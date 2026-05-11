@@ -1,13 +1,24 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
 
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLMLAB</title>
+  
+  <!-- 🚀 Pre-connect to primary AI APIs to shave off 100-300ms from the first prompt -->
+  <link rel="preconnect" href="https://generativelanguage.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://openrouter.ai" crossorigin>
+  <link rel="preconnect" href="https://integrate.api.nvidia.com" crossorigin>
+  
+  <link rel="dns-prefetch" href="https://generativelanguage.googleapis.com">
+  <link rel="dns-prefetch" href="https://openrouter.ai">
+  <link rel="dns-prefetch" href="https://integrate.api.nvidia.com">
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>

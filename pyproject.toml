@@ -1,2 +1,0 @@
-[tool.pyrefly]
-errors = { missing-override-decorator = "error" }

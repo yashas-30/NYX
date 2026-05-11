@@ -1,4 +1,4 @@
-# Design System: react-example (llM_LAB)
+# Design System: react-example (LLMLAB)
 **Project ID:** local/react-example
 
 ## 1. Visual Theme & Atmosphere
@@ -7,20 +7,17 @@ The interface is a modern, high-contrast developer-oriented UI with a vibrant-bu
 
 ## 2. Color Palette & Roles
 
-- Primary Purple (Accent) —  #6d28d9 — Primary interactive color used for CTAs, selection rings, and highlights.
-- Background — #ffffff — App background in light mode; provides a clean canvas.
-- Foreground (Primary Text) — #020617 — Main text color for high legibility.
-- Card / Surface — #ffffff — Surfaces and panels in light mode.
-- Secondary Surface — #f1f5f9 — Muted surfaces, subtle card alternates and dividers.
-- Muted Foreground — #475569 — Secondary text and supportive metadata.
-- Destructive — #dc2626 — Errors and destructive actions.
-- Ring / Glow — #6d28d9 — Focus/ring/glow accent in light mode.
+- Primary Blue (Apple) — #0071E3 — Standard Apple system blue for CTAs and interactive states.
+- Background (Light) — #FCF9F2 — Premium warm cream app background.
+- Foreground (Light) — #1D1D1F — Primary Apple-style deep gray text.
+- Card / Surface — #FFFFFF — Clean white card surfaces for contrast against cream.
+- Secondary Surface — #F0EDE8 — Muted cream for sidebar and secondary areas.
 
 Dark mode variants (applied when .dark is present):
-- Background — #000000
-- Foreground — #f8fafc
-- Primary Accent (Dark) — #22d3ee
-- Card — #09090b
+- Background (Dark) — #3A3A3C — Apple System Gray 4 for a legible, professional gray theme.
+- Foreground (Dark) — #FFFFFF — Pure white text for maximum legibility.
+- Card (Dark) — #48484A — Apple System Gray 3 for elevated surfaces.
+- Primary Accent (Dark) — #0A84FF — Luminous Apple system blue for dark mode.
 
 Design tokens live as CSS custom properties (see src/index.css) and should be referenced semantically (e.g., var(--color-primary) / var(--color-background)).
 
