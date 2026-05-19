@@ -1,6 +1,3 @@
-<div align="center">
-<img width="1200" height="475" alt="NYX Banner" src="public/assets/nyx_logo.png" />
-
 # 🌌 NYX — Premium Multi-Model Arena & Coder Playground
 
 [![Vite](https://img.shields.io/badge/Vite-6.x-646CFF.svg?style=flat-square&logo=vite)](https://vite.dev)
@@ -9,8 +6,6 @@
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-v4.0-38B2AC.svg?style=flat-square&logo=tailwind-css)](https://tailwindcss.com)
 
 **NYX** is a state-of-the-art, high-fidelity developer playground designed for side-by-side LLM comparison, advanced code generation, and direct proxy routing with unified caching. Designed around a "clinical-modern" user interface, it provides millisecond-level responsive streaming, modular IDE controls, deep comparison metrics, and robust API keys credential handling.
-
-</div>
 
 ---
 
