@@ -29,7 +29,7 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
   { id: 'gemini', name: 'Google Gemini', hasModels: true, modelCount: 0 },
   { id: 'openrouter', name: 'OpenRouter', hasModels: true, modelCount: 0 },
   { id: 'nvidia', name: 'NVIDIA NIM', hasModels: true, modelCount: 0 },
-  { id: 'opencode', name: 'OpenCode', hasModels: true, modelCount: 0 },
+  { id: 'opencode', name: 'OpenCode Zen', hasModels: true, modelCount: 0 },
 ];
 
 const getModelCountForProvider = (provider: string): number => {
@@ -554,7 +554,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       >
                         <div className="flex items-center gap-2">
                           <div className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[7px] font-black">C</div>
-                          <span className="text-[10px] font-bold text-foreground">OpenCode API</span>
+                          <span className="text-[10px] font-bold text-foreground">OpenCode Zen</span>
                           <span className="text-[6px] font-bold uppercase tracking-widest text-emerald-500/85 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/10">Free Sandbox</span>
                         </div>
                         {expandedGuideProvider === 'opencode' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -567,7 +567,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <li>Visit the <a href="https://opencode.ai/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-bold inline-flex items-center gap-0.5">OpenCode Portal <ExternalLink size={8} /></a>.</li>
                             <li>Click **Register** to create a developer account.</li>
                             <li>Navigate to the API Tokens section in your account dashboard.</li>
-                            <li>Click **Generate Token**, name it, copy it, and paste it into the **OpenCode** key field on this settings page.</li>
+                            <li>Click **Generate Token**, name it, copy it, and paste it into the **OpenCode Zen** key field on this settings page.</li>
                           </ol>
                         </div>
                       )}

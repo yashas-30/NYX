@@ -212,7 +212,7 @@ OpenRouter aggregates hundreds of models, offering completely free high-throughp
 * **Step 4**: Click **"Create Key"**, give it a name, and copy the new key (starts with `sk-or-...`).
 * **Step 5**: Paste it into the **OpenRouter** field in Settings. Select models with a `:free` suffix in the NYX Model Arena.
 
-### 3. NVIDIA NIM API (1,000 Free GPU Credits)
+### 3. NVIDIA NIM (1,000 Free GPU Credits)
 NVIDIA NGC offers optimized API endpoints for top open-weight models, loaded with 1,000 free GPU credits upon registration.
 * **Step 1**: Navigate to the [NVIDIA NGC Build Catalog](https://build.nvidia.com/).
 * **Step 2**: Sign up for a free NVIDIA developer account.
@@ -220,13 +220,13 @@ NVIDIA NGC offers optimized API endpoints for top open-weight models, loaded wit
 * **Step 4**: Generate and copy your developer key (starts with `nvapi-`).
 * **Step 5**: Paste it into the **NVIDIA NIM** key field in NYX to start consuming free credits.
 
-### 4. OpenCode API (Developer Sandbox Reasoning)
-OpenCode provides developer sandbox tokens to connect with reasoning-focused coding models.
+### 4. OpenCode Zen (Developer Sandbox Reasoning)
+OpenCode Zen provides developer sandbox tokens to connect with reasoning-focused coding models.
 * **Step 1**: Visit the [OpenCode Portal](https://opencode.ai/).
 * **Step 2**: Register a developer account.
 * **Step 3**: Navigate to the **API Tokens** section in your account dashboard.
 * **Step 4**: Click **"Generate Token"**, name it, and copy it.
-* **Step 5**: Paste it into the **OpenCode** key field on the Settings page.
+* **Step 5**: Paste it into the **OpenCode Zen** key field on the Settings page.
 
 ---
 
