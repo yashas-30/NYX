@@ -15,7 +15,7 @@ const app = express();
 
 // ── Optimization: Compress non-streaming responses ──────────────────────────
 app.use(compression({
-  filter: (req, res) => {
+  filter: (req: express.Request, res: express.Response) => {
     // Don't compress SSE streams as it blocks flushing
     if (req.headers.accept === 'text/event-stream' || req.path.includes('/stream')) return false;
     return compression.filter(req, res);
