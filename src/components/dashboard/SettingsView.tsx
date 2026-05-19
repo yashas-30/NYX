@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Trash2, ChevronDown, ChevronUp, Key, Network } from 'lucide-react';
+import { Trash2, ChevronDown, ChevronUp, Key, Network, HelpCircle, BookOpen, ExternalLink, Cpu, Zap, Database, Globe } from 'lucide-react';
 import { UI_TEXT } from '../../lib/design-system/copy';
 import { useTokenUsage } from '../../context/TokenUsageContext';
 import { AVAILABLE_MODELS } from '../../config/models';
@@ -57,6 +57,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const { usage, resetUsage, refreshProviderQuota } = useTokenUsage();
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
   const [showGateways, setShowGateways] = useState(false);
+  const [activeGuideTab, setActiveGuideTab] = useState<'workflow' | 'keys'>('workflow');
+  const [expandedGuideProvider, setExpandedGuideProvider] = useState<string | null>(null);
 
   const [cacheStats, setCacheStats] = useState<{
     itemCount: number;
@@ -338,10 +340,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <p className="text-[6px] text-muted-foreground/50 leading-relaxed max-w-[280px]">
-                  Persistent query cache automatically mirrors inference results to disk. Submitting identical prompts returns results instantly, saving network credits.
-                </p>
                 <button
                   onClick={handleClearCache}
                   disabled={cacheStats.itemCount === 0}
@@ -355,6 +353,228 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   Purge Cache
                 </button>
               </div>
+            </div>
+
+            {/* Learning Hub: App Workflow & Free Keys Guide */}
+            <div className="mt-6 group p-4 rounded-[16px] bg-card border border-border-strong hover:bg-card/85 transition-all shadow-md relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-purple-500/40 via-primary/40 to-purple-500/40 opacity-70 group-hover:opacity-100 transition-opacity" />
+              
+              <div className="flex items-center justify-between mb-4 border-b border-border-strong/20 pb-3">
+                <div>
+                  <p className="text-[7px] font-black uppercase tracking-[0.25em] text-primary">LEARNING & CREDENTIALS HUB</p>
+                  <h3 className="text-xs font-bold text-foreground mt-0.5">Walkthrough & Free API Keys</h3>
+                </div>
+                
+                <div className="flex bg-muted/20 p-0.5 rounded-full border border-border">
+                  <button
+                    onClick={() => setActiveGuideTab('workflow')}
+                    className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      activeGuideTab === 'workflow'
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Workflow
+                  </button>
+                  <button
+                    onClick={() => setActiveGuideTab('keys')}
+                    className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                      activeGuideTab === 'keys'
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Free Keys
+                  </button>
+                </div>
+              </div>
+
+              {activeGuideTab === 'workflow' ? (
+                <div className="space-y-3 animate-in fade-in duration-300">
+                  <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+                    NYX runs on a high-speed, dual-server framework designed for side-by-side LLM comparisons, prompt engineering, and offline local development. Here is how your requests are routed:
+                  </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-muted/5 border border-border-strong/30 rounded-xl p-3 flex flex-col gap-2 hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 rounded-lg bg-primary/10 text-primary">
+                          <Zap size={12} />
+                        </div>
+                        <h4 className="text-[9px] font-black uppercase tracking-wide text-foreground">1. Pipeline</h4>
+                      </div>
+                      <p className="text-[8px] text-muted-foreground/60 leading-relaxed">
+                        Vite frontend connects to the local Express gateway (Port 3000). Streaming requests proxy directly to a Fastify stream engine (Port 3001).
+                      </p>
+                    </div>
+
+                    <div className="bg-muted/5 border border-border-strong/30 rounded-xl p-3 flex flex-col gap-2 hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 rounded-lg bg-primary/10 text-primary">
+                          <Cpu size={12} />
+                        </div>
+                        <h4 className="text-[9px] font-black uppercase tracking-wide text-foreground">2. Sockets</h4>
+                      </div>
+                      <p className="text-[8px] text-muted-foreground/60 leading-relaxed">
+                        Fastify disables TCP buffering (Nagle's Algorithm), utilizes pre-warmed DNS lookups, and leverages persistent socket connection pooling.
+                      </p>
+                    </div>
+
+                    <div className="bg-muted/5 border border-border-strong/30 rounded-xl p-3 flex flex-col gap-2 hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 rounded-lg bg-primary/10 text-primary">
+                          <Database size={12} />
+                        </div>
+                        <h4 className="text-[9px] font-black uppercase tracking-wide text-foreground">3. Cache</h4>
+                      </div>
+                      <p className="text-[8px] text-muted-foreground/60 leading-relaxed">
+                        Every request maps to a SHA-256 signature capturing prompt, model parameters, and settings. Cached answers load instantly from disk.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-muted/5 border border-border/30 rounded-xl p-3 flex flex-col gap-2">
+                    <h4 className="text-[9px] font-black uppercase tracking-wide text-foreground">Features Walkthrough</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[8px] text-muted-foreground/80">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1 h-1 rounded-full bg-primary shrink-0" />
+                        <span><strong>Model Arena (Grid)</strong>: Benchmark model outputs side-by-side.</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1 h-1 rounded-full bg-primary shrink-0" />
+                        <span><strong>Performance Analysis</strong>: Evaluate reasoning, response depth, & code.</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1 h-1 rounded-full bg-primary shrink-0" />
+                        <span><strong>Coder Workspace</strong>: Specialized editor with multiline code playground.</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1 h-1 rounded-full bg-primary shrink-0" />
+                        <span><strong>Model Forge</strong>: Manage model configurations & discover local instances.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 animate-in fade-in duration-300">
+                  <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+                    Acquire free developer API keys to start using NYX at zero cost. Follow the step-by-step instructions below for each provider:
+                  </p>
+
+                  <div className="space-y-2">
+                    {/* Google Gemini Key */}
+                    <div className="border border-border rounded-xl overflow-hidden bg-muted/5 hover:bg-muted/10 transition-all">
+                      <button
+                        onClick={() => setExpandedGuideProvider(expandedGuideProvider === 'gemini' ? null : 'gemini')}
+                        className="w-full px-3 py-2 flex items-center justify-between text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[7px] font-black">G</div>
+                          <span className="text-[10px] font-bold text-foreground">Google Gemini API</span>
+                          <span className="text-[6px] font-bold uppercase tracking-widest text-emerald-500/85 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/10">Free Tier</span>
+                        </div>
+                        {expandedGuideProvider === 'gemini' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                      
+                      {expandedGuideProvider === 'gemini' && (
+                        <div className="px-3 pb-3 pt-1 border-t border-border/10 text-[9px] text-muted-foreground/80 space-y-2 leading-relaxed">
+                          <p>Google offers robust free tiers for Google Gemini keys directly within Google AI Studio, granting developers massive rate limits at no cost.</p>
+                          <ol className="list-decimal pl-4 space-y-1">
+                            <li>Go to the <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-bold inline-flex items-center gap-0.5">Google AI Studio Console <ExternalLink size={8} /></a>.</li>
+                            <li>Log in with any Google account.</li>
+                            <li>Click the prominent <strong>"Get API Key"</strong> or <strong>"Create API Key"</strong> button on the sidebar.</li>
+                            <li>Select <strong>"Create API key in new project"</strong>.</li>
+                            <li>Copy the generated key (starts with <code>AIzaSy...</code>) and paste it into the <strong>Google Gemini</strong> key field on this settings page.</li>
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* OpenRouter Key */}
+                    <div className="border border-border rounded-xl overflow-hidden bg-muted/5 hover:bg-muted/10 transition-all">
+                      <button
+                        onClick={() => setExpandedGuideProvider(expandedGuideProvider === 'openrouter' ? null : 'openrouter')}
+                        className="w-full px-3 py-2 flex items-center justify-between text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[7px] font-black">O</div>
+                          <span className="text-[10px] font-bold text-foreground">OpenRouter API</span>
+                          <span className="text-[6px] font-bold uppercase tracking-widest text-emerald-500/85 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/10">Free Models</span>
+                        </div>
+                        {expandedGuideProvider === 'openrouter' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                      
+                      {expandedGuideProvider === 'openrouter' && (
+                        <div className="px-3 pb-3 pt-1 border-t border-border/10 text-[9px] text-muted-foreground/80 space-y-2 leading-relaxed">
+                          <p>OpenRouter is an aggregator offering low-latency API access. Creating an account gives you instant access to multiple entirely free LLMs.</p>
+                          <ol className="list-decimal pl-4 space-y-1">
+                            <li>Visit the <a href="https://openrouter.ai/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-bold inline-flex items-center gap-0.5">OpenRouter Website <ExternalLink size={8} /></a>.</li>
+                            <li>Register or log in via GitHub, Google, or MetaMask.</li>
+                            <li>Go to <strong>Settings ➔ Keys</strong> in the dashboard or sidebar.</li>
+                            <li>Click <strong>"Create Key"</strong>, name it, and copy the new key (starts with <code>sk-or-...</code>).</li>
+                            <li>Paste the key into the <strong>OpenRouter</strong> key field. OpenRouter free models like <code>meta-llama/llama-3-8b-instruct:free</code> will run instantly at zero cost!</li>
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* NVIDIA NIM Key */}
+                    <div className="border border-border rounded-xl overflow-hidden bg-muted/5 hover:bg-muted/10 transition-all">
+                      <button
+                        onClick={() => setExpandedGuideProvider(expandedGuideProvider === 'nvidia' ? null : 'nvidia')}
+                        className="w-full px-3 py-2 flex items-center justify-between text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[7px] font-black">N</div>
+                          <span className="text-[10px] font-bold text-foreground">NVIDIA NIM API</span>
+                          <span className="text-[6px] font-bold uppercase tracking-widest text-emerald-500/85 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/10">Free Credits</span>
+                        </div>
+                        {expandedGuideProvider === 'nvidia' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                      
+                      {expandedGuideProvider === 'nvidia' && (
+                        <div className="px-3 pb-3 pt-1 border-t border-border/10 text-[9px] text-muted-foreground/80 space-y-2 leading-relaxed">
+                          <p>NVIDIA Developer Program equips developers with 1,000 free inference credits to benchmark state-of-the-art hosted models.</p>
+                          <ol className="list-decimal pl-4 space-y-1">
+                            <li>Navigate to the <a href="https://build.nvidia.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-bold inline-flex items-center gap-0.5">NVIDIA NGC Catalog <ExternalLink size={8} /></a>.</li>
+                            <li>Sign up for a free NVIDIA developer account.</li>
+                            <li>Once registered, select any model (e.g. Llama 3.3 Nemotron) and click on <strong>"Get API Key"</strong>.</li>
+                            <li>Generate and copy your developer key (starts with <code>nvapi-</code>).</li>
+                            <li>Paste the key into the <strong>NVIDIA NIM</strong> key field to consume your free credits.</li>
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* OpenCode Key */}
+                    <div className="border border-border rounded-xl overflow-hidden bg-muted/5 hover:bg-muted/10 transition-all">
+                      <button
+                        onClick={() => setExpandedGuideProvider(expandedGuideProvider === 'opencode' ? null : 'opencode')}
+                        className="w-full px-3 py-2 flex items-center justify-between text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[7px] font-black">C</div>
+                          <span className="text-[10px] font-bold text-foreground">OpenCode API</span>
+                          <span className="text-[6px] font-bold uppercase tracking-widest text-emerald-500/85 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/10">Free Sandbox</span>
+                        </div>
+                        {expandedGuideProvider === 'opencode' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                      
+                      {expandedGuideProvider === 'opencode' && (
+                        <div className="px-3 pb-3 pt-1 border-t border-border/10 text-[9px] text-muted-foreground/80 space-y-2 leading-relaxed">
+                          <p>OpenCode Zen provides optimized developer sandbox keys to connect with code-specialized AI reasoning models.</p>
+                          <ol className="list-decimal pl-4 space-y-1">
+                            <li>Visit the <a href="https://opencode.ai/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-bold inline-flex items-center gap-0.5">OpenCode Portal <ExternalLink size={8} /></a>.</li>
+                            <li>Click **Register** to create a developer account.</li>
+                            <li>Navigate to the API Tokens section in your account dashboard.</li>
+                            <li>Click **Generate Token**, name it, copy it, and paste it into the **OpenCode** key field on this settings page.</li>
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-10 flex justify-center">

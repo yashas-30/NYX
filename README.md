@@ -28,7 +28,7 @@ graph TD
     subgraph ExpressServer [Express Gateway Port 3000]
         G[server.ts Entry] --> H[Express Router]
         H --> I[CacheServer / Local Disk Cache]
-        H --> J[Credential Pin Check]
+        H --> J[API Key & Quota Proxy]
         H --> K[Static assets middleware]
     end
 
@@ -86,9 +86,10 @@ graph TD
 - Full-screen coder interface supporting multiline editor windows, contextual prompts, and variable LLM settings.
 - Structured code execution and live session-level audits.
 
-### 6. 🔐 Credential PIN Locker
-- Secure front-end storage of custom provider API keys inside `localStorage`.
-- Master locking layer with customized PIN codes, auto-lock timeouts, and memory clearance.
+### 6. 🔑 Unified Settings & API Key Manager
+- **Secure Local Storage**: Custom provider API keys are saved directly in your browser's secure `localStorage`. They are never stored on any remote database or sent to third-party tracking systems.
+- **Dynamic Quota Discovery**: Instantly verify your remaining quota (USD credits or token limit) directly inside the Settings tab for connected API providers (e.g. OpenRouter, Google Gemini).
+- **Custom Gateways**: Configure custom gateway URLs for each provider to route requests via alternate endpoints or self-hosted API gateways.
 
 ---
 
@@ -167,6 +168,65 @@ NYX uses a design system tailored around **clinical-modern** visuals. Details ar
 - **Clinical Dark Theme**: Elevated charcoal backdrop (`#3A3A3C`), sharp cards (`#48484A`), and ultra-legible headers (`#FFFFFF`).
 - **Signature Apple Accents**: Primary interactive highlights powered by Apple System Blue (`#0071E3` light / `#0A84FF` dark).
 - **Subtle Spring Easing**: Framer-motion interactive components utilize spring easings for highly tactile UI responses.
+
+---
+
+## ⚙️ How the Application Works (Request Lifecycle)
+
+NYX’s dual-server layout ensures fast UI responses and streaming proxy connections:
+
+1. **Frontend Dispatch**: When you enter a prompt in the Arena or Coder workspace, the React 19 SPA dispatches a request to the backend.
+2. **Local SHA-256 Cache Interception**: The request first hits the **Express Gateway** on Port `3000`. Express hashes your prompt, system instructions, model settings, and conversation history into a unique **SHA-256 key**. If a match exists in `.nyx-cache/`, it serves the result instantly—saving rate limits, API quota, and reducing response latency to `0ms`.
+3. **High-Performance Stream Proxying**: If the request misses the cache, it is proxied to our lightweight **Fastify Streaming Engine** running on Port `3001`.
+4. **Zero-Delay SSE Streams**: Fastify focuses exclusively on low-latency routing. It disables TCP Nagle's algorithm (`setNoDelay(true)`), uses background Cloudflare DNS pre-warming, and routes EventSource chunks back to the frontend with virtually zero buffering.
+5. **Secure Local Keys**: Your API keys are saved strictly in your browser's client-side sandbox (`localStorage`). They are only sent to the authentic provider endpoint via the proxy servers and are never persisted on any database.
+
+---
+
+## ⚙️ How to Setup API Keys in the Settings Page
+
+1. **Access Settings**: Click the **Settings** tab in the sidebar navigation inside NYX.
+2. **Input Credentials**: Paste your API keys into the corresponding fields for Google Gemini, OpenRouter, NVIDIA NIM, or OpenCode.
+3. **Automatic Verification**: As soon as a valid key is input, the Settings page automatically connects to the provider to verify validity, discovers available models, and displays your active quota limit in the UI.
+4. **Gateways configuration (Optional)**: Click the **Gateways** button in the header of the Settings page to reveal custom endpoint inputs if you wish to route calls via localized API gateways.
+
+---
+
+## 🎁 How to Get Free Developer API Keys (Step-by-Step Instructions)
+
+Start using NYX at zero cost by obtaining free API keys from the following providers:
+
+### 1. Google Gemini API
+Google AI Studio grants generous free tier limits for Google Gemini models (Gemini 1.5 Flash/Pro, Gemini 2.0, Gemini 3.0) for developer prototyping.
+* **Step 1**: Visit the [Google AI Studio Console](https://aistudio.google.com/).
+* **Step 2**: Log in with any Google account.
+* **Step 3**: Click the **"Get API Key"** button on the sidebar.
+* **Step 4**: Select **"Create API key in new project"**.
+* **Step 5**: Copy the generated key (starts with `AIzaSy...`) and paste it into the **Google Gemini** input on NYX's Settings page.
+
+### 2. OpenRouter API (Access Free Llama & Mistral Models)
+OpenRouter aggregates hundreds of models, offering completely free high-throughput access to open-source models.
+* **Step 1**: Visit the [OpenRouter Website](https://openrouter.ai/).
+* **Step 2**: Register or log in via GitHub, Google, or MetaMask.
+* **Step 3**: Navigate to **Settings ➔ Keys** in the dashboard.
+* **Step 4**: Click **"Create Key"**, give it a name, and copy the new key (starts with `sk-or-...`).
+* **Step 5**: Paste it into the **OpenRouter** field in Settings. Select models with a `:free` suffix in the NYX Model Arena.
+
+### 3. NVIDIA NIM API (1,000 Free GPU Credits)
+NVIDIA NGC offers optimized API endpoints for top open-weight models, loaded with 1,000 free GPU credits upon registration.
+* **Step 1**: Navigate to the [NVIDIA NGC Build Catalog](https://build.nvidia.com/).
+* **Step 2**: Sign up for a free NVIDIA developer account.
+* **Step 3**: Select any model (e.g. Llama 3.3 Nemotron) and click **"Get API Key"**.
+* **Step 4**: Generate and copy your developer key (starts with `nvapi-`).
+* **Step 5**: Paste it into the **NVIDIA NIM** key field in NYX to start consuming free credits.
+
+### 4. OpenCode API (Developer Sandbox Reasoning)
+OpenCode provides developer sandbox tokens to connect with reasoning-focused coding models.
+* **Step 1**: Visit the [OpenCode Portal](https://opencode.ai/).
+* **Step 2**: Register a developer account.
+* **Step 3**: Navigate to the **API Tokens** section in your account dashboard.
+* **Step 4**: Click **"Generate Token"**, name it, and copy it.
+* **Step 5**: Paste it into the **OpenCode** key field on the Settings page.
 
 ---
 

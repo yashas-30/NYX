@@ -31,7 +31,7 @@ export const useDashboardState = (onExit?: () => void) => {
   const registry = useModelRegistry('http://localhost:1234');
 
   // 2. Security & API Keys
-  const security = useSecurityState({}, null, (provider, key) => refreshProviderQuota(provider, key));
+  const security = useSecurityState({}, (provider, key) => refreshProviderQuota(provider, key));
 
   // 3. Provider Connectivity Status
   const { statuses, refreshStatuses } = useProviderStatus(security.apiKeys, registry.lmStudioBaseUrl, registry.ollamaBaseUrl);
@@ -56,7 +56,6 @@ export const useDashboardState = (onExit?: () => void) => {
     const savedHistory = localStorage.getItem('llm_ref_history');
     const savedKeys = localStorage.getItem('llm_ref_api_keys');
     const savedLegacyKey = localStorage.getItem('llm_ref_api_key');
-    const savedPin = localStorage.getItem('llm_ref_security_pin');
     const savedLmUrl = localStorage.getItem('llm_ref_lmstudio_url');
     const savedOllamaUrl = localStorage.getItem('llm_ref_ollama_url');
 
@@ -68,7 +67,6 @@ export const useDashboardState = (onExit?: () => void) => {
     } else if (savedLegacyKey) {
       security.setApiKeys({ gemini: savedLegacyKey });
     }
-    if (savedPin) security.setSecurityPin(savedPin);
     if (savedLmUrl) registry.setLmStudioBaseUrl(savedLmUrl);
     if (savedOllamaUrl) registry.setOllamaBaseUrl(savedOllamaUrl);
 
