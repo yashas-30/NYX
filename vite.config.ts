@@ -6,9 +6,9 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
 
-  // Set the base path to '/NYX-LLM-COMPARISON-AND-CODER-AGENT/' when building inside GitHub Actions for GitHub Pages deployment
+  // Set the base path to '/NYX/' when building inside GitHub Actions for GitHub Pages deployment
   const isGithubActions = process.env.GITHUB_ACTIONS === 'true';
-  const base = isGithubActions ? '/NYX-LLM-COMPARISON-AND-CODER-AGENT/' : '/';
+  const base = isGithubActions ? '/NYX/' : '/';
 
   return {
     base,

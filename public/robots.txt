@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://yashas-30.github.io/NYX-LLM-COMPARISON-AND-CODER-AGENT/sitemap.xml
+Sitemap: https://yashas-30.github.io/NYX/sitemap.xml

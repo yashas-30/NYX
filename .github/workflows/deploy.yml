@@ -57,6 +57,6 @@ jobs:
 
       - name: Ping Search Engines with Sitemap
         run: |
-          curl -s "https://www.google.com/ping?sitemap=https://yashas-30.github.io/NYX-LLM-COMPARISON-AND-CODER-AGENT/sitemap.xml" || true
-          curl -s "https://www.bing.com/ping?sitemap=https://yashas-30.github.io/NYX-LLM-COMPARISON-AND-CODER-AGENT/sitemap.xml" || true
+          curl -s "https://www.google.com/ping?sitemap=https://yashas-30.github.io/NYX/sitemap.xml" || true
+          curl -s "https://www.bing.com/ping?sitemap=https://yashas-30.github.io/NYX/sitemap.xml" || true
 
