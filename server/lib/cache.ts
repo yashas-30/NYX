@@ -3,11 +3,16 @@ import path from 'path';
 import crypto from 'crypto';
 
 const WORKSPACE_DIR = process.cwd();
-const CACHE_DIR = path.join(WORKSPACE_DIR, '.nyx-cache');
+const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL;
+const CACHE_DIR = isVercel ? '/tmp/.nyx-cache' : path.join(WORKSPACE_DIR, '.nyx-cache');
 
 // Ensure cache directory exists
 if (!fs.existsSync(CACHE_DIR)) {
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+  } catch (e) {
+    console.error('[CacheServer] Failed to create cache dir:', e);
+  }
 }
 
 interface CacheMetadata {
