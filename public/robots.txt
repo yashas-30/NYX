@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://yashas-30.github.io/NYX/sitemap.xml

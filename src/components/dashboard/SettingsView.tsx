@@ -337,9 +337,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         : '0%' 
                     }}
                   />
-                </div>
               </div>
+            </div>
 
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mt-4">
+                <p className="text-[9px] text-muted-foreground/60 leading-relaxed max-w-[280px]">
+                  Persistent query cache automatically mirrors inference results to disk. Submitting identical prompts returns results instantly, saving network credits.
+                </p>
                 <button
                   onClick={handleClearCache}
                   disabled={cacheStats.itemCount === 0}
