@@ -27,7 +27,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeMode, setActiveMode, o
   ];
 
   return (
-    <nav className="w-full h-[60px] md:w-12 md:h-full border-t md:border-t-0 md:border-r border-border-strong flex flex-row md:flex-col items-center justify-around md:justify-start px-2 py-0 md:px-0 md:py-4 gap-1 md:gap-4 bg-background z-50 transition-all duration-500 shrink-0 select-none order-last md:order-first overflow-x-auto md:overflow-visible [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <nav className="fixed bottom-0 left-0 right-0 h-[60px] md:static md:w-12 md:h-full border-t md:border-t-0 md:border-r border-border-strong flex flex-row md:flex-col items-center justify-around md:justify-start px-2 py-0 md:px-0 md:py-4 gap-1 md:gap-4 bg-background z-50 shrink-0 select-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       <div className="relative group hidden md:block">
         <motion.div
           animate={{ 

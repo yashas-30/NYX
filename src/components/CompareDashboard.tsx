@@ -58,7 +58,7 @@ export const CompareDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) 
   return (
     <ErrorBoundary>
       <main className={`h-[100dvh] w-screen overflow-hidden flex flex-row bg-background text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
-        <div className="flex flex-col md:flex-row w-full h-full relative">
+        <div className="flex flex-row w-full h-full relative">
           <Sidebar 
             activeMode={activeMode} 
             setActiveMode={setActiveMode} 
@@ -67,7 +67,7 @@ export const CompareDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) 
             hasHistory={hasHistory} 
           />
 
-          <div className="flex-1 flex flex-col min-w-0 h-full bg-background relative">
+          <div className="flex-1 flex flex-col min-w-0 h-full bg-background relative pb-[60px] md:pb-0 overflow-hidden">
             <div className="flex-1 min-h-0 relative flex flex-col animate-in">
               <AnimatePresence mode="wait">
                 {activeMode === 'grid' ? (
