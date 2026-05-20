@@ -3,7 +3,7 @@
  * @description The standalone Coder feature page, integrating the local hook and AIService.
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FREE_OPENCODE_MODELS } from '@/src/config/models';
 import { 
@@ -12,8 +12,61 @@ import {
   History, Info, ChevronDown, 
   Zap, BrainCircuit, MessageSquare, 
   Settings as SettingsIcon, Save, ArrowDown, Bot, Plus,
-  Play, Pause, RotateCcw, X
+  Play, Pause, RotateCcw, X, Paperclip, ArrowRight
 } from 'lucide-react';
+
+interface UseAutoResizeTextareaProps {
+  minHeight: number;
+  maxHeight?: number;
+}
+
+function useAutoResizeTextarea({
+  minHeight,
+  maxHeight,
+}: UseAutoResizeTextareaProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = useCallback(
+    (reset?: boolean) => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+
+      if (reset) {
+        textarea.style.height = `${minHeight}px`;
+        return;
+      }
+
+      textarea.style.height = `${minHeight}px`;
+
+      const newHeight = Math.max(
+        minHeight,
+        Math.min(
+          textarea.scrollHeight,
+          maxHeight ?? Number.POSITIVE_INFINITY
+        )
+      );
+
+      textarea.style.height = `${newHeight}px`;
+    },
+    [minHeight, maxHeight]
+  );
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = `${minHeight}px`;
+    }
+  }, [minHeight]);
+
+  useEffect(() => {
+    const handleResize = () => adjustHeight();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [adjustHeight]);
+
+  return { textareaRef, adjustHeight };
+}
+
 
 // UI Components (Shared)
 import { Button } from '@/src/components/ui/Button';
@@ -27,6 +80,50 @@ import { useCoderLogic } from './hooks/useCoderLogic';
 import { ModelDefinition, Provider } from '@/src/core/types';
 import { toast } from 'sonner';
 import { ProviderIcon, getProviderLabel } from '@/src/components/ui/ProviderIcon';
+
+const getCustomModelIcon = (model: ModelDefinition | null | undefined) => {
+  if (!model) return <Bot className="w-3.5 h-3.5 text-muted-foreground/70" />;
+  const provider = model.provider?.toLowerCase() || '';
+  const id = model.id?.toLowerCase() || '';
+
+  if (id.includes('claude') || provider.includes('anthropic')) {
+    return (
+      <svg className="w-3.5 h-3.5 text-[#F15A24]" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.8 15.5h-3.6l-.9 2.5H7.2L11 6.1h2l3.8 11.9h-2.1l-.9-2.5zm-.4-1.2l-1.4-3.9-1.4 3.9h2.8z" />
+      </svg>
+    );
+  }
+  if (id.includes('gpt') || provider.includes('openai')) {
+    return (
+      <svg className="w-3.5 h-3.5 text-[#10a37f]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+      </svg>
+    );
+  }
+  if (id.includes('gemini') || provider.includes('google') || provider.includes('gemini')) {
+    return (
+      <svg className="w-3.5 h-3.5 text-indigo-500" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2l2.4 7.2 7.2 2.4-7.2 2.4-2.4 7.2-2.4-7.2-7.2-2.4 7.2-2.4z" />
+      </svg>
+    );
+  }
+  if (provider === 'ollama') {
+    return (
+      <svg className="w-3.5 h-3.5 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 3a9 9 0 0 0-9 9c0 2.2.8 4.2 2.1 5.7L4 21l3.3-1.1c1.4.7 3 1.1 4.7 1.1a9 9 0 0 0 9-9 9 9 0 0 0-9-9zm0 15a6 6 0 1 1 0-12 6 6 0 0 1 0 12z" />
+      </svg>
+    );
+  }
+  if (provider === 'lmstudio') {
+    return (
+      <svg className="w-3.5 h-3.5 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <path d="M4 10v4M9 6v12M14 8v8M19 12v0" />
+      </svg>
+    );
+  }
+  
+  return <BrainCircuit className="w-3.5 h-3.5 text-purple-500" />;
+};
 
 interface CoderPageProps {
   // Global App State
@@ -111,7 +208,20 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   const [speedReadText, setSpeedReadText] = useState<string | null>(null);
 
   const consoleRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { textareaRef: inputRef, adjustHeight } = useAutoResizeTextarea({ minHeight: 72, maxHeight: 300 });
+
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      toast.success(`Attached file: ${file.name}`);
+    }
+  };
+
 
   const currentPersona = agentPersonas[activeAgent];
   const currentModelId = models[activeAgent];
@@ -154,6 +264,32 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   const currentModel = useMemo(() => {
     return mergedModels.find(m => m.id === currentModelId) || mergedModels[0];
   }, [currentModelId, mergedModels]);
+
+  const quickModels = useMemo(() => {
+    const quick: ModelDefinition[] = [];
+    
+    const claude = mergedModels.find(m => m.id.toLowerCase().includes('claude-3-5-sonnet') || m.id.toLowerCase().includes('claude-3.5-sonnet'));
+    if (claude) quick.push(claude);
+    
+    const gemini = mergedModels.find(m => m.id.toLowerCase().includes('gemini-2.5-flash') || m.id.toLowerCase().includes('gemini-2-5-flash') || m.id.toLowerCase().includes('gemini-1.5-flash') || m.id.toLowerCase().includes('gemini-1.5-pro'));
+    if (gemini) quick.push(gemini);
+    
+    const gpt = mergedModels.find(m => m.id.toLowerCase().includes('gpt-4o'));
+    if (gpt) quick.push(gpt);
+
+    const locals = mergedModels.filter(m => m.isLocal).slice(0, 2);
+    quick.push(...locals);
+
+    for (const m of mergedModels) {
+      if (quick.length >= 5) break;
+      if (!quick.some(q => q.id === m.id)) {
+        quick.push(m);
+      }
+    }
+    
+    return quick;
+  }, [mergedModels]);
+
 
   const [showSettings, setShowSettings] = useState(false);
 
@@ -209,6 +345,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     
     runCoder(prompt);
     setPrompt('');
+    adjustHeight(true);
     
     setTimeout(() => {
       window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
@@ -477,6 +614,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     {suggestedPrompts.map((s, idx) => (
                       <button
                         key={idx}
+                        type="button"
                         onClick={() => { setPrompt(s); inputRef.current?.focus(); }}
                         className="px-2.5 py-1 rounded-full bg-white/30 dark:bg-white/5 border border-white/20 dark:border-white/5 hover:border-primary/40 text-[9px] font-bold text-foreground/60 transition-all cursor-pointer"
                       >
@@ -488,7 +626,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
               </AnimatePresence>
 
               <form onSubmit={handleSubmit} className="relative group">
-                {/* Model Selector Dropdown Popover */}
+                {/* Advanced Model Selector Popover */}
                 <AnimatePresence>
                   {showModelSelector && (
                     <ModelSelector
@@ -532,7 +670,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
                         transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                        className="absolute bottom-full left-0 mb-3 z-[500] w-72 bg-card/95 border border-border-strong rounded-3xl shadow-2xl p-5 space-y-4 text-left backdrop-blur-3xl"
+                        className="absolute bottom-full left-0 mb-3 z-[500] w-72 bg-white/95 dark:bg-zinc-900/95 border border-white/20 dark:border-white/10 rounded-3xl shadow-2xl p-5 space-y-4 text-left backdrop-blur-3xl"
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Parameters</span>
@@ -577,12 +715,125 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                   )}
                 </AnimatePresence>
 
+                {/* Floating Quick Model Dropdown */}
+                <AnimatePresence>
+                  {showModelDropdown && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-[499] bg-transparent" 
+                        onClick={() => setShowModelDropdown(false)} 
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        className="absolute bottom-full left-0 mb-3 z-[500] w-64 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-2xl border border-white/20 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden p-1.5 flex flex-col"
+                      >
+                        <div className="px-3 py-2 text-[8px] font-black tracking-widest text-muted-foreground/60 uppercase border-b border-white/10 dark:border-white/5 mb-1 select-none">
+                          Quick Select Model
+                        </div>
+                        <div className="max-h-60 overflow-y-auto custom-scrollbar flex flex-col gap-0.5">
+                          {quickModels.map((model) => {
+                            const isSelected = model.id === currentModelId;
+                            return (
+                              <button
+                                key={model.id}
+                                type="button"
+                                onClick={() => {
+                                  setModel(model.id);
+                                  setShowModelDropdown(false);
+                                  toast.success(`Switched model to ${model.name}`);
+                                }}
+                                className={`flex items-center justify-between w-full px-3 py-2 rounded-xl text-left transition-all ${
+                                  isSelected 
+                                    ? activeAgent === 'nyx'
+                                      ? 'bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20'
+                                      : 'bg-primary/10 text-primary font-bold border border-primary/20'
+                                    : 'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span className="shrink-0 flex items-center justify-center">
+                                    {getCustomModelIcon(model)}
+                                  </span>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-semibold truncate leading-tight">{model.name}</span>
+                                    <span className="text-[8px] text-muted-foreground truncate leading-none mt-0.5 uppercase tracking-wide">
+                                      {model.isLocal ? 'Local Provider' : getProviderLabel(model.provider)}
+                                    </span>
+                                  </div>
+                                </div>
+                                {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-current" strokeWidth={2.5} />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        
+                        <div className="border-t border-white/10 dark:border-white/5 mt-1.5 pt-1.5 p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowModelDropdown(false);
+                              setShowModelSelector(true);
+                            }}
+                            className={`flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-left transition-all hover:bg-black/5 dark:hover:bg-white/5 text-xs font-bold ${
+                              activeAgent === 'nyx' ? 'text-emerald-400' : 'text-primary'
+                            }`}
+                          >
+                            <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                            <span>Search & More Models...</span>
+                          </button>
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+
+                {/* Invisible File Input */}
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  className="hidden" 
+                  onChange={handleFileChange} 
+                  accept="*/*"
+                />
+
                 {/* Prompt Card/Container */}
-                <div className={`flex flex-col gap-2 p-2 bg-white/30 dark:bg-zinc-900/70 backdrop-blur-xl border rounded-2xl transition-all duration-500 shadow-xl ${
+                <div className={`flex flex-col gap-2 p-2 bg-white/30 dark:bg-zinc-900/70 backdrop-blur-xl border rounded-[24px] transition-all duration-500 shadow-xl ${
                   activeAgent === 'nyx'
                     ? 'border-emerald-500/30 focus-within:border-emerald-500/60 focus-within:ring-1 focus-within:ring-emerald-500/10'
                     : 'border-white/30 dark:border-white/15 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/10'
                 }`}>
+                  {/* File Attachment Pill */}
+                  <AnimatePresence>
+                    {selectedFile && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: -5 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -5 }}
+                        className="flex items-center justify-between gap-2 px-3 py-1.5 bg-black/5 dark:bg-white/5 border border-white/10 dark:border-white/5 rounded-xl self-start max-w-full"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" />
+                          <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[200px]">
+                            {selectedFile.name}
+                          </span>
+                          <span className="text-[8px] text-muted-foreground/50 shrink-0">
+                            ({(selectedFile.size / 1024).toFixed(1)} KB)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedFile(null)}
+                          className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-all"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   {/* Text Area Row */}
                   <div className="flex-1 relative flex items-start group/input">
                     {activeAgent === 'nyx' && (
@@ -591,7 +842,10 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     <textarea
                       ref={inputRef}
                       value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
+                      onChange={(e) => {
+                        setPrompt(e.target.value);
+                        adjustHeight();
+                      }}
                       onKeyDown={(e) => { 
                         if (e.key === 'Enter' && !e.shiftKey) { 
                           e.preventDefault(); 
@@ -600,26 +854,45 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                         } 
                       }}
                       placeholder={activeAgent === 'nyx' ? 'nyx::pipeline ~ ' : 'Ask anything...'}
-                      className={`flex-1 bg-transparent border-none focus:ring-0 text-xs py-1 px-1.5 resize-none min-h-[44px] max-h-[160px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/45 scrollbar-none text-left ${activeAgent === 'nyx' ? 'font-mono text-emerald-400' : ''}`}
+                      className={`flex-1 bg-transparent border-none focus:ring-0 text-xs py-1 px-1.5 resize-none min-h-[44px] max-h-[220px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/45 scrollbar-none text-left ${activeAgent === 'nyx' ? 'font-mono text-emerald-400' : ''}`}
                     />
                   </div>
 
                   {/* Bottom Toolbar Row */}
                   <div className="flex items-center justify-between border-t border-white/5 dark:border-white/5 pt-1.5 px-1">
-                    {/* Left Controls: Selector + Settings + Clear */}
+                    {/* Left Controls: Selector + Attachment + Settings + Clear */}
                     <div className="flex items-center gap-1.5">
-                      {/* Model Selector Button */}
+                      {/* Model Selector Dropdown Button */}
                       <button 
                         type="button"
                         onClick={() => {
-                          setShowModelSelector(!showModelSelector);
+                          setShowModelDropdown(!showModelDropdown);
                           setShowSettings(false);
                         }}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 rounded-xl text-[10px] font-semibold text-foreground/80 transition-all select-none ${showModelSelector ? 'ring-1 ring-primary/40' : ''}`}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 rounded-xl text-[10px] font-semibold text-foreground/80 transition-all select-none ${showModelDropdown ? 'ring-1 ring-primary/40' : ''}`}
                       >
-                        <div className={`w-1.5 h-1.5 rounded-full ${badgeStatus === 'success' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : badgeStatus === 'loading' ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground/30'}`} />
+                        <div className="relative flex items-center justify-center">
+                          {getCustomModelIcon(currentModel)}
+                          <div className={`absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-card ${
+                            badgeStatus === 'success' 
+                              ? 'bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]' 
+                              : badgeStatus === 'loading' 
+                                ? 'bg-amber-500 animate-pulse' 
+                                : 'bg-muted-foreground/30'
+                          }`} />
+                        </div>
                         <span className="truncate max-w-[120px]">{currentModel?.name || 'Select Model'}</span>
-                        <ChevronDown className={`w-3 h-3 text-muted-foreground/60 transition-transform duration-300 ${showModelSelector ? 'rotate-180' : ''}`} />
+                        <ChevronDown className={`w-3 h-3 text-muted-foreground/60 transition-transform duration-300 ${showModelDropdown ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {/* File Upload Button */}
+                      <button 
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-1.5 rounded-xl bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground hover:text-foreground transition-all"
+                        title="Attach File"
+                      >
+                        <Paperclip size={12} strokeWidth={1.5} />
                       </button>
 
                       {/* Settings Button */}
@@ -627,10 +900,10 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                         type="button"
                         onClick={() => {
                           setShowSettings(!showSettings);
-                          setShowModelSelector(false);
+                          setShowModelDropdown(false);
                         }}
-                        className={`p-1 rounded-xl bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground hover:text-foreground transition-all group ${showSettings ? 'ring-1 ring-primary/40 text-primary' : ''}`}
-                        title="Model Settings"
+                        className={`p-1.5 rounded-xl bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground hover:text-foreground transition-all group ${showSettings ? 'ring-1 ring-primary/40 text-primary' : ''}`}
+                        title="Model Parameters"
                       >
                         <SettingsIcon size={12} strokeWidth={1.5} className="group-hover:rotate-45 transition-transform duration-300" />
                       </button>
@@ -639,7 +912,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                       <button 
                         type="button" 
                         onClick={clearHistory} 
-                        className="p-1 rounded-xl bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground/60 hover:text-destructive hover:border-destructive/20 transition-all group"
+                        className="p-1.5 rounded-xl bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground/60 hover:text-destructive hover:border-destructive/20 transition-all group"
                         title="Clear session history"
                       >
                         <History size={12} strokeWidth={1.5} className="group-hover:scale-105 transition-transform" />
@@ -649,15 +922,19 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     {/* Right Controls: Send Button */}
                     <div className="flex items-center gap-2">
                       {isLoading ? (
-                        <button type="button" onClick={stopCoder} className="h-6 px-3 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center gap-1 animate-pulse border border-destructive/20 text-[10px] font-bold tracking-wider uppercase">
-                          <StopCircle className="w-3 h-3 animate-spin" />
+                        <button 
+                          type="button" 
+                          onClick={stopCoder} 
+                          className="h-7 px-3 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center gap-1 border border-destructive/20 text-[10px] font-bold tracking-wider uppercase hover:bg-destructive/20 transition-all"
+                        >
+                          <StopCircle className="w-3.5 h-3.5 animate-spin" />
                           <span>Stop</span>
                         </button>
                       ) : (
                         <button 
                           type="submit" 
                           disabled={!prompt.trim()} 
-                          className={`h-6 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all text-[10px] font-bold tracking-wider uppercase ${
+                          className={`h-7 px-3.5 rounded-xl flex items-center justify-center gap-1.5 transition-all text-[10px] font-black tracking-widest uppercase ${
                             prompt.trim() 
                               ? activeAgent === 'nyx'
                                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-100 hover:scale-[1.02]'
@@ -666,7 +943,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                           }`}
                         >
                           <span>Run</span>
-                          <Send size={10} strokeWidth={1.5} />
+                          <ArrowRight size={11} strokeWidth={2.5} />
                         </button>
                       )}
                     </div>
