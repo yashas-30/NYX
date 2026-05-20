@@ -528,7 +528,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                  providerStatuses={providerStatuses}
                  ollamaBaseUrl={ollamaBaseUrl}
                  lmStudioBaseUrl={lmStudioBaseUrl}
-                 isCoder={activeAgent === 'open'}
+                 isCoder={true}
                  onResetContext={() => {
                    clearHistory();
                    toast.success('Context reset successful');

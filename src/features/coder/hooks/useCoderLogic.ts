@@ -91,7 +91,7 @@ export const useCoderLogic = ({
         const openProvider = detectProvider(openModelId, ollamaModels, lmStudioModels);
         const openApiKey = getEffectiveApiKey(openProvider, apiKeys);
 
-        const claudeModelId = models['claude'] || 'anthropic/claude-sonnet-4-20250514';
+        const claudeModelId = models['nyx'] || 'anthropic/claude-sonnet-4-20250514';
         const claudeProvider = detectProvider(claudeModelId, ollamaModels, lmStudioModels);
         const claudeApiKey = getEffectiveApiKey(claudeProvider, apiKeys);
 
