@@ -46,36 +46,6 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
     <ErrorBoundary>
       <main className={`h-[100dvh] w-screen overflow-hidden flex flex-col bg-gradient-to-br from-[#FAF7F2] via-[#F3EFE3] to-[#EDE8DE] dark:from-[#131315] dark:via-[#161618] dark:to-[#1A1A1E] text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
         
-        {/* Top Bar */}
-        <header className="shrink-0 h-14 flex items-center justify-between px-4 border-b border-border/10 bg-background/50 backdrop-blur-md z-50">
-          <div className="flex items-center gap-3">
-            <span className="text-lg font-bold tracking-tight">NYX</span>
-          </div>
-          
-          <nav className="flex items-center gap-1">
-            <TopBarButton 
-              active={activeMode === 'coder'} 
-              onClick={() => setActiveMode('coder')}
-              icon={<CoderIcon />}
-              label="NYX Agent"
-            />
-            <TopBarButton 
-              active={activeMode === 'registry'} 
-              onClick={() => setActiveMode('registry')}
-              icon={<RegistryIcon />}
-              label="Models"
-            />
-            <TopBarButton 
-              active={activeMode === 'settings'} 
-              onClick={() => setActiveMode('settings')}
-              icon={<SettingsIcon />}
-              label="Settings"
-            />
-          </nav>
-
-          <div className="w-20" /> {/* Spacer for balance */}
-        </header>
-
         {/* Main Content */}
         <div className="flex-1 relative overflow-hidden">
           <AnimatePresence mode="wait">
@@ -107,6 +77,8 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                   setActiveAgent={setActiveAgent}
                   models={models}
                   setModel={setModel}
+                  activeMode={activeMode}
+                  setActiveMode={setActiveMode}
                 />
               </motion.div>
             ) : activeMode === 'registry' ? (
@@ -137,6 +109,8 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                     providerStatuses={statuses}
                     ollamaBaseUrl={ollamaBaseUrl}
                     setOllamaBaseUrl={setOllamaBaseUrl}
+                    activeMode={activeMode}
+                    setActiveMode={setActiveMode}
                   />
                 </Suspense>
               </motion.div>
@@ -156,6 +130,8 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                   setOllamaBaseUrl={setOllamaBaseUrl}
                   lmStudioBaseUrl={lmStudioBaseUrl}
                   setLmStudioBaseUrl={setLmStudioBaseUrl}
+                  activeMode={activeMode}
+                  setActiveMode={setActiveMode}
                 />
               </motion.div>
             )}

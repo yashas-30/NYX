@@ -12,7 +12,7 @@ import {
   History, Info, ChevronDown, 
   Zap, BrainCircuit, MessageSquare, 
   Settings as SettingsIcon, Save, ArrowDown, Bot, Plus,
-  Play, Pause, RotateCcw, X, Paperclip, ArrowRight
+  Play, Pause, RotateCcw, X, Paperclip, ArrowRight, Box
 } from 'lucide-react';
 
 interface UseAutoResizeTextareaProps {
@@ -151,6 +151,8 @@ interface CoderPageProps {
   setActiveAgent?: (agent: 'open' | 'claude' | 'nyx') => void;
   models?: Record<'open' | 'claude' | 'nyx', string>;
   setModel?: (modelId: string) => void;
+  activeMode?: 'coder' | 'registry' | 'settings';
+  setActiveMode?: (mode: 'coder' | 'registry' | 'settings') => void;
 }
 
 export const CoderPage: React.FC<CoderPageProps> = ({
@@ -174,7 +176,9 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   activeAgent: propActiveAgent,
   setActiveAgent: propSetActiveAgent,
   models: propModels,
-  setModel: propSetModel
+  setModel: propSetModel,
+  activeMode = 'coder',
+  setActiveMode
 }) => {
   const {
     activeAgent, setActiveAgent,
@@ -208,7 +212,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   const [speedReadText, setSpeedReadText] = useState<string | null>(null);
 
   const consoleRef = useRef<HTMLDivElement>(null);
-  const { textareaRef: inputRef, adjustHeight } = useAutoResizeTextarea({ minHeight: 72, maxHeight: 300 });
+  const { textareaRef: inputRef, adjustHeight } = useAutoResizeTextarea({ minHeight: 36, maxHeight: 300 });
 
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -390,15 +394,33 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     >
       <div className="flex-1 min-h-0 w-full flex flex-col bg-white/30 dark:bg-zinc-900/20 backdrop-blur-xl border border-white/20 dark:border-white/5 rounded-3xl overflow-hidden shadow-xl relative transition-all duration-500">
         {/* ─── Header ─── */}
-        <header className="flex items-center justify-between p-3.5 sm:p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-md">
+        <header className="flex items-center justify-between p-2.5 sm:p-3 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-md">
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex items-center gap-2 bg-purple-500/10 dark:bg-purple-400/10 px-3.5 sm:px-4 py-1.5 rounded-2xl border border-purple-500/20 shadow-sm select-none">
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-purple-600 dark:text-purple-400">
-                NYX Agent
-              </span>
+            <div className="flex items-center gap-1 bg-black/10 dark:bg-white/5 p-0.5 rounded-xl border border-white/10 dark:border-white/5">
+              <button 
+                onClick={() => setActiveMode?.('coder')} 
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'coder' ? 'bg-[#181224]/85 dark:bg-[#120B1C]/90 text-purple-400 border border-purple-500/20 shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+              >
+                <TerminalIcon size={12} />
+                <span>NYX Agent</span>
+              </button>
+              <button 
+                onClick={() => setActiveMode?.('registry')} 
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'registry' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+              >
+                <Box size={12} />
+                <span>Models</span>
+              </button>
+              <button 
+                onClick={() => setActiveMode?.('settings')} 
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'settings' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+              >
+                <SettingsIcon size={12} />
+                <span>Settings</span>
+              </button>
             </div>
-            <div className="h-4 w-px bg-white/15 dark:bg-white/5 mx-1 hidden sm:block" />
-            <div className="flex flex-col hidden sm:flex">
+            <div className="h-4 w-px bg-white/15 dark:bg-white/5 mx-1 hidden lg:block" />
+            <div className="flex flex-col hidden lg:flex">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold tracking-tight text-foreground/80">{currentPersona.name}</span>
                 <span className="text-[7px] font-mono text-muted-foreground bg-white/20 dark:bg-white/5 px-1.5 py-0.5 rounded border border-white/10 dark:border-white/5">v{currentPersona.version}</span>
@@ -470,18 +492,16 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                         </span>
                       </div>
                       <div className={`
-                        relative max-w-[85%] py-3 px-4 rounded-2xl border transition-all duration-500 shadow-sm
-                        ${activeAgent === 'nyx'
-                          ? isUser
-                            ? 'bg-[#181224]/85 dark:bg-[#120B1C]/90 border-purple-500/30 text-purple-300 dark:text-purple-400 font-mono self-end rounded-tr-none text-[11px] shadow-[0_0_20px_rgba(168,85,247,0.1)]'
-                            : msg.status === 'error'
-                              ? 'bg-red-950/20 border-red-500/20 text-red-400 self-start rounded-tl-none text-[11px] font-mono'
-                              : 'bg-[#0B1A12]/90 dark:bg-[#07140C]/95 border-emerald-500/25 text-emerald-400 font-mono self-start rounded-tl-none pl-4 pr-12 shadow-[0_0_20px_rgba(16,185,129,0.12)]'
-                          : isUser 
-                            ? 'bg-white/60 dark:bg-zinc-800/60 backdrop-blur-md border-white/30 dark:border-white/10 text-foreground/90 self-end rounded-tr-none' 
-                            : msg.status === 'error'
-                              ? 'bg-red-500/10 border-red-500/20 text-red-500 dark:text-red-400 self-start rounded-tl-none text-xs'
-                              : 'bg-white/30 dark:bg-zinc-900/30 backdrop-blur-md border-white/20 dark:border-white/5 text-foreground/90 self-start rounded-tl-none pl-4 pr-12'
+                        relative transition-all duration-500 w-full
+                        ${isUser
+                          ? activeAgent === 'nyx'
+                            ? 'max-w-[85%] py-3 px-4 rounded-2xl border shadow-sm self-end rounded-tr-none text-[11px] bg-[#181224]/85 dark:bg-[#120B1C]/90 border-purple-500/30 text-purple-300 dark:text-purple-400 font-mono shadow-[0_0_20px_rgba(168,85,247,0.1)]'
+                            : 'max-w-[85%] py-3 px-4 rounded-2xl border shadow-sm self-end rounded-tr-none bg-white/60 dark:bg-zinc-800/60 backdrop-blur-md border-white/30 dark:border-white/10 text-foreground/90'
+                          : msg.status === 'error'
+                            ? 'self-start text-red-500 dark:text-red-400 text-xs py-1.5'
+                            : activeAgent === 'nyx'
+                              ? 'self-start text-emerald-400 font-mono text-[11px] py-1.5 pr-16 border-none shadow-none bg-transparent'
+                              : 'self-start text-foreground/90 text-xs py-1.5 pr-16 border-none shadow-none bg-transparent'
                         }
                       `}>
                         {msg.content ? (
@@ -493,7 +513,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                               )}
                             </div>
                             {!isUser && msg.content && msg.status !== 'error' && (
-                              <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+                              <div className="absolute top-0 right-0 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
                                 <button 
                                   onClick={() => copyToClipboard(msg.content, `msg-${i}`)}
                                   className="p-1 rounded bg-background/80 hover:bg-background border border-border-strong/40 hover:border-border-strong text-muted-foreground hover:text-foreground transition-all"
@@ -773,7 +793,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                 />
 
                 {/* Prompt Card/Container */}
-                <div className={`flex flex-col gap-2 p-2 bg-white/30 dark:bg-zinc-900/70 backdrop-blur-xl border rounded-[24px] transition-all duration-500 shadow-xl ${
+                <div className={`flex flex-col gap-1.5 p-1.5 bg-white/35 dark:bg-zinc-900/80 backdrop-blur-xl border rounded-2xl transition-all duration-500 shadow-lg ${
                   activeAgent === 'nyx'
                     ? 'border-emerald-500/30 focus-within:border-emerald-500/60 focus-within:ring-1 focus-within:ring-emerald-500/10'
                     : 'border-white/30 dark:border-white/15 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/10'
@@ -827,14 +847,14 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                         } 
                       }}
                       placeholder={activeAgent === 'nyx' ? 'nyx::pipeline ~ ' : 'Ask anything...'}
-                      className={`flex-1 bg-transparent border-none focus:ring-0 text-xs py-1 px-1.5 resize-none min-h-[44px] max-h-[220px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/45 scrollbar-none text-left ${activeAgent === 'nyx' ? 'font-mono text-emerald-400' : ''}`}
+                      className={`flex-1 bg-transparent border-none focus:ring-0 text-xs py-1 px-1.5 resize-none min-h-[32px] max-h-[220px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/45 scrollbar-none text-left ${activeAgent === 'nyx' ? 'font-mono text-emerald-400' : ''}`}
                     />
                   </div>
 
                   {/* Bottom Toolbar Row */}
-                  <div className="flex items-center justify-between border-t border-white/5 dark:border-white/5 pt-1.5 px-1">
+                  <div className="flex items-center justify-between border-t border-white/5 dark:border-white/5 pt-1 px-1">
                     {/* Left Controls: Selector + Attachment + Settings + Clear */}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       {/* Model Selector Dropdown Button */}
                       <button 
                         type="button"
@@ -842,7 +862,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                           setShowModelDropdown(!showModelDropdown);
                           setShowSettings(false);
                         }}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 rounded-xl text-[10px] font-semibold text-foreground/80 transition-all select-none ${showModelDropdown ? 'ring-1 ring-primary/40' : ''}`}
+                        className={`flex items-center gap-1 px-2 py-1 bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 rounded-lg text-[9px] font-semibold text-foreground/80 transition-all select-none ${showModelDropdown ? 'ring-1 ring-primary/40' : ''}`}
                       >
                         <div className="relative flex items-center justify-center">
                           {getCustomModelIcon(currentModel)}
@@ -854,18 +874,18 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                                 : 'bg-muted-foreground/30'
                           }`} />
                         </div>
-                        <span className="truncate max-w-[120px]">{currentModel?.name || 'Select Model'}</span>
-                        <ChevronDown className={`w-3 h-3 text-muted-foreground/60 transition-transform duration-300 ${showModelDropdown ? 'rotate-180' : ''}`} />
+                        <span className="truncate max-w-[90px]">{currentModel?.name || 'Select Model'}</span>
+                        <ChevronDown className={`w-2.5 h-2.5 text-muted-foreground/60 transition-transform duration-300 ${showModelDropdown ? 'rotate-180' : ''}`} />
                       </button>
 
                       {/* File Upload Button */}
                       <button 
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="p-1.5 rounded-xl bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground hover:text-foreground transition-all"
+                        className="p-1 rounded-lg bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground hover:text-foreground transition-all"
                         title="Attach File"
                       >
-                        <Paperclip size={12} strokeWidth={1.5} />
+                        <Paperclip size={11} strokeWidth={1.5} />
                       </button>
 
                       {/* Settings Button */}
@@ -875,39 +895,39 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                           setShowSettings(!showSettings);
                           setShowModelDropdown(false);
                         }}
-                        className={`p-1.5 rounded-xl bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground hover:text-foreground transition-all group ${showSettings ? 'ring-1 ring-primary/40 text-primary' : ''}`}
+                        className={`p-1 rounded-lg bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground hover:text-foreground transition-all group ${showSettings ? 'ring-1 ring-primary/40 text-primary' : ''}`}
                         title="Model Parameters"
                       >
-                        <SettingsIcon size={12} strokeWidth={1.5} className="group-hover:rotate-45 transition-transform duration-300" />
+                        <SettingsIcon size={11} strokeWidth={1.5} className="group-hover:rotate-45 transition-transform duration-300" />
                       </button>
 
                       {/* Clear Session / Reset Context Button */}
                       <button 
                         type="button" 
                         onClick={clearHistory} 
-                        className="p-1.5 rounded-xl bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground/60 hover:text-destructive hover:border-destructive/20 transition-all group"
+                        className="p-1 rounded-lg bg-white/20 dark:bg-zinc-800/40 hover:bg-white/30 dark:hover:bg-zinc-800/70 border border-white/10 dark:border-white/5 text-muted-foreground/60 hover:text-destructive hover:border-destructive/20 transition-all group"
                         title="Clear session history"
                       >
-                        <History size={12} strokeWidth={1.5} className="group-hover:scale-105 transition-transform" />
+                        <History size={11} strokeWidth={1.5} className="group-hover:scale-105 transition-transform" />
                       </button>
                     </div>
 
                     {/* Right Controls: Send Button */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       {isLoading ? (
                         <button 
                           type="button" 
                           onClick={stopCoder} 
-                          className="h-7 px-3 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center gap-1 border border-destructive/20 text-[10px] font-bold tracking-wider uppercase hover:bg-destructive/20 transition-all"
+                          className="h-6 px-2 rounded-lg bg-destructive/10 text-destructive flex items-center justify-center gap-0.5 border border-destructive/20 text-[9px] font-bold tracking-wider uppercase hover:bg-destructive/20 transition-all"
                         >
-                          <StopCircle className="w-3.5 h-3.5 animate-spin" />
+                          <StopCircle className="w-3 h-3 animate-spin" />
                           <span>Stop</span>
                         </button>
                       ) : (
                         <button 
                           type="submit" 
                           disabled={!prompt.trim()} 
-                          className={`h-7 px-3.5 rounded-xl flex items-center justify-center gap-1.5 transition-all text-[10px] font-black tracking-widest uppercase ${
+                          className={`h-6 px-2.5 rounded-lg flex items-center justify-center gap-1 transition-all text-[9px] font-black tracking-widest uppercase ${
                             prompt.trim() 
                               ? activeAgent === 'nyx'
                                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-100 hover:scale-[1.02]'
@@ -916,7 +936,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                           }`}
                         >
                           <span>Run</span>
-                          <ArrowRight size={11} strokeWidth={2.5} />
+                          <ArrowRight size={10} strokeWidth={2.5} />
                         </button>
                       )}
                     </div>

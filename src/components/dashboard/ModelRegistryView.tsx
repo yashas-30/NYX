@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, Plus, RefreshCw, Globe, HardDrive, Info, X, Box, Monitor, Server
+  Search, Plus, RefreshCw, Globe, HardDrive, Info, X, Box, Monitor, Server, Terminal as TerminalIcon, Settings as SettingsIcon
 } from 'lucide-react';
 import { AVAILABLE_MODELS } from '@/src/config/models';
 import { OllamaModel, ModelOption, LMStudioModel } from '@/src/types';
@@ -31,6 +31,8 @@ interface ModelRegistryViewProps {
   providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;
   ollamaBaseUrl: string;
   setOllamaBaseUrl: (url: string) => void;
+  activeMode?: 'coder' | 'registry' | 'settings';
+  setActiveMode?: (mode: 'coder' | 'registry' | 'settings') => void;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -259,6 +261,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   providerStatuses,
   ollamaBaseUrl,
   setOllamaBaseUrl,
+  activeMode,
+  setActiveMode,
 }) => {
   const { usage } = useTokenUsage();
   const [search, setSearch] = useState('');
@@ -327,16 +331,28 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       <div className="flex-1 min-h-0 w-full flex flex-col bg-white/30 dark:bg-zinc-900/20 backdrop-blur-xl border border-white/20 dark:border-white/5 rounded-3xl overflow-hidden shadow-xl relative">
         {/* ── Page header ──────────────────────────────────────────────── */}
         <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-            <div>
-              <h2 className="text-sm font-bold tracking-tight text-foreground">
-                {UI_TEXT.registry.title}
-              </h2>
-              <p className="text-muted-foreground text-[8px] font-black uppercase tracking-[0.2em] opacity-40">
-                Manage active models
-              </p>
-            </div>
+          <div className="flex items-center gap-1 bg-black/10 dark:bg-white/5 p-0.5 rounded-xl border border-white/10 dark:border-white/5">
+            <button 
+              onClick={() => setActiveMode?.('coder')} 
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'coder' ? 'bg-[#181224]/85 dark:bg-[#120B1C]/90 text-purple-400 border border-purple-500/20 shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+            >
+              <TerminalIcon size={12} />
+              <span>NYX Agent</span>
+            </button>
+            <button 
+              onClick={() => setActiveMode?.('registry')} 
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'registry' ? 'bg-primary text-primary-foreground shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+            >
+              <Box size={12} />
+              <span>Models</span>
+            </button>
+            <button 
+              onClick={() => setActiveMode?.('settings')} 
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'settings' ? 'bg-primary text-primary-foreground shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+            >
+              <SettingsIcon size={12} />
+              <span>Settings</span>
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
