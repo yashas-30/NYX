@@ -47,21 +47,24 @@ const DashboardGridComponent: React.FC<DashboardGridProps> = ({
 }) => {
   if (columns.length === 0) {
     return (
-      <div className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden bg-background">
-        <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-center bg-card/40 backdrop-blur-3xl border border-border-strong/30 rounded-2xl overflow-hidden shadow-2xl relative p-6">
+      <div className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-center bg-white/30 dark:bg-zinc-900/20 backdrop-blur-xl border border-white/20 dark:border-white/5 rounded-3xl overflow-hidden shadow-xl relative p-6">
           <motion.div 
             initial={{ scale: 0.98, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className="flex flex-col items-center text-center px-4"
           >
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-6">
+              <span className="text-2xl">⚡</span>
+            </div>
             <h2 className="text-xl md:text-2xl font-bold tracking-tight text-foreground break-words max-w-md">Add model to start conversation</h2>
-            <p className="text-muted-foreground/60 text-[9px] md:text-[10px] font-medium uppercase tracking-widest mt-2 opacity-50">Select a model to begin side-by-side benchmarking</p>
+            <p className="text-muted-foreground/50 text-[10px] font-medium uppercase tracking-widest mt-2">Select a model to begin side-by-side benchmarking</p>
             
             <button 
               onClick={() => onOpenForge()}
-              className="mt-8 px-8 py-3 bg-primary text-white font-bold uppercase tracking-widest text-[9px] md:text-[10px] rounded-full hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 active:scale-95 whitespace-nowrap"
+              className="mt-8 px-8 py-3 bg-primary text-white font-bold uppercase tracking-widest text-[10px] rounded-full hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 active:scale-95 hover:scale-105 whitespace-nowrap"
             >
-              Add
+              Add Model
             </button>
           </motion.div>
         </div>
@@ -88,7 +91,7 @@ const DashboardGridComponent: React.FC<DashboardGridProps> = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden bg-background"
+      className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden"
     >
       <motion.div
         layout

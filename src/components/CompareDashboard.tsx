@@ -26,7 +26,10 @@ import { ErrorBoundary } from './ErrorBoundary';
 // Loading fallback for lazy components
 const LoadingFallback = () => (
   <div className="flex items-center justify-center h-full">
-    <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+      <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">Loading</span>
+    </div>
   </div>
 );
 
@@ -57,7 +60,7 @@ export const CompareDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) 
 
   return (
     <ErrorBoundary>
-      <main className={`h-[100dvh] w-screen overflow-hidden flex bg-background text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
+      <main className={`h-[100dvh] w-screen overflow-hidden flex bg-gradient-to-br from-[#FAF7F2] via-[#F3EFE3] to-[#EDE8DE] dark:from-[#131315] dark:via-[#161618] dark:to-[#1A1A1E] text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
         <Sidebar
           activeMode={activeMode}
           setActiveMode={setActiveMode}
@@ -67,7 +70,7 @@ export const CompareDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) 
         />
 
         {/* Main content — full width on mobile, flex-1 on desktop */}
-        <div className="flex-1 flex flex-col w-full h-full min-w-0 bg-background relative overflow-hidden pb-[60px] md:pb-0 dashboard-main-container">
+        <div className="flex-1 flex flex-col w-full h-full min-w-0 relative overflow-hidden pb-[60px] md:pb-0 dashboard-main-container">
           <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden">
               <AnimatePresence mode="wait">
                 {activeMode === 'grid' ? (

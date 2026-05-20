@@ -132,17 +132,17 @@ const AnalysisViewComponent: React.FC<AnalysisViewProps> = ({
       initial={{ opacity: 0, y: 20 }} 
       animate={{ opacity: 1, y: 0 }} 
       exit={{ opacity: 0, y: -20 }} 
-      className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden bg-background"
+      className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden"
     >
-      <div className="flex-1 min-h-0 w-full flex flex-col bg-card/40 backdrop-blur-3xl border border-border-strong/30 rounded-2xl overflow-hidden shadow-2xl relative">
-        <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 border-b border-border-strong/20 shrink-0 select-none">
+      <div className="flex-1 min-h-0 w-full flex flex-col bg-white/30 dark:bg-zinc-900/20 backdrop-blur-xl border border-white/20 dark:border-white/5 rounded-3xl overflow-hidden shadow-xl relative">
+        <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-sm">
           <div className="flex flex-wrap items-center gap-4">
             <div>
               <h2 className="text-sm font-bold tracking-tight text-foreground">{UI_TEXT.analysis.title}</h2>
               <p className="text-muted-foreground text-[8px] font-black uppercase tracking-[0.2em] opacity-40">Compare model performance</p>
             </div>
 
-            <div className="flex bg-muted/10 p-1 rounded-full border border-border-strong">
+            <div className="flex bg-white/30 dark:bg-zinc-900/30 backdrop-blur-sm p-1 rounded-full border border-white/15 dark:border-white/5">
               <button
                 onClick={() => setAnalysisTab('standard')}
                 className={`px-3 py-1 rounded-full text-[8px] font-bold uppercase tracking-tight transition-all flex items-center gap-1.5 ${
@@ -198,7 +198,7 @@ const AnalysisViewComponent: React.FC<AnalysisViewProps> = ({
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all ${
                     modelSelectorOpen 
                       ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/10'
-                      : 'bg-muted/10 border-border-strong hover:border-primary/20'
+                      : 'bg-white/30 dark:bg-zinc-900/30 border-white/20 dark:border-white/5 hover:border-primary/20'
                   }`}
                 >
                   {analysisModel && (() => {
@@ -227,7 +227,7 @@ const AnalysisViewComponent: React.FC<AnalysisViewProps> = ({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -4, scale: 0.98 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 top-full mt-1.5 w-64 bg-card/95 backdrop-blur-3xl border border-border-strong rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.4)] overflow-hidden z-50"
+                      className="absolute right-0 top-full mt-1.5 w-64 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-white/20 dark:border-white/5 rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.15)] dark:shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden z-50"
                     >
                       <div className="p-2 border-b border-border-strong/30">
                         <span className="text-[7px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 px-2">Evaluation Judge</span>
@@ -292,7 +292,7 @@ const AnalysisViewComponent: React.FC<AnalysisViewProps> = ({
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-6">
           {!hasSuccessfulModels && !isLoading ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-20 opacity-60">
-              <div className="w-24 h-24 rounded-[24px] bg-muted/10 border border-border-strong flex items-center justify-center mb-8">
+              <div className="w-20 h-20 rounded-2xl bg-white/20 dark:bg-white/5 border border-white/15 dark:border-white/5 flex items-center justify-center mb-8">
                 <AlertCircle size={40} strokeWidth={1.5} className="text-amber-500" />
               </div>
               <h3 className="text-xl font-bold tracking-tight text-foreground mb-2">No Model Outputs</h3>
@@ -354,8 +354,8 @@ const AnalysisViewComponent: React.FC<AnalysisViewProps> = ({
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: i * 0.05 }}
-                         className={`p-3.5 rounded-[14px] bg-card/40 backdrop-blur-3xl border transition-all flex flex-col gap-3 shadow-sm hover:shadow-md ${
-                          diff ? 'border-border-strong' : 'border-border-strong opacity-40'
+                         className={`p-3.5 rounded-2xl bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border transition-all flex flex-col gap-3 shadow-sm hover:shadow-md ${
+                          diff ? 'border-white/20 dark:border-white/5' : 'border-white/10 dark:border-white/3 opacity-40'
                         }`}
                       >
                         <div className="flex items-center justify-between">
@@ -398,7 +398,7 @@ const AnalysisViewComponent: React.FC<AnalysisViewProps> = ({
                         key={mid}
                         initial={{ opacity: 0, x: i % 2 === 0 ? -20 : 20 }}
                         animate={{ opacity: 1, x: 0 }}
-                        className="p-4.5 rounded-[14px] bg-card/40 backdrop-blur-3xl border border-border-strong flex flex-col gap-4 shadow-sm hover:shadow-md transition-all duration-500"
+                        className="p-4.5 rounded-2xl bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 flex flex-col gap-4 shadow-sm hover:shadow-md transition-all duration-500"
                       >
                         <div className="flex items-center justify-between">
                           <h5 className="text-sm font-bold text-foreground truncate max-w-[200px] tracking-tight">{mid}</h5>
@@ -465,7 +465,7 @@ const AnalysisViewComponent: React.FC<AnalysisViewProps> = ({
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.1 }}
-                        className="p-8 rounded-[24px] bg-card/40 backdrop-blur-3xl border border-border-strong flex flex-col gap-5 group hover:shadow-md transition-all duration-500"
+                        className="p-8 rounded-2xl bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 flex flex-col gap-5 group hover:shadow-md transition-all duration-500"
                       >
                         <div className="flex items-center justify-between">
                           <div className="w-12 h-12 rounded-[14px] bg-primary/10 flex items-center justify-center text-primary">
@@ -488,7 +488,7 @@ const AnalysisViewComponent: React.FC<AnalysisViewProps> = ({
                 <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="rounded-[24px] bg-card/40 backdrop-blur-3xl border border-border-strong overflow-hidden shadow-2xl transition-all duration-500"
+                  className="rounded-2xl bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 overflow-hidden shadow-xl transition-all duration-500"
                 >
                   <div className="px-6 py-4 bg-muted/5 border-b border-border-strong flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -519,7 +519,7 @@ const AnalysisViewComponent: React.FC<AnalysisViewProps> = ({
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.1 }}
-                        className="p-10 rounded-[24px] bg-card/40 backdrop-blur-3xl border border-border-strong flex flex-col gap-8 shadow-sm hover:shadow-md transition-all duration-500"
+                        className="p-10 rounded-2xl bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 flex flex-col gap-8 shadow-sm hover:shadow-md transition-all duration-500"
                       >
                         <div className="flex items-center justify-between">
                           <div className="min-w-0">

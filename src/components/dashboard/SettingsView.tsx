@@ -127,10 +127,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       initial={{ opacity: 0, y: 15 }} 
       animate={{ opacity: 1, y: 0 }} 
       exit={{ opacity: 0, y: -15 }} 
-      className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden bg-background"
+      className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden"
     >
-      <div className="flex-1 min-h-0 w-full flex flex-col bg-card/40 backdrop-blur-3xl border border-border-strong/30 rounded-2xl overflow-hidden shadow-2xl relative">
-        <header className="flex items-center justify-between p-4 border-b border-border-strong/20 shrink-0 select-none">
+      <div className="flex-1 min-h-0 w-full flex flex-col bg-white/30 dark:bg-zinc-900/20 backdrop-blur-xl border border-white/20 dark:border-white/5 rounded-3xl overflow-hidden shadow-xl relative">
+        <header className="flex items-center justify-between p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-sm">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-primary" />
             <div>
@@ -159,7 +159,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 const isExpanded = expandedProvider === p.id;
 
                 return (
-                  <div key={p.id} className="group p-2.5 rounded-[12px] bg-card border border-border-strong/50 hover:bg-card/80 transition-all shadow-sm">
+                  <div key={p.id} className="group p-2.5 rounded-2xl bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 hover:bg-white/60 dark:hover:bg-zinc-800/40 transition-all shadow-sm hover:shadow-md">
                     <div className="flex items-center gap-3">
                       <div className="w-7 h-7 shrink-0 rounded-[10px] flex items-center justify-center text-[8px] font-black uppercase bg-muted/30 text-muted-foreground/40">
                         {p.name[0]}
@@ -299,7 +299,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* Cache Management Panel */}
-            <div className="mt-6 group p-4 rounded-[16px] bg-card border border-border-strong hover:bg-card/85 transition-all shadow-md relative overflow-hidden">
+            <div className="mt-6 group p-4 rounded-2xl bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 hover:bg-white/50 dark:hover:bg-zinc-800/40 transition-all shadow-md relative overflow-hidden">
               {/* Neon Gradient Accent */}
               <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-primary/40 via-purple-500/40 to-primary/40 opacity-70 group-hover:opacity-100 transition-opacity" />
               
@@ -378,7 +378,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* Learning Hub: App Workflow & Free Keys Guide */}
-            <div className="mt-6 group p-4 rounded-[16px] bg-card border border-border-strong hover:bg-card/85 transition-all shadow-md relative overflow-hidden">
+            <div className="mt-6 group p-4 rounded-2xl bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 hover:bg-white/50 dark:hover:bg-zinc-800/40 transition-all shadow-md relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-purple-500/40 via-primary/40 to-purple-500/40 opacity-70 group-hover:opacity-100 transition-opacity" />
               
               <div className="flex items-center justify-between mb-4 border-b border-border-strong/20 pb-3">

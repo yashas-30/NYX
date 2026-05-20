@@ -27,16 +27,16 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeMode, setActiveMode, o
     <nav
       className={[
         'mobile-nav-bar',
-        // ── Mobile: fixed bottom tab bar ─────────────────────────────
+        // ── Mobile: frosted glass bottom tab bar ─────────────────────
         'fixed bottom-0 left-0 right-0 z-[100]',
         'h-[60px] flex flex-row items-center justify-around px-1',
-        'bg-background/95 backdrop-blur-xl',
-        'border-t border-border-strong/20',
+        'bg-white/70 dark:bg-zinc-900/80 backdrop-blur-2xl',
+        'border-t border-white/20 dark:border-white/5',
         // ── Desktop: left column ──────────────────────────────────────
-        'md:static md:w-12 md:h-full md:flex-col md:items-center',
-        'md:justify-start md:px-0 md:py-3 md:gap-2',
-        'md:border-t-0 md:border-r md:border-border-strong/30',
-        'md:bg-background md:backdrop-blur-none',
+        'md:static md:w-14 md:h-full md:flex-col md:items-center',
+        'md:justify-start md:px-0 md:py-4 md:gap-1.5',
+        'md:border-t-0 md:border-r md:border-white/10 dark:md:border-white/5',
+        'md:bg-white/5 dark:md:bg-black/10 md:backdrop-blur-md',
         // ── Common ───────────────────────────────────────────────────
         'select-none shrink-0',
         '[&::-webkit-scrollbar]:hidden',
@@ -47,13 +47,13 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeMode, setActiveMode, o
         <motion.div
           animate={{
             boxShadow: [
-              '0 0 15px 0px rgba(var(--primary-rgb),0)',
-              '0 0 25px 2px rgba(var(--primary-rgb),0.2)',
-              '0 0 15px 0px rgba(var(--primary-rgb),0)',
+              '0 0 10px 0px rgba(var(--primary-rgb),0)',
+              '0 0 18px 1px rgba(var(--primary-rgb),0.12)',
+              '0 0 10px 0px rgba(var(--primary-rgb),0)',
             ],
           }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-          className="w-8 h-8 rounded-xl bg-foreground/5 border border-border-strong/30 flex items-center justify-center"
+          transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+          className="w-9 h-9 rounded-2xl bg-white/10 dark:bg-white/5 border border-white/15 dark:border-white/5 flex items-center justify-center backdrop-blur-sm"
         >
           <Logo size={20} />
         </motion.div>
@@ -74,14 +74,14 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeMode, setActiveMode, o
                 'min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl',
                 'transition-all duration-300 active:scale-95 touch-manipulation z-10',
                 isActive
-                  ? 'text-white'
-                  : 'text-muted-foreground hover:text-foreground active:bg-muted/20',
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-foreground hover:bg-white/10 dark:hover:bg-white/5',
               ].join(' ')}
             >
               {isActive && (
                 <motion.div
                   layoutId="active-pill-bg"
-                  className="absolute inset-0 bg-primary rounded-xl -z-10 shadow-md shadow-primary/25"
+                  className="absolute inset-0 bg-primary/10 dark:bg-primary/15 rounded-xl -z-10"
                   transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                 />
               )}
@@ -100,12 +100,12 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeMode, setActiveMode, o
                 <motion.span
                   layoutId="active-indicator"
                   className={[
-                    'absolute bg-primary rounded-full z-25',
-                    // Mobile: thin dot above the button
+                    'absolute bg-primary rounded-full z-25 shadow-[0_0_8px_rgba(var(--primary-rgb),0.4)]',
+                    // Mobile: thin bar above the button
                     '-top-px left-1/2 -translate-x-1/2 w-5 h-[2px]',
-                    // Desktop: vertical bar on left edge
+                    // Desktop: luminous vertical bar on left edge
                     'md:top-auto md:left-auto md:-translate-x-0 md:-translate-y-1/2',
-                    'md:-left-[7px] md:top-1/2 md:w-[3px] md:h-5',
+                    'md:-left-[7px] md:top-1/2 md:w-[2px] md:h-6',
                   ].join(' ')}
                   transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                 />
@@ -121,7 +121,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeMode, setActiveMode, o
           <button
             onClick={onExit}
             aria-label="Exit"
-            className="w-11 h-11 rounded-xl flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors active:scale-95"
+            className="w-11 h-11 rounded-xl flex items-center justify-center text-muted-foreground/50 hover:text-destructive hover:bg-destructive/5 transition-all duration-300 active:scale-95"
           >
             <DoorOpen size={17} strokeWidth={1.5} />
           </button>

@@ -25,7 +25,7 @@ interface LandingPageProps {
 }
 
 const MarqueeItem = ({ icon: Icon, text }: { icon: any, text: string }) => (
-  <div className="flex items-center gap-4 px-12 py-4 grayscale opacity-30 hover:grayscale-0 hover:opacity-100 transition-[filter,opacity] duration-500 cursor-default">
+  <div className="flex items-center gap-4 px-12 py-4 opacity-25 hover:opacity-90 hover:text-primary transition-[filter,opacity,color] duration-500 cursor-default">
     <Icon size={24} strokeWidth={1.5} className="text-foreground" />
     <span className="font-mono text-sm uppercase tracking-[0.2em] font-bold text-foreground">{text}</span>
   </div>
@@ -132,7 +132,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
               onClick={onStart}
               onMouseEnter={() => setIsHovering(true)}
               onMouseLeave={() => setIsHovering(false)}
-              className="group relative px-12 py-5 bg-primary text-white font-black uppercase tracking-[0.4em] text-[11px] rounded-full overflow-hidden transition-all shadow-[0_20px_40px_-10px_rgba(var(--primary-rgb),0.4)] active:scale-95"
+              className="group relative px-12 py-5 bg-primary text-white font-black uppercase tracking-[0.4em] text-[11px] rounded-full overflow-hidden transition-all shadow-[0_20px_40px_-10px_rgba(var(--primary-rgb),0.4)] hover:shadow-[0_25px_50px_-12px_rgba(var(--primary-rgb),0.5)] active:scale-95"
             >
               <span className="relative z-10 flex items-center gap-6 text-white">
                 LAUNCH NYX
@@ -171,7 +171,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
       </section>
 
       {/* Marquee - Model Providers (Now under Hero as Instant Integrations Proof) */}
-      <div className="w-full py-6 border-y-2 border-border-strong bg-background/30 backdrop-blur-sm overflow-hidden whitespace-nowrap flex relative">
+      <div className="w-full py-6 border-y border-white/15 dark:border-white/5 bg-white/10 dark:bg-white/5 backdrop-blur-xl overflow-hidden whitespace-nowrap flex relative">
         <div className="flex animate-scroll-x">
           <MarqueeItem icon={Globe} text="OpenRouter" />
           <MarqueeItem icon={Brain} text="Google Gemini" />
@@ -215,7 +215,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="group glass rounded-[24px] overflow-hidden bg-card/50 border border-border-strong shadow-xl max-w-5xl mx-auto w-full"
+              className="group glass rounded-[24px] overflow-hidden bg-white/30 dark:bg-zinc-900/30 backdrop-blur-md border border-border-strong shadow-xl max-w-5xl mx-auto w-full hover:-translate-y-1 hover:shadow-2xl transition-all duration-500"
             >
               <div className="p-8 border-b border-border-strong bg-muted/5">
                 <span className="text-[11px] font-bold text-primary uppercase tracking-[0.4em] mb-2 block">Benchmark Engine</span>
@@ -253,7 +253,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="group glass rounded-[24px] overflow-hidden bg-card/50 border border-border-strong shadow-xl max-w-5xl mx-auto w-full"
+              className="group glass rounded-[24px] overflow-hidden bg-white/30 dark:bg-zinc-900/30 backdrop-blur-md border border-border-strong shadow-xl max-w-5xl mx-auto w-full hover:-translate-y-1 hover:shadow-2xl transition-all duration-500"
             >
               <div className="p-8 border-b border-border-strong bg-muted/5">
                 <span className="text-[11px] font-bold text-primary uppercase tracking-[0.4em] mb-2 block">{UI_TEXT.registry.title}</span>
@@ -284,7 +284,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
         </div>
       </section>
 
-      <footer className="w-full py-12 px-6 flex flex-col items-center gap-4 text-muted-foreground/30 border-t-2 border-border-strong">
+      <footer className="w-full py-12 px-6 flex flex-col items-center gap-4 text-muted-foreground/30 border-t border-white/10 dark:border-white/5 bg-white/5 dark:bg-black/5 backdrop-blur-sm">
         <span className="text-[10px] font-bold uppercase tracking-[0.5em]">
           VER 4.2 — Built by Antigravity using Stitch
         </span>

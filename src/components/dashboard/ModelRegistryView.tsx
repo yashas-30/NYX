@@ -69,7 +69,7 @@ const SectionHeader: React.FC<{
   subtitle: string;
   children?: React.ReactNode;
 }> = ({ icon, title, subtitle, children }) => (
-  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border-strong">
+  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10 dark:border-white/5">
     <div className="flex items-center gap-4">
       <div className="w-10 h-10 rounded-[12px] bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 shadow-sm transition-transform duration-500 hover:rotate-6">
         {icon}
@@ -85,7 +85,7 @@ const SectionHeader: React.FC<{
 
 /** Empty state for when no models are found */
 const EmptyState: React.FC<{ message: string; hint: string }> = ({ message, hint }) => (
-  <div className="py-12 rounded-xl border border-dashed border-border/30 flex flex-col items-center justify-center text-center">
+  <div className="py-12 rounded-2xl border border-dashed border-white/15 dark:border-white/5 flex flex-col items-center justify-center text-center bg-white/10 dark:bg-white/5">
     <Box size={32} className="text-muted-foreground/15 mb-3" />
     <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/80">{message}</p>
     <p className="text-[8px] text-muted-foreground/60 mt-1.5 max-w-[280px]">{hint}</p>
@@ -130,13 +130,13 @@ const ModelCard: React.FC<{
       whileHover={(!isDuplicate && !isDisabled) ? { y: -2, scale: 1.01 } : undefined}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       className={`
-        group relative p-3 rounded-[14px] border border-solid flex flex-col gap-2.5
+        group relative p-3 rounded-2xl border border-solid flex flex-col gap-2.5
         transform-gpu transition-all duration-500 overflow-hidden shadow-sm
         ${isDuplicate
           ? 'bg-destructive/5 border-destructive/20'
           : isDisabled
-            ? 'bg-card/30 border-border-strong/20 opacity-60'
-            : 'bg-card/60 backdrop-blur-3xl border-border-strong/40 hover:border-primary/40 hover:bg-card/80'
+            ? 'bg-white/20 dark:bg-zinc-900/20 border-white/10 dark:border-white/5 opacity-60'
+            : 'bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border-white/20 dark:border-white/5 hover:border-primary/30 hover:bg-white/60 dark:hover:bg-zinc-800/40'
         }
       `}
       style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
@@ -322,11 +322,11 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden bg-background"
+      className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden"
     >
-      <div className="flex-1 min-h-0 w-full flex flex-col bg-card/40 backdrop-blur-3xl border border-border-strong/30 rounded-2xl overflow-hidden shadow-2xl relative">
+      <div className="flex-1 min-h-0 w-full flex flex-col bg-white/30 dark:bg-zinc-900/20 backdrop-blur-xl border border-white/20 dark:border-white/5 rounded-3xl overflow-hidden shadow-xl relative">
         {/* ── Page header ──────────────────────────────────────────────── */}
-        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 border-b border-border-strong/20 shrink-0 select-none">
+        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-sm">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-primary" />
             <div>
@@ -358,17 +358,17 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   }
                 }}
                 className="
-                  bg-muted/10 border border-border-strong rounded-full
+                  bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-full
                   text-[9px] font-medium text-foreground
                   pl-8 pr-3 py-1.5 w-40 sm:w-48
-                  outline-none focus:border-primary/20 focus:bg-background/40
+                  outline-none focus:border-primary/20
                   transition-all placeholder:text-muted-foreground/20 shadow-sm
                 "
               />
             </div>
 
             {/* Filter tabs */}
-            <div className="flex gap-1 bg-muted/10 p-1 rounded-full border border-border-strong shadow-sm">
+            <div className="flex gap-1 bg-white/30 dark:bg-zinc-900/30 backdrop-blur-sm p-1 rounded-full border border-white/15 dark:border-white/5 shadow-sm">
               {(['all', 'cloud', 'local'] as const).map(f => (
                 <button
                   key={f}
@@ -419,7 +419,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
            *  OLLAMA SECTION
            * ════════════════════════════════════════════════════════════════ */}
           {showLocal && (
-            <section className="space-y-4 p-5 rounded-[16px] bg-card/25 border border-border-strong">
+            <section className="space-y-4 p-5 rounded-2xl bg-white/30 dark:bg-zinc-900/20 backdrop-blur-md border border-white/15 dark:border-white/5">
               <SectionHeader
                 icon={<Server size={18} strokeWidth={1.5} />}
                 title="Ollama"
@@ -503,7 +503,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
            *  LM STUDIO SECTION
            * ════════════════════════════════════════════════════════════════ */}
           {showLocal && (
-            <section className="space-y-4 p-5 rounded-[16px] bg-card/25 border border-border-strong">
+            <section className="space-y-4 p-5 rounded-2xl bg-white/30 dark:bg-zinc-900/20 backdrop-blur-md border border-white/15 dark:border-white/5">
               <SectionHeader
                 icon={<Server size={18} strokeWidth={1.5} />}
                 title="LM Studio"
@@ -582,7 +582,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
            *  CLOUD MODELS SECTION
            * ════════════════════════════════════════════════════════════════ */}
           {showCloud && (
-            <section className="space-y-5 p-5 rounded-[16px] bg-card/25 border border-border-strong">
+            <section className="space-y-5 p-5 rounded-2xl bg-white/30 dark:bg-zinc-900/20 backdrop-blur-md border border-white/15 dark:border-white/5">
               <SectionHeader
                 icon={<Globe size={18} strokeWidth={1.5} />}
                 title="Cloud Models"
