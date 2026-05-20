@@ -58,16 +58,13 @@ export const CompareDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) 
   return (
     <ErrorBoundary>
       <main className={`h-[100dvh] w-screen overflow-hidden flex bg-background text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
-        {/* Desktop-only sidebar — takes column space on md+ */}
-        <div className="hidden md:block">
-          <Sidebar
-            activeMode={activeMode}
-            setActiveMode={setActiveMode}
-            onExit={onExit}
-            hasOutput={hasOutput}
-            hasHistory={hasHistory}
-          />
-        </div>
+        <Sidebar
+          activeMode={activeMode}
+          setActiveMode={setActiveMode}
+          onExit={onExit}
+          hasOutput={hasOutput}
+          hasHistory={hasHistory}
+        />
 
         {/* Main content — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 flex flex-col w-full h-full min-w-0 bg-background relative overflow-hidden pb-[60px] md:pb-0 dashboard-main-container">
@@ -206,19 +203,9 @@ export const CompareDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) 
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
 
-        {/* Mobile-only fixed bottom sidebar */}
-        <div className="md:hidden">
-          <Sidebar
-            activeMode={activeMode}
-            setActiveMode={setActiveMode}
-            onExit={onExit}
-            hasOutput={hasOutput}
-            hasHistory={hasHistory}
-          />
-        </div>
-      </main>
+          </div>
+        </main>
     </ErrorBoundary>
   );
 };

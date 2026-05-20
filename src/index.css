@@ -424,12 +424,14 @@
 }
 
 /* ── Mobile Optimization Rules ──────────────────────────────── */
-body:has(input:focus, textarea:focus) .mobile-nav-bar {
-  display: none !important;
-}
+@media (max-width: 767px) {
+  body:has(input:focus, textarea:focus) .mobile-nav-bar {
+    display: none !important;
+  }
 
-body:has(input:focus, textarea:focus) .dashboard-main-container {
-  padding-bottom: 0px !important;
+  body:has(input:focus, textarea:focus) .dashboard-main-container {
+    padding-bottom: 0px !important;
+  }
 }
 
 /* ── Micro-interactions & Design Spells ────────────────────── */
