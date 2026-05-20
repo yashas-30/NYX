@@ -209,6 +209,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             value={apiKeys[p.id] || ''} 
                             onChange={e => updateApiKey(p.id, e.target.value)} 
                             placeholder={`Enter ${p.name} API key`}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                                setTimeout(() => {
+                                  window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+                                }, 100);
+                              }
+                            }}
                             className="flex-1 bg-muted/10 border border-border rounded-full px-3 py-1.5 text-[8px] font-mono transition-all outline-none border-border text-foreground/80 focus:border-primary/40 shadow-inner" 
                           />
                           <button
@@ -271,6 +280,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           value={getGatewayUrl(p.id)} 
                           onChange={e => updateGatewayUrl(p.id, e.target.value)}
                           placeholder={DEFAULT_GATEWAY_URLS[p.id]}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.currentTarget.blur();
+                              setTimeout(() => {
+                                window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+                              }, 100);
+                            }
+                          }}
                           className="w-full bg-muted/5 border border-border/20 rounded-lg px-3 py-1.5 text-[7px] font-mono text-muted-foreground/60 focus:border-primary/30 focus:text-foreground/80 transition-all outline-none" 
                         />
                       </motion.div>

@@ -348,6 +348,15 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 placeholder={UI_TEXT.registry.search}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                    setTimeout(() => {
+                      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+                    }, 100);
+                  }
+                }}
                 className="
                   bg-muted/10 border border-border-strong rounded-full
                   text-[9px] font-medium text-foreground
@@ -424,6 +433,15 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     value={ollamaBaseUrl}
                     onChange={e => setOllamaBaseUrl(e.target.value)}
                     placeholder="http://localhost:11434"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                        setTimeout(() => {
+                          window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+                        }, 100);
+                      }
+                    }}
                     className="
                       bg-transparent border-none text-[9px] font-mono text-primary
                       outline-none w-36 placeholder:text-muted-foreground/10
@@ -499,6 +517,15 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     value={lmStudioBaseUrl}
                     onChange={e => setLmStudioBaseUrl(e.target.value)}
                     placeholder="http://localhost:1234/v1"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                        setTimeout(() => {
+                          window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+                        }, 100);
+                      }
+                    }}
                     className="
                       bg-transparent border-none text-[9px] font-mono text-primary
                       outline-none w-36 placeholder:text-muted-foreground/10

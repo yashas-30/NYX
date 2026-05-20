@@ -189,8 +189,17 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!prompt.trim() || isLoading) return;
+    
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    
     runCoder(prompt);
     setPrompt('');
+    
+    setTimeout(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    }, 100);
   };
 
   const copyToClipboard = (text: string, id: string) => {
@@ -562,7 +571,13 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                       ref={inputRef}
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
+                      onKeyDown={(e) => { 
+                        if (e.key === 'Enter' && !e.shiftKey) { 
+                          e.preventDefault(); 
+                          e.currentTarget.blur(); 
+                          handleSubmit(); 
+                        } 
+                      }}
                       placeholder="Ask anything..."
                       className="flex-1 bg-transparent border-none focus:ring-0 text-[10px] py-1 pl-6 pr-1 resize-none min-h-[24px] max-h-[100px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/30 scrollbar-none text-left"
                     />

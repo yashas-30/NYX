@@ -23,7 +23,16 @@ const DashboardFooterComponent: React.FC<DashboardFooterProps> = ({
   return (
     <footer className="shrink-0 w-full px-3 py-2 bg-background/95 backdrop-blur-xl z-40 border-t border-border-strong/20">
       <div className={`mx-auto transition-all duration-500 ease-out ${globalPrompt.trim().length > 0 ? 'max-w-2xl' : 'max-w-lg'}`}>
-        <form onSubmit={(e) => { e.preventDefault(); runComparison(); }} className="relative">
+        <form onSubmit={(e) => { 
+          e.preventDefault(); 
+          if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
+          runComparison(); 
+          setTimeout(() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+          }, 100);
+        }} className="relative">
           <div className="flex items-center gap-2 px-2 py-1 bg-card/80 backdrop-blur-xl border border-border-strong/20 rounded-2xl focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all shadow-lg">
             {/* Add model button */}
             <Tooltip content={columnsCount >= 2 ? 'Maximum 2 models' : 'Add model'}>
@@ -48,7 +57,16 @@ const DashboardFooterComponent: React.FC<DashboardFooterProps> = ({
               placeholder={UI_TEXT.dashboard.arena.promptPlaceholder}
               value={globalPrompt}
               onChange={e => setGlobalPrompt(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); runComparison(); } }}
+              onKeyDown={e => { 
+                if (e.key === 'Enter') { 
+                  e.preventDefault(); 
+                  e.currentTarget.blur();
+                  runComparison(); 
+                  setTimeout(() => {
+                    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+                  }, 100);
+                } 
+              }}
             />
 
             {/* Send button */}

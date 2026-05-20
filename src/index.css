@@ -468,4 +468,17 @@ body:has(input:focus, textarea:focus) .dashboard-main-container {
   transform: scale(0.97);
 }
 
+/* ── Mobile Input Zoom Prevention ──────────────────────────── */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="search"],
+  input[type="url"],
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+
 
