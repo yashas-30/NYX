@@ -263,6 +263,16 @@ export const CoderPage: React.FC<CoderPageProps> = ({
               >
                 Claude Code
               </button>
+              <button 
+                onClick={() => setActiveAgent('nyx')}
+                className={`px-2.5 sm:px-3 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all duration-300 ${
+                  activeAgent === 'nyx' 
+                  ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.4)]' 
+                  : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                NYX
+              </button>
             </div>
             <div className="h-4 w-px bg-border-strong mx-1 hidden sm:block" />
             <div className="flex flex-col hidden sm:flex">
@@ -406,17 +416,26 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                       </div>
                       <div className={`
                         relative max-w-[85%] py-2.5 rounded-xl border transition-all duration-500
-                        ${isUser 
-                          ? 'bg-card border-border-strong text-foreground/90 self-end rounded-tr-none shadow-sm text-xs px-4' 
-                          : msg.status === 'error'
-                            ? 'bg-destructive/5 border-destructive/20 text-destructive self-start rounded-tl-none text-xs px-4'
-                            : 'bg-card/20 backdrop-blur-xl border-border border-border-strong/40 self-start rounded-tl-none shadow-sm text-xs pl-4 pr-12'
+                        ${activeAgent === 'nyx'
+                          ? isUser
+                            ? 'bg-zinc-950 border-purple-500/30 text-purple-400 font-mono self-end rounded-tr-none shadow-sm text-[11px] px-4 shadow-[0_0_15px_rgba(168,85,247,0.15)]'
+                            : msg.status === 'error'
+                              ? 'bg-zinc-950 border-destructive/30 text-destructive self-start rounded-tl-none text-[11px] px-4 font-mono'
+                              : 'bg-zinc-950/95 border-emerald-500/20 text-emerald-400 font-mono self-start rounded-tl-none shadow-sm text-[11px] pl-4 pr-12 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                          : isUser 
+                            ? 'bg-card border-border-strong text-foreground/90 self-end rounded-tr-none shadow-sm text-xs px-4' 
+                            : msg.status === 'error'
+                              ? 'bg-destructive/5 border-destructive/20 text-destructive self-start rounded-tl-none text-xs px-4'
+                              : 'bg-card/20 backdrop-blur-xl border-border border-border-strong/40 self-start rounded-tl-none shadow-sm text-xs pl-4 pr-12'
                         }
                       `}>
                         {msg.content ? (
                           <>
-                            <div className="leading-[1.6] font-medium tracking-normal whitespace-pre-wrap">
+                            <div className={`leading-[1.6] font-medium tracking-normal whitespace-pre-wrap ${activeAgent === 'nyx' ? 'font-mono tracking-tight text-[11px]' : ''}`}>
                               {msg.content}
+                              {activeAgent === 'nyx' && msg.status === 'loading' && (
+                                <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
+                              )}
                             </div>
                             {!isUser && msg.content && msg.status !== 'error' && (
                               <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
@@ -427,7 +446,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                                 >
                                   {copiedId === `msg-${i}` ? <Check size={10} /> : <Copy size={10} />}
                                 </button>
-                                {activeAgent === 'claude' && (
+                                {(activeAgent === 'claude' || activeAgent === 'nyx') && (
                                   <button 
                                     onClick={() => setSpeedReadText(msg.content)}
                                     className="p-1 rounded bg-background/80 hover:bg-background border border-border-strong/40 hover:border-border-strong text-muted-foreground hover:text-primary transition-all flex items-center gap-0.5"
@@ -549,9 +568,16 @@ export const CoderPage: React.FC<CoderPageProps> = ({
               </AnimatePresence>
 
               <form onSubmit={handleSubmit} className="relative group">
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-card/60 backdrop-blur-3xl border border-border-strong/20 rounded-full focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10 transition-all duration-500 shadow-2xl">
+                <div className={`flex items-center gap-1.5 px-2 py-1 bg-card/60 backdrop-blur-3xl border rounded-full transition-all duration-500 shadow-2xl ${
+                  activeAgent === 'nyx'
+                    ? 'border-emerald-500/20 bg-zinc-950 focus-within:border-emerald-500/40 focus-within:ring-1 focus-within:ring-emerald-500/10'
+                    : 'border-border-strong/20 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10'
+                }`}>
                   {/* Left Controls */}
-                  <div className="shrink-0 flex items-center px-0.5">
+                  <div className="shrink-0 flex items-center px-0.5 gap-1">
+                    {activeAgent === 'nyx' && (
+                      <span className="text-[10px] font-mono text-emerald-400 font-bold px-1 select-none">nyx$</span>
+                    )}
                     <button type="button" onClick={clearHistory} className="w-5 h-5 rounded-full flex items-center justify-center text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted transition-all">
                       <History size={12} strokeWidth={1.5} />
                     </button>
@@ -578,8 +604,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                           handleSubmit(); 
                         } 
                       }}
-                      placeholder="Ask anything..."
-                      className="flex-1 bg-transparent border-none focus:ring-0 text-[10px] py-1 pl-6 pr-1 resize-none min-h-[24px] max-h-[100px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/30 scrollbar-none text-left"
+                      placeholder={activeAgent === 'nyx' ? 'nyx::pipeline ~ ' : 'Ask anything...'}
+                      className={`flex-1 bg-transparent border-none focus:ring-0 text-[10px] py-1 pl-6 pr-1 resize-none min-h-[24px] max-h-[100px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/30 scrollbar-none text-left ${activeAgent === 'nyx' ? 'font-mono text-emerald-400' : ''}`}
                     />
                   </div>
 
@@ -595,7 +621,9 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                         disabled={!prompt.trim()} 
                         className={`h-5 w-5 rounded-full flex items-center justify-center transition-all ${
                           prompt.trim() 
-                            ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-100 hover:scale-105' 
+                            ? activeAgent === 'nyx'
+                              ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-100 hover:scale-105'
+                              : 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-100 hover:scale-105' 
                             : 'bg-muted/20 text-muted-foreground/30 opacity-50 cursor-not-allowed'
                         }`}
                       >

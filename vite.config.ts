@@ -21,6 +21,29 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      chunkSizeWarningLimit: 2000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
+              }
+              if (id.includes('framer-motion')) {
+                return 'vendor-animation';
+              }
+              if (id.includes('recharts') || id.includes('d3')) {
+                return 'vendor-charts';
+              }
+              if (id.includes('lottie-web') || id.includes('lottie')) {
+                return 'vendor-lottie';
+              }
+            }
+          }
+        }
+      }
+    },
     server: {
       proxy: {
         '/api': {
