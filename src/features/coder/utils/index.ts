@@ -1,0 +1,1 @@
+export { getCustomModelIcon } from './modelIcons';

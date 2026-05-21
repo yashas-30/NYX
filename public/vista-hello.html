@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Windows Vista - Hello World</title>
+  <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+    }
+
+    .desktop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(180deg, #1e3a5f 0%, #0d2137 100%);
+    }
+
+    .taskbar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 40px;
+      background: linear-gradient(180deg, #0c3d5e 0%, #0a3250 100%);
+      border-top: 1px solid rgba(255,255,255,0.2);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      z-index: 1000;
+    }
+
+    .start-button {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: linear-gradient(180deg, #1e5a82 0%, #0e3d5c 100%);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 3px;
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+    }
+
+    .start-button:hover {
+      background: linear-gradient(180deg, #2a6a92 0%, #1e4d6c 100%);
+    }
+
+    .start-icon {
+      width: 20px;
+      height: 20px;
+      background: linear-gradient(135deg, #00b4d8 0%, #0077b6 100%);
+      border-radius: 2px;
+      position: relative;
+    }
+
+    .start-icon::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      background: #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 4px #00b4d8;
+    }
+
+    .clock {
+      margin-left: auto;
+      padding: 6px 15px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 3px;
+      color: white;
+      font-size: 12px;
+    }
+
+    .window {
+      width: 400px;
+      background: linear-gradient(180deg, #2d5a7b 0%, #1e3d5a 100%);
+      border-radius: 8px;
+      box-shadow: 
+        0 0 0 1px rgba(255,255,255,0.1),
+        0 8px 32px rgba(0,0,0,0.5),
+        inset 0 1px 0 rgba(255,255,255,0.2);
+      overflow: hidden;
+      animation: windowOpen 0.4s ease-out;
+    }
+
+    @keyframes windowOpen {
+      from {
+        opacity: 0;
+        transform: scale(0.9) translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .title-bar {
+      background: linear-gradient(180deg, #0e4d7a 0%, #0a3d5e 100%);
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .window-icon {
+      width: 20px;
+      height: 20px;
+      background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: white;
+    }
+
+    .title-text {
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .window-controls {
+      display: flex;
+      gap: 2px;
+    }
+
+    .window-btn {
+      width: 28px;
+      height: 22px;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: white;
+      transition: background 0.2s;
+    }
+
+    .window-btn.minimize { background: #c9a227; }
+    .window-btn.maximize { background: #5da426; }
+    .window-btn.close { background: #c72d2d; }
+
+    .window-btn:hover { filter: brightness(1.2); }
+
+    .content {
+      padding: 20px;
+      text-align: center;
+    }
+
+    .hello-text {
+      font-size: 32px;
+      font-weight: 600;
+      color: white;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.8; }
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      color: rgba(255,255,255,0.7);
+      font-size: 14px;
+    }
+
+    .aero-glass {
+      margin-top: 20px;
+      padding: 15px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.2);
+      backdrop-filter: blur(10px);
+      box-shadow: 
+        inset 0 1px 0 rgba(255,255,255,0.2),
+        0 4px 16px rgba(0,0,0,0.2);
+    }
+
+    .aero-text {
+      color: #7dd3fc;
+      font-size: 13px;
+    }
+
+    .gloss {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 50%;
+      background: linear-gradient(180deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+    }
+
+    .sidebar {
+      position: absolute;
+      top: 50%;
+      right: -30px;
+      transform: translateY(-50%);
+      width: 60px;
+      height: 200px;
+      background: linear-gradient(90deg, rgba(0,0,0,0.2) 0%, transparent 100%);
+      border-radius: 0 8px 8px 0;
+      opacity: 0;
+      animation: sidebarFade 0.5s ease-out 0.3s forwards;
+    }
+
+    @keyframes sidebarFade {
+      to { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="desktop">
+    <div class="sidebar"></div>
+    <div class="window" style="position: relative;">
+      <div class="gloss"></div>
+      <div class="title-bar">
+        <div class="window-icon">H</div>
+        <span class="title-text">Hello World</span>
+        <div class="window-controls">
+          <button class="window-btn minimize">&#x2212;</button>
+          <button class="window-btn maximize">&#x25A1;</button>
+          <button class="window-btn close">&#x2715;</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="hello-text">Hello World!</div>
+        <div class="subtitle">Welcome to Windows Vista</div>
+        <div class="aero-glass">
+          <div class="aero-text">Aero Glass Effect</div>
+        </div>
+      </div>
+    </div>
+    <div class="taskbar">
+      <div class="start-button">
+        <div class="start-icon"></div>
+        <span>start</span>
+      </div>
+      <div class="clock" id="clock">12:00 PM</div>
+    </div>
+  </div>
+  <script>
+    function updateClock() {
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const hour12 = hours % 12 || 12;
+      document.getElementById('clock').textContent = `${hour12}:${minutes} ${ampm}`;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+</body>
+</html>

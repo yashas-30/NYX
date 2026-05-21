@@ -45,7 +45,7 @@ export const useDashboardState = (onExit?: () => void) => {
     const savedLegacyKey = localStorage.getItem('llm_ref_api_key');
     const savedLmUrl = localStorage.getItem('llm_ref_lmstudio_url');
     const savedOllamaUrl = localStorage.getItem('llm_ref_ollama_url');
-    const savedModels = localStorage.getItem('nyx_coder_models');
+    const savedModels = localStorage.getItem('nyx_coder_models_v2');
     const savedAgent = localStorage.getItem('nyx_coder_active_agent');
 
     if (savedKeys) {
@@ -57,7 +57,16 @@ export const useDashboardState = (onExit?: () => void) => {
     if (savedOllamaUrl) registry.setOllamaBaseUrl(savedOllamaUrl);
     
     if (savedModels) {
-      try { setModels(JSON.parse(savedModels)); } catch (e) { console.error("Models load fail", e); }
+      try {
+        const parsed = JSON.parse(savedModels);
+        setModels({
+          open: parsed.open || 'opencode/big-pickle',
+          claude: parsed.claude || 'anthropic/claude-sonnet-4-20250514',
+          nyx: parsed.nyx || 'anthropic/claude-sonnet-4-20250514'
+        });
+      } catch (e) {
+        console.error("Models load fail", e);
+      }
     }
     if (savedAgent) {
       setActiveAgent('nyx');
@@ -88,7 +97,7 @@ export const useDashboardState = (onExit?: () => void) => {
   }, [registry.ollamaBaseUrl]);
 
   useEffect(() => {
-    localStorage.setItem('nyx_coder_models', JSON.stringify(models));
+    localStorage.setItem('nyx_coder_models_v2', JSON.stringify(models));
   }, [models]);
 
   useEffect(() => {
