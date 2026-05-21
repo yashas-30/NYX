@@ -131,10 +131,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       initial={{ opacity: 0, y: 15 }} 
       animate={{ opacity: 1, y: 0 }} 
       exit={{ opacity: 0, y: -15 }} 
-      className="h-full w-full p-[2vw] flex flex-col min-h-0 overflow-hidden"
+      className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
-      <div className="flex-1 min-h-0 w-full flex flex-col bg-white/30 dark:bg-zinc-900/20 backdrop-blur-xl border border-white/20 dark:border-white/5 rounded-3xl overflow-hidden shadow-xl relative">
-        <header className="flex items-center justify-between p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-sm">
+      <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
+        <header className="flex items-center justify-between p-2.5 sm:p-3 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-md">
           <div className="flex items-center gap-1 bg-black/10 dark:bg-white/5 p-0.5 rounded-xl border border-white/10 dark:border-white/5">
             <button 
               onClick={() => setActiveMode?.('coder')} 
