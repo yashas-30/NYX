@@ -1,6 +1,11 @@
 /**
  * @file src/features/coder/hooks/useAgentPipeline.ts
- * @description Core AI execution pipeline for single-agent and dual-agent (NYX) flows.
+ * @description Core AI execution pipeline for single-agent and multi-agent (NYX) flows.
+ *
+ * NYX multi-agent pipeline:
+ *   Stage 1 (Architect)  → internal only, shown as a compact progress banner
+ *   Stage 2 (Coder)      → internal only, shown as a compact progress banner
+ *   Stage 3 (Optimizer)  → final output streamed directly to the user
  */
 
 import { useState, useCallback, useRef } from 'react';
@@ -28,6 +33,11 @@ interface PipelineProps {
   getSuggestions: (history: ChatMessage[]) => void;
   setSuggestedPrompts: (prompts: string[]) => void;
 }
+
+// Status banners shown during internal stages 1 & 2 (not shown in final output)
+const STAGE1_BANNER = `> ⚙️ **Architect Agent** — analysing the problem and designing the system blueprint...`;
+const STAGE2_BANNER = `\n> 💻 **Coder Agent** — writing the complete implementation from the blueprint...`;
+const STAGE3_BANNER = `\n> ⚡ **Optimizer Agent** — finalising and delivering your answer...\n\n`;
 
 export const useAgentPipeline = ({
   activeAgent,
@@ -88,7 +98,7 @@ export const useAgentPipeline = ({
   }, [activeAgent, models, apiKeys, agentPersonas, modelSettings, lmStudioBaseUrl, ollamaBaseUrl, ollamaModels, lmStudioModels, trackUsage, historyMap]);
 
   const runMultiAgentPipeline = async (prompt: string, controller: AbortController, controllerRef: React.MutableRefObject<AbortController | null>) => {
-    // 1. Resolve Architect Model (defaults to OpenCode)
+    // ── Resolve Models ─────────────────────────────────────────────────────
     const initialOpenModelId = models['open'] || models['nyx'];
     if (!initialOpenModelId) {
       toast.error('Please select a model for the planning engine');
@@ -102,11 +112,10 @@ export const useAgentPipeline = ({
     const architectProvider = hasPlanningKey ? initialOpenProvider : detectProvider(architectModelId, ollamaModels, lmStudioModels);
     const architectApiKey = hasPlanningKey ? initialOpenApiKey : getEffectiveApiKey(architectProvider, apiKeys);
 
-    // 2. Resolve Coder Model (defaults to Claude Code)
     const initialClaudeModelId = models['claude'] || models['nyx'];
     if (!initialClaudeModelId) {
       toast.error('Please select a model for the execution engine');
-      throw new Error('No model selected for Claude Code executor');
+      throw new Error('No model selected for Coder executor');
     }
     const initialClaudeProvider = detectProvider(initialClaudeModelId, ollamaModels, lmStudioModels);
     const initialClaudeApiKey = getEffectiveApiKey(initialClaudeProvider, apiKeys);
@@ -116,7 +125,6 @@ export const useAgentPipeline = ({
     const coderProvider = hasClaudeKey ? initialClaudeProvider : detectProvider(coderModelId, ollamaModels, lmStudioModels);
     const coderApiKey = hasClaudeKey ? initialClaudeApiKey : getEffectiveApiKey(coderProvider, apiKeys);
 
-    // 3. Resolve Optimizer Model (uses the main NYX agent model directly)
     const optimizerModelId = models['nyx'];
     if (!optimizerModelId) {
       toast.error('Please select a model for the optimization engine');
@@ -125,11 +133,15 @@ export const useAgentPipeline = ({
     const optimizerProvider = detectProvider(optimizerModelId, ollamaModels, lmStudioModels);
     const optimizerApiKey = getEffectiveApiKey(optimizerProvider, apiKeys);
 
-    updateHistory(activeAgent, prev => [...prev, { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }]);
+    // ── Seed the assistant message with stage-1 banner ─────────────────────
+    updateHistory(activeAgent, prev => [
+      ...prev,
+      { role: 'assistant', content: STAGE1_BANNER, timestamp: Date.now(), status: 'loading' }
+    ]);
 
     const startTime = Date.now();
 
-    // Prompts and instructions
+    // ── System Instructions ────────────────────────────────────────────────
     const architectInstruction = `You are the Principal Software Architect Agent. Given the user's prompt, formulate a highly detailed architectural plan and system design blueprint.
 Focus on:
 - System design patterns & components
@@ -146,40 +158,26 @@ RULES:
 - Strictly handle all security, error boundaries, and edge cases described in the blueprint.
 - Keep the code well-organized, highly readable, and modular.`;
 
-    const optimizerInstruction = `You are the High-Performance Optimizer & Security Auditor Agent. Your job is to audit the initial code implementation and refactor it into an elite, highly optimized, production-grade output.
-Optimize for:
-- Execution speed & CPU efficiency
-- Minimal memory footprint and resource leaks
-- Modern, idiomatic language constructs
-- Web accessibility (WCAG 2.2 AA) and robust error safety
+    const optimizerInstruction = `You are the High-Performance Optimizer & Lead Delivery Agent. Your job is to:
+1. Audit and fully optimize the draft code for speed, memory, accessibility (WCAG 2.2 AA), and clean architecture.
+2. Deliver the COMPLETE, FINAL, production-ready code to the user.
 
-RULES:
-- Output the final complete, optimized codebase.
-- Do NOT use placeholders.
-- Start immediately with the optimized code blocks.
-- After the code blocks, provide a brief summary of the optimizations applied.`;
+STRICT OUTPUT FORMAT:
+- Output the COMPLETE optimized code in properly labeled code blocks (e.g. \`\`\`html, \`\`\`typescript, etc.)
+- Do NOT reference stages, agents, or internal pipeline steps.
+- Do NOT use placeholders, TODOs, or partial snippets — every file must be 100% complete.
+- After all code blocks, add a "## How to Use" section with clear, concise implementation steps.
+- Keep the tone direct and professional.`;
 
-    // Stage 1: Architecting
-    let architectText = "";
-    const stage1Header = `### 🏗️ Stage 1: System Architecture Blueprint (Architect Agent)\n\n`;
+    // ── Stage 1: Architect (internal — user sees banner only) ──────────────
+    let architectText = '';
 
     const architectResult = await AIService.execute(
       architectModelId, architectProvider, prompt, architectApiKey, architectInstruction, modelSettings,
-      (accumulatedText) => {
-        architectText = accumulatedText;
+      (_accumulatedText) => {
+        // Stage 1 output is internal — keep the banner visible but don't expose raw architect text
         const elapsed = Date.now() - startTime;
-        const tokens = Math.floor(architectText.length / 4);
-        const tps = elapsed > 0 ? Math.round(tokens / (elapsed / 1000)) : 0;
-        const currentMetrics = { latency: elapsed, tokens, tps };
-        updateHistory(activeAgent, prev => {
-          const history = [...prev];
-          const last = history[history.length - 1];
-          if (last && last.role === 'assistant') {
-            last.content = stage1Header + architectText;
-            last.metrics = currentMetrics;
-          }
-          return history;
-        });
+        updateMetrics(activeAgent, { latency: elapsed, tokens: Math.floor(_accumulatedText.length / 4), tps: 0 });
       },
       controller.signal,
       { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
@@ -188,9 +186,18 @@ RULES:
     architectText = architectResult.text;
     trackUsage(architectProvider, architectResult.metrics.tokens);
 
-    // Stage 2: Implementing
-    let coderText = "";
-    const stage2Header = `\n\n---\n\n### 💻 Stage 2: Initial Implementation (Coder Agent)\n\n`;
+    // Show stage-2 banner
+    updateHistory(activeAgent, prev => {
+      const history = [...prev];
+      const last = history[history.length - 1];
+      if (last && last.role === 'assistant') {
+        last.content = STAGE1_BANNER + STAGE2_BANNER;
+      }
+      return history;
+    });
+
+    // ── Stage 2: Coder (internal — user sees banner only) ─────────────────
+    let coderText = '';
 
     const coderPrompt = `USER PROMPT: ${prompt}
 
@@ -201,21 +208,11 @@ Implement the complete system codebase. Cover all files, functions, and edge cas
 
     const coderResult = await AIService.execute(
       coderModelId, coderProvider, coderPrompt, coderApiKey, coderInstruction, modelSettings,
-      (accumulatedText) => {
-        coderText = accumulatedText;
+      (_accumulatedText) => {
+        // Stage 2 output is internal — keep the banner visible but don't expose raw coder text
         const elapsed = Date.now() - startTime;
-        const totalTokens = architectResult.metrics.tokens + Math.floor(coderText.length / 4);
-        const tps = elapsed > 0 ? Math.round(totalTokens / (elapsed / 1000)) : 0;
-        const currentMetrics = { latency: elapsed, tokens: totalTokens, tps };
-        updateHistory(activeAgent, prev => {
-          const history = [...prev];
-          const last = history[history.length - 1];
-          if (last && last.role === 'assistant') {
-            last.content = stage1Header + architectText + stage2Header + coderText;
-            last.metrics = currentMetrics;
-          }
-          return history;
-        });
+        const totalTokens = architectResult.metrics.tokens + Math.floor(_accumulatedText.length / 4);
+        updateMetrics(activeAgent, { latency: elapsed, tokens: totalTokens, tps: 0 });
       },
       controller.signal,
       { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
@@ -224,9 +221,18 @@ Implement the complete system codebase. Cover all files, functions, and edge cas
     coderText = coderResult.text;
     trackUsage(coderProvider, coderResult.metrics.tokens);
 
-    // Stage 3: Optimizing
-    let optimizerText = "";
-    const stage3Header = `\n\n---\n\n### ⚡ Stage 3: High-Performance Optimization (Optimizer Agent)\n\n`;
+    // Show stage-3 banner (brief, then replaced by streaming optimizer output)
+    updateHistory(activeAgent, prev => {
+      const history = [...prev];
+      const last = history[history.length - 1];
+      if (last && last.role === 'assistant') {
+        last.content = STAGE1_BANNER + STAGE2_BANNER + STAGE3_BANNER;
+      }
+      return history;
+    });
+
+    // ── Stage 3: Optimizer (streamed directly to the user as the final answer)
+    let optimizerText = '';
 
     const optimizerPrompt = `USER PROMPT: ${prompt}
 
@@ -236,7 +242,9 @@ ${architectText}
 INITIAL DRAFT CODE:
 ${coderText}
 
-Audit this implementation. Apply maximum optimizations for speed, memory efficiency, accessibility, and clean architecture. Produce the finalized, fully functional, premium optimized code.`;
+Audit this implementation. Apply maximum optimizations for speed, memory efficiency, accessibility, and clean architecture.
+Deliver the final complete code to the user — no placeholders, no partial snippets, 100% complete files only.
+End your response with a "## How to Use" section with clear implementation steps.`;
 
     const optimizerResult = await AIService.execute(
       optimizerModelId, optimizerProvider, optimizerPrompt, optimizerApiKey, optimizerInstruction, modelSettings,
@@ -246,15 +254,19 @@ Audit this implementation. Apply maximum optimizations for speed, memory efficie
         const totalTokens = architectResult.metrics.tokens + coderResult.metrics.tokens + Math.floor(optimizerText.length / 4);
         const tps = elapsed > 0 ? Math.round(totalTokens / (elapsed / 1000)) : 0;
         const currentMetrics = { latency: elapsed, tokens: totalTokens, tps };
+
+        // Replace the entire message content with the optimizer's streaming output
         updateHistory(activeAgent, prev => {
           const history = [...prev];
           const last = history[history.length - 1];
           if (last && last.role === 'assistant') {
-            last.content = stage1Header + architectText + stage2Header + coderText + stage3Header + optimizerText;
+            last.content = optimizerText;
             last.metrics = currentMetrics;
           }
           return history;
         });
+
+        updateMetrics(activeAgent, currentMetrics);
       },
       controller.signal,
       { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
@@ -266,18 +278,15 @@ Audit this implementation. Apply maximum optimizations for speed, memory efficie
     const finalElapsed = Date.now() - startTime;
     const finalTokens = architectResult.metrics.tokens + coderResult.metrics.tokens + optimizerResult.metrics.tokens;
     const finalTps = finalElapsed > 0 ? Math.round(finalTokens / (finalElapsed / 1000)) : 0;
-    const finalMetrics = {
-      latency: finalElapsed,
-      tokens: finalTokens,
-      tps: finalTps
-    };
+    const finalMetrics = { latency: finalElapsed, tokens: finalTokens, tps: finalTps };
 
+    // Commit the final clean output
     updateHistory(activeAgent, prev => {
       const history = [...prev];
       const last = history[history.length - 1];
       if (last && last.role === 'assistant') {
         last.status = 'success';
-        last.content = stage1Header + architectText + stage2Header + coderText + stage3Header + optimizerText;
+        last.content = optimizerText;
         last.metrics = finalMetrics;
       }
       getSuggestions(history);
@@ -302,10 +311,7 @@ Audit this implementation. Apply maximum optimizations for speed, memory efficie
         const elapsed = Date.now() - startTime;
         const tokens = Math.floor(accumulatedText.length / 4);
         const tps = elapsed > 0 ? Math.round(tokens / (elapsed / 1000)) : 0;
-        updateMetrics(activeAgent, {
-          latency: elapsed, tokens,
-          tps
-        });
+        updateMetrics(activeAgent, { latency: elapsed, tokens, tps });
 
         updateHistory(activeAgent, prev => {
           const history = [...prev];
