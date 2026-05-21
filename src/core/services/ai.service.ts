@@ -54,9 +54,9 @@ export class AIService {
           return {
             text,
             metrics: {
-              latency,
+              latency: 0,
               tokens,
-              tps: latency > 0 ? Number(((tokens / latency) * 1000).toFixed(1)) : 0
+              tps: 0
             }
           };
         }
@@ -103,9 +103,9 @@ export class AIService {
       return {
         text: resultText,
         metrics: {
-          latency,
+          latency: 0,
           tokens,
-          tps: latency > 0 ? Number(((tokens / latency) * 1000).toFixed(1)) : 0
+          tps: 0
         }
       };
     } catch (error: any) {

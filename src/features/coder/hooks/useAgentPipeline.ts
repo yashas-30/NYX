@@ -6,7 +6,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { AIService } from '@/src/core/services/ai.service';
 import { ChatMessage, TelemetryMetrics, AISettings, AgentPersona } from '@/src/core/types';
-import { detectProvider, getEffectiveApiKey } from '@/src/core/utils/provider';
+import { detectProvider, getEffectiveApiKey, requiresApiKey } from '@/src/core/utils/provider';
 import { toast } from 'sonner';
 
 type AgentKey = 'open' | 'claude' | 'nyx';
@@ -65,7 +65,7 @@ export const useAgentPipeline = ({
 
     try {
       if (activeAgent === 'nyx') {
-        await runDualAgentPipeline(prompt, controller, controllerRef);
+        await runMultiAgentPipeline(prompt, controller, controllerRef);
       } else {
         await runSingleAgentPipeline(prompt, controller, controllerRef);
       }
@@ -87,136 +87,94 @@ export const useAgentPipeline = ({
     }
   }, [activeAgent, models, apiKeys, agentPersonas, modelSettings, lmStudioBaseUrl, ollamaBaseUrl, ollamaModels, lmStudioModels, trackUsage, historyMap]);
 
-  const runDualAgentPipeline = async (prompt: string, controller: AbortController, controllerRef: React.MutableRefObject<AbortController | null>) => {
-    const openModelId = models['open'] || models['nyx'];
-    if (!openModelId) {
+  const runMultiAgentPipeline = async (prompt: string, controller: AbortController, controllerRef: React.MutableRefObject<AbortController | null>) => {
+    // 1. Resolve Architect Model (defaults to OpenCode)
+    const initialOpenModelId = models['open'] || models['nyx'];
+    if (!initialOpenModelId) {
       toast.error('Please select a model for the planning engine');
       throw new Error('No model selected for OpenCode planner');
     }
-    const openProvider = detectProvider(openModelId, ollamaModels, lmStudioModels);
-    const openApiKey = getEffectiveApiKey(openProvider, apiKeys);
+    const initialOpenProvider = detectProvider(initialOpenModelId, ollamaModels, lmStudioModels);
+    const initialOpenApiKey = getEffectiveApiKey(initialOpenProvider, apiKeys);
+    const hasPlanningKey = !requiresApiKey(initialOpenProvider) || !!initialOpenApiKey;
 
-    const claudeModelId = models['nyx'] || models['open'];
-    if (!claudeModelId) {
+    const architectModelId = hasPlanningKey ? initialOpenModelId : models['nyx'];
+    const architectProvider = hasPlanningKey ? initialOpenProvider : detectProvider(architectModelId, ollamaModels, lmStudioModels);
+    const architectApiKey = hasPlanningKey ? initialOpenApiKey : getEffectiveApiKey(architectProvider, apiKeys);
+
+    // 2. Resolve Coder Model (defaults to Claude Code)
+    const initialClaudeModelId = models['claude'] || models['nyx'];
+    if (!initialClaudeModelId) {
       toast.error('Please select a model for the execution engine');
       throw new Error('No model selected for Claude Code executor');
     }
-    const claudeProvider = detectProvider(claudeModelId, ollamaModels, lmStudioModels);
-    const claudeApiKey = getEffectiveApiKey(claudeProvider, apiKeys);
+    const initialClaudeProvider = detectProvider(initialClaudeModelId, ollamaModels, lmStudioModels);
+    const initialClaudeApiKey = getEffectiveApiKey(initialClaudeProvider, apiKeys);
+    const hasClaudeKey = !requiresApiKey(initialClaudeProvider) || !!initialClaudeApiKey;
+
+    const coderModelId = hasClaudeKey ? initialClaudeModelId : models['nyx'];
+    const coderProvider = hasClaudeKey ? initialClaudeProvider : detectProvider(coderModelId, ollamaModels, lmStudioModels);
+    const coderApiKey = hasClaudeKey ? initialClaudeApiKey : getEffectiveApiKey(coderProvider, apiKeys);
+
+    // 3. Resolve Optimizer Model (uses the main NYX agent model directly)
+    const optimizerModelId = models['nyx'];
+    if (!optimizerModelId) {
+      toast.error('Please select a model for the optimization engine');
+      throw new Error('No model selected for Optimizer');
+    }
+    const optimizerProvider = detectProvider(optimizerModelId, ollamaModels, lmStudioModels);
+    const optimizerApiKey = getEffectiveApiKey(optimizerProvider, apiKeys);
 
     updateHistory(activeAgent, prev => [...prev, { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }]);
 
     const startTime = Date.now();
 
-    // Detect if same model is used for both steps
-    const isSameModel = openModelId === claudeModelId;
+    // Prompts and instructions
+    const architectInstruction = `You are the Principal Software Architect Agent. Given the user's prompt, formulate a highly detailed architectural plan and system design blueprint.
+Focus on:
+- System design patterns & components
+- Core data structures & algorithms
+- Critical performance considerations & bottlenecks
+- Edge cases, error handling, and security considerations
 
-    if (isSameModel) {
-      // Single model: skip planning entirely, go straight to code generation
-      const directInstruction = `You are a code generator. Output ONLY code. No explanations, no plans, no bullet points, no descriptions.
+Output a structured blueprint. Do NOT include greetings or extra conversation.`;
+
+    const coderInstruction = `You are the Senior Coder Agent. Your job is to implement the complete system codebase based on the Architect's blueprint.
+RULES:
+- Output ONLY complete, production-ready code.
+- Never use comments like "// todo", "// implement later", or placeholders.
+- Strictly handle all security, error boundaries, and edge cases described in the blueprint.
+- Keep the code well-organized, highly readable, and modular.`;
+
+    const optimizerInstruction = `You are the High-Performance Optimizer & Security Auditor Agent. Your job is to audit the initial code implementation and refactor it into an elite, highly optimized, production-grade output.
+Optimize for:
+- Execution speed & CPU efficiency
+- Minimal memory footprint and resource leaks
+- Modern, idiomatic language constructs
+- Web accessibility (WCAG 2.2 AA) and robust error safety
 
 RULES:
-- Start immediately with a code block
-- Write COMPLETE, WORKING code
-- No placeholders like "add your code here"
-- No "step 1, step 2" outlines
-- No "here's how to implement" text
-- Just the code, nothing else
+- Output the final complete, optimized codebase.
+- Do NOT use placeholders.
+- Start immediately with the optimized code blocks.
+- After the code blocks, provide a brief summary of the optimizations applied.`;
 
-If the user asks for a webpage, write the full HTML file with embedded CSS and JS.
-If the user asks for a script, write the complete script.
-If the user asks for multiple files, write each one in its own code block.`;
+    // Stage 1: Architecting
+    let architectText = "";
+    const stage1Header = `### 🏗️ Stage 1: System Architecture Blueprint (Architect Agent)\n\n`;
 
-      const directPrompt = `Write the complete code for this: ${prompt}
-
-Output ONLY the code. Start with the code block immediately. No text before the code.`;
-
-      const directResult = await AIService.execute(
-        claudeModelId, claudeProvider, directPrompt, claudeApiKey, directInstruction, modelSettings,
-        (accumulatedText) => {
-          const latency = Date.now() - startTime;
-          const tokens = Math.floor(accumulatedText.length / 4);
-          const currentMetrics = { latency, tokens, tps: latency > 0 ? Number(((tokens / latency) * 1000).toFixed(1)) : 0 };
-          updateHistory(activeAgent, prev => {
-            const history = [...prev];
-            const last = history[history.length - 1];
-            if (last && last.role === 'assistant') {
-              last.content = accumulatedText;
-              last.metrics = currentMetrics;
-            }
-            return history;
-          });
-        },
-        controller.signal,
-        { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
-      );
-
-      trackUsage(claudeProvider, directResult.metrics.tokens);
-
-      updateHistory(activeAgent, prev => {
-        const history = [...prev];
-        const last = history[history.length - 1];
-        if (last && last.role === 'assistant') {
-          last.status = 'success';
-          last.content = directResult.text;
-          last.metrics = directResult.metrics;
-        }
-        getSuggestions(history);
-        return history;
-      });
-
-      updateMetrics(activeAgent, directResult.metrics);
-      return;
-    }
-
-    // Different models: use full dual-agent pipeline
-    // Step 1: OpenCode Planner (silent - no UI output)
-    const openInstruction = `You are an expert software architect and planning specialist. Given the user's prompt, create a detailed implementation plan with clear, actionable steps. Focus on:
-- Understanding the core problem
-- Breaking down the solution into logical steps
-- Identifying potential edge cases
-- Providing code structure recommendations
-
-Output a clean, well-organized plan. No greetings or filler text.`;
-
-    const openResult = await AIService.execute(
-      openModelId, openProvider, prompt, openApiKey, openInstruction, modelSettings,
-      () => {}, // Silent - no streaming to UI
-      controller.signal,
-      { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
-    );
-
-    trackUsage(openProvider, openResult.metrics.tokens);
-
-    // Step 2: Claude Code - Full response with plan integrated
-    const claudePrompt = `CODE REQUEST: ${prompt}
-
-Here is the implementation plan:
-${openResult.text}
-
-Write the COMPLETE CODE now. Output ONLY code blocks. No descriptions of the plan, no step-by-step outlines, no "here's what I'll do" text. Start immediately with the code.`;
-
-    const claudeInstruction = `You are a code generator. Given a planning outline, write the COMPLETE, WORKING CODE.
-
-RULES:
-- Start immediately with a code block
-- Write ALL code - no placeholders, no "add your code here"
-- No bullet points, no outlines, no "step 1, step 2"
-- No "here's the implementation" or similar preamble
-- After code blocks, you may add brief explanations
-- The code must be copy-paste ready and functional`;
-
-    const claudeResult = await AIService.execute(
-      claudeModelId, claudeProvider, claudePrompt, claudeApiKey, claudeInstruction, modelSettings,
+    const architectResult = await AIService.execute(
+      architectModelId, architectProvider, prompt, architectApiKey, architectInstruction, modelSettings,
       (accumulatedText) => {
-        const latency = Date.now() - startTime;
-        const tokens = Math.floor(accumulatedText.length / 4);
-        const currentMetrics = { latency, tokens, tps: latency > 0 ? Number(((tokens / latency) * 1000).toFixed(1)) : 0 };
+        architectText = accumulatedText;
+        const latency = 0;
+        const tokens = Math.floor(architectText.length / 4);
+        const currentMetrics = { latency, tokens, tps: 0 };
         updateHistory(activeAgent, prev => {
           const history = [...prev];
           const last = history[history.length - 1];
           if (last && last.role === 'assistant') {
-            last.content = accumulatedText;
+            last.content = stage1Header + architectText;
             last.metrics = currentMetrics;
           }
           return history;
@@ -226,14 +184,88 @@ RULES:
       { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
     );
 
-    trackUsage(claudeProvider, claudeResult.metrics.tokens);
+    architectText = architectResult.text;
+    trackUsage(architectProvider, architectResult.metrics.tokens);
 
-    const finalLatency = Date.now() - startTime;
-    const finalTokens = openResult.metrics.tokens + claudeResult.metrics.tokens;
+    // Stage 2: Implementing
+    let coderText = "";
+    const stage2Header = `\n\n---\n\n### 💻 Stage 2: Initial Implementation (Coder Agent)\n\n`;
+
+    const coderPrompt = `USER PROMPT: ${prompt}
+
+ARCHITECT'S BLUEPRINT:
+${architectText}
+
+Implement the complete system codebase. Cover all files, functions, and edge cases specified by the architect. Output complete and functional code only.`;
+
+    const coderResult = await AIService.execute(
+      coderModelId, coderProvider, coderPrompt, coderApiKey, coderInstruction, modelSettings,
+      (accumulatedText) => {
+        coderText = accumulatedText;
+        const latency = 0;
+        const totalTokens = architectResult.metrics.tokens + Math.floor(coderText.length / 4);
+        const currentMetrics = { latency, tokens: totalTokens, tps: 0 };
+        updateHistory(activeAgent, prev => {
+          const history = [...prev];
+          const last = history[history.length - 1];
+          if (last && last.role === 'assistant') {
+            last.content = stage1Header + architectText + stage2Header + coderText;
+            last.metrics = currentMetrics;
+          }
+          return history;
+        });
+      },
+      controller.signal,
+      { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
+    );
+
+    coderText = coderResult.text;
+    trackUsage(coderProvider, coderResult.metrics.tokens);
+
+    // Stage 3: Optimizing
+    let optimizerText = "";
+    const stage3Header = `\n\n---\n\n### ⚡ Stage 3: High-Performance Optimization (Optimizer Agent)\n\n`;
+
+    const optimizerPrompt = `USER PROMPT: ${prompt}
+
+ARCHITECT'S BLUEPRINT:
+${architectText}
+
+INITIAL DRAFT CODE:
+${coderText}
+
+Audit this implementation. Apply maximum optimizations for speed, memory efficiency, accessibility, and clean architecture. Produce the finalized, fully functional, premium optimized code.`;
+
+    const optimizerResult = await AIService.execute(
+      optimizerModelId, optimizerProvider, optimizerPrompt, optimizerApiKey, optimizerInstruction, modelSettings,
+      (accumulatedText) => {
+        optimizerText = accumulatedText;
+        const latency = 0;
+        const totalTokens = architectResult.metrics.tokens + coderResult.metrics.tokens + Math.floor(optimizerText.length / 4);
+        const currentMetrics = { latency, tokens: totalTokens, tps: 0 };
+        updateHistory(activeAgent, prev => {
+          const history = [...prev];
+          const last = history[history.length - 1];
+          if (last && last.role === 'assistant') {
+            last.content = stage1Header + architectText + stage2Header + coderText + stage3Header + optimizerText;
+            last.metrics = currentMetrics;
+          }
+          return history;
+        });
+      },
+      controller.signal,
+      { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
+    );
+
+    optimizerText = optimizerResult.text;
+    trackUsage(optimizerProvider, optimizerResult.metrics.tokens);
+
+    const finalLatency = 0;
+    const finalTokens = architectResult.metrics.tokens + coderResult.metrics.tokens + optimizerResult.metrics.tokens;
     const finalMetrics = {
       latency: finalLatency,
       tokens: finalTokens,
-      tps: finalLatency > 0 ? Number(((finalTokens / finalLatency) * 1000).toFixed(1)) : 0
+      tps: 0
     };
 
     updateHistory(activeAgent, prev => {
@@ -241,7 +273,7 @@ RULES:
       const last = history[history.length - 1];
       if (last && last.role === 'assistant') {
         last.status = 'success';
-        last.content = claudeResult.text;
+        last.content = stage1Header + architectText + stage2Header + coderText + stage3Header + optimizerText;
         last.metrics = finalMetrics;
       }
       getSuggestions(history);
@@ -263,11 +295,11 @@ RULES:
     const result = await AIService.execute(
       currentModelId, provider, prompt, apiKey, persona.systemPrompt, modelSettings,
       (accumulatedText) => {
-        const latency = Date.now() - startTime;
+        const latency = 0;
         const tokens = Math.floor(accumulatedText.length / 4);
         updateMetrics(activeAgent, {
           latency, tokens,
-          tps: latency > 0 ? Number(((tokens / latency) * 1000).toFixed(1)) : 0
+          tps: 0
         });
 
         updateHistory(activeAgent, prev => {
@@ -275,7 +307,7 @@ RULES:
           const last = history[history.length - 1];
           if (last && last.role === 'assistant') {
             last.content = accumulatedText;
-            last.metrics = { latency, tokens, tps: latency > 0 ? Number(((tokens / latency) * 1000).toFixed(1)) : 0 };
+            last.metrics = { latency: 0, tokens, tps: 0 };
           }
           return history;
         });

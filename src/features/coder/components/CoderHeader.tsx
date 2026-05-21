@@ -37,7 +37,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'coder' ? 'bg-[#181224]/85 dark:bg-[#120B1C]/90 text-purple-400 border border-purple-500/20 shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
           >
             <TerminalIcon size={12} />
-            <span>NYX Agent</span>
+            <span>NYX 2.0</span>
           </button>
           <button 
             onClick={() => onModeChange('registry')} 
