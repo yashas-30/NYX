@@ -12,6 +12,8 @@ import { useState, useCallback, useRef } from 'react';
 import { AIService } from '@/src/core/services/ai.service';
 import { ChatMessage, TelemetryMetrics, AISettings, AgentPersona } from '@/src/core/types';
 import { detectProvider, getEffectiveApiKey, requiresApiKey } from '@/src/core/utils/provider';
+import { analyzePrompt, NON_CODE_REJECTION } from '@/src/features/coder/utils/promptAnalyzer';
+import { getLanguageKnowledge, CODING_KNOWLEDGE_SUMMARY } from '@/src/config/codingKnowledge';
 import { toast } from 'sonner';
 
 type AgentKey = 'open' | 'claude' | 'nyx';
@@ -32,15 +34,20 @@ interface PipelineProps {
   updateMetrics: (agent: AgentKey, metrics: TelemetryMetrics) => void;
   getSuggestions: (history: ChatMessage[]) => void;
   setSuggestedPrompts: (prompts: string[]) => void;
+  webSearchEnabled: boolean;
 }
 
-// Status banners shown during internal stages 1 & 2 (not shown in final output)
+// Status banners shown during internal stages (not shown in final output)
+const ANALYSIS_BANNER = `> 🧠 **Prompt Analyzer** — detecting language, intent, and complexity...\n`;
+const STAGE0_BANNER = `> 🔎 **Search Agent** — scouring the web for code production insights and SDK docs...\n`;
+const KNOWLEDGE_BANNER = `> 📚 **Knowledge Agent** — enriching context with deep SDK and framework intelligence...\n`;
 const STAGE1_BANNER = `> ⚙️ **Architect Agent** — analysing the problem and designing the system blueprint...`;
 const STAGE2_BANNER = `\n> 💻 **Coder Agent** — writing the complete implementation from the blueprint...`;
 const STAGE3_BANNER = `\n> ⚡ **Optimizer Agent** — finalising and delivering your answer...\n\n`;
 
-// Direct, concise instruction override for simple prompts in NYX mode
-const SIMPLE_NYX_INSTRUCTION = `You are NYX 2.0, a direct coding assistant.
+const SIMPLE_NYX_INSTRUCTION = `You are NYX 2.0, an elite direct coding assistant with expert knowledge of 30+ programming languages.
+
+${CODING_KNOWLEDGE_SUMMARY}
 
 ABSOLUTE RULES:
 - Output ONLY the direct answer or code. Nothing else.
@@ -50,27 +57,13 @@ ABSOLUTE RULES:
 - NEVER add closing remarks or offers to help.
 - If the input is a greeting: respond with a brief acknowledgment only.
 - If asked for code: output ONLY the code blocks or files requested.
+- Always use the most modern idioms and patterns for the detected language.
 - Start immediately with the answer. Zero preamble.`;
 
-// Simple prompt detection heuristic
+// Simple prompt detection: uses the analyzer's complexity score instead of regex heuristics
 const isSimplePrompt = (prompt: string): boolean => {
-  const normalized = prompt.trim().toLowerCase();
-  if (normalized.length < 150) {
-    return true;
-  }
-  const simpleKeywords = [
-    /hello\s*world/i,
-    /write\s+(?:a\s+)?hello\s*world/i,
-    /^hi$/i,
-    /^hello$/i,
-    /^how\s+are\s+you/i,
-    /^explain\s+/i,
-    /^what\s+is\s+/i,
-    /^how\s+to\s+(?:print|install|run|compile|use)\s+/i,
-    /simple\s+(?:html|script|css|python|js|function|code)/i,
-    /quick\s+example/i
-  ];
-  return simpleKeywords.some(pattern => pattern.test(normalized));
+  const analysis = analyzePrompt(prompt);
+  return analysis.complexity === 'trivial' || analysis.complexity === 'simple';
 };
 
 export const useAgentPipeline = ({
@@ -88,7 +81,8 @@ export const useAgentPipeline = ({
   updateHistory,
   updateMetrics,
   getSuggestions,
-  setSuggestedPrompts
+  setSuggestedPrompts,
+  webSearchEnabled
 }: PipelineProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
@@ -131,6 +125,20 @@ export const useAgentPipeline = ({
 
     try {
       if (activeAgent === 'nyx') {
+        // ── Prompt Analysis & Code-Only Gate ─────────────────────────────
+        const analysis = analyzePrompt(prompt);
+        console.log(`[Prompt Analyzer] ${analysis.summary}`);
+
+        if (!analysis.isCodeRelated) {
+          // Reject non-code prompts immediately
+          updateHistory(activeAgent, prev => [
+            ...prev,
+            { role: 'assistant', content: NON_CODE_REJECTION, timestamp: Date.now(), status: 'success' }
+          ]);
+          toast.error('NYX only accepts coding-related prompts');
+          return;
+        }
+
         // Fetch learned critic rules
         let fetchedRules: string[] = [];
         try {
@@ -156,11 +164,13 @@ To ensure continuous optimization and prevent past mistakes, you must strictly a
 ${formattedRules}
 [END OF LESSONS]`;
 
-        if (isSimplePrompt(prompt)) {
-          const simpleInstructionWithRules = `${SIMPLE_NYX_INSTRUCTION}\n\n${rulesBlock}`;
+        if (isSimplePrompt(prompt) && !webSearchEnabled) {
+          // Enrich simple instruction with detected language knowledge
+          const langKnowledge = getLanguageKnowledge(analysis.detectedLanguages);
+          const simpleInstructionWithRules = `${SIMPLE_NYX_INSTRUCTION}\n\n${langKnowledge}\n\n${rulesBlock}`;
           await runSingleAgentPipeline(prompt, controller, controllerRef, simpleInstructionWithRules);
         } else {
-          await runMultiAgentPipeline(prompt, controller, controllerRef, rulesBlock);
+          await runMultiAgentPipeline(prompt, controller, controllerRef, rulesBlock, analysis);
         }
       } else {
         await runSingleAgentPipeline(prompt, controller, controllerRef);
@@ -183,7 +193,7 @@ ${formattedRules}
     }
   }, [activeAgent, models, apiKeys, agentPersonas, modelSettings, lmStudioBaseUrl, ollamaBaseUrl, ollamaModels, lmStudioModels, trackUsage, historyMap]);
 
-  const runMultiAgentPipeline = async (prompt: string, controller: AbortController, controllerRef: React.MutableRefObject<AbortController | null>, rulesBlock?: string) => {
+  const runMultiAgentPipeline = async (prompt: string, controller: AbortController, controllerRef: React.MutableRefObject<AbortController | null>, rulesBlock?: string, analysis?: ReturnType<typeof analyzePrompt>) => {
     // ── Resolve Models ─────────────────────────────────────────────────────
     const initialOpenModelId = models['open'] || models['nyx'];
     if (!initialOpenModelId) {
@@ -219,37 +229,142 @@ ${formattedRules}
     const optimizerProvider = detectProvider(optimizerModelId, ollamaModels, lmStudioModels);
     const optimizerApiKey = getEffectiveApiKey(optimizerProvider, apiKeys);
 
-    // ── Seed the assistant message with stage-1 banner ─────────────────────
+    // ── Analysis + Stage 0: Search Agent ──────────────────────────────────
+    const analysisPrefix = ANALYSIS_BANNER;
+    const searchPrefix = webSearchEnabled ? STAGE0_BANNER : '';
+
+    // Seed the assistant message with analysis banner
     updateHistory(activeAgent, prev => [
       ...prev,
-      { role: 'assistant', content: STAGE1_BANNER, timestamp: Date.now(), status: 'loading' }
+      { role: 'assistant', content: analysisPrefix, timestamp: Date.now(), status: 'loading' }
     ]);
 
     const startTime = Date.now();
 
+    // Build language-specific knowledge from analysis
+    const langKnowledge = analysis ? getLanguageKnowledge(analysis.detectedLanguages) : '';
+    const analysisContext = analysis ? `\n[PROMPT ANALYSIS]\n${analysis.summary}\n- Detected Languages: ${analysis.detectedLanguages.join(', ') || 'auto-detect'}\n- Intent: ${analysis.intent}\n- Complexity: ${analysis.complexity}\n- Frameworks: ${analysis.frameworks.join(', ') || 'none'}\n[END ANALYSIS]\n` : '';
+
+    // Transition to search banner if needed
+    updateHistory(activeAgent, prev => {
+      const history = [...prev];
+      const last = history[history.length - 1];
+      if (last && last.role === 'assistant') {
+        last.content = analysisPrefix + (webSearchEnabled ? searchPrefix : KNOWLEDGE_BANNER);
+      }
+      return history;
+    });
+
+    // Web search (if enabled)
+    let searchContext = '';
+    if (webSearchEnabled) {
+      try {
+        const searchRes = await fetch('/api/nyx/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: prompt }),
+          signal: controller.signal
+        });
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (searchData.success && Array.isArray(searchData.results)) {
+            const resultsStr = searchData.results
+              .map((r: any, idx: number) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
+              .join('\n\n');
+            searchContext = `\n\nADDITIONAL WEB SEARCH RESULTS:\nHere are some relevant search results from the web for reference:\n${resultsStr}\n`;
+          }
+        }
+      } catch (err) {
+        console.error('Web search API failed:', err);
+      }
+
+      // Transition to knowledge banner
+      updateHistory(activeAgent, prev => {
+        const history = [...prev];
+        const last = history[history.length - 1];
+        if (last && last.role === 'assistant') {
+          last.content = analysisPrefix + searchPrefix + KNOWLEDGE_BANNER;
+        }
+        return history;
+      });
+    }
+
+    // Google SDK Knowledge Extension (for moderate+ complexity)
+    let sdkKnowledge = '';
+    const shouldFetchKnowledge = analysis && (analysis.complexity === 'moderate' || analysis.complexity === 'complex' || analysis.complexity === 'enterprise');
+    if (shouldFetchKnowledge) {
+      try {
+        const knowledgeRes = await fetch('/api/nyx/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            languages: analysis!.detectedLanguages,
+            frameworks: analysis!.frameworks,
+            intent: analysis!.intent,
+            prompt: prompt.substring(0, 500)
+          }),
+          signal: controller.signal
+        });
+        if (knowledgeRes.ok) {
+          const knowledgeData = await knowledgeRes.json();
+          if (knowledgeData.success && knowledgeData.knowledge) {
+            sdkKnowledge = `\n\n[GOOGLE SDK KNOWLEDGE EXTENSION]\n${knowledgeData.knowledge}\n[END SDK KNOWLEDGE]\n`;
+          }
+        }
+      } catch (err) {
+        console.error('Knowledge extension API failed:', err);
+      }
+    }
+
+    // Transition to Stage 1 banner
+    const prefix = analysisPrefix + searchPrefix + (shouldFetchKnowledge ? KNOWLEDGE_BANNER : '');
+    updateHistory(activeAgent, prev => {
+      const history = [...prev];
+      const last = history[history.length - 1];
+      if (last && last.role === 'assistant') {
+        last.content = prefix + STAGE1_BANNER;
+      }
+      return history;
+    });
+
     // ── Pipeline settings: always use max output tokens so code is NEVER cut off ──
-    // Users may have 4096 as their global setting, which truncates large files.
-    // The pipeline overrides this with the maximum safe value per provider.
     const pipelineSettings = { ...modelSettings, maxTokens: 16384 };
 
-    // ── System Instructions ────────────────────────────────────────────────
-    const architectInstruction = `You are the Principal Software Architect Agent. Given the user's prompt, formulate a highly detailed architectural plan and system design blueprint.
+    // ── System Instructions (enriched with language knowledge) ─────────────
+    const architectInstruction = `You are the Principal Software Architect Agent with expert knowledge of 30+ programming languages and their ecosystems.
+
+${CODING_KNOWLEDGE_SUMMARY}
+${langKnowledge}
+
+Given the user's prompt and the analysis context, formulate a highly detailed architectural plan and system design blueprint.
 Focus on:
-- System design patterns & components
-- Core data structures & algorithms
+- System design patterns & components using the DETECTED LANGUAGE'S modern idioms
+- Core data structures & algorithms appropriate for the detected tech stack
 - Critical performance considerations & bottlenecks
 - Edge cases, error handling, and security considerations
+- The correct package manager, build tools, and project structure for the detected language
 
 Output a structured blueprint. Do NOT include greetings or extra conversation.`;
 
-    const coderInstructionOriginal = `You are the Senior Coder Agent. Your job is to implement the complete system codebase based on the Architect's blueprint.
+    const coderInstructionOriginal = `You are the Senior Coder Agent with expert knowledge of 30+ programming languages.
+
+${CODING_KNOWLEDGE_SUMMARY}
+${langKnowledge}
+
+Your job is to implement the complete system codebase based on the Architect's blueprint.
 RULES:
-- Output ONLY complete, production-ready code.
+- Output ONLY complete, production-ready code using the most modern idioms for the detected language.
 - Never use comments like "// todo", "// implement later", or placeholders.
 - Strictly handle all security, error boundaries, and edge cases described in the blueprint.
+- Use the correct import syntax, package names, and API patterns for the detected frameworks.
 - Keep the code well-organized, highly readable, and modular.`;
 
-    const optimizerInstructionOriginal = `You are the High-Performance Optimizer & Lead Delivery Agent. Your job is to:
+    const optimizerInstructionOriginal = `You are the High-Performance Optimizer & Lead Delivery Agent with expert knowledge of 30+ programming languages.
+
+${CODING_KNOWLEDGE_SUMMARY}
+${langKnowledge}
+
+Your job is to:
 1. Audit and fully optimize the draft code for speed, memory, accessibility (WCAG 2.2 AA), and clean architecture.
 2. Deliver the COMPLETE, FINAL, production-ready code to the user.
 
@@ -259,6 +374,7 @@ CRITICAL RULES — VIOLATIONS WILL BREAK THE OUTPUT:
 - If a file is long, output ALL of it anyway. Do not cut corners.
 - Output each file in a properly labeled code block (e.g. \`\`\`html, \`\`\`typescript, \`\`\`css, etc.)
 - Do NOT reference stages, agents, or internal pipeline steps in your response.
+- Ensure all imports, package names, and APIs are correct for the detected language/framework.
 - After all code blocks, add a ## How to Use section with numbered steps (save as X, open in Y, etc.)
 - Keep the tone direct and professional.`;
 
@@ -268,8 +384,10 @@ CRITICAL RULES — VIOLATIONS WILL BREAK THE OUTPUT:
     // ── Stage 1: Architect (internal — user sees banner only) ──────────────
     let architectText = '';
 
+    const architectPrompt = `${prompt}${analysisContext}${searchContext}${sdkKnowledge}`;
+
     const architectResult = await AIService.execute(
-      architectModelId, architectProvider, prompt, architectApiKey, architectInstruction, pipelineSettings,
+      architectModelId, architectProvider, architectPrompt, architectApiKey, architectInstruction, pipelineSettings,
       (_accumulatedText) => {
         // Stage 1 output is internal — keep the banner visible but don't expose raw architect text
         const elapsed = Date.now() - startTime;
@@ -287,7 +405,7 @@ CRITICAL RULES — VIOLATIONS WILL BREAK THE OUTPUT:
       const history = [...prev];
       const last = history[history.length - 1];
       if (last && last.role === 'assistant') {
-        last.content = STAGE1_BANNER + STAGE2_BANNER;
+        last.content = prefix + STAGE1_BANNER + STAGE2_BANNER;
       }
       return history;
     });
@@ -322,7 +440,7 @@ Implement the complete system codebase. Cover all files, functions, and edge cas
       const history = [...prev];
       const last = history[history.length - 1];
       if (last && last.role === 'assistant') {
-        last.content = STAGE1_BANNER + STAGE2_BANNER + STAGE3_BANNER;
+        last.content = prefix + STAGE1_BANNER + STAGE2_BANNER + STAGE3_BANNER;
       }
       return history;
     });

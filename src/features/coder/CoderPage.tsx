@@ -74,7 +74,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     metrics,
     models, setModel,
     runCoder, stopCoder, clearHistory,
-    agentPersonas, suggestedPrompts
+    agentPersonas, suggestedPrompts,
+    webSearchEnabled, setWebSearchEnabled
   } = useCoderLogic({
     apiKeys,
     lmStudioBaseUrl,
@@ -217,6 +218,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
           modelSettings={modelSettings}
           suggestedPrompts={suggestedPrompts}
           getCustomModelIcon={getCustomModelIcon}
+          webSearchEnabled={webSearchEnabled}
+          onWebSearchToggle={setWebSearchEnabled}
         />
       </div>
 

@@ -3,6 +3,7 @@
  * @description Composed hook that orchestrates agent state, message history, and AI pipeline execution.
  */
 
+import { useState } from 'react';
 import { useAgentState } from './useAgentState';
 import { useMessageHistory } from './useMessageHistory';
 import { useAgentPipeline } from './useAgentPipeline';
@@ -34,6 +35,7 @@ export const useCoderLogic = ({
   models: propModels,
   setModel: propSetModel
 }: CoderLogicProps) => {
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const {
     activeAgent,
     setActiveAgent,
@@ -77,7 +79,8 @@ export const useCoderLogic = ({
     updateHistory,
     updateMetrics,
     getSuggestions,
-    setSuggestedPrompts
+    setSuggestedPrompts,
+    webSearchEnabled
   });
 
   return {
@@ -92,6 +95,8 @@ export const useCoderLogic = ({
     stopCoder,
     clearHistory,
     agentPersonas,
-    suggestedPrompts
+    suggestedPrompts,
+    webSearchEnabled,
+    setWebSearchEnabled
   };
 };

@@ -7,7 +7,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send, Settings as SettingsIcon, Check, StopCircle,
-  Paperclip, ArrowRight, X, Zap, Info, ChevronDown, Bot
+  Paperclip, ArrowRight, X, Zap, Info, ChevronDown, Bot, Globe
 } from 'lucide-react';
 import { ModelSelector } from '@/src/components/model-card/ModelSelector';
 import { ModelDefinition } from '@/src/core/types';
@@ -37,6 +37,8 @@ interface PromptInputProps {
   suggestedPrompts: string[];
   onSuggestedPromptClick?: (prompt: string) => void;
   getCustomModelIcon: (model: ModelDefinition | null | undefined) => React.ReactNode;
+  webSearchEnabled: boolean;
+  onWebSearchToggle: (enabled: boolean) => void;
 }
 
 export const PromptInput: React.FC<PromptInputProps> = ({
@@ -62,7 +64,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   modelSettings,
   suggestedPrompts,
   onSuggestedPromptClick,
-  getCustomModelIcon
+  getCustomModelIcon,
+  webSearchEnabled,
+  onWebSearchToggle
 }) => {
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
@@ -309,6 +313,19 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   title="Attach File"
                 >
                   <Paperclip size={12} strokeWidth={1.5} />
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={() => onWebSearchToggle(!webSearchEnabled)}
+                  className={`p-1.5 rounded-lg hover:bg-white/30 dark:hover:bg-zinc-800/70 transition-all ${
+                    webSearchEnabled 
+                      ? 'text-blue-500 bg-blue-500/10 border border-blue-500/20 shadow-[0_0_10px_rgba(59,130,246,0.15)]' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title="Toggle Web Search"
+                >
+                  <Globe size={12} strokeWidth={1.5} className={webSearchEnabled ? 'animate-pulse' : ''} />
                 </button>
 
                 <button 
