@@ -244,6 +244,22 @@ const LANG_SIGNATURES: LangSignature[] = [
     extensions: [/\.zig/i],
     keywords: [/\bpub\s+fn\b/i, /\bconst\s+\w+\s*=\s*struct\b/i, /\b@import\b/i, /\bcomptime\b/i, /\banyerror\b/i, /\borelse\b/i, /\bdefer\b/i, /\berrdefer\b/i, /\btry\s+/i, /\ballocator\b/i],
     frameworkHints: [/\bzig\s+build\b/i, /\bstd\.http\b/i]
+  },
+  {
+    id: 'arduino',
+    name: 'Arduino / Embedded C++',
+    codeBlockTags: ['arduino', 'ino'],
+    extensions: [/\.ino/i, /\.pde/i],
+    keywords: [/\bvoid\s+setup\s*\(/i, /\bvoid\s+loop\s*\(/i, /\bdigitalWrite\b/i, /\bdigitalRead\b/i, /\banalogRead\b/i, /\banalogWrite\b/i, /\bpinMode\b/i, /\bSerial\.begin/i, /\bSerial\.print/i, /\bdelay\s*\(/i, /\b#include\s*<Arduino/i],
+    frameworkHints: [/\barduino\b/i, /\besp32\b/i, /\besp8266\b/i, /\bplatformio\b/i, /\bteensy\b/i, /\badafruit\b/i, /\bsparkfun\b/i, /\bstm32\b/i, /\bavr\b/i, /\bneopixel\b/i, /\bservo\b/i]
+  },
+  {
+    id: 'micropython',
+    name: 'MicroPython / CircuitPython',
+    codeBlockTags: ['micropython', 'circuitpython'],
+    extensions: [/\.py/i],
+    keywords: [/\bfrom\s+machine\s+import/i, /\bimport\s+machine\b/i, /\bPin\s*\(/i, /\bmachine\.Pin/i, /\bnetwork\.WLAN/i, /\busocket\b/i, /\butime\b/i, /\bboard\./i, /\bdigitalio\./i, /\banalogio\./i],
+    frameworkHints: [/\bmicropython\b/i, /\bcircuitpython\b/i, /\braspberry\s*pi\s*pico\b/i, /\brp2040\b/i, /\badafruit\b/i, /\bthonny\b/i]
   }
 ];
 
@@ -338,15 +354,24 @@ const INTENT_PATTERNS: IntentPattern[] = [
 
 // ── Code-Relatedness Detection ───────────────────────────────────────────────
 
+/**
+ * If a prompt mentions ANY programming language name or coding technology,
+ * it is ALWAYS code-related — regardless of phrasing.
+ * This is the nuclear-option check: no question-word prefix required.
+ * Catches: "HTML", "learn python", "CSS tricks", "what is JavaScript", "tell me HTML", etc.
+ */
+const MENTIONS_CODE_TECH: RegExp =
+  /\b(javascript|typescript|python|rust|golang|go\s+lang|java|kotlin|swift|ruby|php|dart|html|css|scss|sass|less|sql|shell|bash|zsh|powershell|elixir|erlang|haskell|scala|clojure|solidity|lua|zig|nim|crystal|ocaml|fsharp|f#|perl|r\s+lang|matlab|fortran|cobol|lisp|scheme|prolog|groovy|objective[-\s]?c|wasm|webassembly|c\+\+|cpp|c#|csharp|assembly|asm|vhdl|verilog|systemverilog|react|vue|angular|svelte|next\.?js|nuxt\.?js|node\.?js|deno|bun|django|flask|fastapi|rails|laravel|symfony|spring|express|fastify|hono|nestjs|gin|fiber|axum|actix|rocket|phoenix|ktor|vapor|sinatra|vite|webpack|rollup|esbuild|parcel|turbopack|docker|kubernetes|k8s|terraform|ansible|puppet|chef|jenkins|travis|circleci|pulumi|git|github|gitlab|bitbucket|npm|yarn|pnpm|pip|conda|cargo|maven|gradle|sbt|cabal|stack|composer|bundler|cocoapods|carthage|graphql|trpc|rest\s*api|grpc|protobuf|thrift|openapi|swagger|postman|insomnia|mongodb|postgres|postgresql|mysql|mariadb|sqlite|redis|memcached|cassandra|dynamodb|couchdb|neo4j|influxdb|timescaledb|cockroachdb|supabase|firebase|appwrite|pocketbase|neon|planetscale|aws|azure|gcp|vercel|netlify|heroku|railway|render|fly\.io|cloudflare|digitalocean|linode|tailwind|bootstrap|material\s*ui|chakra\s*ui|mantine|radix|shadcn|ant\s*design|bulma|foundation|styled[-\s]?components|emotion|stitches|jsx|tsx|dom|virtual\s*dom|shadow\s*dom|json|xml|yaml|toml|protobuf|avro|csv|markdown|mdx|regex|regexp|http|https|tcp|udp|websocket|webrtc|sse|oauth|jwt|cors|csrf|xss|sql\s*injection|oop|mvc|mvvm|mvp|clean\s*architecture|hexagonal|onion|cqrs|event\s*sourcing|ddd|crud|cicd|ci\/cd|tdd|bdd|ddd|agile|scrum|kanban|devops|devsecops|sre|mlops|dataops|gitops|microservice|monolith|serverless|lambda|edge\s*computing|cdn|dns|ssl|tls|ssh|ftp|smtp|imap|ide|vscode|visual\s*studio|intellij|webstorm|pycharm|xcode|android\s*studio|vim|neovim|emacs|sublime|atom|cursor|windsurf|compiler|interpreter|debugger|linter|formatter|transpiler|bundler|minifier|uglifier|runtime|framework|library|package|module|component|widget|hook|state|prop|context|store|reducer|saga|thunk|observable|signal|ref|reactive|promise|callback|closure|recursion|iteration|inheritance|polymorphism|encapsulation|abstraction|composition|mixin|trait|protocol|interface|generic|template|decorator|annotation|middleware|router|controller|model|view|presenter|viewmodel|schema|migration|seed|orm|odm|query\s*builder|active\s*record|data\s*mapper|index|cache|memoiz|buffer|stream|pipe|channel|thread|process|mutex|semaphore|lock|deadlock|race\s*condition|async|await|coroutine|goroutine|green\s*thread|actor|fiber|event\s*loop|reactor|proactor|heap|stack|queue|deque|priority\s*queue|tree|trie|graph|hash\s*map|hash\s*table|hash\s*set|linked\s*list|doubly\s*linked|skip\s*list|bloom\s*filter|b[-\s]?tree|red[-\s]?black|avl|binary\s*search|depth\s*first|breadth\s*first|dijkstra|dynamic\s*programming|greedy|backtracking|divide\s*and\s*conquer|sorting|searching|traversal|pointer|reference|smart\s*pointer|ownership|borrowing|lifetime|move\s*semantics|raii|memory\s*management|garbage\s*collection|gc|arc|reference\s*counting|jit|aot|bytecode|opcode|ir|llvm|abi|ffi|wasi|napi|binding|interop|marshalling|ssr|ssg|isr|spa|pwa|csr|hydration|islands|partial\s*hydration|bundling|minification|tree\s*shaking|code\s*splitting|lazy\s*loading|hot\s*reload|hmr|live\s*reload|fast\s*refresh|repl|sandbox|container|pod|namespace|ingress|service\s*mesh|sidecar|istio|envoy|linkerd|load\s*balanc|reverse\s*proxy|api\s*gateway|rate\s*limit|circuit\s*breaker|retry|backoff|bulkhead|saga|choreography|orchestration|webhook|endpoint|payload|serializ|deserializ|marshal|unmarshal|encode|decode|encrypt|decrypt|hash|digest|hmac|token|session|cookie|header|request|response|status\s*code|middleware|interceptor|guard|pipe|filter|resolver|plugin|extension|addon|snippet|boilerplate|scaffold|seed|skeleton|starter|archetype|refactor|lint|format|prettify|test|spec|suite|mock|stub|spy|fake|fixture|factory|assertion|expectation|matcher|coverage|lcov|istanbul|nyc|benchmark|profil|flame\s*graph|debug|breakpoint|watchpoint|trace|log|structured\s*log|monitor|alert|incident|dashboard|metric|counter|gauge|histogram|percentile|p99|p95|latency|throughput|bandwidth|iops|uptime|availability|durability|sla|slo|sli|error\s*budget|observability|telemetry|tracing|distributed\s*tracing|opentelemetry|otel|sampling|span|jaeger|zipkin|tempo|prometheus|grafana|kibana|elasticsearch|logstash|fluentd|fluentbit|vector|datadog|newrelic|sentry|pagerduty|rollbar|bugsnag|amplitude|mixpanel|segment|posthog|plausible|analytics|tensorboard|wandb|mlflow|jupyter|notebook|colab|kaggle|huggingface|transformers|langchain|llamaindex|autogen|crewai|semantic\s*kernel|embeddings?|vector\s*db|pinecone|chroma|weaviate|qdrant|milvus|faiss|rag|fine[-\s]?tun|lora|qlora|quantiz|onnx|tensorrt|triton|vllm|ollama|llama|mistral|gemma|gpt|claude|gemini|openai|anthropic|cohere|replicate|hugging\s*face|diffusion|stable\s*diffusion|comfyui|sdxl|flux|dall[-\s]?e|midjourney|coding|programming|software|developer|development|engineer|engineering|syntax|semantic|lexer|parser|tokenizer|ast|abstract\s*syntax|cst|ir|cfg|ssa|data\s*flow|control\s*flow|type\s*system|type\s*check|type\s*inference|static\s*analysis|linting|code\s*review|pull\s*request|merge\s*request|branch|commit|rebase|cherry[-\s]?pick|stash|tag|release|deploy|rollback|canary|blue[-\s]?green|rolling\s*update|feature\s*flag|a\/b\s*test|chaos\s*engineering|load\s*test|stress\s*test|fuzz|penetration\s*test|vulnerability|exploit|injection|sanitiz|escap|validat|authentication|authorization|rbac|abac|acl|saml|oidc|sso|mfa|2fa|totp|passkey|webauthn|bcrypt|argon2|scrypt|pbkdf2|aes|rsa|ecdsa|ed25519|diffie[-\s]?hellman|tls|mtls|certificate|pki|vault|secrets?\s*management|arduino|raspberry\s*pi|raspi|rpi|esp32|esp8266|nodemcu|stm32|pic\s*microcontroller|avr|atmega|attiny|teensy|adafruit|sparkfun|beaglebone|beagleboard|jetson\s*nano|jetson\s*orin|jetson|nvidia\s*jetson|intel\s*edison|particle\s*photon|particle\s*argon|mbed|nrf52|nrf53|pico|pico\s*w|rp2040|rp2350|risc[-\s]?v|fpga|asic|soc|mcu|microcontroller|single\s*board\s*computer|sbc|development\s*board|dev\s*board|breakout\s*board|shield|hat\s*module|grove\s*sensor|qwiic|stemma|mqtt|coap|zigbee|z[-\s]?wave|lorawan|lora\s*wan|ble|bluetooth\s*low\s*energy|bluetooth|wifi\s*module|nfc|rfid|i2c|spi\s*bus|uart|serial\s*port|gpio|pwm|adc|dac|can\s*bus|modbus|onewire|one[-\s]?wire|dma|jtag|swd|openocd|platformio|esphome|home\s*assistant|node[-\s]?red|thingsboard|blynk|cayenne|thingspeak|aws\s*iot|azure\s*iot|google\s*cloud\s*iot|iot\s*hub|iot\s*core|matter\s*protocol|thread\s*protocol|embedded\s*system|embedded\s*c|embedded\s*linux|rtos|freertos|zephyr\s*os|zephyr\s*rtos|zephyr|riot\s*os|contiki|mynewt|nuttx|chibios|mbed\s*os|threadx|vxworks|qnx|yocto|buildroot|openwrt|tasmota|micropython|circuitpython|tinygo|rust\s*embedded|embassy[-\s]?rs|probe[-\s]?rs|svd2rust|cortex[-\s]?m|arm\s*cortex|thumb|armv7|armv8|aarch64|xtensa|mips|avr[-\s]?gcc|arm[-\s]?gcc|cross[-\s]?compil|toolchain|bootloader|firmware|flash\s*memory|eeprom|sram|dram|rom|nvram|bare[-\s]?metal|hal|bsp|device\s*driver|kernel\s*module|device\s*tree|dtb|dts|u[-\s]?boot|grub|sensor|actuator|servo|stepper\s*motor|dc\s*motor|relay|led\s*strip|neopixel|ws2812|oled|lcd\s*display|tft\s*display|e[-\s]?ink|epaper|accelerometer|gyroscope|imu|magnetometer|barometer|temperature\s*sensor|humidity\s*sensor|ultrasonic|pir\s*sensor|lidar|ir\s*sensor|potentiometer|encoder|rotary\s*encoder|touch\s*sensor|pressure\s*sensor|gas\s*sensor|gps\s*module|rtc|real\s*time\s*clock|robot|robotics|ros|ros2|gazebo|moveit|slam|odometry|pid\s*control|kalman\s*filter|inverse\s*kinematics|drone|quadcopter|uav|ardupilot|px4|betaflight|mavlink|dronekit|autonomous\s*vehicle|self[-\s]?driving|opencv|yolo|object\s*detection|image\s*recognition|point\s*cloud|computer\s*vision|3d\s*print|additive\s*manufacturing|gcode|g[-\s]?code|slicer|cura|prusaslicer|octoprint|klipper|marlin|openscad|freecad|fusion\s*360|solidworks|autocad|cad|cam|cnc|laser\s*cut|pcb\s*design|pcb|kicad|eagle|altium|gerber|schematic|breadboard|soldering|oscilloscope|logic\s*analyzer|multimeter|power\s*supply|godot|pygame|phaser|pixi\.?js|love2d|monogame|raylib|opengl|vulkan|directx|metal\s*api|webgpu|webgl|shader|glsl|hlsl|spirv|compute\s*shader|ray\s*tracing|rasteriz|game\s*engine|game\s*loop|physics\s*engine|collision\s*detection|sprite|tilemap|particle\s*system|ecs\s*pattern|entity\s*component|react\s*native|expo|ionic|capacitor|cordova|xamarin|maui|kotlin\s*multiplatform|kmp|compose\s*multiplatform|tauri|electron|progressive\s*web\s*app|native\s*app|hybrid\s*app|webview|deep\s*link|push\s*notification|app\s*store|play\s*store|testflight|fastlane|android\s*sdk|ios\s*sdk|numpy|pandas|scipy|scikit[-\s]?learn|matplotlib|seaborn|plotly|bokeh|altair|dask|polars|xgboost|lightgbm|catboost|random\s*forest|neural\s*network|deep\s*learning|machine\s*learning|reinforcement\s*learning|supervised\s*learning|unsupervised\s*learning|transfer\s*learning|feature\s*engineering|data\s*preprocessing|data\s*augmentation|batch\s*normalization|dropout|regularization|overfitting|underfitting|cross\s*validation|hyperparameter|automl|keras|jax|flax|mxnet|caffe|paddle|mindspore|serverless\s*framework|sam\s*cli|cdk|cloudformation|arm\s*template|bicep|crossplane|helm|kustomize|argocd|fluxcd|tekton|spinnaker|consul|nomad|packer|vagrant|proxmox|vmware|virtualbox|hyper[-\s]?v|libvirt|qemu|kvm|openstack|openshift|rancher|portainer|traefik|caddy|haproxy|kong|apisix|ethereum|bitcoin|blockchain|smart\s*contract|defi|dao|nft|erc[-\s]?20|erc[-\s]?721|web3\.?js|ethers\.?js|web3\.?py|brownie|foundry|remix\s*ide|metamask|ganache|anvil|polygon|arbitrum|optimism|avalanche|solana|near|cosmos|polkadot|substrate|aptos|sui|ton|hyperledger|chainlink|ipfs|filecoin|wireshark|tcpdump|nmap|netcat|iptables|nftables|nginx|apache|openvpn|wireguard|tailscale|zerotier|ngrok|vpn|firewall|waf|siem|malware|ghidra|ida\s*pro|radare2|gdb|lldb|strace|valgrind|fuzzing|afl|zapier|n8n|power\s*automate|appsmith|retool|nocodb|strapi|payload\s*cms|sanity|contentful|ghost|twilio|sendgrid|pusher|nats|rabbitmq|kafka|pulsar|temporal|inngest|bull|bullmq|simulink|labview|matlab|octave|gnuplot|wolfram|mathematica)\b/i;
+
 const CODE_RELATED_PATTERNS: RegExp[] = [
   // Code blocks
   /```\w*/i,
   // File extensions
   /\.\w{1,5}\b/i,
-  // Programming language names
+  // Programming language names (compact subset for scoring)
   /\b(javascript|typescript|python|rust|golang|java|kotlin|swift|ruby|php|dart|html|css|scss|sql|shell|bash|elixir|haskell|scala|solidity|lua|zig|wasm|c\+\+|c#|csharp|assembly|react|vue|angular|svelte|next\.?js|node\.?js|django|flask|fastapi|rails|laravel|spring|express)\b/i,
   // Technical keywords
-  /\b(code|program|function|class|struct|interface|module|package|library|framework|api|sdk|database|server|client|frontend|backend|fullstack|algorithm|data\s*structure|variable|loop|array|object|component|repository|git|npm|pip|cargo|maven|gradle)\b/i,
+  /\b(code|program|function|class|struct|interface|module|package|library|framework|api|sdk|database|server|client|frontend|backend|fullstack|algorithm|data\s*structure|variable|loop|array|object|component|repository|git|npm|pip|cargo|maven|gradle|coding|programming|software|developer|development|engineer|engineering|syntax|semantic|compiler|interpreter|runtime|execution|script|scripting)\b/i,
   // Code-related actions
   /\b(implement|refactor|debug|compile|build|deploy|install|import|export|render|parse|serialize|encode|decode|encrypt|decrypt|hash|query|fetch|request|response|route|middleware|controller|model|view|template)\b/i,
   // Technical concepts
@@ -360,7 +385,7 @@ const CODE_RELATED_PATTERNS: RegExp[] = [
 ];
 
 const NON_CODE_PATTERNS: RegExp[] = [
-  /\b(weather|recipe|cooking|sports|news|politics|movie|music|song|celebrity|gossip|horoscope|astrology|dating|relationship|love|poem|story|novel|fiction|essay|homework|geography|capital\s+of|president\s+of|history\s+of|who\s+is|how\s+old|what\s+time|joke|riddle|trivia)\b/i,
+  /\b(weather|recipe|cooking|sports|news|politics|movie|music|song|celebrity|gossip|horoscope|astrology|dating|relationship|love|poem|story|novel|fiction|essay|homework|geography|capital\s+of|president\s+of|history\s+of|how\s+old|what\s+time|joke|riddle|trivia)\b/i,
   /\b(how\s+to\s+cook|how\s+to\s+lose\s+weight|best\s+restaurants|travel\s+to|vacation|flight|hotel|recommendation|suggest\s+a\s+movie)\b/i,
   /\b(write\s+(?:a\s+)?(?:poem|essay|letter|email\s+to\s+(?:my|a)\s+(?:friend|boss|teacher)|story|song\s+lyrics))\b/i
 ];
@@ -408,6 +433,28 @@ const ALL_FRAMEWORKS: Array<{ name: string; pattern: RegExp }> = [
   { name: 'Firebase', pattern: /\bfirebase\b/i },
   { name: 'Gemini API', pattern: /\bgemini\s*(api|sdk)?\b/i },
   { name: 'OpenAI API', pattern: /\bopenai\b/i },
+  { name: 'Arduino', pattern: /\barduino\b/i },
+  { name: 'Raspberry Pi', pattern: /\braspberry\s*pi\b/i },
+  { name: 'ESP32', pattern: /\besp32\b/i },
+  { name: 'ESP8266', pattern: /\besp8266\b/i },
+  { name: 'STM32', pattern: /\bstm32\b/i },
+  { name: 'PlatformIO', pattern: /\bplatformio\b/i },
+  { name: 'FreeRTOS', pattern: /\bfreertos\b/i },
+  { name: 'Zephyr RTOS', pattern: /\bzephyr\b/i },
+  { name: 'ROS/ROS2', pattern: /\bros2?\b/i },
+  { name: 'MicroPython', pattern: /\bmicropython\b/i },
+  { name: 'CircuitPython', pattern: /\bcircuitpython\b/i },
+  { name: 'OpenCV', pattern: /\bopencv\b/i },
+  { name: 'Godot', pattern: /\bgodot\b/i },
+  { name: 'Pygame', pattern: /\bpygame\b/i },
+  { name: 'Electron', pattern: /\belectron\b/i },
+  { name: 'React Native', pattern: /\breact\s*native\b/i },
+  { name: 'Expo', pattern: /\bexpo\b/i },
+  { name: 'MATLAB', pattern: /\bmatlab\b/i },
+  { name: 'Simulink', pattern: /\bsimulink\b/i },
+  { name: 'KiCad', pattern: /\bkicad\b/i },
+  { name: 'Home Assistant', pattern: /\bhome\s*assistant\b/i },
+  { name: 'Node-RED', pattern: /\bnode[-\s]?red\b/i },
 ];
 
 // ── Main Analyzer ────────────────────────────────────────────────────────────
@@ -558,18 +605,24 @@ function checkCodeRelated(
   // If languages or frameworks detected, it's code-related
   if (languages.length > 0 || frameworks.length > 0) return true;
 
-  // If intent is clearly code-related
-  if (['generate', 'refactor', 'debug', 'convert', 'optimize', 'review', 'integrate', 'test', 'deploy'].includes(intent)) {
-    // Double-check with patterns
+  // ★ PRIMARY GATE: If the prompt mentions ANY programming language, framework,
+  // coding tool, or tech concept — it's code-related. No question format required.
+  // This is the catch-all that ensures "HTML", "learn python", "CSS tricks",
+  // "what is JavaScript", "tell me about React", etc. are NEVER rejected.
+  if (MENTIONS_CODE_TECH.test(prompt)) return true;
+
+  // If intent is clearly code-related (including 'explain' for coding Q&A)
+  if (['generate', 'refactor', 'debug', 'convert', 'optimize', 'review', 'integrate', 'test', 'deploy', 'explain', 'general'].includes(intent)) {
+    // Single pattern match is enough when intent already suggests code context
     if (CODE_RELATED_PATTERNS.some(p => p.test(prompt))) return true;
   }
 
   // Check for explicit non-code patterns
   if (NON_CODE_PATTERNS.some(p => p.test(prompt))) return false;
 
-  // Check for code-related patterns as a final pass
+  // Check for code-related patterns as a final pass (reduced threshold)
   const codeMatches = CODE_RELATED_PATTERNS.filter(p => p.test(prompt)).length;
-  return codeMatches >= 2;
+  return codeMatches >= 1;
 }
 
 function extractKeywords(lower: string): string[] {

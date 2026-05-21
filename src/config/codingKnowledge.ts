@@ -1,7 +1,7 @@
 /**
  * @file src/config/codingKnowledge.ts
  * @description Comprehensive coding language knowledge base for the Nyx agent.
- * Contains expert-level references for 30+ languages covering ecosystems,
+ * Contains expert-level references for 40+ languages and platforms covering ecosystems,
  * idioms, frameworks, build tools, and modern conventions.
  */
 
@@ -722,6 +722,222 @@ export const LANGUAGE_PROFILES: Record<string, LanguageProfile> = {
     errorHandling: 'Traps, error codes through return values, host-defined error handling',
     concurrency: 'SharedArrayBuffer + Atomics, Web Workers, WASI threads proposal',
     deployTargets: ['Browsers', 'Edge computing', 'Serverless', 'Embedded runtimes']
+  },
+
+  arduino: {
+    name: 'Arduino / Embedded C++',
+    extensions: ['.ino', '.pde'],
+    typing: 'Static (C/C++ based)',
+    paradigms: ['procedural', 'hardware programming', 'event-loop', 'embedded systems'],
+    packageManager: 'Arduino Library Manager / PlatformIO',
+    buildTools: ['Arduino IDE', 'Arduino CLI', 'PlatformIO', 'avr-gcc', 'arm-gcc'],
+    testFrameworks: ['AUnit', 'ArduinoUnit', 'PlatformIO Unity'],
+    linters: ['cppcheck', 'PlatformIO check'],
+    frameworks: ['Arduino Core', 'ESP-IDF', 'STM32duino', 'Adafruit libraries', 'FastLED', 'AccelStepper', 'PubSubClient (MQTT)', 'WiFi', 'Wire (I2C)', 'SPI'],
+    modernIdioms: [
+      'setup()/loop() pattern for main program flow',
+      'Use const and constexpr over #define macros',
+      'Use millis() instead of delay() for non-blocking timing',
+      'State machines for complex control flow',
+      'Interrupt service routines (ISR) for real-time events',
+      'Use PROGMEM for flash-stored constants on AVR',
+      'EEPROM for persistent settings',
+      'Watchdog timer for crash recovery',
+      'Hardware abstraction layers for portability',
+      'PlatformIO for professional project management'
+    ],
+    errorHandling: 'Return codes, watchdog timer, assertion macros, Serial debug output',
+    concurrency: 'Single-threaded loop, timer interrupts, FreeRTOS tasks on ESP32/STM32',
+    deployTargets: ['Arduino Uno/Mega/Nano', 'ESP32', 'ESP8266', 'STM32', 'Teensy', 'ATtiny', 'RP2040']
+  },
+
+  micropython: {
+    name: 'MicroPython / CircuitPython',
+    extensions: ['.py'],
+    typing: 'Dynamic (Python subset)',
+    paradigms: ['procedural', 'object-oriented', 'scripting', 'embedded'],
+    packageManager: 'upip / mip / circup',
+    buildTools: ['Thonny', 'mpremote', 'esptool', 'ampy', 'rshell'],
+    testFrameworks: ['micropython-unittest'],
+    linters: ['pylint', 'ruff (limited)'],
+    frameworks: ['machine module', 'network module', 'uasyncio', 'Adafruit CircuitPython libraries', 'lvgl bindings'],
+    modernIdioms: [
+      'from machine import Pin, I2C, SPI, PWM, ADC',
+      'uasyncio for cooperative multitasking',
+      'Memory management with gc.collect()',
+      'Use const() for ROM-optimized constants',
+      'Frozen modules for faster boot',
+      'WebREPL for wireless debugging',
+      'Use memoryview for zero-copy buffer ops',
+      'Pin interrupts for real-time response',
+      'Network.WLAN for WiFi connectivity',
+      'ujson/ubinascii for data serialization'
+    ],
+    errorHandling: 'try/except, machine.reset() for hard recovery, watchdog timer',
+    concurrency: 'Single-threaded, uasyncio (cooperative), timer callbacks, _thread module on ESP32',
+    deployTargets: ['Raspberry Pi Pico/Pico W', 'ESP32', 'ESP8266', 'STM32', 'nRF52', 'SAMD21/51']
+  },
+
+  raspberrypi: {
+    name: 'Raspberry Pi (Linux SBC)',
+    extensions: ['.py', '.sh', '.c', '.cpp', '.js'],
+    typing: 'Varies by language',
+    paradigms: ['systems programming', 'scripting', 'IoT', 'edge computing', 'server'],
+    packageManager: 'apt / pip / npm / cargo',
+    buildTools: ['gcc', 'cmake', 'make', 'python3', 'node', 'rustc'],
+    testFrameworks: ['pytest', 'jest', 'googletest'],
+    linters: ['shellcheck', 'pylint', 'eslint', 'cppcheck'],
+    frameworks: ['RPi.GPIO', 'gpiozero', 'pigpio', 'libcamera', 'picamera2', 'Flask', 'Node-RED', 'Home Assistant', 'OctoPrint'],
+    modernIdioms: [
+      'gpiozero for Pythonic GPIO control',
+      'systemd services for auto-start daemons',
+      'raspi-config for system configuration',
+      'Use /boot/config.txt for hardware overlays',
+      'picamera2 for camera module (libcamera-based)',
+      'I2C/SPI via smbus2 or spidev',
+      'Docker containers for isolated services',
+      'SSH + VS Code Remote for development',
+      'cron and systemd timers for scheduling',
+      'GPIO cleanup on exit to prevent pin leaks'
+    ],
+    errorHandling: 'Linux error codes, Python exceptions, systemd journal logging',
+    concurrency: 'Full Linux multithreading, multiprocessing, asyncio, systemd services',
+    deployTargets: ['Raspberry Pi 5/4/3/Zero 2 W', 'Raspberry Pi OS', 'Ubuntu Server', 'DietPi']
+  },
+
+  embedded: {
+    name: 'Embedded Systems / RTOS',
+    extensions: ['.c', '.h', '.cpp', '.s', '.ld'],
+    typing: 'Static (C/C++)',
+    paradigms: ['bare-metal', 'real-time', 'interrupt-driven', 'state-machine'],
+    packageManager: 'vcpkg / conan / CMSIS-Pack / PlatformIO',
+    buildTools: ['arm-none-eabi-gcc', 'CMake', 'Make', 'Ninja', 'IAR', 'Keil MDK', 'SEGGER Embedded Studio'],
+    testFrameworks: ['Unity (ThrowTheSwitch)', 'CppUTest', 'Google Test (host)', 'QEMU'],
+    linters: ['PC-lint', 'cppcheck', 'MISRA-C checkers', 'Polyspace', 'clang-tidy'],
+    frameworks: ['FreeRTOS', 'Zephyr', 'mbed OS', 'RIOT OS', 'NuttX', 'ChibiOS', 'ThreadX/Azure RTOS', 'CMSIS', 'HAL'],
+    modernIdioms: [
+      'CMSIS-compliant peripheral access',
+      'FreeRTOS tasks, queues, semaphores, mutexes',
+      'Interrupt priority grouping (NVIC)',
+      'DMA for high-speed data transfers',
+      'Linker scripts for memory layout control',
+      'Startup code and vector table',
+      'Volatile for hardware registers',
+      'Static allocation over dynamic (no heap fragmentation)',
+      'Circular buffers for UART/SPI data',
+      'Watchdog timer for system reliability'
+    ],
+    errorHandling: 'Error codes, assertion macros, fault handlers (HardFault, BusFault), watchdog reset',
+    concurrency: 'Preemptive RTOS scheduling, ISR + deferred processing, mutexes, semaphores, event flags',
+    deployTargets: ['STM32', 'nRF52/53', 'ESP32', 'SAMD', 'RP2040', 'TI MSP430/CC', 'NXP i.MX', 'Renesas RA']
+  },
+
+  robotics: {
+    name: 'Robotics (ROS/ROS2)',
+    extensions: ['.py', '.cpp', '.launch', '.yaml', '.urdf', '.xacro'],
+    typing: 'Static (C++) / Dynamic (Python)',
+    paradigms: ['publish-subscribe', 'service-oriented', 'action-based', 'real-time'],
+    packageManager: 'rosdep / apt / pip / vcpkg',
+    buildTools: ['colcon', 'catkin', 'cmake', 'ament'],
+    testFrameworks: ['pytest', 'gtest', 'launch_testing', 'ros2 test'],
+    linters: ['ament_lint', 'clang-tidy', 'pylint', 'flake8'],
+    frameworks: ['ROS 2 Humble/Iron/Jazzy', 'MoveIt2', 'Nav2', 'Gazebo', 'RViz2', 'micro-ROS', 'ros2_control', 'tf2'],
+    modernIdioms: [
+      'ROS 2 node lifecycle (configure, activate, deactivate)',
+      'Topics for streaming, services for request-reply, actions for long tasks',
+      'URDF/Xacro for robot description',
+      'Launch files in Python for complex startup',
+      'QoS profiles for reliable/best-effort comms',
+      'TF2 for coordinate frame transformations',
+      'Parameter server for runtime configuration',
+      'Component-based nodes for zero-copy IPC',
+      'colcon build with cmake args',
+      'Custom message/service definitions (.msg/.srv)'
+    ],
+    errorHandling: 'ROS 2 logging (RCLCPP_ERROR), lifecycle node error states, exception handlers',
+    concurrency: 'Multi-threaded executors, callback groups, async services, timers',
+    deployTargets: ['Ubuntu 22.04/24.04', 'Docker', 'Raspberry Pi', 'NVIDIA Jetson', 'Industrial PCs']
+  },
+
+  verilog: {
+    name: 'Verilog / SystemVerilog / VHDL',
+    extensions: ['.v', '.sv', '.vhd', '.vhdl'],
+    typing: 'Static (hardware description)',
+    paradigms: ['hardware description', 'register-transfer level', 'dataflow', 'behavioral'],
+    packageManager: 'FuseSoC / VLNV',
+    buildTools: ['Vivado', 'Quartus', 'Yosys', 'Verilator', 'Icarus Verilog', 'GHDL', 'ModelSim'],
+    testFrameworks: ['cocotb', 'UVM', 'SVUnit', 'OSVVM', 'VUnit'],
+    linters: ['Verilator --lint-only', 'Verible', 'svlint'],
+    frameworks: ['AXI', 'Wishbone', 'AMBA', 'LiteX', 'SpinalHDL', 'Chisel', 'Amaranth'],
+    modernIdioms: [
+      'SystemVerilog for modern design and verification',
+      'Always_ff for sequential, always_comb for combinational',
+      'Parameterized modules for reusability',
+      'Interfaces for port grouping',
+      'Assertions (SVA) for formal verification',
+      'Constrained random verification with UVM',
+      'Clock domain crossing (CDC) techniques',
+      'FSM coding styles (one-hot, binary)',
+      'Testbench with cocotb (Python) for simulation',
+      'Synthesis-aware coding vs simulation-only'
+    ],
+    errorHandling: 'Assertions, coverage, formal verification, waveform debugging',
+    concurrency: 'Inherently parallel — all always blocks run concurrently, fork/join for testbenches',
+    deployTargets: ['Xilinx/AMD FPGAs', 'Intel/Altera FPGAs', 'Lattice FPGAs', 'ASIC tape-out']
+  },
+
+  matlabSimulink: {
+    name: 'MATLAB / Simulink',
+    extensions: ['.m', '.mlx', '.slx', '.mdl'],
+    typing: 'Dynamic (matrix-oriented)',
+    paradigms: ['numerical computing', 'matrix programming', 'model-based design', 'signal processing'],
+    packageManager: 'MATLAB Add-Ons / File Exchange',
+    buildTools: ['MATLAB', 'Simulink', 'MATLAB Compiler', 'MATLAB Coder'],
+    testFrameworks: ['MATLAB Unit Testing Framework', 'Simulink Test'],
+    linters: ['mlint', 'Code Analyzer'],
+    frameworks: ['Simulink', 'Stateflow', 'Control System Toolbox', 'Signal Processing Toolbox', 'Image Processing Toolbox', 'Deep Learning Toolbox', 'Embedded Coder'],
+    modernIdioms: [
+      'Vectorized operations over loops',
+      'Live scripts (.mlx) for literate programming',
+      'App Designer for GUIs',
+      'String arrays over character arrays',
+      'Tables for heterogeneous data',
+      'Object-oriented MATLAB (classdef)',
+      'Embedded Coder for C/C++ code generation',
+      'Simulink for model-based design',
+      'GPU computing with gpuArray',
+      'Parallel Computing Toolbox for HPC'
+    ],
+    errorHandling: 'try/catch, MException, error(), warning(), assert()',
+    concurrency: 'Parallel Computing Toolbox (parfor, parfeval), GPU arrays, distributed arrays',
+    deployTargets: ['Desktop', 'MATLAB Online', 'Simulink Real-Time', 'Embedded targets (C code gen)']
+  },
+
+  pcb: {
+    name: 'PCB Design & EDA',
+    extensions: ['.kicad_pcb', '.kicad_sch', '.brd', '.sch', '.gbr', '.drl'],
+    typing: 'N/A (schematic/layout)',
+    paradigms: ['schematic capture', 'PCB layout', 'manufacturing', 'signal integrity'],
+    packageManager: 'KiCad Plugin Manager / EAGLE Libraries',
+    buildTools: ['KiCad', 'EAGLE', 'Altium Designer', 'EasyEDA', 'Fusion 360 Electronics', 'OrCAD'],
+    testFrameworks: ['Design Rule Check (DRC)', 'Electrical Rule Check (ERC)', 'SPICE simulation'],
+    linters: ['DRC', 'ERC', 'LVS (Layout vs Schematic)'],
+    frameworks: ['KiCad', 'EAGLE', 'Altium', 'SPICE (LTspice, ngspice)', 'JLCPCB', 'PCBWay', 'OSH Park'],
+    modernIdioms: [
+      'Hierarchical schematic design',
+      'Custom footprint/symbol libraries',
+      'Copper pour for ground planes',
+      'Controlled impedance traces for high-speed',
+      'Design for manufacturing (DFM) guidelines',
+      'Gerber/drill file generation for fabrication',
+      'BOM and CPL for assembly',
+      'Version control for KiCad projects',
+      '3D viewer for mechanical fit check',
+      'SPICE simulation before prototyping'
+    ],
+    errorHandling: 'DRC/ERC violations, net connectivity errors, clearance violations',
+    concurrency: 'N/A',
+    deployTargets: ['JLCPCB', 'PCBWay', 'OSH Park', 'Seeed Studio', 'custom fabrication']
   }
 };
 
@@ -756,7 +972,7 @@ export function getLanguageKnowledge(languages: string[]): string {
  * Full knowledge reference as a compact summary string
  * injected into the base NYX system prompt for general awareness.
  */
-export const CODING_KNOWLEDGE_SUMMARY = `You have expert-level knowledge of 30+ programming languages and their ecosystems:
-JavaScript/TypeScript (React, Next.js, Node, Vite, ESLint, Vitest), Python (FastAPI, Django, pytest, ruff, uv), Rust (Cargo, Tokio, Axum, ownership/borrowing), Go (goroutines, channels, gin, go modules), Java (Spring Boot, Maven/Gradle, virtual threads), Kotlin (coroutines, Ktor, Jetpack Compose), C/C++ (CMake, RAII, smart pointers, C++20/23), C# (ASP.NET Core, EF Core, Blazor, LINQ), Swift (SwiftUI, async/await, actors, SPM), Ruby (Rails, RSpec, Bundler), PHP (Laravel, Composer, PHP 8+), Dart (Flutter, sound null safety), Scala (ZIO, Cats, Akka), Elixir (Phoenix, OTP, BEAM), Haskell (monads, type classes, Servant), Shell/Bash (shellcheck, set -euo pipefail), SQL (CTEs, window functions, indexing), HTML/CSS (semantic elements, Grid, Container Queries, View Transitions), Solidity (OpenZeppelin, Foundry, Hardhat), Zig (comptime, error unions, allocators), WebAssembly (WASI, wasm-bindgen), Lua, R, Nim, V, Perl, and more.
+export const CODING_KNOWLEDGE_SUMMARY = `You have expert-level knowledge of 40+ programming languages, platforms, and their ecosystems:
+JavaScript/TypeScript (React, Next.js, Node, Vite, ESLint, Vitest), Python (FastAPI, Django, pytest, ruff, uv), Rust (Cargo, Tokio, Axum, ownership/borrowing), Go (goroutines, channels, gin, go modules), Java (Spring Boot, Maven/Gradle, virtual threads), Kotlin (coroutines, Ktor, Jetpack Compose), C/C++ (CMake, RAII, smart pointers, C++20/23), C# (ASP.NET Core, EF Core, Blazor, LINQ), Swift (SwiftUI, async/await, actors, SPM), Ruby (Rails, RSpec, Bundler), PHP (Laravel, Composer, PHP 8+), Dart (Flutter, sound null safety), Scala (ZIO, Cats, Akka), Elixir (Phoenix, OTP, BEAM), Haskell (monads, type classes, Servant), Shell/Bash (shellcheck, set -euo pipefail), SQL (CTEs, window functions, indexing), HTML/CSS (semantic elements, Grid, Container Queries, View Transitions), Solidity (OpenZeppelin, Foundry, Hardhat), Zig (comptime, error unions, allocators), WebAssembly (WASI, wasm-bindgen), Arduino/Embedded C++ (PlatformIO, ESP32, ESP8266, STM32, sensors, actuators, servo, I2C/SPI/UART), MicroPython/CircuitPython (Raspberry Pi Pico, ESP32, uasyncio, machine module), Raspberry Pi (gpiozero, GPIO, systemd, picamera2, Node-RED), Embedded Systems/RTOS (FreeRTOS, Zephyr, mbed OS, CMSIS, bare-metal, DMA, interrupts), Robotics (ROS 2, MoveIt2, Nav2, Gazebo, SLAM, PID control), Verilog/SystemVerilog/VHDL (FPGA, Yosys, Verilator, cocotb, UVM), MATLAB/Simulink (Embedded Coder, control systems, signal processing), PCB Design/EDA (KiCad, EAGLE, Altium, SPICE, Gerber), Lua, R, Nim, V, Perl, and more.
 
-For each language you know: modern idioms, package managers, build systems, test frameworks, linters, deployment targets, error handling patterns, concurrency models, and the most popular frameworks.`;
+For each language/platform you know: modern idioms, package managers, build systems, test frameworks, linters, deployment targets, error handling patterns, concurrency models, hardware interfaces, and the most popular frameworks.`;
