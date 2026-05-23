@@ -26,7 +26,7 @@ print(f"[HF Server] CUDA Available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"[HF Server] GPU Device: {torch.cuda.get_device_name(0)}")
 
-model_id = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
+model_id = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
 token = get_hf_token()
 
 try:

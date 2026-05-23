@@ -115,34 +115,37 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
         </div>
         <div className="flex items-center gap-2">
           {isExecutable && (
-            <button
+            <motion.button
+              whileTap={{ scale: 0.94 }}
               onClick={handleRunCommand}
               disabled={isRunning}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 transition-all text-[8px] font-bold uppercase tracking-widest disabled:opacity-50"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/20 hover:border-emerald-500/30 text-emerald-400 hover:text-emerald-300 transition-all text-[8px] font-black uppercase tracking-widest disabled:opacity-50 shadow-sm"
             >
               <Play size={9} />
               <span>{isRunning ? 'Running' : 'Run'}</span>
-            </button>
+            </motion.button>
           )}
           {canApply && (
-            <button
+            <motion.button
+              whileTap={{ scale: 0.94 }}
               onClick={() => setShowApplyPanel(!showApplyPanel)}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 hover:text-blue-300 transition-all text-[8px] font-bold uppercase tracking-widest"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/15 border border-blue-500/20 hover:border-blue-500/30 text-blue-400 hover:text-blue-300 transition-all text-[8px] font-black uppercase tracking-widest shadow-sm"
             >
               <Save size={9} />
               <span>Apply</span>
-            </button>
+            </motion.button>
           )}
-          <button
+          <motion.button
+            whileTap={{ scale: 0.94 }}
             onClick={handleCopy}
-            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/4 hover:bg-white/8 border border-white/8 hover:border-primary/25 text-muted-foreground/50 hover:text-primary transition-all text-[8px] font-bold uppercase tracking-widest"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/4 hover:bg-white/6 border border-white/8 hover:border-primary/25 text-muted-foreground/50 hover:text-primary transition-all text-[8px] font-black uppercase tracking-widest shadow-sm"
           >
             {copied ? (
               <><Check size={9} className="text-emerald-400" /><span className="text-emerald-400">Copied</span></>
             ) : (
               <><Copy size={9} /><span>Copy</span></>
             )}
-          </button>
+          </motion.button>
         </div>
       </div>
 
@@ -321,29 +324,54 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = ({
 
 const EmptyState: React.FC = () => (
   <motion.div
-    initial={{ opacity: 0, y: 20 }}
+    initial={{ opacity: 0, y: 15 }}
     animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-    className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 gap-6"
+    transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+    className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
   >
-    {/* Animated bird logo */}
+    {/* Background warm aesthetic glow */}
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] bg-primary/5 dark:bg-primary/8 rounded-full blur-[80px] pointer-events-none select-none -z-10" />
+
+    {/* Elegant bird logo with floating micro-animation */}
     <motion.div
-      initial={{ scale: 0.8, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ delay: 0.1, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      initial={{ scale: 0.92, opacity: 0 }}
+      animate={{ 
+        scale: 1, 
+        opacity: 1,
+        y: [0, -8, 0]
+      }}
+      transition={{ 
+        scale: { delay: 0.15, duration: 0.6, ease: [0.23, 1, 0.32, 1] },
+        opacity: { delay: 0.15, duration: 0.6 },
+        y: { duration: 4, repeat: Infinity, ease: "easeInOut" }
+      }}
+      className="relative cursor-default flex items-center justify-center"
     >
-      <Logo size={96} className="drop-shadow-2xl" />
+      {/* Premium static hardware-accelerated logo glow */}
+      <div className="absolute w-24 h-24 bg-primary/20 dark:bg-primary/30 rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
+
+      <Logo size={90} className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default" />
     </motion.div>
 
-    {/* Gradient greeting */}
-    <motion.h1
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.25, duration: 0.5 }}
-      className="text-2xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-pink-400 to-indigo-400 bg-clip-text text-transparent leading-tight"
-    >
-      Let's jump in
-    </motion.h1>
+    {/* Typography Hierarchy */}
+    <div className="space-y-2 max-w-sm">
+      <motion.h1
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3, duration: 0.5 }}
+        className="text-[20px] font-black tracking-tight text-foreground/80 leading-tight"
+      >
+        How can <span className="text-primary font-black">NYX</span> assist your project today?
+      </motion.h1>
+      <motion.p
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4, duration: 0.5 }}
+        className="text-[10px] uppercase tracking-widest font-black text-muted-foreground/45 leading-relaxed"
+      >
+        Native Local Intelligence & Cloud Orchestration
+      </motion.p>
+    </div>
   </motion.div>
 );
 

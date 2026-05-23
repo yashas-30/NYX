@@ -16,21 +16,11 @@ import { useCoderLogic } from './hooks/useCoderLogic';
 interface CoderPageProps {
   allModels: any[];
   apiKeys: Record<string, string>;
-  lmStudioBaseUrl: string;
   modelSettings: any;
   trackUsage: (provider: string, tokens: number) => void;
-  ollamaModels: any[];
-  lmStudioModels: any[];
-  ollamaStatus: string;
-  lmStudioStatus: string;
-  onRefreshOllama: () => void;
-  onRefreshLMStudio: () => void;
   setModelSettings: (settings: any) => void;
   providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;
-  ollamaBaseUrl: string;
   gatewayUrls?: Record<string, string>;
-  localModelsEnabled?: boolean;
-  setLocalModelsEnabled?: (enabled: boolean) => void;
   models?: Record<'nyx', string>;
   setModel?: (modelId: string) => void;
   activeMode?: 'coder' | 'registry' | 'settings';
@@ -43,21 +33,11 @@ interface CoderPageProps {
 export const CoderPage: React.FC<CoderPageProps> = ({
   allModels,
   apiKeys,
-  lmStudioBaseUrl,
   modelSettings,
   trackUsage,
-  ollamaModels,
-  lmStudioModels,
-  ollamaStatus,
-  lmStudioStatus,
-  onRefreshOllama,
-  onRefreshLMStudio,
   setModelSettings,
   providerStatuses = {},
-  ollamaBaseUrl,
   gatewayUrls = {},
-  localModelsEnabled = false,
-  setLocalModelsEnabled = () => {},
   models: propModels,
   setModel: propSetModel,
   activeMode = 'coder',
@@ -78,12 +58,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled
   } = useCoderLogic({
     apiKeys,
-    lmStudioBaseUrl,
     modelSettings,
     trackUsage,
-    ollamaModels,
-    lmStudioModels,
-    ollamaBaseUrl,
     models: propModels,
     setModel: propSetModel,
     chatSessions
@@ -95,31 +71,13 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   const currentModelId = models['nyx'];
   
   const mergedModels = useMemo(() => {
-    const localOllama: ModelDefinition[] = (ollamaModels || []).map(m => ({
-      id: m.name,
-      name: m.name,
-      provider: 'ollama' as Provider,
-      isLocal: true,
-      description: m.size ? `Local Ollama (${(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB)` : 'Local Ollama model',
-      specs: { contextWindow: 'Dynamic', maxOutput: 'Dynamic', modality: 'Text' }
-    }));
-    
-    const localLMStudio: ModelDefinition[] = (lmStudioModels || []).map(m => ({
-      id: m.id || m.name,
-      name: m.name,
-      provider: 'lmstudio' as Provider,
-      isLocal: true,
-      description: 'Local LM Studio model',
-      specs: { contextWindow: 'Dynamic', maxOutput: 'Dynamic', modality: 'Text' }
-    }));
-
     const seenIds = new Set();
-    return [...allModels, ...localOllama, ...localLMStudio, ...FREE_OPENCODE_MODELS].filter(m => {
+    return [...allModels, ...FREE_OPENCODE_MODELS].filter(m => {
       if (seenIds.has(m.id)) return false;
       seenIds.add(m.id);
       return true;
     });
-  }, [allModels, ollamaModels, lmStudioModels]);
+  }, [allModels]);
 
   const currentModel = useMemo(() => {
     if (!currentModelId) return null;
@@ -170,14 +128,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
           currentModelId={currentModelId}
           currentModel={currentModel}
           allModels={allModels}
-          ollamaModels={ollamaModels}
-          lmStudioModels={lmStudioModels}
           providerStatuses={providerStatuses}
-          ollamaBaseUrl={ollamaBaseUrl}
-          lmStudioBaseUrl={lmStudioBaseUrl}
           gatewayUrls={gatewayUrls}
-          localModelsEnabled={localModelsEnabled}
-          onSetLocalModelsEnabled={setLocalModelsEnabled}
           onModelSelect={setModel}
           onClearHistory={clearHistory}
           onModelSettingsChange={setModelSettings}

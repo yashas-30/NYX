@@ -30,7 +30,7 @@ nyxRouter.post('/reset', (_req, res) => {
 
 // POST /api/nyx/critic - Asynchronous background evaluation loop
 nyxRouter.post('/critic', (req, res) => {
-  const { prompt, response } = req.body;
+  const { prompt, response, modelId, provider, apiKey } = req.body;
   
   if (!prompt || !response) {
     return res.status(400).json({ error: 'Missing prompt or response for critic.' });
@@ -42,7 +42,7 @@ nyxRouter.post('/critic', (req, res) => {
   // Fire off Critic asynchronously
   setImmediate(async () => {
     try {
-      await runBackgroundCritic(prompt, response);
+      await runBackgroundCritic(prompt, response, modelId, provider, apiKey);
     } catch (criticError) {
       console.error('[Nyx Critic Layer Error]:', criticError);
     }
@@ -52,7 +52,13 @@ nyxRouter.post('/critic', (req, res) => {
 /**
  * Executes the Critic model to analyze the interaction and formulate a micro-rule
  */
-async function runBackgroundCritic(userPrompt: string, nyxResponse: string) {
+async function runBackgroundCritic(
+  userPrompt: string, 
+  nyxResponse: string, 
+  modelId?: string, 
+  provider?: string, 
+  apiKey?: string
+) {
   console.log('[Background Critic] Starting meta-cognitive analysis...');
 
   const criticSystemPrompt = `
@@ -82,6 +88,120 @@ ${userPrompt}
 ${nyxResponse}
   `.trim();
 
+  // If selected model config is passed, use it! Otherwise, fallback to the local Python HF critic server.
+  if (modelId && provider) {
+    try {
+      let responseText = '';
+      const activeKey = apiKey || '';
+      
+      console.log(`[Background Critic] Executing meta-critic using selected model ${modelId} (${provider})`);
+
+      if (provider === 'gemini') {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${activeKey}`;
+        const contents = [
+          { role: 'user', parts: [{ text: conversationPayload }] }
+        ];
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            systemInstruction: { parts: [{ text: criticSystemPrompt }] },
+            generationConfig: { temperature: 0.3, maxOutputTokens: 512 }
+          })
+        });
+        if (!res.ok) throw new Error(`Gemini Critic API error: ${res.statusText}`);
+        const data: any = await res.json();
+        responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      } else if (provider === 'pollinations') {
+        const realModel = modelId.replace('pollinations/', '');
+        const res = await fetch('https://text.pollinations.ai/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: realModel,
+            messages: [
+              { role: 'system', content: criticSystemPrompt },
+              { role: 'user', content: conversationPayload }
+            ],
+            stream: false,
+            temperature: 0.3
+          })
+        });
+        if (!res.ok) throw new Error(`Pollinations Critic error: ${res.statusText}`);
+        responseText = await res.text();
+      } else if (provider === 'nyx-native') {
+        const res = await fetch('http://127.0.0.1:12345/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: modelId,
+            messages: [
+              { role: 'system', content: criticSystemPrompt },
+              { role: 'user', content: conversationPayload }
+            ],
+            stream: false,
+            temperature: 0.3,
+            max_tokens: 512
+          })
+        });
+        if (!res.ok) throw new Error(`Local GGUF Critic error: ${res.statusText}`);
+        const data: any = await res.json();
+        responseText = data.choices?.[0]?.message?.content || '';
+      } else {
+        // OpenAI compatible (openrouter, nvidia, opencode)
+        const baseUrl = provider === 'nvidia' 
+          ? 'https://integrate.api.nvidia.com/v1' 
+          : provider === 'opencode'
+            ? 'https://opencode.ai/zen/v1'
+            : 'https://openrouter.ai/api/v1';
+
+        const res = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${activeKey}`,
+            'HTTP-Referer': 'http://localhost:3000',
+            'X-Title': 'NYX Critic Layer'
+          },
+          body: JSON.stringify({
+            model: provider === 'opencode' ? modelId.replace('opencode/', '') : modelId,
+            messages: [
+              { role: 'system', content: criticSystemPrompt },
+              { role: 'user', content: conversationPayload }
+            ],
+            stream: false,
+            temperature: 0.3,
+            max_tokens: 512
+          })
+        });
+        if (!res.ok) throw new Error(`${provider} Critic API error: ${res.statusText}`);
+        const data: any = await res.json();
+        responseText = data.choices?.[0]?.message?.content || '';
+      }
+
+      if (responseText) {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const analysis = JSON.parse(jsonMatch[0]);
+          const hasImprovement = analysis.rule && 
+            !analysis.rule.toLowerCase().includes('no improvement needed') && 
+            !analysis.rule.toLowerCase().includes('none');
+          if (hasImprovement) {
+            RulesDb.addRule(analysis.metric, analysis.critique, analysis.rule);
+            console.log(`[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`);
+          } else {
+            console.log('[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.');
+          }
+          return;
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Background Critic] Selected model run failed, falling back to local Python server:', err.message);
+    }
+  }
+
+  // Fallback to local Python HF service
   try {
     const hfRes = await fetch('http://127.0.0.1:3002/api/gemini/generate', {
       method: 'POST',

@@ -40,8 +40,6 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
   const {
     apiKeys, updateApiKey, clearApiKeys,
-    ollamaModels, ollamaStatus, ollamaError, ollamaBaseUrl, setOllamaBaseUrl, fetchOllamaModels,
-    lmStudioModels, lmStudioStatus, lmStudioBaseUrl, setLmStudioBaseUrl, fetchLMStudioModels,
     modelSettings, setModelSettings, trackUsage,
     statuses,
     activeAgent,
@@ -71,7 +69,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
           variants={sidebarVariants}
           initial="open"
           animate={sidebarOpen ? 'open' : 'closed'}
-          transition={{ type: 'spring', stiffness: 300, damping: 35 }}
+          transition={{ type: 'spring', stiffness: 350, damping: 38 }}
           className="flex-none h-full overflow-hidden flex flex-col bg-[#1a1a1e] border-r border-white/[0.05] relative z-20"
         >
           <div className="flex flex-col h-full min-w-[280px]">
@@ -214,19 +212,10 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                 <CoderPage
                   allModels={AVAILABLE_MODELS}
                   apiKeys={apiKeys}
-                  lmStudioBaseUrl={lmStudioBaseUrl}
                   modelSettings={modelSettings}
                   setModelSettings={setModelSettings}
                   trackUsage={trackUsage}
-                  ollamaModels={ollamaModels}
-                  lmStudioModels={lmStudioModels}
-                  ollamaStatus={ollamaStatus}
-                  lmStudioStatus={lmStudioStatus}
-                  onRefreshOllama={fetchOllamaModels}
-                  onRefreshLMStudio={fetchLMStudioModels}
                   providerStatuses={statuses}
-                  ollamaBaseUrl={ollamaBaseUrl}
-                  localModelsEnabled={localModelsEnabled}
                   models={models}
                   setModel={setModel}
                   activeMode={activeMode}
@@ -247,28 +236,15 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               >
                 <Suspense fallback={<LoadingFallback />}>
                   <ModelRegistryView
-                    models={models}
-                    ollamaModels={ollamaModels}
-                    ollamaStatus={ollamaStatus}
-                    ollamaError={ollamaError}
-                    lmStudioModels={lmStudioModels}
-                    lmStudioStatus={lmStudioStatus}
-                    lmStudioBaseUrl={lmStudioBaseUrl}
-                    setLmStudioBaseUrl={setLmStudioBaseUrl}
-                    onRefreshOllama={fetchOllamaModels}
-                    onRefreshLMStudio={fetchLMStudioModels}
                     selectModel={(mid) => {
                       setModel(mid);
                       setActiveMode('coder');
                     }}
                     apiKeys={apiKeys}
                     providerStatuses={statuses}
-                    ollamaBaseUrl={ollamaBaseUrl}
-                    setOllamaBaseUrl={setOllamaBaseUrl}
                     activeMode={activeMode}
                     setActiveMode={setActiveMode}
-                    localModelsEnabled={localModelsEnabled}
-                    setLocalModelsEnabled={setLocalModelsEnabled}
+                    sidebarOpen={sidebarOpen}
                   />
                 </Suspense>
               </motion.div>
@@ -285,12 +261,9 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                   apiKeys={apiKeys}
                   updateApiKey={updateApiKey}
                   clearApiKeys={clearApiKeys}
-                  ollamaBaseUrl={ollamaBaseUrl}
-                  setOllamaBaseUrl={setOllamaBaseUrl}
-                  lmStudioBaseUrl={lmStudioBaseUrl}
-                  setLmStudioBaseUrl={setLmStudioBaseUrl}
                   activeMode={activeMode}
                   setActiveMode={setActiveMode}
+                  sidebarOpen={sidebarOpen}
                 />
               </motion.div>
             )}
@@ -310,16 +283,23 @@ const SideNavButton: React.FC<{
   onClick: () => void;
 }> = ({ icon, label, active, onClick }) => (
   <motion.button
-    whileTap={{ scale: 0.96 }}
+    whileTap={{ scale: 0.97 }}
     onClick={onClick}
-    className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-[12px] font-medium transition-all ${
+    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all relative overflow-hidden ${
       active
-        ? 'bg-white/8 text-foreground'
-        : 'text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/4'
+        ? 'bg-gradient-to-r from-white/[0.08] to-white/[0.04] text-foreground border border-white/[0.06] shadow-sm'
+        : 'text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/4 border border-transparent'
     }`}
   >
-    <span className={active ? 'text-foreground' : 'text-muted-foreground/50'}>{icon}</span>
-    {label}
+    {active && (
+      <motion.div
+        layoutId="sidebarActiveIndicator"
+        className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r bg-primary"
+        transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+      />
+    )}
+    <span className={`transition-transform duration-200 ${active ? 'text-primary scale-105' : 'text-muted-foreground/50'}`}>{icon}</span>
+    <span className="translate-y-[-0.5px]">{label}</span>
     {active && <ChevronRight size={11} className="ml-auto opacity-40" />}
   </motion.button>
 );
@@ -335,26 +315,31 @@ const SessionItem: React.FC<{
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, x: -8 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -8 }}
+      whileTap={{ scale: 0.98 }}
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={`group relative flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-all ${
-        isActive ? 'bg-white/8 text-foreground' : 'text-muted-foreground/60 hover:bg-white/4 hover:text-foreground/70'
+      className={`group relative flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all border ${
+        isActive
+          ? 'bg-gradient-to-r from-white/[0.07] to-white/[0.03] text-foreground border-white/[0.05] shadow-sm'
+          : 'text-muted-foreground/60 hover:bg-white/4 hover:text-foreground/75 border-transparent'
       }`}
       onClick={onClick}
     >
-      <MessageSquare size={12} className="shrink-0 opacity-50" />
-      <span className="flex-1 text-[11px] font-medium truncate">{session.title}</span>
+      <MessageSquare size={12} className={`shrink-0 transition-transform duration-200 ${isActive ? 'text-primary/70 scale-105' : 'opacity-50 group-hover:scale-105'}`} />
+      <span className="flex-1 text-[11px] font-semibold truncate translate-y-[-0.5px]">{session.title}</span>
       <AnimatePresence>
         {hovered && (
           <motion.button
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.15 }}
             onClick={e => { e.stopPropagation(); onDelete(); }}
-            className="shrink-0 p-0.5 rounded text-muted-foreground/40 hover:text-red-400 transition-colors"
+            className="shrink-0 p-1 rounded-lg bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
           >
             <Trash2 size={11} />
           </motion.button>

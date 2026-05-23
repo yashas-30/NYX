@@ -20,25 +20,21 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
   nvidia: 'NVIDIA NIM',
   openrouter: 'OpenRouter',
   terminal: 'Terminal',
-  lmstudio: 'LM Studio (Local)',
   opencode: 'Open Code',
   pollinations: 'Pollinations (Free)',
-  ollama: 'Ollama (Local)',
   'nyx-native': 'NYX Native',
   'qwen-local': 'Qwen Local (Python)',
 };
 
 export const CLOUD_PROVIDERS: Provider[] = ['gemini', 'nvidia', 'openrouter', 'opencode'];
 
-export const LOCAL_PROVIDERS: Provider[] = ['ollama', 'nyx-native', 'lmstudio', 'qwen-local'];
+export const LOCAL_PROVIDERS: Provider[] = ['nyx-native', 'qwen-local'];
 
 /**
  * Structured provider detection that checks in priority order.
  */
 export const detectProvider = (
-  modelId: string,
-  ollamaModels: ModelDefinition[] = [],
-  lmStudioModels: ModelDefinition[] = []
+  modelId: string
 ): Provider => {
   if (!modelId) return 'gemini';
 
@@ -46,23 +42,7 @@ export const detectProvider = (
   const availableModel = AVAILABLE_MODELS.find(m => m.id === modelId);
   if (availableModel) return availableModel.provider;
 
-  // 2. Check in dynamic local model lists
-  if (ollamaModels.some(m => m.id === modelId || m.name === modelId)) {
-    return 'ollama';
-  }
-  if (lmStudioModels.some(m => m.id === modelId || m.name === modelId)) {
-    return 'lmstudio';
-  }
-
-  // ── Robust string-signature fallbacks when dynamic lists are empty/loading ──
-  if (modelId.includes(':')) {
-    return 'ollama';
-  }
-  if (modelId.endsWith('.gguf') || modelId.toLowerCase().includes('lmstudio') || modelId.toLowerCase().includes('lm-studio')) {
-    return 'lmstudio';
-  }
-
-  // 3. Fall back to priority checks
+  // 2. Fall back to priority checks
   for (const { check, provider } of PROVIDER_PRIORITY) {
     if (check(modelId)) return provider;
   }
@@ -75,14 +55,6 @@ export const detectProvider = (
  */
 export const getProviderForModel = (modelId: string): Provider => {
   if (NVIDIA_MODEL_IDS.has(modelId)) return 'nvidia';
-
-  // ── Robust string-signature fallbacks for local models ──
-  if (modelId.includes(':')) {
-    return 'ollama';
-  }
-  if (modelId.endsWith('.gguf') || modelId.toLowerCase().includes('lmstudio') || modelId.toLowerCase().includes('lm-studio')) {
-    return 'lmstudio';
-  }
 
   const availableModel = AVAILABLE_MODELS.find(m => m.id === modelId);
   if (availableModel) return availableModel.provider;

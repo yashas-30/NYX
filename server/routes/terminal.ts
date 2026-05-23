@@ -1,84 +1,126 @@
 import { Router } from 'express';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import crypto from 'crypto';
+import { spawnSandbox } from '../lib/sandbox.ts';
 
-const execPromise = promisify(exec);
 export const terminalRouter = Router();
 
-// Store background terminal tasks indexed by nodeId
-const tasks = new Map<string, { output: string; isFinished: boolean }>();
+// Store pending command executions
+interface PendingExec {
+  command: string;
+  cwd?: string;
+}
+const pendingExecutions = new Map<string, PendingExec>();
 
+// Store background task outputs for old poll endpoint compatibility
+const legacyTasks = new Map<string, { output: string; isFinished: boolean }>();
+
+/**
+ * POST /api/terminal/run
+ * Runs a command inside the sandbox and waits for completion.
+ * Backward compatible synchronous endpoint.
+ */
 terminalRouter.post('/run', async (req, res) => {
   const { command, cwd } = req.body;
-  
   if (!command) {
     return res.status(400).json({ error: "Command is required" });
   }
 
-  // Security: In a real app, you'd want to restrict commands.
-  // For this local lab, we allow full access as requested by the user.
-  
-  try {
-    const { stdout, stderr } = await execPromise(command, { 
-      cwd: cwd || process.cwd(),
-      env: { ...process.env, FORCE_COLOR: '1' }
-    });
-    
-    res.json({ stdout, stderr });
-  } catch (error: any) {
-    res.status(500).json({ 
-      error: error.message,
-      stdout: error.stdout,
-      stderr: error.stderr 
-    });
-  }
-});
-
-// Start executing command in background and poll for output
-terminalRouter.post('/prompt', (req, res) => {
-  const { nodeId, prompt } = req.body;
-  if (!nodeId || !prompt) {
-    return res.status(400).json({ error: "nodeId and prompt are required" });
+  const { child, error } = spawnSandbox(command, cwd);
+  if (error) {
+    return res.status(400).json({ error });
   }
 
-  // Initialize task state
-  tasks.set(nodeId, { output: '', isFinished: false });
+  if (!child) {
+    return res.status(500).json({ error: "Failed to initialize sandboxed process" });
+  }
 
-  console.log(`[Terminal Bridge] Starting command for node ${nodeId}: ${prompt}`);
+  let stdout = '';
+  let stderr = '';
 
-  // Run the command asynchronously in background
-  exec(prompt, { 
-    cwd: process.cwd(),
-    env: { ...process.env, FORCE_COLOR: '1' }
-  }, (error, stdout, stderr) => {
-    let output = stdout || '';
-    if (stderr) {
-      output += `\nStderr:\n${stderr}`;
-    }
-    if (error) {
-      output += `\nError:\n${error.message}`;
-    }
-    
-    console.log(`[Terminal Bridge] Command finished for node ${nodeId}`);
-    
-    // Update task status as finished with final output
-    tasks.set(nodeId, { 
-      output: output || 'Command completed successfully with no output.', 
-      isFinished: true 
-    });
+  child.stdout?.on('data', (data) => {
+    stdout += data.toString();
   });
 
-  res.json({ status: 'started' });
+  child.stderr?.on('data', (data) => {
+    stderr += data.toString();
+  });
+
+  child.on('close', (code) => {
+    if (code === 0) {
+      res.json({ stdout, stderr });
+    } else {
+      res.status(500).json({
+        error: `Process exited with code ${code}`,
+        stdout,
+        stderr
+      });
+    }
+  });
+
+  child.on('error', (err) => {
+    res.status(500).json({
+      error: `Process error: ${err.message}`,
+      stdout,
+      stderr
+    });
+  });
 });
 
-// Poll the output of a running terminal task
+/**
+ * POST /api/terminal/prompt
+ * Registers a command for background execution. Returns an execId.
+ */
+terminalRouter.post('/prompt', (req, res) => {
+  const { nodeId, prompt, cwd } = req.body;
+  const command = prompt;
+  if (!command) {
+    return res.status(400).json({ error: "Command/prompt is required" });
+  }
+
+  const execId = crypto.randomUUID();
+  pendingExecutions.set(execId, { command, cwd });
+
+  // Maintain old legacyTasks map for polling compatibility if nodeId was provided
+  if (nodeId) {
+    legacyTasks.set(nodeId, { output: 'Execution started. Connect to stream or wait.', isFinished: false });
+    
+    // Spawn in background and gather output for the legacy poll route
+    const { child, error } = spawnSandbox(command, cwd);
+    if (error) {
+      legacyTasks.set(nodeId, { output: `Sandbox Error: ${error}`, isFinished: true });
+    } else if (child) {
+      let accum = '';
+      child.stdout?.on('data', (d) => { accum += d.toString(); });
+      child.stderr?.on('data', (d) => { accum += d.toString(); });
+      child.on('close', (code) => {
+        legacyTasks.set(nodeId, {
+          output: accum || `Exited with code ${code}`,
+          isFinished: true
+        });
+      });
+      child.on('error', (err) => {
+        legacyTasks.set(nodeId, {
+          output: accum + `\nProcess error: ${err.message}`,
+          isFinished: true
+        });
+      });
+    }
+  }
+
+  res.json({ status: 'started', execId });
+});
+
+/**
+ * GET /api/terminal/poll
+ * Legacy polling route for nodeId execution status.
+ */
 terminalRouter.get('/poll', (req, res) => {
   const nodeId = req.query.nodeId as string;
   if (!nodeId) {
     return res.status(400).json({ error: "nodeId is required" });
   }
 
-  const task = tasks.get(nodeId);
+  const task = legacyTasks.get(nodeId);
   if (!task) {
     return res.status(404).json({ error: "No terminal task found for this nodeId" });
   }
@@ -90,3 +132,92 @@ terminalRouter.get('/poll', (req, res) => {
   }
 });
 
+/**
+ * GET /api/terminal/stream
+ * Server-Sent Events stream for execution.
+ * Can consume a registered execId, or spawn command directly via query params.
+ */
+terminalRouter.get('/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const execId = req.query.execId as string;
+  const directCmd = req.query.command as string;
+  const directCwd = req.query.cwd as string;
+
+  let command = '';
+  let cwd: string | undefined = undefined;
+
+  if (execId) {
+    const pending = pendingExecutions.get(execId);
+    if (!pending) {
+      res.write(`event: error\ndata: ${JSON.stringify({ message: "Execution session not found" })}\n\n`);
+      return res.end();
+    }
+    command = pending.command;
+    cwd = pending.cwd;
+    pendingExecutions.delete(execId); // consume
+  } else if (directCmd) {
+    command = directCmd;
+    cwd = directCwd;
+  } else {
+    res.write(`event: error\ndata: ${JSON.stringify({ message: "execId or command parameter is required" })}\n\n`);
+    return res.end();
+  }
+
+  const startTime = Date.now();
+  const { child, error } = spawnSandbox(command, cwd);
+
+  if (error) {
+    res.write(`event: error\ndata: ${JSON.stringify({ message: error })}\n\n`);
+    return res.end();
+  }
+
+  if (!child) {
+    res.write(`event: error\ndata: ${JSON.stringify({ message: "Failed to initialize sandboxed process" })}\n\n`);
+    return res.end();
+  }
+
+  // Stream stdout
+  child.stdout?.on('data', (chunk) => {
+    const lines = chunk.toString().split('\n');
+    for (const line of lines) {
+      if (line !== '') {
+        res.write(`event: stdout\ndata: ${line}\n\n`);
+      }
+    }
+  });
+
+  // Stream stderr
+  child.stderr?.on('data', (chunk) => {
+    const lines = chunk.toString().split('\n');
+    for (const line of lines) {
+      if (line !== '') {
+        res.write(`event: stderr\ndata: ${line}\n\n`);
+      }
+    }
+  });
+
+  // Handle exit/close
+  child.on('close', (code) => {
+    const executionTimeMs = Date.now() - startTime;
+    res.write(`event: exit\ndata: ${JSON.stringify({ code, executionTimeMs })}\n\n`);
+    res.end();
+  });
+
+  child.on('error', (err) => {
+    res.write(`event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
+    res.end();
+  });
+
+  // If client disconnects, kill the child process to save resources
+  req.on('close', () => {
+    if (!child.killed) {
+      try {
+        child.kill();
+      } catch {}
+    }
+  });
+});

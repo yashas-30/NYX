@@ -6,23 +6,10 @@ export type ModelProvider =
   | 'openrouter'
   | 'nvidia'
   | 'terminal'
-  | 'lmstudio'
   | 'opencode'
   | 'pollinations'
-  | 'ollama'
   | 'nyx-native'
   | 'qwen-local';
-
-export interface OllamaModel {
-  name: string;
-  size: number;
-}
-
-export interface LMStudioModel {
-  id: string;
-  object: string;
-  owned_by: string;
-}
 
 export interface ModelSpecs {
   contextWindow: string;

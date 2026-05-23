@@ -195,11 +195,22 @@ export const LocalModelRunner = {
 
       activeModelId = modelId;
 
-      // Log errors if any
+      // Drain stdout and stderr to prevent OS buffer deadlocks (critical for Windows/llama.cpp)
+      activeProcess.stdout?.on('data', (data) => {
+        const str = data.toString().trim();
+        if (str) {
+          console.log(`[llama-server]: ${str}`);
+        }
+      });
+
       activeProcess.stderr?.on('data', (data) => {
-        const str = data.toString();
-        if (str.includes('error') || str.includes('fail')) {
-          console.error(`[llama-server-err]: ${str.trim()}`);
+        const str = data.toString().trim();
+        if (str) {
+          if (str.toLowerCase().includes('error') || str.toLowerCase().includes('fail')) {
+            console.error(`[llama-server-err]: ${str}`);
+          } else {
+            console.log(`[llama-server-log]: ${str}`);
+          }
         }
       });
 

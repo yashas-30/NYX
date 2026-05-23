@@ -4,7 +4,7 @@
  * Supports Cloudflare AI Gateway proxying and provider-specific routing.
  */
 
-export type Provider = 'gemini' | 'openrouter' | 'nvidia' | 'ollama' | 'lmstudio' | 'opencode' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'mistral' | 'together' | 'pollinations' | 'nyx-native' | 'qwen-local';
+export type Provider = 'gemini' | 'openrouter' | 'nvidia' | 'opencode' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'mistral' | 'together' | 'pollinations' | 'nyx-native' | 'qwen-local';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'model';
@@ -44,7 +44,7 @@ interface AIGatewayConfig {
 
 /**
  * Returns Cloudflare AI Gateway config for provider if enabled.
- * Local providers (ollama, lmstudio, opencode) always use direct connections.
+ * Local providers (nyx-native, qwen-local) always use direct connections.
  * @param provider - The AI provider to check
  * @returns AIGatewayConfig with enabled flag and baseUrl
  */
@@ -68,8 +68,6 @@ const getCloudflareGateway = (provider: Provider): AIGatewayConfig => {
       return { enabled: true, accountId, gatewayName: gatewayName || 'llm-gateway', baseUrl: `${gatewayBase}/gemini` };
     case 'openai':
       return { enabled: true, accountId, gatewayName: gatewayName || 'llm-gateway', baseUrl: `${gatewayBase}/openai` };
-    case 'ollama':
-    case 'lmstudio':
     case 'opencode':
     case 'anthropic':
     case 'deepseek':
@@ -90,8 +88,6 @@ const PROVIDER_URLS: Record<Provider, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
   openrouter: 'https://openrouter.ai/api/v1',
   nvidia: 'https://integrate.api.nvidia.com/v1',
-  ollama: '',
-  lmstudio: '',
   opencode: 'https://opencode.ai/zen/v1', // OpenCode Zen API
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com/v1',
@@ -233,7 +229,7 @@ export class Gateway {
 
   /**
    * Validates that we have proper authentication before making requests.
-   * Local providers (ollama, lmstudio) don't need keys.
+   * Local providers (nyx-native, qwen-local) don't need keys.
    * @param provider - The AI provider
    * @param modelId - The model identifier
    * @param apiKey - Optional user-provided API key
@@ -241,7 +237,7 @@ export class Gateway {
    */
   static validateAuth(provider: Provider, modelId: string, apiKey?: string): { valid: boolean; error?: string } {
     // Local providers don't need keys
-    if (['ollama', 'lmstudio', 'pollinations', 'nyx-native', 'qwen-local'].includes(provider)) {
+    if (['pollinations', 'nyx-native', 'qwen-local'].includes(provider)) {
       return { valid: true };
     }
 

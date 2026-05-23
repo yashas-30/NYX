@@ -17,14 +17,11 @@ interface SettingsViewProps {
   apiKeys: Record<string, string>;
   updateApiKey: (provider: string, key: string) => void;
   clearApiKeys: () => void;
-  ollamaBaseUrl: string;
-  setOllamaBaseUrl: (url: string) => void;
-  lmStudioBaseUrl: string;
-  setLmStudioBaseUrl: (url: string) => void;
   gatewayUrls?: Record<string, string>;
   updateGatewayUrl?: (provider: string, url: string) => void;
   activeMode?: 'coder' | 'registry' | 'settings';
   setActiveMode?: (mode: 'coder' | 'registry' | 'settings') => void;
+  sidebarOpen?: boolean;
 }
 
 const PROVIDER_CONFIGS: ProviderConfig[] = [
@@ -49,20 +46,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   apiKeys,
   updateApiKey,
   clearApiKeys,
-  ollamaBaseUrl,
-  setOllamaBaseUrl,
-  lmStudioBaseUrl,
-  setLmStudioBaseUrl,
   gatewayUrls = {},
   updateGatewayUrl = () => {},
   activeMode,
-  setActiveMode
+  setActiveMode,
+  sidebarOpen = true
 }) => {
   const { usage, resetUsage, refreshProviderQuota } = useTokenUsage();
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
   const [showGateways, setShowGateways] = useState(false);
   const [activeGuideTab, setActiveGuideTab] = useState<'workflow' | 'keys'>('workflow');
   const [expandedGuideProvider, setExpandedGuideProvider] = useState<string | null>(null);
+
+  const [vaultStatus, setVaultStatus] = useState<Record<string, boolean>>({});
+  const [keysInput, setKeysInput] = useState<Record<string, string>>({});
+
+  const fetchVaultStatus = async () => {
+    try {
+      const res = await fetch('/api/vault/status');
+      if (res.ok) {
+        const data = await res.json();
+        setVaultStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch vault status:', e);
+    }
+  };
 
   const [cacheStats, setCacheStats] = useState<{
     itemCount: number;
@@ -134,6 +143,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   useEffect(() => {
     fetchCacheStats();
     fetchEvolvedRules();
+    fetchVaultStatus();
   }, []);
 
   const providers = PROVIDER_CONFIGS.map(p => ({
@@ -146,14 +156,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   useEffect(() => {
-    // Refresh quota for all providers with keys
     providers.forEach(provider => {
-      const key = apiKeys[provider.id];
-      if (key && key.length > 5) {
-        refreshProviderQuota(provider.id, key);
+      if (vaultStatus[provider.id]) {
+        refreshProviderQuota(provider.id);
       }
     });
-  }, [apiKeys, refreshProviderQuota]);
+  }, [vaultStatus, refreshProviderQuota]);
 
   const toggleExpanded = (providerId: string) => {
     setExpandedProvider(expandedProvider === providerId ? null : providerId);
@@ -168,7 +176,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
-        <header className="flex items-center justify-between p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/5 dark:bg-black/10 backdrop-blur-md">
+        <header className={`flex items-center justify-between p-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/5 dark:bg-black/10 backdrop-blur-md transition-all duration-300`}>
           <div className="flex items-center gap-2">
             <SettingsIcon size={16} className="text-primary" />
             <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">Settings</h2>
@@ -191,7 +199,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="max-w-xl mx-auto space-y-4 pb-12">
             <div className="space-y-2">
               {providers.map(p => {
-                const hasKey = apiKeys[p.id] && apiKeys[p.id].trim().length > 0;
+                const hasKey = vaultStatus[p.id];
                 const isExpanded = expandedProvider === p.id;
 
                 return (
@@ -206,8 +214,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <div className="flex items-center gap-2">
                             <p className="text-[7px] font-black uppercase tracking-[0.1em] text-muted-foreground/30">{p.name}</p>
                             {hasKey && (
-                              <span className="text-[5px] font-bold uppercase tracking-widest text-emerald-500/60 bg-emerald-500/10 px-1.5 py-0.5 rounded-full">
-                                Connected
+                              <span className="text-[5px] font-bold uppercase tracking-widest text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full border border-violet-500/20">
+                                Vault Locked
                               </span>
                             )}
                           </div>
@@ -242,9 +250,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="flex items-center gap-2">
                           <input 
                             type="password" 
-                            value={apiKeys[p.id] || ''} 
-                            onChange={e => updateApiKey(p.id, e.target.value)} 
-                            placeholder={`Enter ${p.name} API key`}
+                            value={keysInput[p.id] || ''} 
+                            onChange={e => setKeysInput(prev => ({ ...prev, [p.id]: e.target.value }))} 
+                            placeholder={hasKey ? "••••••••••••••••" : `Enter ${p.name} API key`}
                             onKeyDown={e => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
@@ -334,6 +342,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               })}
             </div>
 
+            {Object.keys(keysInput).some(k => keysInput[k].trim().length > 0) && (
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/vault/store', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ keys: keysInput })
+                    });
+                    if (res.ok) {
+                      toast.success('API keys successfully saved to server vault!');
+                      setKeysInput({}); // Clear inputs from memory/DOM
+                      fetchVaultStatus();
+                    } else {
+                      toast.error('Failed to save keys to server vault.');
+                    }
+                  } catch (e: any) {
+                    toast.error(`Error saving keys: ${e.message}`);
+                  }
+                }}
+                className="w-full mt-2 py-2.5 rounded-xl bg-primary hover:bg-primary/95 text-white text-[9px] font-black uppercase tracking-[0.2em] transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+              >
+                Save to Server Vault
+              </motion.button>
+            )}
+
             {/* Cache Management Panel */}
             <div className="mt-6 group p-4 rounded-2xl bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 hover:bg-white/50 dark:hover:bg-zinc-800/40 transition-all shadow-md relative overflow-hidden">
               {/* Neon Gradient Accent */}
@@ -398,18 +433,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <p className="text-[9px] text-muted-foreground/60 leading-relaxed max-w-[280px]">
                   Persistent query cache automatically mirrors inference results to disk. Submitting identical prompts returns results instantly, saving network credits.
                 </p>
-                <button
+                <motion.button
+                  whileTap={cacheStats.itemCount === 0 ? {} : { scale: 0.95 }}
                   onClick={handleClearCache}
                   disabled={cacheStats.itemCount === 0}
-                  className={`px-4 py-2 rounded-full border text-[7px] font-black uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
+                  className={`px-4.5 py-2.5 rounded-xl border text-[8px] font-black uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
                     cacheStats.itemCount === 0 
                       ? 'bg-muted/5 border-muted/10 text-muted-foreground/30 cursor-not-allowed' 
-                      : 'bg-destructive/5 border-destructive/20 text-destructive hover:bg-destructive hover:text-white hover:border-destructive active:scale-95 cursor-pointer'
+                      : 'bg-destructive/5 border-destructive/20 text-destructive hover:bg-destructive hover:text-white hover:border-destructive cursor-pointer shadow-sm'
                   }`}
                 >
                   <Trash2 size={10} />
                   Purge Cache
-                </button>
+                </motion.button>
               </div>
             </div>
 
@@ -464,18 +500,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <p className="text-[9px] text-muted-foreground/60 leading-relaxed max-w-[280px]">
                   Critic processes interactions out-of-band and saves micro-rules that are injected in future runs. This prevents regression and builds robust codebases.
                 </p>
-                <button
+                <motion.button
+                  whileTap={evolvedRules.length === 0 ? {} : { scale: 0.95 }}
                   onClick={handleClearRules}
                   disabled={evolvedRules.length === 0}
-                  className={`px-4 py-2 rounded-full border text-[7px] font-black uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
+                  className={`px-4.5 py-2.5 rounded-xl border text-[8px] font-black uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
                     evolvedRules.length === 0 
                       ? 'bg-muted/5 border-muted/10 text-muted-foreground/30 cursor-not-allowed' 
-                      : 'bg-destructive/5 border-destructive/20 text-destructive hover:bg-destructive hover:text-white hover:border-destructive active:scale-95 cursor-pointer'
+                      : 'bg-destructive/5 border-destructive/20 text-destructive hover:bg-destructive hover:text-white hover:border-destructive cursor-pointer shadow-sm'
                   }`}
                 >
                   <Trash2 size={10} />
                   Reset Memory
-                </button>
+                </motion.button>
               </div>
             </div>
 
@@ -703,16 +740,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <div className="mt-10 flex justify-center">
               <button 
-                onClick={() => {
-                  if (confirm("Delete all keys?")) {
-                    clearApiKeys();
+                onClick={async () => {
+                  if (confirm("Delete all keys from server vault?")) {
+                    try {
+                      const res = await fetch('/api/vault/store', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ keys: { gemini: '', openrouter: '', nvidia: '', opencode: '' } })
+                      });
+                      if (res.ok) {
+                        toast.success('All API keys removed from server vault');
+                        fetchVaultStatus();
+                        clearApiKeys();
+                      } else {
+                        toast.error('Failed to purge server vault.');
+                      }
+                    } catch (e: any) {
+                      toast.error(`Error: ${e.message}`);
+                    }
                   }
                 }}
-                className="px-6 py-2.5 rounded-full bg-destructive/5 border border-destructive/10 text-destructive text-[7px] font-black uppercase tracking-[0.3em] hover:bg-destructive hover:text-white transition-all group active:scale-95"
+                className="px-6 py-2.5 rounded-full bg-destructive/5 border border-destructive/10 text-destructive text-[7px] font-black uppercase tracking-[0.3em] hover:bg-destructive hover:text-white transition-all group active:scale-95 cursor-pointer"
               >
                 <span className="opacity-40 group-hover:opacity-100 flex items-center gap-2">
                   <Trash2 size={12} strokeWidth={1.5} />
-                  PURGE CORE
+                  PURGE SERVER VAULT
                 </span>
               </button>
             </div>

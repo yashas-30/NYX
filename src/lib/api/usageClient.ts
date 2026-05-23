@@ -1,15 +1,15 @@
+import { AIService } from '../../core/services/ai.service';
+
 /**
  * Fetches the remaining quota/credits for a given provider.
  * Supports detailed usage for OpenRouter and verification for others.
  */
-export async function fetchQuota(provider: string, apiKey: string): Promise<{ total: number; used: number; totalUSD?: number; usedUSD?: number }> {
-  if (!apiKey) return { total: 0, used: 0 };
-
+export async function fetchQuota(provider: string, apiKey?: string): Promise<{ total: number; used: number; totalUSD?: number; usedUSD?: number }> {
   try {
-    const response = await fetch('/api/models/quota', {
+    const response = await (AIService as any).fetchWithAuth('/api/models/quota', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, apiKey: apiKey.trim() })
+      body: JSON.stringify({ provider, apiKey: apiKey ? apiKey.trim() : undefined })
     });
 
     if (!response.ok) throw new Error(`Quota proxy failed: ${response.status}`);

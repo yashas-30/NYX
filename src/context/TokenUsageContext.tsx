@@ -14,7 +14,7 @@ interface TokenUsageContextType {
   updateUsage: (provider: string, tokens: number) => void;
   resetUsage: (provider: string) => void;
   setQuota: (provider: string, total: number) => void;
-  refreshProviderQuota: (provider: string, apiKey: string) => Promise<void>;
+  refreshProviderQuota: (provider: string, apiKey?: string) => Promise<void>;
 }
 
 const DEFAULT_QUOTAS: Record<string, number> = {
@@ -24,8 +24,6 @@ const DEFAULT_QUOTAS: Record<string, number> = {
   openai: 1000000,
   claude: 1000000,
   deepseek: 1000000,
-  ollama: 10000000,
-  lmstudio: 10000000,
   opencode: 1000000,
 };
 
@@ -97,8 +95,7 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
   }, []);
 
-  const refreshProviderQuota = useCallback(async (provider: string, apiKey: string) => {
-    if (!apiKey) return;
+  const refreshProviderQuota = useCallback(async (provider: string, apiKey?: string) => {
     const { total, used, totalUSD, usedUSD } = await fetchQuota(provider, apiKey);
     if (total > 0) {
       setUsage(prev => {

@@ -116,7 +116,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
       {/* Right: metrics + status + clear */}
       <div className="flex items-center gap-1.5">
         {/* Latency badge */}
-        <div className="hidden sm:flex items-center gap-1.5 bg-white/4 px-2.5 py-1 rounded-xl border border-white/[0.06]">
+        <div className="hidden sm:flex items-center gap-1.5 bg-white/4 px-2.5 py-1.5 rounded-xl border border-white/[0.05] shadow-inner">
           {isLoading ? (
             <Timer className="w-3 h-3 text-primary animate-pulse" />
           ) : (
@@ -139,7 +139,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
 
         {/* TPS badge */}
         {(metrics.tps > 0 || (!isLoading && metrics.tokens > 0)) && (
-          <div className="hidden sm:flex items-center gap-1.5 bg-white/4 px-2.5 py-1 rounded-xl border border-white/[0.06]">
+          <div className="hidden sm:flex items-center gap-1.5 bg-white/4 px-2.5 py-1.5 rounded-xl border border-white/[0.05] shadow-inner">
             <Zap className="w-3 h-3 text-emerald-500/80" />
             <span className="text-[10px] font-mono font-bold text-foreground/70 tabular-nums">
               {metrics.tps > 0 ? metrics.tps : '—'}
@@ -151,9 +151,9 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
         <StatusBadge status={badgeStatus} />
 
         <motion.button
-          whileTap={{ scale: 0.9 }}
+          whileTap={{ scale: 0.94 }}
           onClick={onClear}
-          className="p-1.5 rounded-xl hover:bg-red-500/10 text-muted-foreground/40 hover:text-red-400 transition-all border border-transparent hover:border-red-500/20"
+          className="p-1.5 rounded-xl bg-white/4 hover:bg-red-500/10 text-muted-foreground/40 hover:text-red-400 transition-all border border-white/[0.05] hover:border-red-500/20 shadow-sm"
           title="Clear Session"
         >
           <Trash2 size={13} strokeWidth={1.5} />
@@ -171,15 +171,22 @@ const TabButton: React.FC<{
   activeClass: string;
 }> = ({ active, onClick, icon, label, activeClass }) => (
   <motion.button
-    whileTap={{ scale: 0.94 }}
+    whileTap={{ scale: 0.95 }}
     onClick={onClick}
-    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 border ${
+    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 border relative ${
       active
-        ? `${activeClass} shadow-sm`
-        : 'border-transparent text-muted-foreground/50 hover:bg-white/4 hover:text-foreground/70'
+        ? 'border-white/[0.06] text-foreground shadow-sm bg-white/5'
+        : 'border-transparent text-muted-foreground/50 hover:text-foreground/70'
     }`}
   >
-    {icon}
-    <span className="hidden sm:block">{label}</span>
+    {active && (
+      <motion.div
+        layoutId="headerActiveTabBackground"
+        className="absolute inset-0 rounded-lg -z-10 bg-white/[0.06] border border-white/[0.08] shadow-sm"
+        transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+      />
+    )}
+    <span className={`transition-transform duration-200 ${active ? 'scale-105 text-primary' : 'opacity-65'}`}>{icon}</span>
+    <span className="hidden sm:block translate-y-[-0.5px]">{label}</span>
   </motion.button>
 );

@@ -21,9 +21,7 @@ function getIcon(provider: string | undefined, size: number, className: string):
   switch (provider) {
     case 'gemini':    return <Logo size={size + 4} className={className} />;
     case 'openrouter': return <Zap size={size} strokeWidth={1.5} className={className} />;
-    case 'ollama':    return <Terminal size={size} strokeWidth={1.5} className={className} />;
     case 'nvidia':    return <Cpu size={size} strokeWidth={1.5} className={className} />;
-    case 'lmstudio':  return <HardDrive size={size} strokeWidth={1.5} className={className} />;
     case 'openai':
     case 'claude':
     case 'deepseek':  return <Bot size={size} strokeWidth={1.5} className={className} />;
@@ -49,7 +47,6 @@ export const ProviderIcon: React.FC<ProviderIconProps> = ({
 // Matches PROVIDER_LABELS in provider.ts for unified naming.
 export function getProviderLabel(provider: string | undefined): string {
   if (!provider) return 'node';
-  if (provider === 'lmstudio') return 'LM Studio';
   if (provider === 'opencode') return 'Open Code';
   if (provider === 'pollinations') return 'Pollinations (Free)';
   if (provider === 'nyx-native') return 'NYX Native';
@@ -60,19 +57,8 @@ export function getProviderLabel(provider: string | undefined): string {
 // ── Provider inference from model ID ──────────────────────────────────────────
 // Detects provider from model ID string when it's not in the registry.
 // Handles stale/renamed IDs gracefully — no code changes needed when renaming.
-export function inferProviderFromId(
-  modelId: string | undefined,
-  ollamaModelNames: Set<string> | string[] = [],
-  lmStudioModelNames: Set<string> | string[] = []
-): string | undefined {
+export function inferProviderFromId(modelId: string | undefined): string | undefined {
   if (!modelId) return undefined;
-  
-  // Check explicitly loaded local nodes first (handles both Set and array)
-  const ollamaSet = ollamaModelNames instanceof Set ? ollamaModelNames : new Set(ollamaModelNames);
-  const lmStudioSet = lmStudioModelNames instanceof Set ? lmStudioModelNames : new Set(lmStudioModelNames);
-  
-  if (ollamaSet.has(modelId)) return 'ollama';
-  if (lmStudioSet.has(modelId)) return 'lmstudio';
 
   const id = modelId.toLowerCase();
   if (id.startsWith('opencode/') || id.startsWith('opencode-')) return 'opencode';

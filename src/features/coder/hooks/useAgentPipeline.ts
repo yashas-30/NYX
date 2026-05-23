@@ -9,7 +9,7 @@ import { useState, useCallback, useRef } from 'react';
 import { AIService } from '@/src/core/services/ai.service';
 import { ChatMessage, TelemetryMetrics, AISettings, AgentPersona } from '@/src/core/types';
 import { detectProvider, getEffectiveApiKey, requiresApiKey } from '@/src/core/utils/provider';
-import { analyzePrompt, NON_CODE_REJECTION, isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/src/features/coder/utils/promptAnalyzer';
+import { analyzePrompt, NON_CODE_REJECTION, isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/promptAnalyzer';
 import { getLanguageKnowledge, CODING_KNOWLEDGE_SUMMARY } from '@/src/config/codingKnowledge';
 import { toast } from 'sonner';
 
@@ -18,10 +18,6 @@ interface PipelineProps {
   apiKeys: Record<string, string>;
   agentPersonas: Record<'nyx', AgentPersona>;
   modelSettings: AISettings;
-  lmStudioBaseUrl: string;
-  ollamaBaseUrl: string;
-  ollamaModels: any[];
-  lmStudioModels: any[];
   trackUsage: (provider: string, tokens: number) => void;
   history: ChatMessage[];
   updateHistory: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
@@ -61,66 +57,49 @@ const isCodebaseQuery = (prompt: string): boolean => {
   return codebaseKeywords.test(lower) || fileRef.test(lower);
 };
 
-// Cache Qwen model status to avoid expensive re-polling on every query
-let cachedQwenModel: { id: string; provider: string } | null = null;
-let lastQwenCheckTime = 0;
-const QWEN_CACHE_TTL = 30000; // Cache status for 30 seconds
+// Cache local agent model status to avoid expensive re-polling on every query
+let cachedAgentModel: { id: string; provider: string } | null = null;
+let lastAgentCheckTime = 0;
+const AGENT_CACHE_TTL = 30000; // Cache status for 30 seconds
 
-/** Auto-discover active Qwen models (local Python, LM Studio, Ollama) or fallback to OpenCode free model */
-const getAvailableQwenModel = async (
-  ollamaModels: any[],
-  lmStudioModels: any[]
-): Promise<{ id: string; provider: string }> => {
+/** Auto-discover active local Gemma models (local GGUF) or fallback to OpenCode free Gemma model */
+const getAvailableAgentModel = async (): Promise<{ id: string; provider: string }> => {
   const now = Date.now();
-  if (cachedQwenModel && (now - lastQwenCheckTime < QWEN_CACHE_TTL)) {
-    return cachedQwenModel;
+  if (cachedAgentModel && (now - lastAgentCheckTime < AGENT_CACHE_TTL)) {
+    return cachedAgentModel;
   }
 
-  // 1. Try local Python Qwen server with a tight timeout (max 200ms)
+  // 0. Try active NYX Native GGUF model loaded in RAM (ultra-fast C++ llama.cpp)
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 200);
-    const response = await fetch('http://127.0.0.1:3002/health', { signal: controller.signal }).catch(() => null);
+    const response = await AIService.fetchWithAuth('/api/nyx/local-models', { signal: controller.signal }).catch(() => null);
     clearTimeout(timer);
     if (response && response.ok) {
-      cachedQwenModel = { id: 'qwen-0.5b-local', provider: 'qwen-local' };
-      lastQwenCheckTime = now;
-      return cachedQwenModel;
+      const data = await response.json();
+      if (data.activeModelId) {
+        cachedAgentModel = { id: data.activeModelId, provider: 'nyx-native' };
+        lastAgentCheckTime = now;
+        return cachedAgentModel;
+      }
     }
   } catch (e) {
-    console.warn('[getAvailableQwenModel] Local Python Qwen check failed or timed out:', e);
+    console.warn('[getAvailableAgentModel] Native GGUF check failed:', e);
   }
 
-  // 2. Try LM Studio
-  const lmQwen = lmStudioModels.find(m => m.id?.toLowerCase().includes('qwen'));
-  if (lmQwen) {
-    cachedQwenModel = { id: lmQwen.id, provider: 'lmstudio' };
-    lastQwenCheckTime = now;
-    return cachedQwenModel;
-  }
-
-  // 3. Try Ollama
-  const ollamaQwen = ollamaModels.find(m => m.id?.toLowerCase().includes('qwen') || m.name?.toLowerCase().includes('qwen'));
-  if (ollamaQwen) {
-    cachedQwenModel = { id: ollamaQwen.id || ollamaQwen.name, provider: 'ollama' };
-    lastQwenCheckTime = now;
-    return cachedQwenModel;
-  }
-
-  // 4. Fallback to OpenCode free Qwen
-  cachedQwenModel = { id: 'opencode/qwen3-coder-14b-free', provider: 'opencode' };
-  lastQwenCheckTime = now;
-  return cachedQwenModel;
+  // 1. Fallback to OpenCode free Gemma
+  cachedAgentModel = { id: 'opencode/gemma-3-27b-it-free', provider: 'opencode' };
+  lastAgentCheckTime = now;
+  return cachedAgentModel;
 };
 
-/** Asynchronously analyze prompt using Qwen (local or Zen fallback) */
+/** Asynchronously analyze prompt using the user-selected model */
 const analyzePromptIntelligently = async (
   prompt: string,
-  ollamaModels: any[],
-  lmStudioModels: any[],
-  apiKeys: Record<string, string>,
-  lmStudioBaseUrl: string,
-  ollamaBaseUrl: string
+  modelId: string,
+  provider: string,
+  apiKey: string,
+  apiKeys: Record<string, string>
 ): Promise<{
   isCodeRelated: boolean;
   isMissingDebugDetails: boolean;
@@ -145,21 +124,19 @@ const analyzePromptIntelligently = async (
 A prompt is isMissingDebugDetails = true if the user asks to debug or fix an error, bug, or crash, but has NOT pasted any code snippet and has NOT pasted any error logs or compile outputs.
 Response must contain ONLY the raw JSON object. Do not include markdown code block syntax (like \`\`\`json).`;
 
-  const qwenModel = await getAvailableQwenModel(ollamaModels, lmStudioModels);
-  console.log(`[analyzePromptIntelligently] Using Qwen model for analysis: ${qwenModel.id} (${qwenModel.provider})`);
+  console.log(`[analyzePromptIntelligently] Using selected model for analysis: ${modelId} (${provider})`);
 
   try {
-    const activeKey = qwenModel.provider === 'opencode' ? (apiKeys['opencode'] || '') : undefined;
     const response = await AIService.execute(
-      qwenModel.id,
-      qwenModel.provider,
+      modelId,
+      provider,
       prompt,
-      activeKey,
+      apiKey,
       systemInstruction,
       { temperature: 0.1, maxTokens: 1024 },
       undefined,
       undefined,
-      { lmStudioBaseUrl, ollamaBaseUrl }
+      undefined
     );
     const text = response.text.trim();
     const jsonStr = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
@@ -169,7 +146,7 @@ Response must contain ONLY the raw JSON object. Do not include markdown code blo
       summary: parsed.summary || ''
     };
   } catch (err) {
-    console.warn('[analyzePromptIntelligently] Initial Qwen execution failed, trying OpenCode Zen Qwen:', err);
+    console.warn(`[analyzePromptIntelligently] Analysis with selected model ${modelId} failed, trying fallback:`, err);
     try {
       const activeKey = apiKeys['opencode'] || '';
       const response = await AIService.execute(
@@ -181,7 +158,7 @@ Response must contain ONLY the raw JSON object. Do not include markdown code blo
         { temperature: 0.1, maxTokens: 1024 },
         undefined,
         undefined,
-        { lmStudioBaseUrl, ollamaBaseUrl }
+        undefined
       );
       const text = response.text.trim();
       const jsonStr = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
@@ -191,67 +168,63 @@ Response must contain ONLY the raw JSON object. Do not include markdown code blo
         summary: parsed.summary || ''
       };
     } catch (err2) {
-      console.error('[analyzePromptIntelligently] All Qwen models failed:', err2);
+      console.error('[analyzePromptIntelligently] All analysis models failed:', err2);
       return null;
     }
   }
 };
 
-/** Use Qwen 0.5B (NYX agent) to analyze the query and codebase context, generating a structured Handoff Specification for the selected model */
+/** Use the user-selected model to analyze the query and codebase context, generating a structured Handoff Specification */
 const generateHandoffPlan = async (
   prompt: string,
   codebaseContext: string,
-  ollamaModels: any[],
-  lmStudioModels: any[],
-  apiKeys: Record<string, string>,
-  lmStudioBaseUrl: string,
-  ollamaBaseUrl: string
+  modelId: string,
+  provider: string,
+  apiKey: string,
+  apiKeys: Record<string, string>
 ): Promise<string> => {
-  const systemInstruction = `You are Nyx, the coordinating agent powered by Qwen 0.5B. Your task is to analyze the user's query and the codebase context, and prepare a structured Handoff Specification for the selected heavy model (e.g., Gemini).
+  const systemInstruction = `You are Nyx, the coordinating agent. Your task is to analyze the user's query and the codebase context, and prepare a structured Handoff Specification for the next step.
 Focus on:
 1. Target Files: Which files in the codebase need to be modified or created.
 2. Technical Requirements: Core functions, interfaces, or logic to be implemented.
 3. Constraints & Safety: Any safety hazards, voltage mismatches, or platform restrictions (especially for Arduino/Raspberry Pi).
 4. Recommended design pattern or architecture.
+5. Learned critic rules from past lessons.
 Keep it technical, clear, and structured as bullet points. Do not include greetings, introductions, or code blocks.`;
 
-  const qwenModel = await getAvailableQwenModel(ollamaModels, lmStudioModels);
-  console.log(`[generateHandoffPlan] Running NYX Agent (Qwen 0.5B) to generate handoff plan using: ${qwenModel.id}`);
+  console.log(`[generateHandoffPlan] Running NYX Agent (Selected Model) to generate handoff plan using: ${modelId}`);
 
   try {
-    const activeKey = qwenModel.provider === 'opencode' ? (apiKeys['opencode'] || '') : undefined;
     const response = await AIService.execute(
-      qwenModel.id,
-      qwenModel.provider,
+      modelId,
+      provider,
       `User Prompt: ${prompt}\n\nCodebase Context:\n${codebaseContext.substring(0, 8000)}`,
-      activeKey,
+      apiKey,
       systemInstruction,
       { temperature: 0.2, maxTokens: 1024 },
       undefined,
       undefined,
-      { lmStudioBaseUrl, ollamaBaseUrl }
+      undefined
     );
     return response.text.trim();
   } catch (err) {
-    console.warn('[generateHandoffPlan] Qwen failed to generate handoff plan, trying OpenCode Zen Qwen fallback:', err);
-    if (qwenModel.provider !== 'opencode') {
-      try {
-        const activeKey = apiKeys['opencode'] || '';
-        const response = await AIService.execute(
-          'opencode/qwen3-coder-14b-free',
-          'opencode',
-          `User Prompt: ${prompt}\n\nCodebase Context:\n${codebaseContext.substring(0, 8000)}`,
-          activeKey,
-          systemInstruction,
-          { temperature: 0.2, maxTokens: 1024 },
-          undefined,
-          undefined,
-          { lmStudioBaseUrl, ollamaBaseUrl }
-        );
-        return response.text.trim();
-      } catch (err2) {
-        console.error('[generateHandoffPlan] Fallback Qwen model failed:', err2);
-      }
+    console.warn(`[generateHandoffPlan] Handoff generation with selected model ${modelId} failed, trying fallback:`, err);
+    try {
+      const activeKey = apiKeys['opencode'] || '';
+      const response = await AIService.execute(
+        'opencode/qwen3-coder-14b-free',
+        'opencode',
+        `User Prompt: ${prompt}\n\nCodebase Context:\n${codebaseContext.substring(0, 8000)}`,
+        activeKey,
+        systemInstruction,
+        { temperature: 0.2, maxTokens: 1024 },
+        undefined,
+        undefined,
+        undefined
+      );
+      return response.text.trim();
+    } catch (err2) {
+      console.error('[generateHandoffPlan] Fallback handoff model failed:', err2);
     }
     return 'Perform the requested codebase changes ensuring clean architecture, modular code blocks, and robust error handling.';
   }
@@ -265,10 +238,6 @@ export const useAgentPipeline = ({
   apiKeys,
   agentPersonas,
   modelSettings,
-  lmStudioBaseUrl,
-  ollamaBaseUrl,
-  ollamaModels,
-  lmStudioModels,
   trackUsage,
   history,
   updateHistory,
@@ -287,19 +256,25 @@ export const useAgentPipeline = ({
   const triggerBackgroundCritic = useCallback(async (prompt: string, responseText: string) => {
     const nyxModel = models['nyx'];
     if (!nyxModel) return;
-    const activeProvider = detectProvider(nyxModel, ollamaModels, lmStudioModels);
+    const activeProvider = detectProvider(nyxModel);
     const apiKey = getEffectiveApiKey(activeProvider, apiKeys);
 
     try {
       await fetch('/api/nyx/critic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, response: responseText, apiKey })
+        body: JSON.stringify({
+          prompt,
+          response: responseText,
+          apiKey,
+          provider: activeProvider,
+          modelId: nyxModel
+        })
       });
     } catch (err) {
       console.error('[useAgentPipeline] Background critic failed:', err);
     }
-  }, [models, apiKeys, ollamaModels, lmStudioModels]);
+  }, [models, apiKeys]);
 
   /**
    * Main entry point — analyzes the prompt and routes to fast or deep-thinking path.
@@ -307,6 +282,8 @@ export const useAgentPipeline = ({
   const runCoder = useCallback(async (prompt: string) => {
     const nyxModel = models['nyx'];
     if (!prompt.trim() || !nyxModel) return;
+    const nyxProvider = detectProvider(nyxModel);
+    const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys);
 
     if (controllerRef.current) controllerRef.current.abort();
     const controller = new AbortController();
@@ -340,14 +317,13 @@ export const useAgentPipeline = ({
           summary: regexAnalysis.summary
         };
       } else {
-        // ── 2. Smart LLM Prompt Analysis (Qwen 0.5B / Zen) ─────────────────────────
+        // ── 2. Smart LLM Prompt Analysis (Qwen 2.5 1.5B / Zen) ─────────────────────────
         analysisResult = await analyzePromptIntelligently(
           prompt,
-          ollamaModels,
-          lmStudioModels,
-          apiKeys,
-          lmStudioBaseUrl,
-          ollamaBaseUrl
+          nyxModel,
+          nyxProvider,
+          nyxApiKey,
+          apiKeys
         );
 
         // Fallback to local regex-based analyzer if LLM analysis fails
@@ -421,14 +397,14 @@ ${formattedRules}
 
       if (!isHeavy) {
         // Fast path: run single agent pipeline
-        // If it's a non-code prompt, use the selected model in the model selector directly (to avoid Qwen 0.5b limitations)
-        // Otherwise, use Qwen Local (which is the default fast path coder model)
-        const qwenModel = !analysisResult.isCodeRelated 
+        // If it's a non-code prompt, use the selected model in the model selector directly (to avoid local limitations)
+        // Otherwise, use Gemma Local (which is the default fast path coder model)
+        const agentModel = !analysisResult.isCodeRelated 
           ? null 
-          : await getAvailableQwenModel(ollamaModels, lmStudioModels);
+          : await getAvailableAgentModel();
 
-        if (qwenModel) {
-          console.log(`[runCoder] Routing to fast path with Qwen model: ${qwenModel.id} (${qwenModel.provider})`);
+        if (agentModel) {
+          console.log(`[runCoder] Routing to fast path with Gemma model: ${agentModel.id} (${agentModel.provider})`);
         } else {
           console.log(`[runCoder] Routing to fast path with selected model: ${nyxModel}`);
         }
@@ -443,7 +419,7 @@ ${formattedRules}
           controller, 
           instruction, 
           analysisResult as any, 
-          qwenModel || undefined
+          agentModel || undefined
         );
       } else {
         // Heavy path: run multi-stage pipeline using the selected model (interconnected)
@@ -451,6 +427,29 @@ ${formattedRules}
       }
     } catch (error: any) {
       const isAborted = error?.name === 'AbortError' || controller.signal.aborted;
+      
+      if (error.message && error.message.startsWith('SAFETY_GATE_BLOCKED:')) {
+        try {
+          const payload = JSON.parse(error.message.substring(20));
+          updateHistory(prev => {
+            const h = prev.filter(m => !(m.role === 'assistant' && m.content === ''));
+            return [
+              ...h,
+              { 
+                role: 'assistant', 
+                content: `⚠️ **NYX Safety Gate Blocked**\n\n${payload.message}\n\n${payload.details && payload.details.length > 0 ? `**Details:**\n${payload.details.map((d: any) => `- ${d}`).join('\n')}` : ''}`, 
+                timestamp: Date.now(), 
+                status: 'success' 
+              }
+            ];
+          });
+          toast.warning('Request blocked by Safety Gate');
+          setIsLoading(false);
+          controllerRef.current = null;
+          return;
+        } catch {}
+      }
+
       updateHistory(prev => {
         const h = [...prev];
         const last = h[h.length - 1];
@@ -466,7 +465,7 @@ ${formattedRules}
       setIsLoading(false);
     }
   // Use historyRef instead of history in deps to prevent useCallback recreation on every message
-  }, [models, apiKeys, agentPersonas, modelSettings, lmStudioBaseUrl, ollamaBaseUrl, ollamaModels, lmStudioModels, trackUsage, updateHistory, updateMetrics, setSuggestedPrompts]);
+  }, [models, apiKeys, agentPersonas, modelSettings, trackUsage, updateHistory, updateMetrics, setSuggestedPrompts]);
 
   /**
    * Multi-stage deep-thinking pipeline (Architect → Coder → Optimizer).
@@ -492,7 +491,7 @@ ${formattedRules}
       toast.error('Please select a model first');
       throw new Error('No model selected');
     }
-    const nyxProvider = detectProvider(nyxModel, ollamaModels, lmStudioModels);
+    const nyxProvider = detectProvider(nyxModel);
     const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys);
 
     // Resolve context flags
@@ -567,18 +566,16 @@ ${formattedRules}
       }
     }
 
-    // ── Qwen 0.5B Handoff Plan ───────────────────────────────────────────
     const handoffPlan = await generateHandoffPlan(
       prompt,
       codebaseContext,
-      ollamaModels,
-      lmStudioModels,
-      apiKeys,
-      lmStudioBaseUrl,
-      ollamaBaseUrl
+      nyxModel,
+      nyxProvider,
+      nyxApiKey,
+      apiKeys
     );
     const handoffBlock = `
-[NYX AGENT COORDINATOR (Qwen 0.5B) HANDOFF SPECIFICATION]
+[NYX AGENT COORDINATOR (Qwen 2.5 1.5B) HANDOFF SPECIFICATION]
 The NYX agent has pre-analyzed the prompt and codebase, establishing the following requirements:
 ${handoffPlan}
 [END OF HANDOFF SPECIFICATION]\n`;
@@ -592,7 +589,7 @@ ${handoffPlan}
 ${langKnowledge}
 
 You are Nyx, the premium AI assistant executing the final implementation.
-You must analyze the user prompt, local codebase context, and the Qwen 0.5B handoff specification below to deliver a high-end, production-ready engineering response.
+You must analyze the user prompt, local codebase context, and the Qwen 2.5 1.5B handoff specification below to deliver a high-end, production-ready engineering response.
 
 ${rulesBlock}
 
@@ -636,7 +633,7 @@ GEMINI-STYLE RESPONSE RULES:
         updateMetrics(currentMetrics);
       },
       controller.signal,
-      { lmStudioBaseUrl, ollamaBaseUrl, history: historyRef.current.slice(-10) }
+      { history: historyRef.current.slice(-10) }
     );
 
     resultText = result.text;
@@ -677,7 +674,7 @@ GEMINI-STYLE RESPONSE RULES:
     const persona = agentPersonas['nyx'];
     const systemPrompt = systemPromptOverride || persona.systemPrompt;
     const currentModelId = modelOverride ? modelOverride.id : models['nyx'];
-    const provider = modelOverride ? modelOverride.provider : detectProvider(currentModelId, ollamaModels, lmStudioModels);
+    const provider = modelOverride ? modelOverride.provider : detectProvider(currentModelId);
     const apiKey = getEffectiveApiKey(provider, apiKeys);
 
     const isGreeting = isGreetingOrIdentity(prompt);
@@ -776,7 +773,7 @@ GEMINI-STYLE RESPONSE RULES:
         });
       },
       controller.signal,
-      { lmStudioBaseUrl, ollamaBaseUrl, history: historyRef.current.slice(-10) }
+      { history: historyRef.current.slice(-10) }
     );
 
     trackUsage(provider, result.metrics.tokens);

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import http from 'node:http';
 import dns from 'node:dns';
+import fs from 'fs';
 
 import './server/lib/apiAgent.ts'; // 🚀 Init global connection pooling
 
@@ -20,13 +21,16 @@ import { agentsRouter }     from './server/routes/agents.ts';
 import { opencodeRouter }   from './server/routes/opencode.ts';
 import { nyxRouter }        from './server/routes/nyx.ts';
 import { pollinationsRouter } from './server/routes/pollinations.ts';
-import { ollamaRouter }     from './server/routes/ollama.ts';
-import { lmStudioRouter }   from './server/routes/lmstudio.ts';
 import { localModelsRouter } from './server/routes/localModels.ts';
 import { qwenLocalRouter }   from './server/routes/qwenLocal.ts';
 import { CacheServer }      from './server/lib/cache.ts';
 import compression from 'compression';
 import { warmupDNS, startFastifyServer } from './server/lib/fastifyApi.ts';
+
+import { requestIdMiddleware } from './server/middleware/requestId.ts';
+import logger from './server/lib/logger.ts';
+import { safetyGateMiddleware } from './server/middleware/safetyGate.ts';
+import { loadKeys, saveKeys, createSessionToken, verifySessionToken, getVaultStatus } from './server/lib/keyVault.ts';
 
 
 // ── DNS: prefer Cloudflare for fastest lookups on Windows ─────────────────────
@@ -39,16 +43,16 @@ const PORT       = parseInt(process.env.PORT || '3000', 10);
 import { spawn } from 'child_process';
 
 function startPythonHFServer() {
-  console.log('[Server] Spawning local Python Hugging Face server (Qwen/Qwen2.5-Coder-0.5B-Instruct)...');
+  console.log('[Server] Spawning local Python Hugging Face server (Qwen/Qwen2.5-Coder-1.5B-Instruct) via uvicorn...');
   const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-  const child = spawn(pythonCmd, [path.join(__dirname, 'server', 'python', 'hf_service.py')], {
+  const child = spawn(pythonCmd, ['-m', 'uvicorn', 'server.python.hf_service_fastapi:app', '--host', '127.0.0.1', '--port', '3002'], {
     stdio: 'inherit',
     detached: false
   });
 
   child.on('error', (err) => {
     console.error('[Server] ERROR: Failed to start Python local HF server:', err.message);
-    console.error('[Server] Please ensure Python is installed and run "python server/python/hf_service.py" manually.');
+    console.error('[Server] Please ensure Python is installed and run "python -m uvicorn server.python.hf_service_fastapi:app --host 127.0.0.1 --port 3002" manually.');
   });
 
   process.on('exit', () => {
@@ -57,8 +61,14 @@ function startPythonHFServer() {
 }
 
 async function startServer() {
-  // Start the Python Hugging Face server on port 3002
-  startPythonHFServer();
+  // Ensure directories exist
+  const VAULT_DIR = path.join(process.cwd(), '.nyx-keys');
+  const LOGS_DIR = path.join(process.cwd(), '.nyx-logs');
+  if (!fs.existsSync(VAULT_DIR)) fs.mkdirSync(VAULT_DIR, { recursive: true });
+  if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
+
+  // Start the Python Hugging Face server on port 3002 (disabled by default to optimize CPU RAM; GGUF local models execute in GPU VRAM instead)
+  // startPythonHFServer();
 
   // Start Fastify server for high-performance streaming API proxying
   try {
@@ -70,6 +80,25 @@ async function startServer() {
 
   const app = express();
   
+  // ── Request Correlation ID ───────────────────────────────────────────────────
+  app.use(requestIdMiddleware);
+
+  // ── Structured Request Logging ────────────────────────────────────────────────
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const latencyMs = Date.now() - start;
+      logger.info({
+        requestId: (req as any).requestId,
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        latencyMs
+      }, `Request finished: ${req.method} ${req.path}`);
+    });
+    next();
+  });
+
   // ── Optimization: Compress non-streaming responses ──────────────────────────
   app.use(compression({
     filter: (req, res) => {
@@ -89,23 +118,165 @@ async function startServer() {
 
   app.use(express.json({ limit: '4mb' }));
 
+  // ── Session Validation Middleware ───────────────────────────────────────────
+  const sessionValidationMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    // Allow public routes (using originalUrl since this is sub-mounted under /api)
+    const originalPath = req.originalUrl.split('?')[0];
+    if (
+      originalPath === '/api/health' ||
+      originalPath === '/api/vault/status' ||
+      originalPath === '/api/vault/token' ||
+      originalPath === '/api/auth/session' ||
+      originalPath === '/api/admin/logs'
+    ) {
+      return next();
+    }
+
+    const authHeader = req.headers.authorization;
+    let token: string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    } else {
+      token = (req.headers['x-nyx-session-token'] as string) || (req.query as any)?.session_token;
+    }
+
+    if (!token && req.body && typeof req.body === 'object') {
+      token = req.body.sessionToken || req.body.session_token;
+    }
+
+    if (!token || !verifySessionToken(token)) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or expired session token' });
+    }
+
+    next();
+  };
+
+  app.use('/api', sessionValidationMiddleware);
+
+  // ── Stream Token Rotation Middleware ───────────────────────────────────────
+  const streamTokenRotationMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if ((req.path.endsWith('/stream') || req.path.includes('/stream')) && req.path !== '/api/admin/logs') {
+      const originalWrite = res.write;
+      let metadataSent = false;
+
+      res.write = function (chunk: any, encoding?: any, callback?: any) {
+        if (!metadataSent) {
+          metadataSent = true;
+          // Generate a new standard session token
+          const newToken = createSessionToken(false);
+          // Write the tokenRotate metadata event first
+          const sseMetadata = `event: metadata\ndata: ${JSON.stringify({ tokenRotate: newToken })}\n\n`;
+          originalWrite.call(res, sseMetadata, 'utf8');
+        }
+        return originalWrite.call(res, chunk, encoding, callback);
+      } as any;
+    }
+    next();
+  };
+
+  app.use(streamTokenRotationMiddleware);
+
+  // ── Vault API Routes ──────────────────────────────────────────────────────────
+  app.post('/api/vault/store', (req, res) => {
+    const { keys } = req.body;
+    if (!keys || typeof keys !== 'object') {
+      return res.status(400).json({ error: 'Invalid payload: keys object required' });
+    }
+    try {
+      const currentKeys = loadKeys();
+      const updatedKeys = { ...currentKeys, ...keys };
+      saveKeys(updatedKeys);
+      res.json({ status: 'ok' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  const handleGetToken = (req: express.Request, res: express.Response) => {
+    const isStream = req.query.stream === 'true';
+    const token = createSessionToken(isStream);
+    res.json({ token, expiresAt: Date.now() + 5 * 60 * 1000 });
+  };
+  app.get('/api/vault/token', handleGetToken);
+  app.get('/api/auth/session', handleGetToken);
+
+  app.get('/api/vault/status', (req, res) => {
+    res.json(getVaultStatus());
+  });
+
+  // ── Secure Admin Log Streaming ──────────────────────────────────────────────
+  app.get('/api/admin/logs', (req, res) => {
+    const adminKey = process.env.ADMIN_KEY;
+    if (!adminKey) {
+      return res.status(404).send('Not Found');
+    }
+    const clientKey = req.headers['x-admin-key'] || req.query.adminKey;
+    if (clientKey !== adminKey) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid admin key' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const logPath = path.join(LOGS_DIR, `nyx-${dateStr}.log`);
+
+    res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', logPath })}\n\n`);
+
+    let filePosition = 0;
+    try {
+      if (fs.existsSync(logPath)) {
+        const stats = fs.statSync(logPath);
+        filePosition = stats.size; // start streaming from current end
+      }
+    } catch {}
+
+    const interval = setInterval(() => {
+      try {
+        if (!fs.existsSync(logPath)) return;
+        const stats = fs.statSync(logPath);
+        if (stats.size > filePosition) {
+          const fd = fs.openSync(logPath, 'r');
+          const buffer = Buffer.alloc(stats.size - filePosition);
+          fs.readSync(fd, buffer, 0, buffer.length, filePosition);
+          fs.closeSync(fd);
+
+          filePosition = stats.size;
+          const newLines = buffer.toString('utf8').split('\n');
+          for (const line of newLines) {
+            const trimmed = line.trim();
+            if (trimmed) {
+              res.write(`event: log\ndata: ${trimmed}\n\n`);
+            }
+          }
+        }
+      } catch (err: any) {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
+      }
+    }, 1000);
+
+    req.on('close', () => {
+      clearInterval(interval);
+    });
+  });
+
   // ── Health check ─────────────────────────────────────────────────────────────
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
   // ── Provider routes ───────────────────────────────────────────────────────────
-  // To add a new provider: import its router above and mount it here
-  app.use('/api/gemini',     geminiRouter);
-  app.use('/api/openrouter', openrouterRouter);
-  app.use('/api/nvidia',     nvidiaRouter);
+  app.use('/api/gemini',     safetyGateMiddleware, geminiRouter);
+  app.use('/api/openrouter', safetyGateMiddleware, openrouterRouter);
+  app.use('/api/nvidia',     safetyGateMiddleware, nvidiaRouter);
   app.use('/api/terminal',   terminalRouter);
   app.use('/api/agents',     agentsRouter);
-  app.use('/api/opencode',   opencodeRouter);
+  app.use('/api/opencode',   safetyGateMiddleware, opencodeRouter);
   app.use('/api/nyx',        nyxRouter);
   app.use('/api/nyx/local-models', localModelsRouter);
-  app.use('/api/pollinations', pollinationsRouter);
-  app.use('/api/ollama',       ollamaRouter);
-  app.use('/api/lmstudio',     lmStudioRouter);
-  app.use('/api/qwen-local',   qwenLocalRouter);
+  app.use('/api/pollinations', safetyGateMiddleware, pollinationsRouter);
+  app.use('/api/qwen-local',   safetyGateMiddleware, qwenLocalRouter);
 
   // ── Model list proxy (Settings page live model discovery) ────────────────────
   app.post('/api/models/list', async (req, res) => {

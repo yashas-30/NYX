@@ -33,20 +33,6 @@ export function getCustomModelIcon(model: ModelDefinition | null | undefined): R
       </svg>
     );
   }
-  if (provider === 'ollama') {
-    return (
-      <svg className="w-3.5 h-3.5 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 3a9 9 0 0 0-9 9c0 2.2.8 4.2 2.1 5.7L4 21l3.3-1.1c1.4.7 3 1.1 4.7 1.1a9 9 0 0 0 9-9 9 9 0 0 0-9-9zm0 15a6 6 0 1 1 0-12 6 6 0 0 1 0 12z" />
-      </svg>
-    );
-  }
-  if (provider === 'lmstudio') {
-    return (
-      <svg className="w-3.5 h-3.5 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-        <path d="M4 10v4M9 6v12M14 8v8M19 12v0" />
-      </svg>
-    );
-  }
   
   return <BrainCircuit className="w-3.5 h-3.5 text-purple-500" />;
 }

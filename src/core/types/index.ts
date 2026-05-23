@@ -8,10 +8,8 @@ export type Provider =
   | 'openrouter' 
   | 'nvidia' 
   | 'terminal'
-  | 'lmstudio'
   | 'opencode'
   | 'pollinations'
-  | 'ollama'
   | 'nyx-native'
   | 'qwen-local';
 

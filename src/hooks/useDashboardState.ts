@@ -8,7 +8,6 @@ import { useState, useEffect } from 'react';
 import { useTokenUsage } from '../context/TokenUsageContext';
 
 // Modular Hooks
-import { useModelRegistry } from './dashboard/useModelRegistry';
 import { useSecurityState } from './dashboard/useSecurityState';
 import { useProviderStatus } from './dashboard/useProviderStatus';
 
@@ -28,8 +27,7 @@ export const useDashboardState = (onExit?: () => void) => {
 
   const { usage, updateUsage: trackUsage, refreshProviderQuota } = useTokenUsage();
 
-  // 1. Model Registry (Ollama/LM Studio)
-  const registry = useModelRegistry('http://localhost:1234');
+  const [localModelsEnabled, setLocalModelsEnabled] = useState(false);
 
   // 2. Security & API Keys
   const security = useSecurityState({}, (provider, key) => refreshProviderQuota(provider, key));
@@ -37,29 +35,19 @@ export const useDashboardState = (onExit?: () => void) => {
   // 3. Provider Connectivity Status
   const { statuses, refreshStatuses } = useProviderStatus(
     security.apiKeys,
-    registry.lmStudioBaseUrl,
-    registry.ollamaBaseUrl,
-    registry.localModelsEnabled
+    localModelsEnabled
   );
 
   // ── Initialization Logic ───────────────────────────────────────────────
   useEffect(() => {
-    const savedKeys = localStorage.getItem('llm_ref_api_keys');
-    const savedLegacyKey = localStorage.getItem('llm_ref_api_key');
-    const savedLmUrl = localStorage.getItem('llm_ref_lmstudio_url');
-    const savedOllamaUrl = localStorage.getItem('llm_ref_ollama_url');
+    // Purge old localStorage keys to ensure compliance with vault policy
+    localStorage.removeItem('llm_ref_api_keys');
+    localStorage.removeItem('llm_ref_api_key');
+
     const savedModels = localStorage.getItem('nyx_coder_models_v2');
     const savedLocalModelsEnabled = localStorage.getItem('llm_ref_local_models_enabled');
-
-    if (savedKeys) {
-      try { security.setApiKeys(JSON.parse(savedKeys)); } catch (e) { console.error("Keys load fail", e); }
-    } else if (savedLegacyKey) {
-      security.setApiKeys({ gemini: savedLegacyKey });
-    }
-    if (savedLmUrl) registry.setLmStudioBaseUrl(savedLmUrl);
-    if (savedOllamaUrl) registry.setOllamaBaseUrl(savedOllamaUrl);
     if (savedLocalModelsEnabled !== null) {
-      registry.setLocalModelsEnabled(savedLocalModelsEnabled === 'true');
+      setLocalModelsEnabled(savedLocalModelsEnabled === 'true');
     }
     
     if (savedModels) {
@@ -86,7 +74,6 @@ export const useDashboardState = (onExit?: () => void) => {
 
   // ── Side Effects (Persistence & Lifecycle) ─────────────────────────────
   useEffect(() => {
-    localStorage.setItem('llm_ref_api_keys', JSON.stringify(security.apiKeys));
     // Only refresh quota for providers that actually have keys (performance fix)
     Object.entries(security.apiKeys).forEach(([p, k]) => {
       if (k) refreshProviderQuota(p, k);
@@ -95,29 +82,9 @@ export const useDashboardState = (onExit?: () => void) => {
   }, [security.apiKeys, refreshProviderQuota]);
 
   useEffect(() => {
-    localStorage.setItem('llm_ref_local_models_enabled', String(registry.localModelsEnabled));
-    if (registry.localModelsEnabled) {
-      registry.fetchLMStudioModels(registry.lmStudioBaseUrl);
-      registry.fetchOllamaModels(registry.ollamaBaseUrl);
-    }
+    localStorage.setItem('llm_ref_local_models_enabled', String(localModelsEnabled));
     refreshStatuses();
-  }, [registry.localModelsEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('llm_ref_lmstudio_url', registry.lmStudioBaseUrl);
-    if (registry.localModelsEnabled) {
-      registry.fetchLMStudioModels(registry.lmStudioBaseUrl);
-    }
-    refreshStatuses();
-  }, [registry.lmStudioBaseUrl]);
-
-  useEffect(() => {
-    localStorage.setItem('llm_ref_ollama_url', registry.ollamaBaseUrl);
-    if (registry.localModelsEnabled) {
-      registry.fetchOllamaModels(registry.ollamaBaseUrl);
-    }
-    refreshStatuses();
-  }, [registry.ollamaBaseUrl]);
+  }, [localModelsEnabled]);
 
   useEffect(() => {
     localStorage.setItem('nyx_coder_models_v2', JSON.stringify(models));
@@ -137,8 +104,8 @@ export const useDashboardState = (onExit?: () => void) => {
     activeAgent: 'nyx' as const,
     models, setModels, setModel,
 
-    // Registry
-    ...registry,
+    // Registry (simplified)
+    localModelsEnabled, setLocalModelsEnabled,
 
     // Security
     ...security,

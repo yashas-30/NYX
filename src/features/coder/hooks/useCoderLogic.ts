@@ -11,12 +11,8 @@ import { ChatMessage } from '@/src/core/types';
 
 interface CoderLogicProps {
   apiKeys: Record<string, string>;
-  lmStudioBaseUrl: string;
   modelSettings: any;
   trackUsage: (provider: string, tokens: number) => void;
-  ollamaModels: any[];
-  lmStudioModels: any[];
-  ollamaBaseUrl: string;
   models?: Record<'nyx', string>;
   setModel?: (modelId: string) => void;
   chatSessions: any;
@@ -24,12 +20,8 @@ interface CoderLogicProps {
 
 export const useCoderLogic = ({
   apiKeys,
-  lmStudioBaseUrl,
   modelSettings,
   trackUsage,
-  ollamaModels,
-  lmStudioModels,
-  ollamaBaseUrl,
   models: propModels,
   setModel: propSetModel,
   chatSessions
@@ -120,10 +112,6 @@ export const useCoderLogic = ({
     apiKeys,
     agentPersonas,
     modelSettings,
-    lmStudioBaseUrl,
-    ollamaBaseUrl,
-    ollamaModels,
-    lmStudioModels,
     trackUsage,
     history: localMessages,
     updateHistory,

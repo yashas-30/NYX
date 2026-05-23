@@ -200,23 +200,20 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
   { id: 'nvidia/ministral-8b', name: 'Mistral 8B (NIM)', provider: 'nvidia', description: 'Mistral via NVIDIA NIM - Free', specs: { contextWindow: '128K', trainingData: '2024', maxOutput: '8K', modality: 'Text' } },
 
   // ═══════════════════════════════════════════════════════════════════════════════
-  // OLLAMA LOCAL PRESETS
-  // ═══════════════════════════════════════════════════════════════════════════════
-  {
-    id: 'qwen2.5-coder:3b',
-    name: 'Qwen 2.5 Coder 3B (Ollama)',
-    provider: 'ollama',
-    description: 'Lightweight local coding model with strong agent performance.',
-    specs: { contextWindow: '32K', trainingData: '2024', maxOutput: '8K', modality: 'Text' }
-  },
-  // ═══════════════════════════════════════════════════════════════════════════════
   // NYX NATIVE PRESETS
   // ═══════════════════════════════════════════════════════════════════════════════
   {
-    id: 'qwen-0.5b-local',
-    name: 'Qwen 2.5 Coder 0.5B (Local Python)',
+    id: 'nyx-gemma-4-e2b-it',
+    name: 'NYX Edge Agent (Gemma 4 E2B)',
+    provider: 'nyx-native',
+    description: 'The native NYX agent running locally on-device. Fully powered by Google\'s Gemma 4 E2B.',
+    specs: { contextWindow: '128K', trainingData: '2026', maxOutput: '4K', modality: 'Text' }
+  },
+  {
+    id: 'qwen-1.5b-local',
+    name: 'Qwen 2.5 Coder 1.5B (Local Python)',
     provider: 'qwen-local',
-    description: 'Ultra-fast local Qwen 0.5B model running on Python causal LM server.',
+    description: 'Ultra-fast local Qwen 1.5B model running on Python causal LM server.',
     specs: { contextWindow: '32K', trainingData: '2024', maxOutput: '8K', modality: 'Text' }
   },
   {
@@ -243,7 +240,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
 ];
 
 // Deduplicate by ID to prevent duplicate entries in the model selector
-const ALLOWED_PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'opencode', 'pollinations', 'ollama', 'nyx-native', 'qwen-local'];
+const ALLOWED_PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'opencode', 'pollinations', 'nyx-native', 'qwen-local'];
 const _seen = new Set<string>();
 export const AVAILABLE_MODELS: ModelOption[] = RAW_AVAILABLE_MODELS
   .filter(m => ALLOWED_PROVIDERS.includes(m.provider))

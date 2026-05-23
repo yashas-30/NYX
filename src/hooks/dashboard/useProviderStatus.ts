@@ -6,8 +6,6 @@ export type Status = 'online' | 'offline' | 'no-key';
 
 export const useProviderStatus = (
   apiKeys: Record<string, string>,
-  lmStudioBaseUrl: string,
-  ollamaBaseUrl: string,
   localModelsEnabled?: boolean
 ) => {
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
@@ -27,23 +25,19 @@ export const useProviderStatus = (
     if (!isVisibleRef.current) return;
 
     const providers: string[] = [
-      'gemini', 'openrouter', 'nvidia', 'ollama', 'lmstudio',
+      'gemini', 'openrouter', 'nvidia',
       'opencode', 'openai', 'anthropic', 'deepseek', 'groq',
       'mistral', 'together', 'nyx-native'
     ];
     const newStatuses: Record<string, Status> = {};
 
     await Promise.all(providers.map(async (p) => {
-      if ((p === 'ollama' || p === 'lmstudio') && !localModelsEnabled) {
-        newStatuses[p] = 'offline';
-        return;
-      }
       const key = apiKeys[p];
-      newStatuses[p] = await AIService.checkStatus(p, key, { lmStudioBaseUrl, ollamaBaseUrl });
+      newStatuses[p] = await AIService.checkStatus(p, key);
     }));
 
     setStatuses(newStatuses);
-  }, [apiKeys, lmStudioBaseUrl, ollamaBaseUrl, localModelsEnabled]);
+  }, [apiKeys, localModelsEnabled]);
 
   useEffect(() => {
     checkAllStatuses();

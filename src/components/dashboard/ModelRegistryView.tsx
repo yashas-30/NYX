@@ -2,13 +2,14 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, RefreshCw, Globe, Box, Server, Terminal as TerminalIcon, Settings as SettingsIcon,
-  Cpu, HardDrive, Play, Square, Download, AlertCircle, CheckCircle2, Loader2
+  Search, Globe, Box, Cpu, Download, AlertCircle, Loader2, Play, Square, Terminal as TerminalIcon, X, Check, Trash2, Zap
 } from 'lucide-react';
 import { AVAILABLE_MODELS } from '@/src/config/models';
-import { OllamaModel, ModelOption, LMStudioModel } from '@/src/types';
+import { getProviderLabel } from '../ui/ProviderIcon';
+import { ModelOption } from '@/src/types';
 import { useTokenUsage } from '@/src/context/TokenUsageContext';
 import { toast } from 'sonner';
+import { AIService } from '@/src/core/services/ai.service';
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Types
@@ -16,54 +17,17 @@ import { toast } from 'sonner';
 
 interface ModelRegistryViewProps {
   models?: Record<'nyx', string>;
-  ollamaModels: OllamaModel[];
-  ollamaStatus: 'idle' | 'loading' | 'error' | 'ok';
-  ollamaError: string;
-  lmStudioModels: LMStudioModel[];
-  lmStudioStatus: 'idle' | 'loading' | 'error' | 'ok';
-  lmStudioBaseUrl: string;
-  setLmStudioBaseUrl: (url: string) => void;
-  onRefreshOllama: () => void;
-  onRefreshLMStudio: () => void;
   selectModel?: (modelId: string) => void;
   apiKeys: Record<string, string>;
   providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;
-  ollamaBaseUrl: string;
-  setOllamaBaseUrl: (url: string) => void;
   activeMode?: 'coder' | 'registry' | 'settings';
   setActiveMode?: (mode: 'coder' | 'registry' | 'settings') => void;
-  localModelsEnabled: boolean;
-  setLocalModelsEnabled: (enabled: boolean) => void;
+  sidebarOpen?: boolean;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Sub-components
  * ───────────────────────────────────────────────────────────────────────────── */
-
-/** Status badge with pulse indicator */
-const StatusBadge: React.FC<{
-  status: 'idle' | 'loading' | 'error' | 'ok';
-}> = ({ status }) => {
-  const isOk = status === 'ok';
-  const isLoading = status === 'loading';
-  return (
-    <div className={`
-      inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[8px] font-bold uppercase tracking-tight
-      ${isOk
-        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-        : isLoading
-          ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
-          : 'bg-red-500/10 text-red-500 border border-red-500/20'
-      }
-    `}>
-      <div className={`
-        w-1.5 h-1.5 rounded-full
-        ${isOk ? 'bg-emerald-500 animate-pulse' : isLoading ? 'bg-amber-500 animate-bounce' : 'bg-red-500'}
-      `} />
-      {isOk ? 'Online' : isLoading ? 'Syncing' : 'Offline'}
-    </div>
-  );
-};
 
 /** Section header with icon, title, and right-side controls */
 const SectionHeader: React.FC<{
@@ -105,7 +69,7 @@ const ModelCard: React.FC<{
   hasKey?: boolean;
   status?: 'online' | 'offline' | 'no-key';
 }> = ({ name, provider, description, specs, usage, hasKey, status }) => {
-  const providerLabel = provider === 'lmstudio' ? 'LM Studio' : provider;
+  const providerLabel = provider;
 
   return (
     <motion.div
@@ -191,28 +155,16 @@ const ModelCard: React.FC<{
  * ───────────────────────────────────────────────────────────────────────────── */
 
 const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
-  ollamaModels,
-  ollamaStatus,
-  ollamaError,
-  lmStudioModels,
-  lmStudioStatus,
-  lmStudioBaseUrl,
-  setLmStudioBaseUrl,
-  onRefreshOllama,
-  onRefreshLMStudio,
   selectModel,
   apiKeys,
   providerStatuses,
-  ollamaBaseUrl,
-  setOllamaBaseUrl,
   activeMode,
   setActiveMode,
-  localModelsEnabled,
-  setLocalModelsEnabled,
+  sidebarOpen = true,
 }) => {
   const { usage } = useTokenUsage();
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'nyx' | 'cloud' | 'local'>('all');
+  const [filter, setFilter] = useState<'all' | 'nyx' | 'cloud'>('all');
 
   // Google Gemini Credentials Helpers
   const hasGeminiKey = !!apiKeys?.gemini;
@@ -229,10 +181,11 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const [activeNativeId, setActiveNativeId] = useState<string | null>(null);
   const [nativeStatus, setNativeStatus] = useState<{ status: string; error: string | null }>({ status: 'stopped', error: null });
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   const fetchNativeModels = useCallback(async () => {
     try {
-      const res = await fetch('/api/nyx/local-models');
+      const res = await AIService.fetchWithAuth('/api/nyx/local-models');
       if (res.ok) {
         const data = await res.json();
         if (data.models) setNativeModels(data.models);
@@ -254,7 +207,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const handleDownload = async (modelId: string) => {
     setActionInProgress(modelId);
     try {
-      const res = await fetch('/api/nyx/local-models/download', {
+      const res = await AIService.fetchWithAuth('/api/nyx/local-models/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId })
@@ -276,7 +229,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const handleRun = async (modelId: string) => {
     setActionInProgress(modelId);
     try {
-      const res = await fetch('/api/nyx/local-models/run', {
+      const res = await AIService.fetchWithAuth('/api/nyx/local-models/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId })
@@ -298,7 +251,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const handleStop = async (modelId: string) => {
     setActionInProgress(modelId);
     try {
-      const res = await fetch('/api/nyx/local-models/stop', {
+      const res = await AIService.fetchWithAuth('/api/nyx/local-models/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -316,19 +269,32 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     }
   };
 
+  const handleDelete = async (modelId: string, modelName: string) => {
+    if (!confirm(`Delete "${modelName}" from disk? This cannot be undone.`)) return;
+    setActionInProgress(modelId);
+    try {
+      const res = await AIService.fetchWithAuth('/api/nyx/local-models/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId })
+      });
+      if (res.ok) {
+        toast.success(`"${modelName}" removed from disk.`);
+        fetchNativeModels();
+      } else {
+        const errData = await res.json();
+        toast.error(`Delete failed: ${errData.error}`);
+      }
+    } catch (err: any) {
+      toast.error(`Error: ${err.message}`);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
+
   const query = search.toLowerCase();
 
   /* ── Filtered model lists ─────────────────────────────────────────────── */
-
-  const filteredOllama = useMemo(
-    () => ollamaModels.filter(m => m.name.toLowerCase().includes(query)),
-    [ollamaModels, query]
-  );
-
-  const filteredLMStudio = useMemo(
-    () => lmStudioModels.filter(m => m.id.toLowerCase().includes(query)),
-    [lmStudioModels, query]
-  );
 
   const cloudModels = useMemo(
     () => AVAILABLE_MODELS.filter(m =>
@@ -351,8 +317,22 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     });
   }, [cloudModels]);
 
+  const groupedLocalPresets = useMemo<[string, any[]][]>(() => {
+    const grouped = nativeModels.reduce((acc, m) => {
+      const prov = m.provider || 'local';
+      if (!acc[prov]) acc[prov] = [];
+      acc[prov].push(m);
+      return acc;
+    }, {} as Record<string, any[]>);
+
+    return (Object.entries(grouped) as [string, any[]][]).sort(([a], [b]) => {
+      if (a === 'google') return -1;
+      if (b === 'google') return 1;
+      return a.localeCompare(b);
+    });
+  }, [nativeModels]);
+
   const showNyx = filter === 'all' || filter === 'nyx';
-  const showLocal = localModelsEnabled && (filter === 'all' || filter === 'local');
   const showCloud = filter === 'all' || filter === 'cloud';
 
   /* ── Render ────────────────────────────────────────────────────────────── */
@@ -368,7 +348,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         {/* ── Page header ──────────────────────────────────────────────── */}
-        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/5 dark:bg-black/10 backdrop-blur-md">
+        <header className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/5 dark:bg-black/10 backdrop-blur-md transition-all duration-300`}>
           <div className="flex items-center gap-2">
             <Box size={16} className="text-primary" />
             <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">Model Registry</h2>
@@ -405,7 +385,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
             {/* Filter tabs */}
             <div className="flex gap-1 bg-white/30 dark:bg-zinc-900/30 backdrop-blur-sm p-1 rounded-full border border-white/15 dark:border-white/5 shadow-sm">
-              {(['all', 'nyx', 'cloud', 'local'] as const).map(f => (
+              {(['all', 'nyx', 'cloud'] as const).map(f => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -417,33 +397,9 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     }
                   `}
                 >
-                  {f === 'all' ? 'All' : f === 'nyx' ? 'NYX Native' : f === 'cloud' ? 'Cloud' : 'Local Servers'}
+                  {f === 'all' ? 'All' : f === 'nyx' ? 'NYX Native' : 'Cloud'}
                 </button>
               ))}
-            </div>
-
-            {/* Local Models Toggle */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/10 border border-border-strong">
-              <Server size={10} className={localModelsEnabled ? 'text-primary' : 'text-muted-foreground/30'} />
-              <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60">Local Servers (Ollama/LM Studio)</span>
-              <button
-                onClick={() => {
-                  setLocalModelsEnabled(!localModelsEnabled);
-                  if (!localModelsEnabled) {
-                    onRefreshOllama();
-                    onRefreshLMStudio();
-                  }
-                }}
-                className={`
-                  w-8 h-4 rounded-full transition-colors duration-200 relative flex items-center px-0.5
-                  ${localModelsEnabled ? 'bg-primary' : 'bg-muted-foreground/20'}
-                `}
-              >
-                <div className={`
-                  w-3 h-3 rounded-full bg-background shadow-sm transition-transform duration-200
-                  ${localModelsEnabled ? 'translate-x-4' : 'translate-x-0'}
-                `} />
-              </button>
             </div>
           </div>
         </header>
@@ -461,29 +417,56 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 title="NYX Native Local Library"
                 subtitle="Directly download and host GGUF models natively"
               >
-                {/* Direct RAM Load Status Badge */}
-                <div className={`
-                  inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[8px] font-bold uppercase tracking-tight
-                  ${activeNativeId 
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                    : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'}
-                `}>
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Direct RAM Load Status Badge */}
                   <div className={`
-                    w-1.5 h-1.5 rounded-full
-                    ${activeNativeId ? 'bg-emerald-400 animate-ping' : 'bg-zinc-400'}
-                  `} />
-                  {activeNativeId ? 'Model Loaded in RAM' : 'No Model in RAM'}
+                    inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[8px] font-bold uppercase tracking-tight
+                    ${activeNativeId 
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                      : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'}
+                  `}>
+                    <div className={`
+                      w-1.5 h-1.5 rounded-full
+                      ${activeNativeId ? 'bg-emerald-400 animate-ping' : 'bg-zinc-400'}
+                    `} />
+                    {activeNativeId ? 'Model Resident in RAM' : 'No Model Loaded'}
+                  </div>
+
+                  {/* Browse Presets / Download button */}
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => setShowDownloadModal(true)}
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-purple-600 hover:bg-purple-500 border border-purple-500/20 hover:border-purple-500/40 text-[8px] font-black uppercase tracking-wider text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 transition-all cursor-pointer"
+                  >
+                    <Download size={10} />
+                    <span>Browse &amp; Download</span>
+                  </motion.button>
                 </div>
               </SectionHeader>
 
-              {nativeModels.length === 0 ? (
-                <div className="py-8 text-center flex flex-col items-center justify-center">
-                  <Loader2 size={24} className="text-primary animate-spin mb-2" />
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Syncing Presets...</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {nativeModels.map(m => {
+              {/* Only show downloaded or actively-downloading models in the library */}
+              {(() => {
+                const installedModels = nativeModels.filter(
+                  m => m.status === 'completed' || m.status === 'downloading' || activeNativeId === m.id
+                );
+
+                if (installedModels.length === 0) {
+                  return (
+                    <div className="py-10 rounded-2xl border border-dashed border-purple-500/15 flex flex-col items-center justify-center text-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                        <Download size={16} className="text-purple-400" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">No models installed</p>
+                        <p className="text-[8px] text-muted-foreground/40 mt-1 font-medium">Click <span className="text-purple-400 font-bold">Browse &amp; Download</span> to add models to your library.</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {installedModels.map(m => {
                     const isResident = activeNativeId === m.id;
                     const isDownloading = m.status === 'downloading';
                     const isCompleted = m.status === 'completed';
@@ -584,12 +567,13 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
                           <div className="flex flex-col gap-1.5 mt-1">
                             {isIdle && (
-                              <button
+                              <motion.button
+                                whileTap={{ scale: 0.96 }}
                                 onClick={() => handleDownload(m.id)}
                                 disabled={isCurrentAction || !!actionInProgress}
                                 className="
                                   w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                                  bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 disabled:opacity-40
+                                  bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 disabled:opacity-40 cursor-pointer
                                 "
                               >
                                 {isCurrentAction ? (
@@ -603,16 +587,17 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                     <span>Download Direct to NYX</span>
                                   </>
                                 )}
-                              </button>
+                              </motion.button>
                             )}
 
                             {isCompleted && !isResident && (
-                              <button
+                              <motion.button
+                                whileTap={{ scale: 0.96 }}
                                 onClick={() => handleRun(m.id)}
                                 disabled={isCurrentAction || !!actionInProgress}
                                 className="
                                   w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                                  bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 disabled:opacity-40
+                                  bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 disabled:opacity-40 cursor-pointer
                                 "
                               >
                                 {isCurrentAction ? (
@@ -626,17 +611,18 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                     <span>Load in Resident RAM</span>
                                   </>
                                 )}
-                              </button>
+                              </motion.button>
                             )}
 
                             {isResident && (
                               <div className="flex gap-2">
-                                <button
+                                <motion.button
+                                  whileTap={{ scale: 0.96 }}
                                   onClick={() => handleStop(m.id)}
                                   disabled={isCurrentAction || !!actionInProgress}
                                   className="
                                     flex-1 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                                    bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 disabled:opacity-40
+                                    bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 disabled:opacity-40 cursor-pointer
                                   "
                                 >
                                   {isCurrentAction ? (
@@ -650,187 +636,48 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                       <span>Unload RAM</span>
                                     </>
                                   )}
-                                </button>
+                                </motion.button>
 
-                                <button
+                                <motion.button
+                                  whileTap={{ scale: 0.96 }}
                                   onClick={() => {
                                     selectModel?.(m.id);
                                     toast.success(`NYX Chatbot active model is now ${m.name}`);
                                   }}
                                   className="
                                     flex-1 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                                    bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25
+                                    bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25 cursor-pointer
                                   "
                                 >
                                   <TerminalIcon size={10} />
                                   <span>Chat Now</span>
-                                </button>
+                                </motion.button>
                               </div>
+                            )}
+
+                            {/* Delete button — only show when downloaded and not currently downloading */}
+                            {(isCompleted || isResident) && (
+                              <motion.button
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => handleDelete(m.id, m.name)}
+                                disabled={isCurrentAction || !!actionInProgress}
+                                className="
+                                  w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all mt-1
+                                  bg-red-500/8 hover:bg-red-500/15 text-red-400/70 hover:text-red-400 border border-red-500/10 hover:border-red-500/25 disabled:opacity-40 cursor-pointer
+                                "
+                              >
+                                <Trash2 size={9} />
+                                <span>Delete from Disk</span>
+                              </motion.button>
                             )}
                           </div>
                         </div>
                       </motion.div>
                     );
-                  })}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* ════════════════════════════════════════════════════════════════
-           *  OLLAMA SECTION
-           * ════════════════════════════════════════════════════════════════ */}
-          {showLocal && (
-            <section className="space-y-4 p-5 rounded-2xl bg-white/30 dark:bg-zinc-900/20 backdrop-blur-md border border-white/15 dark:border-white/5">
-              <SectionHeader
-                icon={<Server size={18} strokeWidth={1.5} />}
-                title="Ollama"
-                subtitle="Local model server"
-              >
-                {/* Inline URL config for Ollama */}
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/5 border border-border-strong/40">
-                  <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/30 shrink-0">URL</span>
-                  <input
-                    type="text"
-                    value={ollamaBaseUrl}
-                    onChange={e => setOllamaBaseUrl(e.target.value)}
-                    placeholder="http://localhost:11434"
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        e.currentTarget.blur();
-                        setTimeout(() => {
-                          window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
-                        }, 100);
-                      }
-                    }}
-                    className="
-                      bg-transparent border-none text-[9px] font-mono text-primary
-                      outline-none w-36 placeholder:text-muted-foreground/10
-                    "
-                  />
-                  <button
-                    onClick={() => setOllamaBaseUrl('http://localhost:11434')}
-                    className="text-[6px] font-bold uppercase tracking-widest text-muted-foreground/20 hover:text-primary transition-colors shrink-0"
-                  >
-                    Reset
-                  </button>
-                </div>
-                <StatusBadge status={ollamaStatus} />
-                <button
-                  onClick={onRefreshOllama}
-                  disabled={ollamaStatus === 'loading'}
-                  className="
-                    p-2 rounded-lg bg-muted/15 border border-border/30
-                    text-muted-foreground hover:text-primary hover:border-primary/30
-                    transition-all disabled:opacity-40
-                  "
-                >
-                  <RefreshCw size={14} strokeWidth={1.5} className={ollamaStatus === 'loading' ? 'animate-spin' : ''} />
-                </button>
-              </SectionHeader>
-
-              {filteredOllama.length === 0 ? (
-                <EmptyState
-                  message="No Ollama models found"
-                  hint="Start Ollama and pull a model with `ollama pull <model>`"
-                />
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {filteredOllama.map(m => (
-                    <ModelCard
-                      key={`ollama-${m.name}`}
-                      name={m.name}
-                      provider="ollama"
-                      description={m.size ? `Local Ollama (${(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB)` : 'Local Ollama model'}
-                      specs={{
-                        contextWindow: 'Dynamic',
-                        maxOutput: 'Dynamic',
-                        modality: 'Text'
-                      }}
-                      usage={usage['ollama']}
-                      hasKey={true}
-                      status={providerStatuses?.['ollama']}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* ════════════════════════════════════════════════════════════════
-           *  LM STUDIO SECTION
-           * ════════════════════════════════════════════════════════════════ */}
-          {showLocal && (
-            <section className="space-y-4 p-5 rounded-2xl bg-white/30 dark:bg-zinc-900/20 backdrop-blur-md border border-white/15 dark:border-white/5">
-              <SectionHeader
-                icon={<Server size={18} strokeWidth={1.5} />}
-                title="LM Studio"
-                subtitle="Local model directory server"
-              >
-                {/* Inline URL config for LM Studio */}
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/5 border border-border-strong/40">
-                  <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/30 shrink-0">URL</span>
-                  <input
-                    type="text"
-                    value={lmStudioBaseUrl}
-                    onChange={e => setLmStudioBaseUrl(e.target.value)}
-                    placeholder="http://localhost:1234/v1"
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        e.currentTarget.blur();
-                        setTimeout(() => {
-                          window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
-                        }, 100);
-                      }
-                    }}
-                    className="
-                      bg-transparent border-none text-[9px] font-mono text-primary
-                      outline-none w-36 placeholder:text-muted-foreground/10
-                    "
-                  />
-                  <button
-                    onClick={() => setLmStudioBaseUrl('http://localhost:1234/v1')}
-                    className="text-[6px] font-bold uppercase tracking-widest text-muted-foreground/20 hover:text-primary transition-colors shrink-0"
-                  >
-                    Reset
-                  </button>
-                </div>
-                <StatusBadge status={lmStudioStatus} />
-                <button
-                  onClick={onRefreshLMStudio}
-                  disabled={lmStudioStatus === 'loading'}
-                  className="
-                    p-2 rounded-lg bg-muted/15 border border-border/30
-                    text-muted-foreground hover:text-primary hover:border-primary/30
-                    transition-all disabled:opacity-40
-                  "
-                >
-                  <RefreshCw size={14} strokeWidth={1.5} className={lmStudioStatus === 'loading' ? 'animate-spin' : ''} />
-                </button>
-              </SectionHeader>
-
-              {filteredLMStudio.length === 0 ? (
-                <EmptyState
-                  message="No LM Studio models loaded"
-                  hint="Load a model in LM Studio and ensure the server is running"
-                />
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {filteredLMStudio.map(m => (
-                    <ModelCard
-                      key={`lmstudio-${m.id}`}
-                      name={m.id}
-                      provider="lmstudio"
-                      description="Currently loaded in LM Studio"
-                      usage={usage['lmstudio']}
-                      hasKey={true}
-                      status={providerStatuses?.['lmstudio']}
-                    />
-                  ))}
-                </div>
-              )}
+                    })}
+                  </div>
+                );
+              })()}
             </section>
           )}
 
@@ -873,34 +720,233 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
               ))}
             </section>
           )}
-
-          {filter === 'local' && !localModelsEnabled && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-8 rounded-3xl bg-gradient-to-br from-white/30 via-white/10 to-transparent dark:from-[#181224]/30 dark:via-[#120B1C]/20 dark:to-transparent border border-white/20 dark:border-white/5 backdrop-blur-xl shadow-2xl flex flex-col items-center justify-center text-center max-w-xl mx-auto py-16"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-6 animate-pulse">
-                <Server size={32} />
-              </div>
-              <h3 className="text-sm font-black uppercase tracking-wider text-foreground">Local Servers Disabled</h3>
-              <p className="text-[11px] text-muted-foreground/80 mt-2 max-w-sm font-medium leading-relaxed">
-                Connect third-party local engines like Ollama or LM Studio to integrate local llama, mistral, or qwen models into NYX.
-              </p>
-              <button
-                onClick={() => {
-                  setLocalModelsEnabled(true);
-                  onRefreshOllama();
-                  onRefreshLMStudio();
-                }}
-                className="mt-6 px-6 py-2.5 rounded-full bg-primary hover:bg-primary/90 text-white text-[9px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:scale-[1.03] active:scale-[0.97]"
-              >
-                Enable Local Servers
-              </button>
-            </motion.div>
-          )}
         </div>
       </div>
+
+      {/* Download GGUF Presets Modal Window */}
+      <AnimatePresence>
+        {showDownloadModal && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDownloadModal(false)}
+              className="absolute inset-0 bg-[#0b0b0c]/85 backdrop-blur-md cursor-pointer"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ 
+                opacity: 1, 
+                scale: 1, 
+                y: 0,
+                transition: { type: "spring", stiffness: 350, damping: 30 }
+              }}
+              exit={{ 
+                opacity: 0, 
+                scale: 0.95, 
+                y: 15,
+                transition: { duration: 0.18, ease: "easeOut" }
+              }}
+              className="relative w-full max-w-4xl bg-[#18181b]/95 border border-white/[0.08] rounded-3xl shadow-[0_30px_70px_rgba(0,0,0,0.6)] flex flex-col max-h-[90vh] backdrop-blur-3xl overflow-hidden cursor-default z-[610]"
+            >
+              {/* Modal Header */}
+              <div className="p-4 px-6 border-b border-white/[0.06] bg-white/[0.02] flex items-center justify-between shrink-0">
+                <div>
+                  <h3 className="text-xs font-black tracking-[0.25em] text-purple-400 uppercase">Local Model Directory</h3>
+                  <p className="text-[8px] font-medium text-muted-foreground/50 uppercase tracking-widest mt-0.5">World's most popular open-source models — download &amp; run locally in NYX</p>
+                </div>
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowDownloadModal(false)}
+                  className="p-1.5 rounded-xl text-muted-foreground/45 hover:text-foreground hover:bg-white/5 transition-all cursor-pointer"
+                >
+                  <X size={14} />
+                </motion.button>
+              </div>
+
+              {/* Scrollable list grouped by provider */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+                {groupedLocalPresets.map(([provider, providerModels]) => (
+                  <div key={provider} className="space-y-4">
+                    {/* Provider divider matching cloud models library */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-[8px] font-black uppercase tracking-[0.3em] text-purple-400 shrink-0">
+                        {getProviderLabel(provider)}
+                      </span>
+                      <div className="h-px flex-1 bg-gradient-to-r from-[#9b4dff]/30 to-transparent" />
+                    </div>
+                    
+                    {/* responsive grid matching main library grids */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {providerModels.map(m => {
+                        const isResident = activeNativeId === m.id;
+                        const isDownloading = m.status === 'downloading';
+                        const isCompleted = m.status === 'completed';
+                        const isIdle = m.status === 'idle' || m.status === 'failed';
+                        const progress = m.progress || { progressPercentage: 0, speedMbps: 0, bytesDownloaded: 0, totalBytes: 0 };
+                        const isCurrentAction = actionInProgress === m.id;
+
+                        return (
+                          <motion.div
+                            key={`modal-preset-${m.id}`}
+                            whileHover={{ y: -2, scale: 1.01 }}
+                            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                            className={`
+                              group relative p-3.5 rounded-2xl border border-solid flex flex-col justify-between gap-3 transform-gpu transition-all duration-500 overflow-hidden shadow-sm
+                              ${isResident
+                                ? 'bg-[#181224]/80 border-[#9b4dff]/45 shadow-[0_0_20px_rgba(155,77,255,0.15)] dark:bg-[#120B1C]/90'
+                                : 'bg-white/40 dark:bg-zinc-900/30 border-white/20 dark:border-white/5 hover:border-purple-500/30 hover:bg-white/60 dark:hover:bg-zinc-800/40'
+                              }
+                            `}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-1.5">
+                                  {m.featured && (
+                                    <span className="inline-flex items-center gap-1 text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                      <Zap size={7} /> Featured
+                                    </span>
+                                  )}
+                                  <span className="inline-block text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                    GGUF
+                                  </span>
+                                </div>
+                                
+                                <div className="flex items-center gap-1.5">
+                                  {isResident && (
+                                    <span className="inline-flex items-center gap-1 text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                      Resident
+                                    </span>
+                                  )}
+                                  {isCompleted && !isResident && (
+                                    <span className="text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
+                                      Ready
+                                    </span>
+                                  )}
+                                  {isDownloading && (
+                                    <span className="text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
+                                      Downloading
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <h5 className="text-[12px] font-bold leading-tight tracking-tight text-foreground group-hover:text-purple-400 transition-colors">
+                                {m.name}
+                              </h5>
+                              <p className="text-[9px] text-muted-foreground/80 line-clamp-2 leading-relaxed font-medium mt-1">
+                                {m.description}
+                              </p>
+
+                              {/* Specs grid — 4 cells */}
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2.5 border-t border-border/30 mt-2">
+                                <div className="flex flex-col">
+                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">Parameters</span>
+                                  <span className="text-[8px] font-mono font-bold text-foreground/80">{m.paramCount || '—'}</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">Quantization</span>
+                                  <span className="text-[8px] font-mono font-bold text-foreground/80">{m.quantization || '—'}</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">Context</span>
+                                  <span className="text-[8px] font-mono font-bold text-foreground/80">{m.contextLength || '—'}</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">File Size</span>
+                                  <span className="text-[8px] font-mono font-bold text-foreground/80">{m.size}</span>
+                                </div>
+                                <div className="flex flex-col col-span-2">
+                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">RAM / VRAM Required</span>
+                                  <span className="text-[8px] font-mono font-bold text-purple-400/80">{m.ramRequired}{m.vramRequired ? ` · ${m.vramRequired}` : ''}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Download Action */}
+                            <div className="mt-2.5 pt-2.5 border-t border-border/30">
+                              {isDownloading && (
+                                <div className="space-y-1.5 mb-2">
+                                  <div className="flex items-center justify-between text-[7px] font-black uppercase tracking-widest text-muted-foreground">
+                                    <span>{progress.progressPercentage}% Completed</span>
+                                    <span>{progress.speedMbps > 0 ? `${progress.speedMbps} MB/s` : 'Connecting...'}</span>
+                                  </div>
+                                  <div className="w-full h-1 rounded-full bg-black/20 dark:bg-white/5 overflow-hidden">
+                                    <motion.div
+                                      className="h-full bg-gradient-to-r from-purple-500 to-indigo-500"
+                                      style={{ width: `${progress.progressPercentage}%` }}
+                                      initial={{ width: '0%' }}
+                                      animate={{ width: `${progress.progressPercentage}%` }}
+                                      transition={{ duration: 0.3 }}
+                                    />
+                                  </div>
+                                  <div className="text-[7px] font-medium text-muted-foreground/50 text-right">
+                                    {progress.totalBytes > 0 
+                                      ? `${(progress.bytesDownloaded / (1024 * 1024)).toFixed(0)} MB / ${(progress.totalBytes / (1024 * 1024)).toFixed(0)} MB`
+                                      : 'Negotiating HTTP download streams...'}
+                                  </div>
+                                </div>
+                              )}
+
+                              {isIdle && (
+                                <motion.button
+                                  whileTap={{ scale: 0.96 }}
+                                  onClick={() => handleDownload(m.id)}
+                                  disabled={isCurrentAction || !!actionInProgress}
+                                  className="
+                                    w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                    bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 disabled:opacity-40 cursor-pointer
+                                  "
+                                >
+                                  {isCurrentAction ? (
+                                    <>
+                                      <Loader2 size={10} className="animate-spin" />
+                                      <span>Initiating...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Download size={10} />
+                                      <span>Download to NYX</span>
+                                    </>
+                                  )}
+                                </motion.button>
+                              )}
+
+                              {isCompleted && (
+                                <div className="flex flex-col gap-1.5">
+                                  <div className="py-1.5 px-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center gap-1.5 text-[8px] font-black uppercase tracking-wider text-emerald-400">
+                                    <Check size={10} />
+                                    <span>Ready on Device</span>
+                                  </div>
+                                  <motion.button
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => handleDelete(m.id, m.name)}
+                                    disabled={isCurrentAction || !!actionInProgress}
+                                    className="
+                                      w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                      bg-red-500/8 hover:bg-red-500/18 text-red-400/70 hover:text-red-400 border border-red-500/15 hover:border-red-500/30 disabled:opacity-40 cursor-pointer
+                                    "
+                                  >
+                                    <Trash2 size={9} />
+                                    <span>Delete from Disk</span>
+                                  </motion.button>
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

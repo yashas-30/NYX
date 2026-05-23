@@ -6,6 +6,52 @@
 import { AISettings, AIResponse, ChatMessage, Provider } from '../types';
 
 export class AIService {
+  private static sessionToken: string | null = null;
+  private static tokenExpiresAt: number = 0;
+
+  static setSessionToken(token: string | null): void {
+    this.sessionToken = token;
+  }
+
+  static getSessionToken(): string | null {
+    return this.sessionToken;
+  }
+
+  private static async getOrFetchSessionToken(isStream = false): Promise<string> {
+    if (isStream) {
+      const res = await fetch('/api/vault/token?stream=true');
+      const data = await res.json();
+      return data.token;
+    }
+    if (this.sessionToken && Date.now() < this.tokenExpiresAt - 10000) {
+      return this.sessionToken;
+    }
+    const res = await fetch('/api/vault/token');
+    const data = await res.json();
+    this.sessionToken = data.token;
+    this.tokenExpiresAt = data.expiresAt || (Date.now() + 5 * 60 * 1000);
+    return this.sessionToken;
+  }
+
+  public static async fetchWithAuth(url: string, init?: RequestInit, isStream = false): Promise<Response> {
+    const token = await this.getOrFetchSessionToken(isStream);
+    const headers = new Headers(init?.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    headers.set('x-nyx-session-token', token);
+    const response = await fetch(url, {
+      ...init,
+      headers
+    });
+
+    if (response.status === 401) {
+      // Clear cached session token to force a refresh on the next request
+      this.sessionToken = null;
+      this.tokenExpiresAt = 0;
+    }
+
+    return response;
+  }
+
   /**
    * Main entry point for executing AI requests with streaming support.
    */
@@ -18,7 +64,7 @@ export class AIService {
     settings?: AISettings,
     onStream?: (text: string) => void,
     signal?: AbortSignal,
-    options?: { lmStudioBaseUrl?: string; ollamaBaseUrl?: string; history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> }
+    options?: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> }
   ): Promise<AIResponse> {
     const startTime = Date.now();
     let resultText = "";
@@ -29,7 +75,7 @@ export class AIService {
     // ── Cache Server Intercept ──────────────────────────────────────────────
     let cacheKey = "";
     try {
-      const cacheCheckRes = await fetch('/api/cache/get', {
+      const cacheCheckRes = await this.fetchWithAuth('/api/cache/get', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -70,8 +116,6 @@ export class AIService {
     try {
       if (provider === 'gemini') {
         resultText = await this.executeGemini(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
-      } else if (provider === 'ollama') {
-        resultText = await this.executeOllama(modelId, prompt, systemInstruction, settings, options?.ollamaBaseUrl, options?.history, options?.nodeId, onStream, signal);
       } else if (provider === 'openrouter') {
         resultText = await this.executeOpenRouter(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
       } else if (provider === 'nvidia') {
@@ -80,8 +124,6 @@ export class AIService {
         resultText = await this.executeOpencode(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
       } else if (provider === 'pollinations') {
         resultText = await this.executePollinations(modelId, prompt, settings, systemInstruction, options?.history, onStream, signal);
-      } else if (provider === 'lmstudio') {
-        resultText = await this.executeLMStudio(modelId, prompt, systemInstruction, settings, options?.lmStudioBaseUrl, options?.history, options?.nodeId, onStream, signal);
       } else if (provider === 'nyx-native') {
         resultText = await this.executeNyxNative(modelId, prompt, systemInstruction, settings, options?.history, onStream, signal);
       } else if (provider === 'qwen-local') {
@@ -92,7 +134,7 @@ export class AIService {
 
       // Write-back to the Cache Server asynchronously
       if (cacheKey && resultText) {
-        fetch('/api/cache/set', {
+        this.fetchWithAuth('/api/cache/set', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -132,7 +174,7 @@ export class AIService {
     gatewayUrls?: Record<string, string>
   ): Promise<string> {
     try {
-      const response = await fetch('/api/gemini/stream', {
+      const response = await this.fetchWithAuth('/api/gemini/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Connection': 'keep-alive' },
         body: JSON.stringify({ model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls }),
@@ -140,8 +182,7 @@ export class AIService {
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: `Gemini Error ${response.status}` }));
-        throw new Error(err.error || `Gemini Error ${response.status}`);
+        await this.handleNonOkResponse(response, 'Gemini');
       }
       return this.processStream(response, onStream);
     } catch (error: any) {
@@ -157,55 +198,7 @@ export class AIService {
     }
   }
 
-  private static async executeOllama(
-    model: string, prompt: string, systemInstruction?: string, settings?: AISettings, 
-    baseUrl?: string, history?: ChatMessage[], nodeId?: string, onStream?: (t: string) => void, signal?: AbortSignal
-  ): Promise<string> {
-    const { ollamaChat } = await import('@/src/lib/api/ollamaClient');
-    let resultText = "";
 
-    return new Promise((resolve, reject) => {
-      ollamaChat({
-        nodeId: nodeId ?? model,
-        model, prompt, systemInstruction, settings, history, baseUrl,
-        onChunk: (_, accumulated) => {
-          resultText = accumulated;
-          if (onStream) onStream(accumulated);
-        },
-        onDone: () => resolve(resultText),
-        onError: (msg) => reject(new Error(msg))
-      });
-
-      if (signal) {
-        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
-      }
-    });
-  }
-
-  private static async executeLMStudio(
-    model: string, prompt: string, systemInstruction?: string, settings?: AISettings, 
-    baseUrl?: string, history?: ChatMessage[], nodeId?: string, onStream?: (t: string) => void, signal?: AbortSignal
-  ): Promise<string> {
-    const { lmStudioChat } = await import('@/src/lib/api/lmStudioClient');
-    let resultText = "";
-
-    return new Promise((resolve, reject) => {
-      lmStudioChat({
-        nodeId: nodeId ?? model,
-        model, prompt, systemInstruction, settings, history, baseUrl,
-        onChunk: (_, accumulated) => {
-          resultText = accumulated;
-          if (onStream) onStream(accumulated);
-        },
-        onDone: () => resolve(resultText),
-        onError: (msg) => reject(new Error(msg))
-      });
-
-      if (signal) {
-        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
-      }
-    });
-  }
 
   private static async executeQwenLocal(
     model: string,
@@ -216,7 +209,7 @@ export class AIService {
     onStream?: (t: string) => void,
     signal?: AbortSignal
   ): Promise<string> {
-    const response = await fetch('/api/qwen-local/stream', {
+    const response = await this.fetchWithAuth('/api/qwen-local/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -232,8 +225,7 @@ export class AIService {
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: `Local Qwen Server Error ${response.status}` }));
-      throw new Error(err.error || `Local Qwen Server Error ${response.status}. Make sure the Python server is running on port 3002.`);
+      await this.handleNonOkResponse(response, 'Local Qwen Server');
     }
 
     return this.processStream(response, onStream);
@@ -257,7 +249,7 @@ export class AIService {
     }
     messages.push({ role: 'user', content: prompt });
 
-    const response = await fetch('/api/nyx/local-models/chat', {
+    const response = await this.fetchWithAuth('/api/nyx/local-models/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -271,8 +263,7 @@ export class AIService {
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: `Native GGUF Runner Error ${response.status}` }));
-      throw new Error(err.error || `Native GGUF Runner Error ${response.status}. Make sure the model is loaded in RAM.`);
+      await this.handleNonOkResponse(response, 'Native GGUF Runner');
     }
 
     return this.processStream(response, onStream);
@@ -284,7 +275,7 @@ export class AIService {
     gatewayUrls?: Record<string, string>
   ): Promise<string> {
     try {
-      const response = await fetch('/api/openrouter/stream', {
+      const response = await this.fetchWithAuth('/api/openrouter/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Connection': 'keep-alive' },
         body: JSON.stringify({ model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls }),
@@ -292,8 +283,7 @@ export class AIService {
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: `OpenRouter Error ${response.status}` }));
-        throw new Error(err.error || `OpenRouter Error ${response.status}`);
+        await this.handleNonOkResponse(response, 'OpenRouter');
       }
       return this.processStream(response, onStream);
     } catch (error: any) {
@@ -316,7 +306,7 @@ export class AIService {
   ): Promise<string> {
     // NVIDIA NIM models - requires API key
     try {
-      const response = await fetch('/api/nvidia/stream', {
+      const response = await this.fetchWithAuth('/api/nvidia/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Connection': 'keep-alive' },
         body: JSON.stringify({ model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls }),
@@ -324,8 +314,7 @@ export class AIService {
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: `NVIDIA Error ${response.status}` }));
-        throw new Error(err.error || `NVIDIA Error ${response.status}`);
+        await this.handleNonOkResponse(response, 'NVIDIA');
       }
       return this.processStream(response, onStream);
     } catch (error: any) {
@@ -347,7 +336,7 @@ export class AIService {
     gatewayUrls?: Record<string, string>
   ): Promise<string> {
     try {
-      const response = await fetch('/api/opencode/stream', {
+      const response = await this.fetchWithAuth('/api/opencode/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Connection': 'keep-alive' },
         body: JSON.stringify({ model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls }),
@@ -355,8 +344,7 @@ export class AIService {
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: `OpenCode Error ${response.status}` }));
-        throw new Error(err.error || `OpenCode Error ${response.status}`);
+        await this.handleNonOkResponse(response, 'OpenCode');
       }
       return this.processStream(response, onStream);
     } catch (error: any) {
@@ -377,7 +365,7 @@ export class AIService {
     systemInstruction?: string, history?: ChatMessage[], onStream?: (t: string) => void, signal?: AbortSignal
   ): Promise<string> {
     try {
-      const response = await fetch('/api/pollinations/stream', {
+      const response = await this.fetchWithAuth('/api/pollinations/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Connection': 'keep-alive' },
         body: JSON.stringify({ model, prompt, settings, systemInstruction, history }),
@@ -385,8 +373,7 @@ export class AIService {
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: `Pollinations Error ${response.status}` }));
-        throw new Error(err.error || `Pollinations Error ${response.status}`);
+        await this.handleNonOkResponse(response, 'Pollinations');
       }
       return this.processStream(response, onStream);
     } catch (error: any) {
@@ -441,6 +428,14 @@ export class AIService {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
+  private static async handleNonOkResponse(response: Response, providerName: string): Promise<never> {
+    const err = await response.json().catch(() => ({ error: `${providerName} Error ${response.status}` }));
+    if (err && err.error === 'SAFETY_GATE_BLOCKED') {
+      throw new Error(`SAFETY_GATE_BLOCKED:${JSON.stringify(err)}`);
+    }
+    throw new Error(err.error || `${providerName} Error ${response.status}`);
+  }
+
   private static async processStream(response: Response, onStream?: (t: string) => void): Promise<string> {
   if (!response.body) throw new Error("No response body");
   
@@ -480,6 +475,12 @@ export class AIService {
         try {
           const parsed = JSON.parse(dataStr);
           
+          // Intercept token rotation events
+          if (parsed && parsed.tokenRotate) {
+            AIService.setSessionToken(parsed.tokenRotate);
+            continue;
+          }
+
           // Check for error
           if (parsed.error) {
             const msg = typeof parsed.error === 'object' 
@@ -499,14 +500,7 @@ export class AIService {
           else if (parsed.choices?.[0]?.delta?.content) {
             chunk = parsed.choices[0].delta.content;
           }
-          // Ollama chat: { message: { content: "..." } }
-          else if (parsed.message?.content) {
-            chunk = parsed.message.content;
-          }
-          // Ollama generate: { response: "..." }
-          else if (typeof parsed.response === 'string') {
-            chunk = parsed.response;
-          }
+
           
           if (chunk) {
             resultText += chunk;
@@ -535,9 +529,8 @@ export class AIService {
 
   private static validateApiKey(provider: Provider | string, key?: string) {
     if (provider === 'pollinations' || provider === 'nyx-native' || provider === 'qwen-local') return;
-    if (!['ollama', 'lmstudio', 'opencode', 'nyx-native', 'gemini', 'qwen-local'].includes(provider) && !key) {
-      throw new Error(`${provider} API key is required. Add it in Settings.`);
-    }
+    // If no key is provided, let the backend vault validation handle auth
+    if (!key) return;
     if (key) {
       const trimmed = key.trim();
       if (!trimmed) return;
@@ -554,6 +547,9 @@ export class AIService {
 
   private static async handleError(error: any, retryFn: () => Promise<AIResponse>): Promise<AIResponse> {
     const message = error.message || String(error);
+    if (message.startsWith('SAFETY_GATE_BLOCKED:')) {
+      throw error;
+    }
     const isTransient = /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|rate_limit|quota|overloaded|high demand/.test(message);
     
     // For now, we skip auto-retry logic in this service layer to keep it pure, 
@@ -567,11 +563,11 @@ export class AIService {
   /**
    * Returns the connectivity status of a provider.
    */
-  static async checkStatus(provider: Provider | string, apiKey?: string, options?: { lmStudioBaseUrl?: string, ollamaBaseUrl?: string }): Promise<'online' | 'offline' | 'no-key'> {
+  static async checkStatus(provider: Provider | string, apiKey?: string): Promise<'online' | 'offline' | 'no-key'> {
     if (provider === 'pollinations') return 'online';
     if (provider === 'nyx-native') {
       try {
-        const res = await fetch('/api/nyx/local-models/status');
+        const res = await this.fetchWithAuth('/api/nyx/local-models/status');
         if (res.ok) {
           const data = await res.json();
           return data.activeModelId ? 'online' : 'offline';
@@ -589,56 +585,27 @@ export class AIService {
         return 'offline';
       }
     }
-    // 1. Check for missing keys first (except for local providers and opencode)
-    if (!['ollama', 'lmstudio', 'opencode', 'nyx-native', 'qwen-local'].includes(provider) && !apiKey) {
-      return 'no-key';
-    }
 
+
+
+    // Check cloud provider via server vault configuration status
     try {
-      if (provider === 'ollama') {
-        const baseUrl = options?.ollamaBaseUrl || 'http://localhost:11434';
-        try {
-          // Try direct fetch first (fastest)
-          const response = await fetch(`${baseUrl}/api/tags`, { mode: 'no-cors' });
-          // with no-cors we can't check ok, but if it doesn't throw, it's likely up
-          return 'online';
-        } catch {
-          // Try Fastify proxy as fallback
-          const proxyResponse = await fetch(`/api/fastify/ollama/models?baseUrl=${encodeURIComponent(baseUrl)}`);
-          return proxyResponse.ok ? 'online' : 'offline';
-        }
-      } 
-      
-      if (provider === 'lmstudio') {
-        const baseUrl = options?.lmStudioBaseUrl || 'http://localhost:1234';
-        try {
-          // LM Studio via Fastify
-          const proxyResponse = await fetch(`/api/fastify/lmstudio/models?baseUrl=${encodeURIComponent(baseUrl)}`);
-          return proxyResponse.ok ? 'online' : 'offline';
-        } catch {
-          return 'offline';
-        }
+      const response = await fetch('/api/vault/status');
+      if (response.ok) {
+        const vaultStatus = await response.json();
+        const isConfigured = vaultStatus[provider];
+        if (isConfigured) return 'online';
       }
-
-      if (provider === 'nvidia') {
-        // NVIDIA NIM - requires API key
-        return apiKey ? 'online' : 'no-key';
-      }
-
-      // 2. For cloud providers, validate the key format
-      if (apiKey) {
-        try {
-          this.validateApiKey(provider, apiKey);
-          return 'online'; 
-        } catch {
-          return 'no-key';
-        }
-      }
-
-      return 'no-key';
-    } catch {
-      return 'offline';
+    } catch (e) {
+      console.warn('[AIService] Failed to check status via vault status:', e);
     }
+
+    // Fallback: check if apiKey is passed in (local in-memory settings check)
+    if (apiKey && apiKey.trim().length > 0) {
+      return 'online';
+    }
+
+    return 'no-key';
   }
 
   /**

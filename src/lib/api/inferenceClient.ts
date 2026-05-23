@@ -14,8 +14,6 @@ export interface AISettings {
 }
 
 export interface InferenceOptions {
-  lmStudioBaseUrl?: string;
-  ollamaBaseUrl?: string;
   history?: any[];
   nodeId?: string;
   gatewayUrls?: Record<string, string>;
@@ -75,45 +73,7 @@ async function handleGemini(model: string, prompt: string, apiKey: string | unde
   }
 }
 
-async function handleOllama(nodeId: string, model: string, prompt: string, systemInstruction: string | undefined, settings: AISettings | undefined, baseUrl: string | undefined, history: any[] | undefined, onStream: ((text: string) => void) | undefined, signal: AbortSignal | undefined): Promise<string> {
-    const { ollamaChat } = await import('@/src/lib/api/ollamaClient');
-    let resultText = "";
-    return new Promise((resolve, reject) => {
-      ollamaChat({
-        nodeId: nodeId ?? model,
-        model, prompt, systemInstruction, settings, history, baseUrl,
-        onChunk: (_, accumulated) => {
-          resultText = accumulated;
-          if (onStream) onStream(accumulated);
-        },
-        onDone: () => resolve(resultText),
-        onError: (msg) => reject(new Error(msg))
-      });
-      if (signal) {
-        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
-      }
-    });
-  }
 
-async function handleLMStudio(nodeId: string, model: string, prompt: string, systemInstruction: string | undefined, settings: AISettings | undefined, baseUrl: string | undefined, history: any[] | undefined, onStream: ((text: string) => void) | undefined, signal: AbortSignal | undefined): Promise<string> {
-    const { lmStudioChat } = await import('@/src/lib/api/lmStudioClient');
-    let resultText = "";
-    return new Promise((resolve, reject) => {
-      lmStudioChat({
-        nodeId: nodeId ?? model,
-        model, prompt, systemInstruction, settings, history, baseUrl,
-        onChunk: (_, accumulated) => {
-          resultText = accumulated;
-          if (onStream) onStream(accumulated);
-        },
-        onDone: () => resolve(resultText),
-        onError: (msg) => reject(new Error(msg))
-      });
-      if (signal) {
-        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
-      }
-    });
-  }
 
 async function handleOpenRouter(model: string, prompt: string, apiKey: string, settings: AISettings, systemInstruction: string | undefined, history: any[] | undefined, onStream: ((text: string) => void) | undefined, signal: AbortSignal | undefined, gatewayUrls?: Record<string, string>): Promise<string> {
   if (!apiKey) throw new Error("OpenRouter API key is required.");
@@ -193,8 +153,6 @@ export async function callAI(
     let resultText = "";
     switch (provider) {
       case 'gemini': resultText = await handleGemini(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
-      case 'ollama': resultText = await handleOllama(nodeId ?? modelId, modelId, prompt, systemInstruction, settings, options?.ollamaBaseUrl, options?.history, onStream, signal); break;
-      case 'lmstudio': resultText = await handleLMStudio(nodeId ?? modelId, modelId, prompt, systemInstruction, settings, options?.lmStudioBaseUrl, options?.history, onStream, signal); break;
       case 'openrouter': resultText = await handleOpenRouter(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
       case 'nvidia': resultText = await handleNvidia(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
       case 'opencode': resultText = await handleOpenCode(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;

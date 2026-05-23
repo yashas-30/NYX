@@ -1,48 +1,64 @@
 /**
- * @file src/features/coder/utils/promptAnalyzer.ts
- * @description Client-side prompt analysis engine that detects programming languages,
- * classifies user intent, scores complexity, and gates non-code prompts.
- * Runs entirely client-side with zero API cost.
+ * @file shared/promptAnalyzer.ts
+ * @description Isomorphic prompt analysis engine with Zod validation schemas.
+ * Runs on both frontend and backend to detect programming languages,
+ * classify user intent, score complexity, gate non-code prompts, and run hardware safety audits.
  */
+
+import { z } from 'zod';
+
+// ── Zod Validation Schemas ──────────────────────────────────────────────────
+
+export const PromptIntentSchema = z.enum([
+  'generate', 'refactor', 'debug', 'explain', 'convert',
+  'optimize', 'review', 'integrate', 'test', 'deploy', 'general'
+]);
+
+export const ComplexityLevelSchema = z.enum(['trivial', 'simple', 'moderate', 'complex', 'enterprise']);
+
+export const HardwareAnalysisSchema = z.object({
+  isHardware: z.boolean(),
+  detectedPlatforms: z.array(z.string()),
+  detectedComponents: z.array(z.string()),
+  detectedProtocols: z.array(z.string()),
+  gaps: z.array(z.string()),
+  safetyHazards: z.array(z.string()),
+  optimizations: z.array(z.string()),
+});
+
+export const PromptAnalysisSchema = z.object({
+  detectedLanguages: z.array(z.string()),
+  primaryLanguage: z.string().nullable(),
+  intent: PromptIntentSchema,
+  complexity: ComplexityLevelSchema,
+  frameworks: z.array(z.string()),
+  keywords: z.array(z.string()),
+  summary: z.string(),
+  isCodeRelated: z.boolean(),
+  hardware: HardwareAnalysisSchema.optional(),
+});
+
+export const PromptRequestSchema = z.object({
+  prompt: z.string().min(1, 'Prompt is required'),
+  history: z.array(z.object({
+    role: z.string(),
+    content: z.string()
+  })).optional(),
+  systemInstruction: z.string().optional(),
+  settings: z.object({
+    temperature: z.number().optional(),
+    maxTokens: z.number().optional(),
+    topP: z.number().optional(),
+    topK: z.number().optional()
+  }).optional(),
+});
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type PromptIntent =
-  | 'generate'   // Build something from scratch
-  | 'refactor'   // Improve/restructure existing code
-  | 'debug'      // Fix a bug or error
-  | 'explain'    // Explain a concept or code
-  | 'convert'    // Translate between languages
-  | 'optimize'   // Make faster or more efficient
-  | 'review'     // Code review & best practices
-  | 'integrate'  // Connect APIs, libraries, services
-  | 'test'       // Write tests
-  | 'deploy'     // Deployment, CI/CD, infrastructure
-  | 'general';   // General code-related question
-
-export type ComplexityLevel = 'trivial' | 'simple' | 'moderate' | 'complex' | 'enterprise';
-
-export interface HardwareAnalysis {
-  isHardware: boolean;
-  detectedPlatforms: string[];
-  detectedComponents: string[];
-  detectedProtocols: string[];
-  gaps: string[];
-  safetyHazards: string[];
-  optimizations: string[];
-}
-
-export interface PromptAnalysis {
-  detectedLanguages: string[];
-  primaryLanguage: string | null;
-  intent: PromptIntent;
-  complexity: ComplexityLevel;
-  frameworks: string[];
-  keywords: string[];
-  summary: string;
-  isCodeRelated: boolean;
-  hardware?: HardwareAnalysis;
-}
+export type PromptIntent = z.infer<typeof PromptIntentSchema>;
+export type ComplexityLevel = z.infer<typeof ComplexityLevelSchema>;
+export type HardwareAnalysis = z.infer<typeof HardwareAnalysisSchema>;
+export type PromptAnalysis = z.infer<typeof PromptAnalysisSchema>;
 
 // ── Language Detection ───────────────────────────────────────────────────────
 
@@ -101,7 +117,7 @@ const LANG_SIGNATURES: LangSignature[] = [
     name: 'Java',
     codeBlockTags: ['java'],
     extensions: [/\.java/i],
-    keywords: [/\bpublic\s+class\b/i, /\bprivate\s+\w+\s+\w+/i, /\bSystem\.out\.print/i, /\bString\[\]/i, /\bvoid\s+main/i, /\bnew\s+\w+\(/i, /\bimplements\s+/i, /\bextends\s+/i, /\b@Override\b/i, /\b@Autowired\b/i],
+    keywords: [/\bpublic\s+class\b/i, /\bprivate\s+\w+\s+\w+/i, /\bSystem\.out\.print/i, /\bString\[\]/i, /\bvoid\s+main\b/i, /\bnew\s+\w+\(/i, /\bimplements\s+/i, /\bextends\s+/i, /\b@Override\b/i, /\b@Autowired\b/i],
     frameworkHints: [/\bspring\s*boot\b/i, /\bhibernate\b/i, /\bmaven\b/i, /\bgradle\b/i, /\bquarkus\b/i, /\bmicronaut\b/i, /\bjunit\b/i]
   },
   {
@@ -365,33 +381,18 @@ const INTENT_PATTERNS: IntentPattern[] = [
 
 // ── Code-Relatedness Detection ───────────────────────────────────────────────
 
-/**
- * If a prompt mentions ANY programming language name or coding technology,
- * it is ALWAYS code-related — regardless of phrasing.
- * This is the nuclear-option check: no question-word prefix required.
- * Catches: "HTML", "learn python", "CSS tricks", "what is JavaScript", "tell me HTML", etc.
- */
 const MENTIONS_CODE_TECH: RegExp =
   /\b(javascript|typescript|python|rust|golang|go\s+lang|java|kotlin|swift|ruby|php|dart|html|css|scss|sass|less|sql|shell|bash|zsh|powershell|elixir|erlang|haskell|scala|clojure|solidity|lua|zig|nim|crystal|ocaml|fsharp|f#|perl|r\s+lang|matlab|fortran|cobol|lisp|scheme|prolog|groovy|objective[-\s]?c|wasm|webassembly|c\+\+|cpp|c#|csharp|assembly|asm|vhdl|verilog|systemverilog|react|vue|angular|svelte|next\.?js|nuxt\.?js|node\.?js|deno|bun|django|flask|fastapi|rails|laravel|symfony|spring|express|fastify|hono|nestjs|gin|fiber|axum|actix|rocket|phoenix|ktor|vapor|sinatra|vite|webpack|rollup|esbuild|parcel|turbopack|docker|kubernetes|k8s|terraform|ansible|puppet|chef|jenkins|travis|circleci|pulumi|git|github|gitlab|bitbucket|npm|yarn|pnpm|pip|conda|cargo|maven|gradle|sbt|cabal|stack|composer|bundler|cocoapods|carthage|graphql|trpc|rest\s*api|grpc|protobuf|thrift|openapi|swagger|postman|insomnia|mongodb|postgres|postgresql|mysql|mariadb|sqlite|redis|memcached|cassandra|dynamodb|couchdb|neo4j|influxdb|timescaledb|cockroachdb|supabase|firebase|appwrite|pocketbase|neon|planetscale|aws|azure|gcp|vercel|netlify|heroku|railway|render|fly\.io|cloudflare|digitalocean|linode|tailwind|bootstrap|material\s*ui|chakra\s*ui|mantine|radix|shadcn|ant\s*design|bulma|foundation|styled[-\s]?components|emotion|stitches|jsx|tsx|dom|virtual\s*dom|shadow\s*dom|json|xml|yaml|toml|protobuf|avro|csv|markdown|mdx|regex|regexp|http|https|tcp|udp|websocket|webrtc|sse|oauth|jwt|cors|csrf|xss|sql\s*injection|oop|mvc|mvvm|mvp|clean\s*architecture|hexagonal|onion|cqrs|event\s*sourcing|ddd|crud|cicd|ci\/cd|tdd|bdd|ddd|agile|scrum|kanban|devops|devsecops|sre|mlops|dataops|gitops|microservice|monolith|serverless|lambda|edge\s*computing|cdn|dns|ssl|tls|ssh|ftp|smtp|imap|ide|vscode|visual\s*studio|intellij|webstorm|pycharm|xcode|android\s*studio|vim|neovim|emacs|sublime|atom|cursor|windsurf|compiler|interpreter|debugger|linter|formatter|transpiler|bundler|minifier|uglifier|runtime|framework|library|package|module|component|widget|hook|state|prop|context|store|reducer|saga|thunk|observable|signal|ref|reactive|promise|callback|closure|recursion|iteration|inheritance|polymorphism|encapsulation|abstraction|composition|mixin|trait|protocol|interface|generic|template|decorator|annotation|middleware|router|controller|model|view|presenter|viewmodel|schema|migration|seed|orm|odm|query\s*builder|active\s*record|data\s*mapper|index|cache|memoiz|buffer|stream|pipe|channel|thread|process|mutex|semaphore|lock|deadlock|race\s*condition|async|await|coroutine|goroutine|green\s*thread|actor|fiber|event\s*loop|reactor|proactor|heap|stack|queue|deque|priority\s*queue|tree|trie|graph|hash\s*map|hash\s*table|hash\s*set|linked\s*list|doubly\s*linked|skip\s*list|bloom\s*filter|b[-\s]?tree|red[-\s]?black|avl|binary\s*search|depth\s*first|breadth\s*first|dijkstra|dynamic\s*programming|greedy|backtracking|divide\s*and\s*conquer|sorting|searching|traversal|pointer|reference|smart\s*pointer|ownership|borrowing|lifetime|move\s*semantics|raii|memory\s*management|garbage\s*collection|gc|arc|reference\s*counting|jit|aot|bytecode|opcode|ir|llvm|abi|ffi|wasi|napi|binding|interop|marshalling|ssr|ssg|isr|spa|pwa|csr|hydration|islands|partial\s*hydration|bundling|minification|tree\s*shaking|code\s*splitting|lazy\s*loading|hot\s*reload|hmr|live\s*reload|fast\s*refresh|repl|sandbox|container|pod|namespace|ingress|service\s*mesh|sidecar|istio|envoy|linkerd|load\s*balanc|reverse\s*proxy|api\s*gateway|rate\s*limit|circuit\s*breaker|retry|backoff|bulkhead|saga|choreography|orchestration|webhook|endpoint|payload|serializ|deserializ|marshal|unmarshal|encode|decode|encrypt|decrypt|hash|digest|hmac|token|session|cookie|header|request|response|status\s*code|middleware|interceptor|guard|pipe|filter|resolver|plugin|extension|addon|snippet|boilerplate|scaffold|seed|skeleton|starter|archetype|refactor|lint|format|prettify|test|spec|suite|mock|stub|spy|fake|fixture|factory|assertion|expectation|matcher|coverage|lcov|istanbul|nyc|benchmark|profil|flame\s*graph|debug|breakpoint|watchpoint|trace|log|structured\s*log|monitor|alert|incident|dashboard|metric|counter|gauge|histogram|percentile|p99|p95|latency|throughput|bandwidth|iops|uptime|availability|durability|sla|slo|sli|error\s*budget|observability|telemetry|tracing|distributed\s*tracing|opentelemetry|otel|sampling|span|jaeger|zipkin|tempo|prometheus|grafana|kibana|elasticsearch|logstash|fluentd|fluentbit|vector|datadog|newrelic|sentry|pagerduty|rollbar|bugsnag|amplitude|mixpanel|segment|posthog|plausible|analytics|tensorboard|wandb|mlflow|jupyter|notebook|colab|kaggle|huggingface|transformers|langchain|llamaindex|autogen|crewai|semantic\s*kernel|embeddings?|vector\s*db|pinecone|chroma|weaviate|qdrant|milvus|faiss|rag|fine[-\s]?tun|lora|qlora|quantiz|onnx|tensorrt|triton|vllm|ollama|llama|mistral|gemma|gpt|claude|gemini|openai|anthropic|cohere|replicate|hugging\s*face|diffusion|stable\s*diffusion|comfyui|sdxl|flux|dall[-\s]?e|midjourney|coding|programming|software|developer|development|engineer|engineering|syntax|semantic|lexer|parser|tokenizer|ast|abstract\s*syntax|cst|ir|cfg|ssa|data\s*flow|control\s*flow|type\s*system|type\s*check|type\s*inference|static\s*analysis|linting|code\s*review|pull\s*request|merge\s*request|branch|commit|rebase|cherry[-\s]?pick|stash|tag|release|deploy|rollback|canary|blue[-\s]?green|rolling\s*update|feature\s*flag|a\/b\s*test|chaos\s*engineering|load\s*test|stress\s*test|fuzz|penetration\s*test|vulnerability|exploit|injection|sanitiz|escap|validat|authentication|authorization|rbac|abac|acl|saml|oidc|sso|mfa|2fa|totp|passkey|webauthn|bcrypt|argon2|scrypt|pbkdf2|aes|rsa|ecdsa|ed25519|diffie[-\s]?hellman|tls|mtls|certificate|pki|vault|secrets?\s*management|arduino|raspberry\s*pi|raspi|rpi|esp32|esp8266|nodemcu|stm32|pic\s*microcontroller|avr|atmega|attiny|teensy|adafruit|sparkfun|beaglebone|beagleboard|jetson\s*nano|jetson\s*orin|jetson|nvidia\s*jetson|intel\s*edison|particle\s*photon|particle\s*argon|mbed|nrf52|nrf53|pico|pico\s*w|rp2040|rp2350|risc[-\s]?v|fpga|asic|soc|mcu|microcontroller|single\s*board\s*computer|sbc|development\s*board|dev\s*board|breakout\s*board|shield|hat\s*module|grove\s*sensor|qwiic|stemma|mqtt|coap|zigbee|z[-\s]?wave|lorawan|lora\s*wan|ble|bluetooth\s*low\s*energy|bluetooth|wifi\s*module|nfc|rfid|i2c|spi\s*bus|uart|serial\s*port|gpio|pwm|adc|dac|can\s*bus|modbus|onewire|one[-\s]?wire|dma|jtag|swd|openocd|platformio|esphome|home\s*assistant|node[-\s]?red|thingsboard|blynk|cayenne|thingspeak|aws\s*iot|azure\s*iot|google\s*cloud\s*iot|iot\s*hub|iot\s*core|matter\s*protocol|thread\s*protocol|embedded\s*system|embedded\s*c|embedded\s*linux|rtos|freertos|zephyr\s*os|zephyr\s*rtos|zephyr|riot\s*os|contiki|mynewt|nuttx|chibios|mbed\s*os|threadx|vxworks|qnx|yocto|buildroot|openwrt|tasmota|micropython|circuitpython|tinygo|rust\s*embedded|embassy[-\s]?rs|probe[-\s]?rs|svd2rust|cortex[-\s]?m|arm\s*cortex|thumb|armv7|armv8|aarch64|xtensa|mips|avr[-\s]?gcc|arm[-\s]?gcc|cross[-\s]?compil|toolchain|bootloader|firmware|flash\s*memory|eeprom|sram|dram|rom|nvram|bare[-\s]?metal|hal|bsp|device\s*driver|kernel\s*module|device\s*tree|dtb|dts|u[-\s]?boot|grub|sensor|actuator|servo|stepper\s*motor|dc\s*motor|relay|led\s*strip|neopixel|ws2812|oled|lcd\s*display|tft\s*display|e[-\s]?ink|epaper|accelerometer|gyroscope|imu|magnetometer|barometer|temperature\s*sensor|humidity\s*sensor|ultrasonic|pir\s*sensor|lidar|ir\s*sensor|potentiometer|encoder|rotary\s*encoder|touch\s*sensor|pressure\s*sensor|gas\s*sensor|gps\s*module|rtc|real\s*time\s*clock|robot|robotics|ros|ros2|gazebo|moveit|slam|odometry|pid\s*control|kalman\s*filter|inverse\s*kinematics|drone|quadcopter|uav|ardupilot|px4|betaflight|mavlink|dronekit|autonomous\s*vehicle|self[-\s]?driving|opencv|yolo|object\s*detection|image\s*recognition|point\s*cloud|computer\s*vision|3d\s*print|additive\s*manufacturing|gcode|g[-\s]?code|slicer|cura|prusaslicer|octoprint|klipper|marlin|openscad|freecad|fusion\s*360|solidworks|autocad|cad|cam|cnc|laser\s*cut|pcb\s*design|pcb|kicad|eagle|altium|gerber|schematic|breadboard|soldering|oscilloscope|logic\s*analyzer|multimeter|power\s*supply|godot|pygame|phaser|pixi\.?js|love2d|monogame|raylib|opengl|vulkan|directx|metal\s*api|webgpu|webgl|shader|glsl|hlsl|spirv|compute\s*shader|ray\s*tracing|rasteriz|game\s*engine|game\s*loop|physics\s*engine|collision\s*detection|sprite|tilemap|particle\s*system|ecs\s*pattern|entity\s*component|react\s*native|expo|ionic|capacitor|cordova|xamarin|maui|kotlin\s*multiplatform|kmp|compose\s*multiplatform|tauri|electron|progressive\s*web\s*app|native\s*app|hybrid\s*app|webview|deep\s*link|push\s*notification|app\s*store|play\s*store|testflight|fastlane|android\s*sdk|ios\s*sdk|numpy|pandas|scipy|scikit[-\s]?learn|matplotlib|seaborn|plotly|bokeh|altair|dask|polars|xgboost|lightgbm|catboost|random\s*forest|neural\s*network|deep\s*learning|machine\s*learning|reinforcement\s*learning|supervised\s*learning|unsupervised\s*learning|transfer\s*learning|feature\s*engineering|data\s*preprocessing|data\s*augmentation|batch\s*normalization|dropout|regularization|overfitting|underfitting|cross\s*validation|hyperparameter|automl|keras|jax|flax|mxnet|caffe|paddle|mindspore|serverless\s*framework|sam\s*cli|cdk|cloudformation|arm\s*template|bicep|crossplane|helm|kustomize|argocd|fluxcd|tekton|spinnaker|consul|nomad|packer|vagrant|proxmox|vmware|virtualbox|hyper[-\s]?v|libvirt|qemu|kvm|openstack|openshift|rancher|portainer|traefik|caddy|haproxy|kong|apisix|ethereum|bitcoin|blockchain|smart\s*contract|defi|dao|nft|erc[-\s]?20|erc[-\s]?721|web3\.?js|ethers\.?js|web3\.?py|brownie|foundry|remix\s*ide|metamask|ganache|anvil|polygon|arbitrum|optimism|avalanche|solana|near|cosmos|polkadot|substrate|aptos|sui|ton|hyperledger|chainlink|ipfs|filecoin|wireshark|tcpdump|nmap|netcat|iptables|nftables|nginx|apache|openvpn|wireguard|tailscale|zerotier|ngrok|vpn|firewall|waf|siem|malware|ghidra|ida\s*pro|radare2|gdb|lldb|strace|valgrind|fuzzing|afl|zapier|n8n|power\s*automate|appsmith|retool|nocodb|strapi|payload\s*cms|sanity|contentful|ghost|twilio|sendgrid|pusher|nats|rabbitmq|kafka|pulsar|temporal|inngest|bull|bullmq|simulink|labview|matlab|octave|gnuplot|wolfram|mathematica)\b/i;
 
 const CODE_RELATED_PATTERNS: RegExp[] = [
-  // Code blocks
   /```\w*/i,
-  // File extensions
   /\.\w{1,5}\b/i,
-  // Programming language names (compact subset for scoring)
   /\b(javascript|typescript|python|rust|golang|java|kotlin|swift|ruby|php|dart|html|css|scss|sql|shell|bash|elixir|haskell|scala|solidity|lua|zig|wasm|c\+\+|c#|csharp|assembly|react|vue|angular|svelte|next\.?js|node\.?js|django|flask|fastapi|rails|laravel|spring|express)\b/i,
-  // Technical keywords
   /\b(code|program|function|class|struct|interface|module|package|library|framework|api|sdk|database|server|client|frontend|backend|fullstack|algorithm|data\s*structure|variable|loop|array|object|component|repository|git|npm|pip|cargo|maven|gradle|coding|programming|software|developer|development|engineer|engineering|syntax|semantic|compiler|interpreter|runtime|execution|script|scripting)\b/i,
-  // Code-related actions
   /\b(implement|refactor|debug|compile|build|deploy|install|import|export|render|parse|serialize|encode|decode|encrypt|decrypt|hash|query|fetch|request|response|route|middleware|controller|model|view|template)\b/i,
-  // Technical concepts
   /\b(async|await|promise|callback|closure|recursion|inheritance|polymorphism|encapsulation|abstraction|mutex|thread|process|memory|pointer|reference|generic|type|interface|protocol|trait|mixin|decorator|annotation|hook|state|prop|context|store|reducer|saga|middleware|pipeline|stream|buffer|socket|websocket|http|tcp|udp|rest|grpc|graphql|oauth|jwt|cors|csrf|xss|sql\s*injection|sanitize|validate)\b/i,
-  // File/folder references
   /\b(index\.\w+|package\.json|tsconfig|webpack|vite\.config|dockerfile|makefile|cargo\.toml|go\.mod|requirements\.txt|gemfile|composer\.json|pubspec\.yaml|pom\.xml|build\.gradle)\b/i,
-  // Error/debugging references
   /\b(error|exception|bug|stack\s*trace|traceback|segfault|null\s*pointer|undefined|type\s*error|syntax\s*error|runtime|compile|lint)\b/i,
-  // DevOps
   /\b(docker|container|kubernetes|k8s|ci\/cd|pipeline|workflow|terraform|ansible|jenkins|github\s*actions|gitlab\s*ci)\b/i
 ];
 
@@ -400,8 +401,6 @@ const NON_CODE_PATTERNS: RegExp[] = [
   /\b(how\s+to\s+cook|how\s+to\s+lose\s+weight|best\s+restaurants|travel\s+to|vacation|flight|hotel|recommendation|suggest\s+a\s+movie)\b/i,
   /\b(write\s+(?:a\s+)?(?:poem|essay|letter|email\s+to\s+(?:my|a)\s+(?:friend|boss|teacher)|story|song\s+lyrics))\b/i
 ];
-
-// ── Framework Detection ──────────────────────────────────────────────────────
 
 const ALL_FRAMEWORKS: Array<{ name: string; pattern: RegExp }> = [
   { name: 'React', pattern: /\breact\b/i },
@@ -468,35 +467,19 @@ const ALL_FRAMEWORKS: Array<{ name: string; pattern: RegExp }> = [
   { name: 'Node-RED', pattern: /\bnode[-\s]?red\b/i },
 ];
 
-// ── Main Analyzer ────────────────────────────────────────────────────────────
-
 export function analyzePrompt(prompt: string): PromptAnalysis {
   const normalized = prompt.trim();
   const lower = normalized.toLowerCase();
 
-  // 1. Detect languages
   const detectedLanguages = detectLanguages(normalized);
-
-  // 2. Detect frameworks
   const frameworks = detectFrameworks(normalized);
-
-  // 3. Classify intent
   const intent = classifyIntent(normalized);
-
-  // 4. Score complexity
   const complexity = scoreComplexity(normalized, detectedLanguages, frameworks);
-
-  // 5. Check if code-related
   const isCodeRelated = checkCodeRelated(normalized, detectedLanguages, frameworks, intent);
-
-  // 6. Extract keywords
   const keywords = extractKeywords(lower);
 
-  // 7. Generate summary
   const primaryLanguage = detectedLanguages.length > 0 ? detectedLanguages[0] : null;
   const summary = generateSummary(primaryLanguage, intent, complexity, frameworks, isCodeRelated);
-
-  // 8. Run Hardware Analyzer
   const hardware = detectHardware(normalized);
 
   return {
@@ -515,7 +498,6 @@ export function analyzePrompt(prompt: string): PromptAnalysis {
 export function detectHardware(prompt: string): HardwareAnalysis {
   const lower = prompt.toLowerCase();
   
-  // 1. Boards/Platforms
   const platformRules = [
     { id: 'arduino', name: 'Arduino', patterns: [/\barduino\b/i, /\buno\b/i, /\bnano\b/i, /\bmega\b/i, /\batmega\b/i, /\bavr\b/i, /\.ino\b/i] },
     { id: 'esp32', name: 'ESP32', patterns: [/\besp32\b/i, /\besp8266\b/i, /\bnodemcu\b/i, /\bfreertos\b/i] },
@@ -530,7 +512,6 @@ export function detectHardware(prompt: string): HardwareAnalysis {
     }
   }
 
-  // 2. Components
   const componentRules = [
     { name: 'OLED Display', patterns: [/\boled\b/i, /\bsh1106\b/i, /\bssd1306\b/i, /\b128x64\b/i] },
     { name: 'LCD Display', patterns: [/\blcd\b/i, /\b16x2\b/i, /\b20x4\b/i, /\bliquidcrystal\b/i] },
@@ -538,7 +519,7 @@ export function detectHardware(prompt: string): HardwareAnalysis {
     { name: 'Servo Motor', patterns: [/\bservo\b/i, /\bsg90\b/i, /\bmg90\b/i] },
     { name: 'Stepper Motor', patterns: [/\bstepper\b/i, /\b28byj\b/i, /\buln2003\b/i, /\ba4988\b/i] },
     { name: 'DC Motor / Driver', patterns: [/\bdc\s*motor\b/i, /\bl298n\b/i, /\bh-bridge\b/i, /\bmotor\s+driver\b/i] },
-    { name: 'NeoPixel LED Strip', patterns: [/\bneopixel\b/i, /\bws2812\b/i, /\bws2812b\b/i, /\bled\s*strip\b/i, /\badaddressable\s+led\b/i] },
+    { name: 'NeoPixel LED Strip', patterns: [/\bneopixel\b/i, /\bws2812\b/i, /\bws2812b\b/i, /\bled\s*strip\b/i, /\baddressable\s+led\b/i] },
     { name: 'Relay Module', patterns: [/\brelay\b/i, /\brelays\b/i] },
     { name: 'Ultrasonic Sensor', patterns: [/\bultrasonic\b/i, /\bhc-sr04\b/i, /\bdistance\s+sensor\b/i] },
     { name: 'PIR Motion Sensor', patterns: [/\bpir\b/i, /\bmotion\s+sensor\b/i, /\bhc-sr501\b/i] },
@@ -555,7 +536,6 @@ export function detectHardware(prompt: string): HardwareAnalysis {
     }
   }
 
-  // 3. Protocols
   const protocolRules = [
     { name: 'I2C', patterns: [/\bi2c\b/i, /\bsda\b/i, /\bscl\b/i, /\bwire\.h\b/i] },
     { name: 'SPI', patterns: [/\bspi\b/i, /\bmiso\b/i, /\bmosi\b/i, /\bsck\b/i, /\bcs\s+pin\b/i, /\bspi\.h\b/i] },
@@ -571,7 +551,6 @@ export function detectHardware(prompt: string): HardwareAnalysis {
     }
   }
 
-  // Add implicit protocol mapping (e.g. OLED/LCD and RTC usually imply I2C)
   if (detectedComponents.some(c => c.includes('OLED') || c.includes('LCD') || c.includes('RTC')) && !detectedProtocols.includes('I2C')) {
     detectedProtocols.push('I2C');
   }
@@ -586,14 +565,11 @@ export function detectHardware(prompt: string): HardwareAnalysis {
   const optimizations: string[] = [];
 
   if (isHardware) {
-    // Determine the host platform for targeting advice
     const isArduinoHost = detectedPlatforms.includes('Arduino') || (!detectedPlatforms.includes('Raspberry Pi') && !detectedPlatforms.includes('Pi Pico') && !detectedPlatforms.includes('ESP32'));
     const isESP32Host = detectedPlatforms.includes('ESP32');
     const isPiHost = detectedPlatforms.includes('Raspberry Pi');
     const isPicoHost = detectedPlatforms.includes('Pi Pico');
 
-    // ── Ambiguity & Gaps ───────────────────────────────────────────────────
-    // Check if pins are specified in the prompt (e.g., D2, pin 5, GPIO 4)
     const pinRegex = /\b(pin\s*\d+|gpio\s*\d+|d\d+|a\d+)\b/i;
     const hasPins = pinRegex.test(prompt);
 
@@ -607,7 +583,6 @@ export function detectHardware(prompt: string): HardwareAnalysis {
       }
     }
 
-    // Check if I2C address is defined for LCD/OLED
     if (detectedComponents.some(c => c.includes('LCD') || c.includes('OLED'))) {
       const hexAddrRegex = /\b0x[0-9a-f]{2}\b/i;
       const hasHexAddr = hexAddrRegex.test(prompt);
@@ -619,7 +594,6 @@ export function detectHardware(prompt: string): HardwareAnalysis {
       }
     }
 
-    // Identify required context libraries
     const libraries: string[] = [];
     if (detectedComponents.some(c => c.includes('LCD'))) {
       libraries.push(isArduinoHost ? 'LiquidCrystal_I2C' : 'smbus2 (Python)');
@@ -637,34 +611,25 @@ export function detectHardware(prompt: string): HardwareAnalysis {
       gaps.push(`Missing library context. The following library headers must be included: ${libraries.join(', ')}.`);
     }
 
-    // ── Electrical & Logic Safety ──────────────────────────────────────────
-    // VCC / Voltage Level Shift Warning
-    // Arduino Uno/Mega operate at 5V logic. ESP32, Raspberry Pi, Pi Pico operate at 3.3V logic.
-    // If user mixes 3.3V host with components that output 5V or require 5V signals, alert.
     const is33VHost = isESP32Host || isPiHost || isPicoHost;
     if (is33VHost) {
-      // Common 5V components
       const has5VComponents = detectedComponents.some(c => c.includes('Ultrasonic') || c.includes('LCD') || c.includes('Relay'));
       if (has5VComponents || lower.includes('5v')) {
         safetyHazards.push(`Voltage Level Mismatch (3.3V vs 5V): Your selected host (${detectedPlatforms.join('/') || '3.3V MCU'}) operates at 3.3V logic levels. Connecting a 5V sensor output directly to a 3.3V GPIO will damage the pin. Recommend using a bidirectional logic level shifter (like TXS0108E) or a voltage divider for signals going from sensor to MCU.`);
       }
     }
 
-    // High frequency sensor reading with blocking delay()
     const isHighFrequency = lower.includes('continuous') || lower.includes('realtime') || lower.includes('every second') || lower.includes('real-time') || lower.includes('fast') || lower.includes('constantly');
     const hasDelayKeywords = lower.includes('delay') || lower.includes('sleep') || lower.includes('wait');
     if (isHighFrequency && hasDelayKeywords) {
       safetyHazards.push(`Blocking execution delay() hazard: High-frequency tasks or sensor polling should avoid blocking delays. Using delay() freezes execution and blocks interrupts, network events, or button presses. Recommend implementing a non-blocking millis() or timer interrupt cycle instead.`);
     }
 
-    // ── Code Optimizations ─────────────────────────────────────────────────
-    // AVR memory constraints
     const isAVR = lower.includes('uno') || lower.includes('nano') || lower.includes('mega') || lower.includes('atmega328') || lower.includes('avr');
     if (isAVR && (lower.includes('string') || lower.includes('json') || lower.includes('web') || lower.includes('server') || detectedComponents.some(c => c.includes('OLED')))) {
       optimizations.push(`AVR RAM Constraint (2KB SRAM limit): Arduino Uno/Nano are highly memory-constrained. Using the dynamic 'String' class or allocating large display buffers leads to rapid heap fragmentation and silent crashes. Use static character arrays (char[]), avoid dynamic allocation, and wrap serial string literals in the F() macro (e.g. Serial.println(F("Hello"))).`);
     }
 
-    // Low power deep sleep advice
     const isBatteryPowered = lower.includes('battery') || lower.includes('solar') || lower.includes('low power') || lower.includes('power saving') || lower.includes('lipo') || lower.includes('power-saving');
     if (isBatteryPowered) {
       optimizations.push(`Battery/Low-Power Mode detected: To maximize battery life, avoid active loop polling which consumes high power (~15-80mA). Recommend putting the MCU into deep sleep mode, configuring a timer or external GPIO interrupt to wake the board up, performing the reading, and immediately going back to sleep.`);
@@ -689,17 +654,14 @@ export function optimizePromptText(prompt: string, analysis: PromptAnalysis): st
     const hw = analysis.hardware;
     const host = hw.detectedPlatforms.length > 0 ? hw.detectedPlatforms.join('/') : 'Microcontroller (e.g. Arduino Nano / ESP32)';
     
-    // Construct components list
     const componentsList = hw.detectedComponents.length > 0 
       ? hw.detectedComponents.map(c => `  - ${c}`).join('\n')
       : '  - [Specify sensor/actuator model here]';
       
-    // Construct protocols list
     const protocolsList = hw.detectedProtocols.length > 0
       ? hw.detectedProtocols.map(p => `  - ${p}`).join('\n')
       : '  - GPIO / Digital Signals';
 
-    // Construct pins list
     const pinsList = hw.detectedComponents.length > 0
       ? hw.detectedComponents.map((c, i) => {
           let pin = `D${2 + i}`;
@@ -736,7 +698,6 @@ ${pinsList}
 `;
     return optimized;
   } else {
-    // Software/General prompt improver
     const lang = analysis.primaryLanguage 
       ? LANG_SIGNATURES.find(s => s.id === analysis.primaryLanguage)?.name || analysis.primaryLanguage
       : 'General Programming';
@@ -760,11 +721,9 @@ ${pinsList}
   }
 }
 
-
 function detectLanguages(prompt: string): string[] {
   const scores: Record<string, number> = {};
 
-  // Check code block tags (```language)
   const codeBlockMatch = prompt.matchAll(/```(\w+)/g);
   for (const m of codeBlockMatch) {
     const tag = m[1].toLowerCase();
@@ -775,7 +734,6 @@ function detectLanguages(prompt: string): string[] {
     }
   }
 
-  // Check keywords and framework hints
   for (const sig of LANG_SIGNATURES) {
     for (const kw of sig.keywords) {
       if (kw.test(prompt)) {
@@ -794,7 +752,6 @@ function detectLanguages(prompt: string): string[] {
     }
   }
 
-  // Sort by score descending, filter to meaningful scores only
   return Object.entries(scores)
     .filter(([, score]) => score >= 2)
     .sort(([, a], [, b]) => b - a)
@@ -844,11 +801,9 @@ function scoreComplexity(prompt: string, languages: string[], frameworks: string
   score += Math.min(languages.length, 3);
   score += Math.min(frameworks.length, 4);
 
-  // Architectural keywords boost complexity
   const archKeywords = /\b(microservice|distributed|scalab|architecture|system\s+design|event[-\s]driven|cqrs|saga|monorepo|multi[-\s]tenant|load\s*balanc|cache\s*layer|message\s*queue|real[-\s]time|websocket|stream|pipeline|orchestrat|infrastructure)\b/i;
   if (archKeywords.test(prompt)) score += 3;
 
-  // Multiple files mentioned
   const fileCount = (prompt.match(/\.\w{1,5}\b/g) || []).length;
   if (fileCount > 3) score += 2;
   else if (fileCount > 1) score += 1;
@@ -866,30 +821,19 @@ function checkCodeRelated(
   frameworks: string[],
   intent: PromptIntent
 ): boolean {
-  // Allow greetings and common introductory inputs or identity queries
   const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up)\b/i;
   const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx)\b/i;
   if (GREETINGS.test(prompt.trim()) || IDENTITY.test(prompt.trim())) return true;
 
-  // If languages or frameworks detected, it's code-related
   if (languages.length > 0 || frameworks.length > 0) return true;
-
-  // ★ PRIMARY GATE: If the prompt mentions ANY programming language, framework,
-  // coding tool, or tech concept — it's code-related. No question format required.
-  // This is the catch-all that ensures "HTML", "learn python", "CSS tricks",
-  // "what is JavaScript", "tell me about React", etc. are NEVER rejected.
   if (MENTIONS_CODE_TECH.test(prompt)) return true;
 
-  // If intent is clearly code-related (including 'explain' for coding Q&A)
   if (['generate', 'refactor', 'debug', 'convert', 'optimize', 'review', 'integrate', 'test', 'deploy', 'explain', 'general'].includes(intent)) {
-    // Single pattern match is enough when intent already suggests code context
     if (CODE_RELATED_PATTERNS.some(p => p.test(prompt))) return true;
   }
 
-  // Check for explicit non-code patterns
   if (NON_CODE_PATTERNS.some(p => p.test(prompt))) return false;
 
-  // Check for code-related patterns as a final pass (reduced threshold)
   const codeMatches = CODE_RELATED_PATTERNS.filter(p => p.test(prompt)).length;
   return codeMatches >= 1;
 }
@@ -943,23 +887,16 @@ To keep my outputs high-performance and focused, I only handle programming, debu
 
 Please describe your coding task, and I'll deliver production-ready results!`;
 
-/**
- * Checks if a user is asking to debug/fix an error or compile failure, but has omitted
- * both the code snippet and the specific error logs.
- */
 export function isMissingDebugDetails(prompt: string, intent: string): boolean {
   const lower = prompt.toLowerCase();
   
-  // Check if user is asking to debug/fix an error/bug
   const hasErrorKeywords = /\b(error|bug|crash|exception|compile\s+error|not\s+compiling|fails?\s+to\s+compile|getting\s+an?\s+error|got\s+an?\s+error|cannot\s+compile|wont\s+compile|won't\s+compile|how\s+to\s+fix|what\s+can\s+be\s+the\s+problem|why\s+is\s+it\s+failing)\b/i.test(lower);
   
   if (!hasErrorKeywords && intent !== 'debug') return false;
   
-  // Check if there is NO code block or visible code keywords (e.g. semicolons, curly braces, code blocks)
   const hasCodeBlock = prompt.includes('```') || prompt.includes('    ') || (prompt.match(/[{}();]/g) || []).length > 6;
   if (hasCodeBlock) return false;
   
-  // Check if the prompt doesn't actually provide any specific error details.
   const isVagueErrorQuery = 
     /error\s+message/i.test(lower) || 
     /getting\s+an?\s+error/i.test(lower) || 
@@ -972,7 +909,6 @@ export function isMissingDebugDetails(prompt: string, intent: string): boolean {
     /cannot\s+compile/i.test(lower) ||
     /what\s+can\s+be\s+the\s+problem/i.test(lower);
     
-  // If the prompt is short (under 45 words) and lacks code/error snippets, it is almost certainly a request without actual context.
   const wordCount = prompt.split(/\s+/).length;
   if (wordCount < 45 && isVagueErrorQuery) {
     return true;
@@ -981,9 +917,6 @@ export function isMissingDebugDetails(prompt: string, intent: string): boolean {
   return false;
 }
 
-/**
- * High-end Gemini-style response politely requesting the user to paste their code and compiler outputs.
- */
 export const MISSING_DEBUG_DETAILS_RESPONSE = `I would love to help you analyze and fix your compilation or code error! 
 
 However, it looks like you haven't shared your code snippet or the specific error message yet. 

@@ -56,12 +56,6 @@ export class UnifiedEngine {
       case 'opencode':
         return this.streamOpenCodeZen(model, messages, activeKey, settings, writeChunk, onDone);
 
-      case 'ollama':
-        return this.streamOllama(model, messages, req.baseUrl, settings, writeChunk, onDone);
-
-      case 'lmstudio':
-        return this.streamLMStudio(model, messages, req.baseUrl, settings, writeChunk, onDone);
-
       case 'nyx-native':
         return this.streamNyxNative(model, messages, settings, writeChunk, onDone);
 
@@ -236,115 +230,6 @@ export class UnifiedEngine {
       console.error('[OpenCode Zen] Request failed:', { status: response.status, error: errorText });
       throw new Error(msg);
     }
-
-    await Gateway.processSSEStream(response, {
-      onChunk: (text) => write({ chunk: text }),
-      onDone: done,
-      onError: (err) => { throw new Error(err); }
-    });
-  }
-
-  /**
-   * Streams responses from local Ollama instance.
-   * Direct connection to Ollama's /api/chat endpoint.
-   * @param model - Ollama model name
-   * @param messages - Array of chat messages
-   * @param baseUrl - Ollama server URL (default: http://localhost:11434)
-   * @param settings - Optional generation settings
-   * @param write - Callback for writing chunks to response
-   * @param done - Callback when stream completes
-   */
-  private static async streamOllama(
-    model: string,
-    messages: ChatMessage[],
-    baseUrl: string | undefined,
-    settings: AISettings | undefined,
-    write: (chunk: any) => void,
-    done: () => void
-  ): Promise<void> {
-    const url = `${baseUrl || 'http://localhost:11434'}/api/chat`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages,
-        stream: true,
-        options: {
-          temperature: settings?.temperature,
-          num_predict: settings?.maxTokens,
-        }
-      })
-    });
-
-    if (!response.ok) throw new Error(`Ollama Error: ${response.status}`);
-
-    if (!response.body) {
-      done();
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done: readerDone, value } = await reader.read();
-      if (readerDone) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.message?.content) write({ chunk: parsed.message.content });
-          if (parsed.done) {
-            done();
-            return;
-          }
-        } catch {}
-      }
-    }
-    done();
-  }
-
-  /**
-   * Streams responses from local LM Studio instance.
-   * Uses OpenAI-compatible /v1/chat/completions endpoint.
-   * @param model - LM Studio model identifier
-   * @param messages - Array of chat messages
-   * @param baseUrl - LM Studio server URL (default: http://localhost:1234)
-   * @param settings - Optional generation settings
-   * @param write - Callback for writing chunks to response
-   * @param done - Callback when stream completes
-   */
-  private static async streamLMStudio(
-    model: string,
-    messages: ChatMessage[],
-    baseUrl: string | undefined,
-    settings: AISettings | undefined,
-    write: (chunk: any) => void,
-    done: () => void
-  ): Promise<void> {
-    const url = `${baseUrl || 'http://localhost:1234'}/v1/chat/completions`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages,
-        stream: true,
-        temperature: settings?.temperature,
-        max_tokens: settings?.maxTokens,
-      })
-    });
-
-    if (!response.ok) throw new Error(`LM Studio Error: ${response.status}`);
 
     await Gateway.processSSEStream(response, {
       onChunk: (text) => write({ chunk: text }),

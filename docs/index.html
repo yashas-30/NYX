@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NYX — Native Local Intelligence & Cloud Orchestration</title>
+  <meta name="description" content="NYX is a premium AI coding environment that runs powerful language models locally on your GPU and connects to every major cloud AI provider in one beautiful interface." />
+  <meta property="og:title" content="NYX — AI Coding Environment" />
+  <meta property="og:description" content="Run Llama, Qwen, DeepSeek locally on your GPU. Connect to Gemini, OpenRouter, NVIDIA NIM. All in one premium interface." />
+  <meta property="og:image" content="https://yashas-30.github.io/NYX/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0c;
+      --surface: #111114;
+      --border: rgba(255,255,255,0.07);
+      --blue: #3b82f6;
+      --blue-glow: rgba(59,130,246,0.15);
+      --violet: #8b5cf6;
+      --text: #f4f4f5;
+      --muted: rgba(244,244,245,0.4);
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Inter', system-ui, sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Grid background ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Glow orbs ── */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .orb-1 {
+      width: 600px; height: 600px;
+      background: rgba(59,130,246,0.07);
+      top: -200px; left: -200px;
+    }
+    .orb-2 {
+      width: 500px; height: 500px;
+      background: rgba(139,92,246,0.06);
+      bottom: -100px; right: -100px;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      height: 60px;
+      background: rgba(10,10,12,0.8);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-logo .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 12px var(--blue);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 8px;
+      transition: all 0.15s;
+    }
+    .nav-links a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+
+    .btn-github {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text) !important;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-github:hover {
+      background: rgba(255,255,255,0.08) !important;
+      border-color: rgba(255,255,255,0.12);
+    }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 120px 2rem 80px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 100px;
+      border: 1px solid rgba(59,130,246,0.25);
+      background: rgba(59,130,246,0.08);
+      color: #93c5fd;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 2rem;
+    }
+
+    .hero-title {
+      font-size: clamp(3rem, 8vw, 6.5rem);
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero-title .gradient {
+      background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #34d399 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      color: var(--muted);
+      max-width: 580px;
+      line-height: 1.7;
+      margin-bottom: 3rem;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 14px;
+      background: var(--blue);
+      color: white;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.2s;
+      box-shadow: 0 0 30px rgba(59,130,246,0.25);
+    }
+    .btn-primary:hover {
+      background: #2563eb;
+      transform: translateY(-1px);
+      box-shadow: 0 0 40px rgba(59,130,246,0.35);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.12);
+      transform: translateY(-1px);
+    }
+
+    /* ── Section ── */
+    section {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 80px 2rem;
+    }
+
+    .section-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-size: clamp(1.75rem, 4vw, 2.75rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 1rem;
+    }
+
+    .section-desc {
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.7;
+      max-width: 560px;
+      margin-bottom: 3rem;
+    }
+
+    /* ── Feature grid ── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      padding: 28px;
+      transition: background 0.2s;
+    }
+    .feature-card:hover { background: #18181c; }
+
+    .feature-icon {
+      width: 40px; height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      margin-bottom: 1rem;
+    }
+
+    .feature-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    /* ── Model table ── */
+    .model-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .model-table th {
+      text-align: left;
+      padding: 10px 16px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .model-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      vertical-align: middle;
+    }
+
+    .model-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-blue { background: rgba(59,130,246,0.12); color: #93c5fd; }
+    .badge-purple { background: rgba(139,92,246,0.12); color: #c4b5fd; }
+    .badge-green { background: rgba(34,197,94,0.12); color: #86efac; }
+    .badge-amber { background: rgba(245,158,11,0.12); color: #fcd34d; }
+
+    /* ── Code block ── */
+    .code-block {
+      background: #0d0d10;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .code-block-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .code-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+    }
+
+    .code-block pre {
+      padding: 20px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+      color: #e4e4e7;
+      overflow-x: auto;
+    }
+
+    .code-block .cm { color: #6b7280; }
+    .code-block .kw { color: #93c5fd; }
+    .code-block .st { color: #86efac; }
+    .code-block .nm { color: #fcd34d; }
+    .code-block .pn { color: #e4e4e7; }
+
+    /* ── Pipeline ── */
+    .pipeline {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .pipeline-stage {
+      flex: 1;
+      padding: 28px 24px;
+      background: var(--surface);
+      position: relative;
+    }
+
+    .pipeline-stage + .pipeline-stage {
+      border-left: 1px solid var(--border);
+    }
+
+    .pipeline-stage:hover { background: #18181c; }
+
+    .pipeline-num {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .pipeline-name {
+      font-size: 17px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .pipeline-desc {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* ── Stats row ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      margin-bottom: 80px;
+    }
+
+    .stat {
+      background: var(--surface);
+      padding: 28px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 2.5rem;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 6px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    /* ── CTA ── */
+    .cta {
+      text-align: center;
+      padding: 100px 2rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cta h2 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      margin-bottom: 1rem;
+    }
+
+    .cta p {
+      color: var(--muted);
+      font-size: 1.1rem;
+      margin-bottom: 2.5rem;
+    }
+
+    /* ── Footer ── */
+    footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--border);
+      padding: 32px 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    footer p { font-size: 13px; color: var(--muted); }
+    footer a { color: var(--blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Divider ── */
+    .divider {
+      position: relative;
+      z-index: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border), transparent);
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 768px) {
+      .pipeline { flex-direction: column; }
+      .pipeline-stage + .pipeline-stage { border-left: none; border-top: 1px solid var(--border); }
+      .stats { grid-template-columns: 1fr 1fr; }
+      nav { padding: 0 1rem; }
+      .nav-links a:not(.btn-github) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <!-- Nav -->
+  <nav>
+    <div class="nav-logo">
+      <span class="dot"></span>
+      NYX
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#models">Models</a>
+      <a href="#agent">Agent</a>
+      <a href="https://github.com/yashas-30/NYX" class="btn-github" target="_blank">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-badge">
+      <span style="color: var(--blue)">◉</span>
+      Native Local Intelligence & Cloud Orchestration
+    </div>
+    <h1 class="hero-title">
+      Your GPU.<br/>
+      <span class="gradient">Every AI Model.</span>
+    </h1>
+    <p class="hero-sub">
+      NYX runs Llama, Qwen, DeepSeek, Gemma, and Mistral directly on your hardware — and connects to Gemini, OpenRouter, NVIDIA NIM, and more. All in one premium coding environment.
+    </p>
+    <div class="hero-actions">
+      <a href="https://github.com/yashas-30/NYX" class="btn-primary" target="_blank">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        Get Started on GitHub
+      </a>
+      <a href="#features" class="btn-secondary">
+        Explore Features ↓
+      </a>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div style="max-width:1100px;margin:0 auto;padding:0 2rem;position:relative;z-index:1;">
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value">50+</div>
+        <div class="stat-label">Local Model Presets</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">0ms</div>
+        <div class="stat-label">Cached Response Latency</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">4+</div>
+        <div class="stat-label">Cloud Providers</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">32K</div>
+        <div class="stat-label">Max Context Window</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <section id="features">
+    <div class="section-label">◆ Core Features</div>
+    <h2 class="section-title">Everything you need.<br/>Nothing you don't.</h2>
+    <p class="section-desc">NYX is engineered for developers who want full control — over models, hardware, and output quality.</p>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(59,130,246,0.1);">🖥️</div>
+        <div class="feature-title">Local GGUF Runner</div>
+        <div class="feature-desc">Built-in llama-server binary. Download, load, and run GGUF models on your GPU — no Ollama or LM Studio required.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(139,92,246,0.1);">⚙️</div>
+        <div class="feature-title">Per-Model Inference Controls</div>
+        <div class="feature-desc">GPU Layers, Context Size, CPU Threads, Temperature, Top-P/K, Mirostat — per model, resets on model switch.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(34,197,94,0.1);">🤖</div>
+        <div class="feature-title">NYX Agent Pipeline</div>
+        <div class="feature-desc">3-stage Architect → Coder → Optimizer pipeline. Works with any selected model. Only the final polished output shown.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(245,158,11,0.1);">⚡</div>
+        <div class="feature-title">Zero-Delay Streaming</div>
+        <div class="feature-desc">Dual Express + Fastify architecture. TCP Nagle disabled, DNS pre-warmed, SHA-256 disk cache for 0ms repeat queries.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(236,72,153,0.1);">📚</div>
+        <div class="feature-title">Codebase Knowledge</div>
+        <div class="feature-desc">Index your project files and query them contextually during generation. Codebase-aware code suggestions.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(20,184,166,0.1);">🔐</div>
+        <div class="feature-title">100% Local Keys</div>
+        <div class="feature-desc">API keys stay in your browser's localStorage. Never stored in a database. Never sent to third parties.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Models -->
+  <section id="models">
+    <div class="section-label">◆ NYX Native Library</div>
+    <h2 class="section-title">Run the world's best<br/>models locally.</h2>
+    <p class="section-desc">Download directly from Hugging Face. Loaded into VRAM with configurable GPU layer offloading.</p>
+
+    <div class="code-block" style="margin-bottom: 2rem;">
+      <div class="code-block-header">
+        <div class="code-dot" style="background:#ef4444;"></div>
+        <div class="code-dot" style="background:#f59e0b;"></div>
+        <div class="code-dot" style="background:#22c55e;"></div>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;">NYX Native Library</span>
+      </div>
+      <table class="model-table" style="margin:0;">
+        <thead>
+          <tr>
+            <th>Model Family</th>
+            <th>Sizes</th>
+            <th>VRAM</th>
+            <th>Best For</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Llama 3.3</strong></td>
+            <td><span class="badge badge-blue">8B</span> <span class="badge badge-purple">70B</span></td>
+            <td>6–48 GB</td>
+            <td>General coding</td>
+          </tr>
+          <tr>
+            <td><strong>Qwen 2.5 Coder</strong></td>
+            <td><span class="badge badge-blue">1.5B</span> <span class="badge badge-blue">7B</span> <span class="badge badge-purple">32B</span></td>
+            <td>1.5–22 GB</td>
+            <td>Code generation</td>
+          </tr>
+          <tr>
+            <td><strong>DeepSeek R1</strong></td>
+            <td><span class="badge badge-blue">7B</span> <span class="badge badge-purple">70B</span></td>
+            <td>4–48 GB</td>
+            <td>Reasoning</td>
+          </tr>
+          <tr>
+            <td><strong>Gemma 3</strong></td>
+            <td><span class="badge badge-blue">4B</span> <span class="badge badge-blue">12B</span> <span class="badge badge-purple">27B</span></td>
+            <td>3–20 GB</td>
+            <td>Instruction following</td>
+          </tr>
+          <tr>
+            <td><strong>Phi-4</strong></td>
+            <td><span class="badge badge-blue">14B</span></td>
+            <td>10 GB</td>
+            <td>Efficiency + quality</td>
+          </tr>
+          <tr>
+            <td><strong>Mistral</strong></td>
+            <td><span class="badge badge-blue">7B</span> <span class="badge badge-amber">Mixtral 8x7B</span></td>
+            <td>5–28 GB</td>
+            <td>Speed</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Agent Pipeline -->
+  <section id="agent">
+    <div class="section-label">◆ NYX Agent</div>
+    <h2 class="section-title">Three-stage intelligence.<br/>One perfect output.</h2>
+    <p class="section-desc">Every prompt runs through a sequential pipeline of specialized agents — using whichever model you select.</p>
+
+    <div class="pipeline">
+      <div class="pipeline-stage">
+        <div class="pipeline-num" style="color: #60a5fa;">Stage 01</div>
+        <div class="pipeline-name">Architect</div>
+        <div class="pipeline-desc">Designs the system blueprint, breaks the problem into components, and produces a technical specification.</div>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-num" style="color: #a78bfa;">Stage 02</div>
+        <div class="pipeline-name">Coder</div>
+        <div class="pipeline-desc">Implements the full solution from the blueprint. Writes complete, production-ready code — never truncated.</div>
+      </div>
+      <div class="pipeline-stage">
+        <div class="pipeline-num" style="color: #34d399;">Stage 03</div>
+        <div class="pipeline-name">Optimizer</div>
+        <div class="pipeline-desc">Audits, refines, and delivers the final polished output. This is the only stage you see.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start -->
+  <section>
+    <div class="section-label">◆ Quick Start</div>
+    <h2 class="section-title">Up and running<br/>in 3 commands.</h2>
+
+    <div class="code-block">
+      <div class="code-block-header">
+        <div class="code-dot" style="background:#ef4444;"></div>
+        <div class="code-dot" style="background:#f59e0b;"></div>
+        <div class="code-dot" style="background:#22c55e;"></div>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;">bash</span>
+      </div>
+      <pre><span class="cm"># Clone and install</span>
+<span class="kw">git</span> <span class="nm">clone</span> <span class="st">https://github.com/yashas-30/NYX.git</span>
+<span class="kw">cd</span> NYX <span class="pn">&&</span> <span class="kw">npm</span> <span class="nm">install</span>
+
+<span class="cm"># Start NYX (Express :3000 + Fastify :3001)</span>
+<span class="kw">npm</span> <span class="nm">run dev</span>
+
+<span class="cm"># Open in browser</span>
+<span class="cm"># http://localhost:3000</span></pre>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div class="cta">
+    <h2>Start building with<br/><span style="background:linear-gradient(135deg,#60a5fa,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">NYX today.</span></h2>
+    <p>Free and open source. Run locally in minutes.</p>
+    <div class="hero-actions">
+      <a href="https://github.com/yashas-30/NYX" class="btn-primary" target="_blank">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+      <a href="https://github.com/yashas-30/NYX/issues" class="btn-secondary" target="_blank">Report an Issue</a>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <p>© 2026 NYX · Built by <a href="https://github.com/yashas-30">Yashas</a></p>
+    <p><a href="https://github.com/yashas-30/NYX/blob/main/LICENSE">MIT License</a> · <a href="https://github.com/yashas-30/NYX">GitHub</a></p>
+  </footer>
+</body>
+</html>

@@ -10,6 +10,7 @@ import https from 'https';
 import dns from 'node:dns';
 
 import { DNS_CACHE, preWarmDns as resolveHostname } from './apiAgent.js';
+import { loadKeys, verifySessionToken } from './keyVault.ts';
 
 // Configure global fetch with connection pooling
 const customAgent = new https.Agent({
@@ -32,8 +33,32 @@ const fastify = Fastify({
 await fastify.register(fastifyCors, {
   origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-nyx-session-token'],
   credentials: true,
+});
+
+// Validate session token for all proxy requests on Fastify (Port 3001)
+fastify.addHook('preHandler', async (request, reply) => {
+  if (request.url === '/health' || request.url.endsWith('/health')) {
+    return;
+  }
+
+  const authHeader = request.headers.authorization;
+  let token: string | undefined;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+  } else {
+    token = (request.headers['x-nyx-session-token'] as string) || (request.query as any)?.session_token;
+  }
+
+  if (!token && request.body && typeof request.body === 'object') {
+    token = (request.body as any).sessionToken || (request.body as any).session_token;
+  }
+
+  if (!token || !verifySessionToken(token)) {
+    return reply.status(401).send({ error: 'Unauthorized: Invalid or expired session token' });
+  }
 });
 
 // Provider URL configuration for fast routing
@@ -85,10 +110,24 @@ export function registerApiKey(provider: string, key: string): void {
 }
 
 export function getApiKey(provider: string): string | undefined {
+  // First attempt: check the secure backend KeyVault
+  try {
+    const keys = loadKeys();
+    const vaultKey = keys[provider]?.trim();
+    if (vaultKey && vaultKey !== '' && vaultKey !== 'null' && vaultKey !== 'undefined') {
+      return vaultKey;
+    }
+  } catch (error: any) {
+    console.error(`[FastifyApi] Failed to load key for ${provider} from vault:`, error.message);
+  }
+
+  // Second attempt: check in-memory temp store
   const entry = API_KEY_STORE.get(provider);
   if (entry && Date.now() - entry.timestamp < 3600000) { // 1 hour cache
     return entry.key;
   }
+
+  // Third attempt: env fallback
   const specificKey = process.env[`${provider.toUpperCase()}_API_KEY`]?.trim();
   if (specificKey) return specificKey;
   
