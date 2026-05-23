@@ -1,13 +1,15 @@
 /**
  * @file src/features/coder/components/CoderHeader.tsx
- * @description Header bar with mode tabs, agent info, real-time latency, status badge, and clear button.
+ * @description Gemini-style top header with sidebar toggle, mode tabs, real-time latency,
+ *              status badge, and clear button.
  */
 
 import React, { useMemo, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { TerminalIcon, Box, Settings as SettingsIcon, Zap, Trash2, Timer } from 'lucide-react';
+import { TerminalIcon, Box, Settings as SettingsIcon, Zap, Trash2, Timer, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { StatusBadge } from '@/src/components/ui/StatusBadge';
 import { AgentPersona } from '@/src/core/types';
+import { Logo } from '@/src/lib/design-system/icons';
 
 interface CoderHeaderProps {
   activeMode: 'coder' | 'registry' | 'settings';
@@ -17,6 +19,8 @@ interface CoderHeaderProps {
   isLoading: boolean;
   badgeStatus: 'success' | 'loading' | 'offline' | 'no_key';
   onClear: () => void;
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 /** Format latency: shows ms below 1000, then switches to X.Xs or Xm Y.Ys format */
@@ -38,125 +42,144 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
   metrics,
   isLoading,
   badgeStatus,
-  onClear
+  onClear,
+  sidebarOpen = true,
+  onToggleSidebar,
 }) => {
-  // Live elapsed timer while loading
   const [liveElapsed, setLiveElapsed] = useState(0);
-  const [loadStart, setLoadStart] = useState<number | null>(null);
 
   useEffect(() => {
     if (isLoading) {
       const start = Date.now();
-      setLoadStart(start);
       setLiveElapsed(0);
-
       const interval = setInterval(() => {
         setLiveElapsed(Date.now() - start);
-      }, 50); // Update every 50ms for smooth display
-
+      }, 50);
       return () => clearInterval(interval);
     } else {
-      setLoadStart(null);
       setLiveElapsed(0);
     }
   }, [isLoading]);
 
-  // Decide what to show: if loading → live counter; if done → final latency from metrics
   const displayLatency = isLoading ? liveElapsed : metrics.latency;
   const latencyText = formatLatency(displayLatency);
 
   return (
-    <header className="flex items-center justify-between p-2.5 sm:p-3 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-md">
-      <div className="flex items-center gap-2 sm:gap-3">
-        <div className="flex items-center gap-1 bg-black/10 dark:bg-white/5 p-0.5 rounded-xl border border-white/10 dark:border-white/5">
-          <button 
-            onClick={() => onModeChange('coder')} 
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'coder' ? 'bg-[#181224]/85 dark:bg-[#120B1C]/90 text-purple-400 border border-purple-500/20 shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+    <header className="flex items-center justify-between px-3 py-2 border-b border-white/[0.05] shrink-0 select-none bg-[#131315]/90 backdrop-blur-md">
+      {/* Left: sidebar toggle + logo + tabs */}
+      <div className="flex items-center gap-2">
+        {/* Sidebar toggle button */}
+        {onToggleSidebar && (
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={onToggleSidebar}
+            className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-white/5 transition-all"
           >
-            <TerminalIcon size={12} />
-            <span>NYX 2.0</span>
-          </button>
-          <button 
-            onClick={() => onModeChange('registry')} 
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'registry' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
-          >
-            <Box size={12} />
-            <span>Models</span>
-          </button>
-          <button 
-            onClick={() => onModeChange('settings')} 
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'settings' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
-          >
-            <SettingsIcon size={12} />
-            <span>Settings</span>
-          </button>
+            {sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
+          </motion.button>
+        )}
+
+        {/* Logo */}
+        <div className="flex items-center gap-1.5">
+          <Logo size={22} />
+          <span className="text-[11px] font-black tracking-tight text-foreground/70 hidden sm:block">NYX</span>
         </div>
-        <div className="h-4 w-px bg-white/15 dark:bg-white/5 mx-1 hidden lg:block" />
-        <div className="flex flex-col hidden lg:flex">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold tracking-tight text-foreground/80">{currentPersona.name}</span>
-            <span className="text-[7px] font-mono text-muted-foreground bg-white/20 dark:bg-white/5 px-1.5 py-0.5 rounded border border-white/10 dark:border-white/5">v{currentPersona.version}</span>
-          </div>
+
+        <div className="w-px h-4 bg-white/10 mx-1" />
+
+        {/* Mode tabs */}
+        <div className="flex items-center gap-0.5 bg-white/4 p-0.5 rounded-xl border border-white/[0.06]">
+          <TabButton
+            active={activeMode === 'coder'}
+            onClick={() => onModeChange('coder')}
+            icon={<TerminalIcon size={11} />}
+            label="NYX 2.0"
+            activeClass="bg-violet-500/15 text-violet-300 border-violet-500/25"
+          />
+          <TabButton
+            active={activeMode === 'registry'}
+            onClick={() => onModeChange('registry')}
+            icon={<Box size={11} />}
+            label="Models"
+            activeClass="bg-primary/10 text-primary border-primary/20"
+          />
+          <TabButton
+            active={activeMode === 'settings'}
+            onClick={() => onModeChange('settings')}
+            icon={<SettingsIcon size={11} />}
+            label="Settings"
+            activeClass="bg-primary/10 text-primary border-primary/20"
+          />
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Latency Display */}
-        <div className="hidden sm:flex items-center gap-2 bg-white/20 dark:bg-white/5 px-2.5 py-1 rounded-xl border border-white/10 dark:border-white/5 shadow-sm group">
+      {/* Right: metrics + status + clear */}
+      <div className="flex items-center gap-1.5">
+        {/* Latency badge */}
+        <div className="hidden sm:flex items-center gap-1.5 bg-white/4 px-2.5 py-1 rounded-xl border border-white/[0.06]">
           {isLoading ? (
             <Timer className="w-3 h-3 text-primary animate-pulse" />
           ) : (
-            <Zap className="w-3 h-3 text-amber-500 dark:text-amber-400 group-hover:scale-110 transition-transform" />
+            <Zap className="w-3 h-3 text-amber-500/80" />
           )}
-          <div className="flex flex-col min-w-[68px]">
-            <span className="text-[7px] font-bold text-muted-foreground uppercase tracking-wider leading-none">
-              {isLoading ? 'Elapsed' : 'Latency'}
-            </span>
-            <span className={`text-[10px] font-mono font-bold leading-none mt-0.5 tabular-nums transition-colors ${
-              isLoading
-                ? 'text-primary'
-                : metrics.latency > 5000
-                  ? 'text-amber-500'
-                  : 'text-foreground/85'
-            }`}>
-              {isLoading ? (
-                <motion.span
-                  key={latencyText}
-                  initial={{ opacity: 0.7 }}
-                  animate={{ opacity: 1 }}
-                >
-                  {latencyText}
-                </motion.span>
-              ) : (
-                latencyText
-              )}
-            </span>
-          </div>
+          <span className={`text-[10px] font-mono font-bold tabular-nums transition-colors ${
+            isLoading
+              ? 'text-primary'
+              : metrics.latency > 5000
+                ? 'text-amber-500'
+                : 'text-foreground/70'
+          }`}>
+            {isLoading ? (
+              <motion.span key={latencyText} initial={{ opacity: 0.6 }} animate={{ opacity: 1 }}>
+                {latencyText}
+              </motion.span>
+            ) : latencyText}
+          </span>
         </div>
 
-        {/* TPS Display */}
+        {/* TPS badge */}
         {(metrics.tps > 0 || (!isLoading && metrics.tokens > 0)) && (
-          <div className="hidden sm:flex items-center gap-2 bg-white/20 dark:bg-white/5 px-2.5 py-1 rounded-xl border border-white/10 dark:border-white/5 shadow-sm">
-            <Zap className="w-3 h-3 text-emerald-500" />
-            <div className="flex flex-col min-w-[42px]">
-              <span className="text-[7px] font-bold text-muted-foreground uppercase tracking-wider leading-none">TPS</span>
-              <span className="text-[10px] font-mono font-bold leading-none mt-0.5 text-foreground/85 tabular-nums">
-                {metrics.tps > 0 ? metrics.tps : '—'}
-              </span>
-            </div>
+          <div className="hidden sm:flex items-center gap-1.5 bg-white/4 px-2.5 py-1 rounded-xl border border-white/[0.06]">
+            <Zap className="w-3 h-3 text-emerald-500/80" />
+            <span className="text-[10px] font-mono font-bold text-foreground/70 tabular-nums">
+              {metrics.tps > 0 ? metrics.tps : '—'}
+              <span className="text-[8px] opacity-50 ml-0.5">t/s</span>
+            </span>
           </div>
         )}
 
         <StatusBadge status={badgeStatus} />
-        
-        <button 
+
+        <motion.button
+          whileTap={{ scale: 0.9 }}
           onClick={onClear}
-          className="p-1.5 rounded-xl hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all border border-transparent hover:border-destructive/20 group"
+          className="p-1.5 rounded-xl hover:bg-red-500/10 text-muted-foreground/40 hover:text-red-400 transition-all border border-transparent hover:border-red-500/20"
           title="Clear Session"
         >
-          <Trash2 size={13} strokeWidth={1.5} className="group-hover:scale-110 transition-transform" />
-        </button>
+          <Trash2 size={13} strokeWidth={1.5} />
+        </motion.button>
       </div>
     </header>
   );
 };
+
+const TabButton: React.FC<{
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  activeClass: string;
+}> = ({ active, onClick, icon, label, activeClass }) => (
+  <motion.button
+    whileTap={{ scale: 0.94 }}
+    onClick={onClick}
+    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 border ${
+      active
+        ? `${activeClass} shadow-sm`
+        : 'border-transparent text-muted-foreground/50 hover:bg-white/4 hover:text-foreground/70'
+    }`}
+  >
+    {icon}
+    <span className="hidden sm:block">{label}</span>
+  </motion.button>
+);

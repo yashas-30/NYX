@@ -1,27 +1,54 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AIService } from '../../core/services/ai.service';
 import { Provider } from '../../core/types';
 
 export type Status = 'online' | 'offline' | 'no-key';
 
-export const useProviderStatus = (apiKeys: Record<string, string>, lmStudioBaseUrl: string, ollamaBaseUrl: string) => {
+export const useProviderStatus = (
+  apiKeys: Record<string, string>,
+  lmStudioBaseUrl: string,
+  ollamaBaseUrl: string,
+  localModelsEnabled?: boolean
+) => {
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
+  const isVisibleRef = useRef(true);
+
+  // Track page visibility to skip polling when tab is hidden
+  useEffect(() => {
+    const handleVisibility = () => {
+      isVisibleRef.current = document.visibilityState === 'visible';
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
 
   const checkAllStatuses = useCallback(async () => {
-    const providers: string[] = ['gemini', 'openrouter', 'nvidia', 'ollama', 'lmstudio', 'opencode', 'openai', 'anthropic', 'deepseek', 'groq', 'mistral', 'together'];
+    // Skip polling when tab is hidden (performance optimization)
+    if (!isVisibleRef.current) return;
+
+    const providers: string[] = [
+      'gemini', 'openrouter', 'nvidia', 'ollama', 'lmstudio',
+      'opencode', 'openai', 'anthropic', 'deepseek', 'groq',
+      'mistral', 'together', 'nyx-native'
+    ];
     const newStatuses: Record<string, Status> = {};
 
     await Promise.all(providers.map(async (p) => {
+      if ((p === 'ollama' || p === 'lmstudio') && !localModelsEnabled) {
+        newStatuses[p] = 'offline';
+        return;
+      }
       const key = apiKeys[p];
       newStatuses[p] = await AIService.checkStatus(p, key, { lmStudioBaseUrl, ollamaBaseUrl });
     }));
 
     setStatuses(newStatuses);
-  }, [apiKeys, lmStudioBaseUrl, ollamaBaseUrl]);
+  }, [apiKeys, lmStudioBaseUrl, ollamaBaseUrl, localModelsEnabled]);
 
   useEffect(() => {
     checkAllStatuses();
-    const interval = setInterval(checkAllStatuses, 30000); // Check every 30s
+    // Increased from 30s to 60s to reduce unnecessary network calls
+    const interval = setInterval(checkAllStatuses, 60000);
     return () => clearInterval(interval);
   }, [checkAllStatuses]);
 

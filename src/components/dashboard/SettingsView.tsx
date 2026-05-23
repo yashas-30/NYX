@@ -168,30 +168,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
-        <header className="flex items-center justify-between p-2.5 sm:p-3 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-md">
-          <div className="flex items-center gap-1 bg-black/10 dark:bg-white/5 p-0.5 rounded-xl border border-white/10 dark:border-white/5">
-            <button 
-              onClick={() => setActiveMode?.('coder')} 
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'coder' ? 'bg-[#181224]/85 dark:bg-[#120B1C]/90 text-purple-400 border border-purple-500/20 shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
-            >
-              <TerminalIcon size={12} />
-              <span>NYX 2.0</span>
-            </button>
-            <button 
-              onClick={() => setActiveMode?.('registry')} 
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'registry' ? 'bg-primary text-primary-foreground shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
-            >
-              <Box size={12} />
-              <span>Models</span>
-            </button>
-            <button 
-              onClick={() => setActiveMode?.('settings')} 
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'settings' ? 'bg-primary text-primary-foreground shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
-            >
-              <SettingsIcon size={12} />
-              <span>Settings</span>
-            </button>
+        <header className="flex items-center justify-between p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/5 dark:bg-black/10 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <SettingsIcon size={16} className="text-primary" />
+            <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">Settings</h2>
           </div>
+
           <button
             onClick={() => setShowGateways(!showGateways)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[8px] font-bold uppercase tracking-widest transition-all ${

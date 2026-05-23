@@ -3,7 +3,7 @@
 // Completely self-contained: receives data + callbacks, emits onSelect / onClose.
 // This version is synced exactly with the CoderPage.tsx design.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { Search, Check, Info, Bot, ArrowDown, RefreshCw, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { FREE_OPENCODE_MODELS, CLAUDE_MODELS, AVAILABLE_MODELS, POLLINATIONS_MODELS } from '../../config/models';
@@ -34,7 +34,7 @@ interface Props {
 }
 
 // Structured provider order for the selector
-const PROVIDER_ORDER = ['gemini', 'opencode', 'openrouter', 'nvidia', 'pollinations'];
+const PROVIDER_ORDER = ['gemini', 'nyx-native', 'opencode', 'openrouter', 'nvidia', 'pollinations'];
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
    gemini: 'https://generativelanguage.googleapis.com/v1beta',
@@ -65,6 +65,23 @@ export const ModelSelector: React.FC<Props> = ({
    setLocalModelsEnabled,
    dropdown = false
 }) => {
+   const containerRef = useRef<HTMLDivElement>(null);
+
+   useEffect(() => {
+     if (!dropdown || !onClose) return;
+
+     const handleClickOutside = (event: MouseEvent) => {
+       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+         onClose();
+       }
+     };
+
+     document.addEventListener('mousedown', handleClickOutside);
+     return () => {
+       document.removeEventListener('mousedown', handleClickOutside);
+     };
+   }, [dropdown, onClose]);
+
    const getGatewayUrl = (provider: string): string => {
      return gatewayUrls[provider] || DEFAULT_GATEWAY_URLS[provider] || '';
    };
@@ -145,10 +162,8 @@ export const ModelSelector: React.FC<Props> = ({
   }, [groupedModels, selectedProvider, searchTerm]);
 
   return (
-    <div className={dropdown ? "absolute bottom-full left-0 mb-3 z-[500] w-full max-w-[440px]" : "fixed inset-0 z-[500] flex items-center justify-center p-4"}>
-      {dropdown ? (
-        <div className="fixed inset-0 z-[499] bg-transparent cursor-default" onClick={onClose} />
-      ) : (
+    <div ref={containerRef} className={dropdown ? "absolute bottom-full left-0 mb-3 z-[500] w-full max-w-[440px]" : "fixed inset-0 z-[500] flex items-center justify-center p-4"}>
+      {dropdown ? null : (
         <motion.div 
           initial={{ opacity: 0 }} 
           animate={{ opacity: 1 }} 
@@ -185,6 +200,7 @@ export const ModelSelector: React.FC<Props> = ({
             </div>
             {onClose && (
               <button 
+                type="button"
                 onClick={onClose}
                 className="p-1 rounded-lg text-muted-foreground/40 hover:text-foreground hover:bg-muted/50 transition-all shrink-0"
                 title="Close"
@@ -202,6 +218,7 @@ export const ModelSelector: React.FC<Props> = ({
             {sortedProviders.map(provider => (
               <button
                 key={provider}
+                type="button"
                 onClick={() => { onProviderChange(provider); onSearchChange(''); }}
                 className={`
                   w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-all duration-300 group
@@ -265,6 +282,7 @@ export const ModelSelector: React.FC<Props> = ({
                           </h4>
                           {isCoder && model.provider === 'opencode' && (
                             <button
+                              type="button"
                               onClick={(e) => {
                                   e.stopPropagation();
                                   onResetContext?.(model.id);

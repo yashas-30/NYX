@@ -9,6 +9,11 @@ import { Gateway } from '../lib/gateway.js';
 export const openrouterRouter = Router();
 
 openrouterRouter.post('/stream', async (req, res) => {
+  const controller = new AbortController();
+  res.on('close', () => {
+    controller.abort();
+  });
+
   try {
     const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = req.body;
 
@@ -37,6 +42,13 @@ openrouterRouter.post('/stream', async (req, res) => {
     // Build URL with gateway support (custom user gateway takes priority)
     const { url } = Gateway.buildUrl('openrouter', '/chat/completions', gatewayUrls);
 
+    // Set event-stream headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -48,14 +60,15 @@ openrouterRouter.post('/stream', async (req, res) => {
       body: JSON.stringify({
         model,
         messages,
-        stream: false,
+        stream: true,
         temperature: settings?.temperature ?? 0.7,
         max_tokens: settings?.maxTokens ?? 4096,
         top_p: settings?.topP ?? 1.0,
       }),
+      signal: controller.signal,
     });
 
-    if (!response.ok) {
+    if (!response.ok || !response.body) {
       const errorText = await response.text();
       let errorMessage = `OpenRouter Error ${response.status}`;
       try {
@@ -64,15 +77,55 @@ openrouterRouter.post('/stream', async (req, res) => {
       } catch {
         errorMessage = errorText || errorMessage;
       }
-      return res.status(response.status).json({ error: errorMessage });
+      res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
+      res.end();
+      return;
     }
 
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || '';
-    
-    return res.json({ text });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith('data: ')) {
+          const dataStr = trimmed.slice(6).trim();
+          if (dataStr === '[DONE]') {
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+          try {
+            const parsed = JSON.parse(dataStr);
+            const chunk = parsed.choices?.[0]?.delta?.content ?? '';
+            if (chunk) {
+              res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+            }
+          } catch (e) {
+            // ignore JSON errors
+          }
+        }
+      }
+    }
+
+    res.write('data: [DONE]\n\n');
+    res.end();
   } catch (e: any) {
     console.error('[OpenRouter Error]:', e.message);
-    return res.status(500).json({ error: e.message });
+    if (e.name === 'AbortError') {
+      res.end();
+      return;
+    }
+    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+    res.end();
   }
 });

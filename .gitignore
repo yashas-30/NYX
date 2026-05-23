@@ -16,3 +16,4 @@ graphify-out/*
 !graphify-out/extract.ps1
 !graphify-out/extract2.ps1
 scratch/
+.nyx-models/

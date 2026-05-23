@@ -248,21 +248,33 @@
     radial-gradient(at 100% 0%, rgba(72, 72, 74, 0.4) 0, transparent 50%);
 }
 
-/* ── Scrollbars ─────────────────────────────────────────────── */
+/* ── Scrollbars (Gemini-style thin dark) ────────────────────── */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--muted-foreground);
+  background: rgba(255, 255, 255, 0.06);
   border-radius: 10px;
-  border: 2px solid transparent;
-  background-clip: content-box;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--muted-foreground) 80%, black);
+  background: rgba(255, 255, 255, 0.12);
 }
+
+/* Thin scrollbar for sidebar session list */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 3px;
+}
+.scrollbar-thumb-white\/5::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
 
 /* ── Live System Trace ──────────────────────────────────────── */
 /* ── Apple Terminal / Staging Area ─────────────────────────── */
@@ -482,5 +494,11 @@
   }
 }
 
+/* ── Professional List Marker Overrides ─────────────────────── */
+.prose-nyx ul li::marker {
+  color: color-mix(in srgb, currentColor 50%, transparent) !important;
+}
 
-
+.prose-nyx ol li::marker {
+  color: color-mix(in srgb, currentColor 70%, transparent) !important;
+}

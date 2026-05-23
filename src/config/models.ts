@@ -200,20 +200,55 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
   { id: 'nvidia/ministral-8b', name: 'Mistral 8B (NIM)', provider: 'nvidia', description: 'Mistral via NVIDIA NIM - Free', specs: { contextWindow: '128K', trainingData: '2024', maxOutput: '8K', modality: 'Text' } },
 
   // ═══════════════════════════════════════════════════════════════════════════════
-  // OPENCODE ZEN - Free Models
+  // OLLAMA LOCAL PRESETS
   // ═══════════════════════════════════════════════════════════════════════════════
-  { id: 'opencode/big-pickle', name: 'Big Pickle', provider: 'opencode', description: 'Stealth model optimized for coding agents. Currently free.', specs: { contextWindow: '200K', trainingData: '2026', maxOutput: '32K', modality: 'Text' } },
-  { id: 'opencode/deepseek-v4-flash-free', name: 'DeepSeek V4 Flash (Free)', provider: 'opencode', description: 'Fast DeepSeek model for quick tasks. Free on Zen.', specs: { contextWindow: '128K', trainingData: '2025', maxOutput: '8K', modality: 'Text' } },
-  { id: 'opencode/minimax-m2.5-free', name: 'MiniMax M2.5 (Free)', provider: 'opencode', description: 'Strong at coding and reasoning. Free on Zen.', specs: { contextWindow: '200K', trainingData: '2025', maxOutput: '8K', modality: 'Text' } },
-  { id: 'opencode/ring-2.6-1t-free', name: 'Ring 2.6 1T (Free)', provider: 'opencode', description: 'High-capacity reasoning model. Free on Zen.', specs: { contextWindow: '200K', trainingData: '2025', maxOutput: '16K', modality: 'Text' } },
-  { id: 'opencode/qwen3-30b-a3b-free', name: 'Qwen3 30B (Free)', provider: 'opencode', description: 'Alibaba Qwen3 model - free on Zen.', specs: { contextWindow: '131K', trainingData: '2025', maxOutput: '8K', modality: 'Text' } },
-  { id: 'opencode/qwen3-coder-14b-free', name: 'Qwen3 Coder 14B (Free)', provider: 'opencode', description: 'Specialized coding model - free on Zen.', specs: { contextWindow: '32K', trainingData: '2025', maxOutput: '8K', modality: 'Text' } },
-  { id: 'opencode/llama-3.3-70b-free', name: 'Llama 3.3 70B (Free)', provider: 'opencode', description: "Meta's latest Llama - free on Zen.", specs: { contextWindow: '131K', trainingData: '2024', maxOutput: '32K', modality: 'Text' } },
-  { id: 'opencode/gemma-3-27b-it-free', name: 'Gemma 3 27B (Free)', provider: 'opencode', description: "Google's latest Gemma - free on Zen.", specs: { contextWindow: '128K', trainingData: '2025', maxOutput: '8K', modality: 'Text' } },
-  { id: 'opencode/deepseek-v3-free', name: 'DeepSeek V3 (Free)', provider: 'opencode', description: 'DeepSeek V3 model - free on Zen.', specs: { contextWindow: '64K', trainingData: '2024', maxOutput: '8K', modality: 'Text' } },
+  {
+    id: 'qwen2.5-coder:3b',
+    name: 'Qwen 2.5 Coder 3B (Ollama)',
+    provider: 'ollama',
+    description: 'Lightweight local coding model with strong agent performance.',
+    specs: { contextWindow: '32K', trainingData: '2024', maxOutput: '8K', modality: 'Text' }
+  },
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // NYX NATIVE PRESETS
+  // ═══════════════════════════════════════════════════════════════════════════════
+  {
+    id: 'qwen-0.5b-local',
+    name: 'Qwen 2.5 Coder 0.5B (Local Python)',
+    provider: 'qwen-local',
+    description: 'Ultra-fast local Qwen 0.5B model running on Python causal LM server.',
+    specs: { contextWindow: '32K', trainingData: '2024', maxOutput: '8K', modality: 'Text' }
+  },
+  {
+    id: 'qwen2.5-coder-1.5b-native',
+    name: 'Qwen 2.5 Coder 1.5B (GGUF)',
+    provider: 'nyx-native',
+    description: 'Fast, lightweight Qwen model optimized specifically for coding tasks.',
+    specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' }
+  },
+  {
+    id: 'qwen2.5-coder-3b-native',
+    name: 'Qwen 2.5 Coder 3B (GGUF)',
+    provider: 'nyx-native',
+    description: 'Perfect balance of high intelligence and execution speed for coding.',
+    specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' }
+  },
+  {
+    id: 'llama-3.2-3b-native',
+    name: 'Llama 3.2 3B (GGUF)',
+    provider: 'nyx-native',
+    description: "Meta's highly capable general instruction model for general analysis.",
+    specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' }
+  }
 ];
 
-
-export const AVAILABLE_MODELS: ModelOption[] = RAW_AVAILABLE_MODELS.filter(m =>
-  ['gemini', 'openrouter', 'nvidia', 'opencode', 'pollinations'].includes(m.provider)
-);
+// Deduplicate by ID to prevent duplicate entries in the model selector
+const ALLOWED_PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'opencode', 'pollinations', 'ollama', 'nyx-native', 'qwen-local'];
+const _seen = new Set<string>();
+export const AVAILABLE_MODELS: ModelOption[] = RAW_AVAILABLE_MODELS
+  .filter(m => ALLOWED_PROVIDERS.includes(m.provider))
+  .filter(m => {
+    if (_seen.has(m.id)) return false;
+    _seen.add(m.id);
+    return true;
+  });

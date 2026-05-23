@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { LandingPage } from './components/LandingPage';
+import React from 'react';
 import { CoderDashboard } from './components/CoderDashboard';
 import { Toaster } from 'sonner';
 import { useTheme } from './context/ThemeContext';
@@ -7,17 +6,12 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const { theme } = useTheme();
 
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 font-sans">
       <ErrorBoundary>
-        {!isAuthenticated ? (
-          <LandingPage onStart={() => setIsAuthenticated(true)} />
-        ) : (
-          <CoderDashboard onExit={() => setIsAuthenticated(false)} />
-        )}
+        <CoderDashboard onExit={() => {}} />
       </ErrorBoundary>
 
       <Toaster 

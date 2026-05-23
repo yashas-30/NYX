@@ -4,7 +4,7 @@
  * Supports Cloudflare AI Gateway proxying and provider-specific routing.
  */
 
-export type Provider = 'gemini' | 'openrouter' | 'nvidia' | 'ollama' | 'lmstudio' | 'opencode' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'mistral' | 'together' | 'pollinations';
+export type Provider = 'gemini' | 'openrouter' | 'nvidia' | 'ollama' | 'lmstudio' | 'opencode' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'mistral' | 'together' | 'pollinations' | 'nyx-native' | 'qwen-local';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'model';
@@ -77,6 +77,8 @@ const getCloudflareGateway = (provider: Provider): AIGatewayConfig => {
     case 'mistral':
     case 'together':
     case 'pollinations':
+    case 'nyx-native':
+    case 'qwen-local':
       return { enabled: false, baseUrl: '' };
     default:
       return { enabled: false, baseUrl: '' };
@@ -98,6 +100,8 @@ const PROVIDER_URLS: Record<Provider, string> = {
   mistral: 'https://api.mistral.ai/v1',
   together: 'https://api.together.ai/v1',
   pollinations: 'https://text.pollinations.ai',
+  'nyx-native': '',
+  'qwen-local': '',
 };
 
 // Free models on OpenCode Zen (verified from API)
@@ -237,7 +241,7 @@ export class Gateway {
    */
   static validateAuth(provider: Provider, modelId: string, apiKey?: string): { valid: boolean; error?: string } {
     // Local providers don't need keys
-    if (['ollama', 'lmstudio', 'pollinations'].includes(provider)) {
+    if (['ollama', 'lmstudio', 'pollinations', 'nyx-native', 'qwen-local'].includes(provider)) {
       return { valid: true };
     }
 

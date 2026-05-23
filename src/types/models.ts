@@ -6,8 +6,12 @@ export type ModelProvider =
   | 'openrouter'
   | 'nvidia'
   | 'terminal'
+  | 'lmstudio'
   | 'opencode'
-  | 'pollinations';
+  | 'pollinations'
+  | 'ollama'
+  | 'nyx-native'
+  | 'qwen-local';
 
 export interface OllamaModel {
   name: string;

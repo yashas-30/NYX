@@ -24,5 +24,9 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["node_modules", "dist", "scratch"]
+  "exclude": ["node_modules", "dist", "scratch", ".nyx-cache", ".nyx-models"],
+  "watchOptions": {
+    "excludeDirectories": ["**/node_modules", "**/dist", "**/scratch", "**/.nyx-cache", "**/.nyx-models"],
+    "excludeFiles": ["**/server.log", "**/server.err"]
+  }
 }

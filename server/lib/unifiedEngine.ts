@@ -62,6 +62,9 @@ export class UnifiedEngine {
       case 'lmstudio':
         return this.streamLMStudio(model, messages, req.baseUrl, settings, writeChunk, onDone);
 
+      case 'nyx-native':
+        return this.streamNyxNative(model, messages, settings, writeChunk, onDone);
+
       default:
         throw new Error(`Unsupported provider: ${provider}`);
     }
@@ -342,6 +345,42 @@ export class UnifiedEngine {
     });
 
     if (!response.ok) throw new Error(`LM Studio Error: ${response.status}`);
+
+    await Gateway.processSSEStream(response, {
+      onChunk: (text) => write({ chunk: text }),
+      onDone: done,
+      onError: (err) => { throw new Error(err); }
+    });
+  }
+
+  /**
+   * Streams responses from local GGUF model executed via NYX's native runner.
+   * Connects directly to localhost:12345.
+   */
+  private static async streamNyxNative(
+    model: string,
+    messages: ChatMessage[],
+    settings: AISettings | undefined,
+    write: (chunk: any) => void,
+    done: () => void
+  ): Promise<void> {
+    const url = 'http://127.0.0.1:12345/v1/chat/completions';
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        stream: true,
+        temperature: settings?.temperature ?? 0.7,
+        max_tokens: settings?.maxTokens ?? 2048,
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Native GGUF Runner Error: ${response.status}. Make sure the model is loaded in RAM.`);
+    }
 
     await Gateway.processSSEStream(response, {
       onChunk: (text) => write({ chunk: text }),

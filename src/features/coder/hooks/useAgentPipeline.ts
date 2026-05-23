@@ -1,73 +1,266 @@
 /**
  * @file src/features/coder/hooks/useAgentPipeline.ts
- * @description Core AI execution pipeline for single-agent and multi-agent (NYX) flows.
- *
- * NYX multi-agent pipeline:
- *   Stage 1 (Architect)  → internal only, shown as a compact progress banner
- *   Stage 2 (Coder)      → internal only, shown as a compact progress banner
- *   Stage 3 (Optimizer)  → final output streamed directly to the user
+ * @description Core AI execution pipeline for NYX agent.
+ * Single-agent fast path for simple prompts, multi-stage deep-thinking path for complex prompts.
+ * All stages use the model selected in the model selector.
  */
 
 import { useState, useCallback, useRef } from 'react';
 import { AIService } from '@/src/core/services/ai.service';
 import { ChatMessage, TelemetryMetrics, AISettings, AgentPersona } from '@/src/core/types';
 import { detectProvider, getEffectiveApiKey, requiresApiKey } from '@/src/core/utils/provider';
-import { analyzePrompt, NON_CODE_REJECTION } from '@/src/features/coder/utils/promptAnalyzer';
+import { analyzePrompt, NON_CODE_REJECTION, isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/src/features/coder/utils/promptAnalyzer';
 import { getLanguageKnowledge, CODING_KNOWLEDGE_SUMMARY } from '@/src/config/codingKnowledge';
 import { toast } from 'sonner';
 
-type AgentKey = 'open' | 'claude' | 'nyx';
-
 interface PipelineProps {
-  activeAgent: AgentKey;
-  models: Record<AgentKey, string>;
+  models: Record<'nyx', string>;
   apiKeys: Record<string, string>;
-  agentPersonas: Record<AgentKey, AgentPersona>;
+  agentPersonas: Record<'nyx', AgentPersona>;
   modelSettings: AISettings;
   lmStudioBaseUrl: string;
   ollamaBaseUrl: string;
   ollamaModels: any[];
   lmStudioModels: any[];
   trackUsage: (provider: string, tokens: number) => void;
-  historyMap: Record<AgentKey, ChatMessage[]>;
-  updateHistory: (agent: AgentKey, updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
-  updateMetrics: (agent: AgentKey, metrics: TelemetryMetrics) => void;
+  history: ChatMessage[];
+  updateHistory: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
+  updateMetrics: (metrics: TelemetryMetrics) => void;
   getSuggestions: (history: ChatMessage[]) => void;
   setSuggestedPrompts: (prompts: string[]) => void;
   webSearchEnabled: boolean;
+  codebaseKnowledgeEnabled: boolean;
 }
 
-// Status banners shown during internal stages (not shown in final output)
-const ANALYSIS_BANNER = `> 🧠 **Prompt Analyzer** — detecting language, intent, and complexity...\n`;
-const STAGE0_BANNER = `> 🔎 **Search Agent** — scouring the web for code production insights and SDK docs...\n`;
-const KNOWLEDGE_BANNER = `> 📚 **Knowledge Agent** — enriching context with deep SDK and framework intelligence...\n`;
-const STAGE1_BANNER = `> ⚙️ **Architect Agent** — analysing the problem and designing the system blueprint...`;
-const STAGE2_BANNER = `\n> 💻 **Coder Agent** — writing the complete implementation from the blueprint...`;
-const STAGE3_BANNER = `\n> ⚡ **Optimizer Agent** — finalising and delivering your answer...\n\n`;
-
-const SIMPLE_NYX_INSTRUCTION = `You are NYX 2.0, an elite direct coding assistant with expert knowledge of 30+ programming languages.
+/** NYX system instruction — used for single-agent fast path */
+const NYX_SYSTEM_INSTRUCTION = `I am Nyx, your premium AI assistant. I am a helpful, friendly, and conversational chatbot with an extensive database of coding knowledge. I can chat with you about general topics, answer questions, or help you with software development, debugging, analyzing files, and system design.
 
 ${CODING_KNOWLEDGE_SUMMARY}
 
-ABSOLUTE RULES:
-- Output ONLY the direct answer or code. Nothing else.
-- NEVER describe what the user said or wrote.
-- NEVER use phrases like "The user said", "You asked", "This is a".
-- NEVER greet, introduce, or acknowledge the prompt.
-- NEVER add closing remarks or offers to help.
-- If the input is a greeting: respond with a brief acknowledgment only.
-- If asked for code: output ONLY the code blocks or files requested.
-- Always use the most modern idioms and patterns for the detected language.
-- Start immediately with the answer. Zero preamble.`;
+OUTPUT GUIDELINES:
+- Respond in a natural, conversational, and highly professional chatbot manner (like Google Gemini).
+- Answer greetings, general queries, simple questions, or chit-chat directly, friendly, and concisely. Do not output system design overviews, implementation plans, or code steps for simple conversational or general prompts.
+- When answering general chatbot questions or chit-chat, behave like a normal friendly AI.
+- When generating code, make sure it is complete, functional, and well-commented.
+- For hardware-related queries, provide clear details on wiring, safety, and non-blocking logic.
+- Keep responses clean, clear, and relevant to the user's query.`;
 
-// Simple prompt detection: uses the analyzer's complexity score instead of regex heuristics
-const isSimplePrompt = (prompt: string): boolean => {
-  const analysis = analyzePrompt(prompt);
-  return analysis.complexity === 'trivial' || analysis.complexity === 'simple';
+/** Check if the prompt is a simple greeting or identity query */
+const isGreetingOrIdentity = (prompt: string): boolean => {
+  const trimmed = prompt.trim();
+  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up)\b/i;
+  const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx)\b/i;
+  return GREETINGS.test(trimmed) || IDENTITY.test(trimmed);
 };
 
+/** Check if the prompt is asking about codebase/project context */
+const isCodebaseQuery = (prompt: string): boolean => {
+  const lower = prompt.toLowerCase();
+  const codebaseKeywords = /\b(project|codebase|repository|repo|workspace|directory|folder|files?|src|components|server|routes|package\.json|tsconfig)\b/i;
+  const fileRef = /\b\w+\.(json|ts|tsx|js|jsx|py|cpp|h|ino|md|yml|yaml|css|html)\b/i;
+  return codebaseKeywords.test(lower) || fileRef.test(lower);
+};
+
+// Cache Qwen model status to avoid expensive re-polling on every query
+let cachedQwenModel: { id: string; provider: string } | null = null;
+let lastQwenCheckTime = 0;
+const QWEN_CACHE_TTL = 30000; // Cache status for 30 seconds
+
+/** Auto-discover active Qwen models (local Python, LM Studio, Ollama) or fallback to OpenCode free model */
+const getAvailableQwenModel = async (
+  ollamaModels: any[],
+  lmStudioModels: any[]
+): Promise<{ id: string; provider: string }> => {
+  const now = Date.now();
+  if (cachedQwenModel && (now - lastQwenCheckTime < QWEN_CACHE_TTL)) {
+    return cachedQwenModel;
+  }
+
+  // 1. Try local Python Qwen server with a tight timeout (max 200ms)
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 200);
+    const response = await fetch('http://127.0.0.1:3002/health', { signal: controller.signal }).catch(() => null);
+    clearTimeout(timer);
+    if (response && response.ok) {
+      cachedQwenModel = { id: 'qwen-0.5b-local', provider: 'qwen-local' };
+      lastQwenCheckTime = now;
+      return cachedQwenModel;
+    }
+  } catch (e) {
+    console.warn('[getAvailableQwenModel] Local Python Qwen check failed or timed out:', e);
+  }
+
+  // 2. Try LM Studio
+  const lmQwen = lmStudioModels.find(m => m.id?.toLowerCase().includes('qwen'));
+  if (lmQwen) {
+    cachedQwenModel = { id: lmQwen.id, provider: 'lmstudio' };
+    lastQwenCheckTime = now;
+    return cachedQwenModel;
+  }
+
+  // 3. Try Ollama
+  const ollamaQwen = ollamaModels.find(m => m.id?.toLowerCase().includes('qwen') || m.name?.toLowerCase().includes('qwen'));
+  if (ollamaQwen) {
+    cachedQwenModel = { id: ollamaQwen.id || ollamaQwen.name, provider: 'ollama' };
+    lastQwenCheckTime = now;
+    return cachedQwenModel;
+  }
+
+  // 4. Fallback to OpenCode free Qwen
+  cachedQwenModel = { id: 'opencode/qwen3-coder-14b-free', provider: 'opencode' };
+  lastQwenCheckTime = now;
+  return cachedQwenModel;
+};
+
+/** Asynchronously analyze prompt using Qwen (local or Zen fallback) */
+const analyzePromptIntelligently = async (
+  prompt: string,
+  ollamaModels: any[],
+  lmStudioModels: any[],
+  apiKeys: Record<string, string>,
+  lmStudioBaseUrl: string,
+  ollamaBaseUrl: string
+): Promise<{
+  isCodeRelated: boolean;
+  isMissingDebugDetails: boolean;
+  missingDetailsRequest: string;
+  intent: string;
+  complexity: string;
+  detectedLanguages: string[];
+  frameworks: string[];
+  summary: string;
+} | null> => {
+  const systemInstruction = `You are a highly advanced AI prompt analyzer. Your job is to analyze the user's prompt and output a JSON object with the following fields:
+{
+  "isCodeRelated": boolean,
+  "isMissingDebugDetails": boolean,
+  "missingDetailsRequest": string, // If the user asks to debug or fix an error/bug/compile-issue but has NOT pasted any code and has NOT pasted any error logs, write a friendly request asking them for their code and logs. Tailor it specifically to any language/platform they mentioned. Keep it brief (under 3 sentences). Otherwise, write empty string.
+  "intent": "generate" | "refactor" | "debug" | "explain" | "convert" | "optimize" | "review" | "integrate" | "test" | "deploy" | "general",
+  "complexity": "trivial" | "simple" | "moderate" | "complex" | "enterprise",
+  "detectedLanguages": string[],
+  "frameworks": string[],
+  "summary": string // A brief 1-sentence summary of what the user wants to accomplish
+}
+A prompt is isMissingDebugDetails = true if the user asks to debug or fix an error, bug, or crash, but has NOT pasted any code snippet and has NOT pasted any error logs or compile outputs.
+Response must contain ONLY the raw JSON object. Do not include markdown code block syntax (like \`\`\`json).`;
+
+  const qwenModel = await getAvailableQwenModel(ollamaModels, lmStudioModels);
+  console.log(`[analyzePromptIntelligently] Using Qwen model for analysis: ${qwenModel.id} (${qwenModel.provider})`);
+
+  try {
+    const activeKey = qwenModel.provider === 'opencode' ? (apiKeys['opencode'] || '') : undefined;
+    const response = await AIService.execute(
+      qwenModel.id,
+      qwenModel.provider,
+      prompt,
+      activeKey,
+      systemInstruction,
+      { temperature: 0.1, maxTokens: 1024 },
+      undefined,
+      undefined,
+      { lmStudioBaseUrl, ollamaBaseUrl }
+    );
+    const text = response.text.trim();
+    const jsonStr = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+    const parsed = JSON.parse(jsonStr);
+    return {
+      ...parsed,
+      summary: parsed.summary || ''
+    };
+  } catch (err) {
+    console.warn('[analyzePromptIntelligently] Initial Qwen execution failed, trying OpenCode Zen Qwen:', err);
+    try {
+      const activeKey = apiKeys['opencode'] || '';
+      const response = await AIService.execute(
+        'opencode/qwen3-coder-14b-free',
+        'opencode',
+        prompt,
+        activeKey,
+        systemInstruction,
+        { temperature: 0.1, maxTokens: 1024 },
+        undefined,
+        undefined,
+        { lmStudioBaseUrl, ollamaBaseUrl }
+      );
+      const text = response.text.trim();
+      const jsonStr = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+      const parsed = JSON.parse(jsonStr);
+      return {
+        ...parsed,
+        summary: parsed.summary || ''
+      };
+    } catch (err2) {
+      console.error('[analyzePromptIntelligently] All Qwen models failed:', err2);
+      return null;
+    }
+  }
+};
+
+/** Use Qwen 0.5B (NYX agent) to analyze the query and codebase context, generating a structured Handoff Specification for the selected model */
+const generateHandoffPlan = async (
+  prompt: string,
+  codebaseContext: string,
+  ollamaModels: any[],
+  lmStudioModels: any[],
+  apiKeys: Record<string, string>,
+  lmStudioBaseUrl: string,
+  ollamaBaseUrl: string
+): Promise<string> => {
+  const systemInstruction = `You are Nyx, the coordinating agent powered by Qwen 0.5B. Your task is to analyze the user's query and the codebase context, and prepare a structured Handoff Specification for the selected heavy model (e.g., Gemini).
+Focus on:
+1. Target Files: Which files in the codebase need to be modified or created.
+2. Technical Requirements: Core functions, interfaces, or logic to be implemented.
+3. Constraints & Safety: Any safety hazards, voltage mismatches, or platform restrictions (especially for Arduino/Raspberry Pi).
+4. Recommended design pattern or architecture.
+Keep it technical, clear, and structured as bullet points. Do not include greetings, introductions, or code blocks.`;
+
+  const qwenModel = await getAvailableQwenModel(ollamaModels, lmStudioModels);
+  console.log(`[generateHandoffPlan] Running NYX Agent (Qwen 0.5B) to generate handoff plan using: ${qwenModel.id}`);
+
+  try {
+    const activeKey = qwenModel.provider === 'opencode' ? (apiKeys['opencode'] || '') : undefined;
+    const response = await AIService.execute(
+      qwenModel.id,
+      qwenModel.provider,
+      `User Prompt: ${prompt}\n\nCodebase Context:\n${codebaseContext.substring(0, 8000)}`,
+      activeKey,
+      systemInstruction,
+      { temperature: 0.2, maxTokens: 1024 },
+      undefined,
+      undefined,
+      { lmStudioBaseUrl, ollamaBaseUrl }
+    );
+    return response.text.trim();
+  } catch (err) {
+    console.warn('[generateHandoffPlan] Qwen failed to generate handoff plan, trying OpenCode Zen Qwen fallback:', err);
+    if (qwenModel.provider !== 'opencode') {
+      try {
+        const activeKey = apiKeys['opencode'] || '';
+        const response = await AIService.execute(
+          'opencode/qwen3-coder-14b-free',
+          'opencode',
+          `User Prompt: ${prompt}\n\nCodebase Context:\n${codebaseContext.substring(0, 8000)}`,
+          activeKey,
+          systemInstruction,
+          { temperature: 0.2, maxTokens: 1024 },
+          undefined,
+          undefined,
+          { lmStudioBaseUrl, ollamaBaseUrl }
+        );
+        return response.text.trim();
+      } catch (err2) {
+        console.error('[generateHandoffPlan] Fallback Qwen model failed:', err2);
+      }
+    }
+    return 'Perform the requested codebase changes ensuring clean architecture, modular code blocks, and robust error handling.';
+  }
+};
+
+/** Streaming update throttle interval (ms) */
+const STREAM_THROTTLE_MS = 50;
+
 export const useAgentPipeline = ({
-  activeAgent,
   models,
   apiKeys,
   agentPersonas,
@@ -77,111 +270,192 @@ export const useAgentPipeline = ({
   ollamaModels,
   lmStudioModels,
   trackUsage,
-  historyMap,
+  history,
   updateHistory,
   updateMetrics,
   getSuggestions,
   setSuggestedPrompts,
-  webSearchEnabled
+  webSearchEnabled,
+  codebaseKnowledgeEnabled
 }: PipelineProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
+  // Keep a ref to history to avoid stale closure in useCallback
+  const historyRef = useRef(history);
+  historyRef.current = history;
 
   const triggerBackgroundCritic = useCallback(async (prompt: string, responseText: string) => {
-    if (activeAgent !== 'nyx') return;
-    
-    const activeProvider = detectProvider(models['nyx'], ollamaModels, lmStudioModels);
+    const nyxModel = models['nyx'];
+    if (!nyxModel) return;
+    const activeProvider = detectProvider(nyxModel, ollamaModels, lmStudioModels);
     const apiKey = getEffectiveApiKey(activeProvider, apiKeys);
 
     try {
       await fetch('/api/nyx/critic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          response: responseText,
-          apiKey
-        })
+        body: JSON.stringify({ prompt, response: responseText, apiKey })
       });
-      console.log('[useAgentPipeline] Background critic triggered successfully.');
     } catch (err) {
-      console.error('[useAgentPipeline] Failed to trigger background critic:', err);
+      console.error('[useAgentPipeline] Background critic failed:', err);
     }
-  }, [activeAgent, models, apiKeys, ollamaModels, lmStudioModels]);
+  }, [models, apiKeys, ollamaModels, lmStudioModels]);
 
+  /**
+   * Main entry point — analyzes the prompt and routes to fast or deep-thinking path.
+   */
   const runCoder = useCallback(async (prompt: string) => {
-    if (!prompt.trim() || !models[activeAgent]) return;
+    const nyxModel = models['nyx'];
+    if (!prompt.trim() || !nyxModel) return;
 
     if (controllerRef.current) controllerRef.current.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
 
+    // Append user message
     const userMsg: ChatMessage = { role: 'user', content: prompt, timestamp: Date.now() };
-    updateHistory(activeAgent, prev => [...prev, userMsg]);
+    updateHistory(prev => [...prev, userMsg]);
 
     setIsLoading(true);
     setSuggestedPrompts([]);
-    updateMetrics(activeAgent, { latency: 0, tokens: 0, tps: 0 });
+    updateMetrics({ latency: 0, tokens: 0, tps: 0 });
 
     try {
-      if (activeAgent === 'nyx') {
-        // ── Prompt Analysis & Code-Only Gate ─────────────────────────────
-        const analysis = analyzePrompt(prompt);
-        console.log(`[Prompt Analyzer] ${analysis.summary}`);
+      // ── 1. Fast Local Regex Analysis (Zero Latency) ──────────────────────────
+      const isGreeting = isGreetingOrIdentity(prompt);
+      const regexAnalysis = analyzePrompt(prompt);
+      
+      let analysisResult: any = null;
 
-        if (!analysis.isCodeRelated) {
-          // Reject non-code prompts immediately
-          updateHistory(activeAgent, prev => [
-            ...prev,
-            { role: 'assistant', content: NON_CODE_REJECTION, timestamp: Date.now(), status: 'success' }
-          ]);
-          toast.error('NYX only accepts coding-related prompts');
-          return;
+      if (isGreeting || !regexAnalysis.isCodeRelated) {
+        // Bypass expensive LLM prompt analysis for greetings and simple general chat
+        analysisResult = {
+          isCodeRelated: regexAnalysis.isCodeRelated || isGreeting,
+          isMissingDebugDetails: false,
+          missingDetailsRequest: '',
+          intent: regexAnalysis.intent,
+          complexity: regexAnalysis.complexity,
+          detectedLanguages: regexAnalysis.detectedLanguages,
+          frameworks: regexAnalysis.frameworks,
+          summary: regexAnalysis.summary
+        };
+      } else {
+        // ── 2. Smart LLM Prompt Analysis (Qwen 0.5B / Zen) ─────────────────────────
+        analysisResult = await analyzePromptIntelligently(
+          prompt,
+          ollamaModels,
+          lmStudioModels,
+          apiKeys,
+          lmStudioBaseUrl,
+          ollamaBaseUrl
+        );
+
+        // Fallback to local regex-based analyzer if LLM analysis fails
+        if (!analysisResult) {
+          analysisResult = {
+            isCodeRelated: regexAnalysis.isCodeRelated,
+            isMissingDebugDetails: isMissingDebugDetails(prompt, regexAnalysis.intent),
+            missingDetailsRequest: MISSING_DEBUG_DETAILS_RESPONSE,
+            intent: regexAnalysis.intent,
+            complexity: regexAnalysis.complexity,
+            detectedLanguages: regexAnalysis.detectedLanguages,
+            frameworks: regexAnalysis.frameworks,
+            summary: regexAnalysis.summary
+          };
         }
+      }
 
-        // Fetch learned critic rules
-        let fetchedRules: string[] = [];
-        try {
-          const res = await fetch('/api/nyx/rules');
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success && Array.isArray(data.rules)) {
-              fetchedRules = data.rules.map((r: any) => r.rule);
-            }
+      // ── 3. Missing Details Gate ────────────────────────────────────────
+      if (analysisResult.isMissingDebugDetails && analysisResult.isCodeRelated) {
+        const reqMessage = analysisResult.missingDetailsRequest || MISSING_DEBUG_DETAILS_RESPONSE;
+        updateHistory(prev => [
+          ...prev,
+          { role: 'assistant', content: reqMessage, timestamp: Date.now(), status: 'success' }
+        ]);
+        toast.error('Please provide your code or error logs');
+        return;
+      }
+
+      // Fetch learned critic rules
+      let fetchedRules: string[] = [];
+      try {
+        const res = await fetch('/api/nyx/rules');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.rules)) {
+            fetchedRules = data.rules.map((r: any) => r.rule);
           }
-        } catch (err) {
-          console.error('Failed to fetch evolutionary rules:', err);
         }
+      } catch (err) {
+        console.error('Failed to fetch evolutionary rules:', err);
+      }
 
-        const formattedRules = fetchedRules.length > 0
-          ? fetchedRules.map(r => `- ${r}`).join('\n')
-          : "- No specific rules accumulated for this context yet.";
+      const formattedRules = fetchedRules.length > 0
+        ? fetchedRules.map(r => `- ${r}`).join('\n')
+        : "- No specific rules accumulated for this context yet.";
 
-        const rulesBlock = `
+      const rulesBlock = `
 To ensure continuous optimization and prevent past mistakes, you must strictly adhere to the following evolutionary rules derived from your past interactions:
 
 [PAST LESSONS LEARNED]
 ${formattedRules}
 [END OF LESSONS]`;
 
-        if (isSimplePrompt(prompt) && !webSearchEnabled) {
-          // Enrich simple instruction with detected language knowledge
-          const langKnowledge = getLanguageKnowledge(analysis.detectedLanguages);
-          const simpleInstructionWithRules = `${SIMPLE_NYX_INSTRUCTION}\n\n${langKnowledge}\n\n${rulesBlock}`;
-          await runSingleAgentPipeline(prompt, controller, controllerRef, simpleInstructionWithRules);
+      // ── 4. Routing Decision (Interconnected) ──────────────────────────
+      // Simple/trivial/general Q&A prompts go to fast path (Qwen Local for coding, Selected model for general conversation)
+      // Heavy/complex coding and debugging prompts go to the selected model in model selector
+      const isSimple = 
+        isGreeting ||
+        !analysisResult.isCodeRelated ||
+        analysisResult.complexity === 'trivial' || 
+        analysisResult.complexity === 'simple' ||
+        analysisResult.intent === 'explain' ||
+        analysisResult.intent === 'general';
+        
+      const isHeavy = !isSimple || 
+        (analysisResult.isCodeRelated && (
+          analysisResult.complexity === 'enterprise' ||
+          analysisResult.complexity === 'complex' ||
+          /\b(system\s+design|architect|blueprint|multi[- ]agent|planning\s+mode|step[- ]by[- ]step\s+plan|thinking|think|deep|heavy)\b/i.test(prompt)
+        ));
+
+      if (!isHeavy) {
+        // Fast path: run single agent pipeline
+        // If it's a non-code prompt, use the selected model in the model selector directly (to avoid Qwen 0.5b limitations)
+        // Otherwise, use Qwen Local (which is the default fast path coder model)
+        const qwenModel = !analysisResult.isCodeRelated 
+          ? null 
+          : await getAvailableQwenModel(ollamaModels, lmStudioModels);
+
+        if (qwenModel) {
+          console.log(`[runCoder] Routing to fast path with Qwen model: ${qwenModel.id} (${qwenModel.provider})`);
         } else {
-          await runMultiAgentPipeline(prompt, controller, controllerRef, rulesBlock, analysis);
+          console.log(`[runCoder] Routing to fast path with selected model: ${nyxModel}`);
         }
+
+        const langKnowledge = getLanguageKnowledge(analysisResult.detectedLanguages);
+        const instruction = (isGreeting || !analysisResult.isCodeRelated)
+          ? NYX_SYSTEM_INSTRUCTION 
+          : `${NYX_SYSTEM_INSTRUCTION}\n\n${langKnowledge}\n\n${rulesBlock}`;
+        
+        await runSingleAgentPipeline(
+          prompt, 
+          controller, 
+          instruction, 
+          analysisResult as any, 
+          qwenModel || undefined
+        );
       } else {
-        await runSingleAgentPipeline(prompt, controller, controllerRef);
+        // Heavy path: run multi-stage pipeline using the selected model (interconnected)
+        await runMultiStagePipeline(prompt, controller, rulesBlock, analysisResult as any);
       }
     } catch (error: any) {
       const isAborted = error?.name === 'AbortError' || controller.signal.aborted;
-      updateHistory(activeAgent, prev => {
-        const history = [...prev];
-        const last = history[history.length - 1];
+      updateHistory(prev => {
+        const h = [...prev];
+        const last = h[h.length - 1];
         if (last && last.role === 'assistant') last.status = isAborted ? 'stopped' : 'error';
-        return history;
+        return h;
       });
 
       if (!isAborted) {
@@ -191,73 +465,87 @@ ${formattedRules}
       controllerRef.current = null;
       setIsLoading(false);
     }
-  }, [activeAgent, models, apiKeys, agentPersonas, modelSettings, lmStudioBaseUrl, ollamaBaseUrl, ollamaModels, lmStudioModels, trackUsage, historyMap]);
+  // Use historyRef instead of history in deps to prevent useCallback recreation on every message
+  }, [models, apiKeys, agentPersonas, modelSettings, lmStudioBaseUrl, ollamaBaseUrl, ollamaModels, lmStudioModels, trackUsage, updateHistory, updateMetrics, setSuggestedPrompts]);
 
-  const runMultiAgentPipeline = async (prompt: string, controller: AbortController, controllerRef: React.MutableRefObject<AbortController | null>, rulesBlock?: string, analysis?: ReturnType<typeof analyzePrompt>) => {
-    // ── Resolve Models ─────────────────────────────────────────────────────
-    const initialOpenModelId = models['open'] || models['nyx'];
-    if (!initialOpenModelId) {
-      toast.error('Please select a model for the planning engine');
-      throw new Error('No model selected for OpenCode planner');
+  /**
+   * Multi-stage deep-thinking pipeline (Architect → Coder → Optimizer).
+   * All 3 stages use the SAME model selected in the model selector.
+   */
+  const runMultiStagePipeline = async (
+    prompt: string,
+    controller: AbortController,
+    rulesBlock: string,
+    analysis: {
+      isCodeRelated: boolean;
+      isMissingDebugDetails: boolean;
+      missingDetailsRequest: string;
+      intent: string;
+      complexity: string;
+      detectedLanguages: string[];
+      frameworks: string[];
+      summary: string;
     }
-    const initialOpenProvider = detectProvider(initialOpenModelId, ollamaModels, lmStudioModels);
-    const initialOpenApiKey = getEffectiveApiKey(initialOpenProvider, apiKeys);
-    const hasPlanningKey = !requiresApiKey(initialOpenProvider) || !!initialOpenApiKey;
-
-    const architectModelId = hasPlanningKey ? initialOpenModelId : models['nyx'];
-    const architectProvider = hasPlanningKey ? initialOpenProvider : detectProvider(architectModelId, ollamaModels, lmStudioModels);
-    const architectApiKey = hasPlanningKey ? initialOpenApiKey : getEffectiveApiKey(architectProvider, apiKeys);
-
-    const initialClaudeModelId = models['claude'] || models['nyx'];
-    if (!initialClaudeModelId) {
-      toast.error('Please select a model for the execution engine');
-      throw new Error('No model selected for Coder executor');
+  ) => {
+    const nyxModel = models['nyx'];
+    if (!nyxModel) {
+      toast.error('Please select a model first');
+      throw new Error('No model selected');
     }
-    const initialClaudeProvider = detectProvider(initialClaudeModelId, ollamaModels, lmStudioModels);
-    const initialClaudeApiKey = getEffectiveApiKey(initialClaudeProvider, apiKeys);
-    const hasClaudeKey = !requiresApiKey(initialClaudeProvider) || !!initialClaudeApiKey;
+    const nyxProvider = detectProvider(nyxModel, ollamaModels, lmStudioModels);
+    const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys);
 
-    const coderModelId = hasClaudeKey ? initialClaudeModelId : models['nyx'];
-    const coderProvider = hasClaudeKey ? initialClaudeProvider : detectProvider(coderModelId, ollamaModels, lmStudioModels);
-    const coderApiKey = hasClaudeKey ? initialClaudeApiKey : getEffectiveApiKey(coderProvider, apiKeys);
+    // Resolve context flags
+    const isGreeting = isGreetingOrIdentity(prompt);
+    const isCodebase = codebaseKnowledgeEnabled && isCodebaseQuery(prompt) && !isGreeting;
 
-    const optimizerModelId = models['nyx'];
-    if (!optimizerModelId) {
-      toast.error('Please select a model for the optimization engine');
-      throw new Error('No model selected for Optimizer');
-    }
-    const optimizerProvider = detectProvider(optimizerModelId, ollamaModels, lmStudioModels);
-    const optimizerApiKey = getEffectiveApiKey(optimizerProvider, apiKeys);
-
-    // ── Analysis + Stage 0: Search Agent ──────────────────────────────────
-    const analysisPrefix = ANALYSIS_BANNER;
-    const searchPrefix = webSearchEnabled ? STAGE0_BANNER : '';
-
-    // Seed the assistant message with analysis banner
-    updateHistory(activeAgent, prev => [
+    // Seed empty assistant message
+    updateHistory(prev => [
       ...prev,
-      { role: 'assistant', content: analysisPrefix, timestamp: Date.now(), status: 'loading' }
+      { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }
     ]);
 
     const startTime = Date.now();
 
-    // Build language-specific knowledge from analysis
-    const langKnowledge = analysis ? getLanguageKnowledge(analysis.detectedLanguages) : '';
-    const analysisContext = analysis ? `\n[PROMPT ANALYSIS]\n${analysis.summary}\n- Detected Languages: ${analysis.detectedLanguages.join(', ') || 'auto-detect'}\n- Intent: ${analysis.intent}\n- Complexity: ${analysis.complexity}\n- Frameworks: ${analysis.frameworks.join(', ') || 'none'}\n[END ANALYSIS]\n` : '';
+    // Build language-specific knowledge
+    const langKnowledge = getLanguageKnowledge(analysis.detectedLanguages);
+    const analysisContext = `\n[PROMPT ANALYSIS]\n${analysis.summary}\n- Detected Languages: ${analysis.detectedLanguages.join(', ') || 'auto-detect'}\n- Intent: ${analysis.intent}\n- Complexity: ${analysis.complexity}\n- Frameworks: ${analysis.frameworks.join(', ') || 'none'}\n[END ANALYSIS]\n`;
 
-    // Transition to search banner if needed
-    updateHistory(activeAgent, prev => {
-      const history = [...prev];
-      const last = history[history.length - 1];
-      if (last && last.role === 'assistant') {
-        last.content = analysisPrefix + (webSearchEnabled ? searchPrefix : KNOWLEDGE_BANNER);
+    // ── Codebase Search ──────────────────────────────────────────────────
+    let codebaseContext = '';
+    let maxCodebaseScore = 0;
+    if (isCodebase) {
+      try {
+        const codebaseRes = await fetch('/api/nyx/codebase-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: prompt }),
+          signal: controller.signal
+        });
+        if (codebaseRes.ok) {
+          const codebaseData = await codebaseRes.json();
+          if (codebaseData.success) {
+            const results = codebaseData.results || [];
+            maxCodebaseScore = results.length > 0
+              ? Math.max(...results.map((f: any) => f.relevanceScore || f.score || 0))
+              : 0;
+            const resultsStr = results
+              .map((f: any) => `File: ${f.relativePath || f.path} (Relevance Score: ${f.relevanceScore || f.score})\n\`\`\`\n${f.content}\n\`\`\``)
+              .join('\n\n');
+            codebaseContext = `\n\n[LOCAL CODEBASE CONTEXT]\nDIRECTORY STRUCTURE:\n${codebaseData.directoryStructure || ''}\n\nRELEVANT SOURCE CODE FILES:\n${resultsStr}\n[END CODEBASE CONTEXT]\n`;
+          }
+        }
+      } catch (err) {
+        console.error('Codebase search API failed:', err);
       }
-      return history;
-    });
+    }
 
-    // Web search (if enabled)
+    const needsCorrectiveSearch = isCodebase && maxCodebaseScore < 120 && !isGreeting;
+    const executeWebSearch = (webSearchEnabled || needsCorrectiveSearch) && !isGreeting;
+
+    // ── Web Search ───────────────────────────────────────────────────────
     let searchContext = '';
-    if (webSearchEnabled) {
+    if (executeWebSearch) {
       try {
         const searchRes = await fetch('/api/nyx/search', {
           method: 'POST',
@@ -271,303 +559,242 @@ ${formattedRules}
             const resultsStr = searchData.results
               .map((r: any, idx: number) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
               .join('\n\n');
-            searchContext = `\n\nADDITIONAL WEB SEARCH RESULTS:\nHere are some relevant search results from the web for reference:\n${resultsStr}\n`;
+            searchContext = `\n\nADDITIONAL WEB SEARCH RESULTS:\n${resultsStr}\n`;
           }
         }
       } catch (err) {
         console.error('Web search API failed:', err);
       }
-
-      // Transition to knowledge banner
-      updateHistory(activeAgent, prev => {
-        const history = [...prev];
-        const last = history[history.length - 1];
-        if (last && last.role === 'assistant') {
-          last.content = analysisPrefix + searchPrefix + KNOWLEDGE_BANNER;
-        }
-        return history;
-      });
     }
 
-    // Google SDK Knowledge Extension (for moderate+ complexity)
-    let sdkKnowledge = '';
-    const shouldFetchKnowledge = analysis && (analysis.complexity === 'moderate' || analysis.complexity === 'complex' || analysis.complexity === 'enterprise');
-    if (shouldFetchKnowledge) {
-      try {
-        const knowledgeRes = await fetch('/api/nyx/knowledge', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            languages: analysis!.detectedLanguages,
-            frameworks: analysis!.frameworks,
-            intent: analysis!.intent,
-            prompt: prompt.substring(0, 500)
-          }),
-          signal: controller.signal
-        });
-        if (knowledgeRes.ok) {
-          const knowledgeData = await knowledgeRes.json();
-          if (knowledgeData.success && knowledgeData.knowledge) {
-            sdkKnowledge = `\n\n[GOOGLE SDK KNOWLEDGE EXTENSION]\n${knowledgeData.knowledge}\n[END SDK KNOWLEDGE]\n`;
-          }
-        }
-      } catch (err) {
-        console.error('Knowledge extension API failed:', err);
-      }
-    }
+    // ── Qwen 0.5B Handoff Plan ───────────────────────────────────────────
+    const handoffPlan = await generateHandoffPlan(
+      prompt,
+      codebaseContext,
+      ollamaModels,
+      lmStudioModels,
+      apiKeys,
+      lmStudioBaseUrl,
+      ollamaBaseUrl
+    );
+    const handoffBlock = `
+[NYX AGENT COORDINATOR (Qwen 0.5B) HANDOFF SPECIFICATION]
+The NYX agent has pre-analyzed the prompt and codebase, establishing the following requirements:
+${handoffPlan}
+[END OF HANDOFF SPECIFICATION]\n`;
 
-    // Transition to Stage 1 banner
-    const prefix = analysisPrefix + searchPrefix + (shouldFetchKnowledge ? KNOWLEDGE_BANNER : '');
-    updateHistory(activeAgent, prev => {
-      const history = [...prev];
-      const last = history[history.length - 1];
-      if (last && last.role === 'assistant') {
-        last.content = prefix + STAGE1_BANNER;
-      }
-      return history;
-    });
-
-    // ── Pipeline settings: always use max output tokens so code is NEVER cut off ──
+    // ── Pipeline settings: max output tokens ─────────────────────────────
     const pipelineSettings = { ...modelSettings, maxTokens: 16384 };
 
-    // ── System Instructions (enriched with language knowledge) ─────────────
-    const architectInstruction = `You are the Principal Software Architect Agent with expert knowledge of 30+ programming languages and their ecosystems.
+    // ── Unified System Instruction for Selected Model ────────────────────
+    const instruction = `${NYX_SYSTEM_INSTRUCTION}
 
-${CODING_KNOWLEDGE_SUMMARY}
 ${langKnowledge}
 
-Given the user's prompt and the analysis context, formulate a highly detailed architectural plan and system design blueprint.
-Focus on:
-- System design patterns & components using the DETECTED LANGUAGE'S modern idioms
-- Core data structures & algorithms appropriate for the detected tech stack
-- Critical performance considerations & bottlenecks
-- Edge cases, error handling, and security considerations
-- The correct package manager, build tools, and project structure for the detected language
+You are Nyx, the premium AI assistant executing the final implementation.
+You must analyze the user prompt, local codebase context, and the Qwen 0.5B handoff specification below to deliver a high-end, production-ready engineering response.
 
-Output a structured blueprint. Do NOT include greetings or extra conversation.`;
+${rulesBlock}
 
-    const coderInstructionOriginal = `You are the Senior Coder Agent with expert knowledge of 30+ programming languages.
-
-${CODING_KNOWLEDGE_SUMMARY}
-${langKnowledge}
-
-Your job is to implement the complete system codebase based on the Architect's blueprint.
-RULES:
-- Output ONLY complete, production-ready code using the most modern idioms for the detected language.
-- Never use comments like "// todo", "// implement later", or placeholders.
-- Strictly handle all security, error boundaries, and edge cases described in the blueprint.
-- Use the correct import syntax, package names, and API patterns for the detected frameworks.
-- Keep the code well-organized, highly readable, and modular.`;
-
-    const optimizerInstructionOriginal = `You are the High-Performance Optimizer & Lead Delivery Agent with expert knowledge of 30+ programming languages.
-
-${CODING_KNOWLEDGE_SUMMARY}
-${langKnowledge}
-
-Your job is to:
-1. Audit and fully optimize the draft code for speed, memory, accessibility (WCAG 2.2 AA), and clean architecture.
-2. Deliver the COMPLETE, FINAL, production-ready code to the user.
-
-CRITICAL RULES — VIOLATIONS WILL BREAK THE OUTPUT:
-- NEVER truncate or abbreviate code. Every file must be 100% complete from first character to last.
-- NEVER write comments like "/* rest of styles */", "// ... existing code ...", or "[rest of code here]" — these are forbidden.
-- If a file is long, output ALL of it anyway. Do not cut corners.
+GEMINI-STYLE RESPONSE RULES:
+- Begin with a brief, premium architectural overview of the planned changes/optimizations.
+- Deliver the COMPLETE, FINAL, production-ready code. Do not cut corners, truncate files, or use placeholders.
 - Output each file in a properly labeled code block (e.g. \`\`\`html, \`\`\`typescript, \`\`\`css, etc.)
-- Do NOT reference stages, agents, or internal pipeline steps in your response.
+- Do NOT reference internal stages, agents, or pipeline steps in your response.
 - Ensure all imports, package names, and APIs are correct for the detected language/framework.
-- After all code blocks, add a ## How to Use section with numbered steps (save as X, open in Y, etc.)
-- Keep the tone direct and professional.`;
+- After all code blocks, provide a concise explanation of the core logic and security details.
+- End your response with a clear, step-by-step "## How to Use" or implementation checklist.
+- Keep the tone highly professional, authoritative, and helpful.`;
 
-    const coderInstruction = rulesBlock ? `${coderInstructionOriginal}\n\n${rulesBlock}` : coderInstructionOriginal;
-    const optimizerInstruction = rulesBlock ? `${optimizerInstructionOriginal}\n\n${rulesBlock}` : optimizerInstructionOriginal;
+    const finalPrompt = `USER PROMPT: ${prompt}${analysisContext}${handoffBlock}${codebaseContext}${searchContext}\n\nDeliver the final complete solution following the engineering rules. Output 100% complete files only.`;
 
-    // ── Stage 1: Architect (internal — user sees banner only) ──────────────
-    let architectText = '';
+    let resultText = '';
+    let lastStreamUpdate = 0;
 
-    const architectPrompt = `${prompt}${analysisContext}${searchContext}${sdkKnowledge}`;
-
-    const architectResult = await AIService.execute(
-      architectModelId, architectProvider, architectPrompt, architectApiKey, architectInstruction, pipelineSettings,
-      (_accumulatedText) => {
-        // Stage 1 output is internal — keep the banner visible but don't expose raw architect text
-        const elapsed = Date.now() - startTime;
-        updateMetrics(activeAgent, { latency: elapsed, tokens: Math.floor(_accumulatedText.length / 4), tps: 0 });
-      },
-      controller.signal,
-      { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
-    );
-
-    architectText = architectResult.text;
-    trackUsage(architectProvider, architectResult.metrics.tokens);
-
-    // Show stage-2 banner
-    updateHistory(activeAgent, prev => {
-      const history = [...prev];
-      const last = history[history.length - 1];
-      if (last && last.role === 'assistant') {
-        last.content = prefix + STAGE1_BANNER + STAGE2_BANNER;
-      }
-      return history;
-    });
-
-    // ── Stage 2: Coder (internal — user sees banner only) ─────────────────
-    let coderText = '';
-
-    const coderPrompt = `USER PROMPT: ${prompt}
-
-ARCHITECT'S BLUEPRINT:
-${architectText}
-
-Implement the complete system codebase. Cover all files, functions, and edge cases specified by the architect. Output complete and functional code only.`;
-
-    const coderResult = await AIService.execute(
-      coderModelId, coderProvider, coderPrompt, coderApiKey, coderInstruction, pipelineSettings,
-      (_accumulatedText) => {
-        // Stage 2 output is internal — keep the banner visible but don't expose raw coder text
-        const elapsed = Date.now() - startTime;
-        const totalTokens = architectResult.metrics.tokens + Math.floor(_accumulatedText.length / 4);
-        updateMetrics(activeAgent, { latency: elapsed, tokens: totalTokens, tps: 0 });
-      },
-      controller.signal,
-      { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
-    );
-
-    coderText = coderResult.text;
-    trackUsage(coderProvider, coderResult.metrics.tokens);
-
-    // Show stage-3 banner (brief, then replaced by streaming optimizer output)
-    updateHistory(activeAgent, prev => {
-      const history = [...prev];
-      const last = history[history.length - 1];
-      if (last && last.role === 'assistant') {
-        last.content = prefix + STAGE1_BANNER + STAGE2_BANNER + STAGE3_BANNER;
-      }
-      return history;
-    });
-
-    // ── Stage 3: Optimizer (streamed directly to the user as the final answer)
-    let optimizerText = '';
-
-    const optimizerPrompt = `USER PROMPT: ${prompt}
-
-ARCHITECT'S BLUEPRINT:
-${architectText}
-
-INITIAL DRAFT CODE:
-${coderText}
-
-Audit this implementation. Apply maximum optimizations for speed, memory efficiency, accessibility, and clean architecture.
-Deliver the final complete code to the user — no placeholders, no partial snippets, 100% complete files only.
-End your response with a "## How to Use" section with clear implementation steps.`;
-
-    const optimizerResult = await AIService.execute(
-      optimizerModelId, optimizerProvider, optimizerPrompt, optimizerApiKey, optimizerInstruction, pipelineSettings,
+    const result = await AIService.execute(
+      nyxModel, nyxProvider, finalPrompt, nyxApiKey, instruction, pipelineSettings,
       (accumulatedText) => {
-        optimizerText = accumulatedText;
-        const elapsed = Date.now() - startTime;
-        const totalTokens = architectResult.metrics.tokens + coderResult.metrics.tokens + Math.floor(optimizerText.length / 4);
-        const tps = elapsed > 0 ? Math.round(totalTokens / (elapsed / 1000)) : 0;
-        const currentMetrics = { latency: elapsed, tokens: totalTokens, tps };
+        resultText = accumulatedText;
+        const now = Date.now();
+        if (now - lastStreamUpdate < STREAM_THROTTLE_MS) return;
+        lastStreamUpdate = now;
 
-        // Replace the entire message content with the optimizer's streaming output
-        updateHistory(activeAgent, prev => {
-          const history = [...prev];
-          const last = history[history.length - 1];
+        const elapsed = now - startTime;
+        const tokens = Math.floor(resultText.length / 4);
+        const tps = elapsed > 0 ? Math.round(tokens / (elapsed / 1000)) : 0;
+        const currentMetrics = { latency: elapsed, tokens, tps };
+
+        updateHistory(prev => {
+          const h = [...prev];
+          const last = h[h.length - 1];
           if (last && last.role === 'assistant') {
-            last.content = optimizerText;
+            last.content = resultText;
             last.metrics = currentMetrics;
           }
-          return history;
+          return h;
         });
-
-        updateMetrics(activeAgent, currentMetrics);
+        updateMetrics(currentMetrics);
       },
       controller.signal,
-      { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap['nyx'].slice(-10) }
+      { lmStudioBaseUrl, ollamaBaseUrl, history: historyRef.current.slice(-10) }
     );
 
-    optimizerText = optimizerResult.text;
-    trackUsage(optimizerProvider, optimizerResult.metrics.tokens);
+    resultText = result.text;
+    trackUsage(nyxProvider, result.metrics.tokens);
 
     const finalElapsed = Date.now() - startTime;
-    const finalTokens = architectResult.metrics.tokens + coderResult.metrics.tokens + optimizerResult.metrics.tokens;
+    const finalTokens = result.metrics.tokens;
     const finalTps = finalElapsed > 0 ? Math.round(finalTokens / (finalElapsed / 1000)) : 0;
     const finalMetrics = { latency: finalElapsed, tokens: finalTokens, tps: finalTps };
 
-    // Commit the final clean output
-    updateHistory(activeAgent, prev => {
-      const history = [...prev];
-      const last = history[history.length - 1];
+    // Commit final output
+    updateHistory(prev => {
+      const h = [...prev];
+      const last = h[h.length - 1];
       if (last && last.role === 'assistant') {
         last.status = 'success';
-        last.content = optimizerText;
+        last.content = resultText;
         last.metrics = finalMetrics;
       }
-      getSuggestions(history);
-      return history;
+      getSuggestions(h);
+      return h;
     });
 
-    updateMetrics(activeAgent, finalMetrics);
-    if (activeAgent === 'nyx') {
-      triggerBackgroundCritic(prompt, optimizerText);
-    }
+    updateMetrics(finalMetrics);
+    triggerBackgroundCritic(prompt, resultText);
   };
 
+  /**
+   * Fast single-agent pipeline — streams directly to user for instant responses.
+   */
   const runSingleAgentPipeline = async (
-    prompt: string, 
-    controller: AbortController, 
-    controllerRef: React.MutableRefObject<AbortController | null>,
-    systemPromptOverride?: string
+    prompt: string,
+    controller: AbortController,
+    systemPromptOverride?: string,
+    analysis?: ReturnType<typeof analyzePrompt>,
+    modelOverride?: { id: string; provider: string }
   ) => {
-    const persona = agentPersonas[activeAgent];
+    const persona = agentPersonas['nyx'];
     const systemPrompt = systemPromptOverride || persona.systemPrompt;
-    const currentModelId = models[activeAgent];
-    const provider = detectProvider(currentModelId, ollamaModels, lmStudioModels);
+    const currentModelId = modelOverride ? modelOverride.id : models['nyx'];
+    const provider = modelOverride ? modelOverride.provider : detectProvider(currentModelId, ollamaModels, lmStudioModels);
     const apiKey = getEffectiveApiKey(provider, apiKeys);
 
-    updateHistory(activeAgent, prev => [...prev, { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }]);
+    const isGreeting = isGreetingOrIdentity(prompt);
+    const isCodebase = codebaseKnowledgeEnabled && isCodebaseQuery(prompt) && !isGreeting;
+
+    const analysisContext = analysis && !isGreeting ? `\n[PROMPT ANALYSIS]\n${analysis.summary}\n- Detected Languages: ${analysis.detectedLanguages.join(', ') || 'auto-detect'}\n- Intent: ${analysis.intent}\n- Complexity: ${analysis.complexity}\n- Frameworks: ${analysis.frameworks.join(', ') || 'none'}\n[END ANALYSIS]\n` : '';
+
+    // Seed empty assistant loading placeholder
+    updateHistory(prev => [
+      ...prev,
+      { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }
+    ]);
+
+    // ── Codebase Search ──────────────────────────────────────────────────
+    let codebaseContext = '';
+    let maxCodebaseScore = 0;
+    let needsCorrectiveSearch = false;
+    if (isCodebase) {
+      try {
+        const codebaseRes = await fetch('/api/nyx/codebase-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: prompt }),
+          signal: controller.signal
+        });
+        if (codebaseRes.ok) {
+          const codebaseData = await codebaseRes.json();
+          if (codebaseData.success) {
+            const results = codebaseData.results || [];
+            maxCodebaseScore = results.length > 0
+              ? Math.max(...results.map((f: any) => f.relevanceScore || f.score || 0))
+              : 0;
+            const resultsStr = results
+              .map((f: any) => `File: ${f.relativePath || f.path} (Relevance Score: ${f.relevanceScore || f.score})\n\`\`\`\n${f.content}\n\`\`\``)
+              .join('\n\n');
+            codebaseContext = `\n\n[LOCAL CODEBASE CONTEXT]\nDIRECTORY STRUCTURE:\n${codebaseData.directoryStructure || ''}\n\nRELEVANT SOURCE CODE FILES:\n${resultsStr}\n[END CODEBASE CONTEXT]\n`;
+            if (maxCodebaseScore < 120) needsCorrectiveSearch = true;
+          }
+        }
+      } catch (err) {
+        console.error('Codebase search failed:', err);
+      }
+    }
+
+    // ── Web Search Fallback ──────────────────────────────────────────────
+    let searchContext = '';
+    const executeWebSearch = (webSearchEnabled || needsCorrectiveSearch) && !isGreeting;
+    if (executeWebSearch) {
+      try {
+        const searchRes = await fetch('/api/nyx/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: prompt }),
+          signal: controller.signal
+        });
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (searchData.success && Array.isArray(searchData.results)) {
+            const resultsStr = searchData.results
+              .map((r: any, idx: number) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
+              .join('\n\n');
+            searchContext = `\n\nADDITIONAL WEB SEARCH RESULTS:\n${resultsStr}\n`;
+          }
+        }
+      } catch (err) {
+        console.error('Web search failed:', err);
+      }
+    }
+
+    const finalPrompt = `${prompt}${analysisContext}${codebaseContext}${searchContext}`;
 
     const startTime = Date.now();
+    let lastStreamUpdate = 0;
+
     const result = await AIService.execute(
-      currentModelId, provider, prompt, apiKey, systemPrompt, modelSettings,
+      currentModelId, provider, finalPrompt, apiKey, systemPrompt, modelSettings,
       (accumulatedText) => {
-        const elapsed = Date.now() - startTime;
+        const now = Date.now();
+        // Throttle UI updates to every STREAM_THROTTLE_MS
+        if (now - lastStreamUpdate < STREAM_THROTTLE_MS) return;
+        lastStreamUpdate = now;
+
+        const elapsed = now - startTime;
         const tokens = Math.floor(accumulatedText.length / 4);
         const tps = elapsed > 0 ? Math.round(tokens / (elapsed / 1000)) : 0;
-        updateMetrics(activeAgent, { latency: elapsed, tokens, tps });
+        updateMetrics({ latency: elapsed, tokens, tps });
 
-        updateHistory(activeAgent, prev => {
-          const history = [...prev];
-          const last = history[history.length - 1];
+        updateHistory(prev => {
+          const h = [...prev];
+          const last = h[h.length - 1];
           if (last && last.role === 'assistant') {
             last.content = accumulatedText;
             last.metrics = { latency: elapsed, tokens, tps };
           }
-          return history;
+          return h;
         });
       },
       controller.signal,
-      { lmStudioBaseUrl, ollamaBaseUrl, history: historyMap[activeAgent].slice(-10) }
+      { lmStudioBaseUrl, ollamaBaseUrl, history: historyRef.current.slice(-10) }
     );
 
     trackUsage(provider, result.metrics.tokens);
 
-    updateHistory(activeAgent, prev => {
-      const history = [...prev];
-      const last = history[history.length - 1];
+    updateHistory(prev => {
+      const h = [...prev];
+      const last = h[h.length - 1];
       if (last && last.role === 'assistant') {
         last.status = 'success';
         last.content = result.text;
         last.metrics = result.metrics;
       }
-      getSuggestions(history);
-      return history;
+      getSuggestions(h);
+      return h;
     });
 
-    updateMetrics(activeAgent, result.metrics);
-    if (activeAgent === 'nyx') {
-      triggerBackgroundCritic(prompt, result.text);
-    }
+    updateMetrics(result.metrics);
+    triggerBackgroundCritic(prompt, result.text);
   };
 
   const stopCoder = useCallback(() => {

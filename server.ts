@@ -20,6 +20,10 @@ import { agentsRouter }     from './server/routes/agents.ts';
 import { opencodeRouter }   from './server/routes/opencode.ts';
 import { nyxRouter }        from './server/routes/nyx.ts';
 import { pollinationsRouter } from './server/routes/pollinations.ts';
+import { ollamaRouter }     from './server/routes/ollama.ts';
+import { lmStudioRouter }   from './server/routes/lmstudio.ts';
+import { localModelsRouter } from './server/routes/localModels.ts';
+import { qwenLocalRouter }   from './server/routes/qwenLocal.ts';
 import { CacheServer }      from './server/lib/cache.ts';
 import compression from 'compression';
 import { warmupDNS, startFastifyServer } from './server/lib/fastifyApi.ts';
@@ -32,7 +36,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 const PORT       = parseInt(process.env.PORT || '3000', 10);
 
+import { spawn } from 'child_process';
+
+function startPythonHFServer() {
+  console.log('[Server] Spawning local Python Hugging Face server (Qwen/Qwen2.5-Coder-0.5B-Instruct)...');
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  const child = spawn(pythonCmd, [path.join(__dirname, 'server', 'python', 'hf_service.py')], {
+    stdio: 'inherit',
+    detached: false
+  });
+
+  child.on('error', (err) => {
+    console.error('[Server] ERROR: Failed to start Python local HF server:', err.message);
+    console.error('[Server] Please ensure Python is installed and run "python server/python/hf_service.py" manually.');
+  });
+
+  process.on('exit', () => {
+    child.kill();
+  });
+}
+
 async function startServer() {
+  // Start the Python Hugging Face server on port 3002
+  startPythonHFServer();
+
   // Start Fastify server for high-performance streaming API proxying
   try {
     await warmupDNS();
@@ -74,15 +101,21 @@ async function startServer() {
   app.use('/api/agents',     agentsRouter);
   app.use('/api/opencode',   opencodeRouter);
   app.use('/api/nyx',        nyxRouter);
+  app.use('/api/nyx/local-models', localModelsRouter);
   app.use('/api/pollinations', pollinationsRouter);
+  app.use('/api/ollama',       ollamaRouter);
+  app.use('/api/lmstudio',     lmStudioRouter);
+  app.use('/api/qwen-local',   qwenLocalRouter);
 
   // ── Model list proxy (Settings page live model discovery) ────────────────────
   app.post('/api/models/list', async (req, res) => {
     const { provider, apiKey } = req.body;
     try {
+      if (provider === 'gemini') {
+        return res.json({ models: ['google/codegemma-2b'] });
+      }
       let url = '';
       const headers: Record<string, string> = {};
-      if (provider === 'gemini')     url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
       if (provider === 'openrouter') { url = 'https://openrouter.ai/api/v1/models'; headers['Authorization'] = `Bearer ${apiKey}`; }
       if (provider === 'nvidia')     { url = 'https://integrate.api.nvidia.com/v1/models'; headers['Authorization'] = `Bearer ${apiKey}`; }
 
@@ -90,7 +123,6 @@ async function startServer() {
       const data = await r.json();
 
       let models: string[] = [];
-      if (provider === 'gemini')     models = data.models?.map((m: any) => m.name.replace('models/', '')) || [];
       if (provider === 'openrouter') models = data.data?.map((m: any) => m.id) || [];
       if (provider === 'nvidia')     models = data.data?.map((m: any) => m.id) || [];
 
@@ -104,6 +136,9 @@ async function startServer() {
   app.post('/api/models/quota', async (req, res) => {
     const { provider, apiKey } = req.body;
     try {
+      if (provider === 'gemini') {
+        return res.json({ status: 'ok', local: true });
+      }
       if (provider === 'openrouter') {
         if (!apiKey) return res.status(401).json({ error: 'API key required for OpenRouter' });
         const r = await fetch('https://openrouter.ai/api/v1/credits', {
@@ -111,11 +146,6 @@ async function startServer() {
         });
         const data = await r.json();
         return res.json(data);
-      }
-      if (provider === 'gemini') {
-        if (!apiKey) return res.status(401).json({ error: 'API key required for Gemini' });
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-        if (r.ok) return res.json({ status: 'ok' });
       }
       res.json({});
     } catch (e: any) {

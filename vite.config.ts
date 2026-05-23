@@ -45,6 +45,15 @@ export default defineConfig(({mode}) => {
       }
     },
     server: {
+      watch: {
+        ignored: [
+          '**/.nyx-cache/**',
+          '**/.nyx-models/**',
+          '**/scratch/**',
+          '**/server.log',
+          '**/server.err'
+        ]
+      },
       proxy: {
         '/api': {
           target: 'http://localhost:3000',

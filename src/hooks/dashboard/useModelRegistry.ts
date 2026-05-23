@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { OllamaModel, LMStudioModel } from '@/src/types';
 import { fetchOllamaModels as fetchOllamaModelsHelper } from '../../lib/state/ollamaHelpers';
 import { fetchLMStudioInstances } from '@/src/lib/api/lmStudioClient';
@@ -46,6 +46,16 @@ export const useModelRegistry = (initialLmStudioUrl: string) => {
        setLmStudioStatus('error');
      }
   }, [lmStudioBaseUrl, localModelsEnabled]);
+
+  // Clear models when disabled
+  useEffect(() => {
+    if (!localModelsEnabled) {
+      setOllamaModels([]);
+      setOllamaStatus('idle');
+      setLmStudioModels([]);
+      setLmStudioStatus('idle');
+    }
+  }, [localModelsEnabled]);
 
   return {
     ollamaModels,

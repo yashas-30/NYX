@@ -22,6 +22,11 @@ const NVIDIA_MODELS: Record<string, string> = {
 };
 
 nvidiaRouter.post('/stream', async (req, res) => {
+  const controller = new AbortController();
+  res.on('close', () => {
+    controller.abort();
+  });
+
   try {
     const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = req.body;
 
@@ -49,7 +54,7 @@ nvidiaRouter.post('/stream', async (req, res) => {
     const requestBody = {
       model: realModel,
       messages,
-      stream: false,
+      stream: true,
       max_tokens: settings?.maxTokens ?? 4096,
       temperature: settings?.temperature ?? 0.7,
       top_p: settings?.topP ?? 1.0,
@@ -63,6 +68,13 @@ nvidiaRouter.post('/stream', async (req, res) => {
 
     console.log(`[NVIDIA Proxy] Sending to NVIDIA NIM: ${realModel}`);
 
+    // Set event-stream headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
     const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -70,20 +82,61 @@ nvidiaRouter.post('/stream', async (req, res) => {
         'Authorization': `Bearer ${activeKey}`,
       },
       body: JSON.stringify(requestBody),
+      signal: controller.signal,
     });
 
-    if (!response.ok) {
+    if (!response.ok || !response.body) {
       const errText = await response.text();
       console.error(`[NVIDIA Error] ${response.status}: ${errText}`);
-      return res.status(response.status).json({ error: `NVIDIA API Error ${response.status}: ${errText}` });
+      res.write(`data: ${JSON.stringify({ error: `NVIDIA API Error ${response.status}: ${errText}` })}\n\n`);
+      res.end();
+      return;
     }
 
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || '';
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
 
-    return res.json({ text });
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith('data: ')) {
+          const dataStr = trimmed.slice(6).trim();
+          if (dataStr === '[DONE]') {
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+          try {
+            const parsed = JSON.parse(dataStr);
+            const chunk = parsed.choices?.[0]?.delta?.content ?? '';
+            if (chunk) {
+              res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+            }
+          } catch (e) {
+            // ignore JSON errors
+          }
+        }
+      }
+    }
+
+    res.write('data: [DONE]\n\n');
+    res.end();
   } catch (e: any) {
     console.error('[NVIDIA Error]:', e.message);
-    return res.status(500).json({ error: e.message });
+    if (e.name === 'AbortError') {
+      res.end();
+      return;
+    }
+    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+    res.end();
   }
 });

@@ -1,19 +1,21 @@
 // Forced HMR re-transpilation trigger comment
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, RefreshCw, Globe, Box, Server, Terminal as TerminalIcon, Settings as SettingsIcon
+  Search, RefreshCw, Globe, Box, Server, Terminal as TerminalIcon, Settings as SettingsIcon,
+  Cpu, HardDrive, Play, Square, Download, AlertCircle, CheckCircle2, Loader2
 } from 'lucide-react';
 import { AVAILABLE_MODELS } from '@/src/config/models';
 import { OllamaModel, ModelOption, LMStudioModel } from '@/src/types';
 import { useTokenUsage } from '@/src/context/TokenUsageContext';
+import { toast } from 'sonner';
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Types
  * ───────────────────────────────────────────────────────────────────────────── */
 
 interface ModelRegistryViewProps {
-  models?: Record<'open' | 'claude' | 'nyx', string>;
+  models?: Record<'nyx', string>;
   ollamaModels: OllamaModel[];
   ollamaStatus: 'idle' | 'loading' | 'error' | 'ok';
   ollamaError: string;
@@ -30,6 +32,8 @@ interface ModelRegistryViewProps {
   setOllamaBaseUrl: (url: string) => void;
   activeMode?: 'coder' | 'registry' | 'settings';
   setActiveMode?: (mode: 'coder' | 'registry' | 'settings') => void;
+  localModelsEnabled: boolean;
+  setLocalModelsEnabled: (enabled: boolean) => void;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -196,17 +200,121 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   setLmStudioBaseUrl,
   onRefreshOllama,
   onRefreshLMStudio,
+  selectModel,
   apiKeys,
   providerStatuses,
   ollamaBaseUrl,
   setOllamaBaseUrl,
   activeMode,
   setActiveMode,
+  localModelsEnabled,
+  setLocalModelsEnabled,
 }) => {
   const { usage } = useTokenUsage();
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'cloud' | 'local'>('all');
-  const [localModelsEnabled, setLocalModelsEnabled] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'nyx' | 'cloud' | 'local'>('all');
+
+  // Google Gemini Credentials Helpers
+  const hasGeminiKey = !!apiKeys?.gemini;
+  const isGeminiActive = hasGeminiKey && providerStatuses?.['gemini'] === 'online';
+  const keyMask = useMemo(() => {
+    const key = apiKeys?.gemini;
+    if (!key) return '';
+    if (key.length <= 8) return '••••••••';
+    return `${key.slice(0, 6)}••••${key.slice(-4)}`;
+  }, [apiKeys?.gemini]);
+
+  // Native GGUF local model states
+  const [nativeModels, setNativeModels] = useState<any[]>([]);
+  const [activeNativeId, setActiveNativeId] = useState<string | null>(null);
+  const [nativeStatus, setNativeStatus] = useState<{ status: string; error: string | null }>({ status: 'stopped', error: null });
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+
+  const fetchNativeModels = useCallback(async () => {
+    try {
+      const res = await fetch('/api/nyx/local-models');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.models) setNativeModels(data.models);
+        if (data.activeModelId) setActiveNativeId(data.activeModelId);
+        else setActiveNativeId(null);
+        if (data.runnerStatus) setNativeStatus(data.runnerStatus);
+      }
+    } catch (err) {
+      console.error('[Registry] Failed to fetch native models:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNativeModels();
+    const interval = setInterval(fetchNativeModels, 2000);
+    return () => clearInterval(interval);
+  }, [fetchNativeModels]);
+
+  const handleDownload = async (modelId: string) => {
+    setActionInProgress(modelId);
+    try {
+      const res = await fetch('/api/nyx/local-models/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId })
+      });
+      if (res.ok) {
+        toast.success('Download started directly within NYX.');
+        fetchNativeModels();
+      } else {
+        const errData = await res.json();
+        toast.error(`Download failed to start: ${errData.error}`);
+      }
+    } catch (err: any) {
+      toast.error(`Error: ${err.message}`);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
+
+  const handleRun = async (modelId: string) => {
+    setActionInProgress(modelId);
+    try {
+      const res = await fetch('/api/nyx/local-models/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId })
+      });
+      if (res.ok) {
+        toast.success('Model loaded natively in Resident RAM.');
+        fetchNativeModels();
+      } else {
+        const errData = await res.json();
+        toast.error(`Failed to load model: ${errData.error}`);
+      }
+    } catch (err: any) {
+      toast.error(`Error: ${err.message}`);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
+
+  const handleStop = async (modelId: string) => {
+    setActionInProgress(modelId);
+    try {
+      const res = await fetch('/api/nyx/local-models/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        toast.success('Model unloaded from Resident RAM. Memory released.');
+        fetchNativeModels();
+      } else {
+        const errData = await res.json();
+        toast.error(`Failed to unload model: ${errData.error}`);
+      }
+    } catch (err: any) {
+      toast.error(`Error: ${err.message}`);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
 
   const query = search.toLowerCase();
 
@@ -243,6 +351,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     });
   }, [cloudModels]);
 
+  const showNyx = filter === 'all' || filter === 'nyx';
   const showLocal = localModelsEnabled && (filter === 'all' || filter === 'local');
   const showCloud = filter === 'all' || filter === 'cloud';
 
@@ -259,30 +368,12 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         {/* ── Page header ──────────────────────────────────────────────── */}
-        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-2.5 sm:p-3 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/10 dark:bg-black/10 backdrop-blur-md">
-          <div className="flex items-center gap-1 bg-black/10 dark:bg-white/5 p-0.5 rounded-xl border border-white/10 dark:border-white/5">
-            <button 
-              onClick={() => setActiveMode?.('coder')} 
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'coder' ? 'bg-[#181224]/85 dark:bg-[#120B1C]/90 text-purple-400 border border-purple-500/20 shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
-            >
-              <TerminalIcon size={12} />
-              <span>NYX 2.0</span>
-            </button>
-            <button 
-              onClick={() => setActiveMode?.('registry')} 
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'registry' ? 'bg-primary text-primary-foreground shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
-            >
-              <Box size={12} />
-              <span>Models</span>
-            </button>
-            <button 
-              onClick={() => setActiveMode?.('settings')} 
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${activeMode === 'settings' ? 'bg-primary text-primary-foreground shadow-sm font-black' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
-            >
-              <SettingsIcon size={12} />
-              <span>Settings</span>
-            </button>
+        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 border-b border-white/10 dark:border-white/5 shrink-0 select-none bg-white/5 dark:bg-black/10 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <Box size={16} className="text-primary" />
+            <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">Model Registry</h2>
           </div>
+
 
           <div className="flex flex-wrap items-center gap-3">
             {/* Search */}
@@ -314,7 +405,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
             {/* Filter tabs */}
             <div className="flex gap-1 bg-white/30 dark:bg-zinc-900/30 backdrop-blur-sm p-1 rounded-full border border-white/15 dark:border-white/5 shadow-sm">
-              {(['all', 'cloud', 'local'] as const).map(f => (
+              {(['all', 'nyx', 'cloud', 'local'] as const).map(f => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -326,7 +417,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     }
                   `}
                 >
-                  {f}
+                  {f === 'all' ? 'All' : f === 'nyx' ? 'NYX Native' : f === 'cloud' ? 'Cloud' : 'Local Servers'}
                 </button>
               ))}
             </div>
@@ -334,7 +425,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
             {/* Local Models Toggle */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/10 border border-border-strong">
               <Server size={10} className={localModelsEnabled ? 'text-primary' : 'text-muted-foreground/30'} />
-              <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60">Local</span>
+              <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/60">Local Servers (Ollama/LM Studio)</span>
               <button
                 onClick={() => {
                   setLocalModelsEnabled(!localModelsEnabled);
@@ -359,6 +450,232 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
         {/* ── Scrollable content ───────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+
+          {/* ════════════════════════════════════════════════════════════════
+           *  NYX NATIVE LOCAL LIBRARY SECTION
+           * ════════════════════════════════════════════════════════════════ */}
+          {showNyx && (
+            <section className="space-y-4 p-5 rounded-2xl bg-gradient-to-br from-[#120B1C]/30 to-[#181224]/20 dark:from-[#120B1C]/50 dark:to-[#181224]/30 backdrop-blur-md border border-[#9b4dff]/25 shadow-[0_8px_32px_rgba(155,77,255,0.08)]">
+              <SectionHeader
+                icon={<Cpu size={18} className="text-purple-400 animate-pulse" />}
+                title="NYX Native Local Library"
+                subtitle="Directly download and host GGUF models natively"
+              >
+                {/* Direct RAM Load Status Badge */}
+                <div className={`
+                  inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[8px] font-bold uppercase tracking-tight
+                  ${activeNativeId 
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                    : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'}
+                `}>
+                  <div className={`
+                    w-1.5 h-1.5 rounded-full
+                    ${activeNativeId ? 'bg-emerald-400 animate-ping' : 'bg-zinc-400'}
+                  `} />
+                  {activeNativeId ? 'Model Loaded in RAM' : 'No Model in RAM'}
+                </div>
+              </SectionHeader>
+
+              {nativeModels.length === 0 ? (
+                <div className="py-8 text-center flex flex-col items-center justify-center">
+                  <Loader2 size={24} className="text-primary animate-spin mb-2" />
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Syncing Presets...</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {nativeModels.map(m => {
+                    const isResident = activeNativeId === m.id;
+                    const isDownloading = m.status === 'downloading';
+                    const isCompleted = m.status === 'completed';
+                    const isIdle = m.status === 'idle' || m.status === 'failed';
+                    const progress = m.progress || { progressPercentage: 0, speedMbps: 0, bytesDownloaded: 0, totalBytes: 0 };
+                    const isCurrentAction = actionInProgress === m.id;
+
+                    return (
+                      <motion.div
+                        key={`native-${m.id}`}
+                        whileHover={{ y: -2, scale: 1.01 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                        className={`
+                          group relative p-4 rounded-2xl border border-solid flex flex-col justify-between gap-3 overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300
+                          ${isResident
+                            ? 'bg-[#181224]/80 border-[#9b4dff]/45 shadow-[0_0_20px_rgba(155,77,255,0.15)] dark:bg-[#120B1C]/90'
+                            : 'bg-white/40 dark:bg-zinc-900/30 border-white/20 dark:border-white/5 hover:border-[#9b4dff]/30 hover:bg-white/60 dark:hover:bg-zinc-800/40'
+                          }
+                        `}
+                      >
+                        <div>
+                          {/* Presets badges */}
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="inline-block text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                              NYX Native
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {isResident && (
+                                <span className="inline-flex items-center gap-1 text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                  Resident RAM
+                                </span>
+                              )}
+                              {isCompleted && !isResident && (
+                                <span className="text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 dark:text-zinc-300 border border-zinc-500/20">
+                                  Ready
+                                </span>
+                              )}
+                              {isDownloading && (
+                                <span className="text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
+                                  Downloading
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <h4 className="text-[12px] font-black tracking-tight text-foreground group-hover:text-purple-400 transition-colors">
+                            {m.name}
+                          </h4>
+                          <p className="text-[9px] text-muted-foreground/80 line-clamp-2 leading-relaxed font-medium mt-1">
+                            {m.description}
+                          </p>
+
+                          {/* Technical attributes */}
+                          <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-border/30">
+                            <div className="flex flex-col">
+                              <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">GGUF File Size</span>
+                              <span className="text-[8px] font-extrabold text-foreground/80">{m.size}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">Required Spec</span>
+                              <span className="text-[8px] font-extrabold text-purple-400/80">{m.ramRequired}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Interactive operations panel */}
+                        <div className="mt-2.5 pt-2.5 border-t border-border/30">
+                          {isDownloading && (
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[7px] font-black uppercase tracking-widest text-muted-foreground">
+                                <span>{progress.progressPercentage}% Completed</span>
+                                <span>{progress.speedMbps > 0 ? `${progress.speedMbps} MB/s` : 'Connecting...'}</span>
+                              </div>
+                              <div className="w-full h-1 rounded-full bg-black/20 dark:bg-white/5 overflow-hidden">
+                                <motion.div
+                                  className="h-full bg-gradient-to-r from-purple-500 to-indigo-500"
+                                  style={{ width: `${progress.progressPercentage}%` }}
+                                  initial={{ width: '0%' }}
+                                  animate={{ width: `${progress.progressPercentage}%` }}
+                                  transition={{ duration: 0.3 }}
+                                />
+                              </div>
+                              <div className="text-[7px] font-medium text-muted-foreground/50 text-right">
+                                {progress.totalBytes > 0 
+                                  ? `${(progress.bytesDownloaded / (1024 * 1024)).toFixed(0)} MB / ${(progress.totalBytes / (1024 * 1024)).toFixed(0)} MB`
+                                  : 'Negotiating HTTP download streams...'}
+                              </div>
+                            </div>
+                          )}
+
+                          {m.status === 'failed' && (
+                            <div className="p-2 mb-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[7px] font-semibold text-red-400 flex items-start gap-1.5">
+                              <AlertCircle size={10} className="shrink-0 mt-0.5" />
+                              <span>{progress.error || 'Download failed. Please check network connections.'}</span>
+                            </div>
+                          )}
+
+                          <div className="flex flex-col gap-1.5 mt-1">
+                            {isIdle && (
+                              <button
+                                onClick={() => handleDownload(m.id)}
+                                disabled={isCurrentAction || !!actionInProgress}
+                                className="
+                                  w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                  bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 disabled:opacity-40
+                                "
+                              >
+                                {isCurrentAction ? (
+                                  <>
+                                    <Loader2 size={10} className="animate-spin" />
+                                    <span>Initiating...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Download size={10} />
+                                    <span>Download Direct to NYX</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+
+                            {isCompleted && !isResident && (
+                              <button
+                                onClick={() => handleRun(m.id)}
+                                disabled={isCurrentAction || !!actionInProgress}
+                                className="
+                                  w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                  bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 disabled:opacity-40
+                                "
+                              >
+                                {isCurrentAction ? (
+                                  <>
+                                    <Loader2 size={10} className="animate-spin" />
+                                    <span>Loading in Memory...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play size={10} />
+                                    <span>Load in Resident RAM</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+
+                            {isResident && (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleStop(m.id)}
+                                  disabled={isCurrentAction || !!actionInProgress}
+                                  className="
+                                    flex-1 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                    bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 disabled:opacity-40
+                                  "
+                                >
+                                  {isCurrentAction ? (
+                                    <>
+                                      <Loader2 size={10} className="animate-spin" />
+                                      <span>Evicting...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Square size={10} />
+                                      <span>Unload RAM</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    selectModel?.(m.id);
+                                    toast.success(`NYX Chatbot active model is now ${m.name}`);
+                                  }}
+                                  className="
+                                    flex-1 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                    bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25
+                                  "
+                                >
+                                  <TerminalIcon size={10} />
+                                  <span>Chat Now</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* ════════════════════════════════════════════════════════════════
            *  OLLAMA SECTION
@@ -555,6 +872,32 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 </div>
               ))}
             </section>
+          )}
+
+          {filter === 'local' && !localModelsEnabled && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="p-8 rounded-3xl bg-gradient-to-br from-white/30 via-white/10 to-transparent dark:from-[#181224]/30 dark:via-[#120B1C]/20 dark:to-transparent border border-white/20 dark:border-white/5 backdrop-blur-xl shadow-2xl flex flex-col items-center justify-center text-center max-w-xl mx-auto py-16"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-6 animate-pulse">
+                <Server size={32} />
+              </div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-foreground">Local Servers Disabled</h3>
+              <p className="text-[11px] text-muted-foreground/80 mt-2 max-w-sm font-medium leading-relaxed">
+                Connect third-party local engines like Ollama or LM Studio to integrate local llama, mistral, or qwen models into NYX.
+              </p>
+              <button
+                onClick={() => {
+                  setLocalModelsEnabled(true);
+                  onRefreshOllama();
+                  onRefreshLMStudio();
+                }}
+                className="mt-6 px-6 py-2.5 rounded-full bg-primary hover:bg-primary/90 text-white text-[9px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:scale-[1.03] active:scale-[0.97]"
+              >
+                Enable Local Servers
+              </button>
+            </motion.div>
           )}
         </div>
       </div>

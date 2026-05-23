@@ -1,12 +1,13 @@
 /**
  * @file src/features/coder/hooks/useCoderLogic.ts
- * @description Composed hook that orchestrates agent state, message history, and AI pipeline execution.
+ * @description Composed hook that orchestrates NYX agent state, message history, and AI pipeline execution.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAgentState } from './useAgentState';
 import { useMessageHistory } from './useMessageHistory';
 import { useAgentPipeline } from './useAgentPipeline';
+import { ChatMessage } from '@/src/core/types';
 
 interface CoderLogicProps {
   apiKeys: Record<string, string>;
@@ -16,10 +17,9 @@ interface CoderLogicProps {
   ollamaModels: any[];
   lmStudioModels: any[];
   ollamaBaseUrl: string;
-  activeAgent?: 'open' | 'claude' | 'nyx';
-  setActiveAgent?: (agent: 'open' | 'claude' | 'nyx') => void;
-  models?: Record<'open' | 'claude' | 'nyx', string>;
+  models?: Record<'nyx', string>;
   setModel?: (modelId: string) => void;
+  chatSessions: any;
 }
 
 export const useCoderLogic = ({
@@ -30,42 +30,92 @@ export const useCoderLogic = ({
   ollamaModels,
   lmStudioModels,
   ollamaBaseUrl,
-  activeAgent: propActiveAgent,
-  setActiveAgent: propSetActiveAgent,
   models: propModels,
-  setModel: propSetModel
+  setModel: propSetModel,
+  chatSessions
 }: CoderLogicProps) => {
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled] = useState(true);
+  
   const {
     activeAgent,
-    setActiveAgent,
     models,
     setModel,
     agentPersonas,
     setAgentPersonas
   } = useAgentState({
-    activeAgent: propActiveAgent,
-    setActiveAgent: propSetActiveAgent,
     models: propModels,
     setModel: propSetModel
   });
 
   const {
-    historyMap,
-    history,
     metrics,
-    metricsMap,
-    setMetricsMap,
     suggestedPrompts,
     setSuggestedPrompts,
-    updateHistory,
     updateMetrics,
-    clearHistory,
+    clearMetrics,
     getSuggestions
-  } = useMessageHistory(activeAgent);
+  } = useMessageHistory();
+
+  const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
+  const messagesRef = useRef<ChatMessage[]>([]);
+
+  // Sync ref to protect session ID synchronously
+  const activeSidRef = useRef<string | null>(chatSessions?.activeSid || null);
+  const createdSessionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    activeSidRef.current = chatSessions?.activeSid || null;
+  }, [chatSessions?.activeSid]);
+
+  // Sync localMessages when activeSession changes
+  const activeSessionMessages = chatSessions?.activeSession?.messages;
+  const activeSid = chatSessions?.activeSid;
+  const lastActiveSidRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (activeSid && activeSid === createdSessionIdRef.current) {
+      lastActiveSidRef.current = activeSid;
+      createdSessionIdRef.current = null;
+      return;
+    }
+    if (activeSid !== lastActiveSidRef.current) {
+      lastActiveSidRef.current = activeSid || null;
+      const msgs = activeSessionMessages || [];
+      messagesRef.current = msgs;
+      setLocalMessages(msgs);
+    } else if (activeSessionMessages && activeSessionMessages !== messagesRef.current) {
+      messagesRef.current = activeSessionMessages;
+      setLocalMessages(activeSessionMessages);
+    }
+  }, [activeSid, activeSessionMessages]);
+
+  // Unified history update callback
+  const updateHistory = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
+    const updated = updater(messagesRef.current);
+    messagesRef.current = updated;
+    setLocalMessages(updated);
+
+    let sid = activeSidRef.current;
+    if (!sid) {
+      sid = chatSessions?.createSession?.(updated) || null;
+      activeSidRef.current = sid;
+      createdSessionIdRef.current = sid;
+    } else {
+      chatSessions?.updateSession?.(sid, updated);
+    }
+  }, [chatSessions]);
+
+  const clearHistory = useCallback(() => {
+    messagesRef.current = [];
+    setLocalMessages([]);
+    if (activeSidRef.current) {
+      chatSessions?.updateSession?.(activeSidRef.current, []);
+    }
+    clearMetrics();
+  }, [chatSessions, clearMetrics]);
 
   const { isLoading, runCoder, stopCoder } = useAgentPipeline({
-    activeAgent,
     models,
     apiKeys,
     agentPersonas,
@@ -75,19 +125,19 @@ export const useCoderLogic = ({
     ollamaModels,
     lmStudioModels,
     trackUsage,
-    historyMap,
+    history: localMessages,
     updateHistory,
     updateMetrics,
     getSuggestions,
     setSuggestedPrompts,
-    webSearchEnabled
+    webSearchEnabled,
+    codebaseKnowledgeEnabled
   });
 
   return {
     activeAgent,
-    setActiveAgent,
     isLoading,
-    history,
+    history: localMessages,
     metrics,
     models,
     setModel,
@@ -97,6 +147,8 @@ export const useCoderLogic = ({
     agentPersonas,
     suggestedPrompts,
     webSearchEnabled,
-    setWebSearchEnabled
+    setWebSearchEnabled,
+    codebaseKnowledgeEnabled,
+    setCodebaseKnowledgeEnabled
   };
 };

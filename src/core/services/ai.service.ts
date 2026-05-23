@@ -69,7 +69,7 @@ export class AIService {
 
     try {
       if (provider === 'gemini') {
-        resultText = await this.executeGemini(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
+        resultText = await this.executeGemini(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
       } else if (provider === 'ollama') {
         resultText = await this.executeOllama(modelId, prompt, systemInstruction, settings, options?.ollamaBaseUrl, options?.history, options?.nodeId, onStream, signal);
       } else if (provider === 'openrouter') {
@@ -82,6 +82,10 @@ export class AIService {
         resultText = await this.executePollinations(modelId, prompt, settings, systemInstruction, options?.history, onStream, signal);
       } else if (provider === 'lmstudio') {
         resultText = await this.executeLMStudio(modelId, prompt, systemInstruction, settings, options?.lmStudioBaseUrl, options?.history, options?.nodeId, onStream, signal);
+      } else if (provider === 'nyx-native') {
+        resultText = await this.executeNyxNative(modelId, prompt, systemInstruction, settings, options?.history, onStream, signal);
+      } else if (provider === 'qwen-local') {
+        resultText = await this.executeQwenLocal(modelId, prompt, systemInstruction, settings, options?.history, onStream, signal);
       } else {
         throw new Error(`Unsupported provider: ${provider}`);
       }
@@ -123,7 +127,7 @@ export class AIService {
   // ── Provider Specific Implementations ────────────────────────────────────
 
   private static async executeGemini(
-    model: string, prompt: string, apiKey: string, settings?: AISettings, 
+    model: string, prompt: string, apiKey?: string, settings?: AISettings, 
     systemInstruction?: string, history?: ChatMessage[], onStream?: (t: string) => void, signal?: AbortSignal,
     gatewayUrls?: Record<string, string>
   ): Promise<string> {
@@ -139,10 +143,7 @@ export class AIService {
         const err = await response.json().catch(() => ({ error: `Gemini Error ${response.status}` }));
         throw new Error(err.error || `Gemini Error ${response.status}`);
       }
-      const data = await response.json();
-      const text = data.text || '';
-      if (onStream) onStream(text);
-      return text;
+      return this.processStream(response, onStream);
     } catch (error: any) {
       const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
       if (!isAbort) {
@@ -206,6 +207,77 @@ export class AIService {
     });
   }
 
+  private static async executeQwenLocal(
+    model: string,
+    prompt: string,
+    systemInstruction?: string,
+    settings?: AISettings,
+    history?: ChatMessage[],
+    onStream?: (t: string) => void,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const response = await fetch('/api/qwen-local/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        prompt,
+        history,
+        systemInstruction,
+        settings
+      }),
+      signal
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: `Local Qwen Server Error ${response.status}` }));
+      throw new Error(err.error || `Local Qwen Server Error ${response.status}. Make sure the Python server is running on port 3002.`);
+    }
+
+    return this.processStream(response, onStream);
+  }
+
+  private static async executeNyxNative(
+    model: string,
+    prompt: string,
+    systemInstruction?: string,
+    settings?: AISettings,
+    history?: ChatMessage[],
+    onStream?: (t: string) => void,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const messages: any[] = [];
+    if (systemInstruction) {
+      messages.push({ role: 'system', content: systemInstruction });
+    }
+    if (history && Array.isArray(history)) {
+      messages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
+    }
+    messages.push({ role: 'user', content: prompt });
+
+    const response = await fetch('/api/nyx/local-models/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: settings?.temperature ?? 0.7,
+        max_tokens: settings?.maxTokens ?? 2048,
+        stream: true
+      }),
+      signal,
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: `Native GGUF Runner Error ${response.status}` }));
+      throw new Error(err.error || `Native GGUF Runner Error ${response.status}. Make sure the model is loaded in RAM.`);
+    }
+
+    return this.processStream(response, onStream);
+  }
+
   private static async executeOpenRouter(
     model: string, prompt: string, apiKey: string, settings?: AISettings, 
     systemInstruction?: string, history?: ChatMessage[], onStream?: (t: string) => void, signal?: AbortSignal,
@@ -223,10 +295,7 @@ export class AIService {
         const err = await response.json().catch(() => ({ error: `OpenRouter Error ${response.status}` }));
         throw new Error(err.error || `OpenRouter Error ${response.status}`);
       }
-      const data = await response.json();
-      const text = data.text || '';
-      if (onStream) onStream(text);
-      return text;
+      return this.processStream(response, onStream);
     } catch (error: any) {
       const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
       if (!isAbort) {
@@ -258,10 +327,7 @@ export class AIService {
         const err = await response.json().catch(() => ({ error: `NVIDIA Error ${response.status}` }));
         throw new Error(err.error || `NVIDIA Error ${response.status}`);
       }
-      const data = await response.json();
-      const text = data.text || '';
-      if (onStream) onStream(text);
-      return text;
+      return this.processStream(response, onStream);
     } catch (error: any) {
       const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
       if (!isAbort) {
@@ -292,10 +358,7 @@ export class AIService {
         const err = await response.json().catch(() => ({ error: `OpenCode Error ${response.status}` }));
         throw new Error(err.error || `OpenCode Error ${response.status}`);
       }
-      const data = await response.json();
-      const text = data.text || '';
-      if (onStream) onStream(text);
-      return text;
+      return this.processStream(response, onStream);
     } catch (error: any) {
       const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
       if (!isAbort) {
@@ -325,10 +388,7 @@ export class AIService {
         const err = await response.json().catch(() => ({ error: `Pollinations Error ${response.status}` }));
         throw new Error(err.error || `Pollinations Error ${response.status}`);
       }
-      const data = await response.json();
-      const text = data.text || '';
-      if (onStream) onStream(text);
-      return text;
+      return this.processStream(response, onStream);
     } catch (error: any) {
       const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
       if (!isAbort) {
@@ -420,11 +480,6 @@ export class AIService {
         try {
           const parsed = JSON.parse(dataStr);
           
-          // Debug logging for first few chunks
-          if (resultText.length < 50 && parsed.chunk) {
-            console.log('[AIService.processStream] First chunk received:', parsed.chunk.substring(0, 100));
-          }
-          
           // Check for error
           if (parsed.error) {
             const msg = typeof parsed.error === 'object' 
@@ -453,11 +508,6 @@ export class AIService {
             chunk = parsed.response;
           }
           
-          // Debug: log chunk info
-          if (chunk) {
-            console.log('[AIService.processStream] Extracted chunk, length:', chunk.length, 'finish_reason:', parsed.choices?.[0]?.finish_reason);
-          }
-          
           if (chunk) {
             resultText += chunk;
             if (onStream) onStream(resultText);
@@ -484,12 +534,13 @@ export class AIService {
 }
 
   private static validateApiKey(provider: Provider | string, key?: string) {
-    if (provider === 'pollinations') return;
-    if (!['ollama', 'lmstudio', 'opencode'].includes(provider) && !key) {
+    if (provider === 'pollinations' || provider === 'nyx-native' || provider === 'qwen-local') return;
+    if (!['ollama', 'lmstudio', 'opencode', 'nyx-native', 'gemini', 'qwen-local'].includes(provider) && !key) {
       throw new Error(`${provider} API key is required. Add it in Settings.`);
     }
     if (key) {
       const trimmed = key.trim();
+      if (!trimmed) return;
       if (provider === 'openrouter' && !trimmed.startsWith('sk-or-')) throw new Error("Invalid OpenRouter Key");
       if (provider === 'gemini' && trimmed.length < 30) throw new Error("Invalid Gemini Key");
       if (provider === 'openai' && !trimmed.startsWith('sk-')) throw new Error("Invalid OpenAI Key");
@@ -518,8 +569,28 @@ export class AIService {
    */
   static async checkStatus(provider: Provider | string, apiKey?: string, options?: { lmStudioBaseUrl?: string, ollamaBaseUrl?: string }): Promise<'online' | 'offline' | 'no-key'> {
     if (provider === 'pollinations') return 'online';
+    if (provider === 'nyx-native') {
+      try {
+        const res = await fetch('/api/nyx/local-models/status');
+        if (res.ok) {
+          const data = await res.json();
+          return data.activeModelId ? 'online' : 'offline';
+        }
+        return 'offline';
+      } catch {
+        return 'offline';
+      }
+    }
+    if (provider === 'qwen-local') {
+      try {
+        const response = await fetch('http://127.0.0.1:3002/health').catch(() => null);
+        return (response && response.ok) ? 'online' : 'offline';
+      } catch {
+        return 'offline';
+      }
+    }
     // 1. Check for missing keys first (except for local providers and opencode)
-    if (!['ollama', 'lmstudio', 'opencode'].includes(provider) && !apiKey) {
+    if (!['ollama', 'lmstudio', 'opencode', 'nyx-native', 'qwen-local'].includes(provider) && !apiKey) {
       return 'no-key';
     }
 

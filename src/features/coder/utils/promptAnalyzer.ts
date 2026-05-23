@@ -22,6 +22,16 @@ export type PromptIntent =
 
 export type ComplexityLevel = 'trivial' | 'simple' | 'moderate' | 'complex' | 'enterprise';
 
+export interface HardwareAnalysis {
+  isHardware: boolean;
+  detectedPlatforms: string[];
+  detectedComponents: string[];
+  detectedProtocols: string[];
+  gaps: string[];
+  safetyHazards: string[];
+  optimizations: string[];
+}
+
 export interface PromptAnalysis {
   detectedLanguages: string[];
   primaryLanguage: string | null;
@@ -31,6 +41,7 @@ export interface PromptAnalysis {
   keywords: string[];
   summary: string;
   isCodeRelated: boolean;
+  hardware?: HardwareAnalysis;
 }
 
 // ── Language Detection ───────────────────────────────────────────────────────
@@ -485,6 +496,9 @@ export function analyzePrompt(prompt: string): PromptAnalysis {
   const primaryLanguage = detectedLanguages.length > 0 ? detectedLanguages[0] : null;
   const summary = generateSummary(primaryLanguage, intent, complexity, frameworks, isCodeRelated);
 
+  // 8. Run Hardware Analyzer
+  const hardware = detectHardware(normalized);
+
   return {
     detectedLanguages,
     primaryLanguage,
@@ -493,9 +507,259 @@ export function analyzePrompt(prompt: string): PromptAnalysis {
     frameworks,
     keywords,
     summary,
-    isCodeRelated
+    isCodeRelated,
+    hardware
   };
 }
+
+export function detectHardware(prompt: string): HardwareAnalysis {
+  const lower = prompt.toLowerCase();
+  
+  // 1. Boards/Platforms
+  const platformRules = [
+    { id: 'arduino', name: 'Arduino', patterns: [/\barduino\b/i, /\buno\b/i, /\bnano\b/i, /\bmega\b/i, /\batmega\b/i, /\bavr\b/i, /\.ino\b/i] },
+    { id: 'esp32', name: 'ESP32', patterns: [/\besp32\b/i, /\besp8266\b/i, /\bnodemcu\b/i, /\bfreertos\b/i] },
+    { id: 'raspberrypi', name: 'Raspberry Pi', patterns: [/\braspberry\s*pi\b/i, /\braspi\b/i, /\brpi\b/i, /\bpi\s*3\b/i, /\bpi\s*4\b/i, /\bpi\s*5\b/i] },
+    { id: 'pico', name: 'Pi Pico', patterns: [/\bpico\b/i, /\brp2040\b/i, /\brp2350\b/i] }
+  ];
+  
+  const detectedPlatforms: string[] = [];
+  for (const rule of platformRules) {
+    if (rule.patterns.some(p => p.test(prompt))) {
+      detectedPlatforms.push(rule.name);
+    }
+  }
+
+  // 2. Components
+  const componentRules = [
+    { name: 'OLED Display', patterns: [/\boled\b/i, /\bsh1106\b/i, /\bssd1306\b/i, /\b128x64\b/i] },
+    { name: 'LCD Display', patterns: [/\blcd\b/i, /\b16x2\b/i, /\b20x4\b/i, /\bliquidcrystal\b/i] },
+    { name: 'DHT Temperature/Humidity Sensor', patterns: [/\bdht11\b/i, /\bdht22\b/i, /\bdht\b/i] },
+    { name: 'Servo Motor', patterns: [/\bservo\b/i, /\bsg90\b/i, /\bmg90\b/i] },
+    { name: 'Stepper Motor', patterns: [/\bstepper\b/i, /\b28byj\b/i, /\buln2003\b/i, /\ba4988\b/i] },
+    { name: 'DC Motor / Driver', patterns: [/\bdc\s*motor\b/i, /\bl298n\b/i, /\bh-bridge\b/i, /\bmotor\s+driver\b/i] },
+    { name: 'NeoPixel LED Strip', patterns: [/\bneopixel\b/i, /\bws2812\b/i, /\bws2812b\b/i, /\bled\s*strip\b/i, /\badaddressable\s+led\b/i] },
+    { name: 'Relay Module', patterns: [/\brelay\b/i, /\brelays\b/i] },
+    { name: 'Ultrasonic Sensor', patterns: [/\bultrasonic\b/i, /\bhc-sr04\b/i, /\bdistance\s+sensor\b/i] },
+    { name: 'PIR Motion Sensor', patterns: [/\bpir\b/i, /\bmotion\s+sensor\b/i, /\bhc-sr501\b/i] },
+    { name: 'LDR Light Sensor', patterns: [/\bldr\b/i, /\blight\s+sensor\b/i, /\bphotoresistor\b/i] },
+    { name: 'Potentiometer', patterns: [/\bpotentiometer\b/i, /\bpot\b/i, /\banalog\s+dial\b/i] },
+    { name: 'IMU / Gyroscope', patterns: [/\bimu\b/i, /\bmpu6050\b/i, /\bmpu9250\b/i, /\bgyro\b/i, /\baccelerometer\b/i] },
+    { name: 'RTC Real Time Clock', patterns: [/\brtc\b/i, /\bds3231\b/i, /\bds1307\b/i, /\bclock\s+module\b/i] }
+  ];
+
+  const detectedComponents: string[] = [];
+  for (const rule of componentRules) {
+    if (rule.patterns.some(p => p.test(prompt))) {
+      detectedComponents.push(rule.name);
+    }
+  }
+
+  // 3. Protocols
+  const protocolRules = [
+    { name: 'I2C', patterns: [/\bi2c\b/i, /\bsda\b/i, /\bscl\b/i, /\bwire\.h\b/i] },
+    { name: 'SPI', patterns: [/\bspi\b/i, /\bmiso\b/i, /\bmosi\b/i, /\bsck\b/i, /\bcs\s+pin\b/i, /\bspi\.h\b/i] },
+    { name: 'UART / Serial', patterns: [/\buart\b/i, /\btx\b/i, /\brx\b/i, /\bserial\b/i, /\bsoftware\s*serial\b/i] },
+    { name: 'PWM', patterns: [/\bpwm\b/i, /\bpulse\s*width\b/i, /\banalogwrite\b/i] },
+    { name: 'One-Wire', patterns: [/\bonewire\b/i, /\b1-wire\b/i, /\bdallas\b/i, /\bds18b20\b/i] }
+  ];
+
+  const detectedProtocols: string[] = [];
+  for (const rule of protocolRules) {
+    if (rule.patterns.some(p => p.test(prompt))) {
+      detectedProtocols.push(rule.name);
+    }
+  }
+
+  // Add implicit protocol mapping (e.g. OLED/LCD and RTC usually imply I2C)
+  if (detectedComponents.some(c => c.includes('OLED') || c.includes('LCD') || c.includes('RTC')) && !detectedProtocols.includes('I2C')) {
+    detectedProtocols.push('I2C');
+  }
+  if (detectedComponents.some(c => c.includes('NeoPixel') || c.includes('Servo') || c.includes('Stepper') || c.includes('DC Motor')) && !detectedProtocols.includes('PWM') && !lower.includes('i2c')) {
+    detectedProtocols.push('PWM / Timing');
+  }
+
+  const isHardware = detectedPlatforms.length > 0 || detectedComponents.length > 0 || detectedProtocols.length > 0 || lower.includes('microcontroller') || lower.includes('sensor') || lower.includes('actuator') || lower.includes('gpio');
+
+  const gaps: string[] = [];
+  const safetyHazards: string[] = [];
+  const optimizations: string[] = [];
+
+  if (isHardware) {
+    // Determine the host platform for targeting advice
+    const isArduinoHost = detectedPlatforms.includes('Arduino') || (!detectedPlatforms.includes('Raspberry Pi') && !detectedPlatforms.includes('Pi Pico') && !detectedPlatforms.includes('ESP32'));
+    const isESP32Host = detectedPlatforms.includes('ESP32');
+    const isPiHost = detectedPlatforms.includes('Raspberry Pi');
+    const isPicoHost = detectedPlatforms.includes('Pi Pico');
+
+    // ── Ambiguity & Gaps ───────────────────────────────────────────────────
+    // Check if pins are specified in the prompt (e.g., D2, pin 5, GPIO 4)
+    const pinRegex = /\b(pin\s*\d+|gpio\s*\d+|d\d+|a\d+)\b/i;
+    const hasPins = pinRegex.test(prompt);
+
+    if (detectedComponents.some(c => c.includes('DHT') || c.includes('Servo') || c.includes('NeoPixel') || c.includes('Relay') || c.includes('Ultrasonic'))) {
+      if (!hasPins) {
+        let suggestedPin = 'D2';
+        if (isPiHost) suggestedPin = 'GPIO 4';
+        else if (isESP32Host) suggestedPin = 'GPIO 4 / D4';
+        else if (isPicoHost) suggestedPin = 'GP15';
+        gaps.push(`Pin assignment undefined. We will default to a standard GPIO pin (${suggestedPin}). Make sure to specify your exact wiring if it differs.`);
+      }
+    }
+
+    // Check if I2C address is defined for LCD/OLED
+    if (detectedComponents.some(c => c.includes('LCD') || c.includes('OLED'))) {
+      const hexAddrRegex = /\b0x[0-9a-f]{2}\b/i;
+      const hasHexAddr = hexAddrRegex.test(prompt);
+      if (!hasHexAddr) {
+        const isLCD = detectedComponents.some(c => c.includes('LCD'));
+        const defaultAddr = isLCD ? '0x27' : '0x3C';
+        const componentName = isLCD ? 'I2C LCD' : 'SSD1306 OLED';
+        gaps.push(`I2C address is missing. The ${componentName} typically defaults to '${defaultAddr}'. We will initialize it with this address, but verify your hardware configuration.`);
+      }
+    }
+
+    // Identify required context libraries
+    const libraries: string[] = [];
+    if (detectedComponents.some(c => c.includes('LCD'))) {
+      libraries.push(isArduinoHost ? 'LiquidCrystal_I2C' : 'smbus2 (Python)');
+    }
+    if (detectedComponents.some(c => c.includes('OLED'))) {
+      libraries.push(isArduinoHost ? 'Adafruit_SSD1306 and Adafruit_GFX' : 'luma.oled (Python)');
+    }
+    if (detectedComponents.some(c => c.includes('DHT'))) {
+      libraries.push(isArduinoHost ? 'DHT sensor library (Adafruit)' : 'Adafruit_DHT (Python)');
+    }
+    if (detectedComponents.some(c => c.includes('NeoPixel'))) {
+      libraries.push(isArduinoHost ? 'Adafruit_NeoPixel' : 'rpi_ws281x (Python)');
+    }
+    if (libraries.length > 0) {
+      gaps.push(`Missing library context. The following library headers must be included: ${libraries.join(', ')}.`);
+    }
+
+    // ── Electrical & Logic Safety ──────────────────────────────────────────
+    // VCC / Voltage Level Shift Warning
+    // Arduino Uno/Mega operate at 5V logic. ESP32, Raspberry Pi, Pi Pico operate at 3.3V logic.
+    // If user mixes 3.3V host with components that output 5V or require 5V signals, alert.
+    const is33VHost = isESP32Host || isPiHost || isPicoHost;
+    if (is33VHost) {
+      // Common 5V components
+      const has5VComponents = detectedComponents.some(c => c.includes('Ultrasonic') || c.includes('LCD') || c.includes('Relay'));
+      if (has5VComponents || lower.includes('5v')) {
+        safetyHazards.push(`Voltage Level Mismatch (3.3V vs 5V): Your selected host (${detectedPlatforms.join('/') || '3.3V MCU'}) operates at 3.3V logic levels. Connecting a 5V sensor output directly to a 3.3V GPIO will damage the pin. Recommend using a bidirectional logic level shifter (like TXS0108E) or a voltage divider for signals going from sensor to MCU.`);
+      }
+    }
+
+    // High frequency sensor reading with blocking delay()
+    const isHighFrequency = lower.includes('continuous') || lower.includes('realtime') || lower.includes('every second') || lower.includes('real-time') || lower.includes('fast') || lower.includes('constantly');
+    const hasDelayKeywords = lower.includes('delay') || lower.includes('sleep') || lower.includes('wait');
+    if (isHighFrequency && hasDelayKeywords) {
+      safetyHazards.push(`Blocking execution delay() hazard: High-frequency tasks or sensor polling should avoid blocking delays. Using delay() freezes execution and blocks interrupts, network events, or button presses. Recommend implementing a non-blocking millis() or timer interrupt cycle instead.`);
+    }
+
+    // ── Code Optimizations ─────────────────────────────────────────────────
+    // AVR memory constraints
+    const isAVR = lower.includes('uno') || lower.includes('nano') || lower.includes('mega') || lower.includes('atmega328') || lower.includes('avr');
+    if (isAVR && (lower.includes('string') || lower.includes('json') || lower.includes('web') || lower.includes('server') || detectedComponents.some(c => c.includes('OLED')))) {
+      optimizations.push(`AVR RAM Constraint (2KB SRAM limit): Arduino Uno/Nano are highly memory-constrained. Using the dynamic 'String' class or allocating large display buffers leads to rapid heap fragmentation and silent crashes. Use static character arrays (char[]), avoid dynamic allocation, and wrap serial string literals in the F() macro (e.g. Serial.println(F("Hello"))).`);
+    }
+
+    // Low power deep sleep advice
+    const isBatteryPowered = lower.includes('battery') || lower.includes('solar') || lower.includes('low power') || lower.includes('power saving') || lower.includes('lipo') || lower.includes('power-saving');
+    if (isBatteryPowered) {
+      optimizations.push(`Battery/Low-Power Mode detected: To maximize battery life, avoid active loop polling which consumes high power (~15-80mA). Recommend putting the MCU into deep sleep mode, configuring a timer or external GPIO interrupt to wake the board up, performing the reading, and immediately going back to sleep.`);
+    }
+  }
+
+  return {
+    isHardware,
+    detectedPlatforms,
+    detectedComponents,
+    detectedProtocols,
+    gaps,
+    safetyHazards,
+    optimizations
+  };
+}
+
+export function optimizePromptText(prompt: string, analysis: PromptAnalysis): string {
+  const normalized = prompt.trim();
+  
+  if (analysis.hardware && analysis.hardware.isHardware) {
+    const hw = analysis.hardware;
+    const host = hw.detectedPlatforms.length > 0 ? hw.detectedPlatforms.join('/') : 'Microcontroller (e.g. Arduino Nano / ESP32)';
+    
+    // Construct components list
+    const componentsList = hw.detectedComponents.length > 0 
+      ? hw.detectedComponents.map(c => `  - ${c}`).join('\n')
+      : '  - [Specify sensor/actuator model here]';
+      
+    // Construct protocols list
+    const protocolsList = hw.detectedProtocols.length > 0
+      ? hw.detectedProtocols.map(p => `  - ${p}`).join('\n')
+      : '  - GPIO / Digital Signals';
+
+    // Construct pins list
+    const pinsList = hw.detectedComponents.length > 0
+      ? hw.detectedComponents.map((c, i) => {
+          let pin = `D${2 + i}`;
+          if (host.includes('Raspberry Pi') && !host.includes('Pico')) pin = `GPIO ${4 + i}`;
+          if (host.includes('Pico')) pin = `GP${15 + i}`;
+          return `  - ${c}: connected to ${pin}`;
+        }).join('\n')
+      : '  - [Map your components to specific GPIO pins]';
+
+    let optimized = `[SYSTEM: HARDWARE ENGINEERING SPECIFICATION]
+# Target Platform & Board
+- **Host Controller:** ${host}
+- **Operating Environment:** Bare metal loop, non-blocking timing
+
+# Bill of Materials & Interfaces
+- **Detected Components:**
+${componentsList}
+- **Communication Protocols:**
+${protocolsList}
+
+# Physical Connections & Pinout
+${pinsList}
+
+# Safety & Logic Hardening
+- **Voltage Requirements:** Use proper logic level shifts (e.g. 5V sensors interfacing with 3.3V ESP32/Pi require a level shifter).
+- **Execution Mode:** Zero blocking delays. Implement high-frequency loops using non-blocking \`millis()\` timing or hardware interrupts.
+
+# Memory & Performance Tuning
+- Avoid dynamic memory allocations (\`String\` class). Use fixed-size buffers and static character arrays.
+- Implement low-power deep sleep cycles if powered by battery or solar.
+
+# Original User Intent
+"${normalized}"
+`;
+    return optimized;
+  } else {
+    // Software/General prompt improver
+    const lang = analysis.primaryLanguage 
+      ? LANG_SIGNATURES.find(s => s.id === analysis.primaryLanguage)?.name || analysis.primaryLanguage
+      : 'General Programming';
+    const fw = analysis.frameworks.length > 0 ? analysis.frameworks.join(', ') : 'Vanilla / Standard Libraries';
+    
+    let optimized = `[SYSTEM: SOFTWARE ENGINEERING SPECIFICATION]
+# Language & Architecture
+- **Primary Language:** ${lang}
+- **Frameworks / Ecosystem:** ${fw}
+- **Implementation Strategy:** Clean Code, modular design, complete error handling
+
+# Key Engineering Goals
+- **Robust Error Gates:** Wrap operations in safe try-catch blocks or monadic error values. Check parameters before execution.
+- **Complexity Tuning:** Keep methods clean and DRY (Don't Repeat Yourself). Implement proper type structures and interfaces.
+- **Resource Management:** Ensure open streams, handles, or network sockets are correctly closed/disposed.
+
+# Original User Request
+"${normalized}"
+`;
+    return optimized;
+  }
+}
+
 
 function detectLanguages(prompt: string): string[] {
   const scores: Record<string, number> = {};
@@ -602,6 +866,11 @@ function checkCodeRelated(
   frameworks: string[],
   intent: PromptIntent
 ): boolean {
+  // Allow greetings and common introductory inputs or identity queries
+  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up)\b/i;
+  const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx)\b/i;
+  if (GREETINGS.test(prompt.trim()) || IDENTITY.test(prompt.trim())) return true;
+
   // If languages or frameworks detected, it's code-related
   if (languages.length > 0 || frameworks.length > 0) return true;
 
@@ -648,7 +917,7 @@ function generateSummary(
   isCodeRelated: boolean
 ): string {
   if (!isCodeRelated) {
-    return '⛔ Non-code prompt detected. NYX only accepts coding-related requests.';
+    return '💬 General Conversation';
   }
 
   const langStr = primaryLanguage
@@ -660,10 +929,9 @@ function generateSummary(
   return `🧠 ${complexity.charAt(0).toUpperCase() + complexity.slice(1)} ${langStr} ${intentStr}${fwStr}`;
 }
 
-/**
- * Non-code prompt rejection message with helpful guidance
- */
-export const NON_CODE_REJECTION = `I'm NYX, a specialized multi-agent coding system. I only handle programming and software development tasks.
+export const NON_CODE_REJECTION = `I am NYX, your premium AI developer assistant. I specialize in software development and embedded hardware systems.
+
+To keep my outputs high-performance and focused, I only handle programming, debugging, architecture, and developer-related tasks.
 
 **I can help you with:**
 - 🏗️ Building applications, APIs, and websites
@@ -673,4 +941,55 @@ export const NON_CODE_REJECTION = `I'm NYX, a specialized multi-agent coding sys
 - 🔌 Integrating APIs and services
 - 🚀 Deployment and DevOps
 
-Please rephrase your request as a coding task, and I'll deliver production-ready results!`;
+Please describe your coding task, and I'll deliver production-ready results!`;
+
+/**
+ * Checks if a user is asking to debug/fix an error or compile failure, but has omitted
+ * both the code snippet and the specific error logs.
+ */
+export function isMissingDebugDetails(prompt: string, intent: string): boolean {
+  const lower = prompt.toLowerCase();
+  
+  // Check if user is asking to debug/fix an error/bug
+  const hasErrorKeywords = /\b(error|bug|crash|exception|compile\s+error|not\s+compiling|fails?\s+to\s+compile|getting\s+an?\s+error|got\s+an?\s+error|cannot\s+compile|wont\s+compile|won't\s+compile|how\s+to\s+fix|what\s+can\s+be\s+the\s+problem|why\s+is\s+it\s+failing)\b/i.test(lower);
+  
+  if (!hasErrorKeywords && intent !== 'debug') return false;
+  
+  // Check if there is NO code block or visible code keywords (e.g. semicolons, curly braces, code blocks)
+  const hasCodeBlock = prompt.includes('```') || prompt.includes('    ') || (prompt.match(/[{}();]/g) || []).length > 6;
+  if (hasCodeBlock) return false;
+  
+  // Check if the prompt doesn't actually provide any specific error details.
+  const isVagueErrorQuery = 
+    /error\s+message/i.test(lower) || 
+    /getting\s+an?\s+error/i.test(lower) || 
+    /fails?\s+to\s+compile/i.test(lower) || 
+    /won't\s+compile/i.test(lower) || 
+    /not\s+compiling/i.test(lower) || 
+    /code\s+not\s+working/i.test(lower) ||
+    /problem\s+compiling/i.test(lower) ||
+    /error\s+when\s+i\s+try\s+to\s+compile/i.test(lower) ||
+    /cannot\s+compile/i.test(lower) ||
+    /what\s+can\s+be\s+the\s+problem/i.test(lower);
+    
+  // If the prompt is short (under 45 words) and lacks code/error snippets, it is almost certainly a request without actual context.
+  const wordCount = prompt.split(/\s+/).length;
+  if (wordCount < 45 && isVagueErrorQuery) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * High-end Gemini-style response politely requesting the user to paste their code and compiler outputs.
+ */
+export const MISSING_DEBUG_DETAILS_RESPONSE = `I would love to help you analyze and fix your compilation or code error! 
+
+However, it looks like you haven't shared your code snippet or the specific error message yet. 
+
+**To help me diagnose and fix the issue accurately, please provide:**
+1. 💻 **Your Code**: Paste the code snippet you are trying to run or compile.
+2. 📋 **The Error Message**: Paste the exact error logs or compiler output you are seeing in your IDE (such as the Arduino IDE output window).
+
+Once you share those details, I will instantly analyze the logic, pinpoint the exact cause of the crash or compile failure, and provide a clean, optimized, and ready-to-use fix!`;

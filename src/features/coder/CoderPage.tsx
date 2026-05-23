@@ -1,19 +1,16 @@
 /**
  * @file src/features/coder/CoderPage.tsx
- * @description The standalone Coder feature page, composed from extracted sub-components.
+ * @description The standalone Coder feature page — NYX is the sole agent.
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useMemo, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { FREE_OPENCODE_MODELS } from '@/src/config/models';
-import { ModelDefinition, Provider, AgentPersona } from '@/src/core/types';
+import { ModelDefinition, Provider } from '@/src/core/types';
 import { toast } from 'sonner';
 
-// Extracted components
-import { CoderHeader, MessageList, PromptInput } from './components';
+import { MessageList, PromptInput } from './components';
 import { getCustomModelIcon } from './utils/modelIcons';
-
-// Feature Logic
 import { useCoderLogic } from './hooks/useCoderLogic';
 
 interface CoderPageProps {
@@ -34,12 +31,13 @@ interface CoderPageProps {
   gatewayUrls?: Record<string, string>;
   localModelsEnabled?: boolean;
   setLocalModelsEnabled?: (enabled: boolean) => void;
-  activeAgent?: 'open' | 'claude' | 'nyx';
-  setActiveAgent?: (agent: 'open' | 'claude' | 'nyx') => void;
-  models?: Record<'open' | 'claude' | 'nyx', string>;
+  models?: Record<'nyx', string>;
   setModel?: (modelId: string) => void;
   activeMode?: 'coder' | 'registry' | 'settings';
   setActiveMode?: (mode: 'coder' | 'registry' | 'settings') => void;
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
+  chatSessions: any;
 }
 
 export const CoderPage: React.FC<CoderPageProps> = ({
@@ -60,22 +58,24 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   gatewayUrls = {},
   localModelsEnabled = false,
   setLocalModelsEnabled = () => {},
-  activeAgent: propActiveAgent,
-  setActiveAgent: propSetActiveAgent,
   models: propModels,
   setModel: propSetModel,
   activeMode = 'coder',
-  setActiveMode
+  setActiveMode,
+  sidebarOpen = true,
+  onToggleSidebar,
+  chatSessions,
 }) => {
   const {
-    activeAgent, setActiveAgent,
+    activeAgent,
     isLoading,
     history,
     metrics,
     models, setModel,
     runCoder, stopCoder, clearHistory,
     agentPersonas, suggestedPrompts,
-    webSearchEnabled, setWebSearchEnabled
+    webSearchEnabled, setWebSearchEnabled,
+    codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled
   } = useCoderLogic({
     apiKeys,
     lmStudioBaseUrl,
@@ -84,17 +84,15 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     ollamaModels,
     lmStudioModels,
     ollamaBaseUrl,
-    activeAgent: propActiveAgent,
-    setActiveAgent: propSetActiveAgent,
     models: propModels,
-    setModel: propSetModel
+    setModel: propSetModel,
+    chatSessions
   });
 
   const [prompt, setPrompt] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const currentPersona = agentPersonas[activeAgent];
-  const currentModelId = models[activeAgent];
+  const currentModelId = models['nyx'];
   
   const mergedModels = useMemo(() => {
     const localOllama: ModelDefinition[] = (ollamaModels || []).map(m => ({
@@ -128,37 +126,15 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     return mergedModels.find(m => m.id === currentModelId) || null;
   }, [currentModelId, mergedModels]);
 
-  const badgeStatus = useMemo(() => {
-    const provider = currentModel?.provider;
-    if (!provider) return 'offline';
-    
-    const p = provider.toLowerCase();
-    const status = providerStatuses[p];
-    
-    if (status === 'no-key') return 'no_key';
-    if (status === 'offline') return 'offline';
-    if (status === 'online') return isLoading ? 'loading' : 'success';
-    
-    if (p === 'ollama' && ollamaStatus !== 'ok') return 'offline';
-    if (p === 'lmstudio' && lmStudioStatus !== 'ok') return 'offline';
-    if (['gemini', 'openrouter', 'nvidia'].includes(p) && !apiKeys[p]) return 'no_key';
-    
-    return isLoading ? 'loading' : 'success';
-  }, [currentModel, providerStatuses, ollamaStatus, lmStudioStatus, apiKeys, isLoading]);
-
-  const handleSubmit = useCallback((e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!prompt.trim() || isLoading) return;
+  const handleSubmit = useCallback((finalPrompt: string) => {
+    if (!finalPrompt.trim() || isLoading) return;
     if (!currentModelId) {
       toast.error('Please select a model first');
       return;
     }
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-    runCoder(prompt);
+    runCoder(finalPrompt);
     setPrompt('');
-  }, [prompt, isLoading, currentModelId, runCoder]);
+  }, [isLoading, currentModelId, runCoder]);
 
   const copyToClipboard = useCallback((text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -177,16 +153,6 @@ export const CoderPage: React.FC<CoderPageProps> = ({
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
-        <CoderHeader
-          activeMode={activeMode}
-          onModeChange={(mode) => setActiveMode?.(mode)}
-          currentPersona={currentPersona}
-          metrics={metrics}
-          isLoading={isLoading}
-          badgeStatus={badgeStatus}
-          onClear={clearHistory}
-        />
-
         <MessageList
           history={history}
           activeAgent={activeAgent}
@@ -220,6 +186,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
           getCustomModelIcon={getCustomModelIcon}
           webSearchEnabled={webSearchEnabled}
           onWebSearchToggle={setWebSearchEnabled}
+          codebaseKnowledgeEnabled={codebaseKnowledgeEnabled}
+          onCodebaseKnowledgeToggle={setCodebaseKnowledgeEnabled}
         />
       </div>
 

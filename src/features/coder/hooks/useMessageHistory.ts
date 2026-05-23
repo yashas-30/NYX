@@ -1,70 +1,137 @@
 /**
  * @file src/features/coder/hooks/useMessageHistory.ts
- * @description Manages chat history, telemetry metrics, and suggested prompts per agent.
+ * @description Manages chat telemetry metrics and suggested prompts.
  */
 
 import { useState, useCallback } from 'react';
 import { ChatMessage, TelemetryMetrics } from '@/src/core/types';
 
-type AgentKey = 'open' | 'claude' | 'nyx';
-
-const emptyHistory: Record<AgentKey, ChatMessage[]> = { open: [], claude: [], nyx: [] };
-const emptyMetrics: Record<AgentKey, TelemetryMetrics> = {
-  open: { latency: 0, tokens: 0, tps: 0 },
-  claude: { latency: 0, tokens: 0, tps: 0 },
-  nyx: { latency: 0, tokens: 0, tps: 0 }
-};
-
-export const useMessageHistory = (activeAgent: AgentKey) => {
-  const [historyMap, setHistoryMap] = useState<Record<AgentKey, ChatMessage[]>>(emptyHistory);
-  const [metricsMap, setMetricsMap] = useState<Record<AgentKey, TelemetryMetrics>>(emptyMetrics);
+export const useMessageHistory = () => {
+  const [metrics, setMetrics] = useState<TelemetryMetrics>({ latency: 0, tokens: 0, tps: 0 });
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([]);
 
-  const history = historyMap[activeAgent];
-  const metrics = metricsMap[activeAgent];
-
-  const updateHistory = useCallback((agent: AgentKey, updater: (prev: ChatMessage[]) => ChatMessage[]) => {
-    setHistoryMap(prev => ({ ...prev, [agent]: updater(prev[agent]) }));
+  const updateMetrics = useCallback((newMetrics: TelemetryMetrics) => {
+    setMetrics(newMetrics);
   }, []);
 
-  const updateMetrics = useCallback((agent: AgentKey, newMetrics: TelemetryMetrics) => {
-    setMetricsMap(prev => ({ ...prev, [agent]: newMetrics }));
-  }, []);
-
-  const clearHistory = useCallback(() => {
-    setHistoryMap(prev => ({ ...prev, [activeAgent]: [] }));
-    setMetricsMap(prev => ({ ...prev, [activeAgent]: { latency: 0, tokens: 0, tps: 0 } }));
+  const clearMetrics = useCallback(() => {
+    setMetrics({ latency: 0, tokens: 0, tps: 0 });
     setSuggestedPrompts([]);
-  }, [activeAgent]);
+  }, []);
 
   const getSuggestions = useCallback((history: ChatMessage[]) => {
+    // If the chat is empty, show zero suggested prompts above the input box (only showing landing page chips)
+    if (!history || history.length === 0) {
+      setSuggestedPrompts([]);
+      return;
+    }
+
     const lastMsg = history[history.length - 1];
-    if (!lastMsg || lastMsg.role === 'user') return;
+    // We only generate suggestions after the assistant responds
+    if (!lastMsg || lastMsg.role === 'user') {
+      return;
+    }
 
     const content = lastMsg.content.toLowerCase();
-    let suggestions = ['Explain this code', 'Add error handling', 'Write unit tests'];
+    
+    // Default fallback general recommendations
+    let suggestions = ['Explain this logic step-by-step', 'Add robust error handling', 'Provide unit tests for this'];
 
-    if (content.includes('react') || content.includes('component')) {
-      suggestions = ['Add prop types', 'Convert to Tailwind', 'Add a loading state'];
-    } else if (content.includes('api') || content.includes('fetch')) {
-      suggestions = ['Add retry logic', 'Document the API', 'Mock this response'];
+    // 1. Arduino / Raspberry Pi / Hardware
+    if (
+      content.includes('arduino') ||
+      content.includes('raspberry') ||
+      content.includes('sensor') ||
+      content.includes('led') ||
+      content.includes('blink') ||
+      content.includes('pin') ||
+      content.includes('gpio') ||
+      content.includes('spi') ||
+      content.includes('i2c') ||
+      content.includes('wire') ||
+      content.includes('hardware')
+    ) {
+      suggestions = [
+        'Add debounce logic for buttons',
+        'Show standard circuit wiring details',
+        'Configure deep sleep low-power mode'
+      ];
+    }
+    // 2. React / Frontend Components
+    else if (
+      content.includes('react') ||
+      content.includes('component') ||
+      content.includes('hook') ||
+      content.includes('state') ||
+      content.includes('prop') ||
+      content.includes('vite') ||
+      content.includes('next.js') ||
+      content.includes('rendering')
+    ) {
+      suggestions = [
+        'Add custom loading skeleton state',
+        'Refactor to clean custom React Hook',
+        'Optimize re-renders & memoization'
+      ];
+    }
+    // 3. Database / SQL
+    else if (
+      content.includes('sql') ||
+      content.includes('database') ||
+      content.includes('query') ||
+      content.includes('postgres') ||
+      content.includes('table') ||
+      content.includes('index') ||
+      content.includes('schema')
+    ) {
+      suggestions = [
+        'Create database migration script',
+        'Optimize indexes for fast queries',
+        'Wrap operations in a secure transaction'
+      ];
+    }
+    // 4. CSS / Styling / Premium design
+    else if (
+      content.includes('css') ||
+      content.includes('style') ||
+      content.includes('tailwind') ||
+      content.includes('glassmorphic') ||
+      content.includes('responsive') ||
+      content.includes('layout') ||
+      content.includes('theme')
+    ) {
+      suggestions = [
+        'Make this layout fully responsive',
+        'Add elegant glassmorphic effects',
+        'Audit accessibility (WCAG AA compliance)'
+      ];
+    }
+    // 5. General Error / Debugging
+    else if (
+      content.includes('error') ||
+      content.includes('fail') ||
+      content.includes('bug') ||
+      content.includes('crash') ||
+      content.includes('exception') ||
+      content.includes('null') ||
+      content.includes('undefined')
+    ) {
+      suggestions = [
+        'Explain the exact root cause',
+        'Add fallback error boundary recovery',
+        'Write edge-case tests to prevent this'
+      ];
     }
 
     setSuggestedPrompts(suggestions);
   }, []);
 
   return {
-    historyMap,
-    setHistoryMap,
-    history,
     metrics,
-    metricsMap,
-    setMetricsMap,
     suggestedPrompts,
     setSuggestedPrompts,
-    updateHistory,
     updateMetrics,
-    clearHistory,
+    clearMetrics,
     getSuggestions
   };
 };

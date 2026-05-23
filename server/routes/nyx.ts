@@ -1,6 +1,8 @@
 import { Router } from 'express';
-import { GoogleGenAI } from '@google/genai';
 import { RulesDb } from '../lib/rulesDb.ts';
+import { CodebaseScanner } from '../lib/codebaseScanner.ts';
+import fs from 'fs';
+import path from 'path';
 
 export const nyxRouter = Router();
 
@@ -28,18 +30,10 @@ nyxRouter.post('/reset', (_req, res) => {
 
 // POST /api/nyx/critic - Asynchronous background evaluation loop
 nyxRouter.post('/critic', (req, res) => {
-  const { prompt, response, apiKey } = req.body;
+  const { prompt, response } = req.body;
   
   if (!prompt || !response) {
     return res.status(400).json({ error: 'Missing prompt or response for critic.' });
-  }
-
-  // Secure server-side API key loaded from environment variables to prevent git leakage
-  const activeKey = process.env.CRITIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-
-  if (!activeKey) {
-    console.log('[Nyx Router] Critic loop skipped: No Gemini API key found.');
-    return res.json({ success: true, message: 'Skipped: No API key available' });
   }
 
   // Respond immediately so user doesn't experience latency
@@ -48,7 +42,7 @@ nyxRouter.post('/critic', (req, res) => {
   // Fire off Critic asynchronously
   setImmediate(async () => {
     try {
-      await runBackgroundCritic(prompt, response, activeKey);
+      await runBackgroundCritic(prompt, response);
     } catch (criticError) {
       console.error('[Nyx Critic Layer Error]:', criticError);
     }
@@ -58,10 +52,8 @@ nyxRouter.post('/critic', (req, res) => {
 /**
  * Executes the Critic model to analyze the interaction and formulate a micro-rule
  */
-async function runBackgroundCritic(userPrompt: string, nyxResponse: string, apiKey: string) {
+async function runBackgroundCritic(userPrompt: string, nyxResponse: string) {
   console.log('[Background Critic] Starting meta-cognitive analysis...');
-
-  const ai = new GoogleGenAI({ apiKey });
 
   const criticSystemPrompt = `
 You are the Core Meta-Cognitive Optimizer for an AI coding agent named Nyx. Your task is to analyze the provided chat interaction between a user and Nyx, identify structural or conceptual gaps, and generate a micro-instruction to improve Nyx's next output.
@@ -74,7 +66,12 @@ Analyze the interaction based on these criteria:
 If Nyx's response has bugs, missing imports, bad practices, or lacks critical files, formulate a rule to prevent this.
 If the response is correct, clear, and perfectly fulfills the prompt, you MUST set the "rule" field to "No improvement needed" or "None".
 
-Output your response strictly as a single, compact JSON object matching the requested schema.
+Output your response strictly as a single, compact JSON object matching the requested schema:
+{
+  "metric": "Specific language/framework or pattern",
+  "critique": "A brief, 1-sentence explanation of what Nyx missed or did poorly.",
+  "rule": "A highly precise, imperative instruction telling Nyx exactly how to handle this scenario next time."
+}
   `.trim();
 
   const conversationPayload = `
@@ -86,31 +83,37 @@ ${nyxResponse}
   `.trim();
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemma-4-31b',
-      contents: conversationPayload,
-      config: {
+    const hfRes = await fetch('http://127.0.0.1:3002/api/gemini/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: conversationPayload,
         systemInstruction: criticSystemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            metric: { type: 'STRING', description: 'Specific language/framework or pattern (e.g., React Hooks, Async Error Handling, State Management)' },
-            critique: { type: 'STRING', description: 'A brief, 1-sentence explanation of what Nyx missed or did poorly.' },
-            rule: { type: 'STRING', description: 'A highly precise, imperative instruction telling Nyx exactly how to handle this scenario next time.' }
-          },
-          required: ['metric', 'critique', 'rule']
+        settings: {
+          maxTokens: 512,
+          temperature: 0.3
         }
-      }
+      })
     });
 
-    const outputText = response.text;
+    if (!hfRes.ok) {
+      throw new Error(`Failed to call local HF service: ${hfRes.statusText}`);
+    }
+
+    const data: any = await hfRes.json();
+    const outputText = data.text;
     if (!outputText) {
       console.log('[Background Critic] Empty response received.');
       return;
     }
 
-    const analysis = JSON.parse(outputText);
+    const jsonMatch = outputText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.log('[Background Critic] Could not parse JSON block from output:', outputText);
+      return;
+    }
+
+    const analysis = JSON.parse(jsonMatch[0]);
     const hasImprovement = analysis.rule && 
       !analysis.rule.toLowerCase().includes('no improvement needed') && 
       !analysis.rule.toLowerCase().includes('none');
@@ -206,6 +209,27 @@ async function performWebSearch(query: string) {
   }
 }
 
+// POST /api/nyx/codebase-search - Scan local codebase and return directory layout and top matches
+nyxRouter.post('/codebase-search', (req, res) => {
+  const { query } = req.body;
+  if (!query) {
+    return res.status(400).json({ error: 'Missing query parameters for codebase search.' });
+  }
+
+  try {
+    const results = CodebaseScanner.search(query, 5);
+    const directoryStructure = CodebaseScanner.getDirectoryStructure();
+    res.json({
+      success: true,
+      results,
+      directoryStructure
+    });
+  } catch (e: any) {
+    console.error('[Nyx Router] Codebase search failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/nyx/search - Perform a web search to enhance model context
 nyxRouter.post('/search', async (req, res) => {
   const { query } = req.body;
@@ -222,67 +246,31 @@ nyxRouter.post('/search', async (req, res) => {
   }
 });
 
-// POST /api/nyx/knowledge - Google SDK-powered deep knowledge extension
-nyxRouter.post('/knowledge', async (req, res) => {
-  const { languages, frameworks, intent, prompt } = req.body;
-  if (!prompt) {
-    return res.status(400).json({ error: 'Missing prompt for knowledge extension.' });
-  }
-
-  const activeKey = process.env.CRITIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-  if (!activeKey) {
-    console.log('[Nyx Knowledge] Skipped: No Gemini API key available.');
-    return res.json({ success: true, knowledge: '' });
+// POST /api/nyx/write-file - Write/apply generated code directly to the workspace
+nyxRouter.post('/write-file', async (req, res) => {
+  const { filePath, content } = req.body;
+  if (!filePath || content === undefined) {
+    return res.status(400).json({ error: 'filePath and content are required' });
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: activeKey });
+    const fullPath = path.resolve(process.cwd(), filePath);
+    
+    // Safety check: ensure file is inside the workspace to prevent directory traversal
+    if (!fullPath.startsWith(process.cwd())) {
+      return res.status(403).json({ error: 'Directory traversal forbidden. Path must reside within the workspace.' });
+    }
 
-    const languageList = Array.isArray(languages) && languages.length > 0
-      ? languages.join(', ')
-      : 'general programming';
-    const frameworkList = Array.isArray(frameworks) && frameworks.length > 0
-      ? frameworks.join(', ')
-      : 'none specified';
-    const taskIntent = intent || 'generate';
-
-    const knowledgePrompt = `You are an expert coding knowledge oracle. Given the context below, provide a concise but deeply technical reference that covers:
-
-1. The exact modern import statements, package names, and installation commands for the frameworks/libraries mentioned
-2. The correct API patterns, function signatures, and initialization code for the detected SDK/frameworks
-3. Common pitfalls, deprecated APIs to avoid, and the latest recommended approaches (as of 2025)
-4. The optimal project structure and file organization for this type of task
-5. Security best practices specific to this tech stack
-
-CONTEXT:
-- Languages: ${languageList}
-- Frameworks: ${frameworkList}
-- Task Intent: ${taskIntent}
-- User Prompt Summary: ${prompt.substring(0, 500)}
-
-RULES:
-- Be extremely precise with version numbers and API names
-- Include actual code snippets where helpful
-- Focus on what a senior developer would need to know to implement this correctly
-- Keep the response under 800 words — dense and actionable, no filler
-- Do NOT include greetings or conversational text`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemma-4-31b',
-      contents: knowledgePrompt,
-      config: {
-        systemInstruction: 'You are a technical reference oracle. Output only precise, actionable coding knowledge. No greetings, no filler.',
-        temperature: 0.3,
-        maxOutputTokens: 2048
-      }
-    });
-
-    const knowledge = response.text || '';
-    console.log(`[Nyx Knowledge] Generated ${knowledge.length} chars of context for: ${languageList}`);
-    res.json({ success: true, knowledge });
+    // Ensure target folder exists
+    await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
+    
+    // Write file
+    await fs.promises.writeFile(fullPath, content, 'utf8');
+    
+    console.log(`[File System] Successfully wrote file to: ${fullPath}`);
+    res.json({ success: true, path: fullPath });
   } catch (e: any) {
-    console.error('[Nyx Knowledge] SDK call failed:', e);
-    res.json({ success: true, knowledge: '' });
+    console.error('[File System Error]:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
-

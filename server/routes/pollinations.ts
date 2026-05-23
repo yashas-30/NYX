@@ -8,6 +8,11 @@ import { Router } from 'express';
 export const pollinationsRouter = Router();
 
 pollinationsRouter.post('/stream', async (req, res) => {
+  const controller = new AbortController();
+  res.on('close', () => {
+    controller.abort();
+  });
+
   try {
     const { model, prompt, settings, systemInstruction, history } = req.body;
 
@@ -30,11 +35,18 @@ pollinationsRouter.post('/stream', async (req, res) => {
     const requestBody = {
       model: realModel,
       messages,
-      stream: false,
+      stream: true,
       temperature: settings?.temperature ?? 0.7,
     };
 
     console.log(`[Pollinations Proxy] Sending to Pollinations.ai: ${realModel}`);
+
+    // Set event-stream headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
 
     const response = await fetch('https://text.pollinations.ai/', {
       method: 'POST',
@@ -42,41 +54,74 @@ pollinationsRouter.post('/stream', async (req, res) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
+      signal: controller.signal,
     });
 
-    if (!response.ok) {
+    if (!response.ok || !response.body) {
       const errText = await response.text();
       console.error(`[Pollinations Error] ${response.status}: ${errText}`);
-      return res.status(response.status).json({ error: `Pollinations API Error ${response.status}: ${errText}` });
+      res.write(`data: ${JSON.stringify({ error: `Pollinations API Error ${response.status}: ${errText}` })}\n\n`);
+      res.end();
+      return;
     }
 
-    let text = '';
-    const contentType = response.headers.get('content-type') || '';
-    
-    if (contentType.includes('application/json')) {
-      try {
-        const textData = await response.text();
-        try {
-          const data = JSON.parse(textData);
-          text = data.choices?.[0]?.message?.content || data.choices?.[0]?.delta?.content || data.text || '';
-        } catch {
-          // If it claims to be JSON but fails parsing, use the raw text content
-          text = textData;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        
+        // Handle raw SSE format from pollinations
+        if (trimmed.startsWith('data: ')) {
+          const dataStr = trimmed.slice(6).trim();
+          if (dataStr === '[DONE]') {
+            res.write('data: [DONE]\n\n');
+            res.end();
+            return;
+          }
+          try {
+            const parsed = JSON.parse(dataStr);
+            const chunk = parsed.choices?.[0]?.delta?.content ?? '';
+            if (chunk) {
+              res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+            }
+          } catch (e) {
+            // ignore JSON parse errors
+          }
+        } else {
+          // Pollinations sometimes sends raw content or lines if not prefixed, or if it claims to be JSON but sent as raw
+          try {
+            const parsed = JSON.parse(trimmed);
+            const chunk = parsed.choices?.[0]?.delta?.content ?? parsed.text ?? '';
+            if (chunk) {
+              res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+            }
+          } catch {
+            // Not JSON, just output raw line if it's part of the text
+          }
         }
-      } catch (e: any) {
-        console.warn('[Pollinations Proxy] Failed to read response as text:', e.message);
       }
-    } else {
-      text = await response.text();
     }
 
-    if (!text || text.trim() === '') {
-      return res.status(500).json({ error: 'Empty response returned from Pollinations.ai' });
-    }
-
-    return res.json({ text });
+    res.write('data: [DONE]\n\n');
+    res.end();
   } catch (e: any) {
     console.error('[Pollinations Error]:', e.message);
-    return res.status(500).json({ error: e.message });
+    if (e.name === 'AbortError') {
+      res.end();
+      return;
+    }
+    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+    res.end();
   }
 });

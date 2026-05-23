@@ -52,8 +52,9 @@ async function requestDirect(endpoint: string, payload: Record<string, any>, pro
   return response;
 }
 
-async function handleGemini(model: string, prompt: string, apiKey: string, settings: AISettings, systemInstruction: string | undefined, history: any[] | undefined, onStream: ((text: string) => void) | undefined, signal: AbortSignal | undefined, gatewayUrls?: Record<string, string>): Promise<string> {
-  if (!apiKey) throw new Error("Gemini API key is required.");
+async function handleGemini(model: string, prompt: string, apiKey: string | undefined, settings: AISettings, systemInstruction: string | undefined, history: any[] | undefined, onStream: ((text: string) => void) | undefined, signal: AbortSignal | undefined, gatewayUrls?: Record<string, string>): Promise<string> {
+  // Bypassed: Gemini is proxied key-free to the local Hugging Face service
+  // if (!apiKey) throw new Error("Gemini API key is required.");
   try {
     const response = await requestDirect('/api/gemini/stream', { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls }, 'Gemini', signal);
     const data = await response.json();
@@ -66,7 +67,7 @@ async function handleGemini(model: string, prompt: string, apiKey: string, setti
     if (!isAbort) {
       console.warn('[inferenceClient] Gemini stream proxy failed, falling back to direct browser fetch:', error);
       const { directFetchGemini } = await import('./directClient');
-      const text = await directFetchGemini(model, prompt, apiKey, settings, systemInstruction, history, signal, gatewayUrls);
+      const text = await directFetchGemini(model, prompt, apiKey || '', settings, systemInstruction, history, signal, gatewayUrls);
       if (onStream) onStream(text);
       return text;
     }

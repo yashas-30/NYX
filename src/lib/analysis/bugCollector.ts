@@ -3,6 +3,8 @@
  * Use this to track and debug issues in the analysis flow
  */
 
+import React from 'react';
+
 export interface BugReport {
   id: string;
   timestamp: number;
@@ -149,5 +151,3 @@ export const useBugCollector = () => {
     logError: BugCollector.logError.bind(BugCollector)
   };
 };
-
-import React from 'react';

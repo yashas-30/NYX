@@ -1,37 +1,45 @@
-/**
- * @file src/features/coder/components/MessageList.tsx
- * @description Renders the chat history with streaming support, markdown, syntax-highlighted
- *   code blocks, metrics, and copy/speed-read actions.
- */
-
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, BrainCircuit, Copy, Check, ArrowDown, Terminal } from 'lucide-react';
+import { Copy, Check, ArrowDown, Terminal, Play, Save, FileText, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { ChatMessage } from '@/src/core/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-
-interface MessageListProps {
-  history: ChatMessage[];
-  activeAgent: 'open' | 'claude' | 'nyx';
-  isLoading: boolean;
-  onCopy: (text: string, id: string) => void;
-  copiedId: string | null;
-  emptyStateLabel?: string;
-  emptyStateDescription?: string;
-}
+import { Logo } from '@/src/lib/design-system/icons';
+import { toast } from 'sonner';
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * Code Block Component
+ * Code Block
  * ───────────────────────────────────────────────────────────────────────────── */
 
-const CodeBlock: React.FC<{
-  language: string;
-  code: string;
-}> = ({ language, code }) => {
+const detectFilePath = (code: string): string => {
+  const firstLine = code.split('\n')[0]?.trim() || '';
+  const match = firstLine.match(/^(?:\/\/\/|\/\/|#|\/\*|--|'|;)\s*(?:filepath:\s*|@file\s*|file:\s*)?([\w.\/\\_-]+\.\w+)\b/i);
+  if (match) {
+    return match[1].replace(/^\.\//, '').replace(/^\.\\/, '');
+  }
+  return '';
+};
+
+const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, code }) => {
   const [copied, setCopied] = useState(false);
+  const [showApplyPanel, setShowApplyPanel] = useState(false);
+  const [filePath, setFilePath] = useState('');
+  const [applyStatus, setApplyStatus] = useState<'idle' | 'writing' | 'success' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Terminal Execution State
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [terminalOutput, setTerminalOutput] = useState('');
+
+  useEffect(() => {
+    const detected = detectFilePath(code);
+    if (detected) {
+      setFilePath(detected);
+    }
+  }, [code]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(code).then(() => {
@@ -40,71 +48,191 @@ const CodeBlock: React.FC<{
     });
   }, [code]);
 
+  const handleApplyFile = async () => {
+    if (!filePath.trim()) {
+      toast.error('File path is required');
+      return;
+    }
+    setApplyStatus('writing');
+    try {
+      const response = await fetch('/api/nyx/write-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath, content: code }),
+      });
+      if (response.ok) {
+        setApplyStatus('success');
+        toast.success(`Successfully applied file to workspace: ${filePath}`);
+        setTimeout(() => {
+          setApplyStatus('idle');
+          setShowApplyPanel(false);
+        }, 2000);
+      } else {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to write file');
+      }
+    } catch (e: any) {
+      setApplyStatus('error');
+      setErrorMsg(e.message);
+      toast.error(`Failed to apply file: ${e.message}`);
+    }
+  };
+
+  const handleRunCommand = async () => {
+    setIsRunning(true);
+    setShowTerminal(true);
+    setTerminalOutput('Executing command on local terminal...\n');
+    try {
+      const response = await fetch('/api/terminal/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: code }),
+      });
+      const data = await response.json();
+      let output = '';
+      if (data.stdout) output += data.stdout;
+      if (data.stderr) output += `\nError Output:\n${data.stderr}`;
+      if (data.error) output += `\nExecution Error:\n${data.error}`;
+      setTerminalOutput(output || 'Command executed with no output.');
+    } catch (e: any) {
+      setTerminalOutput(`Failed to execute command: ${e.message}`);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
   const lang = language || 'text';
+  const isExecutable = ['bash', 'shell', 'sh', 'zsh', 'powershell', 'cmd', 'bat'].includes(lang.toLowerCase());
+  const canApply = !isExecutable && lang !== 'text';
 
   return (
-    <div className="relative group/code my-3 rounded-xl overflow-hidden border border-white/8 dark:border-white/5 shadow-xl ring-1 ring-black/10 dark:ring-black/30">
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[#1a1a2e] dark:bg-[#0f0f1a] border-b border-white/8 dark:border-white/5">
+    <div className="relative group/code my-3 rounded-xl overflow-hidden border border-white/[0.08] shadow-xl">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2 bg-[#13131f] border-b border-white/[0.06]">
         <div className="flex items-center gap-2">
-          {/* Traffic lights */}
-          <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]/90" />
-            <div className="w-2.5 h-2.5 rounded-full bg-[#febc2e]/90" />
-            <div className="w-2.5 h-2.5 rounded-full bg-[#28c840]/90" />
-          </div>
-          <div className="w-px h-3 bg-white/10" />
-          <div className="flex items-center gap-1.5">
-            <Terminal size={10} className="text-primary/50" />
-            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/70">
-              {lang}
-            </span>
-          </div>
+          <Terminal size={10} className="text-primary/50" />
+          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/60">{lang}</span>
         </div>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 hover:border-primary/30 text-muted-foreground hover:text-primary transition-all duration-200 group-hover/code:opacity-100 opacity-60"
-        >
-          {copied ? (
-            <>
-              <Check size={10} className="text-emerald-400" />
-              <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-400">Copied</span>
-            </>
-          ) : (
-            <>
-              <Copy size={10} />
-              <span className="text-[8px] font-bold uppercase tracking-widest">Copy</span>
-            </>
+        <div className="flex items-center gap-2">
+          {isExecutable && (
+            <button
+              onClick={handleRunCommand}
+              disabled={isRunning}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 transition-all text-[8px] font-bold uppercase tracking-widest disabled:opacity-50"
+            >
+              <Play size={9} />
+              <span>{isRunning ? 'Running' : 'Run'}</span>
+            </button>
           )}
-        </button>
+          {canApply && (
+            <button
+              onClick={() => setShowApplyPanel(!showApplyPanel)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 hover:text-blue-300 transition-all text-[8px] font-bold uppercase tracking-widest"
+            >
+              <Save size={9} />
+              <span>Apply</span>
+            </button>
+          )}
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/4 hover:bg-white/8 border border-white/8 hover:border-primary/25 text-muted-foreground/50 hover:text-primary transition-all text-[8px] font-bold uppercase tracking-widest"
+          >
+            {copied ? (
+              <><Check size={9} className="text-emerald-400" /><span className="text-emerald-400">Copied</span></>
+            ) : (
+              <><Copy size={9} /><span>Copy</span></>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* Syntax highlighted code */}
+      {/* Apply File Panel */}
+      <AnimatePresence>
+        {showApplyPanel && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-[#141424] border-b border-white/[0.04] px-4 py-3 flex flex-col gap-2"
+          >
+            <div className="flex items-center gap-2">
+              <FileText size={12} className="text-blue-400" />
+              <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Save to Workspace:</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={filePath}
+                onChange={(e) => setFilePath(e.target.value)}
+                placeholder="e.g., src/components/Button.tsx"
+                className="flex-1 px-3 py-1.5 rounded bg-black/40 border border-white/10 text-xs text-foreground placeholder-white/20 focus:outline-none focus:border-blue-500 transition-colors font-mono"
+              />
+              <button
+                onClick={handleApplyFile}
+                disabled={applyStatus === 'writing'}
+                className="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] uppercase tracking-wider transition-colors disabled:opacity-50 shrink-0"
+              >
+                {applyStatus === 'writing' ? 'Writing...' : 'Write File'}
+              </button>
+              <button
+                onClick={() => setShowApplyPanel(false)}
+                className="p-1.5 rounded hover:bg-white/5 text-muted-foreground transition-colors shrink-0"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {applyStatus === 'success' && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-400 mt-1">
+                <CheckCircle2 size={12} />
+                <span>Successfully wrote file to workspace!</span>
+              </div>
+            )}
+            {applyStatus === 'error' && (
+              <div className="flex items-center gap-1.5 text-xs text-red-400 mt-1">
+                <AlertCircle size={12} />
+                <span>Error: {errorMsg}</span>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Terminal Output Panel */}
+      <AnimatePresence>
+        {showTerminal && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-black border-b border-white/[0.04]"
+          >
+            <div className="flex items-center justify-between px-4 py-1.5 bg-zinc-900 border-b border-white/5">
+              <div className="flex items-center gap-1.5 text-[9px] text-zinc-400 font-bold uppercase tracking-wider">
+                <Terminal size={10} className="text-zinc-500" />
+                <span>Local Terminal Output</span>
+              </div>
+              <button
+                onClick={() => setShowTerminal(false)}
+                className="text-zinc-500 hover:text-zinc-300 transition-colors p-0.5"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <pre className="p-4 text-[11px] font-mono leading-relaxed text-zinc-300 overflow-x-auto max-h-60 bg-black whitespace-pre-wrap">
+              {terminalOutput}
+            </pre>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Code */}
       <SyntaxHighlighter
         language={lang}
         style={oneDark}
         showLineNumbers
-        lineNumberStyle={{
-          color: 'rgba(255,255,255,0.15)',
-          fontSize: '10px',
-          userSelect: 'none',
-          minWidth: '2.5em',
-          paddingRight: '1em',
-        }}
-        customStyle={{
-          margin: 0,
-          padding: '1rem 1.25rem',
-          background: '#13131f',
-          fontSize: '12px',
-          lineHeight: '1.65',
-          borderRadius: 0,
-          fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace',
-        }}
-        codeTagProps={{
-          style: {
-            fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace',
-          }
-        }}
+        lineNumberStyle={{ color: 'rgba(255,255,255,0.12)', fontSize: '10px', userSelect: 'none', minWidth: '2.5em', paddingRight: '1em' }}
+        customStyle={{ margin: 0, padding: '1rem 1.25rem', background: '#0e0e18', fontSize: '12px', lineHeight: '1.65', borderRadius: 0, fontFamily: '"Geist Mono","Fira Code","Cascadia Code",ui-monospace,monospace' }}
+        codeTagProps={{ style: { fontFamily: '"Geist Mono","Fira Code","Cascadia Code",ui-monospace,monospace' } }}
         wrapLongLines={false}
       >
         {code}
@@ -113,142 +241,111 @@ const CodeBlock: React.FC<{
   );
 };
 
+// Interface definition
+interface MessageListProps {
+  history: ChatMessage[];
+  activeAgent: 'nyx';
+  isLoading: boolean;
+  onCopy: (text: string, id: string) => void;
+  copiedId: string | null;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
- * Markdown Renderer
+ * Markdown Renderer (for assistant messages)
  * ───────────────────────────────────────────────────────────────────────────── */
 
-const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = ({
-  content,
-  isStreaming = false,
-}) => {
-  return (
-    <div className="prose-nyx w-full">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          // ── Code blocks ────────────────────────────────────────────────────
-          code({ node, className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || '');
-            const isBlock = !!match || (typeof children === 'string' && (children as string).includes('\n'));
-
-            if (isBlock) {
-              const lang = match ? match[1] : 'text';
-              const code = String(children).replace(/\n$/, '');
-              return <CodeBlock language={lang} code={code} />;
-            }
-
-            // Inline code
-            return (
-              <code
-                className="px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-primary text-[11px] font-mono font-semibold"
-                {...props}
-              >
-                {children}
-              </code>
-            );
-          },
-
-          // ── Headings ───────────────────────────────────────────────────────
-          h1: ({ children }) => (
-            <h1 className="text-base font-black tracking-tight text-foreground mt-5 mb-2 pb-2 border-b border-white/10">
+const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = ({ content, isStreaming = false }) => (
+  <div className="prose-nyx w-full">
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        code({ node, className, children, ...props }) {
+          const match = /language-(\w+)/.exec(className || '');
+          const isBlock = !!match || (typeof children === 'string' && (children as string).includes('\n'));
+          if (isBlock) {
+            return <CodeBlock language={match ? match[1] : 'text'} code={String(children).replace(/\n$/, '')} />;
+          }
+          return (
+            <code className="px-1.5 py-0.5 rounded-md bg-primary/8 border border-primary/15 text-primary text-[11px] font-mono font-semibold" {...props}>
               {children}
-            </h1>
-          ),
-          h2: ({ children }) => (
-            <h2 className="text-[13px] font-black tracking-tight text-foreground mt-4 mb-2 flex items-center gap-2">
-              <span className="w-1 h-4 rounded-full bg-primary inline-block shrink-0" />
-              {children}
-            </h2>
-          ),
-          h3: ({ children }) => (
-            <h3 className="text-[12px] font-bold tracking-tight text-foreground/90 mt-3 mb-1.5">
-              {children}
-            </h3>
-          ),
-          h4: ({ children }) => (
-            <h4 className="text-[11px] font-bold tracking-tight text-foreground/80 mt-2 mb-1">
-              {children}
-            </h4>
-          ),
+            </code>
+          );
+        },
+        h1: ({ children }) => <h1 className="text-base font-black tracking-tight text-foreground mt-5 mb-2 pb-2 border-b border-white/10">{children}</h1>,
+        h2: ({ children }) => (
+          <h2 className="text-[13px] font-black tracking-tight text-foreground mt-4 mb-2 flex items-center gap-2">
+            <span className="w-1 h-4 rounded-full bg-primary inline-block shrink-0" />
+            {children}
+          </h2>
+        ),
+        h3: ({ children }) => <h3 className="text-[12px] font-bold tracking-tight text-foreground/90 mt-3 mb-1.5">{children}</h3>,
+        h4: ({ children }) => <h4 className="text-[11px] font-bold tracking-tight text-foreground/80 mt-2 mb-1">{children}</h4>,
+        p: ({ children }) => <p className="text-sm leading-[1.8] text-foreground/80 my-1.5">{children}</p>,
+        ul: ({ children }) => <ul className="list-disc pl-6 space-y-1 my-2 text-sm text-foreground/75">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-6 space-y-1 my-2 text-sm text-foreground/75">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed pl-1">{children}</li>,
+        strong: ({ children }) => <strong className="font-bold text-foreground">{children}</strong>,
+        em: ({ children }) => <em className="italic text-primary/75">{children}</em>,
+        blockquote: ({ children }) => (
+          <blockquote className="my-2 pl-3 py-1 border-l-2 border-primary/40 bg-primary/4 rounded-r-lg text-sm text-foreground/65 italic">
+            {children}
+          </blockquote>
+        ),
+        hr: () => <div className="my-4 h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />,
+        table: ({ children }) => (
+          <div className="my-3 overflow-x-auto rounded-xl border border-white/8">
+            <table className="w-full text-[11px]">{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead className="bg-primary/8 text-primary border-b border-white/8">{children}</thead>,
+        th: ({ children }) => <th className="px-3 py-2 text-left font-black uppercase tracking-wider text-[9px]">{children}</th>,
+        td: ({ children }) => <td className="px-3 py-2 border-t border-white/4 text-foreground/75">{children}</td>,
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/75 transition-colors">
+            {children}
+          </a>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+    {isStreaming && (
+      <span className="inline-block w-[3px] h-3.5 ml-0.5 bg-primary/50 animate-pulse align-middle rounded-sm" />
+    )}
+  </div>
+);
 
-          // ── Paragraph ─────────────────────────────────────────────────────
-          p: ({ children }) => (
-            <p className="text-xs leading-[1.75] text-foreground/85 my-1.5 font-medium">
-              {children}
-            </p>
-          ),
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Empty State
+ * ───────────────────────────────────────────────────────────────────────────── */
 
-          // ── Lists ─────────────────────────────────────────────────────────
-          ul: ({ children }) => (
-            <ul className="space-y-1 my-2 pl-0">{children}</ul>
-          ),
-          ol: ({ children }) => (
-            <ol className="space-y-1 my-2 pl-0 list-none counter-reset-item">{children}</ol>
-          ),
-          li: ({ children }) => (
-            <li className="flex items-start gap-2 text-[11px] leading-relaxed text-foreground/80">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0" />
-              <span className="flex-1">{children}</span>
-            </li>
-          ),
+const EmptyState: React.FC = () => (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+    className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4 gap-6"
+  >
+    {/* Animated bird logo */}
+    <motion.div
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ delay: 0.1, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+    >
+      <Logo size={96} className="drop-shadow-2xl" />
+    </motion.div>
 
-          // ── Bold / Em ─────────────────────────────────────────────────────
-          strong: ({ children }) => (
-            <strong className="font-black text-foreground">{children}</strong>
-          ),
-          em: ({ children }) => (
-            <em className="italic text-primary/80">{children}</em>
-          ),
-
-          // ── Blockquote ────────────────────────────────────────────────────
-          blockquote: ({ children }) => (
-            <blockquote className="my-2 pl-3 py-1 border-l-2 border-primary/50 bg-primary/5 rounded-r-lg text-[11px] text-foreground/70 italic">
-              {children}
-            </blockquote>
-          ),
-
-          // ── Horizontal rule ───────────────────────────────────────────────
-          hr: () => (
-            <div className="my-4 h-px w-full bg-gradient-to-r from-transparent via-white/15 to-transparent" />
-          ),
-
-          // ── Table ─────────────────────────────────────────────────────────
-          table: ({ children }) => (
-            <div className="my-3 overflow-x-auto rounded-xl border border-white/10">
-              <table className="w-full text-[11px]">{children}</table>
-            </div>
-          ),
-          thead: ({ children }) => (
-            <thead className="bg-primary/10 text-primary border-b border-white/10">{children}</thead>
-          ),
-          th: ({ children }) => (
-            <th className="px-3 py-2 text-left font-black uppercase tracking-wider text-[9px]">{children}</th>
-          ),
-          td: ({ children }) => (
-            <td className="px-3 py-2 border-t border-white/5 text-foreground/80">{children}</td>
-          ),
-
-          // ── Link ──────────────────────────────────────────────────────────
-          a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary underline underline-offset-2 hover:text-primary/80 transition-colors"
-            >
-              {children}
-            </a>
-          ),
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-      {isStreaming && (
-        <span className="inline-block w-1.5 h-3.5 ml-0.5 bg-primary/60 animate-pulse align-middle" />
-      )}
-    </div>
-  );
-};
+    {/* Gradient greeting */}
+    <motion.h1
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.25, duration: 0.5 }}
+      className="text-2xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-pink-400 to-indigo-400 bg-clip-text text-transparent leading-tight"
+    >
+      Let's jump in
+    </motion.h1>
+  </motion.div>
+);
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Main Message List
@@ -260,8 +357,6 @@ export const MessageList: React.FC<MessageListProps> = ({
   isLoading,
   onCopy,
   copiedId,
-  emptyStateLabel = 'Awaiting Instructions',
-  emptyStateDescription = 'Industrial-grade AI guidance for infrastructure and deployment.',
 }) => {
   const consoleRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -300,149 +395,101 @@ export const MessageList: React.FC<MessageListProps> = ({
   }, []);
 
   return (
-    <div className="flex-1 min-h-0 relative flex flex-col bg-background/5 overflow-hidden">
-      {/* Dot grid background */}
-      <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.02] pointer-events-none select-none overflow-hidden">
-        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(currentColor 1.5px, transparent 1.5px)', backgroundSize: '32px 32px' }} />
-      </div>
-
-      <div ref={consoleRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative p-4">
-        <div className="w-full space-y-6 pb-4">
-          {history.length === 0 ? (
-            <div className="flex flex-col items-center justify-center min-h-[20vh] text-center space-y-4">
-              <div className="relative">
-                <div className="absolute inset-0 bg-primary/10 blur-3xl rounded-full scale-125 animate-pulse" />
-                <motion.div className="w-8 h-8 text-primary relative z-10">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="4 17 10 11 4 5" />
-                    <line x1="12" y1="19" x2="20" y2="19" />
-                  </svg>
-                </motion.div>
-              </div>
-              <div className="space-y-1.5">
-                <h2 className="text-sm font-bold tracking-tight text-foreground">{emptyStateLabel}</h2>
-                <p className="text-muted-foreground max-w-xs mx-auto text-[10px] leading-relaxed">
-                  {emptyStateDescription}
-                </p>
-              </div>
-            </div>
-          ) : (
-            history.map((msg, i) => {
+    <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-[#131315]">
+      <div
+        ref={consoleRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative"
+      >
+        {history.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <div className="w-full max-w-3xl mx-auto px-4 pb-6 pt-4 space-y-1">
+            {history.map((msg, i) => {
               const isUser = msg.role === 'user';
               const isStreaming = msg.status === 'loading';
 
               return (
                 <motion.div
                   key={i}
-                  initial={{ opacity: 0, y: 10 }}
+                  initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex flex-col w-full group mb-6"
+                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                  className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} mb-3`}
                 >
-                  {/* Role label */}
-                  <div className={`flex w-full mb-1 px-1.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                    <span className={`text-[9px] font-black uppercase tracking-[0.15em] ${isUser ? 'text-primary/70 dark:text-primary/95' : 'text-muted-foreground/45'}`}>
-                      {isUser ? 'Operator' : 'System'}
-                    </span>
-                  </div>
+                  {isUser ? (
+                    /* ── User bubble: right-aligned glassmorphic pill ── */
+                    <div className={`
+                      max-w-[80%] py-2.5 px-4 rounded-2xl rounded-tr-sm
+                      text-[13px] leading-[1.7] font-medium
+                      bg-zinc-800/80 backdrop-blur-sm
+                      border border-white/[0.06]
+                      text-foreground/90 shadow-sm
+                      ${activeAgent === 'nyx' ? 'border-violet-500/20 shadow-violet-500/5' : ''}
+                    `}>
+                      {msg.content}
+                    </div>
+                  ) : (
+                    /* ── Assistant: container-less, direct on canvas ── */
+                    <div className="flex-1 min-w-0">
+                      {msg.status === 'error' ? (
+                        <p className="text-sm text-red-400/90 py-1">{msg.content}</p>
+                      ) : msg.content ? (
+                        <>
+                          <MarkdownContent content={msg.content} isStreaming={isStreaming} />
 
-                  {/* Message bubble */}
-                  <div className={`
-                    relative transition-all duration-500 w-full
-                    ${isUser
-                      ? activeAgent === 'nyx'
-                        ? 'max-w-[85%] py-3 px-4 rounded-2xl border shadow-sm self-end rounded-tr-none text-[11px] bg-[#181224]/85 dark:bg-[#120B1C]/90 border-purple-500/30 text-purple-300 dark:text-purple-400 font-mono shadow-[0_0_20px_rgba(168,85,247,0.1)]'
-                        : 'max-w-[85%] py-3 px-4 rounded-2xl border shadow-sm self-end rounded-tr-none bg-white/60 dark:bg-zinc-800/60 backdrop-blur-md border-white/30 dark:border-white/10 text-foreground/90'
-                      : msg.status === 'error'
-                        ? 'self-start text-red-500 dark:text-red-400 text-xs py-1.5'
-                        : 'self-start text-foreground/90 text-xs py-1.5 pr-16 border-none shadow-none bg-transparent'
-                    }
-                  `}>
-                    {msg.content ? (
-                      <>
-                        {isUser ? (
-                          /* User messages: plain text, no markdown needed */
-                          <div className="leading-[1.7] font-medium tracking-normal">
-                            {msg.content}
+                          {/* Footer: metrics + copy — fades in on hover */}
+                          {!isStreaming && msg.content && (
+                            <div className="mt-2 flex items-center gap-3 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => onCopy(msg.content, `msg-${i}`)}
+                                className="flex items-center gap-1 text-[9px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+                              >
+                                {copiedId === `msg-${i}` ? (
+                                  <><Check size={9} className="text-emerald-400" /><span className="text-emerald-400">Copied</span></>
+                                ) : (
+                                  <><Copy size={9} /><span>Copy</span></>
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        /* Streaming skeleton */
+                        <div className="flex items-center gap-1.5 py-1">
+                          <div className="flex gap-1">
+                            {[0, 1, 2].map(n => (
+                              <motion.div
+                                key={n}
+                                className="w-1.5 h-1.5 rounded-full bg-primary/40"
+                                animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1, 0.8] }}
+                                transition={{ duration: 1.2, repeat: Infinity, delay: n * 0.2 }}
+                              />
+                            ))}
                           </div>
-                        ) : (
-                          /* Assistant messages: rich markdown + syntax highlighting */
-                          <MarkdownContent
-                            content={msg.content}
-                            isStreaming={isStreaming}
-                          />
-                        )}
-
-                        {/* Footer bar with Metrics and Copy action */}
-                        {!isUser && msg.content && msg.status !== 'error' && (
-                          <div className="mt-3 pt-2 border-t border-border-strong/20 flex items-center justify-end gap-3 opacity-40 hover:opacity-100 transition-opacity">
-                            {/* Metrics if present */}
-                            {msg.metrics && (
-                              <>
-                                <div className="flex items-center gap-1">
-                                  <Zap className="w-2 h-2 text-primary" />
-                                  <span className="text-[8px] font-mono font-bold tracking-wider uppercase">
-                                    {msg.metrics.tps} <span className="text-[6px] opacity-40">t/s</span>
-                                  </span>
-                                </div>
-                                <div className="w-px h-1.5 bg-border-strong/50" />
-                                <div className="flex items-center gap-1">
-                                  <BrainCircuit className="w-2 h-2 text-primary" />
-                                  <span className="text-[8px] font-mono font-bold tracking-wider uppercase">
-                                    {msg.metrics.tokens} <span className="text-[6px] opacity-40">units</span>
-                                  </span>
-                                </div>
-                                <div className="w-px h-1.5 bg-border-strong/50" />
-                              </>
-                            )}
-
-                            {/* Copy action */}
-                            <button
-                              onClick={() => onCopy(msg.content, `msg-${i}`)}
-                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-muted/40 hover:bg-muted border border-border-strong/30 hover:border-border-strong text-muted-foreground hover:text-foreground transition-all text-[8px] font-bold uppercase tracking-wider"
-                              title="Copy response"
-                            >
-                              {copiedId === `msg-${i}` ? (
-                                <>
-                                  <Check size={8} className="text-emerald-400" />
-                                  <span className="text-emerald-400 font-extrabold">Copied</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy size={8} />
-                                  <span>Copy</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="flex flex-col gap-2 py-1">
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 self-start animate-pulse">
-                          <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                          <span className="text-[8px] font-black uppercase tracking-widest text-primary">Executing...</span>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </motion.div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </div>
 
+      {/* Jump to bottom button */}
       <AnimatePresence>
         {showJumpToBottom && (
           <motion.button
-            initial={{ opacity: 0, scale: 0.8, y: 15 }}
+            initial={{ opacity: 0, scale: 0.85, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.8, y: 15 }}
+            exit={{ opacity: 0, scale: 0.85, y: 12 }}
             onClick={jumpToBottom}
-            className="absolute bottom-24 right-8 z-20 flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 transition-transform font-black uppercase tracking-widest text-[9px]"
+            className="absolute bottom-24 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-zinc-800/90 border border-white/10 text-foreground/70 hover:text-foreground shadow-xl text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-zinc-700/90"
           >
             <ArrowDown className="w-3 h-3" />
-            Jump to Latest
+            Latest
           </motion.button>
         )}
       </AnimatePresence>

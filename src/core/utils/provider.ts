@@ -20,13 +20,17 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
   nvidia: 'NVIDIA NIM',
   openrouter: 'OpenRouter',
   terminal: 'Terminal',
+  lmstudio: 'LM Studio (Local)',
   opencode: 'Open Code',
   pollinations: 'Pollinations (Free)',
+  ollama: 'Ollama (Local)',
+  'nyx-native': 'NYX Native',
+  'qwen-local': 'Qwen Local (Python)',
 };
 
 export const CLOUD_PROVIDERS: Provider[] = ['gemini', 'nvidia', 'openrouter', 'opencode'];
 
-export const LOCAL_PROVIDERS: Provider[] = [];
+export const LOCAL_PROVIDERS: Provider[] = ['ollama', 'nyx-native', 'lmstudio', 'qwen-local'];
 
 /**
  * Structured provider detection that checks in priority order.
@@ -36,6 +40,29 @@ export const detectProvider = (
   ollamaModels: ModelDefinition[] = [],
   lmStudioModels: ModelDefinition[] = []
 ): Provider => {
+  if (!modelId) return 'gemini';
+
+  // 1. Check in static AVAILABLE_MODELS presets
+  const availableModel = AVAILABLE_MODELS.find(m => m.id === modelId);
+  if (availableModel) return availableModel.provider;
+
+  // 2. Check in dynamic local model lists
+  if (ollamaModels.some(m => m.id === modelId || m.name === modelId)) {
+    return 'ollama';
+  }
+  if (lmStudioModels.some(m => m.id === modelId || m.name === modelId)) {
+    return 'lmstudio';
+  }
+
+  // ── Robust string-signature fallbacks when dynamic lists are empty/loading ──
+  if (modelId.includes(':')) {
+    return 'ollama';
+  }
+  if (modelId.endsWith('.gguf') || modelId.toLowerCase().includes('lmstudio') || modelId.toLowerCase().includes('lm-studio')) {
+    return 'lmstudio';
+  }
+
+  // 3. Fall back to priority checks
   for (const { check, provider } of PROVIDER_PRIORITY) {
     if (check(modelId)) return provider;
   }
@@ -48,6 +75,14 @@ export const detectProvider = (
  */
 export const getProviderForModel = (modelId: string): Provider => {
   if (NVIDIA_MODEL_IDS.has(modelId)) return 'nvidia';
+
+  // ── Robust string-signature fallbacks for local models ──
+  if (modelId.includes(':')) {
+    return 'ollama';
+  }
+  if (modelId.endsWith('.gguf') || modelId.toLowerCase().includes('lmstudio') || modelId.toLowerCase().includes('lm-studio')) {
+    return 'lmstudio';
+  }
 
   const availableModel = AVAILABLE_MODELS.find(m => m.id === modelId);
   if (availableModel) return availableModel.provider;
@@ -63,7 +98,8 @@ export const getProviderForModel = (modelId: string): Provider => {
  * Checks if a model ID refers to a local instance.
  */
 export const isLocalModel = (modelId: string): boolean => {
-  return false;
+  const provider = getProviderForModel(modelId);
+  return LOCAL_PROVIDERS.includes(provider);
 };
 
 /**

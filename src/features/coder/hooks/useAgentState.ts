@@ -1,34 +1,22 @@
 /**
  * @file src/features/coder/hooks/useAgentState.ts
- * @description Manages active agent, model selection, and agent persona state.
+ * @description Manages NYX agent state and model selection.
  */
 
 import { useState, useCallback } from 'react';
 import { AgentPersona } from '@/src/core/types';
 import { DEFAULT_AGENTS } from '@/src/config/agents';
 
-type AgentKey = 'open' | 'claude' | 'nyx';
-
 interface AgentStateProps {
-  activeAgent?: AgentKey;
-  setActiveAgent?: (agent: AgentKey) => void;
-  models?: Record<AgentKey, string>;
+  models?: Record<'nyx', string>;
   setModel?: (modelId: string) => void;
 }
 
 export const useAgentState = ({
-  activeAgent: propActiveAgent,
-  setActiveAgent: propSetActiveAgent,
   models: propModels,
   setModel: propSetModel
 }: AgentStateProps = {}) => {
-  const [localActiveAgent, setLocalActiveAgent] = useState<AgentKey>('nyx');
-  const activeAgent = propActiveAgent ?? localActiveAgent;
-  const setActiveAgent = propSetActiveAgent ?? setLocalActiveAgent;
-
-  const [localModels, setLocalModels] = useState<Record<AgentKey, string>>({
-    open: '',
-    claude: '',
+  const [localModels, setLocalModels] = useState<Record<'nyx', string>>({
     nyx: ''
   });
   const models = propModels ?? localModels;
@@ -36,15 +24,14 @@ export const useAgentState = ({
     if (propSetModel) {
       propSetModel(mid);
     } else {
-      setLocalModels(prev => ({ ...prev, [activeAgent]: mid }));
+      setLocalModels({ nyx: mid });
     }
-  }, [activeAgent, propSetModel]);
+  }, [propSetModel]);
 
-  const [agentPersonas, setAgentPersonas] = useState<Record<AgentKey, AgentPersona>>(DEFAULT_AGENTS);
+  const [agentPersonas, setAgentPersonas] = useState<Record<'nyx', AgentPersona>>(DEFAULT_AGENTS);
 
   return {
-    activeAgent,
-    setActiveAgent,
+    activeAgent: 'nyx' as const,
     models,
     setModel,
     agentPersonas,
