@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { ModelSelector } from '@/src/components/model-card/ModelSelector';
 import { ModelDefinition } from '@/src/core/types';
-import { toast } from 'sonner';
+import { toast } from '@/src/components/ui/sonner';
 import { analyzePrompt, optimizePromptText } from '@/shared/promptAnalyzer';
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
@@ -57,7 +57,7 @@ interface LocalInferenceSettings {
 
 const DEFAULT_LOCAL: LocalInferenceSettings = {
   gpuLayers: 99,
-  contextSize: 4096,
+  contextSize: 2048,
   threads: 4,
   batchSize: 512,
   temperature: 0.7,
@@ -92,7 +92,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const [selectedProvider, setSelectedProvider] = useState<string>('gemini');
   const [showSettings, setShowSettings] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [localSettings, setLocalSettings] = useState<LocalInferenceSettings>({ ...DEFAULT_LOCAL });
+  const localSettings = modelSettings;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -109,7 +109,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   /* ── Reset settings when switching local models ──────────────────────── */
   useEffect(() => {
     if (isLocalModel) {
-      setLocalSettings({ ...DEFAULT_LOCAL });
       // Close settings panel when switching models so the user sees the reset
       setShowSettings(false);
     }
@@ -127,12 +126,23 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
   const updateLocal = useCallback(<K extends keyof LocalInferenceSettings>(
     key: K, value: LocalInferenceSettings[K]
-  ) => setLocalSettings(prev => ({ ...prev, [key]: value })), []);
+  ) => {
+    onModelSettingsChange({ ...modelSettings, [key]: value });
+  }, [modelSettings, onModelSettingsChange]);
 
   const resetLocalSettings = useCallback(() => {
-    setLocalSettings({ ...DEFAULT_LOCAL });
+    onModelSettingsChange({
+      ...modelSettings,
+      gpuLayers: 99,
+      threads: 4,
+      contextSize: 4096,
+      batchSize: 512,
+      temperature: 0.7,
+      topP: 0.95,
+      topK: 40,
+    });
     toast.success('Settings reset to defaults');
-  }, []);
+  }, [modelSettings, onModelSettingsChange]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -308,6 +318,75 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     <motion.button
                       whileTap={{ scale: 0.88 }}
                       type="button"
+                      onClick={async () => {
+                        try {
+                          const modelIdParam = currentModelId ? `?modelId=${currentModelId}` : '';
+                          const res = await fetch(`/api/system${modelIdParam}`);
+                          const sys = await res.json();
+                          const ramGB = sys.totalmem / (1024 * 1024 * 1024);
+                          const vramGB = (sys.vram || 0) / (1024 * 1024 * 1024);
+                          
+                          let newGpu = 10;
+                          let recommendedModel = currentModelId || 'nyx-gemma-4-e2b-it';
+                          let message = '';
+
+                          if (sys.optimalLayers) {
+                            newGpu = sys.optimalLayers.gpuLayers;
+                            message = sys.optimalLayers.message;
+                            if (vramGB >= 8 && currentModelId === 'nyx-gemma-4-e2b-it') {
+                              recommendedModel = 'qwen2.5-coder-3b-native';
+                              message += ` High VRAM detected, switching to qwen2.5-coder-3b-native for optimal code generation.`;
+                            }
+                          } else {
+                            if (vramGB >= 8) {
+                              newGpu = 99;
+                              recommendedModel = 'qwen2.5-coder-3b-native';
+                              message = `High VRAM detected (${Math.round(vramGB)}GB). Optimal settings applied.`;
+                            } else if (vramGB > 0) {
+                              newGpu = Math.floor(vramGB * 10);
+                              recommendedModel = 'nyx-gemma-4-e2b-it';
+                              message = `VRAM detected (${vramGB.toFixed(1)}GB). Optimal settings applied.`;
+                            } else if (ramGB >= 24) {
+                              newGpu = 99;
+                              recommendedModel = 'qwen2.5-coder-3b-native';
+                              message = `High RAM detected (${Math.round(ramGB)}GB). Optimal settings applied.`;
+                            } else if (ramGB >= 15) {
+                              newGpu = 50;
+                              recommendedModel = 'qwen2.5-coder-3b-native';
+                              message = `Moderate RAM detected (${Math.round(ramGB)}GB). Optimal settings applied.`;
+                            } else if (ramGB >= 7) {
+                              newGpu = 20;
+                              message = `System analyzed: ${Math.round(ramGB)}GB RAM. Settings adjusted.`;
+                            } else {
+                              message = `Basic system: ${Math.round(ramGB)}GB RAM. Using safe defaults.`;
+                            }
+                          }
+
+                          const newThreads = Math.max(1, Math.floor(sys.cpus * 0.75));
+                          
+                          onModelSettingsChange({
+                             ...modelSettings,
+                             gpuLayers: newGpu,
+                             threads: newThreads
+                           });
+                           if (recommendedModel && recommendedModel !== currentModelId) {
+                             onModelSelect(recommendedModel);
+                           }
+                          
+                          toast.success(message);
+                        } catch (e) {
+                          toast.error('Failed to analyze system');
+                        }
+                      }}
+                      title="Auto-adjust based on system specs"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-emerald-400 hover:bg-emerald-500/8 border border-transparent hover:border-emerald-500/15 transition-all"
+                    >
+                      <Zap size={9} />
+                      Analyze System
+                    </motion.button>
+                    <motion.button
+                      whileTap={{ scale: 0.88 }}
+                      type="button"
                       onClick={resetLocalSettings}
                       title="Reset to defaults"
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-amber-400 hover:bg-amber-500/8 border border-transparent hover:border-amber-500/15 transition-all"
@@ -418,9 +497,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                           <ParamSlider
                             label="Temperature"
                             hint="Randomness. 0 = deterministic, 1+ = creative."
-                            value={localSettings.temperature}
+                            value={localSettings.temperature ?? 0.7}
                             min={0} max={2} step={0.05}
-                            display={v => v.toFixed(2)}
+                            display={v => (v ?? 0.7).toFixed(2)}
                             accent="accent-rose-500"
                             onChange={v => updateLocal('temperature', v)}
                             isFloat
@@ -428,9 +507,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                           <ParamSlider
                             label="Top-P (Nucleus)"
                             hint="Cumulative probability cutoff for token selection."
-                            value={localSettings.topP}
+                            value={localSettings.topP ?? 0.95}
                             min={0} max={1} step={0.01}
-                            display={v => v.toFixed(2)}
+                            display={v => (v ?? 0.95).toFixed(2)}
                             accent="accent-rose-500"
                             onChange={v => updateLocal('topP', v)}
                             isFloat
@@ -438,18 +517,18 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                           <ParamSlider
                             label="Top-K"
                             hint="Sample from top K tokens only. 0 = disabled."
-                            value={localSettings.topK}
+                            value={localSettings.topK ?? 40}
                             min={0} max={200} step={1}
-                            display={v => `${v}`}
+                            display={v => `${v ?? 40}`}
                             accent="accent-rose-500"
                             onChange={v => updateLocal('topK', v)}
                           />
                           <ParamSlider
                             label="Repeat Penalty"
                             hint="Penalises recently used tokens. > 1.0 reduces repetition."
-                            value={localSettings.repeatPenalty}
+                            value={localSettings.repeatPenalty ?? 1.1}
                             min={1} max={2} step={0.05}
-                            display={v => v.toFixed(2)}
+                            display={v => (v ?? 1.1).toFixed(2)}
                             accent="accent-rose-500"
                             onChange={v => updateLocal('repeatPenalty', v)}
                             isFloat
@@ -493,7 +572,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   <div className="mt-5 pt-4 border-t border-white/[0.04] flex items-start gap-2">
                     <Info size={9} className="text-muted-foreground/20 mt-0.5 shrink-0" />
                     <p className="text-[7px] text-muted-foreground/20 leading-relaxed">
-                      GPU Layers apply when the model is loaded into Resident RAM. All other sampling parameters take effect on the next generation. Settings reset automatically when you switch models.
+                      GPU Layers apply when the model is loaded into Resident RAM + VRAM. All other sampling parameters take effect on the next generation. Settings reset automatically when you switch models.
                     </p>
                   </div>
                 </div>

@@ -13,11 +13,38 @@ import { useProviderStatus } from './dashboard/useProviderStatus';
 
 export const useDashboardState = (onExit?: () => void) => {
   const [activeMode, setActiveMode] = useState<'settings' | 'registry' | 'coder'>('coder');
-  const [modelSettings, setModelSettings] = useState({
-    temperature: 0.7,
-    maxTokens: 16384,
-    topP: 0.95,
-    topK: 40
+  const [modelSettings, setModelSettings] = useState(() => {
+    const saved = localStorage.getItem('nyx_model_settings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          temperature: 0.7,
+          maxTokens: 16384,
+          topP: 0.95,
+          topK: 40,
+          gpuLayers: 99,
+          threads: 4,
+          contextSize: 2048,
+          batchSize: 512,
+          repeatPenalty: 1.1,
+          mirostat: 0,
+          ...parsed
+        };
+      } catch {}
+    }
+    return {
+      temperature: 0.7,
+      maxTokens: 16384,
+      topP: 0.95,
+      topK: 40,
+      gpuLayers: 99,
+      threads: 4,
+      contextSize: 2048,
+      batchSize: 512,
+      repeatPenalty: 1.1,
+      mirostat: 0,
+    };
   });
   
   // NYX is the only agent — single model state
@@ -89,6 +116,10 @@ export const useDashboardState = (onExit?: () => void) => {
   useEffect(() => {
     localStorage.setItem('nyx_coder_models_v2', JSON.stringify(models));
   }, [models]);
+
+  useEffect(() => {
+    localStorage.setItem('nyx_model_settings', JSON.stringify(modelSettings));
+  }, [modelSettings]);
 
   const setModel = (mid: string) => {
     setModels({ nyx: mid });

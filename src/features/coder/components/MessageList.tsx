@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Logo } from '@/src/lib/design-system/icons';
-import { toast } from 'sonner';
+import { toast } from '@/src/components/ui/sonner';
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Code Block
@@ -443,7 +443,7 @@ export const MessageList: React.FC<MessageListProps> = ({
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                  className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} mb-3`}
+                  className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} mb-3 group`}
                 >
                   {isUser ? (
                     /* ── User bubble: right-aligned glassmorphic pill ── */
@@ -514,7 +514,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 12 }}
             onClick={jumpToBottom}
-            className="absolute bottom-24 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-zinc-800/90 border border-white/10 text-foreground/70 hover:text-foreground shadow-xl text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-zinc-700/90"
+            className="absolute bottom-1 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-zinc-800/90 border border-white/10 text-foreground/70 hover:text-foreground shadow-xl text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-zinc-700/90"
           >
             <ArrowDown className="w-3 h-3" />
             Latest

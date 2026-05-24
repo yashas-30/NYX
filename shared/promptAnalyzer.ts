@@ -821,21 +821,26 @@ function checkCodeRelated(
   frameworks: string[],
   intent: PromptIntent
 ): boolean {
-  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up)\b/i;
-  const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx)\b/i;
-  if (GREETINGS.test(prompt.trim()) || IDENTITY.test(prompt.trim())) return true;
+  const trimmed = prompt.trim();
+
+  // Greetings and identity queries are conversational — NOT code-related
+  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)\b/i;
+  const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx|what\s+can\s+you\s+do|what\s+are\s+you|help\s+me)\b/i;
+  const CONVERSATIONAL = /^(how\s+are\s+you|how's\s+it\s+going|what's\s+up|tell\s+me\s+a\s+joke|what\s+do\s+you\s+think|how\s+do\s+you\s+feel|do\s+you\s+like|what's\s+your\s+favorite|can\s+you\s+help|thanks?\s+for|i\s+appreciate|what\s+time\s+is\s+it|good\s+job|well\s+done)/i;
+  if (GREETINGS.test(trimmed) || IDENTITY.test(trimmed) || CONVERSATIONAL.test(trimmed)) return false;
+
+  // Explicit non-code topics take priority
+  if (NON_CODE_PATTERNS.some(p => p.test(prompt))) return false;
 
   if (languages.length > 0 || frameworks.length > 0) return true;
   if (MENTIONS_CODE_TECH.test(prompt)) return true;
 
-  if (['generate', 'refactor', 'debug', 'convert', 'optimize', 'review', 'integrate', 'test', 'deploy', 'explain', 'general'].includes(intent)) {
+  if (['generate', 'refactor', 'debug', 'convert', 'optimize', 'review', 'integrate', 'test', 'deploy'].includes(intent)) {
     if (CODE_RELATED_PATTERNS.some(p => p.test(prompt))) return true;
   }
 
-  if (NON_CODE_PATTERNS.some(p => p.test(prompt))) return false;
-
   const codeMatches = CODE_RELATED_PATTERNS.filter(p => p.test(prompt)).length;
-  return codeMatches >= 1;
+  return codeMatches >= 2;
 }
 
 function extractKeywords(lower: string): string[] {

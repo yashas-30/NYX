@@ -56,14 +56,14 @@ localModelsRouter.get('/download-progress', (req, res) => {
 
 // Run a model natively via llama-server
 localModelsRouter.post('/run', async (req, res) => {
-  const { modelId } = req.body;
+  const { modelId, settings } = req.body;
   if (!modelId) {
     return res.status(400).json({ error: 'Missing modelId in request body.' });
   }
 
   try {
     // Start runner asynchronously or wait for it
-    await LocalModelRunner.start(modelId);
+    await LocalModelRunner.start(modelId, settings);
     res.json({ status: 'running', modelId });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -114,27 +114,6 @@ localModelsRouter.get('/status', (_req, res) => {
 // Proxy streaming chat completion to port 12345
 localModelsRouter.post('/chat', async (req, res) => {
   const requestedModel = req.body.model || 'nyx-gemma-4-e2b-it';
-  
-  // If the requested model is not currently running, attempt to auto-start it if it is fully downloaded
-  if (LocalModelRunner.getActiveModel() !== requestedModel) {
-    try {
-      const list = LocalModelManager.listModels();
-      const targetModel = list.find(m => m.id === requestedModel);
-      if (targetModel && targetModel.status === 'completed') {
-        console.log(`[Auto-Runner] Model ${requestedModel} is downloaded but not loaded. Auto-starting in RAM...`);
-        await LocalModelRunner.start(requestedModel);
-      }
-    } catch (startErr: any) {
-      console.error('[Auto-Runner] Failed to auto-start model:', startErr.message);
-    }
-  }
-
-  if (!LocalModelRunner.isRunning() || LocalModelRunner.getActiveModel() !== requestedModel) {
-    return res.status(400).json({ 
-      error: `The local model '${requestedModel}' is not loaded in RAM. Please go to the Models tab to download it, or load it in RAM first.`
-    });
-  }
-
   const { messages, temperature, max_tokens } = req.body;
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'Invalid or missing messages in request body.' });
@@ -168,16 +147,51 @@ localModelsRouter.post('/chat', async (req, res) => {
   }
 
   // 3. Formulate the dynamic system prompt integrating codebase knowledge
-  const systemPrompt = `You are Nyx, an intelligent AI coding assistant representing the NYX development workspace.
-You are running locally on Google's state-of-the-art Gemma 4 E2B (2.3B Edge) model.
-You have native, deep, real-time access to the user's workspace, file structure, and code languages.
+  const systemPrompt = `You are NYX, a professional and highly capable AI software engineering assistant.
+Always identify yourself as NYX. Never claim to be OpenAI, ChatGPT, Anthropic, or any other entity.
+Your tone is highly professional, direct, clear, objective, and authoritative—identical to Google Gemini. Avoid friendly fluff, excessive greetings, or marketing language like "premium". Focus on providing highly structured, precise, clean, and complete code solutions.
 
 Here is the current directory structure of the repository:
 ${directoryStructure}
 ${codebaseContext}
 ${rulesContext}
 
-Please analyze the codebase context above and provide highly optimized, syntax-correct, and complete solutions. Write clean code and explain your implementation briefly. Make full use of your understanding of all languages present in the project.`;
+Please analyze the context and provide highly optimized, syntax-correct solutions.`;
+
+  // Estimate total tokens required for this request (system prompt + message history + completion)
+  const totalCharacters = messages.reduce((sum, m) => sum + (m.content || '').length, 0) + systemPrompt.length;
+  const estimatedPromptTokens = Math.ceil(totalCharacters / 3.8);
+  const neededContext = estimatedPromptTokens + (max_tokens ?? 2048);
+  // Round up to nearest 512, clamp between 2048 and 32768
+  const autoContextSize = Math.max(2048, Math.min(32768, Math.ceil(neededContext / 512) * 512));
+
+  const activeModel = LocalModelRunner.getActiveModel();
+  const activeContextSize = LocalModelRunner.getActiveContextSize();
+
+  // If the requested model is not currently running, OR the running model has a context window smaller than required:
+  if (activeModel !== requestedModel || activeContextSize < autoContextSize) {
+    try {
+      const list = LocalModelManager.listModels();
+      const targetModel = list.find(m => m.id === requestedModel);
+      if (targetModel && targetModel.status === 'completed') {
+        if (activeModel === requestedModel) {
+          console.log(`[Auto-Context] Restarting local model ${requestedModel} to upscale context window from ${activeContextSize} to ${autoContextSize} tokens...`);
+        } else {
+          console.log(`[Auto-Runner] Auto-starting local model ${requestedModel} with ${autoContextSize} context tokens...`);
+        }
+        
+        await LocalModelRunner.start(requestedModel, { contextSize: autoContextSize });
+      }
+    } catch (startErr: any) {
+      console.error('[Auto-Runner] Failed to start model with dynamic context:', startErr.message);
+    }
+  }
+
+  if (!LocalModelRunner.isRunning() || LocalModelRunner.getActiveModel() !== requestedModel) {
+    return res.status(400).json({ 
+      error: `The local model '${requestedModel}' is not loaded in RAM. Please go to the Models tab to download it, or load it in RAM first.`
+    });
+  }
 
   // Prepend the codebase context as the system instruction
   const updatedMessages = [
@@ -226,160 +240,10 @@ Please analyze the codebase context above and provide highly optimized, syntax-c
 
         // Forward the raw GGUF token chunk immediately to the client
         res.write(value);
-
-        // Also parse and accumulate text for the cloud refinement pass
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          
-          let dataStr = trimmed;
-          if (trimmed.startsWith('data: ')) {
-            dataStr = trimmed.slice(6).trim();
-          }
-
-          if (dataStr === '[DONE]') continue;
-
-          try {
-            const parsed = JSON.parse(dataStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              localDraftResponse += content;
-            }
-          } catch {}
-        }
       }
+
     }
 
-    // Stage 2: Dual-Stage Orchestration Refinement via Cloud Models
-    const keys = loadKeys();
-    const geminiKey = keys.gemini;
-    const openrouterKey = keys.openrouter;
-
-    if (localDraftResponse && (geminiKey || openrouterKey)) {
-      // Stream Orchestrator status header to user
-      const refinementHeader = `\n\n---\n\n*✨ [NYX Orchestrator] Enhancing response with high-performance model selector...*\n\n`;
-      res.write(`data: ${JSON.stringify({ chunk: refinementHeader })}\n\n`);
-
-      const refinementPrompt = `You are the Core Refinement Critic for the NYX development workspace.
-A user asked the following question:
-"${query}"
-
-Our local GGUF agent (Gemma 4 E2B) drafted the following response:
----
-${localDraftResponse}
----
-
-Here is the codebase context and repository files matching the query:
-${directoryStructure}
-${codebaseContext}
-${rulesContext}
-
-Please refine, optimize, and polish the local model's drafted response into a final production-grade response. 
-Analyze if the drafted response has any bugs, missing imports, or incorrect assumptions relative to the codebase.
-If the draft is already excellent and correct, present it with minor enhancements. If there are any bugs, correct them.
-Output the finalized, polished response with outstanding formatting, clean syntax highlighting, and concise explanations.`;
-
-      if (geminiKey) {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${geminiKey}`;
-        try {
-          const geminiRes = await fetch(geminiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ text: refinementPrompt }] }],
-              generationConfig: { temperature: 0.2, maxOutputTokens: 4096 }
-            })
-          });
-
-          if (geminiRes.ok && geminiRes.body) {
-            const reader = geminiRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || !trimmed.startsWith('data: ')) continue;
-                
-                try {
-                  const jsonStr = trimmed.slice(5).trim();
-                  const parsed = JSON.parse(jsonStr);
-                  const chunkText = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-                  if (chunkText) {
-                    res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
-                  }
-                } catch {}
-              }
-            }
-          }
-        } catch (e: any) {
-          console.error('[Orchestration] Gemini refinement failed:', e.message);
-        }
-      } else if (openrouterKey) {
-        const openrouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
-        try {
-          const orRes = await fetch(openrouterUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${openrouterKey}`,
-              'HTTP-Referer': 'http://localhost:3000',
-              'X-Title': 'NYX Orchestrator'
-            },
-            body: JSON.stringify({
-              model: 'google/gemma-4-31b-it:free',
-              messages: [{ role: 'user', content: refinementPrompt }],
-              stream: true
-            })
-          });
-
-          if (orRes.ok && orRes.body) {
-            const reader = orRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || !trimmed.startsWith('data: ')) continue;
-                
-                try {
-                  const jsonStr = trimmed.slice(5).trim();
-                  if (jsonStr === '[DONE]') continue;
-                  const parsed = JSON.parse(jsonStr);
-                  const chunkText = parsed.choices?.[0]?.delta?.content;
-                  if (chunkText) {
-                    res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
-                  }
-                } catch {}
-              }
-            }
-          }
-        } catch (e: any) {
-          console.error('[Orchestration] OpenRouter refinement failed:', e.message);
-        }
-      }
-    }
-
-    res.write('data: [DONE]\n\n');
     res.end();
   } catch (e: any) {
     console.error('[Local runner proxy error]:', e.message);

@@ -37,6 +37,24 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
   const [activeMode, setActiveMode] = useState<ViewMode>('coder');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setSidebarOpen(false); // Close sidebar on mobile size changes automatically
+      } else {
+        setSidebarOpen(true); // Open sidebar by default on desktop
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    // Initial call to set correct state
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const {
     apiKeys, updateApiKey, clearApiKeys,
@@ -49,7 +67,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
   const { theme } = useTheme();
   const chatSessions = useChatSessions();
-  const { sessions, activeSid, deleteSession, switchSession } = chatSessions;
+  const { sessions, activeSid, deleteSession, switchSession, createSession } = chatSessions;
 
   const filteredSessions = sessions.filter(s =>
     s.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -64,13 +82,26 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
     <ErrorBoundary>
       <main className={`h-[100dvh] w-screen overflow-hidden flex bg-[#131315] text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
 
+        {/* Backdrop for mobile */}
+        <AnimatePresence>
+          {isMobile && sidebarOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSidebarOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs z-25"
+            />
+          )}
+        </AnimatePresence>
+
         {/* ── Collapsible Sidebar ─────────────────────────────────────────── */}
         <motion.aside
           variants={sidebarVariants}
           initial="open"
           animate={sidebarOpen ? 'open' : 'closed'}
           transition={{ type: 'spring', stiffness: 350, damping: 38 }}
-          className="flex-none h-full overflow-hidden flex flex-col bg-[#1a1a1e] border-r border-white/[0.05] relative z-20"
+          className={`h-full overflow-hidden flex flex-col bg-[#1a1a1e] border-r border-white/[0.05] relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl' : 'flex-none z-20'}`}
         >
           <div className="flex flex-col h-full min-w-[280px]">
             {/* Sidebar top controls */}
@@ -81,18 +112,6 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                 className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-all"
               >
                 <PanelLeftClose size={16} />
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.92 }}
-                onClick={() => {
-                  // Signal new chat — reset to coder view with no session
-                  switchSession(null);
-                  setActiveMode('coder');
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/8 border border-white/8 text-[11px] font-semibold text-foreground/70 hover:text-foreground transition-all"
-              >
-                <Plus size={13} />
-                <span>New chat</span>
               </motion.button>
             </div>
 
@@ -110,25 +129,6 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               </div>
             </div>
 
-            {/* Navigation */}
-            <div className="px-2 pb-1 space-y-0.5">
-              <SideNavButton
-                icon={<MessageSquare size={14} />}
-                label="Coder"
-                active={activeMode === 'coder'}
-                onClick={() => setActiveMode('coder')}
-              />
-              <SideNavButton
-                icon={<Box size={14} />}
-                label="Models"
-                active={activeMode === 'registry'}
-                onClick={() => setActiveMode('registry')}
-              />
-            </div>
-
-            {/* Divider */}
-            <div className="mx-3 my-1.5 h-px bg-white/[0.05]" />
-
             {/* Recent chats label */}
             <div className="px-3 py-1">
               <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground/30">
@@ -138,6 +138,17 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
             {/* Session list */}
             <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5 scrollbar-thin scrollbar-thumb-white/5">
+              <div className="mb-1">
+                <SideNavButton
+                  icon={<Plus size={14} />}
+                  label="New chat"
+                  active={activeMode === 'coder' && sessions.length > 0 && activeSid === sessions[0]?.id && sessions[0]?.messages.length === 0}
+                  onClick={() => {
+                    createSession([]);
+                    setActiveMode('coder');
+                  }}
+                />
+              </div>
               <AnimatePresence>
                 {filteredSessions.length === 0 ? (
                   <div className="text-center py-8">
@@ -160,8 +171,18 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               </AnimatePresence>
             </div>
 
+            {/* Models Nav Button (Moved to bottom above user badge/settings) */}
+            <div className="px-2 pt-2 pb-2 border-t border-white/[0.05] mt-auto">
+              <SideNavButton
+                icon={<Box size={14} />}
+                label="Models"
+                active={activeMode === 'registry'}
+                onClick={() => setActiveMode('registry')}
+              />
+            </div>
+
             {/* Bottom user badge */}
-            <div className="px-3 py-3 border-t border-white/[0.05] mt-auto">
+            <div className="px-3 py-3 border-t border-white/[0.05]">
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
                   <User size={13} className="text-white" />

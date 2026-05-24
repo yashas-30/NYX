@@ -4,7 +4,7 @@ import { Trash2, ChevronDown, ChevronUp, Key, Network, HelpCircle, BookOpen, Ext
 import { UI_TEXT } from '../../lib/design-system/copy';
 import { useTokenUsage } from '../../context/TokenUsageContext';
 import { AVAILABLE_MODELS } from '../../config/models';
-import { toast } from 'sonner';
+import { toast } from '@/src/components/ui/sonner';
 
 interface ProviderConfig {
   id: string;

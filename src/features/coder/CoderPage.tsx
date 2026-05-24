@@ -7,7 +7,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { FREE_OPENCODE_MODELS } from '@/src/config/models';
 import { ModelDefinition, Provider } from '@/src/core/types';
-import { toast } from 'sonner';
+import { toast } from '@/src/components/ui/sonner';
 
 import { MessageList, PromptInput } from './components';
 import { getCustomModelIcon } from './utils/modelIcons';

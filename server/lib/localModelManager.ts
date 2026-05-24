@@ -260,6 +260,20 @@ export const MODEL_PRESETS: ModelPreset[] = [
     vramRequired: '6 GB VRAM'
   },
   {
+    id: 'deepseek-r1-distill-qwen-14b',
+    name: 'DeepSeek R1 Distill Qwen 14B (Q4_K_M)',
+    provider: 'deepseek',
+    paramCount: '14B',
+    quantization: 'Q4_K_M',
+    contextLength: '32K',
+    size: '9.0 GB',
+    url: 'https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf',
+    fileName: 'DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf',
+    description: 'DeepSeek R1 reasoning model distilled into Qwen 14B. Outstanding reasoning and STEM logic for high-end devices.',
+    ramRequired: '16 GB RAM',
+    vramRequired: '10 GB VRAM'
+  },
+  {
     id: 'deepseek-r1-distill-llama-8b',
     name: 'DeepSeek R1 Distill Llama 8B (Q4_K_M)',
     provider: 'deepseek',

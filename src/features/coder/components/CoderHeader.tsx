@@ -86,31 +86,6 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
         </div>
 
         <div className="w-px h-4 bg-white/10 mx-1" />
-
-        {/* Mode tabs */}
-        <div className="flex items-center gap-0.5 bg-white/4 p-0.5 rounded-xl border border-white/[0.06]">
-          <TabButton
-            active={activeMode === 'coder'}
-            onClick={() => onModeChange('coder')}
-            icon={<TerminalIcon size={11} />}
-            label="NYX 2.0"
-            activeClass="bg-violet-500/15 text-violet-300 border-violet-500/25"
-          />
-          <TabButton
-            active={activeMode === 'registry'}
-            onClick={() => onModeChange('registry')}
-            icon={<Box size={11} />}
-            label="Models"
-            activeClass="bg-primary/10 text-primary border-primary/20"
-          />
-          <TabButton
-            active={activeMode === 'settings'}
-            onClick={() => onModeChange('settings')}
-            icon={<SettingsIcon size={11} />}
-            label="Settings"
-            activeClass="bg-primary/10 text-primary border-primary/20"
-          />
-        </div>
       </div>
 
       {/* Right: metrics + status + clear */}

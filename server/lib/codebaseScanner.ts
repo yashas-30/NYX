@@ -121,11 +121,25 @@ export class CodebaseScanner {
     let structureStr = 'PROJECT DIRECTORY MAP:\n';
     const folderKeys = Object.keys(folders).sort();
     
+    let lineCount = 0;
+    const maxLines = 30;
+
     for (const folder of folderKeys) {
+      if (lineCount >= maxLines) {
+        structureStr += `... [Directory map truncated, ${folderKeys.length - folderKeys.indexOf(folder)} folders hidden] ...\n`;
+        break;
+      }
       structureStr += `📁 ${folder}\n`;
+      lineCount++;
+
       const sortedFiles = folders[folder].sort();
       for (const f of sortedFiles) {
+        if (lineCount >= maxLines) {
+          structureStr += `  ... [and ${sortedFiles.length - sortedFiles.indexOf(f)} more files hidden] ...\n`;
+          break;
+        }
         structureStr += `  📄 ${f}\n`;
+        lineCount++;
       }
     }
     
@@ -229,12 +243,12 @@ export class CodebaseScanner {
   private static readFileSafely(absolutePath: string): string {
     try {
       const stats = fs.statSync(absolutePath);
-      // Cap individual file reads at 100KB to keep LLM context light
-      const maxSizeBytes = 100 * 1024;
+      // Cap individual file reads at 3KB to keep LLM context light and avoid local context window overflows
+      const maxSizeBytes = 3 * 1024;
       
       if (stats.size > maxSizeBytes) {
         const stream = fs.readFileSync(absolutePath, 'utf8');
-        return stream.substring(0, maxSizeBytes) + '\n\n... [File truncated due to size limit] ...';
+        return stream.substring(0, maxSizeBytes) + '\n\n... [File truncated due to local context size limit] ...';
       }
       
       return fs.readFileSync(absolutePath, 'utf8');

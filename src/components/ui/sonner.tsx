@@ -1,5 +1,5 @@
 import { useTheme } from "next-themes"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { Toaster as Sonner, type ToasterProps, toast as originalToast } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
 const Toaster = ({ ...props }: ToasterProps) => {
@@ -43,5 +43,39 @@ const Toaster = ({ ...props }: ToasterProps) => {
     />
   )
 }
+
+export function formatErrorMessage(msg: string): string {
+  if (!msg) return 'An unknown error occurred';
+  const lines = msg.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return 'An unknown error occurred';
+  
+  let firstLine = lines[0];
+  if (firstLine.length > 120) {
+    firstLine = firstLine.substring(0, 117) + '...';
+  }
+  if (lines.length > 1) {
+    firstLine += ' (see console for details)';
+  }
+  return firstLine;
+}
+
+export const toast = {
+  error: (message: string | React.ReactNode, data?: any) => {
+    if (typeof message === 'string') {
+      const cleanMessage = formatErrorMessage(message);
+      if (cleanMessage !== message) {
+        console.error(`[NYX Error Details]:\n${message}`);
+      }
+      return originalToast.error(cleanMessage, data);
+    }
+    return originalToast.error(message, data);
+  },
+  success: originalToast.success,
+  info: originalToast.info,
+  warning: originalToast.warning,
+  loading: originalToast.loading,
+  custom: originalToast.custom,
+  dismiss: originalToast.dismiss,
+};
 
 export { Toaster }

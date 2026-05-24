@@ -1,5 +1,5 @@
 import { Dispatch, SetStateAction } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/src/components/ui/sonner';
 
 export const updateApiKey = (
   setApiKeys: Dispatch<SetStateAction<Record<string, string>>>,

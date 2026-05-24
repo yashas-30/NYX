@@ -8,7 +8,7 @@ import { AVAILABLE_MODELS } from '@/src/config/models';
 import { getProviderLabel } from '../ui/ProviderIcon';
 import { ModelOption } from '@/src/types';
 import { useTokenUsage } from '@/src/context/TokenUsageContext';
-import { toast } from 'sonner';
+import { toast } from '@/src/components/ui/sonner';
 import { AIService } from '@/src/core/services/ai.service';
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -229,10 +229,18 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const handleRun = async (modelId: string) => {
     setActionInProgress(modelId);
     try {
+      let settings = {};
+      const savedSettings = localStorage.getItem('nyx_model_settings');
+      if (savedSettings) {
+        try {
+          settings = JSON.parse(savedSettings);
+        } catch {}
+      }
+
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId })
+        body: JSON.stringify({ modelId, settings })
       });
       if (res.ok) {
         toast.success('Model loaded natively in Resident RAM.');
@@ -527,8 +535,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                               <span className="text-[8px] font-extrabold text-foreground/80">{m.size}</span>
                             </div>
                             <div className="flex flex-col">
-                              <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">Required Spec</span>
-                              <span className="text-[8px] font-extrabold text-purple-400/80">{m.ramRequired}</span>
+                              <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">RAM / VRAM Required</span>
+                              <span className="text-[8px] font-extrabold text-purple-400/80">{m.vramRequired ? `${m.vramRequired} + ` : ''}{m.ramRequired}</span>
                             </div>
                           </div>
                         </div>
@@ -861,7 +869,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                 </div>
                                 <div className="flex flex-col col-span-2">
                                   <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">RAM / VRAM Required</span>
-                                  <span className="text-[8px] font-mono font-bold text-purple-400/80">{m.ramRequired}{m.vramRequired ? ` · ${m.vramRequired}` : ''}</span>
+                                  <span className="text-[8px] font-mono font-bold text-purple-400/80">{m.vramRequired ? `${m.vramRequired} + ` : ''}{m.ramRequired}</span>
                                 </div>
                               </div>
                             </div>
