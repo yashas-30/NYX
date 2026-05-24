@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
-const VAULT_DIR = path.join(process.cwd(), '.nyx-keys');
+import { VAULT_DIR } from './paths.ts';
 const VAULT_FILE = path.join(VAULT_DIR, 'vault.enc');
 
 // Derive 32-byte key for AES-256-GCM

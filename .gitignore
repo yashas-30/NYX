@@ -17,3 +17,5 @@ graphify-out/*
 !graphify-out/extract2.ps1
 scratch/
 .nyx-models/
+dist-server/
+dist-desktop/

@@ -2,9 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
-const WORKSPACE_DIR = process.cwd();
-const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL;
-const CACHE_DIR = isVercel ? '/tmp/.nyx-cache' : path.join(WORKSPACE_DIR, '.nyx-cache');
+import { CACHE_DIR } from './paths.ts';
 
 // Ensure cache directory exists
 if (!fs.existsSync(CACHE_DIR)) {

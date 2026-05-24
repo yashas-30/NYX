@@ -61,6 +61,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [vaultStatus, setVaultStatus] = useState<Record<string, boolean>>({});
   const [keysInput, setKeysInput] = useState<Record<string, string>>({});
 
+  const [workspacePath, setWorkspacePath] = useState<string>('');
+
+  const fetchWorkspacePath = async () => {
+    try {
+      const res = await fetch('/api/workspace');
+      if (res.ok) {
+        const data = await res.json();
+        setWorkspacePath(data.workspace);
+      }
+    } catch (e) {
+      console.error('Failed to fetch workspace path:', e);
+    }
+  };
+
+  const handleSelectWorkspace = async () => {
+    try {
+      const res = await fetch('/api/workspace/select', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.workspace) {
+          setWorkspacePath(data.workspace);
+          toast.success(`Active workspace updated: ${data.workspace}`);
+        } else if (data.fallback) {
+          toast.info('Please enter the workspace directory path in the text field.');
+        }
+      }
+    } catch (e: any) {
+      toast.error(`Directory selection failed: ${e.message}`);
+    }
+  };
+
   const fetchVaultStatus = async () => {
     try {
       const res = await fetch('/api/vault/status');
@@ -144,6 +175,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     fetchCacheStats();
     fetchEvolvedRules();
     fetchVaultStatus();
+    fetchWorkspacePath();
   }, []);
 
   const providers = PROVIDER_CONFIGS.map(p => ({
@@ -513,6 +545,80 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <Trash2 size={10} />
                   Reset Memory
                 </motion.button>
+              </div>
+            </div>
+
+            {/* Workspace Directory Configurator */}
+            <div className="mt-6 group p-5 rounded-3xl glass-panel hover:border-primary/25 transition-all duration-300 relative overflow-hidden shadow-lg">
+              {/* Gold/Orange Accent representing directory structures/projects */}
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-amber-500/30 via-orange-500/30 to-amber-500/30 opacity-70 group-hover:opacity-100 transition-opacity" />
+              
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-500">WORKSPACE CONFIGURATOR</p>
+                  <h3 className="text-xs font-bold text-foreground mt-0.5">Codebase Scanning Scope</h3>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                  File Index Target
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3 border border-white/10 rounded-xl bg-white/[0.01]">
+                  <div className="flex justify-between items-center mb-1 text-[9px] font-black uppercase tracking-wider text-muted-foreground/80">
+                    <span>Active Scanning Directory</span>
+                  </div>
+                  <div className="text-[11px] font-mono text-foreground/90 select-all break-all bg-black/30 border border-white/5 rounded-lg p-2.5 leading-normal">
+                    {workspacePath || 'Loading...'}
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    onClick={handleSelectWorkspace}
+                    className="flex-1 py-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-background text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-95 flex items-center justify-center gap-1.5"
+                  >
+                    <Globe size={12} />
+                    Select Directory
+                  </motion.button>
+                  
+                  <input
+                    type="text"
+                    placeholder="Or paste absolute directory path..."
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const val = e.currentTarget.value.trim();
+                        if (val) {
+                          try {
+                            const res = await fetch('/api/workspace', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ path: val })
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              setWorkspacePath(data.workspace);
+                              toast.success(`Workspace updated to: ${data.workspace}`);
+                              e.currentTarget.value = '';
+                            } else {
+                              const err = await res.json();
+                              toast.error(`Error: ${err.error}`);
+                            }
+                          } catch (err: any) {
+                            toast.error(`Failed to update workspace: ${err.message}`);
+                          }
+                        }
+                      }
+                    }}
+                    className="flex-[2] bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-amber-500/50 shadow-inner"
+                  />
+                </div>
+                
+                <p className="text-[10px] text-muted-foreground/80 leading-relaxed mt-1">
+                  Specifies the root directory for RAG codebase search indexing and terminal execution. Clicking "Select Directory" opens the native OS folder picker.
+                </p>
               </div>
             </div>
 

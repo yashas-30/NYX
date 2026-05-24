@@ -1,9 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const WORKSPACE_DIR = process.cwd();
-const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL;
-const CACHE_DIR = isVercel ? '/tmp/.nyx-cache' : path.join(WORKSPACE_DIR, '.nyx-cache');
+import { CACHE_DIR } from './paths.ts';
 const RULES_FILE = path.join(CACHE_DIR, 'critic-rules.json');
 
 export interface CriticRule {

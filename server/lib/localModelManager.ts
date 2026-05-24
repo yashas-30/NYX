@@ -602,7 +602,7 @@ export interface DownloadProgress {
   error?: string;
 }
 
-const BASE_DIR = path.join(process.cwd(), '.nyx-models');
+import { MODELS_DIR as BASE_DIR } from './paths.ts';
 const MODELS_DIR = path.join(BASE_DIR, 'models');
 const STATE_FILE = path.join(BASE_DIR, 'downloads.json');
 

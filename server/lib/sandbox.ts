@@ -1,5 +1,6 @@
 import { spawn, execSync, ChildProcess } from 'child_process';
 import path from 'path';
+import { getWorkspaceRoot } from './paths.ts';
 
 let isDockerAvailableCache: boolean | null = null;
 
@@ -21,7 +22,7 @@ export interface SandboxSpawnResult {
 }
 
 export function spawnSandbox(command: string, cwd?: string): SandboxSpawnResult {
-  const targetCwd = cwd || process.cwd();
+  const targetCwd = cwd || getWorkspaceRoot();
   
   // 1. Scan for blocked dangerous patterns
   const dangerousPatterns = ['rm -rf /', 'curl | bash', 'mkfs', 'dd'];

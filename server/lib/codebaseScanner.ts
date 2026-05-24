@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { getWorkspaceRoot } from './paths.ts';
 
 // Directory and file exclusions to maintain high performance and avoid context bloat
 const EXCLUDE_DIRS = new Set([
@@ -106,7 +107,7 @@ export class CodebaseScanner {
    * Builds a tree or flat-list representation of the directory structure
    */
   public static getDirectoryStructure(): string {
-    const root = process.cwd();
+    const root = getWorkspaceRoot();
     const files = this.scanDirectory(root);
     
     // Group files by relative parent directory
@@ -162,7 +163,7 @@ export class CodebaseScanner {
    * Searches the codebase for relevant files matching the query
    */
   public static search(query: string, maxResults = 5): SearchResult[] {
-    const root = process.cwd();
+    const root = getWorkspaceRoot();
     console.log(`[Codebase Scanner] Searching index in "${root}" for: "${query}"`);
     
     const files = this.scanDirectory(root);

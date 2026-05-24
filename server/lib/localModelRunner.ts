@@ -5,7 +5,7 @@ import os from 'os';
 import { spawn, ChildProcess, exec } from 'child_process';
 import { LocalModelManager } from './localModelManager.ts';
 
-const BASE_DIR = path.join(process.cwd(), '.nyx-models');
+import { MODELS_DIR as BASE_DIR } from './paths.ts';
 const BIN_DIR = path.join(BASE_DIR, 'bin');
 const BINARY_PATH = path.join(BIN_DIR, 'llama-server.exe');
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { RulesDb } from '../lib/rulesDb.ts';
 import { CodebaseScanner } from '../lib/codebaseScanner.ts';
+import { getWorkspaceRoot } from '../lib/paths.ts';
 import fs from 'fs';
 import path from 'path';
 
@@ -374,10 +375,11 @@ nyxRouter.post('/write-file', async (req, res) => {
   }
 
   try {
-    const fullPath = path.resolve(process.cwd(), filePath);
+    const workspaceRoot = getWorkspaceRoot();
+    const fullPath = path.resolve(workspaceRoot, filePath);
     
     // Safety check: ensure file is inside the workspace to prevent directory traversal
-    if (!fullPath.startsWith(process.cwd())) {
+    if (!fullPath.startsWith(workspaceRoot)) {
       return res.status(403).json({ error: 'Directory traversal forbidden. Path must reside within the workspace.' });
     }
 

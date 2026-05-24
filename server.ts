@@ -6,6 +6,7 @@ import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import { fileURLToPath } from 'url';
+import { isProd, VAULT_DIR, LOGS_DIR, getWorkspaceRoot, setWorkspaceRoot } from './server/lib/paths.ts';
 import path from 'path';
 import http from 'node:http';
 import dns from 'node:dns';
@@ -42,6 +43,7 @@ try { dns.setServers(['1.1.1.1', '8.8.8.8']); } catch { }
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 const PORT       = parseInt(process.env.PORT || '3000', 10);
+const FASTIFY_PORT = parseInt(process.env.FASTIFY_PORT || '3001', 10);
 
 import { spawn } from 'child_process';
 
@@ -64,21 +66,12 @@ function startPythonHFServer() {
 }
 
 async function startServer() {
-  // Ensure directories exist
-  const VAULT_DIR = path.join(process.cwd(), '.nyx-keys');
-  const LOGS_DIR = path.join(process.cwd(), '.nyx-logs');
-  if (!fs.existsSync(VAULT_DIR)) fs.mkdirSync(VAULT_DIR, { recursive: true });
-  if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
-
-  // Start the Python Hugging Face server on port 3002 (disabled by default to optimize CPU RAM; GGUF local models execute in GPU VRAM instead)
-  // startPythonHFServer();
-
   // Start Fastify server for high-performance streaming API proxying
   try {
     await warmupDNS();
-    await startFastifyServer(3001);
+    await startFastifyServer(FASTIFY_PORT);
   } catch (err: any) {
-    console.error('Failed to start Fastify server:', err.message);
+    console.error(`Failed to start Fastify server on port ${FASTIFY_PORT}:`, err.message);
   }
 
   const app = express();
@@ -447,7 +440,7 @@ async function startServer() {
   // ── Fastify routes (all AI providers) ───────────────────────────────────────
   // Proxy requests to Fastify server on port 3001 to maintain streaming performance
   app.all('/api/fastify/*', async (req, res) => {
-    const targetUrl = `http://127.0.0.1:3001${req.url.replace('/api/fastify', '')}`;
+    const targetUrl = `http://127.0.0.1:${FASTIFY_PORT}${req.url.replace('/api/fastify', '')}`;
     try {
       const headers: Record<string, string> = {};
       Object.entries(req.headers).forEach(([key, value]) => {
@@ -495,9 +488,66 @@ async function startServer() {
     }
   });
 
-  // ── Vite dev middleware ───────────────────────────────────────────────────────
-  const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
-  app.use(vite.middlewares);
+  // ── Workspace configuration endpoints ──────────────────────────────────────────
+  app.get('/api/workspace', (req, res) => {
+    res.json({ workspace: getWorkspaceRoot() });
+  });
+
+  app.post('/api/workspace', (req, res) => {
+    const { path: newPath } = req.body;
+    if (!newPath) {
+      return res.status(400).json({ error: 'Missing path in request body' });
+    }
+    const success = setWorkspaceRoot(newPath);
+    if (success) {
+      res.json({ success: true, workspace: getWorkspaceRoot() });
+    } else {
+      res.status(400).json({ error: 'Directory does not exist or is invalid' });
+    }
+  });
+
+  app.post('/api/workspace/select', async (req, res) => {
+    if (process.versions.electron) {
+      try {
+        const { dialog } = await import('electron');
+        const result = await dialog.showOpenDialog({
+          properties: ['openDirectory'],
+          title: 'Select Active Codebase Workspace'
+        });
+        if (!result.canceled && result.filePaths.length > 0) {
+          const selectedDir = result.filePaths[0];
+          setWorkspaceRoot(selectedDir);
+          return res.json({ success: true, workspace: selectedDir });
+        } else {
+          return res.json({ success: false, message: 'Selection cancelled' });
+        }
+      } catch (e: any) {
+        return res.status(500).json({ error: `Electron dialog error: ${e.message}` });
+      }
+    } else {
+      return res.json({ fallback: true, message: 'Web environment: please input path manually' });
+    }
+  });
+
+  // ── Vite Dev Middleware or Static Production Assets ────────────────────────
+  if (isProd) {
+    let distPath = path.join(__dirname, 'dist');
+    // Self-healing path resolution: check if dist folder exists locally or in parent dir (dist-server sibling)
+    if (!fs.existsSync(path.join(distPath, 'index.html'))) {
+      distPath = path.join(__dirname, '../dist');
+    }
+    console.log(`[Server] Serving static production assets from: ${distPath}`);
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'Endpoint not found' });
+      }
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  } else {
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
+    app.use(vite.middlewares);
+  }
 
   // ── HTTP server with keep-alive ───────────────────────────────────────────────
   // Keep-alive ensures the browser reuses the same TCP connection for every

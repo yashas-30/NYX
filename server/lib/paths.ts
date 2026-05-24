@@ -1,0 +1,83 @@
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
+
+// Check if running in production mode or packaged Electron app
+export const isProd = process.env.NODE_ENV === 'production' || 
+                      process.env.IS_PACKAGED === 'true';
+
+// Base user data directory for NYX application state
+export const APP_STATE_DIR = isProd
+  ? path.join(os.homedir(), '.nyx')
+  : process.cwd();
+
+// Specific sub-folders for keys, logs, models, and cache
+export const VAULT_DIR = path.join(APP_STATE_DIR, '.nyx-keys');
+export const LOGS_DIR = path.join(APP_STATE_DIR, '.nyx-logs');
+export const MODELS_DIR = path.join(APP_STATE_DIR, '.nyx-models');
+export const CACHE_DIR = path.join(APP_STATE_DIR, '.nyx-cache');
+
+// Ensure directories exist
+const dirs = [APP_STATE_DIR, VAULT_DIR, LOGS_DIR, MODELS_DIR, CACHE_DIR];
+dirs.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (e) {
+      console.error(`[Paths] Failed to create directory: ${dir}`, e);
+    }
+  }
+});
+
+// Workspace folder management
+const CONFIG_FILE = path.join(APP_STATE_DIR, 'config.json');
+let workspaceRoot = process.cwd();
+
+/**
+ * Load the saved workspace path from config.json
+ */
+export function loadWorkspaceRoot() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      if (config.workspaceRoot && fs.existsSync(config.workspaceRoot)) {
+        workspaceRoot = path.resolve(config.workspaceRoot);
+        console.log(`[Paths] Loaded workspace root: ${workspaceRoot}`);
+      }
+    }
+  } catch (e) {
+    console.error('[Paths] Failed to load workspace config:', e);
+  }
+}
+
+/**
+ * Set and persist a new workspace path
+ */
+export function setWorkspaceRoot(newRoot: string): boolean {
+  try {
+    const resolved = path.resolve(newRoot);
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+      workspaceRoot = resolved;
+      const config = fs.existsSync(CONFIG_FILE) 
+        ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) 
+        : {};
+      config.workspaceRoot = workspaceRoot;
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+      console.log(`[Paths] Workspace root updated and saved: ${workspaceRoot}`);
+      return true;
+    }
+  } catch (e) {
+    console.error(`[Paths] Failed to set workspace root to ${newRoot}:`, e);
+  }
+  return false;
+}
+
+/**
+ * Get active workspace path
+ */
+export function getWorkspaceRoot(): string {
+  return workspaceRoot;
+}
+
+// Load workspace at startup
+loadWorkspaceRoot();
