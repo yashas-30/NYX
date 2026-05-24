@@ -14,7 +14,7 @@
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
 
-**NYX** is a premium AI coding environment that runs powerful language models **locally on your GPU** and connects seamlessly to every major cloud AI provider — all in a single, beautifully designed interface.
+**NYX** is a premium, high-fidelity AI coding environment and runner that executes powerful local models **locally on your GPU** and orchestrates cloud LLMs, featuring advanced model management, side-by-side comparisons, and zero-delay streaming inside a beautifully crafted interface.
 
 [**Live Demo**](https://yashas-30.github.io/NYX) · [**Releases**](https://github.com/yashas-30/NYX/releases) · [**Issues**](https://github.com/yashas-30/NYX/issues)
 

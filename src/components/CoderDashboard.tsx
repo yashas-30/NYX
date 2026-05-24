@@ -80,7 +80,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
   return (
     <ErrorBoundary>
-      <main className={`h-[100dvh] w-screen overflow-hidden flex bg-[#131315] text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
+      <main className={`h-[100dvh] w-screen overflow-hidden flex bg-background text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
 
         {/* Backdrop for mobile */}
         <AnimatePresence>
@@ -101,7 +101,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
           initial="open"
           animate={sidebarOpen ? 'open' : 'closed'}
           transition={{ type: 'spring', stiffness: 350, damping: 38 }}
-          className={`h-full overflow-hidden flex flex-col bg-[#1a1a1e] border-r border-white/[0.05] relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl' : 'flex-none z-20'}`}
+          className={`h-full overflow-hidden flex flex-col bg-secondary/95 backdrop-blur-xl border-r border-border relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl w-[280px]' : 'flex-none z-20'}`}
         >
           <div className="flex flex-col h-full min-w-[280px]">
             {/* Sidebar top controls */}
@@ -109,7 +109,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               <motion.button
                 whileTap={{ scale: 0.92 }}
                 onClick={() => setSidebarOpen(false)}
-                className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-all"
+                className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted/40 transition-all"
               >
                 <PanelLeftClose size={16} />
               </motion.button>
@@ -117,14 +117,14 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
             {/* Search bar */}
             <div className="px-3 pb-2">
-              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/8">
-                <Search size={11} className="text-muted-foreground/40 shrink-0" />
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-border focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/25 transition-all">
+                <Search size={12} className="text-muted-foreground/45 shrink-0" />
                 <input
                   type="text"
                   placeholder="Search chats..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="flex-1 bg-transparent text-[11px] text-foreground/80 placeholder:text-muted-foreground/30 outline-none font-medium"
+                  className="flex-1 bg-transparent text-[11px] text-foreground/90 placeholder:text-muted-foreground/40 outline-none font-medium"
                 />
               </div>
             </div>
@@ -142,7 +142,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                 <SideNavButton
                   icon={<Plus size={14} />}
                   label="New chat"
-                  active={activeMode === 'coder' && sessions.length > 0 && activeSid === sessions[0]?.id && sessions[0]?.messages.length === 0}
+                  active={false}
                   onClick={() => {
                     createSession([]);
                     setActiveMode('coder');
@@ -184,7 +184,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
             {/* Bottom user badge */}
             <div className="px-3 py-3 border-t border-white/[0.05]">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-400 to-primary flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(34,211,238,0.25)]">
                   <User size={13} className="text-white" />
                 </div>
                 <div className="flex flex-col min-w-0">
@@ -194,7 +194,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                 <motion.button
                   whileTap={{ scale: 0.9 }}
                   onClick={() => setActiveMode('settings')}
-                  className="ml-auto p-1.5 rounded-lg text-muted-foreground/40 hover:text-foreground hover:bg-white/5 transition-all"
+                  className="ml-auto p-1.5 rounded-lg text-muted-foreground/40 hover:text-foreground hover:bg-muted/40 transition-all"
                 >
                   <Settings size={13} />
                 </motion.button>
@@ -306,22 +306,22 @@ const SideNavButton: React.FC<{
   <motion.button
     whileTap={{ scale: 0.97 }}
     onClick={onClick}
-    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all relative overflow-hidden ${
+    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[12px] font-bold transition-all relative overflow-hidden cursor-pointer ${
       active
-        ? 'bg-gradient-to-r from-white/[0.08] to-white/[0.04] text-foreground border border-white/[0.06] shadow-sm'
-        : 'text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/4 border border-transparent'
+        ? 'bg-gradient-to-r from-primary/10 to-primary/5 text-primary border border-primary/20 shadow-[0_0_15px_rgba(34,211,238,0.05)]'
+        : 'text-muted-foreground/60 hover:text-foreground/85 hover:bg-muted/40 border border-transparent'
     }`}
   >
     {active && (
       <motion.div
         layoutId="sidebarActiveIndicator"
-        className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r bg-primary"
+        className="absolute left-0 top-1/2 -translate-y-1/2 w-[3.5px] h-5 rounded-r bg-primary shadow-[0_0_8px_rgba(34,211,238,0.6)]"
         transition={{ type: 'spring', stiffness: 350, damping: 30 }}
       />
     )}
-    <span className={`transition-transform duration-200 ${active ? 'text-primary scale-105' : 'text-muted-foreground/50'}`}>{icon}</span>
+    <span className={`transition-transform duration-200 ${active ? 'scale-105' : 'text-muted-foreground/50'}`}>{icon}</span>
     <span className="translate-y-[-0.5px]">{label}</span>
-    {active && <ChevronRight size={11} className="ml-auto opacity-40" />}
+    {active && <ChevronRight size={11} className="ml-auto opacity-60" />}
   </motion.button>
 );
 
@@ -345,15 +345,15 @@ const SessionItem: React.FC<{
       onMouseLeave={() => setHovered(false)}
       className={`group relative flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all border ${
         isActive
-          ? 'bg-gradient-to-r from-white/[0.07] to-white/[0.03] text-foreground border-white/[0.05] shadow-sm'
-          : 'text-muted-foreground/60 hover:bg-white/4 hover:text-foreground/75 border-transparent'
+          ? 'bg-gradient-to-r from-primary/8 to-primary/3 text-primary border-primary/15'
+          : 'text-muted-foreground/60 hover:bg-muted/40 hover:text-foreground/85 border-transparent'
       }`}
       onClick={onClick}
     >
-      <MessageSquare size={12} className={`shrink-0 transition-transform duration-200 ${isActive ? 'text-primary/70 scale-105' : 'opacity-50 group-hover:scale-105'}`} />
-      <span className="flex-1 text-[11px] font-semibold truncate translate-y-[-0.5px]">{session.title}</span>
+      <MessageSquare size={12} className={`shrink-0 transition-transform duration-200 ${isActive ? 'scale-105' : 'opacity-50 group-hover:scale-105'}`} />
+      <span className="flex-1 text-[11px] font-bold truncate translate-y-[-0.5px]">{session.title}</span>
       <AnimatePresence>
-        {hovered && (
+        {(hovered || isActive) && (
           <motion.button
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}

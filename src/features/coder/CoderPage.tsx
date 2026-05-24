@@ -117,6 +117,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
           isLoading={isLoading}
           onCopy={copyToClipboard}
           copiedId={copiedId}
+          suggestedPrompts={suggestedPrompts}
+          onSuggestedPromptClick={setPrompt}
         />
 
         <PromptInput

@@ -47,6 +47,7 @@
   
   /* Animation */
   --ease-apple: cubic-bezier(0.23, 1, 0.32, 1);
+
   --duration-normal: 300ms;
   --duration-fast: 150ms;
   
@@ -54,35 +55,35 @@
 }
 
 .dark {
-  /* Dark Mode (Apple System Gray Theme - Legible Gray) */
-  --background: #1C1C1E; /* Apple System Background Dark */
-  --foreground: #FFFFFF;
-  --card: #2C2C2E; /* Apple Secondary Background */
-  --card-foreground: #FFFFFF;
-  --popover: #2C2C2E;
-  --popover-foreground: #FFFFFF;
+  /* Dark Mode (Deep Space Charcoal & Aether Cyan) */
+  --background: #0B0E14; /* Deep Space Slate-Charcoal */
+  --foreground: #E6EDF3; /* Off-white for high legibility and reduced eye strain */
+  --card: #111622; /* Surface Deep Card Fill */
+  --card-foreground: #E6EDF3;
+  --popover: #111622;
+  --popover-foreground: #E6EDF3;
   
-  --primary: #0A84FF;
-  --primary-rgb: 10, 132, 255;
-  --primary-foreground: #FFFFFF;
-  --secondary: #3A3A3C; /* System Gray 4 */
-  --secondary-foreground: #EBEBF5;
-  --muted: #3A3A3C;
-  --muted-foreground: #EBEBF5;
-  --accent: #0A84FF;
-  --accent-rgb: 10, 132, 255;
-  --accent-foreground: #FFFFFF;
+  --primary: #22D3EE; /* Aether Cyan */
+  --primary-rgb: 34, 211, 238;
+  --primary-foreground: #000000;
+  --secondary: #1B2336; /* Surface Elevated */
+  --secondary-foreground: #8B949E; /* Highly Legible Muted Text */
+  --muted: #1B2336;
+  --muted-foreground: #8B949E;
+  --accent: #22D3EE;
+  --accent-rgb: 34, 211, 238;
+  --accent-foreground: #000000;
   --destructive: #FF453A;
   
-  --border: rgba(255, 255, 255, 0.3);
-  --border-strong: rgba(255, 255, 255, 0.6);
-  --input: rgba(255, 255, 255, 0.06);
-  --ring: rgba(10, 132, 255, 0.5);
+  --border: rgba(255, 255, 255, 0.12); /* Higher contrast borders */
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --input: rgba(255, 255, 255, 0.05);
+  --ring: rgba(34, 211, 238, 0.4);
   
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 32px 64px -16px rgba(0, 0, 0, 0.8);
-  --shadow-terminal: 0 20px 40px -12px rgba(0, 0, 0, 0.7);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 32px 64px -16px rgba(0, 0, 0, 0.9);
+  --shadow-terminal: 0 20px 40px -12px rgba(0, 0, 0, 0.8);
   
   color-scheme: dark;
 }
@@ -501,4 +502,74 @@
 
 .prose-nyx ol li::marker {
   color: color-mix(in srgb, currentColor 70%, transparent) !important;
+}
+
+/* ── Custom Glassmorphism & Neon Spells ────────────────────── */
+.glass-panel {
+  background: rgba(17, 22, 34, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.neon-border {
+  border-color: rgba(34, 211, 238, 0.3) !important;
+  box-shadow: 0 0 15px rgba(34, 211, 238, 0.05);
+}
+
+.neon-glow-cyan {
+  text-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+}
+
+.btn-tech {
+  @apply px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all duration-200 border cursor-pointer flex items-center justify-center gap-1.5;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--foreground);
+}
+
+.btn-tech:hover {
+  background: rgba(34, 211, 238, 0.08);
+  border-color: rgba(34, 211, 238, 0.3);
+  color: var(--primary);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.05);
+}
+
+.btn-tech:active {
+  transform: translateY(1px);
+}
+
+/* ── Mobile-first Sizing and Touch Targets ─────────────────── */
+@media (max-width: 640px) {
+  /* Increase touch targets to min 44px */
+  button, a, [role="button"] {
+    min-height: 40px;
+    min-width: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Make containers fit mobile screens perfectly */
+  .max-w-xl, .max-w-2xl, .max-w-3xl, .max-w-4xl {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* Reduce paddings for cards and containers */
+  .p-6 {
+    padding: 1rem !important;
+  }
+  .p-4 {
+    padding: 0.75rem !important;
+  }
+  .px-6 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+  
+  /* Stacking on mobile */
+  .grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
 }

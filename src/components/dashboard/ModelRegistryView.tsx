@@ -43,7 +43,7 @@ const SectionHeader: React.FC<{
       </div>
       <div>
         <h3 className="text-sm font-bold tracking-tight text-foreground">{title}</h3>
-        <p className="text-[9px] font-medium text-muted-foreground/70 uppercase tracking-widest mt-0.5">{subtitle}</p>
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">{subtitle}</p>
       </div>
     </div>
     {children && <div className="flex items-center gap-2">{children}</div>}
@@ -54,8 +54,8 @@ const SectionHeader: React.FC<{
 const EmptyState: React.FC<{ message: string; hint: string }> = ({ message, hint }) => (
   <div className="py-12 rounded-2xl border border-dashed border-white/15 dark:border-white/5 flex flex-col items-center justify-center text-center bg-white/10 dark:bg-white/5">
     <Box size={32} className="text-muted-foreground/15 mb-3" />
-    <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/80">{message}</p>
-    <p className="text-[8px] text-muted-foreground/60 mt-1.5 max-w-[280px]">{hint}</p>
+    <p className="text-[11px] font-black uppercase tracking-[0.25em] text-muted-foreground">{message}</p>
+    <p className="text-[11px] text-muted-foreground mt-1.5 max-w-[280px]">{hint}</p>
   </div>
 );
 
@@ -82,15 +82,15 @@ const ModelCard: React.FC<{
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <span className="inline-block text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+            <span className="inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
               {providerLabel}
             </span>
             {status && (
               <span className={`
-                text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full
-                ${status === 'online' ? 'bg-emerald-500/10 text-emerald-500' :
-                  status === 'offline' ? 'bg-red-500/10 text-red-500' :
-                  'bg-amber-500/10 text-amber-500'}
+                text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border
+                ${status === 'online' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                  status === 'offline' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                  'bg-amber-500/10 text-amber-500 border-amber-500/20'}
               `}>
                 {status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Auth'}
               </span>
@@ -103,7 +103,7 @@ const ModelCard: React.FC<{
       </div>
 
       {/* Description */}
-      <p className="text-[9px] text-muted-foreground/80 line-clamp-2 leading-relaxed font-medium">{description}</p>
+      <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed font-medium">{description}</p>
 
       {/* Specs grid */}
       {(specs || (usage && hasKey)) && (
@@ -111,24 +111,24 @@ const ModelCard: React.FC<{
           {specs && (
             <>
               <div className="flex flex-col">
-                <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/70">Context</span>
-                <span className="text-[8px] font-bold text-foreground/70">{specs.contextWindow}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Context</span>
+                <span className="text-[10px] font-mono font-bold text-foreground/80">{specs.contextWindow}</span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/70">Modality</span>
-                <span className="text-[8px] font-bold text-foreground/70">{specs.modality}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Modality</span>
+                <span className="text-[10px] font-mono font-bold text-foreground/80">{specs.modality}</span>
               </div>
             </>
           )}
           {usage && hasKey && (
             <>
               <div className="flex flex-col">
-                <span className="text-[6px] font-black uppercase tracking-widest text-primary/50">Used</span>
-                <span className="text-[8px] font-bold text-primary/80">{(usage.used / 1000).toFixed(1)}k</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-primary/75">Used</span>
+                <span className="text-[10px] font-mono font-bold text-primary/80">{(usage.used / 1000).toFixed(1)}k</span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[6px] font-black uppercase tracking-widest text-emerald-500/50">Remaining</span>
-                <span className="text-[8px] font-bold text-emerald-400/80">{(usage.remaining / 1000).toFixed(1)}k</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500/75">Remaining</span>
+                <span className="text-[10px] font-mono font-bold text-emerald-400">{(usage.remaining / 1000).toFixed(1)}k</span>
               </div>
             </>
           )}
@@ -143,7 +143,7 @@ const ModelCard: React.FC<{
           className="mt-2 p-2.5 rounded-full bg-destructive/10 border border-destructive/20 flex items-center justify-center gap-2"
         >
           <div className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
-          <span className="text-[8px] font-bold uppercase tracking-widest text-destructive">Quota Reached</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-destructive">Quota Reached</span>
         </motion.div>
       )}
     </motion.div>
@@ -417,7 +417,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 }}
                 className="
                   bg-white/40 dark:bg-zinc-900/30 backdrop-blur-md border border-white/20 dark:border-white/5 rounded-full
-                  text-[9px] font-medium text-foreground
+                  text-[11px] font-medium text-foreground
                   pl-8 pr-3 py-1.5 w-40 sm:w-48
                   outline-none focus:border-primary/20
                   transition-all placeholder:text-muted-foreground/20 shadow-sm
@@ -432,7 +432,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   key={f}
                   onClick={() => setFilter(f)}
                   className={`
-                    px-3 py-1 rounded-full text-[8px] font-bold uppercase tracking-tight transition-all
+                    px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-tight transition-all
                     ${filter === f
                       ? 'bg-primary text-white shadow-lg'
                       : 'text-muted-foreground/60 hover:text-foreground hover:bg-foreground/5'
@@ -462,7 +462,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Direct RAM Load Status Badge */}
                   <div className={`
-                    inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[8px] font-bold uppercase tracking-tight
+                    inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-tight
                     ${activeNativeId 
                       ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
                       : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'}
@@ -478,7 +478,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   <motion.button
                     whileTap={{ scale: 0.96 }}
                     onClick={() => setShowDownloadModal(true)}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-purple-600 hover:bg-purple-500 border border-purple-500/20 hover:border-purple-500/40 text-[8px] font-black uppercase tracking-wider text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-purple-600 hover:bg-purple-500 border border-purple-500/20 hover:border-purple-500/40 text-[11px] font-black uppercase tracking-wider text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 transition-all cursor-pointer"
                   >
                     <Download size={10} />
                     <span>Browse &amp; Download</span>
@@ -532,23 +532,23 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                         <div>
                           {/* Presets badges */}
                           <div className="flex items-center justify-between mb-2">
-                            <span className="inline-block text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                            <span className="inline-block text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
                               NYX Native
                             </span>
                             <div className="flex items-center gap-1.5">
                               {isResident && (
-                                <span className="inline-flex items-center gap-1 text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                                   Resident RAM
                                 </span>
                               )}
                               {isCompleted && !isResident && (
-                                <span className="text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 dark:text-zinc-300 border border-zinc-500/20">
+                                <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 dark:text-zinc-300 border border-zinc-500/20">
                                   Ready
                                 </span>
                               )}
                               {isDownloading && (
-                                <span className="text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
+                                <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
                                   Downloading
                                 </span>
                               )}
@@ -558,19 +558,19 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                           <h4 className="text-[12px] font-black tracking-tight text-foreground group-hover:text-purple-400 transition-colors">
                             {m.name}
                           </h4>
-                          <p className="text-[9px] text-muted-foreground/80 line-clamp-2 leading-relaxed font-medium mt-1">
+                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed font-medium mt-1">
                             {m.description}
                           </p>
 
                           {/* Technical attributes */}
                           <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-border/30">
                             <div className="flex flex-col">
-                              <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">GGUF File Size</span>
-                              <span className="text-[8px] font-extrabold text-foreground/80">{m.size}</span>
+                              <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">GGUF File Size</span>
+                              <span className="text-[10px] font-mono font-extrabold text-foreground/80">{m.size}</span>
                             </div>
                             <div className="flex flex-col">
-                              <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">RAM / VRAM Required</span>
-                              <span className="text-[8px] font-extrabold text-purple-400/80">{m.vramRequired ? `${m.vramRequired} + ` : ''}{m.ramRequired}</span>
+                              <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">RAM / VRAM Required</span>
+                              <span className="text-[10px] font-mono font-extrabold text-purple-400">{m.vramRequired ? `${m.vramRequired} + ` : ''}{m.ramRequired}</span>
                             </div>
                           </div>
                         </div>
@@ -579,7 +579,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                         <div className="mt-2.5 pt-2.5 border-t border-border/30">
                           {isDownloading && (
                             <div className="space-y-1.5">
-                              <div className="flex items-center justify-between text-[7px] font-black uppercase tracking-widest text-muted-foreground">
+                              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                                 <span>{progress.progressPercentage}% Completed</span>
                                 <span>{progress.speedMbps > 0 ? `${progress.speedMbps} MB/s` : 'Connecting...'}</span>
                               </div>
@@ -592,7 +592,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                   transition={{ duration: 0.3 }}
                                 />
                               </div>
-                              <div className="text-[7px] font-medium text-muted-foreground/50 text-right">
+                              <div className="text-[10px] font-medium text-muted-foreground/80 text-right">
                                 {progress.totalBytes > 0 
                                   ? `${(progress.bytesDownloaded / (1024 * 1024)).toFixed(0)} MB / ${(progress.totalBytes / (1024 * 1024)).toFixed(0)} MB`
                                   : 'Negotiating HTTP download streams...'}
@@ -601,7 +601,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                           )}
 
                           {m.status === 'failed' && (
-                            <div className="p-2 mb-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[7px] font-semibold text-red-400 flex items-start gap-1.5">
+                            <div className="p-2 mb-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[10px] font-semibold text-red-400 flex items-start gap-1.5">
                               <AlertCircle size={10} className="shrink-0 mt-0.5" />
                               <span>{progress.error || 'Download failed. Please check network connections.'}</span>
                             </div>
@@ -614,7 +614,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                 onClick={() => handleDownload(m.id)}
                                 disabled={isCurrentAction || !!actionInProgress}
                                 className="
-                                  w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                  w-full py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
                                   bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 disabled:opacity-40 cursor-pointer
                                 "
                               >
@@ -638,7 +638,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                 onClick={() => handleRun(m.id)}
                                 disabled={isCurrentAction || !!actionInProgress}
                                 className="
-                                  w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                  w-full py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
                                   bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 disabled:opacity-40 cursor-pointer
                                 "
                               >
@@ -663,7 +663,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                   onClick={() => handleStop(m.id)}
                                   disabled={isCurrentAction || !!actionInProgress}
                                   className="
-                                    flex-1 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                    flex-1 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
                                     bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 disabled:opacity-40 cursor-pointer
                                   "
                                 >
@@ -687,7 +687,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                     toast.success(`NYX Chatbot active model is now ${m.name}`);
                                   }}
                                   className="
-                                    flex-1 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                    flex-1 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
                                     bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25 cursor-pointer
                                   "
                                 >
@@ -704,7 +704,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                 onClick={() => handleDelete(m.id, m.name)}
                                 disabled={isCurrentAction || !!actionInProgress}
                                 className="
-                                  w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all mt-1
+                                  w-full py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all mt-1
                                   bg-red-500/8 hover:bg-red-500/15 text-red-400/70 hover:text-red-400 border border-red-500/10 hover:border-red-500/25 disabled:opacity-40 cursor-pointer
                                 "
                               >
@@ -738,7 +738,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 <div key={provider} className="space-y-4">
                   {/* Provider divider */}
                   <div className="flex items-center gap-3">
-                    <span className="text-[8px] font-black uppercase tracking-[0.3em] text-muted-foreground/40 shrink-0">
+                    <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted-foreground/80 shrink-0">
                       {provider}
                     </span>
                     <div className="h-px flex-1 bg-gradient-to-r from-border/40 to-transparent" />
@@ -797,7 +797,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
               <div className="p-4 px-6 border-b border-white/[0.06] bg-white/[0.02] flex items-center justify-between shrink-0">
                 <div>
                   <h3 className="text-xs font-black tracking-[0.25em] text-purple-400 uppercase">Local Model Directory</h3>
-                  <p className="text-[8px] font-medium text-muted-foreground/50 uppercase tracking-widest mt-0.5">World's most popular open-source models — download &amp; run locally in NYX</p>
+                  <p className="text-[11px] font-medium text-muted-foreground/80 uppercase tracking-widest mt-0.5">World's most popular open-source models — download &amp; run locally in NYX</p>
                 </div>
                 <motion.button
                   whileTap={{ scale: 0.9 }}
@@ -812,18 +812,18 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
               <div className="px-6 py-3.5 border-b border-white/[0.06] bg-white/[0.01] flex flex-col sm:flex-row items-center gap-3 shrink-0">
                 <div className="w-full sm:flex-1 relative">
                   <input
-                    type="text"
-                    placeholder="Paste HuggingFace GGUF direct URL (e.g., https://huggingface.co/.../*.gguf)..."
-                    value={customUrl}
-                    onChange={e => setCustomUrl(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-[10px] text-foreground focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-muted-foreground/35"
+                     type="text"
+                     placeholder="Paste HuggingFace GGUF direct URL (e.g., https://huggingface.co/.../*.gguf)..."
+                     value={customUrl}
+                     onChange={e => setCustomUrl(e.target.value)}
+                     className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-[10px] text-foreground focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-muted-foreground/35"
                   />
                 </div>
                 <motion.button
                   whileTap={{ scale: 0.96 }}
                   onClick={handleCustomUrlDownload}
                   disabled={actionInProgress !== null}
-                  className="w-full sm:w-auto px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 shrink-0"
+                  className="w-full sm:w-auto px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 shrink-0"
                 >
                   Download URL
                 </motion.button>
@@ -835,7 +835,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   <div key={provider} className="space-y-4">
                     {/* Provider divider matching cloud models library */}
                     <div className="flex items-center gap-3">
-                      <span className="text-[8px] font-black uppercase tracking-[0.3em] text-purple-400 shrink-0">
+                      <span className="text-[11px] font-black uppercase tracking-[0.3em] text-purple-400 shrink-0">
                         {getProviderLabel(provider)}
                       </span>
                       <div className="h-px flex-1 bg-gradient-to-r from-[#9b4dff]/30 to-transparent" />
@@ -868,29 +868,29 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-1.5">
                                   {m.featured && (
-                                    <span className="inline-flex items-center gap-1 text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                       <Zap size={7} /> Featured
                                     </span>
                                   )}
-                                  <span className="inline-block text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                  <span className="inline-block text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
                                     GGUF
                                   </span>
                                 </div>
                                 
                                 <div className="flex items-center gap-1.5">
                                   {isResident && (
-                                    <span className="inline-flex items-center gap-1 text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                                       Resident
                                     </span>
                                   )}
                                   {isCompleted && !isResident && (
-                                    <span className="text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
+                                    <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
                                       Ready
                                     </span>
                                   )}
                                   {isDownloading && (
-                                    <span className="text-[7px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
+                                    <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
                                       Downloading
                                     </span>
                                   )}
@@ -900,31 +900,31 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                               <h5 className="text-[12px] font-bold leading-tight tracking-tight text-foreground group-hover:text-purple-400 transition-colors">
                                 {m.name}
                               </h5>
-                              <p className="text-[9px] text-muted-foreground/80 line-clamp-2 leading-relaxed font-medium mt-1">
+                              <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed font-medium mt-1">
                                 {m.description}
                               </p>
 
                               {/* Specs grid — 4 cells */}
                               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2.5 border-t border-border/30 mt-2">
                                 <div className="flex flex-col">
-                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">Parameters</span>
-                                  <span className="text-[8px] font-mono font-bold text-foreground/80">{m.paramCount || '—'}</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Parameters</span>
+                                  <span className="text-[10px] font-mono font-bold text-foreground/80">{m.paramCount || '—'}</span>
                                 </div>
                                 <div className="flex flex-col">
-                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">Quantization</span>
-                                  <span className="text-[8px] font-mono font-bold text-foreground/80">{m.quantization || '—'}</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Quantization</span>
+                                  <span className="text-[10px] font-mono font-bold text-foreground/80">{m.quantization || '—'}</span>
                                 </div>
                                 <div className="flex flex-col">
-                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">Context</span>
-                                  <span className="text-[8px] font-mono font-bold text-foreground/80">{m.contextLength || '—'}</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Context</span>
+                                  <span className="text-[10px] font-mono font-bold text-foreground/80">{m.contextLength || '—'}</span>
                                 </div>
                                 <div className="flex flex-col">
-                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">File Size</span>
-                                  <span className="text-[8px] font-mono font-bold text-foreground/80">{m.size}</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">File Size</span>
+                                  <span className="text-[10px] font-mono font-bold text-foreground/80">{m.size}</span>
                                 </div>
                                 <div className="flex flex-col col-span-2">
-                                  <span className="text-[6px] font-black uppercase tracking-widest text-muted-foreground/60">RAM / VRAM Required</span>
-                                  <span className="text-[8px] font-mono font-bold text-purple-400/80">{m.vramRequired ? `${m.vramRequired} + ` : ''}{m.ramRequired}</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">RAM / VRAM Required</span>
+                                  <span className="text-[10px] font-mono font-bold text-purple-400">{m.vramRequired ? `${m.vramRequired} + ` : ''}{m.ramRequired}</span>
                                 </div>
                               </div>
                             </div>
@@ -933,7 +933,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                             <div className="mt-2.5 pt-2.5 border-t border-border/30">
                               {isDownloading && (
                                 <div className="space-y-1.5 mb-2">
-                                  <div className="flex items-center justify-between text-[7px] font-black uppercase tracking-widest text-muted-foreground">
+                                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                                     <span>{progress.progressPercentage}% Completed</span>
                                     <span>{progress.speedMbps > 0 ? `${progress.speedMbps} MB/s` : 'Connecting...'}</span>
                                   </div>
@@ -946,7 +946,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                       transition={{ duration: 0.3 }}
                                     />
                                   </div>
-                                  <div className="text-[7px] font-medium text-muted-foreground/50 text-right">
+                                  <div className="text-[10px] font-medium text-muted-foreground/80 text-right">
                                     {progress.totalBytes > 0 
                                       ? `${(progress.bytesDownloaded / (1024 * 1024)).toFixed(0)} MB / ${(progress.totalBytes / (1024 * 1024)).toFixed(0)} MB`
                                       : 'Negotiating HTTP download streams...'}
@@ -960,7 +960,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                   onClick={() => handleDownload(m.id)}
                                   disabled={isCurrentAction || !!actionInProgress}
                                   className="
-                                    w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                    w-full py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
                                     bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 disabled:opacity-40 cursor-pointer
                                   "
                                 >
@@ -980,7 +980,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
                               {isCompleted && (
                                 <div className="flex flex-col gap-1.5">
-                                  <div className="py-1.5 px-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center gap-1.5 text-[8px] font-black uppercase tracking-wider text-emerald-400">
+                                  <div className="py-1.5 px-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-400">
                                     <Check size={10} />
                                     <span>Ready on Device</span>
                                   </div>
@@ -989,7 +989,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                                     onClick={() => handleDelete(m.id, m.name)}
                                     disabled={isCurrentAction || !!actionInProgress}
                                     className="
-                                      w-full py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                      w-full py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
                                       bg-red-500/8 hover:bg-red-500/18 text-red-400/70 hover:text-red-400 border border-red-500/15 hover:border-red-500/30 disabled:opacity-40 cursor-pointer
                                     "
                                   >

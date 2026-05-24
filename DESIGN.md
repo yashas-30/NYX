@@ -13,11 +13,11 @@ The interface is a modern, high-contrast developer-oriented UI with a vibrant-bu
 - Card / Surface — #FFFFFF — Clean white card surfaces for contrast against cream.
 - Secondary Surface — #F0EDE8 — Muted cream for sidebar and secondary areas.
 
-Dark mode variants (applied when .dark is present):
-- Background (Dark) — #3A3A3C — Apple System Gray 4 for a legible, professional gray theme.
-- Foreground (Dark) — #FFFFFF — Pure white text for maximum legibility.
-- Card (Dark) — #48484A — Apple System Gray 3 for elevated surfaces.
-- Primary Accent (Dark) — #0A84FF — Luminous Apple system blue for dark mode.
+- Background (Dark) — #0B0E14 — Deep Space Slate-Charcoal for a highly professional look and reduced eye strain.
+- Foreground (Dark) — #E6EDF3 — Off-white text for excellent contrast and legibility.
+- Card (Dark) — #111622 — Surface Deep Card Fill for elevated card elements.
+- Secondary Surface (Dark) — #1B2336 — Elevated charcoal slate for secondary sidebars and inner elements.
+- Primary Accent (Dark) — #22D3EE — Luminous Aether Cyan for high-contrast interactive highlights.
 
 Design tokens live as CSS custom properties (see src/index.css) and should be referenced semantically (e.g., var(--color-primary) / var(--color-background)).
 
@@ -37,10 +37,11 @@ Use subtle letter-spacing and maintain selection styling using the primary hue (
 
 ## 4. Component Stylings
 
-- Buttons: Border-radius from --radius (0.5rem). Primary buttons use --primary (#6d28d9) with white text, medium weight. Hover: subtle darken; focus: glow using --glow-accent.
-- Cards/Containers: Background uses --card; hairline border using --border; shadow minimal. Card corner radius slightly larger than controls for gentle separation.
-- Inputs/Forms: 1px refined border, background from --input, focus border shifts to --ring with gentle glow.
-- Toasts/Popovers: Use --popover and --popover-foreground; subtle elevation or glass backdrop for emphasis.
+- Buttons: Border-radius from --radius (0.5rem / 8px). Primary buttons use --primary (#0071E3 in light / #22D3EE in dark) with appropriate primary-foreground text color, medium weight. Hover: subtle darken or cyan highlight; focus: glow using --ring.
+- Sidebar: Uses --secondary surface with clean border-r border-border styling and hover transitions using --muted/40. Action items (+ New chat) are styled neutrally when inactive rather than retaining redundant active highlights.
+- Cards/Containers/Prompt Box: Background uses --card/--card/70; hairline border using --border; shadow minimal. Card corner radius slightly larger than controls for gentle separation.
+- Inputs/Forms: 1px refined border, background from --input or --muted/40, focus border shifts to --ring with gentle glow.
+- Toasts/Popovers/Model Selectors: Use bg-card/98, --border, and --muted/40 hover lists for complete dark/light theme integration.
 - Motion: Small, springy easing (--ease-spring) for interactive reveals; shimmer and drift keyframes for decorative uses only.
 
 ## 5. Layout Principles

@@ -108,7 +108,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
   return (
     <div className="relative group/code my-3 rounded-xl overflow-hidden border border-white/[0.08] shadow-xl">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[#13131f] border-b border-white/[0.06]">
+      <div className="flex items-center justify-between px-4 py-2 bg-secondary/60 border-b border-border">
         <div className="flex items-center gap-2">
           <Terminal size={10} className="text-primary/50" />
           <span className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/60">{lang}</span>
@@ -156,7 +156,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="bg-[#141424] border-b border-white/[0.04] px-4 py-3 flex flex-col gap-2"
+            className="bg-secondary/90 border-b border-border px-4 py-3 flex flex-col gap-2"
           >
             <div className="flex items-center gap-2">
               <FileText size={12} className="text-blue-400" />
@@ -168,7 +168,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
                 value={filePath}
                 onChange={(e) => setFilePath(e.target.value)}
                 placeholder="e.g., src/components/Button.tsx"
-                className="flex-1 px-3 py-1.5 rounded bg-black/40 border border-white/10 text-xs text-foreground placeholder-white/20 focus:outline-none focus:border-blue-500 transition-colors font-mono"
+                className="flex-1 px-3 py-1.5 rounded bg-muted/30 border border-border text-xs text-foreground placeholder-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-colors font-mono"
               />
               <button
                 onClick={handleApplyFile}
@@ -234,7 +234,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
         style={oneDark}
         showLineNumbers
         lineNumberStyle={{ color: 'rgba(255,255,255,0.12)', fontSize: '10px', userSelect: 'none', minWidth: '2.5em', paddingRight: '1em' }}
-        customStyle={{ margin: 0, padding: '1rem 1.25rem', background: '#0e0e18', fontSize: '12px', lineHeight: '1.65', borderRadius: 0, fontFamily: '"Geist Mono","Fira Code","Cascadia Code",ui-monospace,monospace' }}
+        customStyle={{ margin: 0, padding: '1rem 1.25rem', background: 'var(--card)', fontSize: '12px', lineHeight: '1.65', borderRadius: 0, fontFamily: '"Geist Mono","Fira Code","Cascadia Code",ui-monospace,monospace' }}
         codeTagProps={{ style: { fontFamily: '"Geist Mono","Fira Code","Cascadia Code",ui-monospace,monospace' } }}
         wrapLongLines={false}
       >
@@ -251,6 +251,8 @@ interface MessageListProps {
   isLoading: boolean;
   onCopy: (text: string, id: string) => void;
   copiedId: string | null;
+  suggestedPrompts?: string[];
+  onSuggestedPromptClick?: (prompt: string) => void;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -322,7 +324,10 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = ({
  * Empty State
  * ───────────────────────────────────────────────────────────────────────────── */
 
-const EmptyState: React.FC = () => (
+const EmptyState: React.FC<{
+  suggestedPrompts?: string[];
+  onSuggestedPromptClick?: (prompt: string) => void;
+}> = ({ suggestedPrompts = [], onSuggestedPromptClick }) => (
   <motion.div
     initial={{ opacity: 0, y: 15 }}
     animate={{ opacity: 1, y: 0 }}
@@ -330,27 +335,25 @@ const EmptyState: React.FC = () => (
     className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
   >
     {/* Background warm aesthetic glow */}
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] bg-primary/5 dark:bg-primary/8 rounded-full blur-[80px] pointer-events-none select-none -z-10" />
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] bg-primary/5 dark:bg-primary/8 rounded-full blur-[80px] pointer-events-none select-none -z-10 animate-pulse" />
 
-    {/* Elegant bird logo with floating micro-animation */}
+    {/* Elegant bird logo with entrance and floating animations split to prevent Lottie measurement glitch */}
     <motion.div
-      initial={{ scale: 0.92, opacity: 0 }}
-      animate={{ 
-        scale: 1, 
-        opacity: 1,
-        y: [0, -8, 0]
-      }}
-      transition={{ 
-        scale: { delay: 0.15, duration: 0.6, ease: [0.23, 1, 0.32, 1] },
-        opacity: { delay: 0.15, duration: 0.6 },
-        y: { duration: 4, repeat: Infinity, ease: "easeInOut" }
-      }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.15, duration: 0.6 }}
       className="relative cursor-default flex items-center justify-center"
     >
-      {/* Premium static hardware-accelerated logo glow */}
-      <div className="absolute w-24 h-24 bg-primary/20 dark:bg-primary/30 rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
+      <motion.div
+        animate={{ y: [0, -8, 0] }}
+        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+        className="relative flex items-center justify-center transform-gpu"
+      >
+        {/* Premium static hardware-accelerated logo glow */}
+        <div className="absolute w-24 h-24 bg-primary/20 dark:bg-primary/30 rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
 
-      <Logo size={90} className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default" />
+        <Logo size={90} className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default" />
+      </motion.div>
     </motion.div>
 
     {/* Typography Hierarchy */}
@@ -372,6 +375,29 @@ const EmptyState: React.FC = () => (
         Native Local Intelligence & Cloud Orchestration
       </motion.p>
     </div>
+
+    {/* Suggested Prompts Grid */}
+    {suggestedPrompts && suggestedPrompts.length > 0 && (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5, duration: 0.5 }}
+        className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-xl w-full mt-4"
+      >
+        {suggestedPrompts.slice(0, 4).map((p, idx) => (
+          <motion.button
+            key={idx}
+            whileHover={{ scale: 1.01, backgroundColor: 'rgba(34, 211, 238, 0.06)', borderColor: 'rgba(34, 211, 238, 0.2)' }}
+            whileTap={{ scale: 0.99 }}
+            onClick={() => onSuggestedPromptClick?.(p)}
+            className="p-3.5 text-[11px] font-bold text-left rounded-xl bg-card/45 border border-border/40 text-foreground/75 hover:text-primary transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
+          >
+            <span>{p}</span>
+            <span className="text-[10px] text-primary/40 font-extrabold ml-2">➔</span>
+          </motion.button>
+        ))}
+      </motion.div>
+    )}
   </motion.div>
 );
 
@@ -385,6 +411,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   isLoading,
   onCopy,
   copiedId,
+  suggestedPrompts,
+  onSuggestedPromptClick,
 }) => {
   const consoleRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -423,14 +451,14 @@ export const MessageList: React.FC<MessageListProps> = ({
   }, []);
 
   return (
-    <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-[#131315]">
+    <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-background">
       <div
         ref={consoleRef}
         onScroll={handleScroll}
         className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative"
       >
         {history.length === 0 ? (
-          <EmptyState />
+          <EmptyState suggestedPrompts={suggestedPrompts} onSuggestedPromptClick={onSuggestedPromptClick} />
         ) : (
           <div className="w-full max-w-3xl mx-auto px-4 pb-6 pt-4 space-y-1">
             {history.map((msg, i) => {
@@ -448,12 +476,12 @@ export const MessageList: React.FC<MessageListProps> = ({
                   {isUser ? (
                     /* ── User bubble: right-aligned glassmorphic pill ── */
                     <div className={`
-                      max-w-[80%] py-2.5 px-4 rounded-2xl rounded-tr-sm
-                      text-[13px] leading-[1.7] font-medium
-                      bg-zinc-800/80 backdrop-blur-sm
-                      border border-white/[0.06]
+                      max-w-[85%] sm:max-w-[75%] py-2.5 px-4 rounded-2xl rounded-tr-sm
+                      text-[13px] leading-[1.7] font-semibold
+                      bg-secondary/85 backdrop-blur-md
+                      border border-border
                       text-foreground/90 shadow-sm
-                      ${activeAgent === 'nyx' ? 'border-violet-500/20 shadow-violet-500/5' : ''}
+                      ${activeAgent === 'nyx' ? 'border-primary/20 shadow-primary/5' : ''}
                     `}>
                       {msg.content}
                     </div>
@@ -514,7 +542,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 12 }}
             onClick={jumpToBottom}
-            className="absolute bottom-1 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-zinc-800/90 border border-white/10 text-foreground/70 hover:text-foreground shadow-xl text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-zinc-700/90"
+            className="absolute bottom-1 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-card/90 border border-border text-foreground/70 hover:text-foreground shadow-xl text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-muted/90"
           >
             <ArrowDown className="w-3 h-3" />
             Latest
