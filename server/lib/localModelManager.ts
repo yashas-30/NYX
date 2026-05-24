@@ -38,6 +38,34 @@ export const MODEL_PRESETS: ModelPreset[] = [
     featured: true
   },
   {
+    id: 'gemma-2-2b-it',
+    name: 'Gemma 2 2B Instruct (Q4_K_M)',
+    provider: 'google',
+    paramCount: '2.6B',
+    quantization: 'Q4_K_M',
+    contextLength: '8K',
+    size: '1.7 GB',
+    url: 'https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf',
+    fileName: 'gemma-2-2b-it-Q4_K_M.gguf',
+    description: 'Google\'s Gemma 2 2B instruct model. Power-packed reasoning and instruction following at edge scale.',
+    ramRequired: '4 GB RAM',
+    vramRequired: '2 GB VRAM'
+  },
+  {
+    id: 'gemma-2-9b-it',
+    name: 'Gemma 2 9B Instruct (Q4_K_M)',
+    provider: 'google',
+    paramCount: '9B',
+    quantization: 'Q4_K_M',
+    contextLength: '8K',
+    size: '5.7 GB',
+    url: 'https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf',
+    fileName: 'gemma-2-9b-it-Q4_K_M.gguf',
+    description: 'Google\'s highly popular Gemma 2 9B model. Extremely strong performance matching larger models.',
+    ramRequired: '12 GB RAM',
+    vramRequired: '8 GB VRAM'
+  },
+  {
     id: 'gemma-3-4b-it',
     name: 'Gemma 3 4B Instruct (Q4_K_M)',
     provider: 'google',
@@ -65,8 +93,22 @@ export const MODEL_PRESETS: ModelPreset[] = [
     ramRequired: '12 GB RAM',
     vramRequired: '8 GB VRAM'
   },
+  {
+    id: 'gemma-3-27b-it',
+    name: 'Gemma 3 27B Instruct (Q4_K_M)',
+    provider: 'google',
+    paramCount: '27B',
+    quantization: 'Q4_K_M',
+    contextLength: '128K',
+    size: '18.2 GB',
+    url: 'https://huggingface.co/bartowski/gemma-3-27b-it-GGUF/resolve/main/gemma-3-27b-it-Q4_K_M.gguf',
+    fileName: 'gemma-3-27b-it-Q4_K_M.gguf',
+    description: 'Google\'s largest Gemma 3 model — flagship performance for local systems with larger RAM sizes.',
+    ramRequired: '32 GB RAM',
+    vramRequired: '16 GB VRAM'
+  },
 
-  // ── META ─────────────────────────────────────────────────────────────────
+  // ── META (LLAMA) ─────────────────────────────────────────────────────────
   {
     id: 'llama-3.2-1b-native',
     name: 'Llama 3.2 1B Instruct (Q4_K_M)',
@@ -94,6 +136,20 @@ export const MODEL_PRESETS: ModelPreset[] = [
     description: 'Meta\'s capable 3B general instruction model — great all-rounder for conversations and reasoning at any scale.',
     ramRequired: '4 GB RAM',
     vramRequired: '2 GB VRAM'
+  },
+  {
+    id: 'llama-3-8b-instruct',
+    name: 'Llama 3 8B Instruct (Q4_K_M)',
+    provider: 'meta',
+    paramCount: '8B',
+    quantization: 'Q4_K_M',
+    contextLength: '8K',
+    size: '4.9 GB',
+    url: 'https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf',
+    fileName: 'Meta-Llama-3-8B-Instruct-Q4_K_M.gguf',
+    description: 'The original Llama 3 8B instruct model. Fast, robust, and highly capable general assistant.',
+    ramRequired: '8 GB RAM',
+    vramRequired: '6 GB VRAM'
   },
   {
     id: 'llama-3.1-8b-native',
@@ -124,8 +180,50 @@ export const MODEL_PRESETS: ModelPreset[] = [
     ramRequired: '48 GB RAM',
     vramRequired: '24 GB VRAM'
   },
+  {
+    id: 'codellama-7b-instruct',
+    name: 'Code Llama 7B Instruct (Q4_K_M)',
+    provider: 'meta',
+    paramCount: '7B',
+    quantization: 'Q4_K_M',
+    contextLength: '16K',
+    size: '4.1 GB',
+    url: 'https://huggingface.co/TheBloke/CodeLlama-7B-Instruct-GGUF/resolve/main/codellama-7b-instruct.Q4_K_M.gguf',
+    fileName: 'codellama-7b-instruct.Q4_K_M.gguf',
+    description: 'Meta\'s specialized Code Llama — purpose-built for code generation, completion, and debugging tasks.',
+    ramRequired: '6 GB RAM',
+    vramRequired: '4 GB VRAM'
+  },
+  {
+    id: 'codellama-13b-instruct',
+    name: 'Code Llama 13B Instruct (Q4_K_M)',
+    provider: 'meta',
+    paramCount: '13B',
+    quantization: 'Q4_K_M',
+    contextLength: '16K',
+    size: '8.3 GB',
+    url: 'https://huggingface.co/TheBloke/CodeLlama-13B-Instruct-GGUF/resolve/main/codellama-13b-instruct.Q4_K_M.gguf',
+    fileName: 'codellama-13b-instruct.Q4_K_M.gguf',
+    description: 'Meta\'s mid-size Code Llama — ideal balance of code writing capability and memory footprint.',
+    ramRequired: '16 GB RAM',
+    vramRequired: '8 GB VRAM'
+  },
 
-  // ── MICROSOFT ────────────────────────────────────────────────────────────
+  // ── MICROSOFT (PHI) ──────────────────────────────────────────────────────
+  {
+    id: 'phi-3-mini-instruct',
+    name: 'Phi-3 Mini Instruct (Q4_K_M)',
+    provider: 'microsoft',
+    paramCount: '3.8B',
+    quantization: 'Q4_K_M',
+    contextLength: '128K',
+    size: '2.4 GB',
+    url: 'https://huggingface.co/bartowski/Phi-3-mini-128k-instruct-GGUF/resolve/main/Phi-3-mini-128k-instruct-Q4_K_M.gguf',
+    fileName: 'Phi-3-mini-128k-instruct-Q4_K_M.gguf',
+    description: 'Microsoft\'s Phi-3 Mini 128K context model. Highly optimized small language model with outstanding logic.',
+    ramRequired: '6 GB RAM',
+    vramRequired: '4 GB VRAM'
+  },
   {
     id: 'phi-4-mini-instruct',
     name: 'Phi-4 Mini Instruct (Q4_K_M)',
@@ -149,14 +247,28 @@ export const MODEL_PRESETS: ModelPreset[] = [
     quantization: 'Q4_K_M',
     contextLength: '16K',
     size: '8.4 GB',
-    url: 'https://huggingface.co/bartowski/phi-4-GGUF/resolve/main/phi-4-Q4_K_M.gguf',
+    url: 'https://huggingface.co/phi-4-GGUF/resolve/main/phi-4-Q4_K_M.gguf',
     fileName: 'phi-4-Q4_K_M.gguf',
     description: 'Microsoft\'s Phi-4 full model — state-of-the-art STEM reasoning and coding in the 14B class.',
     ramRequired: '12 GB RAM',
     vramRequired: '8 GB VRAM'
   },
 
-  // ── QWEN (ALIBABA) ───────────────────────────────────────────────────────
+  // ── ALIBABA (QWEN) ───────────────────────────────────────────────────────
+  {
+    id: 'qwen2.5-1.5b-instruct',
+    name: 'Qwen 2.5 1.5B Instruct (Q4_K_M)',
+    provider: 'qwen',
+    paramCount: '1.5B',
+    quantization: 'Q4_K_M',
+    contextLength: '32K',
+    size: '1.2 GB',
+    url: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
+    fileName: 'qwen2.5-1.5b-instruct-q4_k_m.gguf',
+    description: 'Lightweight Qwen 2.5 model, excellent for low-latency tasks and resource-constrained systems.',
+    ramRequired: '2 GB RAM',
+    vramRequired: '1 GB VRAM'
+  },
   {
     id: 'qwen2.5-coder-1.5b-native',
     name: 'Qwen 2.5 Coder 1.5B (Q4_K_M)',
@@ -199,6 +311,34 @@ export const MODEL_PRESETS: ModelPreset[] = [
     description: 'Qwen\'s flagship 7B code model — one of the strongest open-source code models available.',
     ramRequired: '8 GB RAM',
     vramRequired: '6 GB VRAM'
+  },
+  {
+    id: 'qwen2.5-coder-14b-native',
+    name: 'Qwen 2.5 Coder 14B (Q4_K_M)',
+    provider: 'qwen',
+    paramCount: '14B',
+    quantization: 'Q4_K_M',
+    contextLength: '128K',
+    size: '9.6 GB',
+    url: 'https://huggingface.co/Qwen/Qwen2.5-Coder-14B-Instruct-GGUF/resolve/main/qwen2.5-coder-14b-instruct-q4_k_m.gguf',
+    fileName: 'qwen2.5-coder-14b-instruct-q4_k_m.gguf',
+    description: 'Powerful 14B code model with immense codebase synthesis capabilities.',
+    ramRequired: '16 GB RAM',
+    vramRequired: '10 GB VRAM'
+  },
+  {
+    id: 'qwen2.5-coder-32b-instruct',
+    name: 'Qwen 2.5 Coder 32B Instruct (Q4_K_M)',
+    provider: 'qwen',
+    paramCount: '32B',
+    quantization: 'Q4_K_M',
+    contextLength: '128K',
+    size: '20.3 GB',
+    url: 'https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct-GGUF/resolve/main/qwen2.5-coder-32b-instruct-q4_k_m.gguf',
+    fileName: 'qwen2.5-coder-32b-instruct-q4_k_m.gguf',
+    description: 'The flagship open-source coding model from Qwen. Extremely strong code generation and repository understanding.',
+    ramRequired: '32 GB RAM',
+    vramRequired: '24 GB VRAM'
   },
   {
     id: 'qwen2.5-7b-native',
@@ -287,6 +427,34 @@ export const MODEL_PRESETS: ModelPreset[] = [
     ramRequired: '8 GB RAM',
     vramRequired: '6 GB VRAM'
   },
+  {
+    id: 'deepseek-r1-distill-qwen-32b',
+    name: 'DeepSeek R1 Distill Qwen 32B (Q4_K_M)',
+    provider: 'deepseek',
+    paramCount: '32B',
+    quantization: 'Q4_K_M',
+    contextLength: '32K',
+    size: '20.2 GB',
+    url: 'https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf',
+    fileName: 'DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf',
+    description: 'Flagship distilled reasoning model in the 32B class. Top reasoning depth.',
+    ramRequired: '32 GB RAM',
+    vramRequired: '24 GB VRAM'
+  },
+  {
+    id: 'deepseek-r1-distill-llama-70b',
+    name: 'DeepSeek R1 Distill Llama 70B (Q4_K_M)',
+    provider: 'deepseek',
+    paramCount: '70B',
+    quantization: 'Q4_K_M',
+    contextLength: '32K',
+    size: '42.5 GB',
+    url: 'https://huggingface.co/bartowski/DeepSeek-R1-Distill-Llama-70B-GGUF/resolve/main/DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf',
+    fileName: 'DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf',
+    description: 'DeepSeek R1 reasoning distilled into Meta\'s Llama 70B. Superb reasoning, logic, and coding performance.',
+    ramRequired: '48 GB RAM',
+    vramRequired: '24 GB VRAM'
+  },
 
   // ── MISTRAL ──────────────────────────────────────────────────────────────
   {
@@ -314,9 +482,67 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '19.4 GB',
     url: 'https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF/resolve/main/mixtral-8x7b-instruct-v0.1.Q2_K.gguf',
     fileName: 'mixtral-8x7b-instruct-v0.1.Q2_K.gguf',
-    description: 'Mistral\'s legendary Mixture-of-Experts model — 8 experts, 2 active per token. GPT-3.5 quality on consumer hardware.',
+    description: 'The classic Mixture of Experts from Mistral. High quality, light footprint quantization.',
     ramRequired: '24 GB RAM',
     vramRequired: '16 GB VRAM'
+  },
+  {
+    id: 'codestral-22b',
+    name: 'Codestral 22B Instruct (Q4_K_M)',
+    provider: 'mistral',
+    paramCount: '22B',
+    quantization: 'Q4_K_M',
+    contextLength: '32K',
+    size: '13.5 GB',
+    url: 'https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf',
+    fileName: 'Codestral-22B-v0.1-Q4_K_M.gguf',
+    description: 'Mistral\'s specialized code intelligence model. Superior multi-lingual coding reasoning.',
+    ramRequired: '24 GB RAM',
+    vramRequired: '16 GB VRAM'
+  },
+  {
+    id: 'mixtral-8x22b-instruct',
+    name: 'Mixtral 8×22B Instruct (Q2_K)',
+    provider: 'mistral',
+    paramCount: '141B (MoE)',
+    quantization: 'Q2_K',
+    contextLength: '64K',
+    size: '48.3 GB',
+    url: 'https://huggingface.co/bartowski/Mixtral-8x22B-Instruct-v0.1-GGUF/resolve/main/Mixtral-8x22B-Instruct-v0.1-Q2_K.gguf',
+    fileName: 'Mixtral-8x22B-Instruct-v0.1-Q2_K.gguf',
+    description: 'Mistral\'s flagship MoE model. Massive capacity for multi-lingual and coding workflows.',
+    ramRequired: '64 GB RAM',
+    vramRequired: '48 GB VRAM'
+  },
+
+  // ── COHERE ───────────────────────────────────────────────────────────────
+  {
+    id: 'command-r-35b',
+    name: 'Command R 35B (Q4_K_M)',
+    provider: 'cohere',
+    paramCount: '35B',
+    quantization: 'Q4_K_M',
+    contextLength: '128K',
+    size: '20.5 GB',
+    url: 'https://huggingface.co/pmccargo/c4ai-command-r-v01-GGUF/resolve/main/c4ai-command-r-v01-q4_k_m.gguf',
+    fileName: 'c4ai-command-r-v01-q4_k_m.gguf',
+    description: 'Cohere\'s highly acclaimed 35B model designed specifically for complex RAG tasks and multilingual agentic reasoning.',
+    ramRequired: '32 GB RAM',
+    vramRequired: '24 GB VRAM'
+  },
+  {
+    id: 'command-r-plus-104b',
+    name: 'Command R+ 104B (Q2_K)',
+    provider: 'cohere',
+    paramCount: '104B',
+    quantization: 'Q2_K',
+    contextLength: '128K',
+    size: '38.2 GB',
+    url: 'https://huggingface.co/pmccargo/c4ai-command-r-plus-GGUF/resolve/main/c4ai-command-r-plus-q2_k.gguf',
+    fileName: 'c4ai-command-r-plus-q2_k.gguf',
+    description: 'Cohere\'s state-of-the-art 104B parameter model for complex, high-throughput RAG and tool workflows.',
+    ramRequired: '48 GB RAM',
+    vramRequired: '32 GB VRAM'
   },
 
   // ── OPENCHAT / COMMUNITY ─────────────────────────────────────────────────
@@ -331,20 +557,6 @@ export const MODEL_PRESETS: ModelPreset[] = [
     url: 'https://huggingface.co/TheBloke/openchat_3.5-GGUF/resolve/main/openchat_3.5.Q4_K_M.gguf',
     fileName: 'openchat_3.5.Q4_K_M.gguf',
     description: 'OpenChat 3.5 — breakthrough fine-tune that outperformed ChatGPT-3.5 on many benchmarks when released.',
-    ramRequired: '6 GB RAM',
-    vramRequired: '4 GB VRAM'
-  },
-  {
-    id: 'codellama-7b-instruct',
-    name: 'Code Llama 7B Instruct (Q4_K_M)',
-    provider: 'meta',
-    paramCount: '7B',
-    quantization: 'Q4_K_M',
-    contextLength: '16K',
-    size: '4.1 GB',
-    url: 'https://huggingface.co/TheBloke/CodeLlama-7B-Instruct-GGUF/resolve/main/codellama-7b-instruct.Q4_K_M.gguf',
-    fileName: 'codellama-7b-instruct.Q4_K_M.gguf',
-    description: 'Meta\'s specialized Code Llama — purpose-built for code generation, completion, and debugging tasks.',
     ramRequired: '6 GB RAM',
     vramRequired: '4 GB VRAM'
   },
@@ -364,6 +576,20 @@ export const MODEL_PRESETS: ModelPreset[] = [
     ramRequired: '4 GB RAM',
     vramRequired: '3 GB VRAM'
   },
+  {
+    id: 'nemotron-70b-instruct',
+    name: 'Llama 3 Nemotron 70B Instruct (Q4_K_M)',
+    provider: 'nvidia',
+    paramCount: '70B',
+    quantization: 'Q4_K_M',
+    contextLength: '8K',
+    size: '42.5 GB',
+    url: 'https://huggingface.co/bartowski/Llama-3-Nemotron-70B-Instruct-GGUF/resolve/main/Llama-3-Nemotron-70B-Instruct-Q4_K_M.gguf',
+    fileName: 'Llama-3-Nemotron-70B-Instruct-Q4_K_M.gguf',
+    description: 'NVIDIA\'s customized Llama-3 70B model with superior instruction following and conversation quality.',
+    ramRequired: '48 GB RAM',
+    vramRequired: '24 GB VRAM'
+  }
 ];
 
 export interface DownloadProgress {
@@ -415,7 +641,52 @@ export const LocalModelManager = {
   },
 
   listModels() {
-    return MODEL_PRESETS.map(preset => {
+    const scannedPresets: ModelPreset[] = [...MODEL_PRESETS];
+    try {
+      if (fs.existsSync(MODELS_DIR)) {
+        const files = fs.readdirSync(MODELS_DIR);
+        const presetFileNames = new Set(MODEL_PRESETS.map(p => p.fileName.toLowerCase()));
+        
+        for (const file of files) {
+          if (file.toLowerCase().endsWith('.gguf') && !presetFileNames.has(file.toLowerCase())) {
+            const stats = fs.statSync(path.join(MODELS_DIR, file));
+            const sizeInGb = stats.size / (1024 * 1024 * 1024);
+            const sizeStr = sizeInGb >= 1 
+              ? `${sizeInGb.toFixed(1)} GB` 
+              : `${(stats.size / (1024 * 1024)).toFixed(0)} MB`;
+            
+            const qMatch = file.match(/(Q[0-9]+_[A-Z0-9_]+|IQ[0-9]+_[A-Z0-9_]+)/i);
+            const quant = qMatch ? qMatch[1].toUpperCase() : 'Custom';
+            
+            let cleanName = file.replace(/\.gguf$/i, '').replace(/[-_]/g, ' ');
+            cleanName = cleanName.replace(/\b\w/g, c => c.toUpperCase());
+
+            const id = `custom-${file.toLowerCase().replace(/[^a-z0-9.-]/g, '-')}`;
+
+            if (!scannedPresets.some(p => p.id === id)) {
+              scannedPresets.push({
+                id,
+                name: cleanName,
+                provider: 'community',
+                size: sizeStr,
+                url: '',
+                fileName: file,
+                description: 'Custom GGUF model imported directly from local models directory.',
+                ramRequired: `${Math.ceil(Math.max(4, sizeInGb * 1.5))} GB RAM`,
+                vramRequired: `${Math.ceil(Math.max(2, sizeInGb * 1.1))} GB VRAM`,
+                paramCount: 'Custom',
+                quantization: quant,
+                contextLength: '8K'
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error scanning local model directory:', err);
+    }
+
+    return scannedPresets.map(preset => {
       const filePath = path.join(MODELS_DIR, preset.fileName);
       const exists = fs.existsSync(filePath);
 
@@ -461,9 +732,10 @@ export const LocalModelManager = {
     const active = activeDownloads.get(modelId);
     if (active) return active;
 
-    const preset = MODEL_PRESETS.find(p => p.id === modelId);
+    const list = this.listModels();
+    const preset = list.find(p => p.id === modelId);
     if (!preset) {
-      return { modelId, status: 'failed', bytesDownloaded: 0, totalBytes: 0, progressPercentage: 0, speedMbps: 0, error: 'Model preset not found' };
+      return { modelId, status: 'failed', bytesDownloaded: 0, totalBytes: 0, progressPercentage: 0, speedMbps: 0, error: 'Model preset or custom download not found' };
     }
 
     const filePath = path.join(MODELS_DIR, preset.fileName);
@@ -472,17 +744,48 @@ export const LocalModelManager = {
     return {
       modelId,
       status: exists ? 'completed' : 'idle',
-      bytesDownloaded: exists ? 100 : 0,
-      totalBytes: exists ? 100 : 0,
+      bytesDownloaded: exists ? preset.fileSizeBytes : 0,
+      totalBytes: exists ? preset.fileSizeBytes : 0,
       progressPercentage: exists ? 100 : 0,
       speedMbps: 0
     };
   },
 
   startDownload(modelId: string) {
-    const preset = MODEL_PRESETS.find(p => p.id === modelId);
+    let preset = this.listModels().find(p => p.id === modelId);
     if (!preset) {
-      throw new Error(`Model preset '${modelId}' not found.`);
+      // Check if it is a valid HTTP/HTTPS URL
+      if (modelId.startsWith('http://') || modelId.startsWith('https://')) {
+        const urlStr = modelId;
+        const parsedUrl = new URL(urlStr);
+        let fileName = path.basename(parsedUrl.pathname);
+        if (!fileName.endsWith('.gguf')) {
+          fileName = 'custom-model.gguf';
+        }
+        const customId = `custom-${fileName.toLowerCase().replace(/[^a-z0-9.-]/g, '-')}`;
+        
+        // Construct the preset dynamically
+        const newPreset: ModelPreset = {
+          id: customId,
+          name: fileName.replace(/\.gguf$/i, '').replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          provider: 'community',
+          size: 'Unknown',
+          url: urlStr,
+          fileName,
+          description: `Custom model downloaded from URL: ${parsedUrl.hostname}`,
+          ramRequired: '8 GB RAM',
+          vramRequired: '4 GB VRAM',
+          paramCount: 'Custom',
+          quantization: 'Custom',
+          contextLength: '8K'
+        };
+        // Add to active presets array
+        MODEL_PRESETS.push(newPreset);
+        preset = newPreset;
+        modelId = customId; // Use the parsed custom ID
+      } else {
+        throw new Error(`Model preset or URL '${modelId}' not found.`);
+      }
     }
 
     const filePath = path.join(MODELS_DIR, preset.fileName);
@@ -513,20 +816,20 @@ export const LocalModelManager = {
       activeDownloads.delete(modelId);
       downloadStates[modelId] = 'completed';
       saveStates();
-      console.log(`[NYX] Successfully downloaded ${preset.name} → ${filePath}`);
+      console.log(`[NYX] Successfully downloaded ${preset!.name} → ${filePath}`);
     }).catch((err) => {
       progress.status = 'failed';
       progress.error = err.message || 'Download failed';
       activeDownloads.delete(modelId);
       downloadStates[modelId] = 'failed';
       saveStates();
-      console.error(`[NYX] Failed to download ${preset.name}:`, err);
+      console.error(`[NYX] Failed to download ${preset!.name}:`, err);
       if (fs.existsSync(filePath)) {
         try { fs.unlinkSync(filePath); } catch {}
       }
     });
 
-    return { status: 'downloading', message: 'Download started.' };
+    return { status: 'downloading', message: 'Download started.', modelId };
   },
 
   /**
@@ -534,9 +837,9 @@ export const LocalModelManager = {
    * Returns true on success, throws on error.
    */
   deleteModel(modelId: string): { deleted: boolean; message: string } {
-    const preset = MODEL_PRESETS.find(p => p.id === modelId);
+    const preset = this.listModels().find(p => p.id === modelId);
     if (!preset) {
-      throw new Error(`Model preset '${modelId}' not found.`);
+      throw new Error(`Model '${modelId}' not found.`);
     }
 
     // Cancel any active download for this model first

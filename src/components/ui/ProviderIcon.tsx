@@ -51,6 +51,16 @@ export function getProviderLabel(provider: string | undefined): string {
   if (provider === 'pollinations') return 'Pollinations (Free)';
   if (provider === 'nyx-native') return 'NYX Native';
   if (provider === 'qwen-local') return 'Qwen Local (Python)';
+  if (provider === 'google') return 'Google';
+  if (provider === 'meta') return 'Meta (Llama)';
+  if (provider === 'microsoft') return 'Microsoft';
+  if (provider === 'qwen') return 'Qwen (Alibaba)';
+  if (provider === 'deepseek') return 'DeepSeek';
+  if (provider === 'mistral') return 'Mistral';
+  if (provider === 'cohere') return 'Cohere';
+  if (provider === 'nvidia') return 'NVIDIA';
+  if (provider === 'openchat') return 'OpenChat';
+  if (provider === 'community') return 'Community / Custom';
   return provider;
 }
 

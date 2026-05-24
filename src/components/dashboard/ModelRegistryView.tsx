@@ -182,6 +182,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const [nativeStatus, setNativeStatus] = useState<{ status: string; error: string | null }>({ status: 'stopped', error: null });
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [customUrl, setCustomUrl] = useState('');
 
   const fetchNativeModels = useCallback(async () => {
     try {
@@ -203,6 +204,39 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     const interval = setInterval(fetchNativeModels, 2000);
     return () => clearInterval(interval);
   }, [fetchNativeModels]);
+
+  const handleCustomUrlDownload = async () => {
+    if (!customUrl.trim()) {
+      toast.error('Please enter a valid URL.');
+      return;
+    }
+    if (!customUrl.startsWith('http://') && !customUrl.startsWith('https://')) {
+      toast.error('URL must start with http:// or https://');
+      return;
+    }
+    
+    setActionInProgress(customUrl.trim());
+    try {
+      const res = await AIService.fetchWithAuth('/api/nyx/local-models/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId: customUrl.trim() })
+      });
+      if (res.ok) {
+        toast.success('Custom URL download started successfully.');
+        setCustomUrl('');
+        setShowDownloadModal(false);
+        fetchNativeModels();
+      } else {
+        const errData = await res.json();
+        toast.error(`Download failed: ${errData.error}`);
+      }
+    } catch (err: any) {
+      toast.error(`Error: ${err.message}`);
+    } finally {
+      setActionInProgress(null);
+    }
+  };
 
   const handleDownload = async (modelId: string) => {
     setActionInProgress(modelId);
@@ -771,6 +805,27 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   className="p-1.5 rounded-xl text-muted-foreground/45 hover:text-foreground hover:bg-white/5 transition-all cursor-pointer"
                 >
                   <X size={14} />
+                </motion.button>
+              </div>
+
+              {/* Custom GGUF URL Download Input */}
+              <div className="px-6 py-3.5 border-b border-white/[0.06] bg-white/[0.01] flex flex-col sm:flex-row items-center gap-3 shrink-0">
+                <div className="w-full sm:flex-1 relative">
+                  <input
+                    type="text"
+                    placeholder="Paste HuggingFace GGUF direct URL (e.g., https://huggingface.co/.../*.gguf)..."
+                    value={customUrl}
+                    onChange={e => setCustomUrl(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-[10px] text-foreground focus:outline-none focus:border-purple-500/50 transition-all placeholder:text-muted-foreground/35"
+                  />
+                </div>
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  onClick={handleCustomUrlDownload}
+                  disabled={actionInProgress !== null}
+                  className="w-full sm:w-auto px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 shrink-0"
+                >
+                  Download URL
                 </motion.button>
               </div>
 
