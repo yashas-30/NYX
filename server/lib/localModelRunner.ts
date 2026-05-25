@@ -5,6 +5,7 @@ import os from 'os';
 import { spawn, ChildProcess, exec } from 'child_process';
 import * as si from 'systeminformation';
 import { LocalModelManager } from './localModelManager.ts';
+import { registerProcess } from './processRegistry.ts';
 
 import { MODELS_DIR as BASE_DIR } from './paths.ts';
 const BIN_DIR = path.join(BASE_DIR, 'bin');
@@ -618,6 +619,7 @@ export const LocalModelRunner = {
           VK_LOG_LEVEL: 'none'
         }
       });
+      registerProcess(activeProcess);
 
       activeModelId = modelId;
 
