@@ -230,21 +230,23 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                 transition={{ duration: 0.2 }}
                 className="absolute inset-0"
               >
-                <CoderPage
-                  allModels={AVAILABLE_MODELS}
-                  apiKeys={apiKeys}
-                  modelSettings={modelSettings}
-                  setModelSettings={setModelSettings}
-                  trackUsage={trackUsage}
-                  providerStatuses={statuses}
-                  models={models}
-                  setModel={setModel}
-                  activeMode={activeMode}
-                  setActiveMode={setActiveMode}
-                  sidebarOpen={sidebarOpen}
-                  onToggleSidebar={() => setSidebarOpen(p => !p)}
-                  chatSessions={chatSessions}
-                />
+                <ErrorBoundary name="CoderPage">
+                  <CoderPage
+                    allModels={AVAILABLE_MODELS}
+                    apiKeys={apiKeys}
+                    modelSettings={modelSettings}
+                    setModelSettings={setModelSettings}
+                    trackUsage={trackUsage}
+                    providerStatuses={statuses}
+                    models={models}
+                    setModel={setModel}
+                    activeMode={activeMode}
+                    setActiveMode={setActiveMode}
+                    sidebarOpen={sidebarOpen}
+                    onToggleSidebar={() => setSidebarOpen(p => !p)}
+                    chatSessions={chatSessions}
+                  />
+                </ErrorBoundary>
               </motion.div>
             ) : activeMode === 'registry' ? (
               <motion.div
@@ -256,17 +258,19 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                 className="absolute inset-0"
               >
                 <Suspense fallback={<LoadingFallback />}>
-                  <ModelRegistryView
-                    selectModel={(mid) => {
-                      setModel(mid);
-                      setActiveMode('coder');
-                    }}
-                    apiKeys={apiKeys}
-                    providerStatuses={statuses}
-                    activeMode={activeMode}
-                    setActiveMode={setActiveMode}
-                    sidebarOpen={sidebarOpen}
-                  />
+                  <ErrorBoundary name="ModelRegistry">
+                    <ModelRegistryView
+                      selectModel={(mid) => {
+                        setModel(mid);
+                        setActiveMode('coder');
+                      }}
+                      apiKeys={apiKeys}
+                      providerStatuses={statuses}
+                      activeMode={activeMode}
+                      setActiveMode={setActiveMode}
+                      sidebarOpen={sidebarOpen}
+                    />
+                  </ErrorBoundary>
                 </Suspense>
               </motion.div>
             ) : (
@@ -278,14 +282,16 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                 transition={{ duration: 0.2 }}
                 className="absolute inset-0 overflow-auto"
               >
-                <SettingsView
-                  apiKeys={apiKeys}
-                  updateApiKey={updateApiKey}
-                  clearApiKeys={clearApiKeys}
-                  activeMode={activeMode}
-                  setActiveMode={setActiveMode}
-                  sidebarOpen={sidebarOpen}
-                />
+                <ErrorBoundary name="Settings">
+                  <SettingsView
+                    apiKeys={apiKeys}
+                    updateApiKey={updateApiKey}
+                    clearApiKeys={clearApiKeys}
+                    activeMode={activeMode}
+                    setActiveMode={setActiveMode}
+                    sidebarOpen={sidebarOpen}
+                  />
+                </ErrorBoundary>
               </motion.div>
             )}
           </AnimatePresence>

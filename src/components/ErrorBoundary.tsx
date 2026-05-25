@@ -1,42 +1,66 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertCircle } from 'lucide-react';
+import React, { Component, ReactNode } from 'react';
 
 interface Props {
-  children?: ReactNode;
+  children: ReactNode;
   fallback?: ReactNode;
+  name?: string;
 }
 
 interface State {
   hasError: boolean;
-  error?: Error;
+  error: Error | null;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false
-  };
+  public override state: State = { hasError: false, error: null };
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught component error:', error, errorInfo);
+  public override componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error(`[ErrorBoundary:${this.props.name ?? 'unknown'}]`, error, info);
   }
 
-  public render() {
+  public override render() {
     if (this.state.hasError) {
-      if (this.props.fallback) return this.props.fallback;
-      return (
-        <div className="h-full flex flex-col items-center justify-center p-8 bg-card border border-destructive/20 rounded-[24px] shadow-xl">
-          <AlertCircle size={32} className="text-destructive mb-4" />
-          <h2 className="text-xs font-bold text-foreground tracking-widest uppercase mb-2">Error</h2>
-          <p className="text-[9px] text-muted-foreground font-bold text-center max-w-[250px] leading-relaxed">
-            {this.state.error?.message || "An unexpected error occurred."}
+      return this.props.fallback ?? (
+        <div style={{
+          padding: '2rem',
+          color: 'var(--color-text-secondary)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: '13px',
+          border: '1px dashed #ef4444',
+          borderRadius: '6px',
+          margin: '1rem 0',
+          background: 'rgba(239, 68, 68, 0.05)'
+        }}>
+          <p style={{ color: '#ef4444', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            ⚠ Something went wrong in {this.props.name ?? 'this component'}.
           </p>
+          <pre style={{
+            opacity: 0.8,
+            fontSize: '11px',
+            whiteSpace: 'pre-wrap',
+            background: 'rgba(0, 0, 0, 0.2)',
+            padding: '1rem',
+            borderRadius: '4px',
+            overflow: 'auto',
+            marginBottom: '1rem'
+          }}>
+            {this.state.error?.message}
+          </pre>
           <button
-            onClick={() => this.setState({ hasError: false, error: undefined })}
-            className="mt-6 px-6 py-2 bg-primary text-primary-foreground hover:opacity-90 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-primary/20"
+            style={{
+              padding: '4px 12px',
+              fontSize: '12px',
+              color: '#fff',
+              background: '#ef4444',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+            onClick={() => this.setState({ hasError: false, error: null })}
           >
             Retry
           </button>

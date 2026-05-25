@@ -32,27 +32,49 @@ export function useChatSessions() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSid, setActiveSid] = useState<string | null>(null);
 
-  // Load sessions from localStorage on mount
+  // Load sessions from API or fallback to localStorage on mount
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setSessions(parsed);
-          if (parsed.length > 0) {
-            setActiveSid(parsed[0].id);
+    let activeToken = true;
+
+    async function loadSessions() {
+      try {
+        const res = await fetch('/api/conversations');
+        if (res.ok) {
+          const serverSessions = await res.json();
+          if (Array.isArray(serverSessions) && activeToken) {
+            setSessions(serverSessions);
+            if (serverSessions.length > 0) {
+              setActiveSid(serverSessions[0].id);
+            }
+            return;
           }
-        } else {
-          // If the data is corrupted or not an array, initialize with empty sessions
-          setSessions([]);
-          localStorage.removeItem(STORAGE_KEY);
         }
+      } catch (e) {
+        console.warn('[useChatSessions] Backend fetch failed, falling back to localStorage:', e);
       }
-    } catch (e) {
-      console.warn('[useChatSessions] Failed to load sessions:', e);
-      setSessions([]);
+
+      // Fallback
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw && activeToken) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            setSessions(parsed);
+            if (parsed.length > 0) {
+              setActiveSid(parsed[0].id);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[useChatSessions] Fallback load failed:', e);
+      }
     }
+
+    loadSessions();
+
+    return () => {
+      activeToken = false;
+    };
   }, []);
 
   // Persist sessions on every change
@@ -76,21 +98,38 @@ export function useChatSessions() {
     };
     setSessions(prev => [session, ...prev]);
     setActiveSid(id);
+
+    // Sync to backend
+    fetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(session)
+    }).catch(err => console.warn('[useChatSessions] Failed to sync session creation:', err));
+
     return id;
   }, []);
 
   const updateSession = useCallback((sid: string, messages: ChatMessage[]) => {
+    const now = Date.now();
     setSessions(prev =>
-      prev.map(s =>
-        s.id === sid
-          ? {
-              ...s,
-              messages,
-              title: deriveTitleFromMessages(messages),
-              updatedAt: Date.now(),
-            }
-          : s
-      )
+      prev.map(s => {
+        if (s.id === sid) {
+          const updated = {
+            ...s,
+            messages,
+            title: deriveTitleFromMessages(messages),
+            updatedAt: now,
+          };
+          // Sync to backend
+          fetch('/api/conversations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updated)
+          }).catch(err => console.warn('[useChatSessions] Failed to sync session update:', err));
+          return updated;
+        }
+        return s;
+      })
     );
   }, []);
 
@@ -103,6 +142,11 @@ export function useChatSessions() {
       if (prev === sid) return null;
       return prev;
     });
+
+    // Sync to backend
+    fetch(`/api/conversations/${sid}`, {
+      method: 'DELETE'
+    }).catch(err => console.warn('[useChatSessions] Failed to sync session deletion:', err));
   }, []);
 
   const switchSession = useCallback((sid: string | null) => {

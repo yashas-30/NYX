@@ -5,6 +5,15 @@
 
 import { AISettings, AIResponse, ChatMessage, Provider } from '../types';
 
+let currentAbortController: AbortController | null = null;
+
+export function cancelCurrentRequest(): void {
+  if (currentAbortController) {
+    currentAbortController.abort();
+    currentAbortController = null;
+  }
+}
+
 export class AIService {
   private static sessionToken: string | null = null;
   private static tokenExpiresAt: number = 0;
@@ -66,6 +75,10 @@ export class AIService {
     signal?: AbortSignal,
     options?: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> }
   ): Promise<AIResponse> {
+    cancelCurrentRequest();
+    currentAbortController = new AbortController();
+    signal = signal || currentAbortController.signal;
+
     const startTime = Date.now();
     let resultText = "";
     

@@ -8,6 +8,7 @@ import { useAgentState } from './useAgentState';
 import { useMessageHistory } from './useMessageHistory';
 import { useAgentPipeline } from './useAgentPipeline';
 import { ChatMessage } from '@/src/core/types';
+import { cancelCurrentRequest } from '@/src/core/services/ai.service';
 
 interface CoderLogicProps {
   apiKeys: Record<string, string>;
@@ -58,6 +59,9 @@ export const useCoderLogic = ({
 
   useEffect(() => {
     activeSidRef.current = chatSessions?.activeSid || null;
+    return () => {
+      cancelCurrentRequest();
+    };
   }, [chatSessions?.activeSid]);
 
   // Sync localMessages when activeSession changes
