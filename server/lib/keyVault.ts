@@ -9,10 +9,9 @@ const VAULT_FILE = path.join(VAULT_DIR, 'vault.enc');
 function getMasterKey(): Buffer {
   const masterKey = process.env.NYX_MASTER_KEY;
   if (!masterKey) {
-    console.warn('[KeyVault] WARNING: NYX_MASTER_KEY environment variable is not configured. Falling back to derived hash (insecure).');
+    throw new Error('[KeyVault] CRITICAL ERROR: NYX_MASTER_KEY environment variable is not configured. The vault cannot be decrypted/encrypted without this key.');
   }
-  const keySource = masterKey || 'default-nyx-master-key-fallback';
-  return crypto.createHash('sha256').update(keySource).digest();
+  return crypto.createHash('sha256').update(masterKey).digest();
 }
 
 // Encrypt string using AES-256-GCM

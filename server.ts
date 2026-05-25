@@ -182,8 +182,11 @@ async function startServer() {
   // ── Vault API Routes ──────────────────────────────────────────────────────────
   app.post('/api/vault/store', (req, res) => {
     const { keys } = req.body;
-    if (!keys || typeof keys !== 'object') {
+    if (!keys || typeof keys !== 'object' || Array.isArray(keys)) {
       return res.status(400).json({ error: 'Invalid payload: keys object required' });
+    }
+    if (Object.keys(keys).length > 100) {
+      return res.status(400).json({ error: 'Too many keys provided (max 100)' });
     }
     try {
       const currentKeys = loadKeys();
@@ -358,6 +361,12 @@ async function startServer() {
   // ── Model list proxy (Settings page live model discovery) ────────────────────
   app.post('/api/models/list', async (req, res) => {
     const { provider, apiKey } = req.body;
+    if (!provider || typeof provider !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid provider in request body' });
+    }
+    if (provider.length > 64) {
+      return res.status(400).json({ error: 'Provider name too long' });
+    }
     try {
       if (provider === 'gemini') {
         return res.json({ models: ['google/codegemma-2b'] });
@@ -366,6 +375,7 @@ async function startServer() {
       const headers: Record<string, string> = {};
       if (provider === 'openrouter') { url = 'https://openrouter.ai/api/v1/models'; headers['Authorization'] = `Bearer ${apiKey}`; }
       if (provider === 'nvidia')     { url = 'https://integrate.api.nvidia.com/v1/models'; headers['Authorization'] = `Bearer ${apiKey}`; }
+      if (!url) return res.status(400).json({ error: 'Unsupported provider' });
 
       const r = await fetch(url, { headers });
       const data = await r.json();
@@ -383,12 +393,18 @@ async function startServer() {
   // ── Quota/Credits Proxy ──────────────────────────────────────────────────────
   app.post('/api/models/quota', async (req, res) => {
     const { provider, apiKey } = req.body;
+    if (!provider || typeof provider !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid provider in request body' });
+    }
+    if (provider.length > 64) {
+      return res.status(400).json({ error: 'Provider name too long' });
+    }
     try {
       if (provider === 'gemini') {
         return res.json({ status: 'ok', local: true });
       }
       if (provider === 'openrouter') {
-        if (!apiKey) return res.status(401).json({ error: 'API key required for OpenRouter' });
+        if (!apiKey || typeof apiKey !== 'string') return res.status(401).json({ error: 'API key required for OpenRouter' });
         const r = await fetch('https://openrouter.ai/api/v1/credits', {
           headers: { 'Authorization': `Bearer ${apiKey}` }
         });
@@ -404,6 +420,9 @@ async function startServer() {
   // ── Cache Server API routes ───────────────────────────────────────────────
   app.post('/api/cache/get', (req, res) => {
     try {
+      if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        return res.status(400).json({ error: 'Invalid payload: request body must be an object' });
+      }
       const key = CacheServer.generateKey(req.body);
       const text = CacheServer.get(key);
       if (text !== null) {
@@ -417,6 +436,12 @@ async function startServer() {
 
   app.post('/api/cache/set', (req, res) => {
     const { key, data, provider, model } = req.body;
+    if (!key || typeof key !== 'string' || !data) {
+      return res.status(400).json({ error: 'Missing or invalid key or data in request body' });
+    }
+    if (key.length > 2048) {
+      return res.status(400).json({ error: 'Cache key too long' });
+    }
     try {
       CacheServer.set(key, data, provider, model);
       res.json({ success: true });
@@ -501,8 +526,11 @@ async function startServer() {
 
   app.post('/api/workspace', (req, res) => {
     const { path: newPath } = req.body;
-    if (!newPath) {
-      return res.status(400).json({ error: 'Missing path in request body' });
+    if (!newPath || typeof newPath !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid path in request body' });
+    }
+    if (newPath.length > 1024) {
+      return res.status(400).json({ error: 'Path too long (max 1024 characters)' });
     }
     const success = setWorkspaceRoot(newPath);
     if (success) {
