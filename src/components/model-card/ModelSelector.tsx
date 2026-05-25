@@ -56,7 +56,7 @@ const listItemVariants = {
     y: 0, 
     scale: 1,
     transition: {
-      type: "spring",
+      type: "spring" as any,
       stiffness: 380,
       damping: 28,
       mass: 0.8

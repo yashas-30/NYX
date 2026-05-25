@@ -4,6 +4,8 @@
 
 import 'dotenv/config';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { isProd, VAULT_DIR, LOGS_DIR, getWorkspaceRoot, setWorkspaceRoot } from './server/lib/paths.ts';
 import path from 'path';
@@ -34,10 +36,13 @@ import { requestIdMiddleware } from './server/middleware/requestId.ts';
 import logger from './server/lib/logger.ts';
 import { safetyGateMiddleware } from './server/middleware/safetyGate.ts';
 import { loadKeys, saveKeys, createSessionToken, verifySessionToken, getVaultStatus } from './server/lib/keyVault.ts';
+import { validateApiKey } from './server/lib/apiKeyValidator.ts';
 
 
 // ── DNS: prefer Cloudflare for fastest lookups on Windows ─────────────────────
-try { dns.setServers(['1.1.1.1', '8.8.8.8']); } catch { }
+if (process.env.NYX_OVERRIDE_DNS === 'true') {
+  try { dns.setServers(['1.1.1.1', '8.8.8.8']); } catch { }
+}
 
 let _filename = '';
 let _dirname = '';
@@ -115,10 +120,21 @@ async function startServer() {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://localhost:* wss://localhost:* https://generativelanguage.googleapis.com https://openrouter.ai https://integrate.api.nvidia.com https://opencode.ai https://image.pollinations.ai; font-src 'self' data:; worker-src 'self' blob:;"
+    );
     next();
   });
 
   app.use(express.json({ limit: '4mb' }));
+
+  app.use(cors({
+    origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-NYX-Session-Token'],
+    credentials: false
+  }));
 
   // ── Session Validation Middleware ───────────────────────────────────────────
   const sessionValidationMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -137,14 +153,8 @@ async function startServer() {
     const authHeader = req.headers.authorization;
     let token: string | undefined;
 
-    if (authHeader && authHeader.startsWith('Bearer ')) {
+    if (authHeader?.startsWith('Bearer ')) {
       token = authHeader.substring(7);
-    } else {
-      token = (req.headers['x-nyx-session-token'] as string) || (req.query as any)?.session_token;
-    }
-
-    if (!token && req.body && typeof req.body === 'object') {
-      token = req.body.sessionToken || req.body.session_token;
     }
 
     if (!token || !verifySessionToken(token)) {
@@ -179,8 +189,29 @@ async function startServer() {
 
   app.use(streamTokenRotationMiddleware);
 
+  // ── Rate Limiters ────────────────────────────────────────────────────────────
+  const tokenLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many token requests, please try again later.' }
+  });
+
+  const vaultLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    message: { error: 'Too many vault operations, please try again later.' }
+  });
+
+  const aiLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    message: { error: 'AI request rate limit exceeded.' }
+  });
+
   // ── Vault API Routes ──────────────────────────────────────────────────────────
-  app.post('/api/vault/store', (req, res) => {
+  app.post('/api/vault/store', vaultLimiter, (req, res) => {
     const { keys } = req.body;
     if (!keys || typeof keys !== 'object' || Array.isArray(keys)) {
       return res.status(400).json({ error: 'Invalid payload: keys object required' });
@@ -203,8 +234,8 @@ async function startServer() {
     const token = createSessionToken(isStream);
     res.json({ token, expiresAt: Date.now() + 5 * 60 * 1000 });
   };
-  app.get('/api/vault/token', handleGetToken);
-  app.get('/api/auth/session', handleGetToken);
+  app.get('/api/vault/token', tokenLimiter, handleGetToken);
+  app.get('/api/auth/session', tokenLimiter, handleGetToken);
 
   app.get('/api/vault/status', (req, res) => {
     res.json(getVaultStatus());
@@ -347,16 +378,16 @@ async function startServer() {
   });
 
   // ── Provider routes ───────────────────────────────────────────────────────────
-  app.use('/api/gemini',     safetyGateMiddleware, geminiRouter);
-  app.use('/api/openrouter', safetyGateMiddleware, openrouterRouter);
-  app.use('/api/nvidia',     safetyGateMiddleware, nvidiaRouter);
-  app.use('/api/terminal',   terminalRouter);
-  app.use('/api/agents',     agentsRouter);
-  app.use('/api/opencode',   safetyGateMiddleware, opencodeRouter);
-  app.use('/api/nyx',        nyxRouter);
+  app.use('/api/gemini',       aiLimiter, safetyGateMiddleware, geminiRouter);
+  app.use('/api/openrouter',   aiLimiter, safetyGateMiddleware, openrouterRouter);
+  app.use('/api/nvidia',       aiLimiter, safetyGateMiddleware, nvidiaRouter);
+  app.use('/api/terminal',     safetyGateMiddleware, terminalRouter);
+  app.use('/api/agents',       agentsRouter);
+  app.use('/api/opencode',     aiLimiter, safetyGateMiddleware, opencodeRouter);
+  app.use('/api/nyx',          nyxRouter);
   app.use('/api/nyx/local-models', localModelsRouter);
-  app.use('/api/pollinations', safetyGateMiddleware, pollinationsRouter);
-  app.use('/api/qwen-local',   safetyGateMiddleware, qwenLocalRouter);
+  app.use('/api/pollinations', aiLimiter, safetyGateMiddleware, pollinationsRouter);
+  app.use('/api/qwen-local',   aiLimiter, safetyGateMiddleware, qwenLocalRouter);
 
   // ── Model list proxy (Settings page live model discovery) ────────────────────
   app.post('/api/models/list', async (req, res) => {
@@ -366,6 +397,9 @@ async function startServer() {
     }
     if (provider.length > 64) {
       return res.status(400).json({ error: 'Provider name too long' });
+    }
+    if (apiKey && !validateApiKey(provider, apiKey)) {
+      return res.status(400).json({ error: 'Invalid API key format for provider: ' + provider });
     }
     try {
       if (provider === 'gemini') {
@@ -398,6 +432,9 @@ async function startServer() {
     }
     if (provider.length > 64) {
       return res.status(400).json({ error: 'Provider name too long' });
+    }
+    if (apiKey && !validateApiKey(provider, apiKey)) {
+      return res.status(400).json({ error: 'Invalid API key format for provider: ' + provider });
     }
     try {
       if (provider === 'gemini') {
@@ -595,10 +632,7 @@ async function startServer() {
     socket.setNoDelay(true); // Disable Nagle's algorithm for instant small packet delivery
   });
 
-  const host = '127.0.0.1';
-  if (host !== '127.0.0.1') {
-    throw new Error('Security Breach: Express server bound outside localhost.');
-  }
+  const host = '127.0.0.1'; // always localhost; never expose to network
   server.listen(PORT, host, () => {
     console.log(`🚀 NYX READY: http://localhost:${PORT}`);
   });

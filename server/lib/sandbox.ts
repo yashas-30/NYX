@@ -221,7 +221,11 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   }
 
   const isDockerAvail = await isDockerAvailable();
-  const allowRawTerminal = process.env.ALLOW_RAW_TERMINAL === 'true';
+  const ALLOW_RAW = process.env.NYX_ALLOW_RAW_TERMINAL === 'true' && 
+                    process.env.NODE_ENV === 'development';
+  if (ALLOW_RAW) {
+    console.warn('[Sandbox] WARNING: Raw terminal mode enabled. All sandbox protections disabled.');
+  }
 
   // 4. Force Docker Execution Gate
   if (forceDocker) {
@@ -238,8 +242,8 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   }
 
   // 5. Host execution fallback (if ALLOW_RAW_TERMINAL=true and not forced to Docker)
-  if (allowRawTerminal && !forceDocker) {
-    console.log(`[Sandbox] Executing command on host (ALLOW_RAW_TERMINAL=true): ${trimmedCmd}`);
+  if (ALLOW_RAW && !forceDocker) {
+    console.log(`[Sandbox] Executing command on host (NYX_ALLOW_RAW_TERMINAL=true): ${trimmedCmd}`);
     const shellBin = process.platform === 'win32' ? 'cmd.exe' : 'sh';
     const shellArgs = process.platform === 'win32' ? ['/c', trimmedCmd] : ['-c', trimmedCmd];
     
@@ -258,7 +262,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   if (!isDockerAvail) {
     return {
       isDocker: false,
-      error: `Docker required for sandbox. Set ALLOW_RAW_TERMINAL=true in .env to run on host (insecure).`,
+      error: `Docker required for sandbox. Set NYX_ALLOW_RAW_TERMINAL=true in .env to run on host (insecure).`,
     };
   }
 

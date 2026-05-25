@@ -9,7 +9,17 @@ const VAULT_FILE = path.join(VAULT_DIR, 'vault.enc');
 function getMasterKey(): Buffer {
   const masterKey = process.env.NYX_MASTER_KEY;
   if (!masterKey) {
-    throw new Error('[KeyVault] CRITICAL ERROR: NYX_MASTER_KEY environment variable is not configured. The vault cannot be decrypted/encrypted without this key.');
+    const fallbackPath = path.join(VAULT_DIR, '.master-key');
+    if (fs.existsSync(fallbackPath)) {
+      return fs.readFileSync(fallbackPath);
+    }
+    const newKey = crypto.randomBytes(32);
+    if (!fs.existsSync(VAULT_DIR)) {
+      fs.mkdirSync(VAULT_DIR, { recursive: true });
+    }
+    fs.writeFileSync(fallbackPath, newKey, { mode: 0o600 });
+    console.warn('[KeyVault] Generated new master key. BACK UP .nyx-keys/.master-key!');
+    return newKey;
   }
   return crypto.createHash('sha256').update(masterKey).digest();
 }
