@@ -227,7 +227,7 @@ function createWindow(expressPort: number) {
     defaultHeight: 900,
   });
 
-  const preloadPath = path.join(__dirname, 'preload.js');
+  const preloadPath = path.join(__dirname, 'preload.cjs');
   console.log(`[Electron] Loading preload script from: ${preloadPath}`);
 
   mainWindow = new BrowserWindow({
