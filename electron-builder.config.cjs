@@ -1,11 +1,12 @@
-/**
- * @file electron-builder.config.cjs
- * @description Defect-corrected, environment-driven electron-builder configuration.
- */
+const fs = require('fs');
+const path = require('path');
+
+const hasBinaries = fs.existsSync(path.join(__dirname, 'binaries'));
 
 module.exports = {
   appId: 'com.nyx.app',
   productName: 'NYX',
+  electronDist: path.join(__dirname, 'node_modules/electron/dist'),
   directories: {
     output: 'dist-desktop',
   },
@@ -15,25 +16,27 @@ module.exports = {
     'dist-electron/**/*',
     'package.json',
   ],
-  extraResources: [
+  extraResources: hasBinaries ? [
     {
       from: 'binaries/${os}/${arch}/',
       to: 'binaries',
       filter: ['**/*'],
     },
-  ],
+  ] : [],
   asar: true,
-  asarIntegrity: true,
   asarUnpack: [
     '**/binaries/**/*',
     '**/node_modules/sharp/**/*',
     '**/node_modules/@xenova/transformers/**/*',
+    '**/dist/nyx-icon.png',
+    '**/dist/nyx-icon.ico',
+    '**/public/nyx-icon.png',
+    '**/public/nyx-icon.ico',
   ],
   win: {
     target: 'nsis',
     icon: 'public/nyx-icon.ico',
-    certificateFile: process.env.WIN_CERT_PATH || undefined,
-    certificatePassword: process.env.WIN_CERT_PASSWORD || undefined,
+    executableName: 'NYX',
   },
   nsis: {
     oneClick: false,

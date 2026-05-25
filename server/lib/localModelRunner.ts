@@ -3,6 +3,7 @@ import path from 'path';
 import https from 'https';
 import os from 'os';
 import { spawn, ChildProcess, exec } from 'child_process';
+import * as si from 'systeminformation';
 import { LocalModelManager } from './localModelManager.ts';
 
 import { MODELS_DIR as BASE_DIR } from './paths.ts';
@@ -110,36 +111,120 @@ export const LocalModelRunner = {
     });
   },
 
-  async calculateOptimalLayers(modelId: string): Promise<{ gpuLayers: number; totalLayers: number; message: string }> {
+  async detectGPUs(): Promise<{ vendor: string; model: string; vramBytes: number; index: number }[]> {
+    try {
+      const graphics = await si.graphics();
+      if (!graphics || !graphics.controllers) return [];
+      
+      const list = graphics.controllers
+        .filter(g => {
+          const v = (g.vendor || '').toLowerCase();
+          const m = (g.model || '').toLowerCase();
+          return v.includes('nvidia') || v.includes('amd') || v.includes('intel') || 
+                 m.includes('nvidia') || m.includes('radeon') || m.includes('geforce') || m.includes('rtx');
+        })
+        .map((g, i) => {
+          let vramMB = g.vram || g.memoryTotal || 0;
+          if (typeof vramMB !== 'number' || isNaN(vramMB) || vramMB < 0) {
+            vramMB = 0;
+          }
+          return {
+            vendor: g.vendor || 'Unknown',
+            model: g.model || 'Unknown',
+            vramBytes: vramMB * 1024 * 1024,
+            index: i
+          };
+        });
+
+      return list.filter(g => g.vramBytes > 0);
+    } catch (err) {
+      console.warn('[GPU Detection] Failed to query systeminformation graphics:', err);
+      return [];
+    }
+  },
+
+  async calculateOptimalLayers(modelId: string, contextSize = 2048): Promise<{
+    gpuLayers: number;
+    totalLayers: number;
+    batchSize: number;
+    microBatchSize: number;
+    fileSize: number;
+    message: string;
+    hasGPU: boolean;
+    gpuInfo: { vendor: string; model: string; vramBytes: number; index: number }[];
+  }> {
     const MODEL_LAYERS: Record<string, number> = {
       'nyx-gemma-4-e2b-it': 35,
+      'gemma-2-2b-it': 26,
+      'gemma-2-9b-it': 42,
       'gemma-3-4b-it': 40,
       'gemma-3-12b-it': 40,
+      'gemma-3-27b-it': 46,
       'llama-3.2-1b-native': 16,
       'llama-3.2-3b-native': 28,
+      'llama-3-8b-instruct': 32,
       'llama-3.1-8b-native': 32,
       'llama-3.3-70b-native': 80,
+      'codellama-7b-instruct': 32,
+      'codellama-13b-instruct': 40,
+      'phi-3-mini-instruct': 32,
       'phi-4-mini-instruct': 32,
       'phi-4-instruct': 40,
+      'qwen2.5-1.5b-instruct': 28,
       'qwen2.5-coder-1.5b-native': 28,
       'qwen2.5-coder-3b-native': 36,
       'qwen2.5-coder-7b-native': 28,
+      'qwen2.5-coder-14b-native': 48,
+      'qwen2.5-coder-32b-instruct': 64,
       'qwen2.5-7b-native': 28,
       'qwen3-8b-native': 32,
       'deepseek-r1-distill-qwen-1.5b': 28,
       'deepseek-r1-distill-qwen-7b': 28,
       'deepseek-r1-distill-qwen-14b': 48,
       'deepseek-r1-distill-llama-8b': 32,
+      'deepseek-r1-distill-qwen-32b': 64,
+      'deepseek-r1-distill-llama-70b': 80,
       'mistral-7b-v0.3': 32,
-      'mixtral-8x7b-instruct': 32
+      'mixtral-8x7b-instruct': 32,
+      'codestral-22b': 56,
+      'mixtral-8x22b-instruct': 56,
+      'command-r-35b': 40,
+      'command-r-plus-104b': 64,
+      'openchat-3.5-7b': 32,
+      'nemotron-mini-4b': 32,
+      'nemotron-70b-instruct': 80
     };
 
-    const totalLayers = MODEL_LAYERS[modelId] || 32;
+    let totalLayers = 32;
     const models = LocalModelManager.listModels();
     const model = models.find(m => m.id === modelId);
 
-    // Estimate size if model not yet downloaded
-    let fileSize = 2 * 1024 * 1024 * 1024; // 2GB default estimation
+    if (model) {
+      if (MODEL_LAYERS[model.id]) {
+        totalLayers = MODEL_LAYERS[model.id];
+      } else {
+        const filenameLower = model.fileName.toLowerCase();
+        if (filenameLower.includes('70b') || filenameLower.includes('80l')) {
+          totalLayers = 80;
+        } else if (filenameLower.includes('32b') || filenameLower.includes('35b') || filenameLower.includes('64l')) {
+          totalLayers = 64;
+        } else if (filenameLower.includes('22b') || filenameLower.includes('27b') || filenameLower.includes('56l')) {
+          totalLayers = 56;
+        } else if (filenameLower.includes('14b') || filenameLower.includes('13b') || filenameLower.includes('12b') || filenameLower.includes('40l')) {
+          totalLayers = 40;
+        } else if (filenameLower.includes('8b') || filenameLower.includes('9b') || filenameLower.includes('7b') || filenameLower.includes('32l')) {
+          totalLayers = 32;
+        } else if (filenameLower.includes('3b') || filenameLower.includes('4b') || filenameLower.includes('28l')) {
+          totalLayers = 28;
+        } else if (filenameLower.includes('1.5b') || filenameLower.includes('2b') || filenameLower.includes('24l')) {
+          totalLayers = 24;
+        } else if (filenameLower.includes('1b') || filenameLower.includes('16l')) {
+          totalLayers = 16;
+        }
+      }
+    }
+
+    let fileSize = 2 * 1024 * 1024 * 1024;
     if (model && model.status === 'completed' && model.filePath) {
       try {
         fileSize = fs.statSync(model.filePath).size;
@@ -151,43 +236,82 @@ export const LocalModelRunner = {
       }
     }
 
-    try {
-      const freeVram = await this.getFreeVram();
-      if (freeVram > 0) {
-        // Reserve 500MB VRAM safety margin for display server, KV cache, and system tasks
-        const safetyMargin = 500 * 1024 * 1024;
-        const usableVram = Math.max(0, freeVram - safetyMargin);
+    const gpus = await this.detectGPUs();
+    const hasGPU = gpus.length > 0;
+    
+    // Estimate KV cache size (q8_0 quantized)
+    const kvCachePerTokenPerLayer = 220 * 1024 / 32;
+    const kvCacheSize = totalLayers * contextSize * kvCachePerTokenPerLayer;
 
-        if (usableVram < fileSize) {
-          const fraction = usableVram / fileSize;
-          const gpuLayers = Math.max(0, Math.floor(totalLayers * fraction));
-          const pct = Math.round((gpuLayers / totalLayers) * 100);
-          return {
-            gpuLayers,
-            totalLayers,
-            message: `GPU VRAM limit reached. Offloaded exactly ${gpuLayers}/${totalLayers} layers (${pct}%) to VRAM. CPU/RAM handles the remaining ${totalLayers - gpuLayers} layers.`
-          };
-        } else {
-          return {
-            gpuLayers: totalLayers,
-            totalLayers,
-            message: `GPU has abundant VRAM! Loaded all ${totalLayers}/${totalLayers} layers (100%) to GPU VRAM for maximum speed.`
-          };
-        }
-      } else {
-        return {
-          gpuLayers: 0,
-          totalLayers,
-          message: `No active NVIDIA GPU detected or Vulkan driver not supported. Running all ${totalLayers} layers entirely on CPU/RAM.`
-        };
-      }
-    } catch (err: any) {
+    let batchSize = Math.min(2048, contextSize);
+    let microBatchSize = Math.min(512, batchSize);
+
+    if (!hasGPU) {
       return {
         gpuLayers: 0,
         totalLayers,
-        message: `GPU VRAM query failed: ${err.message}. Defaulting all layers to CPU/RAM.`
+        batchSize,
+        microBatchSize,
+        fileSize,
+        message: `No active GPU detected. Running all ${totalLayers} layers entirely on CPU/RAM.`,
+        hasGPU: false,
+        gpuInfo: []
       };
     }
+
+    const primaryGPU = gpus[0];
+    let availableVram = primaryGPU.vramBytes;
+    
+    if (primaryGPU.vendor.toLowerCase().includes('nvidia') || primaryGPU.model.toLowerCase().includes('nvidia')) {
+      try {
+        const freeNvidiaVram = await this.getFreeVram();
+        if (freeNvidiaVram > 0) {
+          availableVram = freeNvidiaVram;
+        }
+      } catch {}
+    }
+
+    const baselineOverhead = 750 * 1024 * 1024;
+    const usableVram = Math.max(0, availableVram - baselineOverhead);
+
+    const computeBuffer = batchSize * 512 * 4;
+    const totalNeeded = fileSize + kvCacheSize + computeBuffer;
+
+    if (totalNeeded > usableVram) {
+      const safeCompute = usableVram - fileSize - kvCacheSize;
+      if (safeCompute > 0) {
+        batchSize = Math.max(128, Math.floor(safeCompute / (512 * 4)));
+        batchSize = Math.min(2048, batchSize);
+        microBatchSize = Math.min(512, batchSize);
+      } else {
+        batchSize = 512;
+        microBatchSize = 128;
+      }
+    }
+
+    const dynamicOverhead = kvCacheSize + (batchSize * 512 * 4);
+    const layerSize = (fileSize + dynamicOverhead) / totalLayers;
+    const maxLayersByVram = Math.floor(usableVram / layerSize);
+    const safeLayers = Math.max(0, Math.min(totalLayers, maxLayersByVram));
+    const pct = Math.round((safeLayers / totalLayers) * 100);
+
+    let message = '';
+    if (safeLayers >= totalLayers) {
+      message = `GPU has abundant VRAM! Loaded all ${totalLayers}/${totalLayers} layers (100%) to GPU VRAM for maximum speed.`;
+    } else {
+      message = `GPU VRAM limit reached. Offloaded exactly ${safeLayers}/${totalLayers} layers (${pct}%) to VRAM. CPU/RAM handles the remaining ${totalLayers - safeLayers} layers.`;
+    }
+
+    return {
+      gpuLayers: safeLayers,
+      totalLayers,
+      batchSize,
+      microBatchSize,
+      fileSize,
+      message,
+      hasGPU: true,
+      gpuInfo: gpus
+    };
   },
 
   async ensureBinaryInstalled(): Promise<void> {
@@ -321,8 +445,8 @@ export const LocalModelRunner = {
   },
 
   async start(modelId: string, settings?: any, isRetry = false): Promise<void> {
-    if (activeModelId === modelId && activeProcess) {
-      return; // Already running
+    if (activeModelId === modelId && activeProcess && activeContextSize >= (settings?.contextSize || 2048)) {
+      return; // Already running with equal or larger context window
     }
 
     if (activeProcess) {
@@ -364,7 +488,6 @@ export const LocalModelRunner = {
       gpuLayers = typeof localSettings?.gpuLayers === 'number' ? localSettings.gpuLayers : 99;
       const threads = typeof localSettings?.threads === 'number' ? localSettings.threads : defaultThreads;
       const contextSize = typeof localSettings?.contextSize === 'number' ? localSettings.contextSize : 2048;
-      const batchSize = typeof localSettings?.batchSize === 'number' ? localSettings.batchSize : 512;
 
       const models = LocalModelManager.listModels();
       const model = models.find(m => m.id === modelId);
@@ -374,9 +497,20 @@ export const LocalModelRunner = {
 
       // Calculate how many layers can actually fit in free VRAM
       let maxGpuLayers = 32;
+      let batchSize = 512;
+      let microBatchSize = 512;
+      let fileSizeBytes = 2 * 1024 * 1024 * 1024;
+      let hasGPU = false;
+      let gpuInfoList: any[] = [];
+      
       try {
-        const optimal = await this.calculateOptimalLayers(modelId);
+        const optimal = await this.calculateOptimalLayers(modelId, contextSize);
         maxGpuLayers = optimal.gpuLayers;
+        batchSize = optimal.batchSize;
+        microBatchSize = optimal.microBatchSize;
+        fileSizeBytes = optimal.fileSize;
+        hasGPU = optimal.hasGPU;
+        gpuInfoList = optimal.gpuInfo;
         console.log(`[GPU Optimizer] VRAM analysis for ${modelId}: max safe layers = ${maxGpuLayers}/${optimal.totalLayers}. (${optimal.message})`);
       } catch (err: any) {
         console.error('[GPU Optimizer] Failed to dynamically calculate offload capacity:', err.message);
@@ -393,21 +527,81 @@ export const LocalModelRunner = {
         console.log(`[GPU Optimizer] Using requested GPU layers: ${gpuLayers}. Remaining layers run on CPU/RAM.`);
       }
 
-      console.log(`Spawning native llama-server.exe for GGUF: ${model.name} (ngl: ${gpuLayers}, threads: ${threads}, ctx: ${contextSize})`);
+      console.log(`Spawning native llama-server.exe for GGUF: ${model.name} (ngl: ${gpuLayers}, threads: ${threads}, ctx: ${contextSize}, batch: ${batchSize})`);
       startProgress = 60;
 
-      const args = [
+      // Helper function to look up model preset layers inside start
+      const lookupPresetLayers = (mid: string): number => {
+        const MODEL_LAYERS_LOOKUP: Record<string, number> = {
+          'nyx-gemma-4-e2b-it': 35, 'gemma-2-2b-it': 26, 'gemma-2-9b-it': 42,
+          'gemma-3-4b-it': 40, 'gemma-3-12b-it': 40, 'gemma-3-27b-it': 46,
+          'llama-3.2-1b-native': 16, 'llama-3.2-3b-native': 28, 'llama-3-8b-instruct': 32,
+          'llama-3.1-8b-native': 32, 'llama-3.3-70b-native': 80, 'codellama-7b-instruct': 32,
+          'codellama-13b-instruct': 40, 'phi-3-mini-instruct': 32, 'phi-4-mini-instruct': 32,
+          'phi-4-instruct': 40, 'qwen2.5-1.5b-instruct': 28, 'qwen2.5-coder-1.5b-native': 28,
+          'qwen2.5-coder-3b-native': 36, 'qwen2.5-coder-7b-native': 28, 'qwen2.5-coder-14b-native': 48,
+          'qwen2.5-coder-32b-instruct': 64, 'qwen2.5-7b-native': 28, 'qwen3-8b-native': 32,
+          'deepseek-r1-distill-qwen-1.5b': 28, 'deepseek-r1-distill-qwen-7b': 28, 'deepseek-r1-distill-qwen-14b': 48,
+          'deepseek-r1-distill-llama-8b': 32, 'deepseek-r1-distill-qwen-32b': 64, 'deepseek-r1-distill-llama-70b': 80,
+          'mistral-7b-v0.3': 32, 'mixtral-8x7b-instruct': 32, 'codestral-22b': 56, 'mixtral-8x22b-instruct': 56,
+          'command-r-35b': 40, 'command-r-plus-104b': 64, 'openchat-3.5-7b': 32, 'nemotron-mini-4b': 32,
+          'nemotron-70b-instruct': 80
+        };
+        return MODEL_LAYERS_LOOKUP[mid] || 32;
+      };
+
+      const totalLayers = lookupPresetLayers(modelId);
+
+      // Base llama-server arguments
+      const args: string[] = [
         '-m', model.filePath,
         '--port', '12345',
+        '--host', '127.0.0.1', // Bind strictly to localhost
         '-c', String(contextSize),
         '--threads', String(threads),
-        '--batch-size', String(contextSize), // Scale prefill batch size to match context size for single-pass processing
-        '-ub', '512', // Micro-batch size
-        '--parallel', '1',
-        '-ngl', String(gpuLayers),
-        '-fa', 'on', // Enable Flash Attention for fast context prefill and lower VRAM usage
-        '--mlock' // Prevent Windows page file swapping
+        '-b', String(batchSize),
+        '-ub', String(microBatchSize),
+        '--parallel', '2', // Parallel execution slots for codebase scanning
+        '--slots', '2',
+        '-ngl', String(gpuLayers)
       ];
+
+      // Enable optimizations if GPU offloading is active
+      if (gpuLayers > 0) {
+        args.push('-fa', 'on'); // Enable Flash Attention
+        args.push('--cont-batching'); // Enable continuous batching for slot parallelism
+        args.push('--cache-type-k', 'q8_0'); // Quantize Key cache to 8-bit
+        args.push('--cache-type-v', 'q8_0'); // Quantize Value cache to 8-bit
+        args.push('--fit', 'off'); // Disable auto-fit to respect manual VRAM layer calculation
+
+        // Windows-specific memory map fix
+        if (process.platform === 'win32') {
+          args.push('--no-mmap');
+        }
+
+        // Cache RAM for CPU offload if doing hybrid split
+        if (gpuLayers < totalLayers) {
+          const cacheRamMb = Math.floor((os.totalmem() * 0.3) / 1024 / 1024); // 30% of system RAM
+          args.push('--cache-ram', String(cacheRamMb));
+        }
+
+        // Skip warmup for very large models (> 20GB) to prevent start OOMs
+        if (fileSizeBytes > 20 * 1024 * 1024 * 1024) {
+          args.push('--no-warmup');
+        }
+
+        // Multi-GPU Splitting
+        if (gpuInfoList.length > 1) {
+          args.push('--main-gpu', '0');
+          args.push('--split-mode', 'layer');
+          const totalGPUVram = gpuInfoList.reduce((sum: number, g: any) => sum + g.vramBytes, 0);
+          const splits = gpuInfoList.map((g: any) => (g.vramBytes / totalGPUVram).toFixed(2));
+          args.push('--tensor-split', splits.join(','));
+        }
+      } else {
+        // CPU-only defaults
+        args.push('--mlock'); // Lock in RAM
+      }
 
       const optimalDevice = await this.getOptimalVulkanDevice();
       if (optimalDevice) {
@@ -447,6 +641,12 @@ export const LocalModelRunner = {
             console.error(`[llama-server-err]: ${str}`);
           } else {
             console.log(`[llama-server-log]: ${str}`);
+          }
+
+          // Active OOM / CUDA device loss crash protection
+          if (str.includes('CUDA out of memory') || str.toLowerCase().includes('oom') || str.includes('failed to allocate')) {
+            console.error('[llama-server] Critical GPU VRAM OOM crash detected! Auto-evicting model runner...');
+            this.stop().catch(() => {});
           }
         }
       });

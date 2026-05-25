@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Tray, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, Tray, Menu, session, shell, nativeImage } from 'electron';
 import { fork, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as net from 'net';
@@ -12,7 +12,9 @@ import { registerVaultHandlers } from './ipc/vault';
 import { registerWindowHandlers } from './ipc/window';
 import { registerSystemHandlers } from './ipc/system';
 
-const store = new Store();
+// @ts-ignore - electron-store is a pure ESM package. When compiled to CJS, the import might resolve to a namespace object
+const StoreConstructor = typeof Store === 'function' ? Store : (Store as any).default;
+const store = new StoreConstructor();
 
 // Initialize Sentry BEFORE app.whenReady()
 if (process.env.NYX_SENTRY_DSN) {
@@ -42,34 +44,34 @@ let serverManager: ServerManager | null = null;
 function waitForPort(port: number, host = '127.0.0.1', timeout = 30000): Promise<void> {
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
-    
+
     function check() {
       if (Date.now() - startTime > timeout) {
         reject(new Error(`Timeout waiting for port ${port}`));
         return;
       }
-      
+
       const socket = new net.Socket();
       socket.setTimeout(200);
-      
+
       socket.on('connect', () => {
         socket.destroy();
         resolve();
       });
-      
+
       socket.on('timeout', () => {
         socket.destroy();
         setTimeout(check, 100);
       });
-      
+
       socket.on('error', () => {
         socket.destroy();
         setTimeout(check, 100);
       });
-      
+
       socket.connect(port, host);
     }
-    
+
     check();
   });
 }
@@ -99,9 +101,7 @@ class ServerManager {
   private isShuttingDown = false;
 
   constructor() {
-    this.serverPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'dist-server', 'server.cjs')
-      : path.join(__dirname, '../dist-server/server.cjs');
+    this.serverPath = path.join(app.getAppPath(), 'dist-server', 'server.cjs');
   }
 
   async start(): Promise<{ expressPort: number; fastifyPort: number }> {
@@ -116,7 +116,7 @@ class ServerManager {
     if (this.isShuttingDown) return;
 
     console.log(`[Electron] Spawning server process from: ${this.serverPath}`);
-    
+
     this.child = fork(this.serverPath, [], {
       env: {
         ...process.env,
@@ -161,7 +161,7 @@ class ServerManager {
     this.restartDelay *= 2; // exponential backoff: 1s, 2s, 4s, 8s, 16s
 
     console.warn(`[Electron] Server crashed. Restarting in ${delay}ms... (Attempt ${this.restartAttempts}/${this.maxRestarts})`);
-    
+
     setTimeout(() => {
       this.spawn().catch((err) => {
         console.error('[Electron] Failed to restart server:', err);
@@ -200,7 +200,7 @@ class ServerManager {
         execSync('killall -9 llama-server', { stdio: 'ignore' });
         console.log('[Electron] Force cleaned up macOS/Linux GGUF llama-server.');
       }
-    } catch {}
+    } catch { }
   }
 }
 
@@ -219,6 +219,18 @@ async function bootApp() {
   createTray();
   createMenus();
   setupAutoUpdater();
+}
+
+function getAppIcon() {
+  const isDev = !app.isPackaged;
+  const iconExt = process.platform === 'win32' ? 'ico' : 'png';
+  const iconName = `nyx-icon.${iconExt}`;
+  
+  const iconPath = isDev
+    ? path.join(__dirname, '../public', iconName)
+    : path.join(__dirname, '../dist', iconName);
+
+  return nativeImage.createFromPath(iconPath);
 }
 
 function createWindow(expressPort: number) {
@@ -243,7 +255,7 @@ function createWindow(expressPort: number) {
       sandbox: true,
       preload: preloadPath,
     },
-    icon: path.join(__dirname, '../public/nyx-icon.png'),
+    icon: getAppIcon(),
   });
 
   mainWindowState.manage(mainWindow);
@@ -298,9 +310,8 @@ function createWindow(expressPort: number) {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, '../public/nyx-icon.png');
-  tray = new Tray(iconPath);
-  
+  tray = new Tray(getAppIcon());
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Show NYX',
