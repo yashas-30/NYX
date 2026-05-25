@@ -19,3 +19,5 @@ scratch/
 .nyx-models/
 dist-server/
 dist-desktop/
+dist-electron/
+*.pdf

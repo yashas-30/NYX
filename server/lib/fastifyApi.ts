@@ -11,6 +11,7 @@ import dns from 'node:dns';
 
 import { DNS_CACHE, preWarmDns as resolveHostname } from './apiAgent.js';
 import { loadKeys, verifySessionToken } from './keyVault.ts';
+import { UnifiedEngine } from './unifiedEngine.ts';
 
 // Configure global fetch with connection pooling
 const customAgent = new https.Agent({
@@ -58,6 +59,86 @@ fastify.addHook('preHandler', async (request, reply) => {
 
   if (!token || !verifySessionToken(token)) {
     return reply.status(401).send({ error: 'Unauthorized: Invalid or expired session token' });
+  }
+});
+
+// High-performance streaming endpoint that bypasses Express entirely
+fastify.post('/api/stream/:provider', async (request, reply) => {
+  const { provider } = request.params as { provider: string };
+  const { model, prompt, apiKey, settings, systemInstruction, history, messages, temperature, max_tokens } = request.body as {
+    model: string;
+    prompt?: string;
+    apiKey?: string;
+    settings?: any;
+    systemInstruction?: string;
+    history?: any[];
+    messages?: any[];
+    temperature?: number;
+    max_tokens?: number;
+  };
+
+  let activeKey = apiKey || getApiKey(provider) || '';
+  if (!activeKey && provider !== 'nyx-native') {
+    return reply.status(401).send({ error: `${provider} API key required` });
+  }
+
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  const finalMessages: any[] = [];
+  if (messages && Array.isArray(messages)) {
+    finalMessages.push(...messages);
+  } else {
+    if (systemInstruction) {
+      finalMessages.push({ role: 'system', content: systemInstruction });
+    }
+    if (history && Array.isArray(history)) {
+      finalMessages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
+    }
+    if (prompt) {
+      finalMessages.push({ role: 'user', content: prompt });
+    }
+  }
+
+  const finalSettings = settings || {
+    temperature: temperature ?? 0.7,
+    maxTokens: max_tokens ?? 2048
+  };
+
+  let isClosed = false;
+  request.raw.on('close', () => {
+    isClosed = true;
+  });
+
+  try {
+    await UnifiedEngine.executeStream(
+      {
+        provider: provider as any,
+        model,
+        messages: finalMessages,
+        settings: finalSettings,
+        apiKey: activeKey
+      },
+      (chunk) => {
+        if (!isClosed) {
+          reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      },
+      () => {
+        if (!isClosed) {
+          reply.raw.write('data: [DONE]\n\n');
+          reply.raw.end();
+        }
+      }
+    );
+  } catch (err: any) {
+    if (!isClosed) {
+      reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
+      reply.raw.end();
+    }
   }
 });
 
