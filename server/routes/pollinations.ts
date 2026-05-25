@@ -4,6 +4,7 @@
  */
 
 import { Router } from 'express';
+import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
 
 export const pollinationsRouter = Router();
 
@@ -47,6 +48,7 @@ pollinationsRouter.post('/stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
+    sendSseTokenRotate(res);
 
     const response = await fetch('https://text.pollinations.ai/', {
       method: 'POST',

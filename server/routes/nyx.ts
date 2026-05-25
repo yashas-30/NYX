@@ -369,7 +369,7 @@ nyxRouter.post('/search', async (req, res) => {
 
 // POST /api/nyx/write-file - Write/apply generated code directly to the workspace
 nyxRouter.post('/write-file', async (req, res) => {
-  const { filePath, content } = req.body;
+  const { filePath, content, overwrite } = req.body;
   if (!filePath || content === undefined) {
     return res.status(400).json({ error: 'filePath and content are required' });
   }
@@ -381,6 +381,35 @@ nyxRouter.post('/write-file', async (req, res) => {
     // Safety check: ensure file is inside the workspace to prevent directory traversal
     if (!fullPath.startsWith(workspaceRoot)) {
       return res.status(403).json({ error: 'Directory traversal forbidden. Path must reside within the workspace.' });
+    }
+
+    // Overwrite check
+    if (fs.existsSync(fullPath)) {
+      if (overwrite !== true) {
+        return res.status(409).json({ 
+          error: 'File already exists.', 
+          requiresConfirmation: true, 
+          path: filePath 
+        });
+      }
+
+      // Perform a clean backing backup before write
+      const backupsDir = path.join(workspaceRoot, '.nyx-backups');
+      if (!fs.existsSync(backupsDir)) {
+        fs.mkdirSync(backupsDir, { recursive: true });
+      }
+      const timestamp = Date.now();
+      const ext = path.extname(filePath);
+      const base = path.basename(filePath, ext);
+      const backupFileName = `${base}-${timestamp}${ext}`;
+      const backupPath = path.join(backupsDir, backupFileName);
+      
+      try {
+        await fs.promises.copyFile(fullPath, backupPath);
+        console.log(`[Backup System] Created backup of ${filePath} at: ${backupPath}`);
+      } catch (backupErr: any) {
+        console.warn(`[Backup System] Failed to create backup, proceeding anyway:`, backupErr.message);
+      }
     }
 
     // Ensure target folder exists

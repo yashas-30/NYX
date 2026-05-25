@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import { Gateway } from '../lib/gateway.js';
+import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
 
 export const openrouterRouter = Router();
 
@@ -48,6 +49,7 @@ openrouterRouter.post('/stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
+    sendSseTokenRotate(res);
 
     const response = await fetch(url, {
       method: 'POST',

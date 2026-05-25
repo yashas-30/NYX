@@ -6,6 +6,8 @@ import { spawn, ChildProcess, exec } from 'child_process';
 import * as si from 'systeminformation';
 import { LocalModelManager } from './localModelManager.ts';
 import { registerProcess } from './processRegistry.ts';
+import kill from 'tree-kill';
+import { MODEL_LAYERS } from '../config/constants.ts';
 
 import { MODELS_DIR as BASE_DIR } from './paths.ts';
 const BIN_DIR = path.join(BASE_DIR, 'bin');
@@ -154,48 +156,6 @@ export const LocalModelRunner = {
     hasGPU: boolean;
     gpuInfo: { vendor: string; model: string; vramBytes: number; index: number }[];
   }> {
-    const MODEL_LAYERS: Record<string, number> = {
-      'nyx-gemma-4-e2b-it': 35,
-      'gemma-2-2b-it': 26,
-      'gemma-2-9b-it': 42,
-      'gemma-3-4b-it': 40,
-      'gemma-3-12b-it': 40,
-      'gemma-3-27b-it': 46,
-      'llama-3.2-1b-native': 16,
-      'llama-3.2-3b-native': 28,
-      'llama-3-8b-instruct': 32,
-      'llama-3.1-8b-native': 32,
-      'llama-3.3-70b-native': 80,
-      'codellama-7b-instruct': 32,
-      'codellama-13b-instruct': 40,
-      'phi-3-mini-instruct': 32,
-      'phi-4-mini-instruct': 32,
-      'phi-4-instruct': 40,
-      'qwen2.5-1.5b-instruct': 28,
-      'qwen2.5-coder-1.5b-native': 28,
-      'qwen2.5-coder-3b-native': 36,
-      'qwen2.5-coder-7b-native': 28,
-      'qwen2.5-coder-14b-native': 48,
-      'qwen2.5-coder-32b-instruct': 64,
-      'qwen2.5-7b-native': 28,
-      'qwen3-8b-native': 32,
-      'deepseek-r1-distill-qwen-1.5b': 28,
-      'deepseek-r1-distill-qwen-7b': 28,
-      'deepseek-r1-distill-qwen-14b': 48,
-      'deepseek-r1-distill-llama-8b': 32,
-      'deepseek-r1-distill-qwen-32b': 64,
-      'deepseek-r1-distill-llama-70b': 80,
-      'mistral-7b-v0.3': 32,
-      'mixtral-8x7b-instruct': 32,
-      'codestral-22b': 56,
-      'mixtral-8x22b-instruct': 56,
-      'command-r-35b': 40,
-      'command-r-plus-104b': 64,
-      'openchat-3.5-7b': 32,
-      'nemotron-mini-4b': 32,
-      'nemotron-70b-instruct': 80
-    };
-
     let totalLayers = 32;
     const models = LocalModelManager.listModels();
     const model = models.find(m => m.id === modelId);
@@ -531,27 +491,7 @@ export const LocalModelRunner = {
       console.log(`Spawning native llama-server.exe for GGUF: ${model.name} (ngl: ${gpuLayers}, threads: ${threads}, ctx: ${contextSize}, batch: ${batchSize})`);
       startProgress = 60;
 
-      // Helper function to look up model preset layers inside start
-      const lookupPresetLayers = (mid: string): number => {
-        const MODEL_LAYERS_LOOKUP: Record<string, number> = {
-          'nyx-gemma-4-e2b-it': 35, 'gemma-2-2b-it': 26, 'gemma-2-9b-it': 42,
-          'gemma-3-4b-it': 40, 'gemma-3-12b-it': 40, 'gemma-3-27b-it': 46,
-          'llama-3.2-1b-native': 16, 'llama-3.2-3b-native': 28, 'llama-3-8b-instruct': 32,
-          'llama-3.1-8b-native': 32, 'llama-3.3-70b-native': 80, 'codellama-7b-instruct': 32,
-          'codellama-13b-instruct': 40, 'phi-3-mini-instruct': 32, 'phi-4-mini-instruct': 32,
-          'phi-4-instruct': 40, 'qwen2.5-1.5b-instruct': 28, 'qwen2.5-coder-1.5b-native': 28,
-          'qwen2.5-coder-3b-native': 36, 'qwen2.5-coder-7b-native': 28, 'qwen2.5-coder-14b-native': 48,
-          'qwen2.5-coder-32b-instruct': 64, 'qwen2.5-7b-native': 28, 'qwen3-8b-native': 32,
-          'deepseek-r1-distill-qwen-1.5b': 28, 'deepseek-r1-distill-qwen-7b': 28, 'deepseek-r1-distill-qwen-14b': 48,
-          'deepseek-r1-distill-llama-8b': 32, 'deepseek-r1-distill-qwen-32b': 64, 'deepseek-r1-distill-llama-70b': 80,
-          'mistral-7b-v0.3': 32, 'mixtral-8x7b-instruct': 32, 'codestral-22b': 56, 'mixtral-8x22b-instruct': 56,
-          'command-r-35b': 40, 'command-r-plus-104b': 64, 'openchat-3.5-7b': 32, 'nemotron-mini-4b': 32,
-          'nemotron-70b-instruct': 80
-        };
-        return MODEL_LAYERS_LOOKUP[mid] || 32;
-      };
-
-      const totalLayers = lookupPresetLayers(modelId);
+      const totalLayers = MODEL_LAYERS[modelId] || 32;
 
       // Base llama-server arguments
       const args: string[] = [
@@ -712,10 +652,12 @@ export const LocalModelRunner = {
     
     return new Promise<void>((resolve) => {
       if (activeProcess) {
-        // Kill the process tree if Windows
         const pid = activeProcess.pid;
         if (pid) {
-          exec(`taskkill /pid ${pid} /f /t`, () => {
+          kill(pid, 'SIGKILL', (err) => {
+            if (err) {
+              console.warn(`[LocalModelRunner] Failed to tree-kill process ${pid}:`, err.message);
+            }
             activeProcess = null;
             activeModelId = null;
             resolve();

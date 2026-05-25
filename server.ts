@@ -126,24 +126,6 @@ async function startServer() {
 
   app.use('/api', sessionValidationMiddleware);
 
-  // Stream Token Rotation Middleware
-  app.use((req, res, next) => {
-    if ((req.path.endsWith('/stream') || req.path.includes('/stream')) && req.path !== '/api/admin/logs') {
-      const originalWrite = res.write;
-      let metadataSent = false;
-      res.write = function (chunk: any, encoding?: any, callback?: any) {
-        if (!metadataSent) {
-          metadataSent = true;
-          const newToken = createSessionToken(false);
-          const sseMetadata = `event: metadata\ndata: ${JSON.stringify({ tokenRotate: newToken })}\n\n`;
-          originalWrite.call(res, sseMetadata, 'utf8');
-        }
-        return originalWrite.call(res, chunk, encoding, callback);
-      } as any;
-    }
-    next();
-  });
-
   // Mount routes
   app.use('/api/vault', vaultRouter);
   app.get('/api/auth/session', (req, res) => {

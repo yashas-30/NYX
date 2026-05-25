@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { UnifiedEngine } from '../lib/unifiedEngine.js';
+import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
 
 export const geminiRouter = Router();
 
@@ -16,6 +17,7 @@ geminiRouter.post('/stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+  sendSseTokenRotate(res);
 
   let isClosed = false;
   res.on('close', () => {

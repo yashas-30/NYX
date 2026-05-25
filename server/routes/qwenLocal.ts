@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
 
 export const qwenLocalRouter = Router();
 
@@ -16,6 +17,7 @@ qwenLocalRouter.post('/stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
+    sendSseTokenRotate(res);
 
     console.log(`[Qwen Local Proxy] Forwarding stream request to local Python server for model "${model}"`);
 

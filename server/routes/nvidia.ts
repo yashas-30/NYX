@@ -5,6 +5,7 @@
  */
 
 import { Router } from 'express';
+import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
 
 export const nvidiaRouter = Router();
 
@@ -74,6 +75,7 @@ nvidiaRouter.post('/stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
+    sendSseTokenRotate(res);
 
     const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',

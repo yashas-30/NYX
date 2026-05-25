@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import os from 'os';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { LocalModelRunner } from '../lib/localModelRunner.ts';
 
 export const systemRouter = Router();
@@ -15,17 +15,17 @@ systemRouter.get('/system', async (req, res) => {
   let vram = 0;
   let freeVram = 0;
   try {
+    const argsTotal = ['--query-gpu=memory.total', '--format=csv,noheader,nounits'];
+    const argsFree = ['--query-gpu=memory.free', '--format=csv,noheader,nounits'];
+
     vram = await new Promise((resolve) => {
-      const commands = [
-        'nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits',
-        '"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" --query-gpu=memory.total --format=csv,noheader,nounits'
-      ];
+      const executables = ['nvidia-smi', 'C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe'];
       const tryExec = (idx: number) => {
-        if (idx >= commands.length) {
+        if (idx >= executables.length) {
           resolve(0);
           return;
         }
-        exec(commands[idx], (error: any, stdout: string) => {
+        execFile(executables[idx], argsTotal, (error, stdout) => {
           if (error) {
             tryExec(idx + 1);
           } else {
@@ -38,16 +38,13 @@ systemRouter.get('/system', async (req, res) => {
     });
 
     freeVram = await new Promise((resolve) => {
-      const commands = [
-        'nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits',
-        '"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" --query-gpu=memory.free --format=csv,noheader,nounits'
-      ];
+      const executables = ['nvidia-smi', 'C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe'];
       const tryExec = (idx: number) => {
-        if (idx >= commands.length) {
+        if (idx >= executables.length) {
           resolve(0);
           return;
         }
-        exec(commands[idx], (error: any, stdout: string) => {
+        execFile(executables[idx], argsFree, (error, stdout) => {
           if (error) {
             tryExec(idx + 1);
           } else {

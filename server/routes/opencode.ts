@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import { Gateway } from '../lib/gateway.js';
+import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
 
 export const opencodeRouter = Router();
 
@@ -55,6 +56,7 @@ opencodeRouter.post('/stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
+    sendSseTokenRotate(res);
 
     // Make request to OpenCode Zen API
     const response = await fetch(url, {

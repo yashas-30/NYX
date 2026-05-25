@@ -3,6 +3,7 @@ import { LocalModelManager } from '../lib/localModelManager.ts';
 import { LocalModelRunner } from '../lib/localModelRunner.ts';
 import { CodebaseScanner } from '../lib/codebaseScanner.ts';
 import { RulesDb } from '../lib/rulesDb.ts';
+import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
 
 export const localModelsRouter = express.Router();
 
@@ -160,6 +161,13 @@ Please analyze the context and provide highly optimized, syntax-correct solution
   // Estimate total tokens required for this request (system prompt + message history + completion)
   const totalCharacters = messages.reduce((sum, m) => sum + (m.content || '').length, 0) + systemPrompt.length;
   const estimatedPromptTokens = Math.ceil(totalCharacters / 3.8);
+
+  if (estimatedPromptTokens > 32768 - 256) {
+    return res.status(400).json({
+      error: `Input context is too large (${estimatedPromptTokens} estimated tokens). Please reduce the size of your prompt or active codebase files.`
+    });
+  }
+
   const neededContext = estimatedPromptTokens + (max_tokens ?? 2048);
   // Round up to nearest 512, clamp between 2048 and 32768
   const autoContextSize = Math.max(2048, Math.min(32768, Math.ceil(neededContext / 512) * 512));
@@ -225,6 +233,7 @@ Please analyze the context and provide highly optimized, syntax-correct solution
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
+    sendSseTokenRotate(res);
 
     let localDraftResponse = '';
 

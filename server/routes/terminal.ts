@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { spawnSandbox } from '../lib/sandbox.ts';
+import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
 
 export const terminalRouter = Router();
 
@@ -143,6 +144,7 @@ terminalRouter.get('/stream', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
+  sendSseTokenRotate(res);
 
   const execId = req.query.execId as string;
   const directCmd = req.query.command as string;

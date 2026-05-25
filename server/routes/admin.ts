@@ -33,7 +33,7 @@ adminRouter.get('/logs', (req, res) => {
     }
   } catch {}
 
-  const interval = setInterval(() => {
+  const readNewLogs = () => {
     try {
       if (!fs.existsSync(logPath)) return;
       const stats = fs.statSync(logPath);
@@ -55,9 +55,25 @@ adminRouter.get('/logs', (req, res) => {
     } catch (err: any) {
       res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
     }
-  }, 1000);
+  };
+
+  let watcher: fs.FSWatcher | null = null;
+  try {
+    if (!fs.existsSync(LOGS_DIR)) {
+      fs.mkdirSync(LOGS_DIR, { recursive: true });
+    }
+    watcher = fs.watch(LOGS_DIR, (eventType, filename) => {
+      if (filename === path.basename(logPath)) {
+        readNewLogs();
+      }
+    });
+  } catch (err: any) {
+    console.error('[AdminLogs] Failed to start fs.watch:', err.message);
+  }
 
   req.on('close', () => {
-    clearInterval(interval);
+    if (watcher) {
+      watcher.close();
+    }
   });
 });
