@@ -78,6 +78,17 @@ export class CacheServer {
       release = await lock(filePath, { realpath: false, retries: 3 });
       const raw = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(raw);
+
+      // TTL check: if the entry has an expiresAt field and it's in the past, treat as a miss
+      if (parsed.expiresAt && Date.now() > parsed.expiresAt) {
+        this.stats.misses++;
+        // Evict expired entry asynchronously
+        setImmediate(() => {
+          try { fs.unlinkSync(filePath); } catch {}
+        });
+        return null;
+      }
+
       this.stats.hits++;
       
       // Touch file to update mtime for LRU eviction policy
@@ -101,16 +112,30 @@ export class CacheServer {
    * Stores a value in the cache with thread-safe lock and LRU eviction
    */
   public static async set(key: string, data: string, provider: string, model: string): Promise<void> {
+    return this.setWithTTL(key, data, provider, model, 0);
+  }
+
+  /**
+   * Stores a value with a TTL (time-to-live). Use for web search results and other short-lived data.
+   * @param ttlMs - TTL in milliseconds. 0 means no expiry (permanent). Default for web search: 300000 (5 min).
+   */
+  public static async setWithTTL(key: string, data: string, provider: string, model: string, ttlMs = 0): Promise<void> {
     const filePath = path.join(CACHE_DIR, `${key}.json`);
     let release: (() => Promise<void>) | null = null;
     try {
-      const payload = {
+      const payload: any = {
         key,
         provider,
         model,
         timestamp: Date.now(),
         data
       };
+
+      // Attach expiry timestamp if TTL is specified
+      if (ttlMs > 0) {
+        payload.expiresAt = Date.now() + ttlMs;
+        console.log(`[CacheServer] Storing entry with TTL=${ttlMs}ms (expires in ${(ttlMs / 1000).toFixed(0)}s): ${key.slice(0, 12)}...`);
+      }
 
       const fileExists = fs.existsSync(filePath);
       if (!fileExists) {

@@ -4,9 +4,16 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
-const currentDirname = typeof __dirname !== 'undefined'
-  ? __dirname
-  : path.dirname(fileURLToPath(import.meta.url));
+const currentDirname = (() => {
+  if (typeof __dirname !== 'undefined') {
+    return __dirname;
+  }
+  try {
+    return path.dirname(fileURLToPath(new Function('return import.meta.url')()));
+  } catch {
+    return '';
+  }
+})();
 
 export function runMigrations() {
   try {

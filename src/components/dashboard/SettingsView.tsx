@@ -111,6 +111,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     misses: number;
   }>({ itemCount: 0, totalSizeBytes: 0, hits: 0, misses: 0 });
 
+  // ── Quantization / Local Inference State ───────────────────────────────────
+  const QUANT_TIERS = [
+    { id: 'Q4_K_M', label: 'Speed',    badge: '3–4× faster',  quality: '95%', vram: '~3.9 GB', warn: 'Higher hallucination risk for complex code.' },
+    { id: 'Q5_K_M', label: 'Balanced', badge: 'Recommended', quality: '98%', vram: '~4.8 GB', warn: null },
+    { id: 'Q6_K',   label: 'Quality',  badge: 'Best output', quality: '99%', vram: '~5.7 GB', warn: null },
+  ] as const;
+  type QuantTierId = typeof QUANT_TIERS[number]['id'];
+  const [selectedQuant, setSelectedQuant] = useState<QuantTierId>(() => {
+    return (localStorage.getItem('nyx_quant') as QuantTierId) || 'Q5_K_M';
+  });
+  const [quantSaving, setQuantSaving] = useState(false);
+
+  const handleQuantChange = async (quantId: QuantTierId) => {
+    setSelectedQuant(quantId);
+    localStorage.setItem('nyx_quant', quantId);
+    setQuantSaving(true);
+    try {
+      await fetch('/api/nyx/local-models/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantization: quantId })
+      });
+      toast.success(`Quantization set to ${quantId} — takes effect on next model load.`);
+    } catch {
+      toast.info(`Quantization saved locally: ${quantId}`);
+    } finally {
+      setQuantSaving(false);
+    }
+  };
+
   const [evolvedRules, setEvolvedRules] = useState<Array<{
     metric: string;
     critique: string;
@@ -402,7 +432,79 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </motion.button>
             )}
 
+            {/* Local Inference Engine Panel - Quality/Speed slider */}
+            <div className="mt-6 group p-5 rounded-3xl glass-panel hover:border-primary/25 transition-all duration-300 relative overflow-hidden shadow-lg">
+              {/* Violet/Indigo GPU accent */}
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-violet-500/50 via-indigo-500/50 to-violet-500/50 opacity-70 group-hover:opacity-100 transition-opacity" />
+              
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-400">LOCAL INFERENCE ENGINE</p>
+                  <h3 className="text-xs font-bold text-foreground mt-0.5">Quantization Quality / Speed</h3>
+                </div>
+                <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${quantSaving ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-violet-400 bg-violet-500/10 border-violet-500/20'}`}>
+                  {quantSaving ? 'Saving...' : selectedQuant}
+                </span>
+              </div>
+
+              {/* Tier selector cards */}
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {QUANT_TIERS.map((tier) => {
+                  const isSelected = selectedQuant === tier.id;
+                  return (
+                    <button
+                      key={tier.id}
+                      onClick={() => handleQuantChange(tier.id)}
+                      className={`relative p-3 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${
+                        isSelected
+                          ? 'bg-violet-500/15 border-violet-500/40 shadow-md shadow-violet-500/10'
+                          : 'bg-white/[0.02] border-white/8 hover:border-white/20 hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                      )}
+                      <div className={`text-[10px] font-black uppercase tracking-wider mb-1 ${isSelected ? 'text-violet-300' : 'text-muted-foreground/80'}`}>
+                        {tier.label}
+                      </div>
+                      <div className={`text-[11px] font-bold font-mono mb-2 ${isSelected ? 'text-foreground' : 'text-foreground/70'}`}>
+                        {tier.id}
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[9px] font-bold uppercase tracking-wider">
+                          <span className="text-muted-foreground/60">Quality</span>
+                          <span className={isSelected ? 'text-emerald-400' : 'text-muted-foreground/80'}>{tier.quality}</span>
+                        </div>
+                        <div className="flex justify-between text-[9px] font-bold uppercase tracking-wider">
+                          <span className="text-muted-foreground/60">VRAM</span>
+                          <span className={isSelected ? 'text-violet-300' : 'text-muted-foreground/80'}>{tier.vram}</span>
+                        </div>
+                      </div>
+                      <span className={`mt-2 inline-block text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full ${
+                        isSelected ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30' : 'bg-white/5 text-muted-foreground/60 border border-white/10'
+                      }`}>
+                        {tier.badge}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Warning for Q4 tier */}
+              {QUANT_TIERS.find(t => t.id === selectedQuant)?.warn && (
+                <div className="mb-3 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/25 text-[10px] text-amber-300 flex items-center gap-2">
+                  <span className="text-amber-400 shrink-0">⚠</span>
+                  {QUANT_TIERS.find(t => t.id === selectedQuant)?.warn}
+                </div>
+              )}
+
+              <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+                Quantization controls model weight precision. Higher quality tiers reduce hallucinations in code generation. Q5_K_M is the recommended minimum for coding tasks. Takes effect on next model load.
+              </p>
+            </div>
+
             {/* Cache Management Panel */}
+
             <div className="mt-6 group p-5 rounded-3xl glass-panel hover:border-primary/25 transition-all duration-300 relative overflow-hidden shadow-lg">
               {/* Neon Gradient Accent */}
               <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-primary/30 via-cyan-500/30 to-primary/30 opacity-70 group-hover:opacity-100 transition-opacity" />

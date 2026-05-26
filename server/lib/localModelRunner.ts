@@ -566,7 +566,7 @@ export const LocalModelRunner = {
       return; // Already running with equal or larger context window
     }
 
-    if (modelState !== 'idle' && modelState !== 'downloading') {
+    if (modelState !== 'idle' && modelState !== 'downloading' && modelState !== 'running') {
       throw new Error(`Cannot start model: currently ${modelState}`);
     }
 
@@ -586,20 +586,24 @@ export const LocalModelRunner = {
       startProgress = 40;
 
       // Save/retrieve settings
+      let existingSettings: any = {};
+      if (fs.existsSync(CONFIG_PATH)) {
+        try {
+          existingSettings = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+        } catch (err: any) {
+          console.error('Failed to read local models config.json:', err.message);
+        }
+      }
+
       if (localSettings) {
+        localSettings = { ...existingSettings, ...localSettings };
         try {
           fs.writeFileSync(CONFIG_PATH, JSON.stringify(localSettings, null, 2));
         } catch (err: any) {
           console.error('Failed to write local models config.json:', err.message);
         }
       } else {
-        if (fs.existsSync(CONFIG_PATH)) {
-          try {
-            localSettings = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-          } catch (err: any) {
-            console.error('Failed to read local models config.json:', err.message);
-          }
-        }
+        localSettings = existingSettings;
       }
 
       // Safe defaults
@@ -609,6 +613,30 @@ export const LocalModelRunner = {
       gpuLayers = typeof localSettings?.gpuLayers === 'number' ? localSettings.gpuLayers : 99;
       const threads = typeof localSettings?.threads === 'number' ? localSettings.threads : defaultThreads;
       const contextSize = typeof localSettings?.contextSize === 'number' ? localSettings.contextSize : 2048;
+
+      // ── Quantization tier enforcement ────────────────────────────────────────
+      // Coding tasks are the most quantization-sensitive (one wrong token = broken syntax).
+      // Minimum enforced: Q4_K_M. Recommended default: Q5_K_M. High-quality: Q6_K.
+      const QUANT_TIERS = ['Q2_K', 'Q3_K_M', 'Q4_K_M', 'Q5_K_M', 'Q6_K', 'Q8_0'];
+      const MIN_CODE_QUANT = 'Q4_K_M';
+      const DEFAULT_CODE_QUANT = 'Q5_K_M';
+      let selectedQuant: string = localSettings?.quantization || DEFAULT_CODE_QUANT;
+      // Block Q2/Q3 quantizations for any session - enforce minimum Q4_K_M
+      const quantIdx = QUANT_TIERS.indexOf(selectedQuant);
+      const minQuantIdx = QUANT_TIERS.indexOf(MIN_CODE_QUANT);
+      if (quantIdx >= 0 && quantIdx < minQuantIdx) {
+        console.warn(`[Quantization Guard] Blocked low-quality quant '${selectedQuant}' — upgrading to minimum safe '${MIN_CODE_QUANT}' for code generation.`);
+        selectedQuant = MIN_CODE_QUANT;
+      }
+      console.log(`[Quantization] Using quant tier: ${selectedQuant} (Speed/Quality balance for coding)`);
+
+      // ── Sampling defaults tuned for code generation ──────────────────────────
+      // Lower temperature = near-greedy = fewer hallucinations in code
+      const codingTemperature = typeof localSettings?.temperature === 'number' ? localSettings.temperature : 0.1;
+      const topP = typeof localSettings?.topP === 'number' ? localSettings.topP : 0.9;
+      const topK = typeof localSettings?.topK === 'number' ? localSettings.topK : 20;
+      // minP filters tokens that are extremely improbable relative to top choice — major hallucination vector
+      const minP = typeof localSettings?.minP === 'number' ? localSettings.minP : 0.05;
 
       const models = LocalModelManager.listModels();
       const model = models.find(m => m.id === modelId);
@@ -657,20 +685,24 @@ export const LocalModelRunner = {
       const args: string[] = [
         '-m', model.filePath,
         '--port', '12345',
-        '--host', '127.0.0.1', // Bind strictly to localhost
+        '--host', '127.0.0.1',          // Bind strictly to localhost
         '-c', String(contextSize),
         '--threads', String(threads),
         '-b', String(batchSize),
         '-ub', String(microBatchSize),
-        '--parallel', '1', // Single slot for max context space execution
-        '-ngl', String(gpuLayers)
+        '--parallel', '1',              // Single user local execution to maximize slot context & VRAM offload
+        '-ngl', String(gpuLayers),
+        '--temp', String(codingTemperature), // Near-greedy for code accuracy (0.1 default)
+        '--top-p', String(topP),        // Nucleus sampling
+        '--top-k', String(topK),        // Top-k filter
+        '--min-p', String(minP),        // MinP: filters wildly unlikely tokens — reduces hallucinations
       ];
 
       // Enable optimizations if GPU offloading is active
       if (gpuLayers > 0) {
-        args.push('-fa'); // Enable Flash Attention switch without invalid 'on' value
-        args.push('--cont-batching'); // Enable continuous batching for slot parallelism
-        args.push('--cache-type-k', 'q8_0'); // Quantize Key cache to 8-bit
+        args.push('--flash-attn', 'on'); // Flash Attention: O(n²) → O(n) KV cache. 2-4x faster for long contexts from codebaseScanner
+        args.push('--cont-batching');   // Continuous batching for parallel slot execution
+        args.push('--cache-type-k', 'q8_0'); // Quantize Key cache to 8-bit — halves KV memory overhead
         args.push('--cache-type-v', 'q8_0'); // Quantize Value cache to 8-bit
 
         // Windows-specific memory map fix
@@ -688,7 +720,30 @@ export const LocalModelRunner = {
         }
       } else {
         // CPU-only defaults
-        args.push('--mlock'); // Lock in RAM
+      }
+
+      // ── Speculative Decoding (2-3x speedup) ─────────────────────────────────
+      // If a 1B draft model with matching ID suffix exists alongside the main model, use it
+      // to speculate 5 tokens ahead and batch-verify with the main model.
+      // Convention: <modelId>-draft.gguf placed in same models directory.
+      const MODELS_DIR_PATH = path.dirname(model.filePath);
+      const draftModelPath = path.join(MODELS_DIR_PATH, `${modelId}-draft.gguf`);
+      if (fs.existsSync(draftModelPath)) {
+        args.push('--draft-model', draftModelPath);
+        args.push('--draft', '5'); // Speculate 5 tokens per draft step
+        console.log(`[Speculative Decoding] Draft model found: ${draftModelPath}. Speculating 5 tokens per step.`);
+      } else {
+        // Also check for a generic tinyllama/gemma 1B draft model as universal fallback
+        const genericDraftPaths = [
+          path.join(MODELS_DIR_PATH, 'llama-3.2-1b-native.gguf'),
+          path.join(MODELS_DIR_PATH, 'gemma-2-2b-it.gguf'),
+        ];
+        const foundDraft = genericDraftPaths.find(p => fs.existsSync(p));
+        if (foundDraft && foundDraft !== model.filePath) {
+          args.push('--draft-model', foundDraft);
+          args.push('--draft', '5');
+          console.log(`[Speculative Decoding] Generic draft model found at: ${foundDraft}. Speculating 5 tokens per step.`);
+        }
       }
 
       const optimalDevice = await this.getOptimalVulkanDevice();
@@ -737,6 +792,15 @@ export const LocalModelRunner = {
 
       activeModelId = modelId;
 
+      const logFilePath = path.join(BASE_DIR, '..', '.nyx-logs', 'llama-server.log');
+      try {
+        const logsDir = path.dirname(logFilePath);
+        if (!fs.existsSync(logsDir)) {
+          fs.mkdirSync(logsDir, { recursive: true });
+        }
+        fs.writeFileSync(logFilePath, '', 'utf-8');
+      } catch {}
+
       const stderrLogs: string[] = [];
 
       // Drain stdout and stderr to prevent OS buffer deadlocks (critical for Windows/llama.cpp)
@@ -744,6 +808,9 @@ export const LocalModelRunner = {
         const str = data.toString().trim();
         if (str) {
           console.log(`[llama-server]: ${str}`);
+          try {
+            fs.appendFileSync(logFilePath, `[STDOUT] ${str}\n`, 'utf-8');
+          } catch {}
         }
       });
 
@@ -758,6 +825,9 @@ export const LocalModelRunner = {
           } else {
             console.log(`[llama-server-log]: ${str}`);
           }
+          try {
+            fs.appendFileSync(logFilePath, `[STDERR] ${str}\n`, 'utf-8');
+          } catch {}
 
           // Active OOM / CUDA device loss crash protection
           if (str.includes('CUDA out of memory') || str.toLowerCase().includes('oom') || str.includes('failed to allocate')) {

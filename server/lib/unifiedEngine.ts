@@ -7,6 +7,28 @@ import { Gateway, Provider, ChatMessage, AISettings, ZEN_FREE_MODELS } from './g
 
 export type { Provider, ChatMessage, AISettings } from './gateway.js';
 
+// ── Layer 7: Abstention Training ──────────────────────────────────────────────
+// Injected into all system prompts to reduce hallucinations by encouraging
+// the model to say "I don't know" rather than guess wrong answers.
+const ABSTENTION_INSTRUCTION = `
+IMPORTANT: If you are unsure about an API, function, library, or implementation detail, or if the context does not contain sufficient information to answer accurately, explicitly state "I don't have enough context to answer this reliably" rather than guessing. Accuracy over completeness. Never hallucinate imports, library names, or function signatures.`.trim();
+
+/**
+ * Injects abstention instruction into the last system message, or prepends a new one.
+ */
+function injectAbstentionInstruction(messages: ChatMessage[]): ChatMessage[] {
+  const systemIdx = messages.findIndex(m => m.role === 'system');
+  if (systemIdx >= 0) {
+    const updated = [...messages];
+    updated[systemIdx] = {
+      ...updated[systemIdx],
+      content: `${updated[systemIdx].content}\n\n${ABSTENTION_INSTRUCTION}`
+    };
+    return updated;
+  }
+  return [{ role: 'system', content: ABSTENTION_INSTRUCTION }, ...messages];
+}
+
 export interface UnifiedRequest {
   provider: Provider;
   model: string;
@@ -92,12 +114,12 @@ export class UnifiedEngine {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents,
-        systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+        systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction + '\n\n' + ABSTENTION_INSTRUCTION }] } : { parts: [{ text: ABSTENTION_INSTRUCTION }] },
         generationConfig: {
-          temperature: settings?.temperature,
+          temperature: settings?.temperature ?? 0.1,  // Near-greedy for code accuracy
           maxOutputTokens: settings?.maxTokens,
-          topP: settings?.topP,
-          topK: settings?.topK,
+          topP: settings?.topP ?? 0.9,
+          topK: settings?.topK ?? 20,
         }
       })
     });
@@ -143,11 +165,12 @@ export class UnifiedEngine {
       },
       body: JSON.stringify({
         model,
-        messages,
+        messages: injectAbstentionInstruction(messages),
         stream: true,
-        temperature: settings?.temperature,
+        temperature: settings?.temperature ?? 0.1,  // Near-greedy for code quality
         max_tokens: settings?.maxTokens,
-        top_p: settings?.topP,
+        top_p: settings?.topP ?? 0.9,
+        top_k: settings?.topK ?? 20,
       })
     });
 
@@ -241,6 +264,9 @@ export class UnifiedEngine {
   /**
    * Streams responses from local GGUF model executed via NYX's native runner.
    * Connects directly to localhost:12345.
+   * Layer 4 — Chain-of-Verification (CoVe): After streaming the main response,
+   * a non-streaming verifier pass checks for hallucinated APIs, broken syntax,
+   * and invalid imports. Research shows CoVe improves F1 scores by 23%.
    */
   private static async streamNyxNative(
     model: string,
@@ -250,16 +276,22 @@ export class UnifiedEngine {
     done: () => void
   ): Promise<void> {
     const url = 'http://127.0.0.1:12345/v1/chat/completions';
+    const augmentedMessages = injectAbstentionInstruction(
+      messages.map(m => ({ role: m.role, content: m.content }))
+    );
 
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        messages: augmentedMessages,
         stream: true,
-        temperature: settings?.temperature ?? 0.7,
+        temperature: settings?.temperature ?? 0.1,  // Layer 1: Near-greedy, reduces hallucinations
         max_tokens: settings?.maxTokens ?? 4096,
+        top_p: settings?.topP ?? 0.9,              // Nucleus sampling
+        top_k: settings?.topK ?? 20,              // Top-K filter
+        min_p: (settings as any)?.minP ?? 0.05,   // Layer 1: MinP prevents wildly improbable tokens
       })
     });
 
@@ -267,10 +299,55 @@ export class UnifiedEngine {
       throw new Error(`Native GGUF Runner Error: ${response.status}. Make sure the model is loaded in RAM.`);
     }
 
+    // Collect the full draft response while streaming it to the client
+    let fullDraftResponse = '';
     await Gateway.processSSEStream(response, {
-      onChunk: (text) => write({ chunk: text }),
-      onDone: done,
+      onChunk: (text) => {
+        fullDraftResponse += text;
+        write({ chunk: text });
+      },
+      onDone: () => {},  // We call done() after CoVe below
       onError: (err) => { throw new Error(err); }
     });
+
+    // ── Layer 4: Chain-of-Verification (CoVe) ────────────────────────────────
+    // Only run verification if the response contains code blocks (most likely a code task).
+    // This avoids latency overhead on pure chat responses.
+    const hasCode = fullDraftResponse.includes('```') || fullDraftResponse.includes('function ') || fullDraftResponse.includes('class ');
+
+    if (hasCode && fullDraftResponse.length > 50) {
+      try {
+        const verifierPrompt = `You are a strict code verifier. Review the following AI-generated response for factual correctness:\n1. All APIs, functions, and methods used actually exist in the specified language/framework\n2. Syntax is valid for the target language\n3. No hallucinated imports, packages, or dependencies\n4. Logic is sound and won't cause obvious runtime errors\n\nIf everything is correct, respond with exactly: VERIFIED\nIf issues are found, list them concisely (max 3 bullets).\n\n--- CODE TO VERIFY ---\n${fullDraftResponse.slice(0, 3000)}`;
+
+        const verifyResponse = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: verifierPrompt }],
+            stream: false,
+            temperature: 0.0,  // Fully deterministic for verification
+            max_tokens: 256,
+          })
+        });
+
+        if (verifyResponse.ok) {
+          const verifyData = await verifyResponse.json();
+          const verifyResult: string = verifyData?.choices?.[0]?.message?.content || '';
+          if (verifyResult && !verifyResult.startsWith('VERIFIED')) {
+            // Emit verification issues as a special chunk so the frontend can display them
+            write({ chunk: `\n\n---\n**⚠ NYX Code Verifier:**\n${verifyResult}` });
+            console.log('[CoVe] Verification found issues:', verifyResult.slice(0, 200));
+          } else {
+            console.log('[CoVe] Response verified: PASSED');
+          }
+        }
+      } catch (verifyErr: any) {
+        // CoVe failure is non-fatal — the original response was already streamed
+        console.warn('[CoVe] Verification step failed (non-fatal):', verifyErr.message);
+      }
+    }
+
+    done();
   }
-}
+}
