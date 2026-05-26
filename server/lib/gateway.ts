@@ -4,6 +4,8 @@
  * Supports Cloudflare AI Gateway proxying and provider-specific routing.
  */
 
+import { loadKeys } from './keyVault.ts';
+
 export type Provider = 'gemini' | 'openrouter' | 'nvidia' | 'opencode' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'mistral' | 'together' | 'pollinations' | 'nyx-native' | 'qwen-local';
 
 export interface ChatMessage {
@@ -143,6 +145,16 @@ export class Gateway {
 
     if (isValidKey(userKey)) {
       return userKey!.trim();
+    }
+
+    // Fallback: check encrypted keyVault keys
+    try {
+      const vaultKeys = loadKeys();
+      if (isValidKey(vaultKeys[provider])) {
+        return vaultKeys[provider].trim();
+      }
+    } catch (err) {
+      console.error(`[Gateway] Failed to retrieve key for ${provider} from keyVault:`, err);
     }
 
     return this.SYSTEM_KEYS[provider] || '';

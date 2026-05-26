@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { validate } from '../middleware/validate.ts';
 import { writeFileSchema } from '../schemas/index.ts';
+import { loadKeys } from '../lib/keyVault.ts';
 
 export const nyxRouter = Router();
 
@@ -95,7 +96,8 @@ ${nyxResponse}
   if (modelId && provider) {
     try {
       let responseText = '';
-      const activeKey = apiKey || '';
+      const keys = loadKeys();
+      const activeKey = apiKey || keys[provider] || '';
       
       console.log(`[Background Critic] Executing meta-critic using selected model ${modelId} (${provider})`);
 
