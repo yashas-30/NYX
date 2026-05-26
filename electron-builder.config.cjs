@@ -28,11 +28,12 @@ module.exports = {
     '**/dist/**/*',
     '**/dist-server/**/*',
     '**/binaries/**/*',
-    '**/node_modules/**/*',
+    '**/node_modules/better-sqlite3/**/*',
+    '**/node_modules/electron-store/**/*',
     '**/dist/nyx-icon.png',
     '**/dist/nyx-icon.ico',
     '**/public/nyx-icon.png',
-    '**/public/nyx-icon.ico',
+    '**/public/nyx-icon.ico'
   ],
   win: {
     target: 'nsis',
@@ -53,4 +54,7 @@ module.exports = {
     entitlements: process.env.MAC_ENTITLEMENTS_PATH || undefined,
     entitlementsInherit: process.env.MAC_ENTITLEMENTS_PATH || undefined,
   },
+  linux: {
+    target: ['AppImage', 'deb']
+  }
 };

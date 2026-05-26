@@ -5,10 +5,13 @@
 
 import { Router } from 'express';
 import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
+import { validate } from '../middleware/validate.js';
+import { pollinationsStreamSchema } from '../schemas/index.js';
+import logger from '../lib/logger.ts';
 
 export const pollinationsRouter = Router();
 
-pollinationsRouter.post('/stream', async (req, res) => {
+pollinationsRouter.post('/stream', validate(pollinationsStreamSchema), async (req, res) => {
   const controller = new AbortController();
   res.on('close', () => {
     controller.abort();
@@ -40,7 +43,7 @@ pollinationsRouter.post('/stream', async (req, res) => {
       temperature: settings?.temperature ?? 0.7,
     };
 
-    console.log(`[Pollinations Proxy] Sending to Pollinations.ai: ${realModel}`);
+    logger.info({ model: realModel }, 'Forwarding stream request to Pollinations.ai');
 
     // Set event-stream headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -61,7 +64,7 @@ pollinationsRouter.post('/stream', async (req, res) => {
 
     if (!response.ok || !response.body) {
       const errText = await response.text();
-      console.error(`[Pollinations Error] ${response.status}: ${errText}`);
+      logger.error({ status: response.status, error: errText }, 'Pollinations API response error');
       res.write(`data: ${JSON.stringify({ error: `Pollinations API Error ${response.status}: ${errText}` })}\n\n`);
       res.end();
       return;
@@ -118,7 +121,7 @@ pollinationsRouter.post('/stream', async (req, res) => {
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (e: any) {
-    console.error('[Pollinations Error]:', e.message);
+    logger.error({ err: e }, 'Pollinations stream error');
     if (e.name === 'AbortError') {
       res.end();
       return;

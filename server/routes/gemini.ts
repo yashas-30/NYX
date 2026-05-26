@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { UnifiedEngine } from '../lib/unifiedEngine.js';
 import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
+import { validate } from '../middleware/validate.js';
+import { geminiStreamSchema } from '../schemas/index.js';
+import logger from '../lib/logger.ts';
 
 export const geminiRouter = Router();
 
-geminiRouter.post('/stream', async (req, res) => {
+geminiRouter.post('/stream', validate(geminiStreamSchema), async (req, res) => {
   const { model, prompt, settings, systemInstruction, history, apiKey } = req.body;
 
   if (!model) {
@@ -25,7 +28,7 @@ geminiRouter.post('/stream', async (req, res) => {
   });
 
   try {
-    console.log(`[Gemini Route Proxy] Forwarding request to actual Gemini API for model "${model}"`);
+    logger.info({ model }, 'Forwarding request to actual Gemini API');
 
     const messages = [];
     if (systemInstruction) {

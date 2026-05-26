@@ -6,10 +6,12 @@
 import { Router } from 'express';
 import { Gateway } from '../lib/gateway.js';
 import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
+import { validate } from '../middleware/validate.js';
+import { openrouterStreamSchema } from '../schemas/index.js';
 
 export const openrouterRouter = Router();
 
-openrouterRouter.post('/stream', async (req, res) => {
+openrouterRouter.post('/stream', validate(openrouterStreamSchema), async (req, res) => {
   const controller = new AbortController();
   res.on('close', () => {
     controller.abort();

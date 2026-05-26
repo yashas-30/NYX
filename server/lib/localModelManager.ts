@@ -4,6 +4,15 @@ import https from 'https';
 import { IncomingMessage } from 'http';
 import os from 'os';
 import * as si from 'systeminformation';
+import logger from './logger.ts';
+import PQueueModule from 'p-queue';
+
+// Robust ES module interop wrapper for ESM/CJS bundling in Electron/Node
+const PQueue = (typeof PQueueModule === 'function'
+  ? PQueueModule
+  : (PQueueModule as any).default) as typeof PQueueModule;
+
+const downloadQueue = new PQueue({ concurrency: 1 });
 
 export interface ModelPreset {
   id: string;
@@ -622,14 +631,14 @@ try {
     downloadStates = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
   }
 } catch (e) {
-  console.error('Error loading model download state file:', e);
+  logger.error({ err: e }, 'Error loading model download state file');
 }
 
 function saveStates() {
   try {
     fs.writeFileSync(STATE_FILE, JSON.stringify(downloadStates, null, 2), 'utf8');
   } catch (e) {
-    console.error('Error saving model download state file:', e);
+    logger.error({ err: e }, 'Error saving model download state file');
   }
 }
 
@@ -685,7 +694,7 @@ export const LocalModelManager = {
         }
       }
     } catch (err) {
-      console.error('Error scanning local model directory:', err);
+      logger.error({ err }, 'Error scanning local model directory');
     }
 
     return scannedPresets.map(preset => {
@@ -698,7 +707,7 @@ export const LocalModelManager = {
         try {
           fileSizeBytes = fs.statSync(filePath).size;
           if (fileSizeBytes < 10 * 1024 * 1024) { // Under 10MB is definitely corrupt for these models
-            console.warn(`[NYX] Model ${preset.name} is corrupt (size ${fileSizeBytes} bytes). Deleting and recovering...`);
+            logger.warn({ modelName: preset.name, fileSizeBytes }, 'Model is corrupt. Deleting and recovering...');
             fs.unlinkSync(filePath);
             exists = false;
             fileSizeBytes = 0;
@@ -832,14 +841,14 @@ export const LocalModelManager = {
       activeDownloads.delete(modelId);
       downloadStates[modelId] = 'completed';
       saveStates();
-      console.log(`[NYX] Successfully downloaded ${activePreset.name} → ${filePath}`);
+      logger.info({ modelName: activePreset.name, filePath }, 'Successfully downloaded local model');
     }).catch((err) => {
       progress.status = 'failed';
       progress.error = err.message || 'Download failed';
       activeDownloads.delete(modelId);
       downloadStates[modelId] = 'failed';
       saveStates();
-      console.error(`[NYX] Failed to download ${preset!.name}:`, err);
+      logger.error({ err, modelName: preset!.name }, 'Failed to download local model');
       if (fs.existsSync(filePath)) {
         try { fs.unlinkSync(filePath); } catch {}
       }
@@ -887,7 +896,7 @@ export const LocalModelManager = {
   },
 
   downloadFile(url: string, destPath: string, progress: DownloadProgress): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return downloadQueue.add(() => new Promise<void>((resolve, reject) => {
       const partPath = destPath + '.part';
       let fileStream: fs.WriteStream | null = null;
       let existingBytes = 0;
@@ -1018,7 +1027,7 @@ export const LocalModelManager = {
       };
 
       makeRequest(url);
-    });
+    })) as any;
   },
 
   async getDeviceCompatibility(): Promise<{
@@ -1094,7 +1103,7 @@ export const LocalModelManager = {
         });
       }
     } catch (err) {
-      console.warn('[Compatibility] Failed to query systeminformation graphics:', err);
+      logger.warn({ err }, 'Failed to query systeminformation graphics');
     }
 
     // Try purely fallback on nvidia-smi if systeminformation graphics is empty

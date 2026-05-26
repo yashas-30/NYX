@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
+import { validate } from '../middleware/validate.js';
+import { qwenLocalStreamSchema } from '../schemas/index.js';
+import logger from '../lib/logger.ts';
 
 export const qwenLocalRouter = Router();
 
-qwenLocalRouter.post('/stream', async (req, res) => {
+qwenLocalRouter.post('/stream', validate(qwenLocalStreamSchema), async (req, res) => {
   const controller = new AbortController();
   res.on('close', () => {
     controller.abort();
@@ -19,7 +22,7 @@ qwenLocalRouter.post('/stream', async (req, res) => {
     res.flushHeaders();
     sendSseTokenRotate(res);
 
-    console.log(`[Qwen Local Proxy] Forwarding stream request to local Python server for model "${model}"`);
+    logger.info({ model }, 'Forwarding stream request to local Python server');
 
     const response = await fetch('http://127.0.0.1:3002/api/gemini/stream', {
       method: 'POST',
@@ -66,7 +69,7 @@ qwenLocalRouter.post('/stream', async (req, res) => {
     }
     res.end();
   } catch (error: any) {
-    console.error('[Qwen Local Proxy Error]:', error);
+    logger.error({ err: error }, 'Qwen Local stream error');
     res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
     res.end();
   }

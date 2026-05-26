@@ -2,6 +2,8 @@ import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { LOGS_DIR } from '../lib/paths.ts';
+import chokidar from 'chokidar';
+import logger from '../lib/logger.ts';
 
 export const adminRouter = Router();
 
@@ -70,18 +72,21 @@ adminRouter.get('/logs', (req, res) => {
     }
   };
 
-  let watcher: fs.FSWatcher | null = null;
+  let watcher: any = null;
   try {
     if (!fs.existsSync(LOGS_DIR)) {
       fs.mkdirSync(LOGS_DIR, { recursive: true });
     }
-    watcher = fs.watch(LOGS_DIR, (eventType, filename) => {
-      if (filename === path.basename(logPath)) {
-        readNewLogs();
-      }
+    watcher = chokidar.watch(logPath, {
+      persistent: true,
+      ignoreInitial: true,
+      usePolling: false
+    });
+    watcher.on('change', () => {
+      readNewLogs();
     });
   } catch (err: any) {
-    console.error('[AdminLogs] Failed to start fs.watch:', err.message);
+    logger.error({ err }, 'Failed to start chokidar watcher for logs');
   }
 
   req.on('close', () => {

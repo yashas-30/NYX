@@ -84,6 +84,64 @@ export const streamRequestSchema = z.object({
   gatewayUrls: z.record(z.string(), z.string().url()).optional()
 });
 
+const gatewayUrlsSchema = z.record(z.string(), z.string().url()).optional();
+
+export const geminiStreamSchema = z.object({
+  model: z.string().min(1).max(256),
+  prompt: z.string().min(1).max(65536),
+  apiKey: z.string().max(512).optional(),
+  settings: aiSettingsSchema,
+  systemInstruction: z.string().max(16384).optional(),
+  history: z.array(chatMessageSchema).max(500).optional(),
+  gatewayUrls: gatewayUrlsSchema,
+});
+
+export const openrouterStreamSchema = z.object({
+  model: z.string().min(1).max(256),
+  prompt: z.string().min(1).max(65536),
+  apiKey: z.string().min(1).max(512),
+  settings: aiSettingsSchema,
+  systemInstruction: z.string().max(16384).optional(),
+  history: z.array(chatMessageSchema).max(500).optional(),
+  gatewayUrls: gatewayUrlsSchema,
+});
+
+export const nvidiaStreamSchema = z.object({
+  model: z.string().min(1).max(256),
+  prompt: z.string().min(1).max(65536),
+  apiKey: z.string().regex(/^nvapi-/).max(512).optional(),
+  settings: aiSettingsSchema,
+  systemInstruction: z.string().max(16384).optional(),
+  history: z.array(chatMessageSchema).max(500).optional(),
+  gatewayUrls: gatewayUrlsSchema,
+});
+
+export const opencodeStreamSchema = z.object({
+  model: z.string().min(1).max(256),
+  prompt: z.string().min(1).max(65536),
+  apiKey: z.string().max(512).optional(),
+  settings: aiSettingsSchema,
+  systemInstruction: z.string().max(16384).optional(),
+  history: z.array(chatMessageSchema).max(500).optional(),
+  gatewayUrls: gatewayUrlsSchema,
+});
+
+export const pollinationsStreamSchema = z.object({
+  model: z.string().min(1).max(256),
+  prompt: z.string().min(1).max(65536),
+  settings: aiSettingsSchema,
+  systemInstruction: z.string().max(16384).optional(),
+  history: z.array(chatMessageSchema).max(500).optional(),
+});
+
+export const qwenLocalStreamSchema = z.object({
+  model: z.string().min(1).max(256).optional(),
+  prompt: z.string().min(1).max(65536),
+  settings: aiSettingsSchema,
+  systemInstruction: z.string().max(16384).optional(),
+  history: z.array(chatMessageSchema).max(500).optional(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Terminal Schemas
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 // Pure UI — receives isSelected + onClick, emits nothing else.
 
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Tooltip } from '../Tooltip';
 
 interface NodeToggleProps {

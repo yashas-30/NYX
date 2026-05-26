@@ -64,7 +64,7 @@ export default defineConfig({
               if (id.includes('lucide-react')) {
                 return 'vendor-icons';
               }
-              if (id.includes('framer-motion')) {
+              if (id.includes('motion')) {
                 return 'vendor-animation';
               }
               if (id.includes('recharts') || id.includes('d3')) {

@@ -1,6 +1,6 @@
 // Forced HMR re-transpilation trigger comment
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, Globe, Box, Cpu, Download, AlertCircle, Loader2, Play, Square, Terminal as TerminalIcon, X, Check, Trash2, Zap
 } from 'lucide-react';

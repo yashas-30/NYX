@@ -6,12 +6,15 @@
 import { Router } from 'express';
 import { Gateway } from '../lib/gateway.js';
 import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
+import { validate } from '../middleware/validate.js';
+import { opencodeStreamSchema } from '../schemas/index.js';
+import logger from '../lib/logger.ts';
 
 export const opencodeRouter = Router();
 
 const SYSTEM_KEY = process.env.OPENROUTER_API_KEY || process.env.LLM_API_KEY || '';
 
-opencodeRouter.post('/stream', async (req, res) => {
+opencodeRouter.post('/stream', validate(opencodeStreamSchema), async (req, res) => {
   const controller = new AbortController();
   res.on('close', () => {
     controller.abort();
@@ -130,7 +133,7 @@ opencodeRouter.post('/stream', async (req, res) => {
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (error: any) {
-    console.error('[OpenCode Error]:', error);
+    logger.error({ err: error }, 'OpenCode stream error');
     if (error.name === 'AbortError') {
       res.end();
       return;

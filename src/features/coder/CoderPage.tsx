@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { FREE_OPENCODE_MODELS } from '@/src/config/models';
 import { ModelDefinition, Provider } from '@/src/core/types';
 import { toast } from '@/src/components/ui/sonner';

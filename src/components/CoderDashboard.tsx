@@ -5,7 +5,7 @@
  */
 
 import React, { lazy, Suspense, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useDashboardState } from '@/src/hooks/useDashboardState';
 import { useChatSessions } from '@/src/hooks/useChatSessions';
 import { CoderPage } from '@/src/features/coder/CoderPage';

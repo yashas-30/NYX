@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Send, Settings as SettingsIcon, Check, StopCircle,
   Paperclip, X, Zap, Info, ChevronDown, Bot, Globe, Plus,

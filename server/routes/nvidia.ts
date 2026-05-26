@@ -6,6 +6,9 @@
 
 import { Router } from 'express';
 import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
+import { validate } from '../middleware/validate.js';
+import { nvidiaStreamSchema } from '../schemas/index.js';
+import logger from '../lib/logger.ts';
 
 export const nvidiaRouter = Router();
 
@@ -22,7 +25,7 @@ const NVIDIA_MODELS: Record<string, string> = {
   'nvidia/ministral-8b': 'mistralai/ministral-8b-instruct-v0.3',
 };
 
-nvidiaRouter.post('/stream', async (req, res) => {
+nvidiaRouter.post('/stream', validate(nvidiaStreamSchema), async (req, res) => {
   const controller = new AbortController();
   res.on('close', () => {
     controller.abort();
@@ -67,7 +70,7 @@ nvidiaRouter.post('/stream', async (req, res) => {
       return res.status(401).json({ error: 'NVIDIA API key is required. Add your nvapi-* key in Settings.' });
     }
 
-    console.log(`[NVIDIA Proxy] Sending to NVIDIA NIM: ${realModel}`);
+    logger.info({ model: realModel }, 'Forwarding stream request to NVIDIA NIM');
 
     // Set event-stream headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -89,7 +92,7 @@ nvidiaRouter.post('/stream', async (req, res) => {
 
     if (!response.ok || !response.body) {
       const errText = await response.text();
-      console.error(`[NVIDIA Error] ${response.status}: ${errText}`);
+      logger.error({ status: response.status, error: errText }, 'NVIDIA API response error');
       res.write(`data: ${JSON.stringify({ error: `NVIDIA API Error ${response.status}: ${errText}` })}\n\n`);
       res.end();
       return;
@@ -133,7 +136,7 @@ nvidiaRouter.post('/stream', async (req, res) => {
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (e: any) {
-    console.error('[NVIDIA Error]:', e.message);
+    logger.error({ err: e }, 'NVIDIA stream error');
     if (e.name === 'AbortError') {
       res.end();
       return;

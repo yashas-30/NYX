@@ -3,7 +3,7 @@
 // No logic here — just reads a status string and renders the correct style.
 
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 type Status = 'idle' | 'loading' | 'success' | 'error' | 'offline' | 'no_key';
 

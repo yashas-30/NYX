@@ -5,7 +5,7 @@
  */
 
 import React, { useMemo, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { TerminalIcon, Box, Settings as SettingsIcon, Zap, Trash2, Timer, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { StatusBadge } from '@/src/components/ui/StatusBadge';
 import { AgentPersona } from '@/src/core/types';

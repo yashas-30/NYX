@@ -7,9 +7,9 @@ import { fileURLToPath } from 'url';
 import { isProd } from './server/lib/paths.ts';
 import path from 'path';
 import http from 'node:http';
-import dns from 'node:dns';
 import fs from 'fs';
 import compression from 'compression';
+import helmet from 'helmet';
 
 import './server/lib/apiAgent.ts'; // 🚀 Init global connection pooling
 
@@ -47,10 +47,7 @@ import { CodebaseScanner } from './server/lib/codebaseScanner.ts';
 import { runMigrations } from './server/db/migrator.ts';
 import { migrateOldStore } from './server/lib/conversationStore.ts';
 
-// DNS override
-if (process.env.NYX_OVERRIDE_DNS === 'true') {
-  try { dns.setServers(['1.1.1.1', '8.8.8.8']); } catch { }
-}
+// DNS override removed: breaks enterprise VPNs and split-horizon DNS.
 
 const _filename = typeof __filename !== 'undefined' ? __filename : '';
 const _dirname = typeof __dirname !== 'undefined' ? __dirname : '';
@@ -101,16 +98,7 @@ async function startServer() {
   }));
 
   // Security Headers
-  app.use((_req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader(
-      'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://localhost:* wss://localhost:* https://generativelanguage.googleapis.com https://openrouter.ai https://integrate.api.nvidia.com https://opencode.ai https://image.pollinations.ai; font-src 'self' data:; worker-src 'self' blob:;"
-    );
-    next();
-  });
+  app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], connectSrc: ["'self'", 'http://127.0.0.1:3001', 'http://127.0.0.1:3002', 'https://generativelanguage.googleapis.com', 'https://openrouter.ai', 'https://integrate.api.nvidia.com', 'https://opencode.ai', 'https://text.pollinations.ai', 'ws://localhost:*', 'wss://localhost:*'] } }, crossOriginEmbedderPolicy: false }));
 
   app.use(express.json({ limit: '4mb' }));
   app.use(cors({
@@ -122,14 +110,13 @@ async function startServer() {
 
   // Session middleware
   const sessionValidationMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const originalPath = req.originalUrl.split('?')[0];
-    const isPublic = [
+    const isPublic = new Set([
       '/api/health',
       '/api/vault/status',
       '/api/vault/token',
       '/api/auth/session',
       '/api/admin/logs'
-    ].includes(originalPath);
+    ]).has(req.path.replace(/\/$/, ''));
 
     if (isPublic) return next();
 
@@ -141,6 +128,9 @@ async function startServer() {
   };
 
   app.use('/api', sessionValidationMiddleware);
+
+  const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
+  app.use('/api', generalLimiter);
 
   // Mount routes
   app.use('/api/vault', vaultRouter);
@@ -161,7 +151,7 @@ async function startServer() {
   // Existing Provider routes
   const aiLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 20,
+    max: 30,
     message: { error: 'AI request rate limit exceeded.' }
   });
 

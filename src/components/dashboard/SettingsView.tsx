@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Trash2, ChevronDown, ChevronUp, Key, Network, HelpCircle, BookOpen, ExternalLink, Cpu, Zap, Database, Globe, Terminal as TerminalIcon, Box, Settings as SettingsIcon, Brain } from 'lucide-react';
 import { UI_TEXT } from '../../lib/design-system/copy';
 import { useTokenUsage } from '../../context/TokenUsageContext';

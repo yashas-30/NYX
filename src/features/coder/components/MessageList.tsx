@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Copy, Check, ArrowDown, Terminal, Play, Save, FileText, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { ChatMessage } from '@/src/core/types';
 import ReactMarkdown from 'react-markdown';
