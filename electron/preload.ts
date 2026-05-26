@@ -13,7 +13,8 @@ const VALID_CHANNELS = [
   'window:maximize',
   'window:close',
   'system:gpu-info',
-  'system:info'
+  'system:info',
+  'system:get-userdata'
 ] as const;
 
 type ValidChannel = typeof VALID_CHANNELS[number];
@@ -41,6 +42,7 @@ const channelSchemas: Partial<Record<ValidChannel, z.ZodTypeAny>> = {
   'window:close': z.tuple([]),
   'system:gpu-info': z.tuple([]),
   'system:info': z.tuple([]),
+  'system:get-userdata': z.tuple([]),
 };
 
 function validateArgs(channel: ValidChannel, args: unknown[]): void {
@@ -70,7 +72,7 @@ const api = {
     chrome: process.versions.chrome,
     electron: process.versions.electron,
   },
-  invoke: async (channel: string, ...args: unknown[]): Promise<Result<unknown>> => {
+  invoke: async (channel: string, ...args: unknown[]): Promise<Result<any>> => {
     if (!VALID_CHANNELS.includes(channel as ValidChannel)) {
       throw new Error(`Blocked IPC channel: ${channel}`);
     }
@@ -87,6 +89,17 @@ const api = {
     validateArgs(validChannel, args);
     ipcRenderer.send(validChannel, ...structuredClone(args));
   },
+  // Secure, high-level typed API methods for React
+  getUserDataPath: async (): Promise<string> => {
+    const res = await ipcRenderer.invoke('system:get-userdata');
+    if (res.success) return res.data;
+    throw new Error(res.error || 'Failed to get userData path');
+  },
+  showOpenDirectory: async (): Promise<string | null> => {
+    const res = await ipcRenderer.invoke('dialog:open-directory');
+    if (res.success) return res.data;
+    throw new Error(res.error || 'Failed to select active workspace');
+  },
   onNavigate: (callback: (path: string) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, path: string) => {
       if (typeof path === 'string') callback(path);
@@ -94,6 +107,15 @@ const api = {
     ipcRenderer.on('navigate', handler);
     return () => {
       ipcRenderer.removeListener('navigate', handler);
+    };
+  },
+  onModelUnload: (callback: () => void): (() => void) => {
+    const handler = () => {
+      callback();
+    };
+    ipcRenderer.on('model:unload', handler);
+    return () => {
+      ipcRenderer.removeListener('model:unload', handler);
     };
   },
 };

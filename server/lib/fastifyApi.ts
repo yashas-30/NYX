@@ -306,188 +306,192 @@ function resolveRealModel(model: string): string {
 // ── GEMINI ───────────────────────────────────────────────────────────────────────
 fastify.post('/gemini/*', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
   const model = (request.params as any)['*'];
-  const { prompt, settings, systemInstruction, history, gatewayUrls } = request.body as any;
+  const { prompt, settings, systemInstruction, history, messages } = request.body as any;
 
   const activeKey = getApiKey('gemini') || '';
   if (!activeKey) return reply.status(401).send({ error: 'Gemini API key required' });
 
-  if (gatewayUrls) {
-    for (const u of Object.values(gatewayUrls)) {
-      try { validateGatewayUrl(u as string); } catch (e: any) {
-        return reply.status(400).send({ error: `Invalid gateway URL: ${e.message}` });
-      }
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const finalMessages: any[] = [];
+  if (messages && Array.isArray(messages)) {
+    finalMessages.push(...messages);
+  } else {
+    if (systemInstruction) {
+      finalMessages.push({ role: 'system', content: systemInstruction });
+    }
+    if (history && Array.isArray(history)) {
+      finalMessages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
+    }
+    if (prompt) {
+      finalMessages.push({ role: 'user', content: prompt });
     }
   }
 
-  let baseUrl = gatewayUrls?.gemini?.replace(/\/$/, '') || 'https://generativelanguage.googleapis.com/v1beta';
-  const realModel = resolveRealModel(model);
-  const url = `${baseUrl}/models/${realModel}:generateContent?key=${activeKey}`;
-
-  const contents: any[] = [];
-  if (history) {
-    contents.push(...history.map((m: any) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    })));
-  }
-  contents.push({ role: 'user', parts: [{ text: prompt }] });
-
-  const body: any = { contents };
-  if (systemInstruction) body.systemInstruction = { role: 'system', parts: [{ text: systemInstruction }] };
-  if (settings?.temperature) body.generationConfig = { temperature: settings.temperature };
-  if (settings?.topP) body.generationConfig = { ...body.generationConfig, topP: settings.topP };
-  if (settings?.maxTokens) body.generationConfig = { ...body.generationConfig, maxOutputTokens: settings.maxTokens };
+  let isClosed = false;
+  request.raw.on('close', () => {
+    isClosed = true;
+  });
 
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': activeKey
+    await UnifiedEngine.executeStream(
+      {
+        provider: 'gemini',
+        model,
+        messages: finalMessages,
+        settings,
+        apiKey: activeKey
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage = `Google AI Studio Error ${response.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorMessage;
-      } catch {}
-      return reply.status(response.status).send({ error: errorMessage });
+      (chunk) => {
+        if (!isClosed) {
+          reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      },
+      () => {
+        if (!isClosed) {
+          reply.raw.write('data: [DONE]\n\n');
+          reply.raw.end();
+        }
+      }
+    );
+  } catch (err: any) {
+    if (!isClosed) {
+      reply.raw.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+      reply.raw.end();
     }
-
-    const data = await response.json() as any;
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    return reply.send({ text });
-  } catch (e: any) {
-    return reply.status(500).send({ error: e.message });
   }
 });
 
 // ── OPENCODE ─────────────────────────────────────────────────────────────────────
 fastify.post('/opencode/*', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
   const model = (request.params as any)['*'];
-  const { prompt, settings, systemInstruction, history, gatewayUrls } = request.body as any;
+  const { prompt, settings, systemInstruction, history, messages } = request.body as any;
 
   const activeKey = getApiKey('opencode') || '';
   if (!activeKey) return reply.status(401).send({ error: 'OpenCode API key required' });
 
-  if (gatewayUrls) {
-    for (const u of Object.values(gatewayUrls)) {
-      try { validateGatewayUrl(u as string); } catch (e: any) {
-        return reply.status(400).send({ error: `Invalid gateway URL: ${e.message}` });
-      }
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const finalMessages: any[] = [];
+  if (messages && Array.isArray(messages)) {
+    finalMessages.push(...messages);
+  } else {
+    if (systemInstruction) {
+      finalMessages.push({ role: 'system', content: systemInstruction });
+    }
+    if (history && Array.isArray(history)) {
+      finalMessages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
+    }
+    if (prompt) {
+      finalMessages.push({ role: 'user', content: prompt });
     }
   }
 
-  let baseUrl = gatewayUrls?.opencode?.replace(/\/$/, '') || 'https://opencode.ai/zen/v1';
-  const url = `${baseUrl}/chat/completions`;
-
-  const messages: any[] = [];
-  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
-  if (history) messages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
-  messages.push({ role: 'user', content: prompt });
-
-  const body = {
-    model,
-    messages,
-    stream: false,
-    temperature: settings?.temperature ?? 0.7,
-    max_tokens: settings?.maxTokens ?? 4096,
-    top_p: settings?.topP ?? 1.0
-  };
+  let isClosed = false;
+  request.raw.on('close', () => {
+    isClosed = true;
+  });
 
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${activeKey}`
+    await UnifiedEngine.executeStream(
+      {
+        provider: 'opencode',
+        model,
+        messages: finalMessages,
+        settings,
+        apiKey: activeKey
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage = `OpenCode Error ${response.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorMessage;
-      } catch {}
-      return reply.status(response.status).send({ error: errorMessage });
+      (chunk) => {
+        if (!isClosed) {
+          reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      },
+      () => {
+        if (!isClosed) {
+          reply.raw.write('data: [DONE]\n\n');
+          reply.raw.end();
+        }
+      }
+    );
+  } catch (err: any) {
+    if (!isClosed) {
+      reply.raw.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+      reply.raw.end();
     }
-
-    const data = await response.json() as any;
-    const text = data.choices?.[0]?.message?.content || '';
-    return reply.send({ text });
-  } catch (e: any) {
-    return reply.status(500).send({ error: e.message });
   }
 });
 
 // ── OPENROUTER ──────────────────────────────────────────────────────────────────
 fastify.post('/openrouter/*', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
   const model = (request.params as any)['*'];
-  const { prompt, settings, systemInstruction, history, gatewayUrls } = request.body as any;
+  const { prompt, settings, systemInstruction, history, messages } = request.body as any;
 
   const activeKey = getApiKey('openrouter') || '';
   if (!activeKey) return reply.status(401).send({ error: 'OpenRouter API key required' });
 
-  if (gatewayUrls) {
-    for (const u of Object.values(gatewayUrls)) {
-      try { validateGatewayUrl(u as string); } catch (e: any) {
-        return reply.status(400).send({ error: `Invalid gateway URL: ${e.message}` });
-      }
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const finalMessages: any[] = [];
+  if (messages && Array.isArray(messages)) {
+    finalMessages.push(...messages);
+  } else {
+    if (systemInstruction) {
+      finalMessages.push({ role: 'system', content: systemInstruction });
+    }
+    if (history && Array.isArray(history)) {
+      finalMessages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
+    }
+    if (prompt) {
+      finalMessages.push({ role: 'user', content: prompt });
     }
   }
 
-  let baseUrl = gatewayUrls?.openrouter?.replace(/\/$/, '') || 'https://openrouter.ai/api/v1';
-  const url = `${baseUrl}/chat/completions`;
-
-  const messages: any[] = [];
-  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
-  if (history) messages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
-  messages.push({ role: 'user', content: prompt });
-
-  const body = {
-    model,
-    messages,
-    stream: false,
-    temperature: settings?.temperature ?? 0.7,
-    max_tokens: settings?.maxTokens ?? 4096,
-    top_p: settings?.topP ?? 1.0
-  };
+  let isClosed = false;
+  request.raw.on('close', () => {
+    isClosed = true;
+  });
 
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${activeKey}`
+    await UnifiedEngine.executeStream(
+      {
+        provider: 'openrouter',
+        model,
+        messages: finalMessages,
+        settings,
+        apiKey: activeKey
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage = `OpenRouter Error ${response.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorMessage;
-      } catch {}
-      return reply.status(response.status).send({ error: errorMessage });
+      (chunk) => {
+        if (!isClosed) {
+          reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      },
+      () => {
+        if (!isClosed) {
+          reply.raw.write('data: [DONE]\n\n');
+          reply.raw.end();
+        }
+      }
+    );
+  } catch (err: any) {
+    if (!isClosed) {
+      reply.raw.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+      reply.raw.end();
     }
-
-    const data = await response.json() as any;
-    const text = data.choices?.[0]?.message?.content || '';
-    return reply.send({ text });
-  } catch (e: any) {
-    return reply.status(500).send({ error: e.message });
   }
 });
 
@@ -495,7 +499,7 @@ fastify.post('/openrouter/*', { config: { bodyLimit: 1024 * 1024 } }, async (req
 // NVIDIA NIM models - requires nvapi-* API key
 fastify.post('/nvidia/*', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
   const model = (request.params as any)['*'];
-  const { prompt, settings, systemInstruction, history, gatewayUrls } = request.body as any;
+  const { prompt, settings, systemInstruction, history, messages } = request.body as any;
 
   // Resolve API key: server-side vault only
   const activeKey = getApiKey('nvidia') || '';
@@ -503,68 +507,59 @@ fastify.post('/nvidia/*', { config: { bodyLimit: 1024 * 1024 } }, async (request
     return reply.status(401).send({ error: 'NVIDIA API key is required. Add your nvapi-* key in Settings.' });
   }
 
-  if (gatewayUrls) {
-    for (const u of Object.values(gatewayUrls)) {
-      try { validateGatewayUrl(u as string); } catch (e: any) {
-        return reply.status(400).send({ error: `Invalid gateway URL: ${e.message}` });
-      }
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const finalMessages: any[] = [];
+  if (messages && Array.isArray(messages)) {
+    finalMessages.push(...messages);
+  } else {
+    if (systemInstruction) {
+      finalMessages.push({ role: 'system', content: systemInstruction });
+    }
+    if (history && Array.isArray(history)) {
+      finalMessages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
+    }
+    if (prompt) {
+      finalMessages.push({ role: 'user', content: prompt });
     }
   }
 
-  // NVIDIA NIM model mapping
-  const modelMap: Record<string, string> = {
-    'nvidia/llama-3.3-70b-instruct': 'meta/llama-3.3-70b-instruct',
-    'nvidia/deepseek-r1': 'deepseek-ai/deepseek-r1',
-    'nvidia/deepseek-v3': 'deepseek-ai/deepseek-v3',
-    'nvidia/llama-3.1-nemotron-70b-instruct': 'nvidia/llama-3.1-nemotron-70b-instruct',
-    'nvidia/nemotron-4-340b-instruct': 'nvidia/nemotron-4-340b-instruct',
-    'nvidia/gemma-3-27b-it': 'google/gemma-3-27b-it',
-    'nvidia/gemma-2-9b-it': 'google/gemma-2-9b-it',
-    'nvidia/phi-4': 'microsoft/phi-4',
-    'nvidia/ministral-8b': 'mistralai/ministral-8b-instruct-v0.3',
-  };
-  const realModel = modelMap[model] || model.replace('nvidia/', '');
-
-  const messages: any[] = [];
-  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
-  if (history) messages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
-  messages.push({ role: 'user', content: prompt });
-
-  const body = {
-    model: realModel,
-    messages,
-    stream: false,
-    temperature: settings?.temperature ?? 0.7,
-    max_tokens: settings?.maxTokens ?? 4096,
-    top_p: settings?.topP ?? 1.0
-  };
+  let isClosed = false;
+  request.raw.on('close', () => {
+    isClosed = true;
+  });
 
   try {
-    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${activeKey}`,
+    await UnifiedEngine.executeStream(
+      {
+        provider: 'nvidia',
+        model,
+        messages: finalMessages,
+        settings,
+        apiKey: activeKey
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage = `NVIDIA Error ${response.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorMessage;
-      } catch {}
-      return reply.status(response.status).send({ error: errorMessage });
+      (chunk) => {
+        if (!isClosed) {
+          reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      },
+      () => {
+        if (!isClosed) {
+          reply.raw.write('data: [DONE]\n\n');
+          reply.raw.end();
+        }
+      }
+    );
+  } catch (err: any) {
+    if (!isClosed) {
+      reply.raw.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+      reply.raw.end();
     }
-
-    const data = await response.json() as any;
-    const text = data.choices?.[0]?.message?.content || '';
-    return reply.send({ text });
-  } catch (e: any) {
-    return reply.status(500).send({ error: e.message });
   }
 });
 

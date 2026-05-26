@@ -202,6 +202,13 @@ function registerSystemHandlers() {
       return { success: false, error: err.message };
     }
   });
+  electron.ipcMain.handle("system:get-userdata", async () => {
+    try {
+      return { success: true, data: electron.app.getPath("userData") };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
 }
 const StoreConstructor = typeof Store === "function" ? Store : Store.default;
 const store = new StoreConstructor();

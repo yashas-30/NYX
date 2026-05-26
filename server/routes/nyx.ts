@@ -2,13 +2,74 @@ import { Router } from 'express';
 import { RulesDb } from '../lib/rulesDb.ts';
 import { CodebaseScanner } from '../lib/codebaseScanner.ts';
 import { getWorkspaceRoot } from '../lib/paths.ts';
+import { WorkspaceIntelligence } from '../lib/workspaceIntelligence.ts';
+import { GitIntegration } from '../lib/gitIntegration.ts';
 import fs from 'fs';
 import path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { validate } from '../middleware/validate.ts';
 import { writeFileSchema, nyxCriticSchema, nyxSearchSchema, codebaseSearchSchema } from '../schemas/index.ts';
 import { loadKeys } from '../lib/keyVault.ts';
 
+const execAsync = promisify(exec);
+
 export const nyxRouter = Router();
+
+// ── Subagent Status Store ─────────────────────────────────────────────────────
+// Keyed by the session token that the client sends in x-nyx-session-token.
+// Entries expire after 30 minutes of inactivity.
+
+interface SubagentStatusEntry {
+  tasks: unknown[];
+  updatedAt: number;
+}
+
+const subagentStatusStore = new Map<string, SubagentStatusEntry>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of subagentStatusStore.entries()) {
+    if (now - data.updatedAt > 30 * 60 * 1000) {
+      subagentStatusStore.delete(token);
+    }
+  }
+}, 60_000).unref();
+
+// POST /api/nyx/subagent-status — client pushes live task list
+nyxRouter.post('/subagent-status', (req, res) => {
+  try {
+    const token = req.headers['x-nyx-session-token'] as string | undefined;
+    if (!token) {
+      return res.status(401).json({ error: 'Missing x-nyx-session-token header' });
+    }
+    const { tasks } = req.body as { tasks?: unknown[] };
+    if (!Array.isArray(tasks)) {
+      return res.status(400).json({ error: 'tasks must be an array' });
+    }
+    subagentStatusStore.set(token, { tasks, updatedAt: Date.now() });
+    res.json({ success: true });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// GET /api/nyx/subagent-status — client polls current task list
+nyxRouter.get('/subagent-status', (req, res) => {
+  try {
+    const token = req.headers['x-nyx-session-token'] as string | undefined;
+    if (!token) {
+      return res.status(401).json({ error: 'Missing x-nyx-session-token header' });
+    }
+    const data = subagentStatusStore.get(token);
+    res.json({ success: true, tasks: data?.tasks ?? [] });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: msg });
+  }
+});
+
 
 // GET /api/nyx/rules - Fetch all learned instructions
 nyxRouter.get('/rules', (_req, res) => {
@@ -518,6 +579,184 @@ nyxRouter.post('/write-file', validate(writeFileSchema), async (req, res) => {
     res.json({ success: true, path: fullPath });
   } catch (e: any) {
     console.error('[File System Error]:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/nyx/workspace-profile
+nyxRouter.get('/workspace-profile', async (req, res) => {
+  try {
+    const profile = await WorkspaceIntelligence.getProfile();
+    res.json({ success: true, profile });
+  } catch (e: any) {
+    console.error('[Nyx Router] Failed to fetch workspace profile:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/nyx/workspace-profile
+nyxRouter.post('/workspace-profile', async (req, res) => {
+  try {
+    const { openFiles } = req.body as { openFiles?: string[] };
+    if (openFiles && Array.isArray(openFiles)) {
+      WorkspaceIntelligence.trackOpenFiles(openFiles);
+    }
+    const profile = await WorkspaceIntelligence.getProfile();
+    res.json({ success: true, profile });
+  } catch (e: any) {
+    console.error('[Nyx Router] Failed to update/fetch workspace profile:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/nyx/validate
+nyxRouter.post('/validate', async (req, res) => {
+  try {
+    const profile = await WorkspaceIntelligence.getProfile();
+    const root = getWorkspaceRoot();
+    let command = '';
+
+    if (profile.projectType === 'react' || profile.projectType === 'node') {
+      if (fs.existsSync(path.join(root, 'tsconfig.json'))) {
+        command = 'npx tsc --noEmit';
+      } else if (profile.packageManager === 'pnpm') {
+        command = 'pnpm run lint';
+      } else if (profile.packageManager === 'yarn') {
+        command = 'yarn run lint';
+      } else {
+        command = 'npm run lint';
+      }
+    } else if (profile.projectType === 'rust') {
+      command = 'cargo check';
+    } else if (profile.projectType === 'python') {
+      command = 'python -m compileall -q .';
+    } else if (profile.projectType === 'go') {
+      command = 'go build -o /dev/null ./...';
+    }
+
+    if (!command) {
+      return res.json({ success: true, message: 'No validation command defined for this project type' });
+    }
+
+    console.log(`[Validation] Running validation command: "${command}" in ${root}`);
+    try {
+      const { stdout, stderr } = await execAsync(command, { cwd: root, timeout: 25_000 });
+      return res.json({ success: true, stdout });
+    } catch (err: any) {
+      console.warn(`[Validation] Validation failed:`, err.stderr || err.stdout || err.message);
+      return res.json({
+        success: false,
+        error: err.stderr || err.stdout || err.message
+      });
+    }
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/nyx/read-file
+nyxRouter.post('/read-file', async (req, res) => {
+  try {
+    const { filePath, startLine, endLine } = req.body as { filePath: string; startLine?: number; endLine?: number };
+    if (!filePath) {
+      return res.status(400).json({ error: 'filePath is required' });
+    }
+
+    const workspaceRoot = getWorkspaceRoot();
+    const normalizedFull = path.resolve(workspaceRoot, filePath);
+    const normalizedRoot = path.resolve(workspaceRoot);
+    const relative = path.relative(normalizedRoot, normalizedFull);
+
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      return res.status(403).json({ error: 'Directory traversal forbidden.' });
+    }
+
+    if (!fs.existsSync(normalizedFull)) {
+      return res.status(404).json({ error: 'File not found.' });
+    }
+
+    const stats = fs.statSync(normalizedFull);
+    if (stats.isSymbolicLink()) {
+      return res.status(403).json({ error: 'Reading from symbolic links is forbidden.' });
+    }
+
+    let content = fs.readFileSync(normalizedFull, 'utf8');
+
+    if (startLine !== undefined || endLine !== undefined) {
+      const lines = content.split('\n');
+      const start = startLine !== undefined ? Math.max(0, startLine - 1) : 0;
+      const end = endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
+      content = lines.slice(start, end).join('\n');
+    }
+
+    res.json({ success: true, content });
+  } catch (e: any) {
+    console.error('[Nyx Router] read-file failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/nyx/list-directory
+nyxRouter.post('/list-directory', async (req, res) => {
+  try {
+    const { dirPath } = req.body as { dirPath?: string };
+    const workspaceRoot = getWorkspaceRoot();
+    const targetDir = dirPath ? path.resolve(workspaceRoot, dirPath) : path.resolve(workspaceRoot);
+    const normalizedRoot = path.resolve(workspaceRoot);
+    const relative = path.relative(normalizedRoot, targetDir);
+
+    if (relative.startsWith('..') && targetDir !== normalizedRoot) {
+      return res.status(403).json({ error: 'Directory traversal forbidden.' });
+    }
+
+    if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+      return res.status(404).json({ error: 'Directory not found.' });
+    }
+
+    const files = fs.readdirSync(targetDir).map(name => {
+      const fullPath = path.join(targetDir, name);
+      try {
+        const stats = fs.statSync(fullPath);
+        return {
+          name,
+          isDir: stats.isDirectory(),
+          size: stats.size
+        };
+      } catch {
+        return {
+          name,
+          isDir: false,
+          size: 0
+        };
+      }
+    });
+
+    res.json({ success: true, files });
+  } catch (e: any) {
+    console.error('[Nyx Router] list-directory failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/nyx/git-diff
+nyxRouter.post('/git-diff', async (req, res) => {
+  try {
+    const { filePath } = req.body as { filePath?: string };
+    const diff = await GitIntegration.getDiff(filePath);
+    res.json({ success: true, diff });
+  } catch (e: any) {
+    console.error('[Nyx Router] git-diff failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/nyx/git-status
+nyxRouter.post('/git-status', async (req, res) => {
+  try {
+    const status = await GitIntegration.getStatus();
+    res.json({ success: true, status });
+  } catch (e: any) {
+    console.error('[Nyx Router] git-status failed:', e);
     res.status(500).json({ error: e.message });
   }
 });

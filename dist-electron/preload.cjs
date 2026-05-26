@@ -11,7 +11,8 @@ const VALID_CHANNELS = [
   "window:maximize",
   "window:close",
   "system:gpu-info",
-  "system:info"
+  "system:info",
+  "system:get-userdata"
 ];
 const channelSchemas = {
   "vault:store-key": zod.z.tuple([
@@ -32,7 +33,8 @@ const channelSchemas = {
   "window:maximize": zod.z.tuple([]),
   "window:close": zod.z.tuple([]),
   "system:gpu-info": zod.z.tuple([]),
-  "system:info": zod.z.tuple([])
+  "system:info": zod.z.tuple([]),
+  "system:get-userdata": zod.z.tuple([])
 };
 function validateArgs(channel, args) {
   const schema = channelSchemas[channel];
@@ -73,6 +75,17 @@ const api = {
     validateArgs(validChannel, args);
     electron.ipcRenderer.send(validChannel, ...structuredClone(args));
   },
+  // Secure, high-level typed API methods for React
+  getUserDataPath: async () => {
+    const res = await electron.ipcRenderer.invoke("system:get-userdata");
+    if (res.success) return res.data;
+    throw new Error(res.error || "Failed to get userData path");
+  },
+  showOpenDirectory: async () => {
+    const res = await electron.ipcRenderer.invoke("dialog:open-directory");
+    if (res.success) return res.data;
+    throw new Error(res.error || "Failed to select active workspace");
+  },
   onNavigate: (callback) => {
     const handler = (_event, path) => {
       if (typeof path === "string") callback(path);
@@ -80,6 +93,15 @@ const api = {
     electron.ipcRenderer.on("navigate", handler);
     return () => {
       electron.ipcRenderer.removeListener("navigate", handler);
+    };
+  },
+  onModelUnload: (callback) => {
+    const handler = () => {
+      callback();
+    };
+    electron.ipcRenderer.on("model:unload", handler);
+    return () => {
+      electron.ipcRenderer.removeListener("model:unload", handler);
     };
   }
 };

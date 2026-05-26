@@ -7,12 +7,14 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { AIService } from '@/src/core/services/ai.service';
-import { ChatMessage, TelemetryMetrics, AISettings, AgentPersona } from '@/src/core/types';
+import { ChatMessage, TelemetryMetrics, AISettings, AgentPersona, SubagentTask } from '@/src/core/types';
 import { detectProvider, getEffectiveApiKey, requiresApiKey } from '@/src/core/utils/provider';
 import { analyzePrompt, NON_CODE_REJECTION, isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/promptAnalyzer';
 import { getLanguageKnowledge, CODING_KNOWLEDGE_SUMMARY } from '@/src/config/codingKnowledge';
 import { toast } from '@/src/components/ui/sonner';
 import { runMultiStagePipeline } from './pipeline';
+import { SubagentOrchestrator } from './useSubagentOrchestrator';
+import { PromptAnalyzerService } from '@/src/core/services/promptAnalyzer';
 
 interface PipelineProps {
   models: Record<'nyx', string>;
@@ -354,7 +356,9 @@ export const useAgentPipeline = ({
   codebaseKnowledgeEnabled
 }: PipelineProps) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [subagentTasks, setSubagentTasks] = useState<SubagentTask[]>([]);
   const controllerRef = useRef<AbortController | null>(null);
+  const orchestratorRef = useRef<SubagentOrchestrator | null>(null);
   // Keep a ref to history to avoid stale closure in useCallback
   const historyRef = useRef(history);
   historyRef.current = history;
@@ -392,6 +396,8 @@ export const useAgentPipeline = ({
     const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys) || '';
 
     if (controllerRef.current) controllerRef.current.abort();
+    orchestratorRef.current?.abort();
+    orchestratorRef.current = null;
     const controller = new AbortController();
     controllerRef.current = controller;
 
@@ -402,30 +408,36 @@ export const useAgentPipeline = ({
     setIsLoading(true);
     setSuggestedPrompts([]);
     updateMetrics({ latency: 0, tokens: 0, tps: 0 });
+    setSubagentTasks([]);
 
     try {
-      // ── 1. Fast Local Regex Analysis (Zero Latency) ──────────────────────────
+      // ── 1. Smart Prompt Analysis (PromptAnalyzerService) ───────────────────
       const isGreeting = isGreetingOrIdentity(prompt);
       const isChat = isConversational(prompt);
       const regexAnalysis = analyzePrompt(prompt);
       
       let analysisResult: any = null;
 
-      if (isGreeting || isChat || !regexAnalysis.isCodeRelated) {
-        // Bypass expensive LLM prompt analysis for greetings, conversations, and non-code chat
+      if (isGreeting || isChat) {
         analysisResult = {
+          intent: 'general_chat',
+          complexity: 'trivial',
+          scope: 'single_file',
+          requiresExecution: false,
+          requiresWebSearch: false,
+          requiresCodebaseContext: false,
+          estimatedTokenCount: Math.ceil(prompt.length / 4),
+          suggestedTools: [],
+          confidence: 1.0,
           isCodeRelated: false,
           isMissingDebugDetails: false,
           missingDetailsRequest: '',
-          intent: isGreeting || isChat ? 'general' : regexAnalysis.intent,
-          complexity: 'trivial',
           detectedLanguages: regexAnalysis.detectedLanguages,
           frameworks: regexAnalysis.frameworks,
-          summary: isGreeting || isChat ? '💬 General Conversation' : regexAnalysis.summary
+          summary: '💬 General Conversation'
         };
       } else {
-        // ── 2. Smart LLM Prompt Analysis (Qwen 2.5 1.5B / Zen) ─────────────────────────
-        analysisResult = await analyzePromptIntelligently(
+        const analysis = await PromptAnalyzerService.analyze(
           prompt,
           nyxModel,
           nyxProvider,
@@ -433,22 +445,20 @@ export const useAgentPipeline = ({
           apiKeys
         );
 
-        // Fallback to local regex-based analyzer if LLM analysis fails
-        if (!analysisResult) {
-          analysisResult = {
-            isCodeRelated: regexAnalysis.isCodeRelated,
-            isMissingDebugDetails: isMissingDebugDetails(prompt, regexAnalysis.intent),
-            missingDetailsRequest: MISSING_DEBUG_DETAILS_RESPONSE,
-            intent: regexAnalysis.intent,
-            complexity: regexAnalysis.complexity,
-            detectedLanguages: regexAnalysis.detectedLanguages,
-            frameworks: regexAnalysis.frameworks,
-            summary: regexAnalysis.summary
-          };
-        }
+        const missingDebug = analysis.intent === 'debugging' && isMissingDebugDetails(prompt, regexAnalysis.intent);
+
+        analysisResult = {
+          ...analysis,
+          isCodeRelated: analysis.intent !== 'general_chat',
+          isMissingDebugDetails: missingDebug,
+          missingDetailsRequest: missingDebug ? MISSING_DEBUG_DETAILS_RESPONSE : '',
+          detectedLanguages: regexAnalysis.detectedLanguages,
+          frameworks: regexAnalysis.frameworks,
+          summary: regexAnalysis.summary
+        };
       }
 
-      // ── 3. Missing Details Gate ────────────────────────────────────────
+      // ── 2. Missing Details Gate ────────────────────────────────────────
       if (analysisResult.isMissingDebugDetails && analysisResult.isCodeRelated) {
         const reqMessage = analysisResult.missingDetailsRequest || MISSING_DEBUG_DETAILS_RESPONSE;
         updateHistory(prev => [
@@ -540,8 +550,9 @@ To ensure continuous optimization and prevent past mistakes, you must strictly a
 ${formattedRules}
 [END OF LESSONS]`;
 
-        const isPlanningRequested = /\b(planning\s+mode|step[- ]by[- ]step\s+plan|generate\s+plan|create\s+plan|architectural\s+plan|system\s+design|architect|blueprint|multi[- ]agent|agent|claude\s+code)\b/i.test(prompt);
+        const isPlanningRequested = /\b(planning\s+mode|step[- ]by[- ]step\s+plan|generate\s+plan|create\s+plan|architectural\s+plan|system\s+design|architect|blueprint|multi[- ]agent|agent|claude\s+code|swarm)\b/i.test(prompt);
         const isHeavy = isPlanningRequested || (analysisResult.isCodeRelated && ['moderate', 'complex', 'enterprise'].includes(analysisResult.complexity));
+        const isEnterpriseSwarm = isPlanningRequested || (analysisResult.isCodeRelated && ['complex', 'enterprise'].includes(analysisResult.complexity));
 
         if (!isHeavy) {
           // Fast path for simple code prompts
@@ -562,8 +573,40 @@ ${formattedRules}
             analysisResult as any, 
             agentModel || undefined
           );
+        } else if (isEnterpriseSwarm) {
+          // ── SUBAGENT SWARM PATH (complex/enterprise/planning-mode prompts) ──
+          console.log(`[runCoder] Routing to SUBAGENT SWARM for ${analysisResult.complexity} task`);
+
+          // Seed the assistant loading placeholder
+          updateHistory(prev => [
+            ...prev,
+            { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' as const }
+          ]);
+
+          const orchestrator = new SubagentOrchestrator();
+          orchestratorRef.current = orchestrator;
+
+          orchestrator.onTaskUpdate = (tasks: SubagentTask[]) => {
+            setSubagentTasks(tasks);
+          };
+
+          await orchestrator.execute(prompt, {
+            apiKeys,
+            modelSettings,
+            trackUsage,
+            history: historyRef.current,
+            updateHistory,
+            updateMetrics,
+            getSuggestions,
+            setSuggestedPrompts,
+            webSearchEnabled,
+            codebaseKnowledgeEnabled,
+            triggerBackgroundCritic: (p: string, r: string) => triggerBackgroundCritic(p, r),
+            originalPrompt: prompt,
+            signal: controller.signal
+          });
         } else {
-        // Heavy path: run multi-stage pipeline using the selected model (interconnected)
+          // Moderate path: run multi-stage pipeline using the selected model
           await runMultiStagePipeline({
             prompt,
             controller,
@@ -618,6 +661,7 @@ ${formattedRules}
       });
     } finally {
       controllerRef.current = null;
+      orchestratorRef.current = null;
       setIsLoading(false);
     }
   }, [models, apiKeys, agentPersonas, modelSettings, trackUsage, updateHistory, updateMetrics, setSuggestedPrompts]);
@@ -760,8 +804,12 @@ ${formattedRules}
       controllerRef.current.abort();
       controllerRef.current = null;
     }
+    if (orchestratorRef.current) {
+      orchestratorRef.current.abort();
+      orchestratorRef.current = null;
+    }
     setIsLoading(false);
   }, []);
 
-  return { isLoading, runCoder, stopCoder };
+  return { isLoading, runCoder, stopCoder, subagentTasks };
 };

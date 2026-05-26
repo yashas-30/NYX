@@ -425,10 +425,27 @@ export const LocalModelRunner = {
     };
   },
 
-  async ensureBinaryInstalled(): Promise<void> {
+  async detectBackend(): Promise<'cuda' | 'vulkan'> {
+    try {
+      const gpus = await this.detectGPUs();
+      const hasNvidia = gpus.some(g => {
+        const vendor = (g.vendor || '').toLowerCase();
+        const model = (g.model || '').toLowerCase();
+        return vendor.includes('nvidia') || model.includes('nvidia') || model.includes('geforce') || model.includes('rtx') || model.includes('gtx');
+      });
+      return hasNvidia ? 'cuda' : 'vulkan';
+    } catch {
+      return 'vulkan';
+    }
+  },
+
+  async ensureBinaryInstalled(forceBackend?: 'cuda' | 'vulkan'): Promise<'cuda' | 'vulkan'> {
+    let backend = forceBackend || (await this.detectBackend());
     const vulkanDllPath = path.join(BIN_DIR, 'ggml-vulkan.dll');
+    const cudaDllPath = path.join(BIN_DIR, 'cudart64_12.dll');
     const versionFilePath = path.join(BIN_DIR, '.version');
     const CURRENT_VERSION = 'b9294';
+    let expectedVersion = `${CURRENT_VERSION}-${backend}`;
 
     let installedVersion = '';
     if (fs.existsSync(versionFilePath)) {
@@ -437,73 +454,175 @@ export const LocalModelRunner = {
       } catch {}
     }
     
-    // If the server executable, Vulkan DLL, and correct version exist, we are good.
-    if (fs.existsSync(BINARY_PATH) && fs.existsSync(vulkanDllPath) && installedVersion === CURRENT_VERSION) {
-      return;
+    // Check if the server executable, correct backend DLLs, and version exist.
+    let binaryReady = fs.existsSync(BINARY_PATH) && (installedVersion === expectedVersion || (backend === 'vulkan' && installedVersion === CURRENT_VERSION));
+    if (binaryReady) {
+      if (backend === 'vulkan' && !fs.existsSync(vulkanDllPath)) {
+        binaryReady = false;
+      } else if (backend === 'cuda' && !fs.existsSync(cudaDllPath)) {
+        binaryReady = false;
+      }
     }
 
-    // Clean up to ensure a clean zip extraction of Vulkan binaries
-    if (fs.existsSync(BINARY_PATH)) {
-      try { fs.unlinkSync(BINARY_PATH); } catch {}
+    // Smart Fallback: If CUDA is preferred but not ready, check if Vulkan is already installed and ready.
+    if (!binaryReady && backend === 'cuda' && !forceBackend) {
+      const vulkanReady = fs.existsSync(BINARY_PATH) && fs.existsSync(vulkanDllPath) && 
+                          (installedVersion === `${CURRENT_VERSION}-vulkan` || installedVersion === CURRENT_VERSION);
+      if (vulkanReady) {
+        console.log('[GPU Optimizer] CUDA backend is preferred but not downloaded. Vulkan is already installed and ready. Using Vulkan to avoid slow download.');
+        backend = 'vulkan';
+        expectedVersion = `${CURRENT_VERSION}-vulkan`;
+        binaryReady = true;
+      }
     }
-    if (fs.existsSync(vulkanDllPath)) {
-      try { fs.unlinkSync(vulkanDllPath); } catch {}
+
+    if (binaryReady) {
+      if (backend === 'vulkan' && installedVersion === CURRENT_VERSION) {
+        try {
+          fs.writeFileSync(versionFilePath, expectedVersion, 'utf-8');
+        } catch {}
+      }
+      return backend;
+    }
+
+    // Clean up old files to avoid mismatched DLL issues
+    const filesToClean = [
+      BINARY_PATH,
+      vulkanDllPath,
+      cudaDllPath,
+      path.join(BIN_DIR, 'ggml-cuda.dll'),
+      path.join(BIN_DIR, 'cublas64_12.dll'),
+      path.join(BIN_DIR, 'cublasLt64_12.dll'),
+    ];
+    for (const f of filesToClean) {
+      if (fs.existsSync(f)) {
+        try { fs.unlinkSync(f); } catch {}
+      }
     }
 
     modelState = 'downloading';
     startProgress = 10;
-    console.log(`Portable llama-server.exe version ${CURRENT_VERSION} (Vulkan GPU/VRAM) not found. Preparing direct Vulkan binary download...`);
+    console.log(`Portable llama-server.exe version ${CURRENT_VERSION} (${backend.toUpperCase()} backend) not found. Preparing direct download...`);
 
-    const zipUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-win-vulkan-x64.zip`;
     const zipPath = path.join(BIN_DIR, 'llama-bin.zip');
+    const cudartZipPath = path.join(BIN_DIR, 'cudart-bin.zip');
 
     try {
-      // Step 1: Download zip
-      startProgress = 20;
-      await this.downloadBinaryZip(zipUrl, zipPath);
-      startProgress = 60;
-      console.log('Vulkan GPU binary downloaded successfully. Extracting archive natively via PowerShell...');
+      if (backend === 'cuda') {
+        const zipUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-win-cuda-12.4-x64.zip`;
+        const cudartUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/cudart-llama-bin-win-cuda-12.4-x64.zip`;
 
-      // Step 2: Unzip via PowerShell
-      await new Promise<void>((resolve, reject) => {
-        const cmd = `powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
-        exec(cmd, (err, stdout, stderr) => {
-          if (err) {
-            console.error('PowerShell extraction failed:', stderr);
-            reject(err);
-          } else {
-            resolve();
-          }
+        // Download main CUDA zip
+        startProgress = 20;
+        await this.downloadBinaryZip(zipUrl, zipPath);
+        startProgress = 40;
+
+        // Download CUDA runtime DLLs
+        console.log('Downloading CUDA runtime libraries...');
+        await this.downloadBinaryZip(cudartUrl, cudartZipPath);
+        startProgress = 60;
+
+        console.log('Extracting main CUDA archive natively via PowerShell...');
+        await new Promise<void>((resolve, reject) => {
+          const cmd = `powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
+          exec(cmd, (err, stdout, stderr) => {
+            if (err) {
+              console.error('PowerShell extraction of CUDA binary failed:', stderr);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
         });
-      });
+
+        console.log('Extracting CUDA runtime libraries natively via PowerShell...');
+        await new Promise<void>((resolve, reject) => {
+          const cmd = `powershell -Command "Expand-Archive -Path '${cudartZipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
+          exec(cmd, (err, stdout, stderr) => {
+            if (err) {
+              console.error('PowerShell extraction of CUDA runtime failed:', stderr);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      } else {
+        // Vulkan download
+        const zipUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-win-vulkan-x64.zip`;
+        startProgress = 20;
+        await this.downloadBinaryZip(zipUrl, zipPath);
+        startProgress = 60;
+        console.log('Vulkan GPU binary downloaded successfully. Extracting archive natively via PowerShell...');
+
+        await new Promise<void>((resolve, reject) => {
+          const cmd = `powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
+          exec(cmd, (err, stdout, stderr) => {
+            if (err) {
+              console.error('PowerShell extraction failed:', stderr);
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      }
 
       startProgress = 90;
       // Write the installed version
       try {
-        fs.writeFileSync(versionFilePath, CURRENT_VERSION, 'utf-8');
+        fs.writeFileSync(versionFilePath, expectedVersion, 'utf-8');
       } catch (err: any) {
         console.error('Failed to write .version file:', err.message);
       }
 
-      // Step 3: Clean up zip file
+      // Clean up zip files
       if (fs.existsSync(zipPath)) {
         try { fs.unlinkSync(zipPath); } catch {}
+      }
+      if (fs.existsSync(cudartZipPath)) {
+        try { fs.unlinkSync(cudartZipPath); } catch {}
       }
 
       startProgress = 100;
       modelState = 'idle';
-      console.log(`Binary extraction complete. Native llama-server.exe version ${CURRENT_VERSION} (Vulkan GPU/VRAM) is ready.`);
+      console.log(`Binary extraction complete. Native llama-server.exe version ${CURRENT_VERSION} (${backend.toUpperCase()} backend) is ready.`);
+      return backend;
     } catch (e: any) {
       modelState = 'idle';
       startProgress = 0;
       if (fs.existsSync(zipPath)) {
         try { fs.unlinkSync(zipPath); } catch {}
       }
+      if (fs.existsSync(cudartZipPath)) {
+        try { fs.unlinkSync(cudartZipPath); } catch {}
+      }
       throw new Error(`Failed to initialize built-in llama-server executable: ${e.message}`);
     }
   },
 
   downloadBinaryZip(url: string, destPath: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      // Prefer native curl on Windows for speed and system-proxy compatibility
+      if (process.platform === 'win32') {
+        console.log(`[Binary Downloader] Attempting download via curl.exe from: ${url}`);
+        const cmd = `curl.exe -L "${url}" -o "${destPath}"`;
+        exec(cmd, (err, stdout, stderr) => {
+          if (!err && fs.existsSync(destPath) && fs.statSync(destPath).size > 0) {
+            console.log(`[Binary Downloader] Successfully downloaded via curl: ${path.basename(destPath)}`);
+            resolve();
+          } else {
+            console.warn(`[Binary Downloader] curl download failed or not available, falling back to Node https:`, err || stderr);
+            this.downloadBinaryZipNode(url, destPath).then(resolve).catch(reject);
+          }
+        });
+        return;
+      }
+      this.downloadBinaryZipNode(url, destPath).then(resolve).catch(reject);
+    });
+  },
+
+  downloadBinaryZipNode(url: string, destPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const fileStream = fs.createWriteStream(destPath);
       
@@ -543,6 +662,10 @@ export const LocalModelRunner = {
           });
         });
 
+        req.setTimeout(60000, () => {
+          req.destroy(new Error('Download request timed out after 60 seconds'));
+        });
+
         req.on('error', (err) => {
           fileStream.close(() => {
             try { fs.unlinkSync(destPath); } catch {}
@@ -555,13 +678,13 @@ export const LocalModelRunner = {
     });
   },
 
-  async start(modelId: string, settings?: any, isRetry = false): Promise<void> {
+  async start(modelId: string, settings?: any, fallbackStage: 'none' | 'vulkan' | 'cpu' = 'none'): Promise<void> {
     return runnerMutex.runExclusive(async () => {
-      await this._startInternal(modelId, settings, isRetry);
+      await this._startInternal(modelId, settings, fallbackStage);
     });
   },
 
-  async _startInternal(modelId: string, settings?: any, isRetry = false): Promise<void> {
+  async _startInternal(modelId: string, settings?: any, fallbackStage: 'none' | 'vulkan' | 'cpu' = 'none'): Promise<void> {
     if (activeModelId === modelId && activeProcess && activeContextSize >= (settings?.contextSize || 2048)) {
       return; // Already running with equal or larger context window
     }
@@ -580,9 +703,12 @@ export const LocalModelRunner = {
 
     let gpuLayers = 99;
     let localSettings = settings;
+    let usedBackend: 'cuda' | 'vulkan' = 'vulkan';
 
     try {
-      await this.ensureBinaryInstalled();
+      // Choose backend based on fallback stage
+      const forcedBackend = fallbackStage === 'vulkan' ? 'vulkan' : (fallbackStage === 'cpu' ? 'vulkan' : undefined);
+      usedBackend = await this.ensureBinaryInstalled(forcedBackend);
       startProgress = 40;
 
       // Save/retrieve settings
@@ -610,18 +736,20 @@ export const LocalModelRunner = {
       const cpus = os.cpus().length;
       const defaultThreads = Math.max(1, Math.floor(cpus * 0.75));
 
-      gpuLayers = typeof localSettings?.gpuLayers === 'number' ? localSettings.gpuLayers : 99;
+      // Force gpuLayers to 0 if fallbackStage is cpu
+      if (fallbackStage === 'cpu') {
+        gpuLayers = 0;
+      } else {
+        gpuLayers = typeof localSettings?.gpuLayers === 'number' ? localSettings.gpuLayers : 99;
+      }
       const threads = typeof localSettings?.threads === 'number' ? localSettings.threads : defaultThreads;
       const contextSize = typeof localSettings?.contextSize === 'number' ? localSettings.contextSize : 2048;
 
-      // ── Quantization tier enforcement ────────────────────────────────────────
-      // Coding tasks are the most quantization-sensitive (one wrong token = broken syntax).
-      // Minimum enforced: Q4_K_M. Recommended default: Q5_K_M. High-quality: Q6_K.
+      // Quantization tier enforcement
       const QUANT_TIERS = ['Q2_K', 'Q3_K_M', 'Q4_K_M', 'Q5_K_M', 'Q6_K', 'Q8_0'];
       const MIN_CODE_QUANT = 'Q4_K_M';
       const DEFAULT_CODE_QUANT = 'Q5_K_M';
       let selectedQuant: string = localSettings?.quantization || DEFAULT_CODE_QUANT;
-      // Block Q2/Q3 quantizations for any session - enforce minimum Q4_K_M
       const quantIdx = QUANT_TIERS.indexOf(selectedQuant);
       const minQuantIdx = QUANT_TIERS.indexOf(MIN_CODE_QUANT);
       if (quantIdx >= 0 && quantIdx < minQuantIdx) {
@@ -630,12 +758,10 @@ export const LocalModelRunner = {
       }
       console.log(`[Quantization] Using quant tier: ${selectedQuant} (Speed/Quality balance for coding)`);
 
-      // ── Sampling defaults tuned for code generation ──────────────────────────
-      // Lower temperature = near-greedy = fewer hallucinations in code
+      // Sampling defaults tuned for code generation
       const codingTemperature = typeof localSettings?.temperature === 'number' ? localSettings.temperature : 0.1;
       const topP = typeof localSettings?.topP === 'number' ? localSettings.topP : 0.9;
       const topK = typeof localSettings?.topK === 'number' ? localSettings.topK : 20;
-      // minP filters tokens that are extremely improbable relative to top choice — major hallucination vector
       const minP = typeof localSettings?.minP === 'number' ? localSettings.minP : 0.05;
 
       const models = LocalModelManager.listModels();
@@ -665,21 +791,23 @@ export const LocalModelRunner = {
         console.error('[GPU Optimizer] Failed to dynamically calculate offload capacity:', err.message);
       }
 
-      // Enforce dynamic offloading caps:
-      if (gpuLayers === 99) {
-        gpuLayers = maxGpuLayers;
-        console.log(`[GPU Optimizer] Maximum offload mode active. Offloading exactly ${gpuLayers} layers to GPU VRAM. Remaining layers run on CPU/RAM.`);
-      } else if (gpuLayers > maxGpuLayers) {
-        console.log(`[GPU Optimizer] Requested GPU layers (${gpuLayers}) exceeds calculated safe limit (${maxGpuLayers}). Capping to ${maxGpuLayers} to prevent GPU OOM crash. Remaining layers run on CPU/RAM.`);
-        gpuLayers = maxGpuLayers;
+      // Force gpuLayers to 0 if fallbackStage is cpu
+      if (fallbackStage === 'cpu') {
+        gpuLayers = 0;
       } else {
-        console.log(`[GPU Optimizer] Using requested GPU layers: ${gpuLayers}. Remaining layers run on CPU/RAM.`);
+        if (gpuLayers === 99) {
+          gpuLayers = maxGpuLayers;
+          console.log(`[GPU Optimizer] Maximum offload mode active. Offloading exactly ${gpuLayers} layers to GPU VRAM. Remaining layers run on CPU/RAM.`);
+        } else if (gpuLayers > maxGpuLayers) {
+          console.log(`[GPU Optimizer] Requested GPU layers (${gpuLayers}) exceeds calculated safe limit (${maxGpuLayers}). Capping to ${maxGpuLayers} to prevent GPU OOM crash. Remaining layers run on CPU/RAM.`);
+          gpuLayers = maxGpuLayers;
+        } else {
+          console.log(`[GPU Optimizer] Using requested GPU layers: ${gpuLayers}. Remaining layers run on CPU/RAM.`);
+        }
       }
 
-      console.log(`Spawning native llama-server.exe for GGUF: ${model.name} (ngl: ${gpuLayers}, threads: ${threads}, ctx: ${contextSize}, batch: ${batchSize})`);
+      console.log(`Spawning native llama-server.exe for GGUF: ${model.name} (ngl: ${gpuLayers}, threads: ${threads}, ctx: ${contextSize}, batch: ${batchSize}, backend: ${usedBackend})`);
       startProgress = 60;
-
-      const totalLayers = MODEL_LAYERS[modelId] || 32;
 
       // Base llama-server arguments
       const args: string[] = [
@@ -700,15 +828,12 @@ export const LocalModelRunner = {
 
       // Enable optimizations if GPU offloading is active
       if (gpuLayers > 0) {
-        args.push('--flash-attn', 'on'); // Flash Attention: O(n²) → O(n) KV cache. 2-4x faster for long contexts from codebaseScanner
+        if (usedBackend === 'cuda') {
+          args.push('--flash-attn', 'on'); // Only enable flash attention on CUDA to avoid Vulkan CPU-fallback slowdown
+        }
         args.push('--cont-batching');   // Continuous batching for parallel slot execution
         args.push('--cache-type-k', 'q8_0'); // Quantize Key cache to 8-bit — halves KV memory overhead
         args.push('--cache-type-v', 'q8_0'); // Quantize Value cache to 8-bit
-
-        // Windows-specific memory map fix
-        if (process.platform === 'win32') {
-          args.push('--no-mmap');
-        }
 
         // Multi-GPU Splitting
         if (gpuInfoList.length > 1) {
@@ -718,14 +843,9 @@ export const LocalModelRunner = {
           const splits = gpuInfoList.map((g: any) => (g.vramBytes / totalGPUVram).toFixed(2));
           args.push('--tensor-split', splits.join(','));
         }
-      } else {
-        // CPU-only defaults
       }
 
-      // ── Speculative Decoding (2-3x speedup) ─────────────────────────────────
-      // If a 1B draft model with matching ID suffix exists alongside the main model, use it
-      // to speculate 5 tokens ahead and batch-verify with the main model.
-      // Convention: <modelId>-draft.gguf placed in same models directory.
+      // Speculative Decoding (2-3x speedup)
       const MODELS_DIR_PATH = path.dirname(model.filePath);
       const draftModelPath = path.join(MODELS_DIR_PATH, `${modelId}-draft.gguf`);
       if (fs.existsSync(draftModelPath)) {
@@ -733,7 +853,6 @@ export const LocalModelRunner = {
         args.push('--draft', '5'); // Speculate 5 tokens per draft step
         console.log(`[Speculative Decoding] Draft model found: ${draftModelPath}. Speculating 5 tokens per step.`);
       } else {
-        // Also check for a generic tinyllama/gemma 1B draft model as universal fallback
         const genericDraftPaths = [
           path.join(MODELS_DIR_PATH, 'llama-3.2-1b-native.gguf'),
           path.join(MODELS_DIR_PATH, 'gemma-2-2b-it.gguf'),
@@ -766,8 +885,6 @@ export const LocalModelRunner = {
           console.log(`[GPU Optimizer] Setting environment variable: CUDA_VISIBLE_DEVICES = ${optimalDevice.index}`);
         }
       } else if (gpuInfoList && gpuInfoList.length > 0) {
-        // Fallback: If optimalDevice could not be parsed but we detected a discrete GPU,
-        // force its index into the visible devices env variables.
         const discreteGPU = gpuInfoList.find(g => {
           const m = g.model.toLowerCase();
           const v = g.vendor.toLowerCase();
@@ -778,7 +895,11 @@ export const LocalModelRunner = {
           spawnEnv['GGML_VK_VISIBLE_DEVICES'] = String(discreteGPU.index);
           spawnEnv['GGML_VULKAN_DEVICE'] = String(discreteGPU.index);
           spawnEnv['CUDA_VISIBLE_DEVICES'] = String(discreteGPU.index);
-          args.push('--device', `Vulkan${discreteGPU.index}`);
+          if (usedBackend === 'cuda') {
+            args.push('--device', `CUDA${discreteGPU.index}`);
+          } else {
+            args.push('--device', `Vulkan${discreteGPU.index}`);
+          }
         }
       }
 
@@ -877,10 +998,19 @@ export const LocalModelRunner = {
       startProgress = 0;
       await _stop();
 
-      if (!isRetry && gpuLayers > 0) {
-        console.warn(`[Local Runner] Spawn failed with GPU offload (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with CPU-only mode (-ngl 0)...`);
+      if (fallbackStage === 'none' && gpuLayers > 0) {
+        if (usedBackend === 'cuda') {
+          console.warn(`[Local Runner] Spawn failed with CUDA offload (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with Vulkan backend...`);
+          return this._startInternal(modelId, localSettings, 'vulkan');
+        } else {
+          console.warn(`[Local Runner] Spawn failed with Vulkan offload (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with CPU-only mode (-ngl 0)...`);
+          const fallbackSettings = { ...localSettings, gpuLayers: 0 };
+          return this._startInternal(modelId, fallbackSettings, 'cpu');
+        }
+      } else if (fallbackStage === 'vulkan' && gpuLayers > 0) {
+        console.warn(`[Local Runner] Spawn failed with Vulkan fallback (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with CPU-only mode (-ngl 0)...`);
         const fallbackSettings = { ...localSettings, gpuLayers: 0 };
-        return this._startInternal(modelId, fallbackSettings, true);
+        return this._startInternal(modelId, fallbackSettings, 'cpu');
       }
 
       throw e;

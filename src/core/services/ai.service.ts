@@ -4,6 +4,7 @@
  */
 
 import { AISettings, AIResponse, ChatMessage, Provider } from '../types';
+import { ContinuationManager } from './continuationManager';
 
 let currentAbortController: AbortController | null = null;
 
@@ -721,5 +722,33 @@ export class AIService {
     const taskPattern = /\b(write|implement|create|build|code|function|class|script|program)\b/;
     if (langPattern.test(p) && taskPattern.test(p)) return true;
     return false;
+  }
+
+  /**
+   * Executes with automatic continuation if the response is truncated.
+   * Guarantees complete, non-cut-off output.
+   */
+  static async executeWithContinuation(
+    modelId: string,
+    provider: Provider | string,
+    prompt: string,
+    apiKey?: string,
+    systemInstruction?: string,
+    settings?: AISettings,
+    onStream?: (text: string) => void,
+    signal?: AbortSignal,
+    options?: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> }
+  ): Promise<AIResponse> {
+    return ContinuationManager.executeWithContinuation(
+      modelId,
+      provider,
+      prompt,
+      apiKey,
+      systemInstruction,
+      settings,
+      onStream,
+      signal,
+      options
+    );
   }
 }

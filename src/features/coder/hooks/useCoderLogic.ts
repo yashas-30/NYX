@@ -9,6 +9,8 @@ import { useMessageHistory } from './useMessageHistory';
 import { useAgentPipeline } from './useAgentPipeline';
 import { ChatMessage } from '@/src/core/types';
 import { cancelCurrentRequest } from '@/src/core/services/ai.service';
+import { useNyxStore } from '@/src/store/useNyxStore';
+import { WorkspaceIntelligence } from '@/src/core/services/workspaceIntelligence';
 
 interface CoderLogicProps {
   apiKeys: Record<string, string>;
@@ -64,6 +66,13 @@ export const useCoderLogic = ({
     };
   }, [chatSessions?.activeSid]);
 
+  const workspacePath = useNyxStore(state => state.workspacePath);
+
+  useEffect(() => {
+    WorkspaceIntelligence.clearCache();
+    WorkspaceIntelligence.getProfile(true).catch(() => {});
+  }, [workspacePath]);
+
   // Sync localMessages when activeSession changes
   const activeSessionMessages = chatSessions?.activeSession?.messages;
   const activeSid = chatSessions?.activeSid;
@@ -111,7 +120,7 @@ export const useCoderLogic = ({
     clearMetrics();
   }, [chatSessions, clearMetrics]);
 
-  const { isLoading, runCoder, stopCoder } = useAgentPipeline({
+  const { isLoading, runCoder, stopCoder, subagentTasks } = useAgentPipeline({
     models,
     apiKeys,
     agentPersonas,
@@ -141,6 +150,7 @@ export const useCoderLogic = ({
     webSearchEnabled,
     setWebSearchEnabled,
     codebaseKnowledgeEnabled,
-    setCodebaseKnowledgeEnabled
+    setCodebaseKnowledgeEnabled,
+    subagentTasks
   };
 };

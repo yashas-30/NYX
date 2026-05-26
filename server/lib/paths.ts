@@ -6,10 +6,27 @@ import fs from 'fs';
 export const isProd = process.env.NODE_ENV === 'production' || 
                       process.env.IS_PACKAGED === 'true';
 
+// Helper to locate the project workspace root in development
+function findProjectRoot(): string {
+  if (process.env.NYX_WORKSPACE_ROOT) {
+    return path.resolve(process.env.NYX_WORKSPACE_ROOT);
+  }
+  let dir = __dirname;
+  for (let i = 0; i < 5; i++) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
+
 // Base user data directory for NYX application state
 export const APP_STATE_DIR = isProd
   ? path.join(os.homedir(), '.nyx')
-  : process.cwd();
+  : findProjectRoot();
 
 // Specific sub-folders for keys, logs, models, and cache
 export const VAULT_DIR = path.join(APP_STATE_DIR, '.nyx-keys');

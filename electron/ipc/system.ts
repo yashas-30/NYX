@@ -33,4 +33,12 @@ export function registerSystemHandlers(): void {
       return { success: false, error: (err as Error).message };
     }
   });
+
+  ipcMain.handle('system:get-userdata', async (): Promise<Result<string>> => {
+    try {
+      return { success: true, data: app.getPath('userData') };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
 }

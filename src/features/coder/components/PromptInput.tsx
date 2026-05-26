@@ -327,22 +327,25 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 12, scale: 0.97 }}
                 transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-                /* Positioned above the pill, full width of the outer container */
-                className="absolute bottom-full mb-3 left-0 right-0 z-[500] overflow-hidden rounded-3xl border border-border bg-card/95 shadow-2xl backdrop-blur-3xl"
+                /* Double-Bezel Architecture */
+                className="absolute bottom-full mb-3 left-0 right-0 z-[500] bg-white/[0.02] border border-white/5 p-1 rounded-3xl shadow-2xl backdrop-blur-3xl overflow-hidden"
               >
-                {/* ── Header ─────────────────────────────────────────────── */}
-                <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/[0.05]">
-                  <div className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                      <SlidersHorizontal size={13} className="text-primary" />
+                {/* Inner Core */}
+                <div className="w-full bg-[#0B0E14]/98 border border-white/10 rounded-[calc(1.5rem-4px)] overflow-hidden">
+                  
+                  {/* ── Header ─────────────────────────────────────────────── */}
+                  <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/[0.05]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center">
+                        <SlidersHorizontal size={13} className="text-cyan-400" />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-foreground/85">Local Inference</p>
+                        <p className="text-[8px] text-cyan-400/80 font-semibold uppercase tracking-wider mt-0.5">
+                          {currentModel?.name || 'GGUF Model'} · settings
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-foreground/85">Local Inference</p>
-                      <p className="text-[8px] text-primary/60 font-medium mt-0.5">
-                        {currentModel?.name || 'GGUF Model'} · Per-model settings
-                      </p>
-                    </div>
-                  </div>
                   <div className="flex items-center gap-1.5">
                     <motion.button
                       whileTap={{ scale: 0.88 }}
@@ -598,14 +601,15 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   </div>
 
                   {/* Footer note */}
-                  <div className="mt-5 pt-4 border-t border-white/[0.04] flex items-start gap-2">
+                  <div className="mt-5 pt-4 border-t border-white/[0.04] flex items-start gap-2 px-6 pb-5">
                     <Info size={9} className="text-muted-foreground/20 mt-0.5 shrink-0" />
                     <p className="text-[7px] text-muted-foreground/20 leading-relaxed">
                       GPU Layers apply when the model is loaded into Resident RAM + VRAM. All other sampling parameters take effect on the next generation. Settings reset automatically when you switch models.
                     </p>
                   </div>
                 </div>
-              </motion.div>
+              </div>
+            </motion.div>
             </>
           )}
         </AnimatePresence>
@@ -614,160 +618,168 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         <motion.form
           onSubmit={handleSubmit}
           layout
-          transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-          className="relative"
+          transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+          className="relative w-full"
         >
-          <div className="flex flex-col gap-1.5 p-2 bg-card/70 backdrop-blur-xl border border-border rounded-3xl shadow-2xl focus-within:border-primary/45 focus-within:ring-1 focus-within:ring-primary/20 transition-all duration-300">
+          {/* Double-Bezel for Prompt Input Box */}
+          <div className="w-full p-[2px] bg-white/[0.02] border border-white/5 rounded-3xl shadow-2xl focus-within:border-primary/30 focus-within:shadow-[0_0_20px_rgba(34,211,238,0.06)] transition-all duration-300">
+            <div className="flex flex-col gap-2 p-2 bg-[#0B0E14]/90 backdrop-blur-2xl border border-white/5 rounded-[calc(1.5rem-2px)] focus-within:border-primary/20 transition-all">
 
-            {/* Attachment chip */}
-            <AnimatePresence>
-              {selectedFile && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9, y: -4 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                  className="flex items-center justify-between gap-2 px-3 py-1.5 bg-muted/40 border border-border rounded-2xl self-start mx-1"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                     <Paperclip className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                    <span className="text-[10px] font-mono text-muted-foreground/70 truncate max-w-[200px]">{selectedFile.name}</span>
-                    <span className="text-[8px] text-muted-foreground/30 shrink-0">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFile(null)}
-                    className="p-0.5 rounded-full hover:bg-muted/40 text-muted-foreground/40 hover:text-foreground/60 transition-all"
+              {/* Attachment chip */}
+              <AnimatePresence>
+                {selectedFile && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: -4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                    className="flex items-center justify-between gap-2 px-3 py-1.5 bg-[#1B2336]/60 border border-white/5 rounded-2xl self-start mx-1"
                   >
-                    <X className="w-3 h-3" />
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Textarea */}
-            <div className="flex items-start gap-2 px-1">
-              <motion.button
-                whileTap={{ scale: 0.85, rotate: 45 }}
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="mt-1 p-1.5 rounded-full text-muted-foreground/40 hover:text-foreground/70 hover:bg-muted/40 transition-all shrink-0"
-              >
-                <Plus size={16} />
-              </motion.button>
-              <textarea
-                ref={textareaRef}
-                value={prompt}
-                onChange={e => { onPromptChange(e.target.value); adjustHeight(); }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-                    handleSubmit(e);
-                  }
-                }}
-                placeholder="Ask anything..."
-                className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1.5 px-1 resize-none min-h-[36px] max-h-[220px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/45"
-                style={{ scrollbarWidth: 'none' }}
-              />
-              <motion.button
-                whileTap={{ scale: 0.9 }}
-                type="button"
-                className="mt-1 p-1.5 rounded-full text-muted-foreground/30 hover:text-foreground/70 hover:bg-muted/40 transition-all shrink-0"
-              >
-                <Mic size={15} />
-              </motion.button>
-            </div>
-
-            {/* Bottom toolbar */}
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-0.5">
-
-                {/* Model selector button */}
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    setShowModelSelector(v => !v);
-                    setShowSettings(false);
-                  }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium transition-all select-none ${
-                    currentModel
-                      ? 'text-foreground/70 hover:bg-muted/40'
-                      : 'text-amber-400 ring-1 ring-amber-400/30 bg-amber-500/5 hover:bg-amber-500/8 font-bold'
-                  }`}
-                >
-                  {currentModel ? getCustomModelIcon(currentModel) : <Bot className="w-3.5 h-3.5 text-amber-400/70" />}
-                  <span className="truncate max-w-[120px]">{currentModel?.name || 'Select model'}</span>
-                  <ChevronDown className="w-3 h-3 opacity-40" />
-                </motion.button>
-
-                <div className="w-px h-4 bg-border mx-1" />
-
-                {/* Web search */}
-                <ToolButton
-                  active={webSearchEnabled}
-                  onClick={() => onWebSearchToggle(!webSearchEnabled)}
-                  title="Web Search"
-                  icon={<Globe size={13} strokeWidth={1.5} className={webSearchEnabled ? 'animate-pulse' : ''} />}
-                  activeColor="text-blue-400 bg-blue-500/8 border-blue-500/15"
-                />
-
-                {/* ⚙ Settings — only for local GGUF models */}
-                {isLocalModel && (
-                  <div className="relative">
-                    <ToolButton
-                      active={showSettings}
-                      onClick={() => {
-                        setShowSettings(v => !v);
-                        setShowModelSelector(false);
-                      }}
-                      title="Local Inference Settings"
-                      icon={
-                        <SettingsIcon
-                          size={13}
-                          strokeWidth={1.5}
-                          className={`transition-transform duration-300 ${showSettings ? 'rotate-45' : ''}`}
-                        />
-                      }
-                      activeColor="text-blue-400 bg-blue-500/8 border-blue-500/20"
-                    />
-                    {/* Pulsing blue dot */}
-                    {!showSettings && (
-                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500 border-[1.5px] border-card pointer-events-none">
-                        <span className="block w-full h-full rounded-full bg-blue-400 animate-ping opacity-60" />
-                      </span>
-                    )}
-                  </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Paperclip className="w-3 h-3 text-primary/60 shrink-0" />
+                      <span className="text-[10px] font-mono text-muted-foreground/70 truncate max-w-[200px]">{selectedFile.name}</span>
+                      <span className="text-[8px] text-muted-foreground/30 shrink-0">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFile(null)}
+                      className="p-0.5 rounded-full hover:bg-white/5 text-muted-foreground/40 hover:text-foreground/60 transition-all cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </motion.div>
                 )}
+              </AnimatePresence>
+
+              {/* Textarea */}
+              <div className="flex items-start gap-2 px-1">
+                <motion.button
+                  whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  whileTap={{ scale: 0.85, rotate: 45 }}
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-1 p-1.5 rounded-full text-muted-foreground/45 hover:text-primary transition-all shrink-0 cursor-pointer"
+                >
+                  <Plus size={16} />
+                </motion.button>
+                <textarea
+                  ref={textareaRef}
+                  value={prompt}
+                  onChange={e => { onPromptChange(e.target.value); adjustHeight(); }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+                      handleSubmit(e);
+                    }
+                  }}
+                  placeholder="Ask anything..."
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1.5 px-1 resize-none min-h-[36px] max-h-[220px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/35"
+                  style={{ scrollbarWidth: 'none' }}
+                />
+                <motion.button
+                  whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  whileTap={{ scale: 0.9 }}
+                  type="button"
+                  className="mt-1 p-1.5 rounded-full text-muted-foreground/30 hover:text-primary transition-all shrink-0 cursor-pointer"
+                >
+                  <Mic size={15} />
+                </motion.button>
               </div>
 
-              {/* Stop / Submit */}
-              <div className="flex items-center gap-1.5">
-                {isLoading ? (
+              {/* Bottom toolbar */}
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-0.5">
+
+                  {/* Model selector button */}
                   <motion.button
+                    whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.04)' }}
                     whileTap={{ scale: 0.95 }}
                     type="button"
-                    onClick={onStop}
-                    className="h-8 px-3.5 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center gap-1.5 border border-red-500/15 text-[10px] font-black tracking-wider uppercase hover:bg-red-500/15 transition-all"
-                  >
-                    <StopCircle className="w-3.5 h-3.5" />
-                    Stop
-                  </motion.button>
-                ) : (
-                  <motion.button
-                    whileTap={{ scale: canSubmit ? 0.94 : 1 }}
-                    type="submit"
-                    disabled={!canSubmit}
-                    className={`h-8 w-8 rounded-xl flex items-center justify-center transition-all border ${
-                      canSubmit
-                        ? 'bg-foreground text-background border-foreground shadow-md hover:opacity-90'
-                        : 'bg-muted/10 border-transparent text-muted-foreground/30 cursor-not-allowed'
+                    onClick={e => {
+                      e.stopPropagation();
+                      setShowModelSelector(v => !v);
+                      setShowSettings(false);
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all select-none cursor-pointer ${
+                      currentModel
+                        ? 'text-foreground/75 border border-white/5 bg-white/[0.01]'
+                        : 'text-amber-400 border border-amber-400/20 bg-amber-500/5 hover:bg-amber-500/10'
                     }`}
                   >
-                    <Send size={13} strokeWidth={2} />
+                    {currentModel ? getCustomModelIcon(currentModel) : <Bot className="w-3.5 h-3.5 text-amber-400/70" />}
+                    <span className="truncate max-w-[120px]">{currentModel?.name || 'Select model'}</span>
+                    <ChevronDown className="w-3 h-3 opacity-40" />
                   </motion.button>
-                )}
+
+                  <div className="w-px h-4 bg-white/10 mx-1" />
+
+                  {/* Web search */}
+                  <ToolButton
+                    active={webSearchEnabled}
+                    onClick={() => onWebSearchToggle(!webSearchEnabled)}
+                    title="Web Search"
+                    icon={<Globe size={13} strokeWidth={1.5} className={webSearchEnabled ? 'animate-pulse' : ''} />}
+                    activeColor="text-primary bg-primary/10 border-primary/20"
+                  />
+
+                  {/* ⚙ Settings — only for local GGUF models */}
+                  {isLocalModel && (
+                    <div className="relative">
+                      <ToolButton
+                        active={showSettings}
+                        onClick={() => {
+                          setShowSettings(v => !v);
+                          setShowModelSelector(false);
+                        }}
+                        title="Local Inference Settings"
+                        icon={
+                          <SettingsIcon
+                            size={13}
+                            strokeWidth={1.5}
+                            className={`transition-transform duration-300 ${showSettings ? 'rotate-45 text-primary' : ''}`}
+                          />
+                        }
+                        activeColor="text-primary bg-primary/10 border-primary/20"
+                      />
+                      {/* Pulsing blue dot */}
+                      {!showSettings && (
+                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary border-[1.5px] border-card pointer-events-none">
+                          <span className="block w-full h-full rounded-full bg-primary animate-ping opacity-60" />
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Stop / Submit */}
+                <div className="flex items-center gap-1.5">
+                  {isLoading ? (
+                    <motion.button
+                      whileHover={{ scale: 1.02, backgroundColor: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)' }}
+                      whileTap={{ scale: 0.95 }}
+                      type="button"
+                      onClick={onStop}
+                      className="h-8.5 px-4 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center gap-1.5 border border-red-500/20 text-[9px] font-black tracking-widest uppercase transition-all cursor-pointer"
+                    >
+                      <StopCircle className="w-3.5 h-3.5 animate-pulse" />
+                      Stop
+                    </motion.button>
+                  ) : (
+                    <motion.button
+                      whileHover={{ scale: canSubmit ? 1.05 : 1, boxShadow: canSubmit ? '0 0 12px rgba(34, 211, 238, 0.3)' : 'none' }}
+                      whileTap={{ scale: canSubmit ? 0.95 : 1 }}
+                      type="submit"
+                      disabled={!canSubmit}
+                      className={`h-8.5 w-8.5 rounded-xl flex items-center justify-center transition-all border cursor-pointer ${
+                        canSubmit
+                          ? 'bg-primary text-black border-primary'
+                          : 'bg-white/5 border-transparent text-muted-foreground/30 cursor-not-allowed'
+                      }`}
+                    >
+                      <Send size={13} strokeWidth={2.5} />
+                    </motion.button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -800,11 +812,11 @@ const ParamSlider: React.FC<{
   onChange: (v: number) => void;
   isFloat?: boolean;
 }> = ({ label, hint, value, min, max, step, display, accent, onChange, isFloat }) => (
-  <div>
-    <div className="flex items-center justify-between mb-1.5">
+  <div className="space-y-1.5">
+    <div className="flex items-center justify-between mb-0.5">
       <div className="flex-1 min-w-0">
-        <span className="text-[8px] font-bold text-muted-foreground/55 uppercase tracking-wider">{label}</span>
-        <p className="text-[7px] text-muted-foreground/28 mt-0.5 leading-snug">{hint}</p>
+        <span className="text-[8px] font-black text-muted-foreground/60 uppercase tracking-wider">{label}</span>
+        <p className="text-[7px] text-muted-foreground/30 mt-0.5 leading-snug">{hint}</p>
       </div>
       <span className="text-[10px] font-mono font-bold text-foreground/50 ml-3 shrink-0 tabular-nums">{display(value)}</span>
     </div>

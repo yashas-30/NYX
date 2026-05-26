@@ -100,45 +100,46 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
           variants={sidebarVariants}
           initial="open"
           animate={sidebarOpen ? 'open' : 'closed'}
-          transition={{ type: 'spring', stiffness: 350, damping: 38 }}
-          className={`h-full overflow-hidden flex flex-col bg-secondary/95 backdrop-blur-xl border-r border-border relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl w-[280px]' : 'flex-none z-20'}`}
+          transition={{ type: 'spring', stiffness: 380, damping: 35 }}
+          className={`h-full overflow-hidden flex flex-col bg-[#0B0E14]/40 backdrop-blur-2xl border-r border-white/5 relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl w-[280px]' : 'flex-none z-20'}`}
         >
           <div className="flex flex-col h-full min-w-[280px]">
             {/* Sidebar top controls */}
             <div className="flex items-center justify-between px-3 pt-3 pb-2">
               <motion.button
-                whileTap={{ scale: 0.92 }}
+                whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setSidebarOpen(false)}
-                className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted/40 transition-all"
+                className="p-2 rounded-xl text-muted-foreground/45 hover:text-foreground border border-transparent hover:border-white/5 transition-all cursor-pointer"
               >
-                <PanelLeftClose size={16} />
+                <PanelLeftClose size={14} />
               </motion.button>
             </div>
 
             {/* Search bar */}
-            <div className="px-3 pb-2">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-card border border-border focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/25 transition-all">
-                <Search size={12} className="text-muted-foreground/45 shrink-0" />
+            <div className="px-3 pb-2.5">
+              <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#0B0E14]/65 border border-white/[0.04] focus-within:border-primary/45 focus-within:ring-1 focus-within:ring-primary/20 focus-within:shadow-[0_0_12px_rgba(34,211,238,0.05)] transition-all duration-300">
+                <Search size={12} className="text-muted-foreground/35 shrink-0" />
                 <input
                   type="text"
                   placeholder="Search chats..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="flex-1 bg-transparent text-[11px] text-foreground/90 placeholder:text-muted-foreground/40 outline-none font-medium"
+                  className="flex-1 bg-transparent text-[11px] text-foreground/85 placeholder:text-muted-foreground/35 outline-none font-bold uppercase tracking-wider"
                 />
               </div>
             </div>
 
             {/* Recent chats label */}
-            <div className="px-3 py-1">
-              <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground/30">
-                Recent
+            <div className="px-4 py-1.5 flex items-center justify-between">
+              <span className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/25">
+                Recent Chats
               </span>
             </div>
 
             {/* Session list */}
-            <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5 scrollbar-thin scrollbar-thumb-white/5">
-              <div className="mb-1">
+            <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1.5 scrollbar-thin scrollbar-thumb-white/5">
+              <div className="mb-1.5">
                 <SideNavButton
                   icon={<Plus size={14} />}
                   label="New chat"
@@ -152,7 +153,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               <AnimatePresence>
                 {filteredSessions.length === 0 ? (
                   <div className="text-center py-8">
-                    <p className="text-[10px] text-muted-foreground/25">No chats yet</p>
+                    <p className="text-[10px] text-muted-foreground/25 font-bold uppercase tracking-wider">No chats yet</p>
                   </div>
                 ) : (
                   filteredSessions.map(session => (
@@ -172,7 +173,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
             </div>
 
             {/* Models Nav Button (Moved to bottom above user badge/settings) */}
-            <div className="px-2 pt-2 pb-2 border-t border-white/[0.05] mt-auto">
+            <div className="px-2 pt-2.5 pb-2.5 border-t border-white/[0.04] mt-auto">
               <SideNavButton
                 icon={<Box size={14} />}
                 label="Models"
@@ -182,19 +183,20 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
             </div>
 
             {/* Bottom user badge */}
-            <div className="px-3 py-3 border-t border-white/[0.05]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-400 to-primary flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(34,211,238,0.25)]">
-                  <User size={13} className="text-white" />
+            <div className="px-3 py-3 border-t border-white/[0.04] bg-[#0B0E14]/30">
+              <div className="flex items-center gap-3 p-1 rounded-xl">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-primary flex items-center justify-center shrink-0 shadow-[0_0_12px_rgba(34,211,238,0.3)]">
+                  <User size={13} className="text-black" strokeWidth={2.5} />
                 </div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-[11px] font-bold text-foreground/80 truncate">User</span>
-                  <span className="text-[9px] text-muted-foreground/40 font-medium">Pro</span>
+                  <span className="text-[11px] font-black tracking-wide text-foreground/80 truncate uppercase">User</span>
+                  <span className="text-[8px] text-primary/75 font-black tracking-widest uppercase">Pro Account</span>
                 </div>
                 <motion.button
-                  whileTap={{ scale: 0.9 }}
+                  whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  whileTap={{ scale: 0.92 }}
                   onClick={() => setActiveMode('settings')}
-                  className="ml-auto p-1.5 rounded-lg text-muted-foreground/40 hover:text-foreground hover:bg-muted/40 transition-all"
+                  className="ml-auto p-2 rounded-xl text-muted-foreground/45 hover:text-primary border border-transparent hover:border-white/5 transition-all cursor-pointer"
                 >
                   <Settings size={13} />
                 </motion.button>
@@ -210,10 +212,12 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
+              whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => setSidebarOpen(true)}
-              className="absolute top-3 left-3 z-30 p-1.5 rounded-lg bg-white/5 hover:bg-white/8 border border-white/8 text-muted-foreground/60 hover:text-foreground transition-all"
+              className="absolute top-3.5 left-3.5 z-30 p-2 rounded-xl bg-[#0B0E14]/85 hover:bg-[#0B0E14] border border-white/5 text-muted-foreground/60 hover:text-primary transition-all shadow-md cursor-pointer"
             >
-              <PanelLeftOpen size={16} />
+              <PanelLeftOpen size={14} />
             </motion.button>
           )}
         </AnimatePresence>
@@ -310,24 +314,25 @@ const SideNavButton: React.FC<{
   onClick: () => void;
 }> = ({ icon, label, active, onClick }) => (
   <motion.button
-    whileTap={{ scale: 0.97 }}
+    whileHover={{ scale: 1.01 }}
+    whileTap={{ scale: 0.98 }}
     onClick={onClick}
-    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[12px] font-bold transition-all relative overflow-hidden cursor-pointer ${
+    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all duration-200 relative overflow-hidden cursor-pointer ${
       active
-        ? 'bg-gradient-to-r from-primary/10 to-primary/5 text-primary border border-primary/20 shadow-[0_0_15px_rgba(34,211,238,0.05)]'
-        : 'text-muted-foreground/60 hover:text-foreground/85 hover:bg-muted/40 border border-transparent'
+        ? 'bg-primary/10 text-primary border border-primary/20 shadow-[0_0_15px_rgba(34,211,238,0.08)]'
+        : 'text-muted-foreground/50 hover:text-foreground/80 hover:bg-white/[0.04] border border-transparent'
     }`}
   >
     {active && (
       <motion.div
         layoutId="sidebarActiveIndicator"
-        className="absolute left-0 top-1/2 -translate-y-1/2 w-[3.5px] h-5 rounded-r bg-primary shadow-[0_0_8px_rgba(34,211,238,0.6)]"
+        className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r bg-primary shadow-[0_0_8px_rgba(34,211,238,0.6)]"
         transition={{ type: 'spring', stiffness: 350, damping: 30 }}
       />
     )}
-    <span className={`transition-transform duration-200 ${active ? 'scale-105' : 'text-muted-foreground/50'}`}>{icon}</span>
+    <span className={`transition-all duration-200 ${active ? 'scale-105 text-primary' : 'opacity-65 text-muted-foreground/60'}`}>{icon}</span>
     <span className="translate-y-[-0.5px]">{label}</span>
-    {active && <ChevronRight size={11} className="ml-auto opacity-60" />}
+    {active && <ChevronRight size={10} className="ml-auto opacity-60 text-primary" />}
   </motion.button>
 );
 
@@ -342,22 +347,23 @@ const SessionItem: React.FC<{
   return (
     <motion.div
       layout
+      whileHover={{ scale: 1.01 }}
       whileTap={{ scale: 0.98 }}
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.96 }}
-      transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={`group relative flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all border ${
+      className={`group relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl cursor-pointer transition-all border ${
         isActive
-          ? 'bg-gradient-to-r from-primary/8 to-primary/3 text-primary border-primary/15'
-          : 'text-muted-foreground/60 hover:bg-muted/40 hover:text-foreground/85 border-transparent'
+          ? 'bg-primary/8 text-primary border-primary/15 shadow-[0_0_12px_rgba(34,211,238,0.03)]'
+          : 'text-muted-foreground/60 hover:bg-white/[0.03] hover:text-foreground/90 border-transparent'
       }`}
       onClick={onClick}
     >
-      <MessageSquare size={12} className={`shrink-0 transition-transform duration-200 ${isActive ? 'scale-105' : 'opacity-50 group-hover:scale-105'}`} />
-      <span className="flex-1 text-[11px] font-bold truncate translate-y-[-0.5px]">{session.title}</span>
+      <MessageSquare size={12} className={`shrink-0 transition-transform duration-200 ${isActive ? 'scale-105 text-primary' : 'opacity-40 group-hover:scale-105 group-hover:opacity-75'}`} />
+      <span className="flex-1 text-[11px] font-bold truncate translate-y-[-0.5px] tracking-wide">{session.title}</span>
       <AnimatePresence>
         {(hovered || isActive) && (
           <motion.button
@@ -366,9 +372,9 @@ const SessionItem: React.FC<{
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: 0.15 }}
             onClick={e => { e.stopPropagation(); onDelete(); }}
-            className="shrink-0 p-1 rounded-lg bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
+            className="shrink-0 p-1.5 rounded-lg bg-red-500/10 text-red-400/60 hover:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
           >
-            <Trash2 size={11} />
+            <Trash2 size={10} />
           </motion.button>
         )}
       </AnimatePresence>

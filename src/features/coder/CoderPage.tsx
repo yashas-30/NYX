@@ -10,6 +10,7 @@ import { ModelDefinition, Provider } from '@/src/core/types';
 import { toast } from '@/src/components/ui/sonner';
 
 import { MessageList, PromptInput } from './components';
+import { SubagentPanel } from './components/SubagentPanel';
 import { getCustomModelIcon } from './utils/modelIcons';
 import { useCoderLogic } from './hooks/useCoderLogic';
 
@@ -55,7 +56,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     runCoder, stopCoder, clearHistory,
     agentPersonas, suggestedPrompts,
     webSearchEnabled, setWebSearchEnabled,
-    codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled
+    codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled,
+    subagentTasks
   } = useCoderLogic({
     apiKeys,
     modelSettings,
@@ -111,6 +113,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
+        <SubagentPanel tasks={subagentTasks} isLoading={isLoading} />
         <MessageList
           history={history}
           activeAgent={activeAgent}
