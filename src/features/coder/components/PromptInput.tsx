@@ -121,6 +121,35 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     }
   }, [isLocalModel]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ── Global keyboard shortcuts ────────────────────────────────────────── */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Toggle Model Selector (Cmd+K / Ctrl+K)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowModelSelector(v => !v);
+        setShowSettings(false);
+      }
+
+      // 2. Stop active inference (Escape)
+      if (e.key === 'Escape' && isLoading) {
+        e.preventDefault();
+        onStop();
+        toast.info('Generation stopped');
+      }
+
+      // 3. Clear Chat History (Cmd+Shift+C / Ctrl+Shift+C)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        onClearHistory();
+        toast.success('Context reset');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLoading, onStop, onClearHistory]);
+
   const analysis = prompt ? analyzePrompt(prompt) : null;
   const isHardware = analysis?.hardware?.isHardware || false;
 
@@ -259,7 +288,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         <AnimatePresence>
           {showModelSelector && (
             <ModelSelector
-              currentModelId={currentModelId}
+              currentModelId={currentModelId || undefined}
               allModels={allModels}
               selectedProvider={selectedProvider}
               searchTerm={modelSearch}

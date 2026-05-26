@@ -690,17 +690,27 @@ export const LocalModelManager = {
 
     return scannedPresets.map(preset => {
       const filePath = path.join(MODELS_DIR, preset.fileName);
-      const exists = fs.existsSync(filePath);
-
+      let exists = fs.existsSync(filePath);
       let status: 'idle' | 'downloading' | 'completed' | 'failed' = 'idle';
       let fileSizeBytes = 0;
 
       if (exists) {
-        status = 'completed';
-        downloadStates[preset.id] = 'completed';
         try {
           fileSizeBytes = fs.statSync(filePath).size;
-        } catch {}
+          if (fileSizeBytes < 10 * 1024 * 1024) { // Under 10MB is definitely corrupt for these models
+            console.warn(`[NYX] Model ${preset.name} is corrupt (size ${fileSizeBytes} bytes). Deleting and recovering...`);
+            fs.unlinkSync(filePath);
+            exists = false;
+            fileSizeBytes = 0;
+          }
+        } catch {
+          exists = false;
+        }
+      }
+
+      if (exists) {
+        status = 'completed';
+        downloadStates[preset.id] = 'completed';
       } else if (activeDownloads.has(preset.id)) {
         status = activeDownloads.get(preset.id)!.status;
       } else if (downloadStates[preset.id] === 'completed') {
@@ -793,7 +803,8 @@ export const LocalModelManager = {
       }
     }
 
-    const filePath = path.join(MODELS_DIR, preset.fileName);
+    const activePreset = preset!;
+    const filePath = path.join(MODELS_DIR, activePreset.fileName);
     if (fs.existsSync(filePath)) {
       return { status: 'completed', message: 'Model already downloaded.' };
     }
@@ -815,13 +826,13 @@ export const LocalModelManager = {
     downloadStates[modelId] = 'downloading';
     saveStates();
 
-    this.downloadFile(preset.url, filePath, progress).then(() => {
+    this.downloadFile(activePreset.url, filePath, progress).then(() => {
       progress.status = 'completed';
       progress.progressPercentage = 100;
       activeDownloads.delete(modelId);
       downloadStates[modelId] = 'completed';
       saveStates();
-      console.log(`[NYX] Successfully downloaded ${preset!.name} → ${filePath}`);
+      console.log(`[NYX] Successfully downloaded ${activePreset.name} → ${filePath}`);
     }).catch((err) => {
       progress.status = 'failed';
       progress.error = err.message || 'Download failed';
@@ -856,7 +867,7 @@ export const LocalModelManager = {
     }
 
     const filePath = path.join(MODELS_DIR, preset.fileName);
-    const tmpPath = filePath + '.tmp';
+    const partPath = filePath + '.part';
 
     let deleted = false;
 
@@ -865,8 +876,8 @@ export const LocalModelManager = {
       deleted = true;
     }
 
-    if (fs.existsSync(tmpPath)) {
-      try { fs.unlinkSync(tmpPath); } catch {}
+    if (fs.existsSync(partPath)) {
+      try { fs.unlinkSync(partPath); } catch {}
     }
 
     downloadStates[modelId] = 'idle';
@@ -877,22 +888,36 @@ export const LocalModelManager = {
 
   downloadFile(url: string, destPath: string, progress: DownloadProgress): Promise<void> {
     return new Promise((resolve, reject) => {
-      const tempPath = destPath + '.tmp';
+      const partPath = destPath + '.part';
       let fileStream: fs.WriteStream | null = null;
-      let receivedBytes = 0;
+      let existingBytes = 0;
+
+      if (fs.existsSync(partPath)) {
+        try {
+          existingBytes = fs.statSync(partPath).size;
+        } catch (e) {
+          existingBytes = 0;
+        }
+      }
+
+      let receivedBytes = existingBytes;
       let totalBytes = 0;
       let lastTime = Date.now();
-      let lastBytes = 0;
+      let lastBytes = existingBytes;
 
       const makeRequest = (currentUrl: string) => {
         const urlObj = new URL(currentUrl);
-        const options = {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Connection': 'keep-alive'
-          }
+        const headers: Record<string, string> = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': '*/*',
+          'Connection': 'keep-alive'
         };
+
+        if (existingBytes > 0) {
+          headers['Range'] = `bytes=${existingBytes}-`;
+        }
+
+        const options = { headers };
 
         const req = https.get(urlObj, options, (res: IncomingMessage) => {
           // Handle redirects (HuggingFace → AWS S3 / Cloudflare CDN)
@@ -907,16 +932,30 @@ export const LocalModelManager = {
             }
           }
 
-          if (res.statusCode !== 200) {
+          const isRangeSupported = res.statusCode === 206;
+
+          if (res.statusCode !== 200 && res.statusCode !== 206) {
             reject(new Error(`Server responded with status code: ${res.statusCode}`));
             return;
           }
 
-          totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+          const contentLength = parseInt(res.headers['content-length'] || '0', 10);
+          
+          if (isRangeSupported) {
+            totalBytes = contentLength + existingBytes;
+          } else {
+            // Server did not support range, reset to 0 bytes downloaded
+            totalBytes = contentLength;
+            receivedBytes = 0;
+            existingBytes = 0;
+            lastBytes = 0;
+          }
+          
           progress.totalBytes = totalBytes;
 
           try {
-            fileStream = fs.createWriteStream(tempPath);
+            // If range is supported, append to the file. Otherwise overwrite.
+            fileStream = fs.createWriteStream(partPath, { flags: isRangeSupported ? 'a' : 'w' });
           } catch (err) {
             reject(err);
             return;
@@ -951,7 +990,7 @@ export const LocalModelManager = {
             if (fileStream) {
               fileStream.close(() => {
                 try {
-                  fs.renameSync(tempPath, destPath);
+                  fs.renameSync(partPath, destPath);
                   resolve();
                 } catch (e: any) {
                   reject(e);
@@ -966,7 +1005,6 @@ export const LocalModelManager = {
           if (fileStream) {
             fileStream.destroy();
           }
-          try { fs.unlinkSync(tempPath); } catch {}
           reject(err);
         });
 
@@ -975,7 +1013,6 @@ export const LocalModelManager = {
           if (fileStream) {
             fileStream.destroy();
           }
-          try { fs.unlinkSync(tempPath); } catch {}
           reject(new Error('Download timeout reached. Connection lost.'));
         });
       };

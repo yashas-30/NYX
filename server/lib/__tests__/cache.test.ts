@@ -36,4 +36,46 @@ describe('CacheServer', () => {
     const missing = await CacheServer.get('non-existent-key-123');
     expect(missing).toBeNull();
   });
+
+  describe('generateKey Hashing Determinism', () => {
+    it('produces identical keys regardless of object property order (determinism)', () => {
+      const payload1 = {
+        provider: 'gemini',
+        model: 'gemini-1.5-pro',
+        prompt: 'test prompt',
+        settings: { temperature: 0.7, topP: 0.95 }
+      };
+
+      const payload2 = {
+        settings: { topP: 0.95, temperature: 0.7 },
+        prompt: 'test prompt',
+        model: 'gemini-1.5-pro',
+        provider: 'gemini'
+      };
+
+      const key1 = CacheServer.generateKey(payload1);
+      const key2 = CacheServer.generateKey(payload2);
+
+      expect(key1).toBe(key2);
+    });
+
+    it('produces distinct keys for different prompts (collision resistance)', () => {
+      const payload1 = {
+        provider: 'gemini',
+        model: 'gemini-1.5-pro',
+        prompt: 'test prompt 1'
+      };
+
+      const payload2 = {
+        provider: 'gemini',
+        model: 'gemini-1.5-pro',
+        prompt: 'test prompt 2'
+      };
+
+      const key1 = CacheServer.generateKey(payload1);
+      const key2 = CacheServer.generateKey(payload2);
+
+      expect(key1).not.toBe(key2);
+    });
+  });
 });

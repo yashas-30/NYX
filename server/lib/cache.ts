@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+// @ts-ignore
 import { lock } from 'proper-lockfile';
 
 import { CACHE_DIR } from './paths.ts';
@@ -30,11 +31,26 @@ export class CacheServer {
     misses: 0
   };
 
+  private static sortKeys(obj: any): any {
+    if (obj === null || typeof obj !== 'object') {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(CacheServer.sortKeys);
+    }
+    const sortedKeys = Object.keys(obj).sort();
+    const result: any = {};
+    for (const key of sortedKeys) {
+      result[key] = CacheServer.sortKeys(obj[key]);
+    }
+    return result;
+  }
+
   /**
    * Generates a unique SHA-256 cache key based on query parameters
    */
   public static generateKey(body: any): string {
-    const hashInput = JSON.stringify({
+    const sortedInput = CacheServer.sortKeys({
       provider: body.provider || '',
       model: body.model || '',
       prompt: body.prompt || '',
@@ -42,6 +58,7 @@ export class CacheServer {
       history: body.history || [],
       settings: body.settings || {}
     });
+    const hashInput = JSON.stringify(sortedInput);
     
     return crypto.createHash('sha256').update(hashInput).digest('hex');
   }

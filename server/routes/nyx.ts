@@ -5,7 +5,7 @@ import { getWorkspaceRoot } from '../lib/paths.ts';
 import fs from 'fs';
 import path from 'path';
 import { validate } from '../middleware/validate.ts';
-import { writeFileSchema } from '../schemas/index.ts';
+import { writeFileSchema, nyxCriticSchema, nyxSearchSchema, codebaseSearchSchema } from '../schemas/index.ts';
 import { loadKeys } from '../lib/keyVault.ts';
 
 export const nyxRouter = Router();
@@ -22,7 +22,11 @@ nyxRouter.get('/rules', (_req, res) => {
 });
 
 // POST /api/nyx/reset - Reset rules database
-nyxRouter.post('/reset', (_req, res) => {
+nyxRouter.post('/reset', (req, res) => {
+  // Require explicit confirmation to prevent accidental/malicious wipes
+  if (req.body?.confirm !== true) {
+    return res.status(400).json({ error: 'Must pass { confirm: true } to reset rules.' });
+  }
   try {
     RulesDb.resetRules();
     res.json({ success: true });
@@ -33,8 +37,8 @@ nyxRouter.post('/reset', (_req, res) => {
 });
 
 // POST /api/nyx/critic - Asynchronous background evaluation loop
-nyxRouter.post('/critic', (req, res) => {
-  const { prompt, response, modelId, provider, apiKey } = req.body;
+nyxRouter.post('/critic', validate(nyxCriticSchema), (req, res) => {
+  const { prompt, response, modelId, provider } = req.body;
   
   if (!prompt || !response) {
     return res.status(400).json({ error: 'Missing prompt or response for critic.' });
@@ -46,7 +50,7 @@ nyxRouter.post('/critic', (req, res) => {
   // Fire off Critic asynchronously
   setImmediate(async () => {
     try {
-      await runBackgroundCritic(prompt, response, modelId, provider, apiKey);
+      await runBackgroundCritic(prompt, response, modelId, provider);
     } catch (criticError) {
       console.error('[Nyx Critic Layer Error]:', criticError);
     }
@@ -60,10 +64,11 @@ async function runBackgroundCritic(
   userPrompt: string, 
   nyxResponse: string, 
   modelId?: string, 
-  provider?: string, 
-  apiKey?: string
+  provider?: string
 ) {
   console.log('[Background Critic] Starting meta-cognitive analysis...');
+  const keys = loadKeys();
+  const activeKey = keys[provider || ''] || '';
 
   const criticSystemPrompt = `
 You are the Core Meta-Cognitive Optimizer for an AI coding agent named Nyx. Your task is to analyze the provided chat interaction between a user and Nyx, identify structural or conceptual gaps, and generate a micro-instruction to improve Nyx's next output.
@@ -97,7 +102,7 @@ ${nyxResponse}
     try {
       let responseText = '';
       const keys = loadKeys();
-      const activeKey = apiKey || keys[provider] || '';
+      const activeKey = keys[provider] || '';
       
       console.log(`[Background Critic] Executing meta-critic using selected model ${modelId} (${provider})`);
 
@@ -253,68 +258,119 @@ ${nyxResponse}
   }
 }
 
+interface SearchCacheEntry {
+  results: any[];
+  expiresAt: number;
+}
+const searchCache = new Map<string, SearchCacheEntry>();
+const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache
+
 /**
- * Perform a free, robust Google/DuckDuckGo web search to gather rich documentation and coding ideas
+ * Perform a free, robust Google/DuckDuckGo/SerpAPI/Brave web search to gather rich documentation
  */
 async function performWebSearch(query: string) {
-  console.log(`[Web Search] Querying web search index for: "${query}"`);
-  try {
-    const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-    const html = await response.text();
-    
-    const results: Array<{ title: string; link: string; snippet: string }> = [];
-    
-    // Parse results using regex for extreme simplicity and speed
-    const resultBlockRegex = /<div class="(?:result__body|links_main.*?)"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
-    const titleRegex = /<a class="result__a"[^>]*>([\s\S]*?)<\/a>/;
-    const linkRegex = /<a class="result__a"[^>]*href="([^"]+)"/;
-    const snippetRegex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/;
+  // Check TTL cache
+  const cached = searchCache.get(query);
+  if (cached && cached.expiresAt > Date.now()) {
+    console.log(`[Web Search] Cache hit for: "${query}"`);
+    return cached.results;
+  }
 
-    let match;
-    let count = 0;
-    while ((match = resultBlockRegex.exec(html)) !== null && count < 5) {
-      const block = match[1];
-      const titleMatch = titleRegex.exec(block);
-      const linkMatch = linkRegex.exec(block);
-      const snippetMatch = snippetRegex.exec(block);
+  console.log(`[Web Search] Querying web search for: "${query}"`);
+  const keys = loadKeys();
+  const serpapiKey = keys['SERPAPI_KEY'] || process.env.SERPAPI_KEY || '';
+  const braveApiKey = keys['BRAVE_API_KEY'] || process.env.BRAVE_API_KEY || '';
+
+  let results: Array<{ title: string; link: string; snippet: string }> = [];
+
+  try {
+    if (serpapiKey) {
+      console.log('[Web Search] Using SerpAPI backend...');
+      const response = await fetch(`https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${serpapiKey}`);
+      if (response.ok) {
+        const data = await response.json();
+        const organic = data.organic_results || [];
+        results = organic.slice(0, 5).map((r: any) => ({
+          title: r.title || '',
+          link: r.link || '',
+          snippet: r.snippet || '',
+        }));
+      } else {
+        throw new Error(`SerpAPI returned HTTP ${response.status}`);
+      }
+    } else if (braveApiKey) {
+      console.log('[Web Search] Using Brave Search API backend...');
+      const response = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}`, {
+        headers: { 'Accept': 'application/json', 'X-Subscription-Token': braveApiKey }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const webResults = data.web?.results || [];
+        results = webResults.slice(0, 5).map((r: any) => ({
+          title: r.title || '',
+          link: r.url || '',
+          snippet: r.description || '',
+        }));
+      } else {
+        throw new Error(`Brave Search returned HTTP ${response.status}`);
+      }
+    } else {
+      // Fallback: DuckDuckGo HTML scraper
+      console.log('[Web Search] Falling back to DuckDuckGo HTML Scraper...');
+      const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+      const html = await response.text();
       
-      if (titleMatch && linkMatch) {
-        let title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
-        let link = linkMatch[1];
+      const resultBlockRegex = /<div class="(?:result__body|links_main.*?)"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
+      const titleRegex = /<a class="result__a"[^>]*>([\s\S]*?)<\/a>/;
+      const linkRegex = /<a class="result__a"[^>]*href="([^"]+)"/;
+      const snippetRegex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/;
+
+      let match;
+      let count = 0;
+      while ((match = resultBlockRegex.exec(html)) !== null && count < 5) {
+        const block = match[1];
+        const titleMatch = titleRegex.exec(block);
+        const linkMatch = linkRegex.exec(block);
+        const snippetMatch = snippetRegex.exec(block);
         
-        // Decode duckduckgo redirection links if applicable
-        if (link.startsWith('//duckduckgo.com/l/?kh=-1&uddg=')) {
-          const rawLink = link.split('uddg=')[1]?.split('&')[0];
-          if (rawLink) {
-            link = decodeURIComponent(rawLink);
+        if (titleMatch && linkMatch) {
+          let title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
+          let link = linkMatch[1];
+          
+          if (link.startsWith('//duckduckgo.com/l/?kh=-1&uddg=')) {
+            const rawLink = link.split('uddg=')[1]?.split('&')[0];
+            if (rawLink) link = decodeURIComponent(rawLink);
+          } else if (link.startsWith('/l/?kh=-1&uddg=')) {
+            const rawLink = link.split('uddg=')[1]?.split('&')[0];
+            if (rawLink) link = decodeURIComponent(rawLink);
           }
-        } else if (link.startsWith('/l/?kh=-1&uddg=')) {
-          const rawLink = link.split('uddg=')[1]?.split('&')[0];
-          if (rawLink) {
-            link = decodeURIComponent(rawLink);
+          
+          if (link.startsWith('//')) {
+            link = 'https:' + link;
           }
+          
+          let snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, '').trim() : '';
+          results.push({ title, link, snippet });
+          count++;
         }
-        
-        if (link.startsWith('//')) {
-          link = 'https:' + link;
-        }
-        
-        let snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, '').trim() : '';
-        
-        results.push({ title, link, snippet });
-        count++;
       }
     }
-    
+
     if (results.length === 0) {
       throw new Error('No results parsed from response');
     }
-    
+
+    // Save to TTL cache
+    searchCache.set(query, {
+      results,
+      expiresAt: Date.now() + SEARCH_CACHE_TTL_MS
+    });
+
     return results;
   } catch (error) {
     console.error('[Web Search Scraper Error]:', error);
@@ -334,8 +390,29 @@ async function performWebSearch(query: string) {
   }
 }
 
+// GET /api/nyx/search/backends - List available search backends and their active configurations
+nyxRouter.get('/search/backends', (req, res) => {
+  try {
+    const keys = loadKeys();
+    const serpapiActive = !!(keys['SERPAPI_KEY'] || process.env.SERPAPI_KEY);
+    const braveActive = !!(keys['BRAVE_API_KEY'] || process.env.BRAVE_API_KEY);
+
+    res.json({
+      success: true,
+      activeBackend: serpapiActive ? 'SerpAPI' : braveActive ? 'Brave' : 'DuckDuckGo Scraper',
+      backends: {
+        serpapi: { configured: serpapiActive },
+        brave: { configured: braveActive },
+        duckduckgo: { configured: true, fallback: true }
+      }
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/nyx/codebase-search - Scan local codebase and return directory layout and top matches
-nyxRouter.post('/codebase-search', async (req, res) => {
+nyxRouter.post('/codebase-search', validate(codebaseSearchSchema), async (req, res) => {
   const { query } = req.body;
   if (!query) {
     return res.status(400).json({ error: 'Missing query parameters for codebase search.' });
@@ -356,7 +433,7 @@ nyxRouter.post('/codebase-search', async (req, res) => {
 });
 
 // POST /api/nyx/search - Perform a web search to enhance model context
-nyxRouter.post('/search', async (req, res) => {
+nyxRouter.post('/search', validate(nyxSearchSchema), async (req, res) => {
   const { query } = req.body;
   if (!query) {
     return res.status(400).json({ error: 'Missing query parameters for search.' });
@@ -377,11 +454,29 @@ nyxRouter.post('/write-file', validate(writeFileSchema), async (req, res) => {
 
   try {
     const workspaceRoot = getWorkspaceRoot();
-    const fullPath = path.resolve(workspaceRoot, filePath);
-    
-    // Safety check: ensure file is inside the workspace to prevent directory traversal
-    if (!fullPath.startsWith(workspaceRoot)) {
-      return res.status(403).json({ error: 'Directory traversal forbidden. Path must reside within the workspace.' });
+
+    // Normalize both paths for case-insensitive Windows comparison
+    const normalizedFull = path.resolve(workspaceRoot, filePath);
+    const normalizedRoot = path.resolve(workspaceRoot);
+    const relative = path.relative(normalizedRoot, normalizedFull);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      return res.status(403).json({ error: 'Directory traversal forbidden.' });
+    }
+    const fullPath = normalizedFull;
+
+    // Symlink protection
+    if (fs.existsSync(fullPath)) {
+      const lstat = fs.lstatSync(fullPath);
+      if (lstat.isSymbolicLink()) {
+        return res.status(403).json({ error: 'Writing to symbolic links is forbidden.' });
+      }
+    }
+
+    // Extension whitelist
+    const ALLOWED_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.json', '.css', '.html', '.py', '.md', '.yml', '.yaml', '.sh', '.txt', '.env']);
+    const ext = path.extname(fullPath).toLowerCase();
+    if (ext && !ALLOWED_EXTENSIONS.has(ext)) {
+      return res.status(403).json({ error: `File extension '${ext}' is not allowed.` });
     }
 
     // Overwrite check

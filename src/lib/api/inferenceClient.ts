@@ -152,10 +152,10 @@ export async function callAI(
   try {
     let resultText = "";
     switch (provider) {
-      case 'gemini': resultText = await handleGemini(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
-      case 'openrouter': resultText = await handleOpenRouter(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
-      case 'nvidia': resultText = await handleNvidia(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
-      case 'opencode': resultText = await handleOpenCode(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
+      case 'gemini': resultText = await handleGemini(modelId, prompt, apiKey!, settings || {}, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
+      case 'openrouter': resultText = await handleOpenRouter(modelId, prompt, apiKey!, settings || {}, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
+      case 'nvidia': resultText = await handleNvidia(modelId, prompt, apiKey!, settings || {}, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
+      case 'opencode': resultText = await handleOpenCode(modelId, prompt, apiKey, settings || {}, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls); break;
       default: throw new Error(`Unsupported provider: ${provider}`);
     }
     return { text: resultText, latency: Date.now() - startTime };

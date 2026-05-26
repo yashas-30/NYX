@@ -389,7 +389,7 @@ export const useAgentPipeline = ({
     const nyxModel = models['nyx'];
     if (!prompt.trim() || !nyxModel) return;
     const nyxProvider = detectProvider(nyxModel);
-    const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys);
+    const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys) || '';
 
     if (controllerRef.current) controllerRef.current.abort();
     const controller = new AbortController();

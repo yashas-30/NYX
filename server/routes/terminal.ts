@@ -2,6 +2,8 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { spawnSandbox } from '../lib/sandbox.ts';
 import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
+import { validate } from '../middleware/validate.ts';
+import { terminalRunSchema, terminalPromptSchema } from '../schemas/index.ts';
 
 export const terminalRouter = Router();
 
@@ -20,7 +22,7 @@ const legacyTasks = new Map<string, { output: string; isFinished: boolean }>();
  * Runs a command inside the sandbox and waits for completion.
  * Backward compatible synchronous endpoint.
  */
-terminalRouter.post('/run', async (req, res) => {
+terminalRouter.post('/run', validate(terminalRunSchema), async (req, res) => {
   const { command, cwd } = req.body;
   if (!command) {
     return res.status(400).json({ error: "Command is required" });
@@ -71,7 +73,7 @@ terminalRouter.post('/run', async (req, res) => {
  * POST /api/terminal/prompt
  * Registers a command for background execution. Returns an execId.
  */
-terminalRouter.post('/prompt', (req, res) => {
+terminalRouter.post('/prompt', validate(terminalPromptSchema), (req, res) => {
   const { nodeId, prompt, cwd } = req.body;
   const command = prompt;
   if (!command) {
@@ -147,8 +149,6 @@ terminalRouter.get('/stream', async (req, res) => {
   sendSseTokenRotate(res);
 
   const execId = req.query.execId as string;
-  const directCmd = req.query.command as string;
-  const directCwd = req.query.cwd as string;
 
   let command = '';
   let cwd: string | undefined = undefined;
@@ -162,11 +162,8 @@ terminalRouter.get('/stream', async (req, res) => {
     command = pending.command;
     cwd = pending.cwd;
     pendingExecutions.delete(execId); // consume
-  } else if (directCmd) {
-    command = directCmd;
-    cwd = directCwd;
   } else {
-    res.write(`event: error\ndata: ${JSON.stringify({ message: "execId or command parameter is required" })}\n\n`);
+    res.write(`event: error\ndata: ${JSON.stringify({ message: "execId parameter is required" })}\n\n`);
     return res.end();
   }
 

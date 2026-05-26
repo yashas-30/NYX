@@ -233,6 +233,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {providers.map(p => {
                 const hasKey = vaultStatus[p.id];
                 const isExpanded = expandedProvider === p.id;
+                const providerUsage = usage[p.id];
 
                 return (
                   <div key={p.id} className="group p-3.5 rounded-2xl glass-panel hover:border-primary/30 transition-all duration-300 shadow-sm hover:shadow-md">
@@ -252,21 +253,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             )}
                           </div>
                           <div className="flex items-center gap-2">
-                            {usage[p.id] && hasKey && (
+                            {providerUsage && hasKey && (
                               <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] font-bold">
-                                {usage[p.id].totalUSD !== undefined && (
+                                {providerUsage.totalUSD !== undefined && (
                                   <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-white/10">
                                     <span className="text-[9px] font-black uppercase tracking-widest text-primary/75">USD</span>
-                                    <span className="text-[10px] font-mono text-primary font-bold tracking-tight">${(usage[p.id].totalUSD - (usage[p.id].usedUSD || 0)).toFixed(2)}</span>
+                                    <span className="text-[10px] font-mono text-primary font-bold tracking-tight">${(providerUsage.totalUSD - (providerUsage.usedUSD || 0)).toFixed(2)}</span>
                                   </div>
                                 )}
                                 <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-white/10">
                                   <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/75">USED</span>
-                                  <span className="text-[10px] font-mono text-foreground/90 font-bold tracking-tight">{(usage[p.id].used / 1000).toFixed(1)}K</span>
+                                  <span className="text-[10px] font-mono text-foreground/90 font-bold tracking-tight">{(providerUsage.used / 1000).toFixed(1)}K</span>
                                 </div>
                                 <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-white/10">
                                   <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/75">REM</span>
-                                  <span className="text-[10px] font-mono text-emerald-400 font-bold tracking-tight">{(usage[p.id].remaining / 1000).toFixed(1)}K</span>
+                                  <span className="text-[10px] font-mono text-emerald-400 font-bold tracking-tight">{(providerUsage.remaining / 1000).toFixed(1)}K</span>
                                 </div>
                                 <button 
                                   onClick={() => resetUsage(p.id)}

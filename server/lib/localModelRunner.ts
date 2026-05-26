@@ -2,12 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import os from 'os';
-import { spawn, ChildProcess, exec } from 'child_process';
+import { spawn, ChildProcess, exec, execFile } from 'child_process';
 import * as si from 'systeminformation';
 import { LocalModelManager } from './localModelManager.ts';
 import { registerProcess } from './processRegistry.ts';
 import kill from 'tree-kill';
 import { MODEL_LAYERS } from '../config/constants.ts';
+import { Mutex } from 'async-mutex';
 
 import { MODELS_DIR as BASE_DIR } from './paths.ts';
 const BIN_DIR = path.join(BASE_DIR, 'bin');
@@ -17,12 +18,92 @@ const BINARY_PATH = path.join(BIN_DIR, 'llama-server.exe');
 if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
 
 type ModelState = 'idle' | 'downloading' | 'starting' | 'running' | 'stopping';
-let modelState: ModelState = 'idle';
 
+// ── State machine (mutex-protected) ──────────────────────────────────────────
+const runnerMutex = new Mutex();
+let modelState: ModelState = 'idle';
 let activeProcess: ChildProcess | null = null;
 let activeModelId: string | null = null;
 let activeContextSize = 2048;
 let startProgress = 0;
+
+// ── Health check / zombie detection ──────────────────────────────────────────
+let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+let consecutiveHealthFailures = 0;
+const HEALTH_CHECK_INTERVAL_MS = 5000;
+const MAX_HEALTH_FAILURES = 3;
+
+function startHealthCheckLoop(): void {
+  stopHealthCheckLoop();
+  consecutiveHealthFailures = 0;
+  healthCheckInterval = setInterval(async () => {
+    if (modelState !== 'running') { stopHealthCheckLoop(); return; }
+    try {
+      const res = await fetch('http://127.0.0.1:12345/health', { signal: AbortSignal.timeout(3000) });
+      if (res.ok) {
+        consecutiveHealthFailures = 0;
+        return;
+      }
+    } catch {
+      // fetch failed
+    }
+    consecutiveHealthFailures++;
+    console.warn(`[LocalModelRunner] Health check failed (${consecutiveHealthFailures}/${MAX_HEALTH_FAILURES})`);
+    if (consecutiveHealthFailures >= MAX_HEALTH_FAILURES) {
+      console.error('[LocalModelRunner] llama-server is unresponsive (zombie). Auto-killing...');
+      stopHealthCheckLoop();
+      LocalModelRunner.stop().catch(() => {});
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+  healthCheckInterval.unref?.();
+}
+
+function stopHealthCheckLoop(): void {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
+  consecutiveHealthFailures = 0;
+}
+
+async function _stop(): Promise<void> {
+  stopHealthCheckLoop();
+  if (!activeProcess) {
+    activeModelId = null;
+    modelState = 'idle';
+    return;
+  }
+
+  console.log('Terminating local model runner child process...');
+  modelState = 'stopping';
+  
+  return new Promise<void>((resolve) => {
+    if (activeProcess) {
+      const pid = activeProcess.pid;
+      if (pid) {
+        kill(pid, 'SIGKILL', (err) => {
+          if (err) {
+            console.warn(`[LocalModelRunner] Failed to tree-kill process ${pid}:`, err.message);
+          }
+          activeProcess = null;
+          activeModelId = null;
+          modelState = 'idle';
+          resolve();
+        });
+      } else {
+        activeProcess.kill('SIGKILL');
+        activeProcess = null;
+        activeModelId = null;
+        modelState = 'idle';
+        resolve();
+      }
+    } else {
+      activeModelId = null;
+      modelState = 'idle';
+      resolve();
+    }
+  });
+}
 
 const CONFIG_PATH = path.join(BASE_DIR, 'config.json');
 
@@ -79,7 +160,7 @@ export const LocalModelRunner = {
 
   getOptimalVulkanDevice(): Promise<{ name: string; index: number; type: string } | null> {
     return new Promise((resolve) => {
-      exec(`"${BINARY_PATH}" --list-devices`, (error: any, stdout: string, stderr: string) => {
+      exec(`"${BINARY_PATH}" --list-devices`, { cwd: BIN_DIR }, (error: any, stdout: string, stderr: string) => {
         const output = (stdout || '') + '\n' + (stderr || '');
         if (!output.trim()) {
           resolve(null);
@@ -475,6 +556,12 @@ export const LocalModelRunner = {
   },
 
   async start(modelId: string, settings?: any, isRetry = false): Promise<void> {
+    return runnerMutex.runExclusive(async () => {
+      await this._startInternal(modelId, settings, isRetry);
+    });
+  },
+
+  async _startInternal(modelId: string, settings?: any, isRetry = false): Promise<void> {
     if (activeModelId === modelId && activeProcess && activeContextSize >= (settings?.contextSize || 2048)) {
       return; // Already running with equal or larger context window
     }
@@ -485,7 +572,7 @@ export const LocalModelRunner = {
 
     if (activeProcess) {
       console.log('Stopping active local model runner to load new model...');
-      await this.stop();
+      await _stop();
     }
 
     modelState = 'starting';
@@ -606,8 +693,8 @@ export const LocalModelRunner = {
 
       const optimalDevice = await this.getOptimalVulkanDevice();
       
-      const spawnEnv = {
-        ...process.env,
+      const spawnEnv: Record<string, string> = {
+        ...process.env as Record<string, string>,
         VK_LOG_LEVEL: 'none'
       };
 
@@ -617,7 +704,8 @@ export const LocalModelRunner = {
         
         if (optimalDevice.type === 'device' || optimalDevice.type === 'vulkan') {
           spawnEnv['GGML_VK_VISIBLE_DEVICES'] = String(optimalDevice.index);
-          console.log(`[GPU Optimizer] Setting environment variable: GGML_VK_VISIBLE_DEVICES = ${optimalDevice.index}`);
+          spawnEnv['GGML_VULKAN_DEVICE'] = String(optimalDevice.index);
+          console.log(`[GPU Optimizer] Setting environment variables: GGML_VK_VISIBLE_DEVICES = ${optimalDevice.index}, GGML_VULKAN_DEVICE = ${optimalDevice.index}`);
         } else if (optimalDevice.type === 'cuda') {
           spawnEnv['CUDA_VISIBLE_DEVICES'] = String(optimalDevice.index);
           console.log(`[GPU Optimizer] Setting environment variable: CUDA_VISIBLE_DEVICES = ${optimalDevice.index}`);
@@ -633,7 +721,9 @@ export const LocalModelRunner = {
         if (discreteGPU) {
           console.log(`[GPU Optimizer] Fallback: Forcing discrete GPU visible devices at index: ${discreteGPU.index}`);
           spawnEnv['GGML_VK_VISIBLE_DEVICES'] = String(discreteGPU.index);
+          spawnEnv['GGML_VULKAN_DEVICE'] = String(discreteGPU.index);
           spawnEnv['CUDA_VISIBLE_DEVICES'] = String(discreteGPU.index);
+          args.push('--device', `Vulkan${discreteGPU.index}`);
         }
       }
 
@@ -710,16 +800,17 @@ export const LocalModelRunner = {
       startProgress = 100;
       modelState = 'running';
       activeContextSize = contextSize;
+      startHealthCheckLoop();
       console.log(`Native llama-server running successfully on http://localhost:12345 with model ${model.name}`);
     } catch (e: any) {
       modelState = 'idle';
       startProgress = 0;
-      await this.stop();
+      await _stop();
 
       if (!isRetry && gpuLayers > 0) {
         console.warn(`[Local Runner] Spawn failed with GPU offload (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with CPU-only mode (-ngl 0)...`);
         const fallbackSettings = { ...localSettings, gpuLayers: 0 };
-        return this.start(modelId, fallbackSettings, true);
+        return this._startInternal(modelId, fallbackSettings, true);
       }
 
       throw e;
@@ -727,40 +818,8 @@ export const LocalModelRunner = {
   },
 
   async stop(): Promise<void> {
-    if (!activeProcess) {
-      activeModelId = null;
-      modelState = 'idle';
-      return;
-    }
-
-    console.log('Terminating local model runner child process...');
-    modelState = 'stopping';
-    
-    return new Promise<void>((resolve) => {
-      if (activeProcess) {
-        const pid = activeProcess.pid;
-        if (pid) {
-          kill(pid, 'SIGKILL', (err) => {
-            if (err) {
-              console.warn(`[LocalModelRunner] Failed to tree-kill process ${pid}:`, err.message);
-            }
-            activeProcess = null;
-            activeModelId = null;
-            modelState = 'idle';
-            resolve();
-          });
-        } else {
-          activeProcess.kill('SIGKILL');
-          activeProcess = null;
-          activeModelId = null;
-          modelState = 'idle';
-          resolve();
-        }
-      } else {
-        activeModelId = null;
-        modelState = 'idle';
-        resolve();
-      }
+    return runnerMutex.runExclusive(async () => {
+      await _stop();
     });
   }
 };

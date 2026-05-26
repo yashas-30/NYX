@@ -13,6 +13,17 @@ import { DNS_CACHE, preWarmDns as resolveHostname } from './apiAgent.js';
 import { loadKeys, verifySessionToken } from './keyVault.ts';
 import { UnifiedEngine } from './unifiedEngine.ts';
 
+// SSRF protection: reject private/loopback addresses in gateway URLs
+function validateGatewayUrl(url: string): void {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { throw new Error('Invalid gateway URL'); }
+  if (parsed.protocol !== 'https:') throw new Error('Gateway URL must use HTTPS');
+  const host = parsed.hostname.toLowerCase();
+  if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|::1|localhost$)/.test(host)) {
+    throw new Error('Gateway URL must not point to private network');
+  }
+}
+
 // Configure global fetch with connection pooling
 const customAgent = new https.Agent({
   keepAlive: true,
@@ -32,10 +43,10 @@ const fastify = Fastify({
 
 // Enable CORS for frontend connections
 fastify.register(fastifyCors, {
-  origin: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-nyx-session-token'],
-  credentials: true,
+  credentials: false,
 });
 
 // Validate session token for all proxy requests on Fastify (Port 3001)
@@ -50,11 +61,7 @@ fastify.addHook('preHandler', async (request, reply) => {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.substring(7);
   } else {
-    token = (request.headers['x-nyx-session-token'] as string) || (request.query as any)?.session_token;
-  }
-
-  if (!token && request.body && typeof request.body === 'object') {
-    token = (request.body as any).sessionToken || (request.body as any).session_token;
+    token = request.headers['x-nyx-session-token'] as string | undefined;
   }
 
   if (!token || !verifySessionToken(token)) {
@@ -62,13 +69,19 @@ fastify.addHook('preHandler', async (request, reply) => {
   }
 });
 
+interface StreamListener {
+  write: (chunk: string) => void;
+  end: () => void;
+}
+
+const activeStreams = new Map<string, Set<StreamListener>>();
+
 // High-performance streaming endpoint that bypasses Express entirely
-fastify.post('/api/stream/:provider', async (request, reply) => {
+fastify.post('/api/stream/:provider', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
   const { provider } = request.params as { provider: string };
-  const { model, prompt, apiKey, settings, systemInstruction, history, messages, temperature, max_tokens } = request.body as {
+  const { model, prompt, settings, systemInstruction, history, messages, temperature, max_tokens } = request.body as {
     model: string;
     prompt?: string;
-    apiKey?: string;
     settings?: any;
     systemInstruction?: string;
     history?: any[];
@@ -77,15 +90,58 @@ fastify.post('/api/stream/:provider', async (request, reply) => {
     max_tokens?: number;
   };
 
-  let activeKey = apiKey || getApiKey(provider) || '';
+  const activeKey = getApiKey(provider) || '';
   if (!activeKey && provider !== 'nyx-native') {
     return reply.status(401).send({ error: `${provider} API key required` });
   }
+
+  const fingerprint = JSON.stringify({
+    provider,
+    model,
+    prompt: prompt || '',
+    systemInstruction: systemInstruction || '',
+    messages: messages || [],
+    history: history || [],
+    settings: settings || {}
+  });
 
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
+  });
+
+  const listener: StreamListener = {
+    write: (chunk: string) => {
+      reply.raw.write(chunk);
+    },
+    end: () => {
+      reply.raw.end();
+    }
+  };
+
+  if (activeStreams.has(fingerprint)) {
+    console.log(`[Fastify Stream Dedupe] Multiplexing concurrent stream for provider ${provider}, model ${model}`);
+    const listeners = activeStreams.get(fingerprint)!;
+    listeners.add(listener);
+
+    request.raw.on('close', () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        activeStreams.delete(fingerprint);
+      }
+    });
+    return;
+  }
+
+  const listeners = new Set<StreamListener>([listener]);
+  activeStreams.set(fingerprint, listeners);
+
+  request.raw.on('close', () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      activeStreams.delete(fingerprint);
+    }
   });
 
   const finalMessages: any[] = [];
@@ -108,11 +164,6 @@ fastify.post('/api/stream/:provider', async (request, reply) => {
     maxTokens: max_tokens ?? 4096
   };
 
-  let isClosed = false;
-  request.raw.on('close', () => {
-    isClosed = true;
-  });
-
   try {
     await UnifiedEngine.executeStream(
       {
@@ -123,22 +174,31 @@ fastify.post('/api/stream/:provider', async (request, reply) => {
         apiKey: activeKey
       },
       (chunk) => {
-        if (!isClosed) {
-          reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        const payload = `data: ${JSON.stringify(chunk)}\n\n`;
+        for (const l of listeners) {
+          try { l.write(payload); } catch {}
         }
       },
       () => {
-        if (!isClosed) {
-          reply.raw.write('data: [DONE]\n\n');
-          reply.raw.end();
+        const payload = 'data: [DONE]\n\n';
+        for (const l of listeners) {
+          try {
+            l.write(payload);
+            l.end();
+          } catch {}
         }
+        activeStreams.delete(fingerprint);
       }
     );
   } catch (err: any) {
-    if (!isClosed) {
-      reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
-      reply.raw.end();
+    const payload = `event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`;
+    for (const l of listeners) {
+      try {
+        l.write(payload);
+        l.end();
+      } catch {}
     }
+    activeStreams.delete(fingerprint);
   }
 });
 
@@ -244,12 +304,20 @@ function resolveRealModel(model: string): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── GEMINI ───────────────────────────────────────────────────────────────────────
-fastify.post('/gemini/*', async (request, reply) => {
+fastify.post('/gemini/*', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
   const model = (request.params as any)['*'];
-  const { prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = request.body as any;
+  const { prompt, settings, systemInstruction, history, gatewayUrls } = request.body as any;
 
-  let activeKey = apiKey || getApiKey('gemini') || '';
+  const activeKey = getApiKey('gemini') || '';
   if (!activeKey) return reply.status(401).send({ error: 'Gemini API key required' });
+
+  if (gatewayUrls) {
+    for (const u of Object.values(gatewayUrls)) {
+      try { validateGatewayUrl(u as string); } catch (e: any) {
+        return reply.status(400).send({ error: `Invalid gateway URL: ${e.message}` });
+      }
+    }
+  }
 
   let baseUrl = gatewayUrls?.gemini?.replace(/\/$/, '') || 'https://generativelanguage.googleapis.com/v1beta';
   const realModel = resolveRealModel(model);
@@ -277,7 +345,8 @@ fastify.post('/gemini/*', async (request, reply) => {
         'Content-Type': 'application/json',
         'x-goog-api-key': activeKey
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000)
     });
 
     if (!response.ok) {
@@ -299,12 +368,20 @@ fastify.post('/gemini/*', async (request, reply) => {
 });
 
 // ── OPENCODE ─────────────────────────────────────────────────────────────────────
-fastify.post('/opencode/*', async (request, reply) => {
+fastify.post('/opencode/*', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
   const model = (request.params as any)['*'];
-  const { prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = request.body as any;
+  const { prompt, settings, systemInstruction, history, gatewayUrls } = request.body as any;
 
-  let activeKey = apiKey || getApiKey('opencode') || '';
+  const activeKey = getApiKey('opencode') || '';
   if (!activeKey) return reply.status(401).send({ error: 'OpenCode API key required' });
+
+  if (gatewayUrls) {
+    for (const u of Object.values(gatewayUrls)) {
+      try { validateGatewayUrl(u as string); } catch (e: any) {
+        return reply.status(400).send({ error: `Invalid gateway URL: ${e.message}` });
+      }
+    }
+  }
 
   let baseUrl = gatewayUrls?.opencode?.replace(/\/$/, '') || 'https://opencode.ai/zen/v1';
   const url = `${baseUrl}/chat/completions`;
@@ -330,7 +407,8 @@ fastify.post('/opencode/*', async (request, reply) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${activeKey}`
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000)
     });
 
     if (!response.ok) {
@@ -352,12 +430,20 @@ fastify.post('/opencode/*', async (request, reply) => {
 });
 
 // ── OPENROUTER ──────────────────────────────────────────────────────────────────
-fastify.post('/openrouter/*', async (request, reply) => {
+fastify.post('/openrouter/*', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
   const model = (request.params as any)['*'];
-  const { prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = request.body as any;
+  const { prompt, settings, systemInstruction, history, gatewayUrls } = request.body as any;
 
-  let activeKey = apiKey || getApiKey('openrouter') || '';
+  const activeKey = getApiKey('openrouter') || '';
   if (!activeKey) return reply.status(401).send({ error: 'OpenRouter API key required' });
+
+  if (gatewayUrls) {
+    for (const u of Object.values(gatewayUrls)) {
+      try { validateGatewayUrl(u as string); } catch (e: any) {
+        return reply.status(400).send({ error: `Invalid gateway URL: ${e.message}` });
+      }
+    }
+  }
 
   let baseUrl = gatewayUrls?.openrouter?.replace(/\/$/, '') || 'https://openrouter.ai/api/v1';
   const url = `${baseUrl}/chat/completions`;
@@ -383,7 +469,8 @@ fastify.post('/openrouter/*', async (request, reply) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${activeKey}`
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000)
     });
 
     if (!response.ok) {
@@ -406,14 +493,22 @@ fastify.post('/openrouter/*', async (request, reply) => {
 
 // ── NVIDIA ───────────────────────────────────────────────────────────────────────
 // NVIDIA NIM models - requires nvapi-* API key
-fastify.post('/nvidia/*', async (request, reply) => {
+fastify.post('/nvidia/*', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
   const model = (request.params as any)['*'];
-  const { prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = request.body as any;
+  const { prompt, settings, systemInstruction, history, gatewayUrls } = request.body as any;
 
-  // Resolve API key: request body > env var
-  const activeKey = apiKey || getApiKey('nvidia') || '';
+  // Resolve API key: server-side vault only
+  const activeKey = getApiKey('nvidia') || '';
   if (!activeKey || !activeKey.startsWith('nvapi-')) {
     return reply.status(401).send({ error: 'NVIDIA API key is required. Add your nvapi-* key in Settings.' });
+  }
+
+  if (gatewayUrls) {
+    for (const u of Object.values(gatewayUrls)) {
+      try { validateGatewayUrl(u as string); } catch (e: any) {
+        return reply.status(400).send({ error: `Invalid gateway URL: ${e.message}` });
+      }
+    }
   }
 
   // NVIDIA NIM model mapping
@@ -451,7 +546,8 @@ fastify.post('/nvidia/*', async (request, reply) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${activeKey}`,
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000)
     });
 
     if (!response.ok) {
@@ -473,11 +569,11 @@ fastify.post('/nvidia/*', async (request, reply) => {
 });
 
 // Model list endpoint
-fastify.post('/models/list', async (request, reply) => {
-  const { provider, apiKey } = request.body as { provider: string; apiKey: string };
+fastify.post('/models/list', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
+  const { provider } = request.body as { provider: string };
 
-  let activeKey = apiKey || getApiKey(provider) || '';
-  
+  const activeKey = getApiKey(provider) || '';
+
   if (!activeKey) {
     return reply.status(401).send({ error: `API key required for ${provider}` });
   }
@@ -503,7 +599,10 @@ fastify.post('/models/list', async (request, reply) => {
   }
 
   try {
-    const response = await fetch(url, { headers });
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(120_000)
+    });
     const data = await response.json();
 
     let models: string[] = [];
@@ -522,11 +621,11 @@ fastify.post('/models/list', async (request, reply) => {
 });
 
 // Quota check endpoint
-fastify.post('/quota', async (request, reply) => {
-  const { provider, apiKey } = request.body as { provider: string; apiKey: string };
+fastify.post('/quota', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
+  const { provider } = request.body as { provider: string };
 
-  let activeKey = apiKey || getApiKey(provider) || '';
-  
+  const activeKey = getApiKey(provider) || '';
+
   if (!activeKey) {
     return reply.status(401).send({ error: `API key required for ${provider}` });
   }
@@ -534,14 +633,17 @@ fastify.post('/quota', async (request, reply) => {
   try {
     if (provider === 'openrouter') {
       const response = await fetch('https://openrouter.ai/api/v1/credits', {
-        headers: { 'Authorization': `Bearer ${activeKey}` }
+        headers: { 'Authorization': `Bearer ${activeKey}` },
+        signal: AbortSignal.timeout(120_000)
       });
       const data = await response.json();
       return reply.send(data);
     }
-    
+
     if (provider === 'gemini') {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${activeKey}`);
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${activeKey}`, {
+        signal: AbortSignal.timeout(120_000)
+      });
       if (response.ok) return reply.send({ status: 'ok' });
     }
 

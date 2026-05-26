@@ -17,6 +17,7 @@ export function cancelCurrentRequest(): void {
 export class AIService {
   private static sessionToken: string | null = null;
   private static tokenExpiresAt: number = 0;
+  private static inFlightRequests = new Map<string, Promise<AIResponse>>();
 
   static setSessionToken(token: string | null): void {
     this.sessionToken = token;
@@ -39,7 +40,7 @@ export class AIService {
     const data = await res.json();
     this.sessionToken = data.token;
     this.tokenExpiresAt = data.expiresAt || (Date.now() + 5 * 60 * 1000);
-    return this.sessionToken;
+    return this.sessionToken || '';
   }
 
   public static async fetchWithAuth(url: string, init?: RequestInit, isStream = false): Promise<Response> {
@@ -62,9 +63,91 @@ export class AIService {
   }
 
   /**
-   * Main entry point for executing AI requests with streaming support.
+   * Main entry point for executing AI requests with streaming support and deduplication.
    */
   static async execute(
+    modelId: string,
+    provider: Provider | string,
+    prompt: string,
+    apiKey?: string,
+    systemInstruction?: string,
+    settings?: AISettings,
+    onStream?: (text: string) => void,
+    signal?: AbortSignal,
+    options?: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> }
+  ): Promise<AIResponse> {
+    const dedupeKey = JSON.stringify({
+      provider,
+      model: modelId,
+      prompt,
+      systemInstruction,
+      history: options?.history || [],
+      settings: settings || {}
+    });
+
+    if (this.inFlightRequests.has(dedupeKey)) {
+      console.log(`[AIService] Deduplicating in-flight request for model ${modelId} (${provider})`);
+      const existingPromise = this.inFlightRequests.get(dedupeKey)!;
+      if (onStream) {
+        const res = await existingPromise;
+        onStream(res.text);
+        return res;
+      }
+      return existingPromise;
+    }
+
+    const promise = this.executeWithRetry(
+      modelId,
+      provider,
+      prompt,
+      apiKey,
+      systemInstruction,
+      settings,
+      onStream,
+      signal,
+      options
+    );
+
+    this.inFlightRequests.set(dedupeKey, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inFlightRequests.delete(dedupeKey);
+    }
+  }
+
+  private static async executeWithRetry(
+    modelId: string,
+    provider: Provider | string,
+    prompt: string,
+    apiKey?: string,
+    systemInstruction?: string,
+    settings?: AISettings,
+    onStream?: (text: string) => void,
+    signal?: AbortSignal,
+    options?: any,
+    attempt = 1
+  ): Promise<AIResponse> {
+    try {
+      return await this._executeRaw(modelId, provider, prompt, apiKey, systemInstruction, settings, onStream, signal, options);
+    } catch (error: any) {
+      const message = error.message || String(error);
+      const isAbort = error.name === 'AbortError' || message.includes('aborted');
+      const isCloud = ['gemini', 'openrouter', 'nvidia', 'opencode'].includes(String(provider));
+      const isTransient = /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|rate_limit|quota|overloaded|high demand/i.test(message) ||
+                          /fetch|network|timeout|econnreset|enotfound/i.test(message);
+
+      if (isCloud && isTransient && attempt <= 3 && !isAbort) {
+        const delay = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
+        console.warn(`[AIService] Cloud request failed. Retrying in ${delay}ms (Attempt ${attempt}/3). Error: ${message}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.executeWithRetry(modelId, provider, prompt, apiKey, systemInstruction, settings, onStream, signal, options, attempt + 1);
+      }
+      throw error;
+    }
+  }
+
+  private static async _executeRaw(
     modelId: string,
     provider: Provider | string,
     prompt: string,
@@ -126,57 +209,51 @@ export class AIService {
       console.warn('[Cache Server] Check failed, falling back to direct API:', e);
     }
 
-    try {
-      if (provider === 'gemini') {
-        resultText = await this.executeGemini(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
-      } else if (provider === 'openrouter') {
-        resultText = await this.executeOpenRouter(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
-      } else if (provider === 'nvidia') {
-        resultText = await this.executeNvidia(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
-      } else if (provider === 'opencode') {
-        resultText = await this.executeOpencode(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
-      } else if (provider === 'pollinations') {
-        resultText = await this.executePollinations(modelId, prompt, settings, systemInstruction, options?.history, onStream, signal);
-      } else if (provider === 'nyx-native') {
-        resultText = await this.executeNyxNative(modelId, prompt, systemInstruction, settings, options?.history, onStream, signal);
-      } else if (provider === 'qwen-local') {
-        resultText = await this.executeQwenLocal(modelId, prompt, systemInstruction, settings, options?.history, onStream, signal);
-      } else {
-        throw new Error(`Unsupported provider: ${provider}`);
-      }
-
-      // Write-back to the Cache Server asynchronously
-      if (cacheKey && resultText) {
-        this.fetchWithAuth('/api/cache/set', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            key: cacheKey,
-            data: resultText,
-            provider,
-            model: modelId
-          })
-        }).catch(err => console.warn('[Cache Server] Write failed:', err));
-      }
-
-      const endTime = Date.now();
-      const latency = endTime - startTime;
-      const tokens = Math.floor(resultText.length / 4); // Heuristic: ~4 chars per token
-      const tps = latency > 0 ? Math.round(tokens / (latency / 1000)) : 0;
-      
-      return {
-        text: resultText,
-        metrics: {
-          latency,
-          tokens,
-          tps
-        }
-      };
-    } catch (error: any) {
-      return this.handleError(error, async () => {
-        return this.execute(modelId, provider, prompt, apiKey, systemInstruction, settings, onStream, signal, options);
-      });
+    if (provider === 'gemini') {
+      resultText = await this.executeGemini(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
+    } else if (provider === 'openrouter') {
+      resultText = await this.executeOpenRouter(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
+    } else if (provider === 'nvidia') {
+      resultText = await this.executeNvidia(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
+    } else if (provider === 'opencode') {
+      resultText = await this.executeOpencode(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
+    } else if (provider === 'pollinations') {
+      resultText = await this.executePollinations(modelId, prompt, settings, systemInstruction, options?.history, onStream, signal);
+    } else if (provider === 'nyx-native') {
+      resultText = await this.executeNyxNative(modelId, prompt, systemInstruction, settings, options?.history, onStream, signal);
+    } else if (provider === 'qwen-local') {
+      resultText = await this.executeQwenLocal(modelId, prompt, systemInstruction, settings, options?.history, onStream, signal);
+    } else {
+      throw new Error(`Unsupported provider: ${provider}`);
     }
+
+    // Write-back to the Cache Server asynchronously
+    if (cacheKey && resultText) {
+      this.fetchWithAuth('/api/cache/set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: cacheKey,
+          data: resultText,
+          provider,
+          model: modelId
+        })
+      }).catch(err => console.warn('[Cache Server] Write failed:', err));
+    }
+
+    const endTime = Date.now();
+    const latency = endTime - startTime;
+    const tokens = Math.floor(resultText.length / 4); // Heuristic: ~4 chars per token
+    const tps = latency > 0 ? Math.round(tokens / (latency / 1000)) : 0;
+    
+    return {
+      text: resultText,
+      metrics: {
+        latency,
+        tokens,
+        tps
+      }
+    };
   }
 
   // ── Provider Specific Implementations ────────────────────────────────────
@@ -203,7 +280,7 @@ export class AIService {
       if (!isAbort) {
         console.warn('[AIService] Gemini stream proxy failed, falling back to direct browser fetch:', error);
         const { directFetchGemini } = await import('@/src/lib/api/directClient');
-        const text = await directFetchGemini(model, prompt, apiKey, settings, systemInstruction, history, signal, gatewayUrls);
+        const text = await directFetchGemini(model, prompt, apiKey || '', settings, systemInstruction, history, signal, gatewayUrls);
         if (onStream) onStream(text);
         return text;
       }

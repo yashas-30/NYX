@@ -92,7 +92,7 @@ export async function runMultiStagePipeline({
     throw new Error('No model selected');
   }
   const nyxProvider = detectProvider(nyxModel);
-  const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys);
+  const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys) || '';
 
   // Resolve context flags
   const isGreeting = isGreetingOrIdentity(prompt);

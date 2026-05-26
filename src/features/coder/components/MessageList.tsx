@@ -8,10 +8,13 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Logo } from '@/src/lib/design-system/icons';
 import { toast } from '@/src/components/ui/sonner';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Code Block
  * ───────────────────────────────────────────────────────────────────────────── */
+
+import { CodeMirrorBlock } from '@/src/components/ui/CodeMirrorBlock';
 
 const detectFilePath = (code: string): string => {
   const firstLine = code.split('\n')[0]?.trim() || '';
@@ -106,7 +109,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
   const canApply = !isExecutable && lang !== 'text';
 
   return (
-    <div className="relative group/code my-3 rounded-xl overflow-hidden border border-white/[0.08] shadow-xl">
+    <div className="relative group/code my-3 rounded-xl overflow-hidden border border-white/[0.08] shadow-xl text-left">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-secondary/60 border-b border-border">
         <div className="flex items-center gap-2">
@@ -228,18 +231,8 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
         )}
       </AnimatePresence>
 
-      {/* Code */}
-      <SyntaxHighlighter
-        language={lang}
-        style={oneDark}
-        showLineNumbers
-        lineNumberStyle={{ color: 'rgba(255,255,255,0.12)', fontSize: '10px', userSelect: 'none', minWidth: '2.5em', paddingRight: '1em' }}
-        customStyle={{ margin: 0, padding: '1rem 1.25rem', background: 'var(--card)', fontSize: '12px', lineHeight: '1.65', borderRadius: 0, fontFamily: '"Geist Mono","Fira Code","Cascadia Code",ui-monospace,monospace' }}
-        codeTagProps={{ style: { fontFamily: '"Geist Mono","Fira Code","Cascadia Code",ui-monospace,monospace' } }}
-        wrapLongLines={false}
-      >
-        {code}
-      </SyntaxHighlighter>
+      {/* CodeMirror Code Block */}
+      <CodeMirrorBlock code={code} language={lang} />
     </div>
   );
 };
@@ -401,6 +394,91 @@ const EmptyState: React.FC<{
   </motion.div>
 );
 
+interface MessageBubbleProps {
+  msg: ChatMessage;
+  index: number;
+  activeAgent: 'nyx';
+  onCopy: (text: string, id: string) => void;
+  copiedId: string | null;
+}
+
+const MessageBubble = React.memo<MessageBubbleProps>(({
+  msg,
+  index,
+  activeAgent,
+  onCopy,
+  copiedId,
+}) => {
+  const isUser = msg.role === 'user';
+  const isStreaming = msg.status === 'loading';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} group`}
+    >
+      {isUser ? (
+        /* ── User bubble: right-aligned glassmorphic pill ── */
+        <div className={`
+          max-w-[85%] sm:max-w-[75%] py-2.5 px-4 rounded-2xl rounded-tr-sm
+          text-[13px] leading-[1.7] font-semibold
+          bg-secondary/85 backdrop-blur-md
+          border border-border
+          text-foreground/90 shadow-sm
+          ${activeAgent === 'nyx' ? 'border-primary/20 shadow-primary/5' : ''}
+        `}>
+          {msg.content}
+        </div>
+      ) : (
+        /* ── Assistant: container-less, direct on canvas ── */
+        <div className="flex-1 min-w-0">
+          {msg.status === 'error' ? (
+            <p className="text-sm text-red-400/90 py-1">{msg.content}</p>
+          ) : msg.content ? (
+            <>
+              <MarkdownContent content={msg.content} isStreaming={isStreaming} />
+
+              {/* Footer: metrics + copy — fades in on hover */}
+              {!isStreaming && msg.content && (
+                <div className="mt-2 flex items-center gap-3 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => onCopy(msg.content, `msg-${index}`)}
+                    className="flex items-center gap-1 text-[9px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+                  >
+                    {copiedId === `msg-${index}` ? (
+                      <><Check size={9} className="text-emerald-400" /><span className="text-emerald-400">Copied</span></>
+                    ) : (
+                      <><Copy size={9} /><span>Copy</span></>
+                    )}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Streaming skeleton */
+            <div className="flex items-center gap-1.5 py-1">
+              <div className="flex gap-1">
+                {[0, 1, 2].map(n => (
+                  <motion.div
+                    key={n}
+                    className="w-1.5 h-1.5 rounded-full bg-primary/40"
+                    animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1, 0.8] }}
+                    transition={{ duration: 1.2, repeat: Infinity, delay: n * 0.2 }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </motion.div>
+  );
+});
+
+MessageBubble.displayName = 'MessageBubble';
+
 /* ─────────────────────────────────────────────────────────────────────────────
  * Main Message List
  * ───────────────────────────────────────────────────────────────────────────── */
@@ -418,15 +496,20 @@ export const MessageList: React.FC<MessageListProps> = ({
   const [autoScroll, setAutoScroll] = useState(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
+  // Virtualizer setup for dynamic-height message bubbles
+  const rowVirtualizer = useVirtualizer({
+    count: history.length,
+    getScrollElement: () => consoleRef.current,
+    estimateSize: () => 120, // average estimated size of message bubble
+    overscan: 5,
+  });
+
+  // Re-run scrollToBottom when new items are added to history
   useEffect(() => {
-    if (autoScroll && consoleRef.current) {
-      requestAnimationFrame(() => {
-        if (consoleRef.current && autoScroll) {
-          consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
-        }
-      });
+    if (autoScroll && history.length > 0) {
+      rowVirtualizer.scrollToIndex(history.length - 1, { align: 'end' });
     }
-  }, [history, autoScroll]);
+  }, [history, autoScroll, rowVirtualizer]);
 
   const handleScroll = useCallback(() => {
     if (!consoleRef.current) return;
@@ -440,15 +523,11 @@ export const MessageList: React.FC<MessageListProps> = ({
   }, [history.length]);
 
   const jumpToBottom = useCallback(() => {
-    if (consoleRef.current) {
-      requestAnimationFrame(() => {
-        if (consoleRef.current) {
-          consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
-          setAutoScroll(true);
-        }
-      });
+    if (consoleRef.current && history.length > 0) {
+      rowVirtualizer.scrollToIndex(history.length - 1, { align: 'end' });
+      setAutoScroll(true);
     }
-  }, []);
+  }, [history.length, rowVirtualizer]);
 
   return (
     <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-background">
@@ -460,74 +539,36 @@ export const MessageList: React.FC<MessageListProps> = ({
         {history.length === 0 ? (
           <EmptyState suggestedPrompts={suggestedPrompts} onSuggestedPromptClick={onSuggestedPromptClick} />
         ) : (
-          <div className="w-full max-w-3xl mx-auto px-4 pb-6 pt-4 space-y-1">
-            {history.map((msg, i) => {
-              const isUser = msg.role === 'user';
-              const isStreaming = msg.status === 'loading';
+          <div 
+            className="w-full max-w-3xl mx-auto px-4 pb-6 pt-4 relative"
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+              const msg = history[virtualItem.index];
+              if (!msg) return null;
 
               return (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                  className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} mb-3 group`}
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={rowVirtualizer.measureElement}
+                  className="absolute left-0 w-full"
+                  style={{
+                    top: 0,
+                    transform: `translateY(${virtualItem.start}px)`,
+                    paddingBottom: '12px',
+                  }}
                 >
-                  {isUser ? (
-                    /* ── User bubble: right-aligned glassmorphic pill ── */
-                    <div className={`
-                      max-w-[85%] sm:max-w-[75%] py-2.5 px-4 rounded-2xl rounded-tr-sm
-                      text-[13px] leading-[1.7] font-semibold
-                      bg-secondary/85 backdrop-blur-md
-                      border border-border
-                      text-foreground/90 shadow-sm
-                      ${activeAgent === 'nyx' ? 'border-primary/20 shadow-primary/5' : ''}
-                    `}>
-                      {msg.content}
-                    </div>
-                  ) : (
-                    /* ── Assistant: container-less, direct on canvas ── */
-                    <div className="flex-1 min-w-0">
-                      {msg.status === 'error' ? (
-                        <p className="text-sm text-red-400/90 py-1">{msg.content}</p>
-                      ) : msg.content ? (
-                        <>
-                          <MarkdownContent content={msg.content} isStreaming={isStreaming} />
-
-                          {/* Footer: metrics + copy — fades in on hover */}
-                          {!isStreaming && msg.content && (
-                            <div className="mt-2 flex items-center gap-3 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => onCopy(msg.content, `msg-${i}`)}
-                                className="flex items-center gap-1 text-[9px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
-                              >
-                                {copiedId === `msg-${i}` ? (
-                                  <><Check size={9} className="text-emerald-400" /><span className="text-emerald-400">Copied</span></>
-                                ) : (
-                                  <><Copy size={9} /><span>Copy</span></>
-                                )}
-                              </button>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        /* Streaming skeleton */
-                        <div className="flex items-center gap-1.5 py-1">
-                          <div className="flex gap-1">
-                            {[0, 1, 2].map(n => (
-                              <motion.div
-                                key={n}
-                                className="w-1.5 h-1.5 rounded-full bg-primary/40"
-                                animate={{ opacity: [0.4, 1, 0.4], scale: [0.8, 1, 0.8] }}
-                                transition={{ duration: 1.2, repeat: Infinity, delay: n * 0.2 }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </motion.div>
+                  <MessageBubble
+                    msg={msg}
+                    index={virtualItem.index}
+                    activeAgent={activeAgent}
+                    onCopy={onCopy}
+                    copiedId={copiedId}
+                  />
+                </div>
               );
             })}
           </div>

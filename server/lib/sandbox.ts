@@ -191,6 +191,13 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     };
   }
 
+  // 3. Argument count limit (max 50 tokens)
+  const wordTokens = tokens.filter(t => t.type === 'word');
+  if (wordTokens.length > 50) {
+    logSecurityBlock(trimmedCmd, 'Too many arguments (max 50)');
+    return { isDocker: false, error: 'Security Sandbox Block: Too many arguments (max 50 allowed).' };
+  }
+
   const rawExecutable = tokens[0].value;
   const executable = path.basename(rawExecutable).replace(/\.(exe|cmd|bat|sh)$/i, '').toLowerCase();
 
@@ -218,6 +225,24 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
         }
       }
     }
+  }
+
+  // Resolve and validate cwd to prevent path traversal
+  const workspaceRoot = getWorkspaceRoot();
+  let resolvedCwd = targetCwd;
+  if (fs.existsSync(targetCwd)) {
+    try {
+      resolvedCwd = fs.realpathSync(targetCwd);
+    } catch {
+      resolvedCwd = path.resolve(targetCwd);
+    }
+  } else {
+    resolvedCwd = path.resolve(targetCwd);
+  }
+  const relative = path.relative(workspaceRoot, resolvedCwd);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    logSecurityBlock(trimmedCmd, `cwd '${targetCwd}' is outside workspace root`);
+    return { isDocker: false, error: 'Security Sandbox Block: Working directory must be within the workspace.' };
   }
 
   const isDockerAvail = await isDockerAvailable();
@@ -248,7 +273,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     const shellArgs = process.platform === 'win32' ? ['/c', trimmedCmd] : ['-c', trimmedCmd];
     
     const child = spawn(shellBin, shellArgs, {
-      cwd: targetCwd,
+      cwd: resolvedCwd,
       env: { ...process.env, FORCE_COLOR: '1' },
     });
     
@@ -275,7 +300,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     '--network', 'none',
     '--read-only',
     '--tmpfs', '/tmp:noexec,nosuid,size=100m',
-    '-v', `${targetCwd}:/workspace:ro`, // ONLY mount targetCwd, read-only
+    '-v', `${resolvedCwd}:/workspace:ro`, // ONLY mount resolvedCwd, read-only
     '-w', '/workspace',
     '--cpus', '1.0',
     '--memory', '512m',
@@ -288,7 +313,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   console.log(`[Sandbox] Spawning command inside Docker (${image}): docker ${dockerArgs.join(' ')}`);
 
   const child = spawn('docker', dockerArgs, {
-    cwd: targetCwd,
+    cwd: resolvedCwd,
   });
 
   return {

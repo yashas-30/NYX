@@ -44,6 +44,8 @@ import { safetyGateMiddleware } from './server/middleware/safetyGate.ts';
 import { createSessionToken, verifySessionToken } from './server/lib/keyVault.ts';
 import { cleanupProcesses } from './server/lib/processRegistry.ts';
 import { CodebaseScanner } from './server/lib/codebaseScanner.ts';
+import { runMigrations } from './server/db/migrator.ts';
+import { migrateOldStore } from './server/lib/conversationStore.ts';
 
 // DNS override
 if (process.env.NYX_OVERRIDE_DNS === 'true') {
@@ -56,6 +58,10 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const FASTIFY_PORT = parseInt(process.env.FASTIFY_PORT || '3001', 10);
 
 async function startServer() {
+  // Initialize SQLite schema and migrate legacy JSON chat files
+  runMigrations();
+  migrateOldStore();
+
   try {
     await warmupDNS();
     await startFastifyServer(FASTIFY_PORT);
@@ -159,13 +165,20 @@ async function startServer() {
     message: { error: 'AI request rate limit exceeded.' }
   });
 
+  const localModelLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10000,
+    message: { error: 'Local model rate limit exceeded.' },
+    skip: () => true
+  });
+
   app.use('/api/gemini',       aiLimiter, safetyGateMiddleware, geminiRouter);
   app.use('/api/openrouter',   aiLimiter, safetyGateMiddleware, openrouterRouter);
   app.use('/api/nvidia',       aiLimiter, safetyGateMiddleware, nvidiaRouter);
-  app.use('/api/terminal',     safetyGateMiddleware, terminalRouter);
+  app.use('/api/terminal',     sessionValidationMiddleware, terminalRouter);
   app.use('/api/agents',       agentsRouter);
   app.use('/api/opencode',     aiLimiter, safetyGateMiddleware, opencodeRouter);
-  app.use('/api/nyx/local-models', localModelsRouter);
+  app.use('/api/nyx/local-models', localModelLimiter, localModelsRouter);
   app.use('/api/nyx',          nyxRouter);
   app.use('/api/pollinations', aiLimiter, safetyGateMiddleware, pollinationsRouter);
   app.use('/api/qwen-local',   aiLimiter, safetyGateMiddleware, qwenLocalRouter);

@@ -69,6 +69,31 @@ export class CodebaseScanner {
   private static currentWatchedRoot = '';
   private static cacheFilePath = '';
   private static pipelineModule: any = null;
+  private static accessTimes: Map<string, number> = new Map();
+
+  private static touch(path: string): void {
+    this.accessTimes.set(path, Date.now());
+  }
+
+  private static evictOldestVectors(): void {
+    const MAX_VECTORS = 5000;
+    if (this.vectors.size <= MAX_VECTORS) return;
+    
+    const entries = Array.from(this.vectors.keys()).map(k => ({
+      key: k,
+      time: this.accessTimes.get(k) || 0
+    }));
+    
+    entries.sort((a, b) => a.time - b.time);
+    const excess = this.vectors.size - MAX_VECTORS;
+    const toEvict = entries.slice(0, excess);
+    
+    for (const item of toEvict) {
+      this.vectors.delete(item.key);
+      this.accessTimes.delete(item.key);
+    }
+    console.log(`[RAG] Cap at 5000 reached. Evicted ${excess} oldest files from codebase scanner cache.`);
+  }
 
   private static async getPipeline(): Promise<any> {
     if (!this.pipelineModule) {
@@ -128,6 +153,9 @@ export class CodebaseScanner {
         const raw = fs.readFileSync(this.cacheFilePath, 'utf8');
         const parsed = JSON.parse(raw);
         this.vectors = new Map(Object.entries(parsed));
+        for (const k of this.vectors.keys()) {
+          this.touch(k);
+        }
         console.log(`[RAG] Loaded ${this.vectors.size} cached vector embeddings.`);
       }
     } catch (err) {
@@ -178,6 +206,8 @@ export class CodebaseScanner {
           if (content.trim()) {
             const embedding = await this.generateEmbedding(content);
             this.vectors.set(file.relativePath, embedding);
+            this.touch(file.relativePath);
+            this.evictOldestVectors();
             indexCount++;
           }
         } catch (err) {
@@ -229,6 +259,8 @@ export class CodebaseScanner {
               if (content.trim()) {
                 const embedding = await this.generateEmbedding(content);
                 this.vectors.set(relativePath, embedding);
+                this.touch(relativePath);
+                this.evictOldestVectors();
                 this.saveEmbeddingsCache();
                 console.log(`[RAG] Watcher triggered re-indexing for modified file: ${relativePath}`);
               }
@@ -357,6 +389,7 @@ export class CodebaseScanner {
     for (const [relativePath, fileVector] of this.vectors.entries()) {
       const score = this.cosineSimilarity(queryVector, fileVector);
       if (score > 0) {
+        this.touch(relativePath);
         const absolutePath = path.join(root, relativePath);
         const content = this.readFileSafely(absolutePath);
         scoredResults.push({

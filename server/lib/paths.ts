@@ -16,6 +16,7 @@ export const VAULT_DIR = path.join(APP_STATE_DIR, '.nyx-keys');
 export const LOGS_DIR = path.join(APP_STATE_DIR, '.nyx-logs');
 export const MODELS_DIR = path.join(APP_STATE_DIR, '.nyx-models');
 export const CACHE_DIR = path.join(APP_STATE_DIR, '.nyx-cache');
+export const DB_FILE = path.join(APP_STATE_DIR, 'nyx.db');
 
 // Ensure directories exist
 const dirs = [APP_STATE_DIR, VAULT_DIR, LOGS_DIR, MODELS_DIR, CACHE_DIR];

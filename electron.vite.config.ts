@@ -36,6 +36,17 @@ export default defineConfig({
         '@': path.resolve(__dirname, '.'),
       },
     },
+    server: {
+      watch: {
+        ignored: [
+          '**/.nyx-cache/**',
+          '**/.nyx-models/**',
+          '**/scratch/**',
+          '**/server.log',
+          '**/server.err'
+        ]
+      }
+    },
     build: {
       outDir: 'dist',
       chunkSizeWarningLimit: 2000,

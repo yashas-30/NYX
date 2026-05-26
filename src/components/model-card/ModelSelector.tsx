@@ -1,11 +1,7 @@
-// ─── ModelSelector ────────────────────────────────────────────────────────────
-// The dropdown overlay shown when the user clicks the model name in the header.
-// Completely self-contained: receives data + callbacks, emits onSelect / onClose.
-// This version is designed with high-end premium aesthetics and Emil Kowalski animation physics.
-
 import React, { useMemo, useEffect, useRef } from 'react';
 import { Search, Check, Info, Bot, RefreshCw, X, Sparkles, Zap, HardDrive, Cpu, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { FREE_OPENCODE_MODELS, CLAUDE_MODELS, AVAILABLE_MODELS, POLLINATIONS_MODELS } from '../../config/models';
 import { ModelOption } from '../../types';
 import { ProviderIcon, getProviderLabel } from '../ui/ProviderIcon';
@@ -80,6 +76,7 @@ export const ModelSelector: React.FC<Props> = ({
   dropdown = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!dropdown || !onClose) return;
@@ -144,6 +141,14 @@ export const ModelSelector: React.FC<Props> = ({
       m.id.toLowerCase().includes(query)
     );
   }, [groupedModels, selectedProvider, searchTerm]);
+
+  // Virtualizer setup
+  const rowVirtualizer = useVirtualizer({
+    count: filteredModels.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 48,
+    overscan: 5,
+  });
 
   return (
     <div 
@@ -277,7 +282,7 @@ export const ModelSelector: React.FC<Props> = ({
             </div>
             
             {/* Scrollable list of models */}
-            <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+            <div ref={parentRef} className="flex-1 overflow-y-auto p-2 custom-scrollbar">
               {filteredModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center space-y-2 py-6">
                   <div className="w-8 h-8 rounded-2xl bg-muted/30 flex items-center justify-center border border-dashed border-border">
@@ -286,89 +291,102 @@ export const ModelSelector: React.FC<Props> = ({
                   <p className="text-[8px] font-black uppercase tracking-widest opacity-35">None found</p>
                 </div>
               ) : (
-                <motion.div
-                  key={selectedProvider + '-' + searchTerm}
-                  variants={listContainerVariants}
-                  initial="hidden"
-                  animate="show"
-                  className="grid grid-cols-1 gap-1.5"
+                <div
+                  style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative',
+                  }}
                 >
-                  {filteredModels.map(model => {
+                  {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+                    const model = filteredModels[virtualItem.index];
                     const isSelected = currentModelId === model.id;
                     const isNoKey = providerStatuses?.[model.provider] === 'no-key';
                     const isOnline = providerStatuses?.[model.provider] === 'online';
 
                     return (
-                      <motion.div
-                        key={model.id}
-                        variants={listItemVariants}
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => { onSelect((model as any).realId || model.id); }}
-                        className={`
-                          flex items-center justify-between gap-2.5 p-2.5 rounded-xl transition-all duration-300 border text-left group relative overflow-hidden cursor-pointer
-                          ${isSelected 
-                            ? (isNoKey
-                                ? 'bg-amber-500/10 border-amber-500/30'
-                                : 'bg-primary/10 border-primary/25 shadow-sm')
-                            : 'bg-card border-border/40 hover:bg-muted/30 hover:border-border'}
-                        `}
+                      <div
+                        key={virtualItem.key}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: `${virtualItem.size}px`,
+                          transform: `translateY(${virtualItem.start}px)`,
+                          paddingBottom: '6px'
+                        }}
                       >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <h4 className={`text-[10px] font-bold truncate leading-none ${isSelected ? 'text-foreground font-black' : 'text-foreground/80'}`}>
-                              {model.name}
-                            </h4>
+                        <motion.div
+                          variants={listItemVariants}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => { onSelect((model as any).realId || model.id); }}
+                          className={`
+                            flex items-center justify-between gap-2.5 p-2.5 rounded-xl transition-all duration-300 border text-left group relative overflow-hidden cursor-pointer h-full
+                            ${isSelected 
+                              ? (isNoKey
+                                  ? 'bg-amber-500/10 border-amber-500/30'
+                                  : 'bg-primary/10 border-primary/25 shadow-sm')
+                              : 'bg-card border-border/40 hover:bg-muted/30 hover:border-border'}
+                          `}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <h4 className={`text-[10px] font-bold truncate leading-none ${isSelected ? 'text-foreground font-black' : 'text-foreground/80'}`}>
+                                {model.name}
+                              </h4>
 
-                            {/* Reset Context Action (OpenCode only) */}
-                            {isCoder && model.provider === 'opencode' && (
-                              <motion.button
-                                whileTap={{ scale: 0.85 }}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onResetContext?.(model.id);
-                                }}
-                                className="p-0.5 rounded bg-primary/15 border border-primary/25 text-primary hover:bg-primary/25 transition-all ml-1 shadow-sm shrink-0 cursor-pointer"
-                                title="Reset Context"
-                              >
-                                <RefreshCw size={8} strokeWidth={2.5} />
-                              </motion.button>
-                            )}
+                              {/* Reset Context Action (OpenCode only) */}
+                              {isCoder && model.provider === 'opencode' && (
+                                <motion.button
+                                  whileTap={{ scale: 0.85 }}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onResetContext?.(model.id);
+                                  }}
+                                  className="p-0.5 rounded bg-primary/15 border border-primary/25 text-primary hover:bg-primary/25 transition-all ml-1 shadow-sm shrink-0 cursor-pointer"
+                                  title="Reset Context"
+                                >
+                                  <RefreshCw size={8} strokeWidth={2.5} />
+                                </motion.button>
+                              )}
 
-                            {/* Status Tag */}
-                            {providerStatuses && providerStatuses[model.provider] && (
-                              <div className={`
-                                text-[6px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-[4px] border shrink-0
-                                ${isOnline ? 'bg-primary/8 border-primary/15 text-primary' :
-                                  isNoKey ? 'bg-amber-500/8 border-amber-500/15 text-amber-500' :
-                                  'bg-red-500/8 border-red-500/15 text-red-400'}
-                              `}>
-                                {isOnline ? 'Online' : isNoKey ? 'Auth' : 'Off'}
-                              </div>
-                            )}
+                              {/* Status Tag */}
+                              {providerStatuses && providerStatuses[model.provider] && (
+                                <div className={`
+                                  text-[6px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-[4px] border shrink-0
+                                  ${isOnline ? 'bg-primary/8 border-primary/15 text-primary' :
+                                    isNoKey ? 'bg-amber-500/8 border-amber-500/15 text-amber-500' :
+                                    'bg-red-500/8 border-red-500/15 text-red-400'}
+                                `}>
+                                  {isOnline ? 'Online' : isNoKey ? 'Auth' : 'Off'}
+                                </div>
+                              )}
 
-                            {/* Inline Monospace Specs Badge */}
-                            {model.specs?.contextWindow && (
-                              <span className="text-[6.5px] font-mono font-bold text-muted-foreground/50 bg-muted/40 px-1.5 py-0.5 rounded border border-border shrink-0 ml-auto leading-none">
-                                {model.specs.contextWindow}
-                              </span>
-                            )}
+                              {/* Inline Monospace Specs Badge */}
+                              {model.specs?.contextWindow && (
+                                <span className="text-[6.5px] font-mono font-bold text-muted-foreground/50 bg-muted/40 px-1.5 py-0.5 rounded border border-border shrink-0 ml-auto leading-none">
+                                  {model.specs.contextWindow}
+                                </span>
+                              )}
+                            </div>
+                            
+                            <p className="text-[7.5px] font-mono text-muted-foreground/45 truncate uppercase tracking-tight mt-1 leading-none">
+                              {model.description || model.id}
+                            </p>
                           </div>
-                          
-                          <p className="text-[7.5px] font-mono text-muted-foreground/45 truncate uppercase tracking-tight mt-1 leading-none">
-                            {model.description || model.id}
-                          </p>
-                        </div>
 
-                        {isSelected && (
-                          <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 shadow-md ${isNoKey ? 'bg-amber-500' : 'bg-primary'}`}>
-                            <Check className="w-2.5 h-2.5 text-white" />
-                          </div>
-                        )}
-                      </motion.div>
+                          {isSelected && (
+                            <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 shadow-md ${isNoKey ? 'bg-amber-500' : 'bg-primary'}`}>
+                              <Check className="w-2.5 h-2.5 text-white" />
+                            </div>
+                          )}
+                        </motion.div>
+                      </div>
                     );
                   })}
-                </motion.div>
+                </div>
               )}
             </div>
           </div>

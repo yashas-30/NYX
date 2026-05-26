@@ -1,32 +1,36 @@
-name: CI
+name: NYX Hardening CI Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 jobs:
-  build:
+  validate:
+    name: Lint, Typecheck, and Test
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
 
-      - name: Use Node.js
+      - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install Project Dependencies
         run: npm ci
 
-      - name: Check TypeScript compilation
-        run: npx tsc --noEmit
+      - name: Execute Strict Typecheck & Linter
+        run: npm run lint
 
       - name: Run Vitest Unit Tests
         run: npx vitest run
 
-      - name: Build project
+      - name: Verify Bundle Compilation
         run: npm run build
+        env:
+          NODE_ENV: production
