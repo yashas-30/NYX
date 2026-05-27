@@ -5,12 +5,12 @@ import os from 'os';
 import { spawn, ChildProcess, exec, execFile } from 'child_process';
 import * as si from 'systeminformation';
 import { LocalModelManager } from './localModelManager.ts';
-import { registerProcess } from './processRegistry.ts';
+import { registerProcess } from '../../lib/processRegistry.ts';
 import kill from 'tree-kill';
-import { MODEL_LAYERS } from '../config/constants.ts';
+import { MODEL_LAYERS } from '../../config/constants.ts';
 import { Mutex } from 'async-mutex';
 
-import { MODELS_DIR as BASE_DIR } from './paths.ts';
+import { MODELS_DIR as BASE_DIR } from '../../lib/paths.ts';
 const BIN_DIR = path.join(BASE_DIR, 'bin');
 const BINARY_PATH = path.join(BIN_DIR, 'llama-server.exe');
 

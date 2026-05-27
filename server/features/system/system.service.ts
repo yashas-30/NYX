@@ -4,7 +4,7 @@ import checkDiskSpace from 'check-disk-space';
 import si from 'systeminformation';
 import { APP_STATE_DIR } from '../../lib/paths.ts';
 import { CacheServer } from '../../lib/cache.ts';
-import { LocalModelRunner } from '../../lib/localModelRunner.ts';
+import { LocalModelRunner } from '../local-models/localModelRunner.ts';
 import logger from '../../lib/logger.ts';
 
 interface VRAMResult {

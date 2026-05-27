@@ -1,6 +1,6 @@
-import { LocalModelManager } from '../../lib/localModelManager.ts';
-import { LocalModelRunner } from '../../lib/localModelRunner.ts';
-import { CodebaseScanner } from '../../lib/codebaseScanner.ts';
+import { LocalModelManager } from './localModelManager.ts';
+import { LocalModelRunner } from './localModelRunner.ts';
+import { CodebaseScanner } from '../workspace/codebaseScanner.ts';
 import { RulesDb } from '../admin/admin.service.ts';
 
 export class LocalModelsService {

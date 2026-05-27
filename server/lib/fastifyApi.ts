@@ -11,7 +11,7 @@ import dns from 'node:dns';
 
 import { DNS_CACHE, preWarmDns as resolveHostname } from './apiAgent.js';
 import { loadKeys, verifySessionToken } from '../features/vault/vault.service.ts';
-import { UnifiedEngine } from './unifiedEngine.ts';
+import { UnifiedEngine } from './aiEngine.ts';
 
 // SSRF protection: reject private/loopback addresses in gateway URLs
 function validateGatewayUrl(url: string): void {

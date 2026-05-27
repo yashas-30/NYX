@@ -1,4 +1,4 @@
-import { CodebaseScanner } from '../../lib/codebaseScanner.ts';
+import { CodebaseScanner } from '../workspace/codebaseScanner.ts';
 import { loadKeys } from '../vault/vault.service.ts';
 
 interface SearchCacheEntry {

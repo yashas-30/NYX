@@ -1,4 +1,4 @@
-import { WorkspaceIntelligence } from '../../lib/workspaceIntelligence.ts';
+import { WorkspaceIntelligence } from '../workspace/workspaceIntelligence.ts';
 import { getWorkspaceRoot } from '../../lib/paths.ts';
 import fs from 'fs';
 import path from 'path';

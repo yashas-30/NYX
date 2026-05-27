@@ -1,4 +1,4 @@
-import { UnifiedEngine } from '../../lib/unifiedEngine.js';
+import { UnifiedEngine } from '../../lib/aiEngine.js';
 
 export interface GeminiStreamParams {
   model: string;

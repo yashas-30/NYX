@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { getWorkspaceRoot } from './paths.ts';
+import { getWorkspaceRoot } from '../../lib/paths.ts';
 
 const execAsync = promisify(exec);
 

@@ -4,7 +4,7 @@ import https from 'https';
 import { IncomingMessage, ClientRequest } from 'http';
 import os from 'os';
 import * as si from 'systeminformation';
-import logger from './logger.ts';
+import logger from '../../lib/logger.ts';
 // No download queue needed — downloads are tracked per-modelId in activeDownloads map
 
 
@@ -664,7 +664,7 @@ export interface DownloadProgress {
   error?: string;
 }
 
-import { MODELS_DIR as BASE_DIR } from './paths.ts';
+import { MODELS_DIR as BASE_DIR } from '../../lib/paths.ts';
 const MODELS_DIR = path.join(BASE_DIR, 'models');
 const STATE_FILE = path.join(BASE_DIR, 'downloads.json');
 

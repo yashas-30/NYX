@@ -43,7 +43,7 @@ import logger from './server/lib/logger.ts';
 import { safetyGateMiddleware } from './server/middleware/safetyGate.ts';
 import { createSessionToken, verifySessionToken } from './server/features/vault/vault.service.ts';
 import { cleanupProcesses } from './server/lib/processRegistry.ts';
-import { CodebaseScanner } from './server/lib/codebaseScanner.ts';
+import { CodebaseScanner } from './server/features/workspace/codebaseScanner.ts';
 import { runMigrations } from './server/db/migrator.ts';
 import { migrateOldStore } from './server/features/conversations/conversations.service.ts';
 

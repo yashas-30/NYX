@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getWorkspaceRoot } from './paths.ts';
+import { getWorkspaceRoot } from '../../lib/paths.ts';
 
 // Directory and file exclusions to maintain high performance
 const EXCLUDE_DIRS = new Set([

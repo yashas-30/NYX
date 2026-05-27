@@ -1,4 +1,4 @@
-import { GitIntegration } from '../../lib/gitIntegration.ts';
+import { GitIntegration } from '../workspace/gitIntegration.ts';
 
 export class GitService {
   async getDiff(filePath?: string) {
