@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useDashboardState } from '../hooks/useDashboardState';
 import { useChatSessions } from '@src/shared/hooks/useChatSessions';
 import { CoderPage } from '@src/features/coder/CoderPage';
-import { SettingsView } from '@src/components/dashboard/settings/SettingsView';
+import { SettingsView } from '@src/features/settings';
 import { useCoderLogic } from '@src/features/coder/hooks/useCoderLogic';
 import { AVAILABLE_MODELS } from '@src/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
