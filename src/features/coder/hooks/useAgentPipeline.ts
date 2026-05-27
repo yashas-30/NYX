@@ -12,9 +12,7 @@ import { detectProvider, getEffectiveApiKey, requiresApiKey } from '@/src/core/u
 import { analyzePrompt, NON_CODE_REJECTION, isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/promptAnalyzer';
 import { getLanguageKnowledge, CODING_KNOWLEDGE_SUMMARY } from '@/src/config/codingKnowledge';
 import { toast } from '@/src/components/ui/sonner';
-import { runMultiStagePipeline } from './pipeline';
 import { SubagentOrchestrator } from './useSubagentOrchestrator';
-import { PromptAnalyzerService } from '@/src/core/services/promptAnalyzer';
 
 interface PipelineProps {
   models: Record<'nyx', string>;
@@ -29,10 +27,11 @@ interface PipelineProps {
   setSuggestedPrompts: (prompts: string[]) => void;
   webSearchEnabled: boolean;
   codebaseKnowledgeEnabled: boolean;
+  mode: 'chat' | 'code';
 }
 
 /** NYX system instruction — used for single-agent fast path */
-const NYX_SYSTEM_INSTRUCTION = `You are NYX, a professional and highly capable AI software engineering assistant developed by Yashas. Always identify yourself as NYX. Your tone is highly professional, direct, clear, objective, and authoritative—identical to Google Gemini. Avoid friendly fluff, excessive greetings, or marketing language like "premium" or "advanced". Focus on providing highly structured, precise, clean, and complete code solutions.
+const NYX_SYSTEM_INSTRUCTION = `You are NYX, a professional, elite, and highly capable AI software engineering assistant developed by Yashas. Always identify yourself as NYX. Your tone is highly professional, direct, clear, objective, and authoritative—identical to Google Gemini. Avoid friendly fluff, excessive greetings, or marketing language. Focus on providing highly structured, precise, clean, and complete code solutions.
 
 ${CODING_KNOWLEDGE_SUMMARY}
 
@@ -41,13 +40,19 @@ AGENTIC CODE & DESIGN PROTOCOLS:
    - Treat every task as production-critical.
    - NEVER generate partial code or lazy placeholders (e.g. "// ...", "// rest of code", or "TODO"). Every file must be complete, runnable, and production-ready.
    
-2. PREMIUM UTILITARIAN MINIMALIST UI ARCHITECTURE:
-   - When generating frontend interfaces, strictly follow these design constraints:
-     * Color: Scarlet spot pastels or desaturated colors for accents/tags. Canvas must be pure white (#FFFFFF) or warm off-white (#F7F6F3/#FBFBFA) and primary surfaces #FFFFFF. Use clean borders (1px solid #EAEAEA) and avoid heavy shadows.
-     * Typography: Editorial serifs (e.g., Lyon Text, Instrument Serif, Playfair Display) for hero/section titles with tight tracking/leading, and geometric sans (e.g., Switzer, Geist Sans, SF Pro) for body text and UI.
-     * Layout: Clean asymmetrical CSS Bento Box feature grids. Use macro-whitespace (massive vertical gaps like py-24 or py-32) to let the editorial design breathe.
-     * Elements: Flat crisp buttons (solid charcoal/black background with white text, CRISP corners, micro-scale click transforms). No pill shapes for large containers, no emojis, no gradients, and no glassmorphism.
-     * Motion: Ultra-subtle, scroll-entry transitions (translateY(12px) + opacity fade over 600ms).
+2. DETAILED VISUAL DESIGN & UI/UX ARCHITECTURE (21st.dev & Senior Design-Engineering Standard):
+   - When generating frontend interfaces, strictly adhere to these elite design-engineering principles:
+     * 21st.dev Component Integration: Leverage the curated component styling of [21st.dev](https://21st.dev) (the premier shadcn/ui React Tailwind registry). Suggest components by author/name (e.g., shadcn, magicui, bundui) and output the standard installation commands like \`npx shadcn@latest add https://21st.dev/r/{author}/{component}\`.
+     * Color Calibration (No Cliché Purple): Banish generic "AI purple text/glows" or neon overlays. Max 1 Accent color with saturation < 80%, blended with absolute Slate/Zinc neutrals. Custom brand colors must match the industry: Teal for AI/writing, Deep Emerald for devtools, Navy/Steel for enterprise/finance, Warm Coral/Rose for creative.
+     * Iconography & Emojis: Emojis are strictly BANNED in all generated code, comments, and alt texts. Use Lucide React, Phosphor React, or clean inline SVG primitives with standardized strokeWidth (1.5). Banish sparks, stars, or wand icons to avoid looking "AI-generated".
+     * Typography: \`Inter\` is strictly BANNED. Headings must use Satoshi, Geist, or Outfit with tight tracking (\`tracking-tighter leading-none\`). Software & Dashboard UIs must use pure Sans-Serif pairs (Geist + Geist Mono or Satoshi + JetBrains Mono) with monospace font for all numbers.
+     * Materiality & Card Hardening: Avoid boxing every metric in card components. Group related metrics using purely negative space, top-borders, or divide-y lines. Cards are used only when z-index elevation is functionally needed. Shadow glows are desaturated and tinted to match the background hue.
+     * Layout Normalization: Standardize container widths using \`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8\`. Align text and layout grids perfectly across sections. Multi-column grids must fall back to a single column below 768px. Never use \`h-screen\` (leads to mobile jumps)—always use \`min-h-[100dvh]\` for full sections.
+     * Interactive Cycles: Build complete states. Include layout skeleton loaders (never generic circular spinners), beautiful blank/empty states, and clear inline form error feedback. Add tactile push feedback (\`scale-[0.98]\` or \`scale-[0.97]\` on \`:active\`) for buttons, links, and cards.
+     * Motion & Easing Polish: CSS transitions must be fast (<250ms ease-out). Banish \`ease-in\` on dropdowns and popovers. Easing curves should be snappy: \`cubic-bezier(0.23, 1, 0.32, 1)\`. Avoid \`transition: all\`; always specify the target property explicitly (e.g., \`transition: transform 200ms ease-out\`).
+     * Springs & Transitions: For dynamic gestures, use Framer Motion springs (\`stiffness: 100, damping: 20\`). Never animate from \`scale(0)\`; start entry transitions from \`scale(0.95)\` with \`opacity: 0\` to preserve physical weight.
+     * No Invented Fake Metrics: Do not invent mock round statistics like "99.9% uptime" or "10x speed". Use organic, realistic figures or write \`[metric]\` labels. Banish custom cursor styles.
+     * Gradient Accents: Gradients must be solid and readable. Never place gradient elements with \`-z-10\` behind parent \`bg-background\` containers (the parent covers the gradient). Avoid oklch() color spaces inside custom \`radial-gradients()\` due to browser rendering issues; use \`rgba()\` or hex strings instead.
 
 3. MODULAR REACT & TYPESCRIPT ENGINEERING:
    - Separate concerns completely. Segregate event handlers/state logic into custom hooks, move static mock datasets to mockData.ts, and enforce strict type safety using Readonly props interfaces.
@@ -57,33 +62,37 @@ OUTPUT GUIDELINES:
 - Answer greetings, general queries, simple questions, or chit-chat directly, friendly, and concisely. Do not output system design overviews, implementation plans, or code steps for simple conversational or general prompts.
 - Keep responses clean, clear, and relevant to the user's query.`;
 
+/** NYX Chat system instruction — conversational, Claude-like, no stiff greeting */
+const NYX_CHAT_SYSTEM_PROMPT = `You are NYX, an intelligent AI assistant built by Yashas for developers.
+
+PERSONALITY:
+- Warm, direct, and conversational — like Claude.ai
+- Match the user's tone: casual questions get casual answers, serious questions get thorough ones
+- Never start every response with "Hello. I am NYX." — vary your greeting style
+- For greetings: respond naturally ("Hey! How can I help?" not always the same intro)
+- For general questions: answer directly without heavy structure
+- For code questions: provide complete, working code with brief explanation
+
+CONVERSATION:
+- Remember and reference earlier context in this conversation
+- Build on previous messages naturally
+- If asked to modify earlier code, reference and improve the previous version
+
+RULES:
+- Complete code only — no "// TODO" or "// rest of code here"
+- No emojis in code or technical content
+- Keep prose responses concise; expand only when depth is genuinely needed
+- Never say "As an AI language model..."`;
+
 /** Check if the prompt is a simple greeting or identity query */
 const isGreetingOrIdentity = (prompt: string): boolean => {
   const trimmed = prompt.trim();
-  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)\b/i;
+  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)(?:\s+(?:nyx|assistant|there|friend|everyone|all))?[.,!?\s]*$/i;
   const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx|what\s+can\s+you\s+do|what\s+are\s+you|help\s+me)\b/i;
   return GREETINGS.test(trimmed) || IDENTITY.test(trimmed);
 };
 
-/** Check if the prompt is general conversation (non-code chat) */
-const isConversational = (prompt: string): boolean => {
-  const trimmed = prompt.trim();
-  if (isGreetingOrIdentity(trimmed)) return true;
-  const CHAT_PATTERNS = /^(how\s+are\s+you|how's\s+it\s+going|tell\s+me\s+(about|a\s+joke)|what\s+do\s+you\s+think|how\s+do\s+you\s+feel|do\s+you\s+like|what's\s+your\s+favorite|can\s+you\s+help|what\s+time|good\s+job|well\s+done|i\s+appreciate|what\s+is\s+the\s+meaning|what\s+is\s+life|who\s+is\s+(the|a)\b|what\s+happened|when\s+did|where\s+is|how\s+old|how\s+many|how\s+much|how\s+far|how\s+long|how\s+tall|how\s+big|how\s+fast|tell\s+me\s+something|what's\s+new|what\s+should\s+i|recommend|suggest|opinion|advice)/i;
-  return CHAT_PATTERNS.test(trimmed);
-};
 
-/** Lightweight system instruction for general conversation */
-const NYX_CONVERSATIONAL_INSTRUCTION = `I am Nyx, your AI assistant. I am friendly, helpful, and conversational.
-
-For general questions and conversation:
-- Respond naturally, warmly, and concisely like a knowledgeable friend.
-- Be direct and helpful. Don't add unnecessary structure or formality.
-- Keep responses focused and relevant to what the user asked.
-- If the user greets me, greet them back warmly.
-- If asked about myself: I am Nyx, an AI coding and general-purpose assistant built for developers.
-- Answer general knowledge questions clearly and accurately.
-- Be friendly but not overly enthusiastic or verbose.`;
 
 /** Check if the prompt is asking about codebase/project context */
 const isCodebaseQuery = (prompt: string): boolean => {
@@ -156,187 +165,7 @@ const streamStaticResponse = (
   }, 12); // Stream extremely fast
 };
 
-// Cache local agent model status to avoid expensive re-polling on every query
-let cachedAgentModel: { id: string; provider: string } | null = null;
-let lastAgentCheckTime = 0;
-const AGENT_CACHE_TTL = 30000; // Cache status for 30 seconds
 
-/** Auto-discover active local Gemma models (local GGUF) or fallback to OpenCode free Gemma model */
-const getAvailableAgentModel = async (): Promise<{ id: string; provider: string }> => {
-  const now = Date.now();
-  if (cachedAgentModel && (now - lastAgentCheckTime < AGENT_CACHE_TTL)) {
-    return cachedAgentModel;
-  }
-
-  // 0. Try active NYX Native GGUF model loaded in RAM (ultra-fast C++ llama.cpp)
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 200);
-    const response = await AIService.fetchWithAuth('/api/nyx/local-models', { signal: controller.signal }).catch(() => null);
-    clearTimeout(timer);
-    if (response && response.ok) {
-      const data = await response.json();
-      if (data.activeModelId) {
-        cachedAgentModel = { id: data.activeModelId, provider: 'nyx-native' };
-        lastAgentCheckTime = now;
-        return cachedAgentModel;
-      }
-    }
-  } catch (e) {
-    console.warn('[getAvailableAgentModel] Native GGUF check failed:', e);
-  }
-
-  // 1. Fallback to OpenCode free Gemma
-  cachedAgentModel = { id: 'opencode/gemma-3-27b-it-free', provider: 'opencode' };
-  lastAgentCheckTime = now;
-  return cachedAgentModel;
-};
-
-/** Asynchronously analyze prompt using the user-selected model */
-const analyzePromptIntelligently = async (
-  prompt: string,
-  modelId: string,
-  provider: string,
-  apiKey: string,
-  apiKeys: Record<string, string>
-): Promise<{
-  isCodeRelated: boolean;
-  isMissingDebugDetails: boolean;
-  missingDetailsRequest: string;
-  intent: string;
-  complexity: string;
-  detectedLanguages: string[];
-  frameworks: string[];
-  summary: string;
-} | null> => {
-  const systemInstruction = `You are a highly advanced AI prompt analyzer. Your job is to analyze the user's prompt and output a JSON object with the following fields:
-{
-  "isCodeRelated": boolean,
-  "isMissingDebugDetails": boolean,
-  "missingDetailsRequest": string, // If the user asks to debug or fix an error/bug/compile-issue but has NOT pasted any code and has NOT pasted any error logs, write a friendly request asking them for their code and logs. Tailor it specifically to any language/platform they mentioned. Keep it brief (under 3 sentences). Otherwise, write empty string.
-  "intent": "generate" | "refactor" | "debug" | "explain" | "convert" | "optimize" | "review" | "integrate" | "test" | "deploy" | "general",
-  "complexity": "trivial" | "simple" | "moderate" | "complex" | "enterprise",
-  "detectedLanguages": string[],
-  "frameworks": string[],
-  "summary": string // A brief 1-sentence summary of what the user wants to accomplish
-}
-A prompt is isMissingDebugDetails = true if the user asks to debug or fix an error, bug, or crash, but has NOT pasted any code snippet and has NOT pasted any error logs or compile outputs.
-Response must contain ONLY the raw JSON object. Do not include markdown code block syntax (like \`\`\`json).`;
-
-  console.log(`[analyzePromptIntelligently] Using selected model for analysis: ${modelId} (${provider})`);
-
-  try {
-    const response = await AIService.execute(
-      modelId,
-      provider,
-      prompt,
-      apiKey,
-      systemInstruction,
-      { temperature: 0.1, maxTokens: 1024 },
-      undefined,
-      undefined,
-      undefined
-    );
-    const text = response.text.trim();
-    const jsonStr = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-    const parsed = JSON.parse(jsonStr);
-    return {
-      ...parsed,
-      summary: parsed.summary || ''
-    };
-  } catch (err) {
-    console.warn(`[analyzePromptIntelligently] Analysis with selected model ${modelId} failed, trying fallback:`, err);
-    try {
-      const activeKey = apiKeys['opencode'] || '';
-      const response = await AIService.execute(
-        'opencode/qwen3-coder-14b-free',
-        'opencode',
-        prompt,
-        activeKey,
-        systemInstruction,
-        { temperature: 0.1, maxTokens: 1024 },
-        undefined,
-        undefined,
-        undefined
-      );
-      const text = response.text.trim();
-      const jsonStr = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-      const parsed = JSON.parse(jsonStr);
-      return {
-        ...parsed,
-        summary: parsed.summary || ''
-      };
-    } catch (err2) {
-      console.error('[analyzePromptIntelligently] All analysis models failed:', err2);
-      return {
-        isCodeRelated: true,
-        isMissingDebugDetails: false,
-        missingDetailsRequest: '',
-        intent: 'general',
-        complexity: 'moderate',
-        detectedLanguages: [],
-        frameworks: [],
-        summary: ''
-      };
-    }
-  }
-};
-
-/** Use the user-selected model to analyze the query and codebase context, generating a structured Handoff Specification */
-const generateHandoffPlan = async (
-  prompt: string,
-  codebaseContext: string,
-  modelId: string,
-  provider: string,
-  apiKey: string,
-  apiKeys: Record<string, string>
-): Promise<string> => {
-  const systemInstruction = `You are Nyx, the coordinating agent. Your task is to analyze the user's query and the codebase context, and prepare a structured Handoff Specification for the next step.
-Focus on:
-1. Target Files: Which files in the codebase need to be modified or created.
-2. Technical Requirements: Core functions, interfaces, or logic to be implemented.
-3. Constraints & Safety: Any safety hazards, voltage mismatches, or platform restrictions (especially for Arduino/Raspberry Pi).
-4. Recommended design pattern or architecture.
-5. Learned critic rules from past lessons.
-Keep it technical, clear, and structured as bullet points. Do not include greetings, introductions, or code blocks.`;
-
-  console.log(`[generateHandoffPlan] Running NYX Agent (Selected Model) to generate handoff plan using: ${modelId}`);
-
-  try {
-    const response = await AIService.execute(
-      modelId,
-      provider,
-      `User Prompt: ${prompt}\n\nCodebase Context:\n${codebaseContext.substring(0, 8000)}`,
-      apiKey,
-      systemInstruction,
-      { temperature: 0.2, maxTokens: 1024 },
-      undefined,
-      undefined,
-      undefined
-    );
-    return response.text.trim();
-  } catch (err) {
-    console.warn(`[generateHandoffPlan] Handoff generation with selected model ${modelId} failed, trying fallback:`, err);
-    try {
-      const activeKey = apiKeys['opencode'] || '';
-      const response = await AIService.execute(
-        'opencode/qwen3-coder-14b-free',
-        'opencode',
-        `User Prompt: ${prompt}\n\nCodebase Context:\n${codebaseContext.substring(0, 8000)}`,
-        activeKey,
-        systemInstruction,
-        { temperature: 0.2, maxTokens: 1024 },
-        undefined,
-        undefined,
-        undefined
-      );
-      return response.text.trim();
-    } catch (err2) {
-      console.error('[generateHandoffPlan] Fallback handoff model failed:', err2);
-    }
-    return 'Perform the requested codebase changes ensuring clean architecture, modular code blocks, and robust error handling.';
-  }
-};
 
 /** Streaming update throttle interval (ms) */
 const STREAM_THROTTLE_MS = 50;
@@ -353,7 +182,8 @@ export const useAgentPipeline = ({
   getSuggestions,
   setSuggestedPrompts,
   webSearchEnabled,
-  codebaseKnowledgeEnabled
+  codebaseKnowledgeEnabled,
+  mode
 }: PipelineProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [subagentTasks, setSubagentTasks] = useState<SubagentTask[]>([]);
@@ -411,121 +241,77 @@ export const useAgentPipeline = ({
     setSubagentTasks([]);
 
     try {
-      // ── 1. Smart Prompt Analysis (PromptAnalyzerService) ───────────────────
-      const isGreeting = isGreetingOrIdentity(prompt);
-      const isChat = isConversational(prompt);
-      const regexAnalysis = analyzePrompt(prompt);
-      
-      let analysisResult: any = null;
+      if (mode === 'chat') {
+        // ── CHAT MODE: Pure direct LLM, like Claude Desktop ──
+        // Seed loading placeholder
+        updateHistory(prev => [...prev, { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }]);
 
-      if (isGreeting || isChat) {
-        analysisResult = {
-          intent: 'general_chat',
-          complexity: 'trivial',
-          scope: 'single_file',
-          requiresExecution: false,
-          requiresWebSearch: false,
-          requiresCodebaseContext: false,
-          estimatedTokenCount: Math.ceil(prompt.length / 4),
-          suggestedTools: [],
-          confidence: 1.0,
-          isCodeRelated: false,
-          isMissingDebugDetails: false,
-          missingDetailsRequest: '',
-          detectedLanguages: regexAnalysis.detectedLanguages,
-          frameworks: regexAnalysis.frameworks,
-          summary: '💬 General Conversation'
-        };
-      } else {
-        const analysis = await PromptAnalyzerService.analyze(
-          prompt,
+        const startTime = Date.now();
+        let lastStreamUpdate = 0;
+
+        const result = await AIService.execute(
           nyxModel,
           nyxProvider,
+          prompt,
           nyxApiKey,
-          apiKeys
+          NYX_CHAT_SYSTEM_PROMPT,
+          modelSettings,
+          (accumulatedText) => {
+            const now = Date.now();
+            if (now - lastStreamUpdate < STREAM_THROTTLE_MS) return;
+            lastStreamUpdate = now;
+
+            const elapsed = now - startTime;
+            const tokens = Math.floor(accumulatedText.length / 4);
+            const tps = elapsed > 0 ? Math.round(tokens / (elapsed / 1000)) : 0;
+            updateMetrics({ latency: elapsed, tokens, tps });
+
+            updateHistory(prev => {
+              const h = [...prev];
+              const last = h[h.length - 1];
+              if (last && last.role === 'assistant') {
+                last.content = accumulatedText;
+                last.metrics = { latency: elapsed, tokens, tps };
+              }
+              return h;
+            });
+          },
+          controller.signal,
+          { history: historyRef.current.slice(-20) } // more history for chat
         );
 
-        const missingDebug = analysis.intent === 'debugging' && isMissingDebugDetails(prompt, regexAnalysis.intent);
+        trackUsage(nyxProvider, result.metrics.tokens);
 
-        analysisResult = {
-          ...analysis,
-          isCodeRelated: analysis.intent !== 'general_chat',
-          isMissingDebugDetails: missingDebug,
-          missingDetailsRequest: missingDebug ? MISSING_DEBUG_DETAILS_RESPONSE : '',
-          detectedLanguages: regexAnalysis.detectedLanguages,
-          frameworks: regexAnalysis.frameworks,
-          summary: regexAnalysis.summary
-        };
-      }
+        updateHistory(prev => {
+          const h = [...prev];
+          const last = h[h.length - 1];
+          if (last && last.role === 'assistant') {
+            last.status = 'success';
+            last.content = result.text;
+            last.metrics = result.metrics;
+          }
+          getSuggestions(h);
+          return h;
+        });
 
-      // ── 2. Missing Details Gate ────────────────────────────────────────
-      if (analysisResult.isMissingDebugDetails && analysisResult.isCodeRelated) {
-        const reqMessage = analysisResult.missingDetailsRequest || MISSING_DEBUG_DETAILS_RESPONSE;
-        updateHistory(prev => [
-          ...prev,
-          { role: 'assistant', content: reqMessage, timestamp: Date.now(), status: 'success' }
-        ]);
-        toast.error('Please provide your code or error logs');
-        return;
-      }
+        updateMetrics(result.metrics);
+        triggerBackgroundCritic(prompt, result.text);
 
-      // ── 4. Routing Decision ──────────────────────────────────────────
-      // Conversational/general prompts → fast path with lightweight system prompt
-      // Simple code prompts → fast path with code system prompt
-      // Complex code prompts → multi-stage pipeline with planning
+      } else {
+        // ── CODE MODE: Single-agent with context injection ──
+        const regexAnalysis = analyzePrompt(prompt);
 
-      const isChatMode = isGreeting || isChat || !analysisResult.isCodeRelated;
-
-      if (isChatMode) {
-        const trimmed = prompt.trim();
-        const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx|what\s+can\s+you\s+do|what\s+are\s+you)\b/i;
-        const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye)\b/i;
-
-        if (IDENTITY.test(trimmed)) {
-          const identityResponse = `Hello. I am **NYX**, a professional and highly capable AI software engineering assistant.
-
-I have native, deep integration with your workspace and can run tasks, analyze repository structures, and write high-quality code. Here are some of the key capabilities I have:
-- 💻 **Autonomous Coding**: Generate complete, syntax-correct, production-ready code.
-- 🔍 **Workspace Analysis**: Search your local codebase, trace imports, and understand file relations.
-- ⚡ **Task Automation**: Execute shell commands, run tests, and manage background processes.
-- 🗣️ **Conversational Intelligence**: Explain complex codebases, plan architectures, and help troubleshoot bugs.
-
-How can I assist you with your workspace or project today?`;
-          
-          await new Promise<void>((resolve) => {
-            streamStaticResponse(identityResponse, updateHistory, updateMetrics, () => {
-              setIsLoading(false);
-              resolve();
-            }, controller.signal);
-          });
-          return;
-        } else if (GREETINGS.test(trimmed)) {
-          const greetingResponse = `Hello. I am **NYX**, your professional AI software engineering assistant.
-
-How can I help you with your repository, code, or terminal tasks today?`;
-          
-          await new Promise<void>((resolve) => {
-            streamStaticResponse(greetingResponse, updateHistory, updateMetrics, () => {
-              setIsLoading(false);
-              resolve();
-            }, controller.signal);
-          });
+        // Missing details check
+        if (isMissingDebugDetails(prompt, regexAnalysis.intent)) {
+          updateHistory(prev => [
+            ...prev,
+            { role: 'assistant', content: MISSING_DEBUG_DETAILS_RESPONSE, timestamp: Date.now(), status: 'success' }
+          ]);
+          toast.error('Please provide your code or error logs');
           return;
         }
 
-        // ── CONVERSATIONAL FAST PATH ────────────────────────────────────
-        // Skip rules, skip local agent model, skip code knowledge — just chat
-        console.log(`[runCoder] Routing to CONVERSATIONAL fast path with selected model: ${nyxModel}`);
-        
-        await runSingleAgentPipeline(
-          prompt, 
-          controller, 
-          NYX_CONVERSATIONAL_INSTRUCTION, 
-          analysisResult as any, 
-          undefined // Always use selected model for conversation
-        );
-      } else {
-        // Code-related prompt — fetch rules and route
+        // Fetch rules
         let fetchedRules: string[] = [];
         try {
           const res = await fetch('/api/nyx/rules');
@@ -550,83 +336,16 @@ To ensure continuous optimization and prevent past mistakes, you must strictly a
 ${formattedRules}
 [END OF LESSONS]`;
 
-        const isPlanningRequested = /\b(planning\s+mode|step[- ]by[- ]step\s+plan|generate\s+plan|create\s+plan|architectural\s+plan|system\s+design|architect|blueprint|multi[- ]agent|agent|claude\s+code|swarm)\b/i.test(prompt);
-        const isHeavy = isPlanningRequested || (analysisResult.isCodeRelated && ['moderate', 'complex', 'enterprise'].includes(analysisResult.complexity));
-        const isEnterpriseSwarm = isPlanningRequested || (analysisResult.isCodeRelated && ['complex', 'enterprise'].includes(analysisResult.complexity));
+        const langKnowledge = getLanguageKnowledge(regexAnalysis.detectedLanguages);
+        const systemPrompt = `${NYX_SYSTEM_INSTRUCTION}\n\n${langKnowledge}\n\n${rulesBlock}`;
 
-        if (!isHeavy) {
-          // Fast path for simple code prompts
-          const agentModel = await getAvailableAgentModel();
-          if (agentModel) {
-            console.log(`[runCoder] Routing to CODE fast path with agent model: ${agentModel.id} (${agentModel.provider})`);
-          } else {
-            console.log(`[runCoder] Routing to CODE fast path with selected model: ${nyxModel}`);
-          }
-
-          const langKnowledge = getLanguageKnowledge(analysisResult.detectedLanguages);
-          const instruction = `${NYX_SYSTEM_INSTRUCTION}\n\n${langKnowledge}\n\n${rulesBlock}`;
-          
-          await runSingleAgentPipeline(
-            prompt, 
-            controller, 
-            instruction, 
-            analysisResult as any, 
-            agentModel || undefined
-          );
-        } else if (isEnterpriseSwarm) {
-          // ── SUBAGENT SWARM PATH (complex/enterprise/planning-mode prompts) ──
-          console.log(`[runCoder] Routing to SUBAGENT SWARM for ${analysisResult.complexity} task`);
-
-          // Seed the assistant loading placeholder
-          updateHistory(prev => [
-            ...prev,
-            { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' as const }
-          ]);
-
-          const orchestrator = new SubagentOrchestrator();
-          orchestratorRef.current = orchestrator;
-
-          orchestrator.onTaskUpdate = (tasks: SubagentTask[]) => {
-            setSubagentTasks(tasks);
-          };
-
-          await orchestrator.execute(prompt, {
-            apiKeys,
-            modelSettings,
-            trackUsage,
-            history: historyRef.current,
-            updateHistory,
-            updateMetrics,
-            getSuggestions,
-            setSuggestedPrompts,
-            webSearchEnabled,
-            codebaseKnowledgeEnabled,
-            triggerBackgroundCritic: (p: string, r: string) => triggerBackgroundCritic(p, r),
-            originalPrompt: prompt,
-            signal: controller.signal
-          });
-        } else {
-          // Moderate path: run multi-stage pipeline using the selected model
-          await runMultiStagePipeline({
-            prompt,
-            controller,
-            rulesBlock,
-            analysis: analysisResult as any,
-            models,
-            apiKeys,
-            modelSettings,
-            trackUsage,
-            updateHistory,
-            updateMetrics,
-            getSuggestions,
-            webSearchEnabled,
-            codebaseKnowledgeEnabled,
-            historyRef,
-            triggerBackgroundCritic,
-            generateHandoffPlan,
-            NYX_SYSTEM_INSTRUCTION
-          });
-        }
+        await runSingleAgentPipeline(
+          prompt,
+          controller,
+          systemPrompt,
+          regexAnalysis as any,
+          undefined // Always use selected model
+        );
       }
     } catch (error: any) {
       const isAborted = error?.name === 'AbortError' || controller.signal.aborted;
@@ -664,7 +383,7 @@ ${formattedRules}
       orchestratorRef.current = null;
       setIsLoading(false);
     }
-  }, [models, apiKeys, agentPersonas, modelSettings, trackUsage, updateHistory, updateMetrics, setSuggestedPrompts]);
+  }, [models, apiKeys, agentPersonas, modelSettings, trackUsage, updateHistory, updateMetrics, setSuggestedPrompts, mode]);
 
   /**
    * Fast single-agent pipeline — streams directly to user for instant responses.

@@ -20,6 +20,7 @@ interface Props {
   onResetContext?: (modelId: string) => void;
   gatewayUrls?: Record<string, string>;
   dropdown?: boolean;
+  alignDropdown?: 'top' | 'bottom';
 }
 
 // Structured provider order for the selector
@@ -73,7 +74,8 @@ export const ModelSelector: React.FC<Props> = ({
   isCoder,
   onResetContext,
   gatewayUrls = {},
-  dropdown = false
+  dropdown = false,
+  alignDropdown = 'top'
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -146,14 +148,25 @@ export const ModelSelector: React.FC<Props> = ({
   const rowVirtualizer = useVirtualizer({
     count: filteredModels.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 48,
+    estimateSize: () => 42,
     overscan: 5,
   });
+
+  const dropdownClassName = alignDropdown === 'bottom'
+    ? "absolute top-full left-0 mt-3.5 z-[500] w-[300px]"
+    : "absolute bottom-full left-0 mb-3.5 z-[500] w-[300px]";
+
+  const transformOrigin = dropdown
+    ? (alignDropdown === 'bottom' ? 'top left' : 'bottom left')
+    : 'center';
+
+  const entryY = alignDropdown === 'bottom' ? -12 : 12;
+  const exitY = alignDropdown === 'bottom' ? -8 : 8;
 
   return (
     <div 
       ref={containerRef} 
-      className={dropdown ? "absolute bottom-full left-0 mb-3.5 z-[500] w-full max-w-[440px]" : "fixed inset-0 z-[500] flex items-center justify-center p-4"}
+      className={dropdown ? dropdownClassName : "fixed inset-0 z-[500] flex items-center justify-center p-4"}
     >
       {dropdown ? null : (
         <motion.div 
@@ -161,11 +174,11 @@ export const ModelSelector: React.FC<Props> = ({
           animate={{ opacity: 1 }} 
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="absolute inset-0 bg-[#191918]/80 backdrop-blur-md cursor-pointer"
+          className="absolute inset-0 bg-black/65 backdrop-blur-sm cursor-pointer"
         />
       )}
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 12 }} 
+        initial={{ opacity: 0, scale: 0.95, y: entryY }} 
         animate={{ 
           opacity: 1, 
           scale: 1, 
@@ -179,60 +192,24 @@ export const ModelSelector: React.FC<Props> = ({
         exit={{ 
           opacity: 0, 
           scale: 0.95, 
-          y: 8,
+          y: exitY,
           transition: {
             duration: 0.18,
             ease: [0.23, 1, 0.32, 1]
           }
         }}
-        style={{ transformOrigin: dropdown ? 'bottom left' : 'center' }}
+        style={{ transformOrigin }}
         onClick={(e) => e.stopPropagation()}
-        className={dropdown 
-          ? "relative w-full bg-[#222221]/98 border border-white/[0.05] rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[50vh] backdrop-blur-3xl cursor-default z-[500]"
-          : "relative w-full max-w-[440px] bg-[#222221]/98 border border-white/[0.05] rounded-3xl shadow-[0_35px_80px_rgba(0,0,0,0.65)] overflow-hidden flex flex-col max-h-[60vh] backdrop-blur-3xl cursor-default"
-        }
+        className="relative w-full max-w-[300px] bg-[#262626]/98 border border-white/[0.06] rounded-3xl shadow-[0_35px_80px_rgba(0,0,0,0.65)] overflow-hidden flex flex-col max-h-[35vh] backdrop-blur-3xl cursor-default"
       >
         {/* Top Edge Highlight for premium visual depth */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#E0B86F]/20 to-transparent" />
-        {/* Selector Header */}
-        <div className="p-3 px-4 border-b border-white/[0.05] bg-white/[0.02] flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <h3 className="text-[9px] font-black tracking-[0.25em] text-[#E0B86F] uppercase truncate">Logic Units</h3>
-          </div>
-          
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Search Input Pill */}
-            <div className="relative w-36 group">
-              <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors group-focus-within:text-[#E0B86F]" />
-              <input 
-                autoFocus
-                type="text"
-                value={searchTerm}
-                onChange={(e) => onSearchChange(e.target.value)}
-                placeholder="Search units..."
-                className="w-full bg-[#262625] border border-white/5 rounded-full pl-7.5 pr-2.5 py-1 text-[9px] font-semibold text-foreground focus:outline-none focus:border-[#E0B86F]/50 transition-all shadow-inner placeholder:text-zinc-500"
-              />
-            </div>
-            {onClose && (
-              <motion.button 
-                whileTap={{ scale: 0.9 }}
-                type="button"
-                onClick={onClose}
-                className="p-1 rounded-xl text-zinc-500 hover:text-foreground hover:bg-white/5 transition-all shrink-0 cursor-pointer"
-                title="Close"
-              >
-                <X className="w-3.5 h-3.5" />
-              </motion.button>
-            )}
-          </div>
-        </div>
-        
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
         {/* Main Content Split Area */}
-        <div className="flex flex-1 min-h-0 gap-2.5 p-3 overflow-hidden">
+        <div className="flex flex-1 min-h-0 gap-1.5 p-1.5 overflow-hidden">
           
           {/* Left Box: Providers (Gateways) */}
-          <div className="w-[125px] shrink-0 bg-[#191918]/60 border border-white/[0.04] rounded-2xl flex flex-col p-2 space-y-1 overflow-y-auto custom-scrollbar shadow-inner">
-            <span className="px-2 py-0.5 text-[7px] font-black uppercase tracking-[0.2em] text-zinc-500">Gateways</span>
+          <div className="w-[85px] shrink-0 bg-[#161616]/60 border border-white/[0.06] rounded-2xl flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar shadow-inner">
+            <span className="px-1 py-0.5 text-[6.5px] font-black uppercase tracking-[0.2em] text-zinc-500">Gateways</span>
             {sortedProviders.map(provider => {
               const status = providerStatuses?.[provider];
               const isActive = selectedProvider === provider;
@@ -244,23 +221,23 @@ export const ModelSelector: React.FC<Props> = ({
                   type="button"
                   onClick={() => { onProviderChange(provider); onSearchChange(''); }}
                   className={`
-                    w-full flex items-center justify-between px-2.5 py-2 rounded-xl transition-all duration-300 group cursor-pointer border
+                    w-full flex items-center justify-between px-1.5 py-1 rounded-lg transition-all duration-300 group cursor-pointer border
                     ${isActive 
                       ? (status === 'no-key' 
                           ? 'bg-zinc-500/10 border-zinc-500/20 text-zinc-300 font-bold' 
-                          : 'bg-[#E0B86F]/10 border-[#E0B86F]/25 text-[#E0B86F] font-bold shadow-sm') 
+                          : 'bg-white/[0.08] border-white/10 text-white font-bold shadow-sm') 
                       : 'hover:bg-white/5 border-transparent text-zinc-400 hover:text-zinc-200'}
                   `}
                 >
-                  <span className="flex-1 text-left text-[9px] font-bold truncate leading-none">
+                  <span className="flex-1 text-left text-[8.2px] font-bold truncate leading-none">
                     {getProviderLabel(provider)}
                   </span>
                   
                   {/* Status Indicator Glow Dot */}
                   {providerStatuses && (
-                    <div className="relative flex items-center shrink-0 ml-1.5">
+                    <div className="relative flex items-center shrink-0 ml-1">
                       <div className={`w-1.5 h-1.5 rounded-full ${
-                        status === 'online' ? 'bg-[#E0B86F] animate-pulse' :
+                        status === 'online' ? 'bg-emerald-400 animate-pulse' :
                         status === 'no-key' ? 'bg-zinc-700' :
                         'bg-zinc-800'
                       }`} />
@@ -272,11 +249,11 @@ export const ModelSelector: React.FC<Props> = ({
           </div>
 
           {/* Right Box: Models Grid */}
-          <div className="flex-1 bg-[#191918]/60 border border-white/[0.04] rounded-2xl overflow-hidden flex flex-col shadow-inner">
+          <div className="flex-1 bg-[#161616]/60 border border-white/[0.06] rounded-2xl overflow-hidden flex flex-col shadow-inner">
             {/* Context Sub-header */}
-            <div className="p-2 px-3 border-b border-white/[0.04] flex items-center justify-between bg-white/[0.02]">
+            <div className="p-1.5 px-2 border-b border-white/[0.04] flex items-center justify-between bg-white/[0.02]">
               <span className="text-[7px] font-black uppercase tracking-[0.2em] text-zinc-500">Units</span>
-              <div className="px-1.5 py-0.5 rounded-full bg-[#E0B86F]/10 border border-[#E0B86F]/20 text-[7px] font-mono font-black text-[#E0B86F]">
+              <div className="px-1.5 py-0.5 rounded-full bg-white/[0.08] border border-white/10 text-[7px] font-mono font-black text-white">
                 {filteredModels.length.toString().padStart(2, '0')}
               </div>
             </div>
@@ -314,7 +291,7 @@ export const ModelSelector: React.FC<Props> = ({
                           width: '100%',
                           height: `${virtualItem.size}px`,
                           transform: `translateY(${virtualItem.start}px)`,
-                          paddingBottom: '6px'
+                          paddingBottom: '4px'
                         }}
                       >
                         <motion.div
@@ -322,17 +299,17 @@ export const ModelSelector: React.FC<Props> = ({
                           whileTap={{ scale: 0.97 }}
                           onClick={() => { onSelect((model as any).realId || model.id); }}
                           className={`
-                            flex items-center justify-between gap-2.5 p-2.5 rounded-xl transition-all duration-300 border text-left group relative overflow-hidden cursor-pointer h-full
+                            flex items-center justify-between gap-1.5 p-1.5 rounded-lg transition-all duration-300 border text-left group relative overflow-hidden cursor-pointer h-full
                             ${isSelected 
                               ? (isNoKey
                                   ? 'bg-zinc-500/10 border-zinc-500/20 shadow-sm'
-                                  : 'bg-[#E0B86F]/10 border-[#E0B86F]/25 shadow-sm')
-                              : 'bg-[#222221] border-white/[0.04] hover:bg-[#2D2D2B] hover:border-[#E0B86F]/20'}
+                                  : 'bg-white/[0.08] border-white/10 shadow-sm')
+                              : 'bg-[#1c1c1c] border-white/[0.04] hover:bg-[#2d2d2d] hover:border-white/10'}
                           `}
                         >
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <h4 className={`text-[10px] font-bold truncate leading-none ${isSelected ? 'text-foreground font-black' : 'text-foreground/80'}`}>
+                            <div className="flex items-center gap-1">
+                              <h4 className={`text-[9px] font-bold truncate leading-none ${isSelected ? 'text-foreground font-black' : 'text-foreground/80'}`}>
                                 {model.name}
                               </h4>
 
@@ -345,7 +322,7 @@ export const ModelSelector: React.FC<Props> = ({
                                     e.stopPropagation();
                                     onResetContext?.(model.id);
                                   }}
-                                  className="p-0.5 rounded bg-[#E0B86F]/15 border border-[#E0B86F]/25 text-[#E0B86F] hover:bg-[#E0B86F]/25 transition-all ml-1 shadow-sm shrink-0 cursor-pointer"
+                                  className="p-0.5 rounded bg-white/[0.08] border border-white/10 text-white hover:bg-white/[0.15] transition-all ml-1 shadow-sm shrink-0 cursor-pointer"
                                   title="Reset Context"
                                 >
                                   <RefreshCw size={8} strokeWidth={2.5} />
@@ -355,8 +332,8 @@ export const ModelSelector: React.FC<Props> = ({
                               {/* Status Tag */}
                               {providerStatuses && providerStatuses[model.provider] && (
                                 <div className={`
-                                  text-[6px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-[4px] border shrink-0
-                                  ${isOnline ? 'bg-[#E0B86F]/8 border-[#E0B86F]/15 text-[#E0B86F]' :
+                                  text-[5.5px] font-black uppercase tracking-wider px-1 py-0.5 rounded-[3px] border shrink-0
+                                  ${isOnline ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
                                     isNoKey ? 'bg-zinc-800 border-white/[0.04] text-zinc-400' :
                                     'bg-zinc-900 border-white/[0.04] text-zinc-500'}
                                 `}>
@@ -366,20 +343,20 @@ export const ModelSelector: React.FC<Props> = ({
 
                               {/* Inline Monospace Specs Badge */}
                               {model.specs?.contextWindow && (
-                                <span className="text-[6.5px] font-mono font-bold text-muted-foreground/50 bg-white/5 px-1.5 py-0.5 rounded border border-white/5 shrink-0 ml-auto leading-none">
+                                <span className="text-[6px] font-mono font-bold text-muted-foreground/50 bg-white/5 px-1 py-0.5 rounded border border-white/5 shrink-0 ml-auto leading-none">
                                   {model.specs.contextWindow}
                                 </span>
                               )}
                             </div>
                             
-                            <p className="text-[7.5px] font-mono text-zinc-500 truncate uppercase tracking-tight mt-1 leading-none">
+                            <p className="text-[7px] font-mono text-zinc-500 truncate uppercase tracking-tight mt-0.5 leading-none">
                               {model.description || model.id}
                             </p>
                           </div>
 
                           {isSelected && (
-                            <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 shadow-md ${isNoKey ? 'bg-zinc-600' : 'bg-[#E0B86F]'}`}>
-                              <Check className="w-2.5 h-2.5 text-black" />
+                            <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 shadow-md ${isNoKey ? 'bg-zinc-600' : 'bg-white border border-white/10'}`}>
+                              <Check className={`w-2 h-2 ${isNoKey ? 'text-white' : 'text-black'}`} />
                             </div>
                           )}
                         </motion.div>
@@ -398,10 +375,10 @@ export const ModelSelector: React.FC<Props> = ({
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { 
-          background: rgba(224, 184, 111, 0.15); 
+          background: rgba(255, 255, 255, 0.05); 
           border-radius: 10px;
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(224, 184, 111, 0.35); }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
       `}} />
     </div>
   );

@@ -97,8 +97,16 @@ async function startServer() {
     }
   }));
 
-  // Security Headers
-  app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], connectSrc: ["'self'", 'http://127.0.0.1:3001', 'http://127.0.0.1:3002', 'https://generativelanguage.googleapis.com', 'https://openrouter.ai', 'https://integrate.api.nvidia.com', 'https://opencode.ai', 'https://text.pollinations.ai', 'ws://localhost:*', 'wss://localhost:*'] } }, crossOriginEmbedderPolicy: false }));
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-eval'", "'unsafe-inline'"],
+        connectSrc: ["'self'", 'http://127.0.0.1:3001', 'http://127.0.0.1:3002', 'https://generativelanguage.googleapis.com', 'https://openrouter.ai', 'https://integrate.api.nvidia.com', 'https://opencode.ai', 'https://text.pollinations.ai', 'ws://localhost:*', 'wss://localhost:*']
+      }
+    },
+    crossOriginEmbedderPolicy: false
+  }));
 
   app.use(express.json({ limit: '4mb' }));
   app.use(cors({
@@ -110,13 +118,14 @@ async function startServer() {
 
   // Session middleware
   const sessionValidationMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const fullPath = req.originalUrl.split('?')[0].replace(/\/$/, '');
     const isPublic = new Set([
       '/api/health',
       '/api/vault/status',
       '/api/vault/token',
       '/api/auth/session',
       '/api/admin/logs'
-    ]).has(req.path.replace(/\/$/, ''));
+    ]).has(fullPath);
 
     if (isPublic) return next();
 
@@ -129,7 +138,7 @@ async function startServer() {
 
   app.use('/api', sessionValidationMiddleware);
 
-  const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
+  const generalLimiter = rateLimit({ windowMs: 60 * 1000, max: 10000, standardHeaders: true, legacyHeaders: false });
   app.use('/api', generalLimiter);
 
   // Mount routes

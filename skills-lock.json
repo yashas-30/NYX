@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "21st-dev-builder-v2": {
+      "source": "trin-zenityx/21st-dev-builder-v2",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "4b999823f09d4b428b2bf63ec12ce8a84a04658a44e334ec57c8f265594e3c54"
+    },
     "brandkit": {
       "source": "Leonxlnx/taste-skill",
       "sourceType": "github",

@@ -389,8 +389,8 @@ const CODE_RELATED_PATTERNS: RegExp[] = [
   /\.\w{1,5}\b/i,
   /\b(javascript|typescript|python|rust|golang|java|kotlin|swift|ruby|php|dart|html|css|scss|sql|shell|bash|elixir|haskell|scala|solidity|lua|zig|wasm|c\+\+|c#|csharp|assembly|react|vue|angular|svelte|next\.?js|node\.?js|django|flask|fastapi|rails|laravel|spring|express)\b/i,
   /\b(code|program|function|class|struct|interface|module|package|library|framework|api|sdk|database|server|client|frontend|backend|fullstack|algorithm|data\s*structure|variable|loop|array|object|component|repository|git|npm|pip|cargo|maven|gradle|coding|programming|software|developer|development|engineer|engineering|syntax|semantic|compiler|interpreter|runtime|execution|script|scripting)\b/i,
-  /\b(implement|refactor|debug|compile|build|deploy|install|import|export|render|parse|serialize|encode|decode|encrypt|decrypt|hash|query|fetch|request|response|route|middleware|controller|model|view|template)\b/i,
-  /\b(async|await|promise|callback|closure|recursion|inheritance|polymorphism|encapsulation|abstraction|mutex|thread|process|memory|pointer|reference|generic|type|interface|protocol|trait|mixin|decorator|annotation|hook|state|prop|context|store|reducer|saga|middleware|pipeline|stream|buffer|socket|websocket|http|tcp|udp|rest|grpc|graphql|oauth|jwt|cors|csrf|xss|sql\s*injection|sanitize|validate)\b/i,
+  /\b(implement|refactor|debug|fix|compile|build|deploy|install|import|export|render|parse|serialize|encode|decode|encrypt|decrypt|hash|query|fetch|request|response|route|middleware|controller|model|view|template)\b/i,
+  /\b(async|await|promise|callback|closure|recursion|inheritance|polymorphism|encapsulation|abstraction|mutex|thread|process|memory|pointer|reference|generic|type|interface|protocol|trait|mixin|decorator|annotation|hook|state|prop|context|store|reducer|saga|thunk|observable|signal|ref|reactive|promise|callback|closure|recursion|iteration|inheritance|polymorphism|encapsulation|abstraction|composition|mixin|trait|protocol|interface|generic|template|decorator|annotation|middleware|router|controller|model|view|presenter|viewmodel|schema|migration|seed|orm|odm|query\s*builder|active\s*record|data\s*mapper|index|cache|memoiz|buffer|stream|pipe|channel|thread|process|mutex|semaphore|lock|deadlock|race\s*condition|async|await|coroutine|goroutine|green\s*thread|actor|fiber|event\s*loop|...)\b/i,
   /\b(index\.\w+|package\.json|tsconfig|webpack|vite\.config|dockerfile|makefile|cargo\.toml|go\.mod|requirements\.txt|gemfile|composer\.json|pubspec\.yaml|pom\.xml|build\.gradle)\b/i,
   /\b(error|exception|bug|stack\s*trace|traceback|segfault|null\s*pointer|undefined|type\s*error|syntax\s*error|runtime|compile|lint)\b/i,
   /\b(docker|container|kubernetes|k8s|ci\/cd|pipeline|workflow|terraform|ansible|jenkins|github\s*actions|gitlab\s*ci)\b/i
@@ -824,7 +824,7 @@ function checkCodeRelated(
   const trimmed = prompt.trim();
 
   // Greetings and identity queries are conversational — NOT code-related
-  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)\b/i;
+  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)(?:\s+(?:nyx|assistant|there|friend|everyone|all))?[.,!?\s]*$/i;
   const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx|what\s+can\s+you\s+do|what\s+are\s+you|help\s+me)\b/i;
   const CONVERSATIONAL = /^(how\s+are\s+you|how's\s+it\s+going|what's\s+up|tell\s+me\s+a\s+joke|what\s+do\s+you\s+think|how\s+do\s+you\s+feel|do\s+you\s+like|what's\s+your\s+favorite|can\s+you\s+help|thanks?\s+for|i\s+appreciate|what\s+time\s+is\s+it|good\s+job|well\s+done)/i;
   if (GREETINGS.test(trimmed) || IDENTITY.test(trimmed) || CONVERSATIONAL.test(trimmed)) return false;
@@ -835,7 +835,7 @@ function checkCodeRelated(
   if (languages.length > 0 || frameworks.length > 0) return true;
   if (MENTIONS_CODE_TECH.test(prompt)) return true;
 
-  if (['generate', 'refactor', 'debug', 'convert', 'optimize', 'review', 'integrate', 'test', 'deploy'].includes(intent)) {
+  if (['generate', 'refactor', 'debug', 'convert', 'optimize', 'review', 'integrate', 'test', 'deploy', 'explain', 'general'].includes(intent)) {
     if (CODE_RELATED_PATTERNS.some(p => p.test(prompt))) return true;
   }
 

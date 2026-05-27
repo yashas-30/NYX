@@ -136,6 +136,7 @@ export const LocalModelRunner = {
     return new Promise((resolve) => {
       const commands = [
         'nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits',
+        '"C:\\Windows\\System32\\nvidia-smi.exe" --query-gpu=memory.free --format=csv,noheader,nounits',
         '"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" --query-gpu=memory.free --format=csv,noheader,nounits'
       ];
 
@@ -372,17 +373,25 @@ export const LocalModelRunner = {
 
     const primaryGPU = gpus[0];
     let availableVram = primaryGPU.vramBytes;
+    let freeNvidiaVram = 0;
     
     if (primaryGPU.vendor.toLowerCase().includes('nvidia') || primaryGPU.model.toLowerCase().includes('nvidia')) {
       try {
-        const freeNvidiaVram = await this.getFreeVram();
+        freeNvidiaVram = await this.getFreeVram();
         if (freeNvidiaVram > 0) {
           availableVram = freeNvidiaVram;
         }
       } catch {}
     }
 
-    const baselineOverhead = 750 * 1024 * 1024;
+    // Secondary fallback: if we couldn't get free VRAM dynamically, deduct a conservative overhead baseline (1.5GB or 25% total VRAM)
+    if (freeNvidiaVram <= 0) {
+      const defaultOverhead = Math.max(1500 * 1024 * 1024, Math.floor(primaryGPU.vramBytes * 0.25));
+      availableVram = Math.max(0, primaryGPU.vramBytes - defaultOverhead);
+    }
+
+    // Dynamic safety baseline: low-VRAM GPUs (<= 6.2GB VRAM) require a larger baseline buffer (1.2GB) due to OS/Electron/DWM overhead
+    const baselineOverhead = primaryGPU.vramBytes <= 6.2 * 1024 * 1024 * 1024 ? 1200 * 1024 * 1024 : 750 * 1024 * 1024;
     const usableVram = Math.max(0, availableVram - baselineOverhead);
 
     const computeBuffer = batchSize * 512 * 4;
@@ -687,6 +696,147 @@ export const LocalModelRunner = {
   async _startInternal(modelId: string, settings?: any, fallbackStage: 'none' | 'vulkan' | 'cpu' = 'none'): Promise<void> {
     if (activeModelId === modelId && activeProcess && activeContextSize >= (settings?.contextSize || 2048)) {
       return; // Already running with equal or larger context window
+    }
+
+    if (modelId.startsWith('airllm-')) {
+      if (modelState !== 'idle' && modelState !== 'running') {
+        throw new Error(`Cannot start model: currently ${modelState}`);
+      }
+
+      if (activeProcess) {
+        console.log('Stopping active local model runner to load AirLLM model...');
+        await _stop();
+      }
+
+      modelState = 'starting';
+      startProgress = 5;
+
+      try {
+        const presets = LocalModelManager.listModels();
+        const modelPreset = presets.find(m => m.id === modelId);
+        if (!modelPreset) {
+          throw new Error(`AirLLM Model preset '${modelId}' not found.`);
+        }
+
+        let hfRepoId = modelPreset.url;
+        if (hfRepoId === 'local-model-llama') {
+          hfRepoId = path.join(BASE_DIR, 'models', 'local-llama');
+          if (!fs.existsSync(hfRepoId) || fs.readdirSync(hfRepoId).length === 0) {
+            throw new Error(`Local model weights folder not found. Please create a folder named 'local-llama' inside your '.nyx-models/models/' directory (e.g. .nyx-models/models/local-llama) and place your Llama PyTorch/Safetensors files in it.`);
+          }
+        }
+        
+        const airllmSavingPath = path.join(BASE_DIR, 'airllm', modelId);
+
+        let pythonPath = 'python';
+        const vscodeSettingsPath = path.join(BASE_DIR, '..', '.vscode', 'settings.json');
+        if (fs.existsSync(vscodeSettingsPath)) {
+          try {
+            const vscodeSettings = JSON.parse(fs.readFileSync(vscodeSettingsPath, 'utf-8'));
+            if (vscodeSettings['python.defaultInterpreterPath']) {
+              pythonPath = vscodeSettings['python.defaultInterpreterPath'];
+            }
+          } catch {}
+        }
+
+        const pythonScriptPath = path.join(BASE_DIR, '..', 'server', 'python', 'airllm_service.py');
+        const compression = '4bit';
+        const port = 12345;
+
+        console.log(`Spawning Python AirLLM server for: ${modelPreset.name} (repo: ${hfRepoId}, compression: ${compression})`);
+        startProgress = 30;
+
+        const args = [
+          pythonScriptPath,
+          '--model', hfRepoId,
+          '--port', String(port),
+          '--compression', compression,
+          '--saving-path', airllmSavingPath
+        ];
+
+        activeProcess = spawn(pythonPath, args, {
+          cwd: path.dirname(pythonScriptPath),
+          detached: false,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        registerProcess(activeProcess);
+
+        activeModelId = modelId;
+
+        const logFilePath = path.join(BASE_DIR, '..', '.nyx-logs', 'llama-server.log');
+        try {
+          const logsDir = path.dirname(logFilePath);
+          if (!fs.existsSync(logsDir)) {
+            fs.mkdirSync(logsDir, { recursive: true });
+          }
+          fs.writeFileSync(logFilePath, '', 'utf-8');
+        } catch {}
+
+        const stderrLogs: string[] = [];
+
+        activeProcess.stdout?.on('data', (data) => {
+          const str = data.toString().trim();
+          if (str) {
+            console.log(`[AirLLM Server]: ${str}`);
+            try {
+              fs.appendFileSync(logFilePath, `[STDOUT] ${str}\n`, 'utf-8');
+            } catch {}
+          }
+        });
+
+        activeProcess.stderr?.on('data', (data) => {
+          const str = data.toString().trim();
+          if (str) {
+            stderrLogs.push(str);
+            if (stderrLogs.length > 20) stderrLogs.shift();
+            console.error(`[AirLLM Server Err]: ${str}`);
+            try {
+              fs.appendFileSync(logFilePath, `[STDERR] ${str}\n`, 'utf-8');
+            } catch {}
+          }
+        });
+
+        startProgress = 60;
+        let healthy = false;
+        const maxAttempts = 1200; 
+        for (let i = 0; i < maxAttempts; i++) {
+          if (activeProcess.exitCode !== null) {
+            const exitMsg = stderrLogs.join('\n') || `Exit code: ${activeProcess.exitCode}`;
+            throw new Error(`AirLLM server exited prematurely. Stderr:\n${exitMsg}`);
+          }
+
+          await new Promise(r => setTimeout(r, 1000));
+          try {
+            const res = await fetch('http://127.0.0.1:12345/health');
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === 'ok') {
+                healthy = true;
+                break;
+              }
+            }
+          } catch {
+            // Keep waiting
+          }
+        }
+
+        if (!healthy) {
+          throw new Error('AirLLM server did not become healthy in time.');
+        }
+
+        startProgress = 100;
+        modelState = 'running';
+        activeContextSize = 4096;
+        startHealthCheckLoop();
+        console.log(`AirLLM server running successfully on http://localhost:12345 with model ${modelPreset.name}`);
+        return;
+
+      } catch (err: any) {
+        modelState = 'idle';
+        startProgress = 0;
+        await _stop();
+        throw err;
+      }
     }
 
     if (modelState !== 'idle' && modelState !== 'downloading' && modelState !== 'running') {

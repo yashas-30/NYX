@@ -9,22 +9,25 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useDashboardState } from '@/src/hooks/useDashboardState';
 import { useChatSessions } from '@/src/hooks/useChatSessions';
 import { CoderPage } from '@/src/features/coder/CoderPage';
-import { SettingsView } from './dashboard/SettingsView';
+import { SettingsView } from './dashboard/settings/SettingsView';
+import { useCoderLogic } from '@/src/features/coder/hooks/useCoderLogic';
 import { AVAILABLE_MODELS } from '@/src/config/models';
 import { useTheme } from '../context/ThemeContext';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
   PanelLeftClose, PanelLeftOpen, Plus, MessageSquare,
-  Box, Settings, Trash2, ChevronRight, User
+  Box, Settings, Trash2, ChevronRight, User, Activity,
+  ArrowLeft, ArrowRight, History, Clock, Folder, ChevronDown,
+  Library
 } from 'lucide-react';
 import { toast } from '@/src/components/ui/sonner';
 
 const ModelRegistryView = lazy(() =>
-  import('./dashboard/ModelRegistryView').then(m => ({ default: m.ModelRegistryView }))
+  import('./dashboard/registry/ModelRegistryView').then(m => ({ default: m.ModelRegistryView }))
 );
 
 const LoadingFallback = () => (
-  <div className="flex items-center justify-center h-full bg-[#191918]">
+  <div className="flex items-center justify-center h-full bg-[#0B0E14]">
     <div className="flex flex-col items-center gap-3">
       <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
       <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">Loading</span>
@@ -69,6 +72,16 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
   const { theme } = useTheme();
   const chatSessions = useChatSessions();
+
+  const coderState = useCoderLogic({
+    apiKeys,
+    modelSettings,
+    trackUsage,
+    models,
+    setModel,
+    chatSessions,
+    mode: sidebarTab
+  });
   const { sessions, activeSid, deleteSession, switchSession, createSession } = chatSessions;
 
   const filteredSessions = sessions.filter(s =>
@@ -82,7 +95,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
   return (
     <ErrorBoundary>
-      <main className={`h-[100dvh] w-screen overflow-hidden flex bg-[#191918] text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
+      <main className={`h-[100dvh] w-screen overflow-hidden flex bg-background text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
 
         {/* Backdrop for mobile */}
         <AnimatePresence>
@@ -103,133 +116,137 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
           initial="open"
           animate={sidebarOpen ? 'open' : 'closed'}
           transition={{ type: 'spring', stiffness: 380, damping: 35 }}
-          className={`h-full overflow-hidden flex flex-col bg-[#222221] border-r border-white/[0.03] relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl w-[260px]' : 'flex-none z-20'}`}
+          className={`h-full overflow-hidden flex flex-col bg-secondary border-r border-white/[0.04] relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl w-[260px]' : 'flex-none z-20'}`}
         >
-          <div className="flex flex-col h-full min-w-[260px]">
-            {/* Sidebar Top Header (Claude Desktop style close button positioning) */}
-            <div className="flex items-center justify-between px-4 pt-3.5 pb-1 select-none">
-              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#E0B86F]">NYX</span>
-              <motion.button
-                whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setSidebarOpen(false)}
-                className="p-1.5 rounded-lg text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer"
-                title="Collapse Sidebar"
-              >
-                <PanelLeftClose size={13} />
-              </motion.button>
+          <div className="flex flex-col h-full min-w-[260px] bg-background">
+            {/* Sidebar Top Header (Stitch Design Flat) */}
+            <div className="px-4.5 pt-3.5 pb-2 select-none border-b border-white/[0.03]">
+              
+              {/* Toolbar: Sidebar Toggle + Back/Forward Arrows */}
+              <div className="flex items-center gap-3 text-zinc-500">
+                <motion.button
+                  whileHover={{ scale: 1.05, color: '#f5f5f5' }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setSidebarOpen(false)}
+                  className="p-1 rounded hover:bg-white/5 text-zinc-400 transition-all cursor-pointer"
+                  title="Collapse Sidebar"
+                >
+                  <PanelLeftClose size={13} />
+                </motion.button>
+                <div className="flex items-center gap-2 text-zinc-600">
+                  <motion.button
+                    whileHover={{ scale: 1.05, color: '#f5f5f5' }}
+                    className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                  >
+                    <ArrowLeft size={12} />
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05, color: '#f5f5f5' }}
+                    className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                  >
+                    <ArrowRight size={12} />
+                  </motion.button>
+                </div>
+              </div>
             </div>
 
-            {/* Claude-style Segmented Control */}
-            <div className="flex bg-[#191918] p-1 rounded-xl border border-white/5 mx-3.5 mt-2 mb-2.5">
-              <button
-                onClick={() => setSidebarTab('chat')}
-                className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all text-center cursor-pointer ${
-                  sidebarTab === 'chat'
-                    ? 'bg-[#2D2D2B] text-[#E0B86F] shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                Chat
-              </button>
-              <button
-                onClick={() => {
-                  setSidebarTab('code');
-                  toast.info("Workspace explorer view compiled cleanly.");
-                }}
-                className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all text-center cursor-pointer ${
-                  sidebarTab === 'code'
-                    ? 'bg-[#2D2D2B] text-[#E0B86F] shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                Code
-              </button>
-            </div>
-
-            {/* Top Primary Actions (Claude minimal actions with gold grid buttons) */}
-            <div className="px-3.5 pb-2 space-y-1.5">
+            {/* Top Primary Actions (Stitch design tabs) */}
+            <div className="px-3.5 pt-3 pb-2 space-y-1">
               <motion.button
-                whileHover={{ scale: 1.01, backgroundColor: 'rgba(224,184,111,0.06)' }}
+                whileHover={{ backgroundColor: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)' }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => {
                   createSession([]);
                   setActiveMode('coder');
                 }}
-                className="w-full flex items-center justify-center gap-2.5 px-3.5 py-2.5 rounded-xl text-[11px] font-bold tracking-wide transition-all duration-200 cursor-pointer border border-[#E0B86F]/20 hover:border-[#E0B86F]/40 text-[#E0B86F] bg-[#E0B86F]/5"
+                className="w-full flex items-center justify-start gap-2 px-3 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer border border-white/[0.04] text-zinc-300 bg-white/[0.02] mb-1"
               >
-                <Plus size={13} strokeWidth={2.5} />
-                <span className="translate-y-[-0.5px]">New Chat</span>
+                <Plus size={13} strokeWidth={1.8} className="text-zinc-400" />
+                <span>New Conversation</span>
               </motion.button>
 
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  onClick={() => setActiveMode('registry')}
-                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[10px] font-bold tracking-wide transition-all border cursor-pointer ${
-                    activeMode === 'registry'
-                      ? 'bg-white/[0.08] text-[#E0B86F] border-white/10'
-                      : 'bg-white/[0.01] border-transparent text-zinc-400 hover:text-white hover:bg-white/[0.03]'
-                  }`}
-                >
-                  <Box size={11} strokeWidth={2} />
-                  <span>Models</span>
-                </button>
-                <button
-                  onClick={() => setActiveMode('settings')}
-                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[10px] font-bold tracking-wide transition-all border cursor-pointer ${
-                    activeMode === 'settings'
-                      ? 'bg-white/[0.08] text-[#E0B86F] border-white/10'
-                      : 'bg-white/[0.01] border-transparent text-zinc-400 hover:text-white hover:bg-white/[0.03]'
-                  }`}
-                >
-                  <Settings size={11} strokeWidth={2} />
-                  <span>Settings</span>
-                </button>
-              </div>
-            </div>
+              <button
+                onClick={() => {
+                  setSidebarTab('chat');
+                  setActiveMode('coder');
+                }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left cursor-pointer ${
+                  sidebarTab === 'chat'
+                    ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                }`}
+              >
+                <MessageSquare size={13} className={sidebarTab === 'chat' ? 'text-zinc-200' : 'text-zinc-500'} />
+                <span>Chat Agent</span>
+              </button>
 
-            {/* Recents Section */}
-            <div className="px-4 pt-3.5 pb-1.5">
-              <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-zinc-500 select-none">
-                Recents
-              </span>
+              <button
+                onClick={() => {
+                  setSidebarTab('code');
+                  setActiveMode('coder');
+                }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left cursor-pointer ${
+                  sidebarTab === 'code'
+                    ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                }`}
+              >
+                <Box size={13} className={sidebarTab === 'code' ? 'text-zinc-200' : 'text-zinc-500'} />
+                <span>Coder Agent</span>
+              </button>
             </div>
 
             {/* Chat Session List */}
-            <div className="flex-1 overflow-y-auto px-2 space-y-1 scrollbar-none">
-              <AnimatePresence>
-                {filteredSessions.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-[10px] text-zinc-600 font-bold uppercase tracking-wider">No chats yet</p>
-                  </div>
-                ) : (
-                  filteredSessions.map(session => (
-                    <SessionItem
-                      key={session.id}
-                      session={session}
-                      isActive={session.id === activeSid}
-                      onClick={() => {
-                        switchSession(session.id);
-                        setActiveMode('coder');
-                      }}
-                      onDelete={() => deleteSession(session.id)}
-                    />
-                  ))
-                )}
-              </AnimatePresence>
+            <div className="flex-1 overflow-y-auto px-2 space-y-1.5 scrollbar-none pt-3">
+              <div className="space-y-0.5">
+                <AnimatePresence>
+                  {filteredSessions.length === 0 ? (
+                    <div className="text-left py-4 pl-4.5">
+                      <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">No conversations</p>
+                    </div>
+                  ) : (
+                    filteredSessions.map(session => (
+                      <SessionItem
+                        key={session.id}
+                        session={session}
+                        isActive={session.id === activeSid}
+                        onClick={() => {
+                          switchSession(session.id);
+                          setActiveMode('coder');
+                        }}
+                        onDelete={() => deleteSession(session.id)}
+                      />
+                    ))
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
-            {/* Bottom user badge (Claude Desktop flat layout) */}
-            <div className="px-4 py-3.5 border-t border-white/[0.03] bg-[#1E1E1D] mt-auto">
-              <div className="flex items-center gap-3 p-1 rounded-xl">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E0B86F] to-amber-600 flex items-center justify-center shrink-0 shadow-md select-none">
-                  <User size={13} className="text-black" strokeWidth={2.5} />
-                </div>
-                <div className="flex flex-col min-w-0 select-none">
-                  <span className="text-[11px] font-black tracking-wide text-foreground/80 truncate uppercase">User</span>
-                  <span className="text-[8px] text-[#E0B86F] font-black tracking-widest uppercase">Pro Account</span>
-                </div>
-              </div>
+            {/* Bottom Section (Model Library & Settings) */}
+            <div className="px-4.5 py-3.5 border-t border-white/[0.03] mt-auto space-y-3">
+              <button
+                onClick={() => {
+                  setActiveMode('registry');
+                }}
+                className={`w-full flex items-center gap-2.5 transition-all text-left cursor-pointer text-xs font-semibold ${
+                  activeMode === 'registry' ? 'text-white font-bold' : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Library size={13} className={activeMode === 'registry' ? 'text-[#22D3EE]' : 'text-zinc-500'} />
+                <span>Model Library</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveMode('settings');
+                }}
+                className={`w-full flex items-center gap-2.5 transition-all text-left cursor-pointer text-xs font-semibold ${
+                  activeMode === 'settings' ? 'text-white font-bold' : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Settings size={13} className={activeMode === 'settings' ? 'text-white' : 'text-zinc-500'} />
+                <span>Settings</span>
+              </button>
             </div>
           </div>
         </motion.aside>
@@ -244,7 +261,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setSidebarOpen(true)}
-              className="absolute top-3.5 left-3.5 z-30 p-2 rounded-xl bg-[#222221] hover:bg-[#2D2D2B] border border-white/5 text-zinc-500 hover:text-white transition-all shadow-md cursor-pointer"
+              className="absolute top-3.5 left-3.5 z-30 p-2 rounded-xl bg-secondary hover:bg-secondary/80 border border-white/[0.04] text-zinc-500 hover:text-white transition-all shadow-md cursor-pointer"
             >
               <PanelLeftOpen size={14} />
             </motion.button>
@@ -252,7 +269,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
         </AnimatePresence>
 
         {/* ── Main Content Canvas ────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 h-full relative overflow-hidden bg-[#191918]">
+        <div className="flex-1 min-w-0 h-full relative overflow-hidden bg-background">
           <AnimatePresence mode="wait">
             {activeMode === 'coder' ? (
               <motion.div
@@ -271,16 +288,33 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                     setModelSettings={setModelSettings}
                     trackUsage={trackUsage}
                     providerStatuses={statuses}
-                    models={models}
-                    setModel={setModel}
                     activeMode={activeMode}
                     setActiveMode={setActiveMode}
                     sidebarOpen={sidebarOpen}
                     onToggleSidebar={() => setSidebarOpen(p => !p)}
                     chatSessions={chatSessions}
+                    mode={sidebarTab}
+
+                    // Pass down lifted state props
+                    activeAgent={coderState.activeAgent}
+                    isLoading={coderState.isLoading}
+                    history={coderState.history}
+                    metrics={coderState.metrics}
+                    models={coderState.models}
+                    setModel={coderState.setModel}
+                    runCoder={coderState.runCoder}
+                    stopCoder={coderState.stopCoder}
+                    clearHistory={coderState.clearHistory}
+                    suggestedPrompts={coderState.suggestedPrompts}
+                    subagentTasks={coderState.subagentTasks}
+                    webSearchEnabled={coderState.webSearchEnabled}
+                    setWebSearchEnabled={coderState.setWebSearchEnabled}
+                    codebaseKnowledgeEnabled={coderState.codebaseKnowledgeEnabled}
+                    setCodebaseKnowledgeEnabled={coderState.setCodebaseKnowledgeEnabled}
                   />
                 </ErrorBoundary>
               </motion.div>
+
             ) : activeMode === 'registry' ? (
               <motion.div
                 key="registry"
@@ -351,7 +385,7 @@ const SideNavButton: React.FC<{
         : 'text-zinc-400 hover:text-white hover:bg-white/[0.03] border border-transparent'
     }`}
   >
-    <span className={`transition-all duration-200 ${active ? 'scale-105 text-[#E0B86F]' : 'opacity-70 text-zinc-400'}`}>{icon}</span>
+    <span className={`transition-all duration-200 ${active ? 'scale-105 text-[#22D3EE]' : 'opacity-70 text-zinc-400'}`}>{icon}</span>
     <span className="translate-y-[-0.5px]">{label}</span>
   </motion.button>
 );
@@ -365,40 +399,50 @@ const SessionItem: React.FC<{
 }> = ({ session, isActive, onClick, onDelete }) => {
   const [hovered, setHovered] = useState(false);
 
+  const timeAgo = (timestamp: number) => {
+    const diff = Date.now() - timestamp;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'now';
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
+  };
+
   return (
     <motion.div
       layout
-      whileHover={{ scale: 1.01 }}
-      whileTap={{ scale: 0.98 }}
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={`group relative flex items-center gap-2.5 px-3.5 py-2 rounded-xl cursor-pointer transition-all border ${
+      className={`group relative flex items-center justify-between px-3.5 py-1.5 rounded-md cursor-pointer transition-all ${
         isActive
-          ? 'bg-white/[0.06] text-white border-white/[0.08] shadow-sm font-bold'
-          : 'text-zinc-400 hover:bg-white/[0.03] hover:text-white border-transparent'
+          ? 'text-zinc-200 font-semibold bg-white/[0.03]'
+          : 'text-zinc-400 hover:bg-white/[0.02] hover:text-zinc-200'
       }`}
       onClick={onClick}
     >
-      <MessageSquare size={12} className={`shrink-0 transition-transform duration-200 ${isActive ? 'scale-105 text-[#E0B86F]' : 'opacity-40 group-hover:scale-105 group-hover:opacity-75'}`} />
-      <span className="flex-1 text-[11px] font-medium truncate translate-y-[-0.5px] tracking-wide">{session.title}</span>
-      <AnimatePresence>
-        {(hovered || isActive) && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ duration: 0.15 }}
+      <span className="flex-1 text-[11px] truncate tracking-normal font-medium">{session.title}</span>
+      
+      <div className="flex items-center gap-2 shrink-0 select-none ml-2">
+        {hovered ? (
+          <button
             onClick={e => { e.stopPropagation(); onDelete(); }}
-            className="shrink-0 p-1.5 rounded-lg bg-red-500/10 text-red-400/60 hover:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
+            className="p-1 rounded bg-red-500/10 text-red-400/60 hover:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
+            title="Delete Chat"
           >
-            <Trash2 size={10} />
-          </motion.button>
+            <Trash2 size={9} />
+          </button>
+        ) : isActive ? (
+          <span className="w-1.5 h-1.5 rounded-full bg-[#0071E3] shadow-[0_0_6px_#0071E3]" />
+        ) : (
+          <span className="text-[9px] text-zinc-500 font-mono tracking-tighter">{timeAgo(session.updatedAt)}</span>
         )}
-      </AnimatePresence>
+      </div>
     </motion.div>
   );
 };

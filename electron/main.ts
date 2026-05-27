@@ -287,7 +287,7 @@ function createWindow(expressPort: number) {
       script-src ${scriptSrc};
       style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
       font-src 'self' https://fonts.gstatic.com;
-      connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* https://*.googleapis.com https://*.huggingface.co;
+      connect-src 'self' http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:* https://*.googleapis.com https://*.huggingface.co https://*.openrouter.ai https://*.nvidia.com https://*.opencode.ai https://*.pollinations.ai;
       img-src 'self' data: https:;
       media-src 'self';
       frame-ancestors 'none';

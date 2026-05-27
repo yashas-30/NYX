@@ -1,18 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import { IncomingMessage } from 'http';
+import { IncomingMessage, ClientRequest } from 'http';
 import os from 'os';
 import * as si from 'systeminformation';
 import logger from './logger.ts';
-import PQueueModule from 'p-queue';
+// No download queue needed — downloads are tracked per-modelId in activeDownloads map
 
-// Robust ES module interop wrapper for ESM/CJS bundling in Electron/Node
-const PQueue = (typeof PQueueModule === 'function'
-  ? PQueueModule
-  : (PQueueModule as any).default) as typeof PQueueModule;
-
-const downloadQueue = new PQueue({ concurrency: 1 });
 
 export interface ModelPreset {
   id: string;
@@ -223,15 +217,15 @@ export const MODEL_PRESETS: ModelPreset[] = [
   // ── MICROSOFT (PHI) ──────────────────────────────────────────────────────
   {
     id: 'phi-3-mini-instruct',
-    name: 'Phi-3 Mini Instruct (Q4_K_M)',
+    name: 'Phi-3.1 Mini Instruct (Q4_K_M)',
     provider: 'microsoft',
     paramCount: '3.8B',
     quantization: 'Q4_K_M',
     contextLength: '128K',
     size: '2.4 GB',
-    url: 'https://huggingface.co/bartowski/Phi-3-mini-128k-instruct-GGUF/resolve/main/Phi-3-mini-128k-instruct-Q4_K_M.gguf',
-    fileName: 'Phi-3-mini-128k-instruct-Q4_K_M.gguf',
-    description: 'Microsoft\'s Phi-3 Mini 128K context model. Highly optimized small language model with outstanding logic.',
+    url: 'https://huggingface.co/bartowski/Phi-3.1-mini-128k-instruct-GGUF/resolve/main/Phi-3.1-mini-128k-instruct-Q4_K_M.gguf',
+    fileName: 'Phi-3.1-mini-128k-instruct-Q4_K_M.gguf',
+    description: 'Microsoft\'s Phi-3.1 Mini 128K context model. Highly optimized small language model with outstanding logic.',
     ramRequired: '6 GB RAM',
     vramRequired: '4 GB VRAM'
   },
@@ -243,8 +237,8 @@ export const MODEL_PRESETS: ModelPreset[] = [
     quantization: 'Q4_K_M',
     contextLength: '128K',
     size: '2.5 GB',
-    url: 'https://huggingface.co/bartowski/Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf',
-    fileName: 'Phi-4-mini-instruct-Q4_K_M.gguf',
+    url: 'https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF/resolve/main/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf',
+    fileName: 'microsoft_Phi-4-mini-instruct-Q4_K_M.gguf',
     description: 'Microsoft\'s Phi-4 Mini — punches well above its weight with exceptional math and coding capabilities.',
     ramRequired: '4 GB RAM',
     vramRequired: '3 GB VRAM',
@@ -600,12 +594,69 @@ export const MODEL_PRESETS: ModelPreset[] = [
     description: 'NVIDIA\'s customized Llama-3 70B model with superior instruction following and conversation quality.',
     ramRequired: '48 GB RAM',
     vramRequired: '24 GB VRAM'
+  },
+  // ── AIRLLM LARGE SCALE ENGINE ──────────────────────────────────────────────
+  {
+    id: 'airllm-llama-3.3-70b',
+    name: 'Llama 3.3 70B Instruct (AirLLM)',
+    provider: 'meta',
+    paramCount: '70B',
+    quantization: '4-bit Layered',
+    contextLength: '128K',
+    size: '42.5 GB',
+    url: 'meta-llama/Llama-3.3-70B-Instruct',
+    fileName: 'Llama-3.3-70B-Instruct',
+    description: 'Run Meta\'s flagship 70B model layer-by-layer on standard GPUs. Perfect for limited VRAM systems (4GB+). Uses disk-streaming.',
+    ramRequired: '8 GB RAM',
+    vramRequired: '4 GB VRAM'
+  },
+  {
+    id: 'airllm-qwen-2.5-coder-32b',
+    name: 'Qwen 2.5 Coder 32B (AirLLM)',
+    provider: 'qwen',
+    paramCount: '32B',
+    quantization: '4-bit Layered',
+    contextLength: '32K',
+    size: '20.3 GB',
+    url: 'Qwen/Qwen2.5-Coder-32B-Instruct',
+    fileName: 'Qwen2.5-Coder-32B-Instruct',
+    description: 'Run Qwen\'s flagship 32B code generation model layer-by-layer on consumer GPUs. Optimized for deep codebase comprehension.',
+    ramRequired: '8 GB RAM',
+    vramRequired: '4 GB VRAM'
+  },
+  {
+    id: 'airllm-deepseek-r1-8b',
+    name: 'DeepSeek R1 Distill Llama 8B (AirLLM)',
+    provider: 'deepseek',
+    paramCount: '8B',
+    quantization: '4-bit Layered',
+    contextLength: '32K',
+    size: '4.9 GB',
+    url: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B',
+    fileName: 'DeepSeek-R1-Distill-Llama-8B',
+    description: 'Run DeepSeek\'s Transfer-Reasoning 8B Llama model. Extremely deep reasoning patterns offloaded sequentially to low VRAM.',
+    ramRequired: '8 GB RAM',
+    vramRequired: '4 GB VRAM'
+  },
+  {
+    id: 'airllm-local-llama',
+    name: 'My Local Llama Model (AirLLM)',
+    provider: 'meta',
+    paramCount: 'Custom',
+    quantization: '4-bit Layered',
+    contextLength: '8K',
+    size: 'Custom',
+    url: 'local-model-llama',
+    fileName: 'local-llama-folder',
+    description: 'Load your own local Llama weights folder from .nyx-models/models/local-llama (safetensors format) layer-by-layer using AirLLM.',
+    ramRequired: '8 GB RAM',
+    vramRequired: '4 GB VRAM'
   }
 ];
 
 export interface DownloadProgress {
   modelId: string;
-  status: 'idle' | 'downloading' | 'completed' | 'failed';
+  status: 'idle' | 'downloading' | 'paused' | 'completed' | 'failed';
   bytesDownloaded: number;
   totalBytes: number;
   progressPercentage: number;
@@ -623,12 +674,30 @@ if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
 
 // Active downloads map
 const activeDownloads = new Map<string, DownloadProgress>();
-let downloadStates: Record<string, 'idle' | 'downloading' | 'completed' | 'failed'> = {};
+// Active HTTP request handles (for pause/cancel)
+const activeRequests = new Map<string, ClientRequest>();
+let downloadStates: Record<string, 'idle' | 'downloading' | 'paused' | 'completed' | 'failed'> = {};
 
 // Load states from disk if exists
 try {
   if (fs.existsSync(STATE_FILE)) {
     downloadStates = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    // Sanitize stale states on startup:
+    // - 'downloading' → 'paused'  (server restarted mid-download, .part file is intact)
+    // - 'failed'      → 'idle'    (allow the user to retry)
+    let sanitized = false;
+    for (const [modelId, state] of Object.entries(downloadStates)) {
+      if (state === 'downloading') {
+        downloadStates[modelId] = 'paused';
+        sanitized = true;
+        logger.info({ modelId }, 'Stale downloading state reset to paused on startup');
+      } else if (state === 'failed') {
+        downloadStates[modelId] = 'idle';
+        sanitized = true;
+        logger.info({ modelId }, 'Stale failed state reset to idle on startup');
+      }
+    }
+    if (sanitized) saveStates();
   }
 } catch (e) {
   logger.error({ err: e }, 'Error loading model download state file');
@@ -698,22 +767,38 @@ export const LocalModelManager = {
     }
 
     return scannedPresets.map(preset => {
-      const filePath = path.join(MODELS_DIR, preset.fileName);
-      let exists = fs.existsSync(filePath);
-      let status: 'idle' | 'downloading' | 'completed' | 'failed' = 'idle';
+      const isAirLLM = preset.id.startsWith('airllm-');
+      const airllmPath = path.join(BASE_DIR, 'airllm', preset.id);
+      const filePath = isAirLLM ? airllmPath : path.join(MODELS_DIR, preset.fileName);
+      let exists = false;
       let fileSizeBytes = 0;
+      let status: 'idle' | 'downloading' | 'paused' | 'completed' | 'failed' = 'idle';
 
-      if (exists) {
-        try {
-          fileSizeBytes = fs.statSync(filePath).size;
-          if (fileSizeBytes < 10 * 1024 * 1024) { // Under 10MB is definitely corrupt for these models
-            logger.warn({ modelName: preset.name, fileSizeBytes }, 'Model is corrupt. Deleting and recovering...');
-            fs.unlinkSync(filePath);
+      if (isAirLLM) {
+        exists = fs.existsSync(airllmPath) && fs.readdirSync(airllmPath).length > 0;
+        if (exists) {
+          try {
+            const files = fs.readdirSync(airllmPath);
+            for (const file of files) {
+              const stat = fs.statSync(path.join(airllmPath, file));
+              if (stat.isFile()) fileSizeBytes += stat.size;
+            }
+          } catch {}
+        }
+      } else {
+        exists = fs.existsSync(filePath);
+        if (exists) {
+          try {
+            fileSizeBytes = fs.statSync(filePath).size;
+            if (fileSizeBytes < 10 * 1024 * 1024) { // Under 10MB is definitely corrupt for these models
+              logger.warn({ modelName: preset.name, fileSizeBytes }, 'Model is corrupt. Deleting and recovering...');
+              fs.unlinkSync(filePath);
+              exists = false;
+              fileSizeBytes = 0;
+            }
+          } catch {
             exists = false;
-            fileSizeBytes = 0;
           }
-        } catch {
-          exists = false;
         }
       }
 
@@ -726,6 +811,8 @@ export const LocalModelManager = {
         // GGUF was deleted manually — reset to idle
         downloadStates[preset.id] = 'idle';
         status = 'idle';
+      } else if (downloadStates[preset.id] === 'paused') {
+        status = 'paused';
       } else if (downloadStates[preset.id]) {
         status = downloadStates[preset.id] === 'downloading' ? 'idle' : (downloadStates[preset.id] as any);
       }
@@ -814,18 +901,33 @@ export const LocalModelManager = {
 
     const activePreset = preset!;
     const filePath = path.join(MODELS_DIR, activePreset.fileName);
-    if (fs.existsSync(filePath)) {
-      return { status: 'completed', message: 'Model already downloaded.' };
+    
+    if (activePreset.id.startsWith('airllm-')) {
+      const airllmPath = path.join(BASE_DIR, 'airllm', activePreset.id);
+      if (fs.existsSync(airllmPath) && fs.readdirSync(airllmPath).length > 0) {
+        return { status: 'completed', message: 'Model already sharded.' };
+      }
+    } else {
+      if (fs.existsSync(filePath)) {
+        return { status: 'completed', message: 'Model already downloaded.' };
+      }
     }
 
     if (activeDownloads.has(modelId) && activeDownloads.get(modelId)!.status === 'downloading') {
       return { status: 'downloading', message: 'Download is already in progress.' };
     }
 
+    // Restore paused byte count for accurate progress display
+    const partPath = path.join(MODELS_DIR, activePreset.fileName) + '.part';
+    let resumedBytes = 0;
+    if (fs.existsSync(partPath)) {
+      try { resumedBytes = fs.statSync(partPath).size; } catch {}
+    }
+
     const progress: DownloadProgress = {
       modelId,
       status: 'downloading',
-      bytesDownloaded: 0,
+      bytesDownloaded: resumedBytes,
       totalBytes: 0,
       progressPercentage: 0,
       speedMbps: 0
@@ -835,26 +937,122 @@ export const LocalModelManager = {
     downloadStates[modelId] = 'downloading';
     saveStates();
 
-    this.downloadFile(activePreset.url, filePath, progress).then(() => {
-      progress.status = 'completed';
-      progress.progressPercentage = 100;
-      activeDownloads.delete(modelId);
-      downloadStates[modelId] = 'completed';
-      saveStates();
-      logger.info({ modelName: activePreset.name, filePath }, 'Successfully downloaded local model');
-    }).catch((err) => {
-      progress.status = 'failed';
-      progress.error = err.message || 'Download failed';
-      activeDownloads.delete(modelId);
-      downloadStates[modelId] = 'failed';
-      saveStates();
-      logger.error({ err, modelName: preset!.name }, 'Failed to download local model');
-      if (fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch {}
-      }
-    });
+    if (activePreset.id.startsWith('airllm-')) {
+      const airllmPath = path.join(BASE_DIR, 'airllm', activePreset.id);
+      fs.mkdirSync(airllmPath, { recursive: true });
+      fs.writeFileSync(path.join(airllmPath, 'metadata.json'), JSON.stringify({ sharded: false, hf_repo: activePreset.url }), 'utf-8');
+      
+      setTimeout(() => {
+        progress.status = 'completed';
+        progress.progressPercentage = 100;
+        activeDownloads.delete(modelId);
+        downloadStates[modelId] = 'completed';
+        saveStates();
+        logger.info({ modelName: activePreset.name }, 'Completed mock download for AirLLM metadata folder. Real loading triggers on first run.');
+      }, 500);
+    } else {
+      this.downloadFile(activePreset.url, filePath, progress).then(() => {
+        // If the promise resolved due to a deliberate pause or cancel, don't mark as completed
+        if (progress.status === 'paused' || progress.status === 'failed') {
+          return;
+        }
+        progress.status = 'completed';
+        progress.progressPercentage = 100;
+        activeDownloads.delete(modelId);
+        downloadStates[modelId] = 'completed';
+        saveStates();
+        logger.info({ modelName: activePreset.name, filePath }, 'Successfully downloaded local model');
+      }).catch((err) => {
+        // Don't clobber a deliberate cancel/pause state
+        if (progress.status === 'paused' || progress.status === 'failed') {
+          return;
+        }
+        progress.status = 'failed';
+        progress.error = err.message || 'Download failed';
+        activeDownloads.delete(modelId);
+        downloadStates[modelId] = 'failed';
+        saveStates();
+        logger.error({ err, modelName: preset!.name }, 'Failed to download local model');
+        if (fs.existsSync(filePath)) {
+          try { fs.unlinkSync(filePath); } catch {}
+        }
+      });
+    }
 
     return { status: 'downloading', message: 'Download started.', modelId };
+  },
+
+  pauseDownload(modelId: string): { status: string; message: string } {
+    const progress = activeDownloads.get(modelId);
+    if (!progress || progress.status !== 'downloading') {
+      return { status: 'error', message: 'No active download found for this model.' };
+    }
+
+    // Set paused BEFORE destroying so the async error handler sees the right state
+    progress.status = 'paused';
+    progress.speedMbps = 0;
+    downloadStates[modelId] = 'paused';
+    saveStates();
+
+    // Now destroy the TCP connection — .part file is kept intact for resume
+    const req = activeRequests.get(modelId);
+    if (req) {
+      req.destroy();
+      activeRequests.delete(modelId);
+    }
+
+    logger.info({ modelId }, 'Download paused by user');
+    return { status: 'paused', message: 'Download paused. Resume to continue from where it stopped.' };
+  },
+
+  resumeDownload(modelId: string): { status: string; message: string; modelId?: string } {
+    const progress = activeDownloads.get(modelId);
+    if (!progress || progress.status !== 'paused') {
+      // Not currently tracked as paused — just try a fresh startDownload
+      return this.startDownload(modelId) as any;
+    }
+
+    // Mark as downloading again and call startDownload which resumes via HTTP Range
+    activeDownloads.delete(modelId); // Clear so startDownload re-creates it cleanly
+    downloadStates[modelId] = 'idle'; // Temporarily reset so startDownload doesn't bail out
+    logger.info({ modelId }, 'Resuming paused download');
+    return this.startDownload(modelId) as any;
+  },
+
+  cancelDownload(modelId: string): { status: string; message: string } {
+    const progress = activeDownloads.get(modelId);
+
+    // Mark as failed BEFORE destroying so .then()/.catch() guards see the cancelled state
+    if (progress) {
+      progress.status = 'failed';
+      progress.error = 'Cancelled by user';
+    }
+
+    // Now destroy active request
+    const req = activeRequests.get(modelId);
+    if (req) {
+      req.destroy();
+      activeRequests.delete(modelId);
+    }
+
+    if (progress) {
+      activeDownloads.delete(modelId);
+    }
+
+    downloadStates[modelId] = 'idle';
+    saveStates();
+
+    // Delete the partial file
+    const preset = MODEL_PRESETS.find(p => p.id === modelId);
+    if (preset) {
+      const partPath = path.join(MODELS_DIR, preset.fileName) + '.part';
+      if (fs.existsSync(partPath)) {
+        try { fs.unlinkSync(partPath); } catch {}
+      }
+    }
+
+    logger.info({ modelId }, 'Download cancelled by user');
+    return { status: 'cancelled', message: 'Download cancelled and partial file removed.' };
   },
 
   /**
@@ -875,18 +1073,28 @@ export const LocalModelManager = {
       activeDownloads.delete(modelId);
     }
 
-    const filePath = path.join(MODELS_DIR, preset.fileName);
-    const partPath = filePath + '.part';
-
     let deleted = false;
 
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      deleted = true;
-    }
+    if (modelId.startsWith('airllm-')) {
+      const airllmPath = path.join(BASE_DIR, 'airllm', modelId);
+      if (fs.existsSync(airllmPath)) {
+        try {
+          fs.rmSync(airllmPath, { recursive: true, force: true });
+          deleted = true;
+        } catch {}
+      }
+    } else {
+      const filePath = path.join(MODELS_DIR, preset.fileName);
+      const partPath = filePath + '.part';
 
-    if (fs.existsSync(partPath)) {
-      try { fs.unlinkSync(partPath); } catch {}
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        deleted = true;
+      }
+
+      if (fs.existsSync(partPath)) {
+        try { fs.unlinkSync(partPath); } catch {}
+      }
     }
 
     downloadStates[modelId] = 'idle';
@@ -896,7 +1104,7 @@ export const LocalModelManager = {
   },
 
   downloadFile(url: string, destPath: string, progress: DownloadProgress): Promise<void> {
-    return downloadQueue.add(() => new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const partPath = destPath + '.part';
       let fileStream: fs.WriteStream | null = null;
       let existingBytes = 0;
@@ -913,8 +1121,21 @@ export const LocalModelManager = {
       let totalBytes = 0;
       let lastTime = Date.now();
       let lastBytes = existingBytes;
+      let settled = false;
+
+      const done = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err); else resolve();
+      };
 
       const makeRequest = (currentUrl: string) => {
+        // If already paused/cancelled before the request fires, bail immediately
+        if (progress.status === 'paused' || progress.status === 'failed') {
+          done();
+          return;
+        }
+
         const urlObj = new URL(currentUrl);
         const headers: Record<string, string> = {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -926,16 +1147,16 @@ export const LocalModelManager = {
           headers['Range'] = `bytes=${existingBytes}-`;
         }
 
-        const options = { headers };
-
-        const req = https.get(urlObj, options, (res: IncomingMessage) => {
-          // Handle redirects (HuggingFace → AWS S3 / Cloudflare CDN)
+        const req = https.get(urlObj, { headers }, (res: IncomingMessage) => {
+          // Handle redirects — consume response and follow
           if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+            res.resume(); // drain and discard redirect body so socket is freed
             let redirectUrl = res.headers.location;
             if (redirectUrl) {
               if (!redirectUrl.startsWith('http://') && !redirectUrl.startsWith('https://')) {
                 redirectUrl = new URL(redirectUrl, currentUrl).href;
               }
+              activeRequests.delete(progress.modelId); // clear stale ref before new request
               makeRequest(redirectUrl!);
               return;
             }
@@ -944,35 +1165,32 @@ export const LocalModelManager = {
           const isRangeSupported = res.statusCode === 206;
 
           if (res.statusCode !== 200 && res.statusCode !== 206) {
-            reject(new Error(`Server responded with status code: ${res.statusCode}`));
+            res.resume();
+            done(new Error(`Server responded with status code: ${res.statusCode}`));
             return;
           }
 
           const contentLength = parseInt(res.headers['content-length'] || '0', 10);
-          
+
           if (isRangeSupported) {
             totalBytes = contentLength + existingBytes;
           } else {
-            // Server did not support range, reset to 0 bytes downloaded
             totalBytes = contentLength;
             receivedBytes = 0;
             existingBytes = 0;
             lastBytes = 0;
           }
-          
+
           progress.totalBytes = totalBytes;
 
           try {
-            // If range is supported, append to the file. Otherwise overwrite.
             fileStream = fs.createWriteStream(partPath, { flags: isRangeSupported ? 'a' : 'w' });
-          } catch (err) {
-            reject(err);
+          } catch (err: any) {
+            done(err);
             return;
           }
 
-          fileStream.on('error', (err) => {
-            reject(err);
-          });
+          fileStream.on('error', (err) => done(err));
 
           res.on('data', (chunk) => {
             receivedBytes += chunk.length;
@@ -986,8 +1204,7 @@ export const LocalModelManager = {
             const elapsed = now - lastTime;
             if (elapsed >= 500) {
               const bytesDiff = receivedBytes - lastBytes;
-              const speedBytesPerSec = (bytesDiff / elapsed) * 1000;
-              progress.speedMbps = parseFloat((speedBytesPerSec / (1024 * 1024)).toFixed(2));
+              progress.speedMbps = parseFloat(((bytesDiff / elapsed) * 1000 / (1024 * 1024)).toFixed(2));
               lastTime = now;
               lastBytes = receivedBytes;
             }
@@ -998,36 +1215,47 @@ export const LocalModelManager = {
           fileStream.on('finish', () => {
             if (fileStream) {
               fileStream.close(() => {
+                activeRequests.delete(progress.modelId);
+                // If paused/cancelled while finishing, leave the .part file intact
+                if (progress.status === 'paused' || progress.status === 'failed') {
+                  done();
+                  return;
+                }
                 try {
                   fs.renameSync(partPath, destPath);
-                  resolve();
+                  done();
                 } catch (e: any) {
-                  reject(e);
+                  done(e);
                 }
               });
             }
           });
         });
 
+        // Register active request for pause/cancel
+        activeRequests.set(progress.modelId, req);
+
         req.on('error', (err) => {
-          req.destroy();
-          if (fileStream) {
-            fileStream.destroy();
+          activeRequests.delete(progress.modelId);
+          if (fileStream) fileStream.destroy();
+          // Deliberate pause or cancel — resolve silently, .part file stays
+          if (progress.status === 'paused' || progress.status === 'failed') {
+            done();
+            return;
           }
-          reject(err);
+          done(err);
         });
 
         req.setTimeout(600000, () => {
           req.destroy();
-          if (fileStream) {
-            fileStream.destroy();
-          }
-          reject(new Error('Download timeout reached. Connection lost.'));
+          if (fileStream) fileStream.destroy();
+          if (progress.status === 'paused' || progress.status === 'failed') { done(); return; }
+          done(new Error('Download timeout reached. Connection lost.'));
         });
       };
 
       makeRequest(url);
-    })) as any;
+    });
   },
 
   async getDeviceCompatibility(): Promise<{

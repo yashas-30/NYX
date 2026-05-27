@@ -57,7 +57,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
   const latencyText = formatLatency(displayLatency);
 
   return (
-    <header className="flex items-center justify-between px-6 py-3 shrink-0 select-none bg-[#191918] border-b border-white/[0.03]">
+    <header className="flex items-center justify-between px-6 py-3 shrink-0 select-none bg-background border-b border-white/[0.03]">
       {/* Left: Collapsed sidebar toggle trigger */}
       <div className="flex items-center gap-2">
         {!sidebarOpen && onToggleSidebar && (
@@ -84,30 +84,8 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
         <ChevronDown size={11} className="text-zinc-500 opacity-60 mt-0.5" />
       </motion.div>
 
-      {/* Right: share, metrics, status, clear */}
+      {/* Right: share, status, clear */}
       <div className="flex items-center gap-2.5">
-        {/* Real-time stats labels in flat, sophisticated monospace text */}
-        {(metrics.tps > 0 || isLoading) && (
-          <div className="hidden sm:flex items-center gap-2.5 text-[10px] font-mono text-zinc-500 pr-1 select-none">
-            <div className="flex items-center gap-1">
-              {isLoading ? (
-                <Timer size={10} className="text-cyan-400 animate-pulse" />
-              ) : (
-                <Zap size={10} className="text-[#E0B86F]" />
-              )}
-              <span className={isLoading ? 'text-cyan-400 font-bold' : ''}>{latencyText}</span>
-            </div>
-            {metrics.tps > 0 && (
-              <div className="flex items-center gap-1 text-emerald-400 font-semibold">
-                <span>{metrics.tps}</span>
-                <span className="text-[8px] opacity-50 uppercase">t/s</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <StatusBadge status={badgeStatus} />
-
         {/* Share Action */}
         <motion.button
           whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}

@@ -19,6 +19,7 @@ interface CoderLogicProps {
   models?: Record<'nyx', string>;
   setModel?: (modelId: string) => void;
   chatSessions: any;
+  mode: 'chat' | 'code';
 }
 
 export const useCoderLogic = ({
@@ -27,7 +28,8 @@ export const useCoderLogic = ({
   trackUsage,
   models: propModels,
   setModel: propSetModel,
-  chatSessions
+  chatSessions,
+  mode
 }: CoderLogicProps) => {
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled] = useState(true);
@@ -89,25 +91,28 @@ export const useCoderLogic = ({
       const msgs = activeSessionMessages || [];
       messagesRef.current = msgs;
       setLocalMessages(msgs);
+      clearMetrics();
     } else if (activeSessionMessages && activeSessionMessages !== messagesRef.current) {
       messagesRef.current = activeSessionMessages;
       setLocalMessages(activeSessionMessages);
     }
-  }, [activeSid, activeSessionMessages]);
+  }, [activeSid, activeSessionMessages, clearMetrics]);
 
   // Unified history update callback
   const updateHistory = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
     const updated = updater(messagesRef.current);
-    messagesRef.current = updated;
-    setLocalMessages(updated);
+    // Clone array and all message objects to guarantee React and React.memo notice mutations
+    const cloned = updated.map(msg => ({ ...msg }));
+    messagesRef.current = cloned;
+    setLocalMessages(cloned);
 
     let sid = activeSidRef.current;
     if (!sid) {
-      sid = chatSessions?.createSession?.(updated) || null;
+      sid = chatSessions?.createSession?.(cloned) || null;
       activeSidRef.current = sid;
       createdSessionIdRef.current = sid;
     } else {
-      chatSessions?.updateSession?.(sid, updated);
+      chatSessions?.updateSession?.(sid, cloned);
     }
   }, [chatSessions]);
 
@@ -132,7 +137,8 @@ export const useCoderLogic = ({
     getSuggestions,
     setSuggestedPrompts,
     webSearchEnabled,
-    codebaseKnowledgeEnabled
+    codebaseKnowledgeEnabled,
+    mode
   });
 
   return {

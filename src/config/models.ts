@@ -236,6 +236,34 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'nyx-native',
     description: "Meta's highly capable general instruction model for general analysis.",
     specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' }
+  },
+  {
+    id: 'airllm-llama-3.3-70b',
+    name: 'Llama 3.3 70B (AirLLM)',
+    provider: 'nyx-native',
+    description: "Run Meta's massive 70B flagship model layer-by-layer on low-VRAM GPUs using AirLLM.",
+    specs: { contextWindow: '128K', trainingData: '2024', maxOutput: '4K', modality: 'Text' }
+  },
+  {
+    id: 'airllm-qwen-2.5-coder-32b',
+    name: 'Qwen 2.5 Coder 32B (AirLLM)',
+    provider: 'nyx-native',
+    description: "Run Qwen's flagship 32B coding model layer-by-layer on low-VRAM GPUs using AirLLM.",
+    specs: { contextWindow: '32K', trainingData: '2024', maxOutput: '4K', modality: 'Text' }
+  },
+  {
+    id: 'airllm-deepseek-r1-8b',
+    name: 'DeepSeek R1 Distill Llama 8B (AirLLM)',
+    provider: 'nyx-native',
+    description: "Run DeepSeek R1 reasoning transfer model layer-by-layer on low-VRAM GPUs using AirLLM.",
+    specs: { contextWindow: '32K', trainingData: '2025', maxOutput: '4K', modality: 'Text' }
+  },
+  {
+    id: 'airllm-local-llama',
+    name: 'My Local Llama Model (AirLLM)',
+    provider: 'nyx-native',
+    description: "Load your local Llama weights folder from '.nyx-models/models/local-llama' layer-by-layer on your GPU.",
+    specs: { contextWindow: '8K', trainingData: 'Custom', maxOutput: '2K', modality: 'Text' }
   }
 ];
 

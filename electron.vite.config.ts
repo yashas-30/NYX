@@ -25,12 +25,20 @@ export default defineConfig({
       },
       outDir: 'dist-electron',
       emptyOutDir: false,
+      rollupOptions: {
+        external: ['electron'],
+      },
     },
-    plugins: [externalizeDepsPlugin()],
+    plugins: [],
   },
   renderer: {
     root: '.',
     plugins: [react(), tailwindcss()],
+    optimizeDeps: {
+      esbuildOptions: {
+        target: 'esnext',
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -48,6 +56,7 @@ export default defineConfig({
       }
     },
     build: {
+      target: 'esnext',
       outDir: 'dist',
       chunkSizeWarningLimit: 2000,
       rollupOptions: {

@@ -26,9 +26,9 @@ function getIcon(provider: string | undefined, size: number, className: string):
     case 'claude':
     case 'deepseek':  return <Bot size={size} strokeWidth={1.5} className={className} />;
     case 'opencode':  return <Sparkles size={size} strokeWidth={1.5} className={className} />;
-    case 'pollinations': return <Sparkles size={size} strokeWidth={1.5} className={`${className} text-purple-400 animate-pulse`} />;
+    case 'pollinations': return <Sparkles size={size} strokeWidth={1.5} className={`${className} text-amber-500 animate-pulse`} />;
     case 'terminal':  return <Bot size={size} strokeWidth={1.5} className={className} />;
-    case 'nyx-native': return <Cpu size={size} strokeWidth={1.5} className={`${className} text-purple-400 animate-pulse`} />;
+    case 'nyx-native': return <Cpu size={size} strokeWidth={1.5} className={`${className} text-[#22D3EE] animate-pulse`} />;
     case 'qwen-local': return <Sparkles size={size} strokeWidth={1.5} className={`${className} text-amber-400 animate-pulse`} />;
     default:          return <Cpu size={size} strokeWidth={1.5} className={className} />;
   }

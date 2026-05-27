@@ -55,35 +55,35 @@
 }
 
 .dark {
-  /* Dark Mode (Deep Space Charcoal & Aether Cyan) */
-  --background: #0B0E14; /* Deep Space Slate-Charcoal */
-  --foreground: #E6EDF3; /* Off-white for high legibility and reduced eye strain */
-  --card: #111622; /* Surface Deep Card Fill */
-  --card-foreground: #E6EDF3;
-  --popover: #111622;
-  --popover-foreground: #E6EDF3;
+  /* Dark Mode (Premium Matte Gray "Just Gray" Stitch Design Scheme) */
+  --background: #1c1c1c; /* Solid Matte Gray canvas background */
+  --foreground: #e3e3e3; /* Soft off-white text */
+  --card: #262626; /* Warm Gray Card Fill */
+  --card-foreground: #e3e3e3;
+  --popover: #262626;
+  --popover-foreground: #e3e3e3;
   
-  --primary: #22D3EE; /* Aether Cyan */
-  --primary-rgb: 34, 211, 238;
-  --primary-foreground: #000000;
-  --secondary: #1B2336; /* Surface Elevated */
-  --secondary-foreground: #8B949E; /* Highly Legible Muted Text */
-  --muted: #1B2336;
-  --muted-foreground: #8B949E;
-  --accent: #22D3EE;
-  --accent-rgb: 34, 211, 238;
-  --accent-foreground: #000000;
-  --destructive: #FF453A;
+  --primary: #ffffff; /* Monochromatic Clean White */
+  --primary-rgb: 255, 255, 255;
+  --primary-foreground: #1c1c1c;
+  --secondary: #161616; /* Sophisticated Matte Dark Gray Sidebar */
+  --secondary-foreground: #a3a3a3; /* Muted warm grey text */
+  --muted: #2d2d2d; /* Soft dark grey for blockquotes and code */
+  --muted-foreground: #737373; /* Neutral neutral-500 text */
+  --accent: #f5f5f5;
+  --accent-rgb: 245, 245, 245;
+  --accent-foreground: #1c1c1c;
+  --destructive: #ef4444;
   
-  --border: rgba(255, 255, 255, 0.12); /* Higher contrast borders */
-  --border-strong: rgba(255, 255, 255, 0.22);
-  --input: rgba(255, 255, 255, 0.05);
-  --ring: rgba(34, 211, 238, 0.4);
+  --border: rgba(255, 255, 255, 0.06); /* Extremely thin clean border lines */
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.02);
+  --ring: rgba(255, 255, 255, 0.1);
   
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.7);
-  --shadow-lg: 0 32px 64px -16px rgba(0, 0, 0, 0.9);
-  --shadow-terminal: 0 20px 40px -12px rgba(0, 0, 0, 0.8);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 16px 48px -8px rgba(0, 0, 0, 0.7);
+  --shadow-terminal: 0 12px 32px -8px rgba(0, 0, 0, 0.7);
   
   color-scheme: dark;
 }
@@ -573,3 +573,30 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ── NYX 6-Dot Spinner Pulse Keyframes ───────────────────────── */
+@keyframes nyx-loader-pulse {
+  0%, 100% {
+    opacity: 0.25;
+    fill: #52525b; /* Zinc-600 */
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 1;
+    fill: #22D3EE; /* Gold-Amber */
+    transform: scale(1.05);
+  }
+}
+
+.nyx-dot {
+  animation: nyx-loader-pulse 1.4s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.nyx-dot-1 { animation-delay: 0.0s; }
+.nyx-dot-2 { animation-delay: 0.12s; }
+.nyx-dot-3 { animation-delay: 0.24s; }
+.nyx-dot-4 { animation-delay: 0.36s; }
+.nyx-dot-5 { animation-delay: 0.48s; }
+.nyx-dot-6 { animation-delay: 0.6s; }

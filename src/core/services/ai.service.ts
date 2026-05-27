@@ -19,6 +19,35 @@ export class AIService {
   private static sessionToken: string | null = null;
   private static tokenExpiresAt: number = 0;
   private static inFlightRequests = new Map<string, Promise<AIResponse>>();
+  private static cachedVaultStatus: any = null;
+  private static cachedVaultStatusTime: number = 0;
+  private static pendingVaultStatusPromise: Promise<any> | null = null;
+
+  private static async getVaultStatus() {
+    if (this.cachedVaultStatus && Date.now() - this.cachedVaultStatusTime < 2000) {
+      return this.cachedVaultStatus;
+    }
+    if (this.pendingVaultStatusPromise) {
+      return this.pendingVaultStatusPromise;
+    }
+    this.pendingVaultStatusPromise = (async () => {
+      try {
+        const response = await fetch('/api/vault/status');
+        if (response.ok) {
+          const data = await response.json();
+          this.cachedVaultStatus = data;
+          this.cachedVaultStatusTime = Date.now();
+          return data;
+        }
+      } catch (e) {
+        console.warn('[AIService] Failed to check status via vault status:', e);
+      } finally {
+        this.pendingVaultStatusPromise = null;
+      }
+      return null;
+    })();
+    return this.pendingVaultStatusPromise;
+  }
 
   static setSessionToken(token: string | null): void {
     this.sessionToken = token;
@@ -680,9 +709,8 @@ export class AIService {
 
     // Check cloud provider via server vault configuration status
     try {
-      const response = await fetch('/api/vault/status');
-      if (response.ok) {
-        const vaultStatus = await response.json();
+      const vaultStatus = await this.getVaultStatus();
+      if (vaultStatus) {
         const isConfigured = vaultStatus[provider];
         if (isConfigured) return 'online';
       }

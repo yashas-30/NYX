@@ -111,6 +111,48 @@ localModelsRouter.get('/download-progress', (req, res) => {
   }
 });
 
+// Pause an active download (keeps .part file for resume)
+localModelsRouter.post('/pause', (req, res) => {
+  const { modelId } = req.body;
+  if (!modelId) {
+    return res.status(400).json({ error: 'Missing modelId in request body.' });
+  }
+  try {
+    const result = LocalModelManager.pauseDownload(modelId);
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Resume a paused download from where it left off
+localModelsRouter.post('/resume', (req, res) => {
+  const { modelId } = req.body;
+  if (!modelId) {
+    return res.status(400).json({ error: 'Missing modelId in request body.' });
+  }
+  try {
+    const result = LocalModelManager.resumeDownload(modelId);
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Cancel a download and delete the partial file
+localModelsRouter.post('/cancel', (req, res) => {
+  const { modelId } = req.body;
+  if (!modelId) {
+    return res.status(400).json({ error: 'Missing modelId in request body.' });
+  }
+  try {
+    const result = LocalModelManager.cancelDownload(modelId);
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Run a model natively via llama-server
 localModelsRouter.post('/run', async (req, res) => {
   const { modelId, settings } = req.body;

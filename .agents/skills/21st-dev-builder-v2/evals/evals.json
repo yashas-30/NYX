@@ -1,0 +1,26 @@
+{
+  "skill_name": "21st-dev-builder-v2",
+  "evals": [
+    {
+      "id": 0,
+      "name": "saas-landing-page",
+      "prompt": "สร้าง landing page สำหรับ SaaS product ชื่อ CloudSync ที่เกี่ยวกับ cloud storage ใช้ 21st.dev components ต้องมี hero, features, pricing, testimonials, footer",
+      "expected_output": "A Next.js project with a landing page composed of 21st.dev components including hero section, features, pricing table, testimonials, and footer. Components should be installed via npx shadcn and the page should be well-structured.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "admin-dashboard",
+      "prompt": "อยากสร้าง admin dashboard ด้วย 21st สำหรับ e-commerce มี sidebar, stats cards, data table, และ charts",
+      "expected_output": "A Next.js project with an admin dashboard layout using 21st.dev components including sidebar navigation, stat cards, data table, and chart components. Should have proper layout structure.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "developer-portfolio",
+      "prompt": "Build me a developer portfolio with blog section using 21st.dev. I want it to look modern with animated text, project cards, and a contact form",
+      "expected_output": "A Next.js project with a portfolio site using 21st.dev components including animated typography, project card grid, blog listing, and contact form. Should feel modern and polished.",
+      "files": []
+    }
+  ]
+}
