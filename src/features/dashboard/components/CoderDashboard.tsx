@@ -11,7 +11,7 @@ import { useChatSessions } from '@src/shared/hooks/useChatSessions';
 import { CoderPage } from '@src/features/coder/CoderPage';
 import { SettingsView } from '@src/features/settings';
 import { useCoderLogic } from '@src/features/coder/hooks/useCoderLogic';
-import { AVAILABLE_MODELS } from '@src/config/models';
+import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import {
@@ -23,7 +23,7 @@ import {
 import { toast } from '@src/shared/components/ui/sonner';
 
 const ModelRegistryView = lazy(() =>
-  import('@src/components/dashboard/registry/ModelRegistryView').then(m => ({ default: m.ModelRegistryView }))
+  import('@src/features/model-registry').then(m => ({ default: m.ModelRegistryView }))
 );
 
 const LoadingFallback = () => (

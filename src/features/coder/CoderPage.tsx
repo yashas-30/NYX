@@ -6,7 +6,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Folder, Monitor, ChevronDown, PanelLeftOpen } from 'lucide-react';
-import { FREE_OPENCODE_MODELS } from '@src/config/models';
+import { FREE_OPENCODE_MODELS } from '@src/features/model-registry/config/models';
 import { ModelDefinition, Provider } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 

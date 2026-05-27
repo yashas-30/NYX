@@ -3,7 +3,7 @@
  * @description Advanced Hybrid Model Router with warmth prediction, VRAM management, and a robust fallback chain.
  */
 
-import { AVAILABLE_MODELS } from '../../config/models';
+import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
 import { AIService } from '@src/core/services/ai.service';
 import { Provider, RoutingDecision, SubagentTask, LocalModelState, AIResponse } from '../types';
 

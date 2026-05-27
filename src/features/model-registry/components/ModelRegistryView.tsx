@@ -4,7 +4,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Search, Box, Cpu, Download, Globe, Layers } from 'lucide-react';
-import { AVAILABLE_MODELS } from '@src/config/models';
+import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
 import { ModelOption } from '@src/types';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
