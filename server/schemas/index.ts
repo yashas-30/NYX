@@ -184,21 +184,7 @@ export const writeFileSchema = z.object({
 // ─────────────────────────────────────────────────────────────────────────────
 // Cache Schemas
 // ─────────────────────────────────────────────────────────────────────────────
-export const cacheSetSchema = z.object({
-  key: z.string().min(1).max(2048),
-  data: z.any(),
-  provider: z.string().min(1).max(64),
-  model: z.string().min(1).max(128)
-});
-
-export const cacheGetSchema = z.object({
-  provider: z.string().min(1).max(64),
-  model: z.string().min(1).max(128),
-  prompt: z.string().max(65536).optional(),
-  systemInstruction: z.string().max(16384).optional(),
-  history: z.array(chatMessageSchema).max(500).optional(),
-  settings: aiSettingsSchema
-});
+export { cacheSetSchema, cacheGetSchema } from '../features/cache/cache.schema.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace / System Schemas
