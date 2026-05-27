@@ -1,18 +1,12 @@
-/**
- * @file server/routes/opencode.ts
- * @description OpenCode free models direct REST proxy.
- */
-
 import { Router } from 'express';
-import { Gateway } from '../lib/gateway.js';
-import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
-import { validate } from '../middleware/validate.js';
-import { opencodeStreamSchema } from '../schemas/index.js';
-import logger from '../lib/logger.ts';
+import { OpenCodeService } from './opencode.service.ts';
+import { sendSseTokenRotate } from '../../lib/sseHelpers.ts';
+import { validate } from '../../middleware/validate.ts';
+import { opencodeStreamSchema } from './opencode.schema.ts';
+import logger from '../../lib/logger.ts';
 
 export const opencodeRouter = Router();
-
-const SYSTEM_KEY = process.env.OPENROUTER_API_KEY || process.env.LLM_API_KEY || '';
+const service = new OpenCodeService();
 
 opencodeRouter.post('/stream', validate(opencodeStreamSchema), async (req, res) => {
   const controller = new AbortController();
@@ -21,37 +15,13 @@ opencodeRouter.post('/stream', validate(opencodeStreamSchema), async (req, res) 
   });
 
   try {
-    const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = req.body;
+    const { model, prompt } = req.body;
     
     if (!model || !prompt) {
       return res.status(400).json({ error: 'Model and prompt are required' });
     }
 
-    // Resolve active key
-    const isUserKey = (apiKey && apiKey.trim() !== '' && apiKey !== 'null' && apiKey !== 'undefined');
-    const activeKey = isUserKey ? apiKey.trim() : SYSTEM_KEY;
-
-    // Validation
-    const authResult = Gateway.validateAuth('opencode', model, apiKey);
-    if (!authResult.valid) {
-      return res.status(401).json({ error: authResult.error });
-    }
-
-    // Map model ID
-    const mappedModel = Gateway.mapOpenCodeModel(model);
-
-    // Build messages
-    const messages: any[] = [];
-    if (systemInstruction) {
-      messages.push({ role: 'system', content: systemInstruction });
-    }
-    if (history && Array.isArray(history)) {
-      messages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
-    }
-    messages.push({ role: 'user', content: prompt });
-
-    // Build URL with gateway support (custom user gateway takes priority)
-    const { url } = Gateway.buildUrl('opencode', '/chat/completions', gatewayUrls);
+    const reqData = service.prepareRequest(req.body);
 
     // Set event-stream headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -62,22 +32,10 @@ opencodeRouter.post('/stream', validate(opencodeStreamSchema), async (req, res) 
     sendSseTokenRotate(res);
 
     // Make request to OpenCode Zen API
-    const response = await fetch(url, {
+    const response = await fetch(reqData.url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${activeKey}`,
-        'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'LLM Reference - OpenCode Zen',
-      },
-      body: JSON.stringify({
-        model: mappedModel,
-        messages,
-        stream: true,
-        temperature: settings?.temperature ?? 0.7,
-        max_tokens: settings?.maxTokens ?? 4096,
-        top_p: settings?.topP ?? 1.0,
-      }),
+      headers: reqData.headers,
+      body: JSON.stringify(reqData.body),
       signal: controller.signal,
     });
 

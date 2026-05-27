@@ -98,15 +98,7 @@ export const nvidiaStreamSchema = z.object({
   gatewayUrls: gatewayUrlsSchema,
 });
 
-export const opencodeStreamSchema = z.object({
-  model: z.string().min(1).max(256),
-  prompt: z.string().min(1).max(65536),
-  apiKey: z.string().max(512).optional(),
-  settings: aiSettingsSchema,
-  systemInstruction: z.string().max(16384).optional(),
-  history: z.array(chatMessageSchema).max(500).optional(),
-  gatewayUrls: gatewayUrlsSchema,
-});
+export { opencodeStreamSchema } from '../features/opencode/opencode.schema.ts';
 
 export const pollinationsStreamSchema = z.object({
   model: z.string().min(1).max(256),
