@@ -2,7 +2,7 @@ import express from 'express';
 import { LocalModelManager } from '../lib/localModelManager.ts';
 import { LocalModelRunner } from '../lib/localModelRunner.ts';
 import { CodebaseScanner } from '../lib/codebaseScanner.ts';
-import { RulesDb } from '../lib/rulesDb.ts';
+import { RulesDb } from '../features/admin/admin.service.ts';
 import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
 
 export const localModelsRouter = express.Router();

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { RulesDb } from '../lib/rulesDb.ts';
+import { RulesDb } from '../features/admin/admin.service.ts';
 import { CodebaseScanner } from '../lib/codebaseScanner.ts';
 import { getWorkspaceRoot } from '../lib/paths.ts';
 import { WorkspaceIntelligence } from '../lib/workspaceIntelligence.ts';

@@ -1,13 +1,12 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { LOGS_DIR } from '../lib/paths.ts';
+import { LOGS_DIR } from '../../lib/paths.ts';
 import chokidar from 'chokidar';
-import logger from '../lib/logger.ts';
+import logger from '../../lib/logger.ts';
+import { timingSafeEqual } from 'crypto';
 
 export const adminRouter = Router();
-
-import { timingSafeEqual } from 'crypto';
 
 function safeCompare(a: string, b: string): boolean {
   try {

@@ -239,6 +239,4 @@ export const agentRunSchema = z.object({
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin / Rules
 // ─────────────────────────────────────────────────────────────────────────────
-export const rulesResetSchema = z.object({
-  confirm: z.literal(true)
-});
+export { rulesResetSchema } from '../features/admin/admin.schema.ts';

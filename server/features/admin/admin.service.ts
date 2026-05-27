@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { CACHE_DIR } from './paths.ts';
+import { CACHE_DIR } from '../../lib/paths.ts';
 const RULES_FILE = path.join(CACHE_DIR, 'critic-rules.json');
 
 export interface CriticRule {
