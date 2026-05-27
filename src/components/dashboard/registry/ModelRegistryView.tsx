@@ -6,8 +6,8 @@ import { motion } from 'motion/react';
 import { Search, Box, Cpu, Download, Globe, Layers } from 'lucide-react';
 import { AVAILABLE_MODELS } from '@src/config/models';
 import { ModelOption } from '@src/types';
-import { useTokenUsage } from '@src/context/TokenUsageContext';
-import { toast } from '@src/components/ui/sonner';
+import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
+import { toast } from '@src/shared/components/ui/sonner';
 import { AIService } from '@src/core/services/ai.service';
 
 // Import modular sub-components

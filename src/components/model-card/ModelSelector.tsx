@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { FREE_OPENCODE_MODELS, CLAUDE_MODELS, AVAILABLE_MODELS, POLLINATIONS_MODELS } from '../../config/models';
 import { ModelOption } from '../../types';
-import { ProviderIcon, getProviderLabel } from '../ui/ProviderIcon';
+import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
 
 interface Props {
   currentModelId?: string;

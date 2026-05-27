@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useTokenUsage } from '../context/TokenUsageContext';
+import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 
 // Modular Hooks
 import { useSecurityState } from './dashboard/useSecurityState';

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Network, HelpCircle, BookOpen, ExternalLink, Cpu, Zap, Database, Globe, Settings as SettingsIcon, ChevronUp, ChevronDown } from 'lucide-react';
-import { useTokenUsage } from '@src/context/TokenUsageContext';
-import { toast } from '@src/components/ui/sonner';
+import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
+import { toast } from '@src/shared/components/ui/sonner';
 
 import { ApiKeyVault } from './ApiKeyVault';
 import { WorkspaceConfig } from './WorkspaceConfig';

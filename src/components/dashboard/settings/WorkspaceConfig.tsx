@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Globe } from 'lucide-react';
-import { toast } from '@src/components/ui/sonner';
+import { toast } from '@src/shared/components/ui/sonner';
 
 interface WorkspaceConfigProps {
   workspacePath: string;

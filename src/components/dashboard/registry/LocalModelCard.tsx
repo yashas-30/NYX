@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Download, Loader2, Play, Square, Terminal as TerminalIcon, Trash2, AlertCircle } from 'lucide-react';
-import { toast } from '@src/components/ui/sonner';
+import { toast } from '@src/shared/components/ui/sonner';
 
 interface LocalModelCardProps {
   m: any;

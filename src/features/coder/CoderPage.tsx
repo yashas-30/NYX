@@ -8,7 +8,7 @@ import { motion } from 'motion/react';
 import { Folder, Monitor, ChevronDown, PanelLeftOpen } from 'lucide-react';
 import { FREE_OPENCODE_MODELS } from '@src/config/models';
 import { ModelDefinition, Provider } from '@src/infrastructure/types';
-import { toast } from '@src/components/ui/sonner';
+import { toast } from '@src/shared/components/ui/sonner';
 
 import { CoderHeader, MessageList, PromptInput } from './components';
 import { AgentPlanner } from './components/AgentPlanner';

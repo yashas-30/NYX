@@ -6,15 +6,15 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Logo, NyxLoader } from '@src/lib/design-system/icons';
-import { toast } from '@src/components/ui/sonner';
+import { Logo, NyxLoader } from '@src/shared/design-system/icons';
+import { toast } from '@src/shared/components/ui/sonner';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Code Block
  * ───────────────────────────────────────────────────────────────────────────── */
 
-import { CodeMirrorBlock } from '@src/components/ui/CodeMirrorBlock';
+import { CodeMirrorBlock } from '@src/shared/components/ui/CodeMirrorBlock';
 
 const detectFilePath = (code: string): string => {
   const firstLine = code.split('\n')[0]?.trim() || '';

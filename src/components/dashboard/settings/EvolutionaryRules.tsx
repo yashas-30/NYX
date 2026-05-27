@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Brain, Trash2 } from 'lucide-react';
-import { toast } from '@src/components/ui/sonner';
+import { toast } from '@src/shared/components/ui/sonner';
 
 interface EvolvedRule {
   metric: string;

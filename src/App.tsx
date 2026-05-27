@@ -1,8 +1,8 @@
 import React from 'react';
 import { CoderDashboard } from './components/CoderDashboard';
 import { Toaster } from 'sonner';
-import { useTheme } from './context/ThemeContext';
-import { ErrorBoundary } from './components/ErrorBoundary';
+import { useTheme } from '@src/shared/context/ThemeContext';
+import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 
 
 export default function App() {

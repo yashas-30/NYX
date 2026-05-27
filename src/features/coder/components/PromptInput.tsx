@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { ModelSelector } from '@src/components/model-card/ModelSelector';
 import { ModelDefinition } from '@src/infrastructure/types';
-import { toast } from '@src/components/ui/sonner';
+import { toast } from '@src/shared/components/ui/sonner';
 import { analyzePrompt, optimizePromptText } from '@/shared/promptAnalyzer';
 
 /* ── Types ───────────────────────────────────────────────────────────────── */

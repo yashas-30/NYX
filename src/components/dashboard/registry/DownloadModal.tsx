@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Cpu, HardDrive, Zap, Loader2, RefreshCw, Activity, Layers, Download, Check, Trash2, Sparkles } from 'lucide-react';
-import { getProviderLabel } from '../../ui/ProviderIcon';
+import { getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
 
 interface DownloadModalProps {
   showDownloadModal: boolean;
