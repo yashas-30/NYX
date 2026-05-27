@@ -30,7 +30,7 @@ import { geminiRouter } from './server/routes/gemini.ts';
 import { openrouterRouter } from './server/routes/openrouter.ts';
 import { nvidiaRouter } from './server/routes/nvidia.ts';
 import { terminalRouter } from './server/routes/terminal.ts';
-import { agentsRouter } from './server/routes/agents.ts';
+import { agentsRouter } from './server/features/agents/agents.router.ts';
 import { opencodeRouter } from './server/routes/opencode.ts';
 import { nyxRouter } from './server/routes/nyx.ts';
 import { pollinationsRouter } from './server/routes/pollinations.ts';
