@@ -1,5 +1,5 @@
 import { AIService } from '@src/core/services/ai.service';
-import { AISettings } from '@src/core/types';
+import { AISettings } from '@src/infrastructure/types';
 import { ExecutionPlan } from './planning';
 import { writeFileWithHistory } from '../utils/fileWriter';
 

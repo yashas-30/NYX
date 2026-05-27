@@ -14,7 +14,7 @@ import {
   Activity
 } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
-import { SubagentTask } from '@src/core/types';
+import { SubagentTask } from '@src/infrastructure/types';
 import { NyxLoader } from '@src/lib/design-system/icons';
 
 interface Subtask {

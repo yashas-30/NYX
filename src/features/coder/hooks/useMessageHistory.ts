@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { ChatMessage, TelemetryMetrics } from '@src/core/types';
+import { ChatMessage, TelemetryMetrics } from '@src/infrastructure/types';
 
 export const useMessageHistory = () => {
   const [metrics, setMetrics] = useState<TelemetryMetrics>({ latency: 0, tokens: 0, tps: 0 });

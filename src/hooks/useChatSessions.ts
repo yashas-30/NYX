@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { ChatMessage } from '@src/core/types';
+import { ChatMessage } from '@src/infrastructure/types';
 
 export interface ChatSession {
   id: string;

@@ -3,7 +3,7 @@
  * @description Client-side workspace intelligence orchestrator. Coordinates project profiling and caches results.
  */
 
-import { AIService } from './ai.service';
+import { AIService } from '@src/core/services/ai.service';
 import { WorkspaceProfile } from '../types';
 
 let cachedProfile: WorkspaceProfile | null = null;

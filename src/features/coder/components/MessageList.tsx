@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Copy, Check, ArrowDown, Terminal, Play, Save, FileText, CheckCircle2, AlertCircle, X } from 'lucide-react';
-import { ChatMessage, SubagentTask } from '@src/core/types';
+import { ChatMessage, SubagentTask } from '@src/infrastructure/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';

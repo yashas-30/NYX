@@ -7,10 +7,10 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAgentState } from './useAgentState';
 import { useMessageHistory } from './useMessageHistory';
 import { useAgentPipeline } from './useAgentPipeline';
-import { ChatMessage } from '@src/core/types';
+import { ChatMessage } from '@src/infrastructure/types';
 import { cancelCurrentRequest } from '@src/core/services/ai.service';
 import { useNyxStore } from '@src/store/useNyxStore';
-import { WorkspaceIntelligence } from '@src/core/services/workspaceIntelligence';
+import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
 
 interface CoderLogicProps {
   apiKeys: Record<string, string>;

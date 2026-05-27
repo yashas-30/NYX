@@ -3,7 +3,7 @@
  * @description Core Tool Registry and Tool Executor for the NYX autonomous agent.
  */
 
-import { AIService } from './ai.service';
+import { AIService } from '@src/core/services/ai.service';
 import { WorkspaceIntelligence } from './workspaceIntelligence';
 
 export interface ToolDefinition {

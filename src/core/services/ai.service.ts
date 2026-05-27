@@ -3,8 +3,8 @@
  * @description Unified service for interacting with local and remote AI models.
  */
 
-import { AISettings, AIResponse, ChatMessage, Provider } from '../types';
-import { ContinuationManager } from './continuationManager';
+import { AISettings, AIResponse, ChatMessage, Provider } from '@src/infrastructure/types';
+import { ContinuationManager } from '@src/infrastructure/services/continuationManager';
 
 let currentAbortController: AbortController | null = null;
 
@@ -309,7 +309,7 @@ export class AIService {
       const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
       if (!isAbort) {
         console.warn('[AIService] Gemini stream proxy failed, falling back to direct browser fetch:', error);
-        const { directFetchGemini } = await import('@src/lib/api/directClient');
+        const { directFetchGemini } = await import('@src/infrastructure/api/directClient');
         const text = await directFetchGemini(model, prompt, apiKey || '', settings, systemInstruction, history, signal, gatewayUrls);
         if (onStream) onStream(text);
         return text;
@@ -409,7 +409,7 @@ export class AIService {
       const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
       if (!isAbort) {
         console.warn('[AIService] OpenRouter stream proxy failed, falling back to direct browser fetch:', error);
-        const { directFetchOpenRouter } = await import('@src/lib/api/directClient');
+        const { directFetchOpenRouter } = await import('@src/infrastructure/api/directClient');
         const text = await directFetchOpenRouter(model, prompt, apiKey, settings, systemInstruction, history, signal, gatewayUrls);
         if (onStream) onStream(text);
         return text;
@@ -440,7 +440,7 @@ export class AIService {
       const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
       if (!isAbort) {
         console.warn('[AIService] NVIDIA stream proxy failed, falling back to direct browser fetch:', error);
-        const { directFetchNvidia } = await import('@src/lib/api/directClient');
+        const { directFetchNvidia } = await import('@src/infrastructure/api/directClient');
         const text = await directFetchNvidia(model, prompt, apiKey, settings, systemInstruction, history, signal, gatewayUrls);
         if (onStream) onStream(text);
         return text;
@@ -470,7 +470,7 @@ export class AIService {
       const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
       if (!isAbort) {
         console.warn('[AIService] OpenCode stream proxy failed, falling back to direct browser fetch:', error);
-        const { directFetchOpenCode } = await import('@src/lib/api/directClient');
+        const { directFetchOpenCode } = await import('@src/infrastructure/api/directClient');
         const text = await directFetchOpenCode(model, prompt, apiKey, settings, systemInstruction, history, signal, gatewayUrls);
         if (onStream) onStream(text);
         return text;

@@ -4,7 +4,7 @@
  */
 
 import { AVAILABLE_MODELS } from '../../config/models';
-import { AIService } from './ai.service';
+import { AIService } from '@src/core/services/ai.service';
 import { Provider, RoutingDecision, SubagentTask, LocalModelState, AIResponse } from '../types';
 
 let localModelPool: Map<string, LocalModelState> = new Map();

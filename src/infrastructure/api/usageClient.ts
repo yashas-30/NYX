@@ -1,4 +1,4 @@
-import { AIService } from '../../core/services/ai.service';
+import { AIService } from '@src/core/services/ai.service';
 
 /**
  * Fetches the remaining quota/credits for a given provider.

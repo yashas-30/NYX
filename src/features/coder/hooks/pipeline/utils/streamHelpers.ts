@@ -1,4 +1,4 @@
-import { ChatMessage, TelemetryMetrics } from '@src/core/types';
+import { ChatMessage, TelemetryMetrics } from '@src/infrastructure/types';
 
 export function createStreamUpdate(
   startTime: number,

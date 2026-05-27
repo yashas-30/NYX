@@ -6,7 +6,7 @@
  */
 
 import { AISettings, ChatMessage, TelemetryMetrics, Provider } from '../types';
-import { AIService } from './ai.service';
+import { AIService } from '@src/core/services/ai.service';
 
 export class ContinuationManager {
   /**

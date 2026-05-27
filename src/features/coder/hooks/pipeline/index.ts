@@ -1,7 +1,7 @@
 import React from 'react';
 import { AIService } from '@src/core/services/ai.service';
-import { ChatMessage, TelemetryMetrics, AISettings } from '@src/core/types';
-import { detectProvider, getEffectiveApiKey } from '@src/core/utils/provider';
+import { ChatMessage, TelemetryMetrics, AISettings } from '@src/infrastructure/types';
+import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { toast } from '@src/components/ui/sonner';
 import { getLanguageKnowledge } from '@src/config/codingKnowledge';
 

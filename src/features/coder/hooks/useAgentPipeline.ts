@@ -7,8 +7,8 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { AIService } from '@src/core/services/ai.service';
-import { ChatMessage, TelemetryMetrics, AISettings, AgentPersona, SubagentTask } from '@src/core/types';
-import { detectProvider, getEffectiveApiKey, requiresApiKey } from '@src/core/utils/provider';
+import { ChatMessage, TelemetryMetrics, AISettings, AgentPersona, SubagentTask } from '@src/infrastructure/types';
+import { detectProvider, getEffectiveApiKey, requiresApiKey } from '@src/infrastructure/utils/provider';
 import { analyzePrompt, NON_CODE_REJECTION, isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/promptAnalyzer';
 import { getLanguageKnowledge, CODING_KNOWLEDGE_SUMMARY } from '@src/config/codingKnowledge';
 import { toast } from '@src/components/ui/sonner';

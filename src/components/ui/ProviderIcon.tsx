@@ -3,7 +3,7 @@
 // To add a new provider icon: add one line to the map below.
 
 import { Cpu, Zap, Bot, Sparkles } from 'lucide-react';
-import { Logo } from '../../lib/design-system/icons';
+import { Logo } from '@src/lib/design-system/icons';
 import { ModelProvider } from '../../types';
 
 interface ProviderIconProps {

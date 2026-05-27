@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { fetchQuota } from '../lib/api/usageClient';
+import { fetchQuota } from '@src/infrastructure/api/usageClient';
 
 export interface TokenUsage {
   used: number;

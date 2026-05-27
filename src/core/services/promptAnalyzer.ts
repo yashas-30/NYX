@@ -4,7 +4,7 @@
  */
 
 import { AIService } from './ai.service';
-import { PromptAnalysis } from '../types';
+import { PromptAnalysis } from '@src/infrastructure/types';
 import { analyzePrompt as localRegexAnalyze } from '@/shared/promptAnalyzer';
 
 const PROMPT_ANALYZER_SYSTEM_PROMPT = `You are the NYX Prompt Analyzer. Analyze the user's prompt and output a valid JSON object matching this schema:

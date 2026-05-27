@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Bot, BrainCircuit } from 'lucide-react';
-import { ModelDefinition } from '@src/core/types';
+import { ModelDefinition } from '@src/infrastructure/types';
 
 export function getCustomModelIcon(model: ModelDefinition | null | undefined): React.ReactNode {
   if (!model) return <Bot className="w-3.5 h-3.5 text-muted-foreground/70" />;

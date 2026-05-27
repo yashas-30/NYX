@@ -14,7 +14,7 @@ import {
   Layers, RotateCcw, AlertTriangle
 } from 'lucide-react';
 import { ModelSelector } from '@src/components/model-card/ModelSelector';
-import { ModelDefinition } from '@src/core/types';
+import { ModelDefinition } from '@src/infrastructure/types';
 import { toast } from '@src/components/ui/sonner';
 import { analyzePrompt, optimizePromptText } from '@/shared/promptAnalyzer';
 
