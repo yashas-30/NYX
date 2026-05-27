@@ -5,6 +5,7 @@
 
 import { AISettings, AIResponse, ChatMessage, Provider } from '@src/infrastructure/types';
 import { ContinuationManager } from '@src/infrastructure/services/continuationManager';
+import { fetchWithAuth, getSessionToken, setSessionToken } from '@src/infrastructure/api/authFetch';
 
 let currentAbortController: AbortController | null = null;
 
@@ -16,8 +17,6 @@ export function cancelCurrentRequest(): void {
 }
 
 export class AIService {
-  private static sessionToken: string | null = null;
-  private static tokenExpiresAt: number = 0;
   private static inFlightRequests = new Map<string, Promise<AIResponse>>();
   private static cachedVaultStatus: any = null;
   private static cachedVaultStatusTime: number = 0;
@@ -50,46 +49,15 @@ export class AIService {
   }
 
   static setSessionToken(token: string | null): void {
-    this.sessionToken = token;
+    setSessionToken(token);
   }
 
   static getSessionToken(): string | null {
-    return this.sessionToken;
-  }
-
-  private static async getOrFetchSessionToken(isStream = false): Promise<string> {
-    if (isStream) {
-      const res = await fetch('/api/vault/token?stream=true');
-      const data = await res.json();
-      return data.token;
-    }
-    if (this.sessionToken && Date.now() < this.tokenExpiresAt - 10000) {
-      return this.sessionToken;
-    }
-    const res = await fetch('/api/vault/token');
-    const data = await res.json();
-    this.sessionToken = data.token;
-    this.tokenExpiresAt = data.expiresAt || (Date.now() + 5 * 60 * 1000);
-    return this.sessionToken || '';
+    return getSessionToken();
   }
 
   public static async fetchWithAuth(url: string, init?: RequestInit, isStream = false): Promise<Response> {
-    const token = await this.getOrFetchSessionToken(isStream);
-    const headers = new Headers(init?.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    headers.set('x-nyx-session-token', token);
-    const response = await fetch(url, {
-      ...init,
-      headers
-    });
-
-    if (response.status === 401) {
-      // Clear cached session token to force a refresh on the next request
-      this.sessionToken = null;
-      this.tokenExpiresAt = 0;
-    }
-
-    return response;
+    return fetchWithAuth(url, init, isStream);
   }
 
   /**
@@ -768,6 +736,7 @@ export class AIService {
     options?: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> }
   ): Promise<AIResponse> {
     return ContinuationManager.executeWithContinuation(
+      this.execute.bind(this),
       modelId,
       provider,
       prompt,

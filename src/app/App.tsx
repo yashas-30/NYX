@@ -1,11 +1,18 @@
-import React from 'react';
 import { CoderDashboard } from '@src/features/dashboard';
 import { Toaster } from 'sonner';
 import { useTheme } from '@src/shared/context/ThemeContext';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
-
+import { Providers } from './providers';
 
 export default function App() {
+  return (
+    <Providers>
+      <AppContent />
+    </Providers>
+  );
+}
+
+function AppContent() {
   const { theme } = useTheme();
 
   return (

@@ -6,13 +6,14 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import { AIService } from '@src/core/services/ai.service';
+import { AIService } from '@src/features/coder/services/ai.service';
 import { ChatMessage, TelemetryMetrics, AISettings, AgentPersona, SubagentTask } from '@src/infrastructure/types';
 import { detectProvider, getEffectiveApiKey, requiresApiKey } from '@src/infrastructure/utils/provider';
 import { analyzePrompt, NON_CODE_REJECTION, isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/promptAnalyzer';
-import { getLanguageKnowledge, CODING_KNOWLEDGE_SUMMARY } from '@src/config/codingKnowledge';
+import { getLanguageKnowledge, CODING_KNOWLEDGE_SUMMARY } from '@src/features/coder/config/codingKnowledge';
 import { toast } from '@src/shared/components/ui/sonner';
 import { SubagentOrchestrator } from './useSubagentOrchestrator';
+import { triggerCritic, fetchEvolutionaryRules, searchCodebase, searchWeb } from '../api/coderApi';
 
 interface PipelineProps {
   models: Record<'nyx', string>;
@@ -197,19 +198,15 @@ export const useAgentPipeline = ({
     const nyxModel = models['nyx'];
     if (!nyxModel) return;
     const activeProvider = detectProvider(nyxModel);
-    const apiKey = getEffectiveApiKey(activeProvider, apiKeys);
+    const apiKey = getEffectiveApiKey(activeProvider, apiKeys) || '';
 
     try {
-      await fetch('/api/nyx/critic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          response: responseText,
-          apiKey,
-          provider: activeProvider,
-          modelId: nyxModel
-        })
+      await triggerCritic({
+        prompt,
+        response: responseText,
+        apiKey,
+        provider: activeProvider,
+        modelId: nyxModel
       });
     } catch (err) {
       console.error('[useAgentPipeline] Background critic failed:', err);
@@ -314,13 +311,7 @@ export const useAgentPipeline = ({
         // Fetch rules
         let fetchedRules: string[] = [];
         try {
-          const res = await fetch('/api/nyx/rules');
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success && Array.isArray(data.rules)) {
-              fetchedRules = data.rules.map((r: any) => r.rule);
-            }
-          }
+          fetchedRules = await fetchEvolutionaryRules();
         } catch (err) {
           console.error('Failed to fetch evolutionary rules:', err);
         }
@@ -418,25 +409,17 @@ ${formattedRules}
     let needsCorrectiveSearch = false;
     if (isCodebase) {
       try {
-        const codebaseRes = await fetch('/api/nyx/codebase-search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: prompt }),
-          signal: controller.signal
-        });
-        if (codebaseRes.ok) {
-          const codebaseData = await codebaseRes.json();
-          if (codebaseData.success) {
-            const results = codebaseData.results || [];
-            maxCodebaseScore = results.length > 0
-              ? Math.max(...results.map((f: any) => f.relevanceScore || f.score || 0))
-              : 0;
-            const resultsStr = results
-              .map((f: any) => `File: ${f.relativePath || f.path} (Relevance Score: ${f.relevanceScore || f.score})\n\`\`\`\n${f.content}\n\`\`\``)
-              .join('\n\n');
-            codebaseContext = `\n\n[LOCAL CODEBASE CONTEXT]\nDIRECTORY STRUCTURE:\n${codebaseData.directoryStructure || ''}\n\nRELEVANT SOURCE CODE FILES:\n${resultsStr}\n[END CODEBASE CONTEXT]\n`;
-            if (maxCodebaseScore < 120) needsCorrectiveSearch = true;
-          }
+        const codebaseData = await searchCodebase(prompt, controller.signal);
+        if (codebaseData.success) {
+          const results = codebaseData.results || [];
+          maxCodebaseScore = results.length > 0
+            ? Math.max(...results.map((f: any) => f.relevanceScore || f.score || 0))
+            : 0;
+          const resultsStr = results
+            .map((f: any) => `File: ${f.relativePath || f.path} (Relevance Score: ${f.relevanceScore || f.score})\n\`\`\`\n${f.content}\n\`\`\``)
+            .join('\n\n');
+          codebaseContext = `\n\n[LOCAL CODEBASE CONTEXT]\nDIRECTORY STRUCTURE:\n${codebaseData.directoryStructure || ''}\n\nRELEVANT SOURCE CODE FILES:\n${resultsStr}\n[END CODEBASE CONTEXT]\n`;
+          if (maxCodebaseScore < 120) needsCorrectiveSearch = true;
         }
       } catch (err) {
         console.error('Codebase search failed:', err);
@@ -448,20 +431,12 @@ ${formattedRules}
     const executeWebSearch = (webSearchEnabled || needsCorrectiveSearch) && !isGreeting;
     if (executeWebSearch) {
       try {
-        const searchRes = await fetch('/api/nyx/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: prompt }),
-          signal: controller.signal
-        });
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          if (searchData.success && Array.isArray(searchData.results)) {
-            const resultsStr = searchData.results
-              .map((r: any, idx: number) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
-              .join('\n\n');
-            searchContext = `\n\nADDITIONAL WEB SEARCH RESULTS:\n${resultsStr}\n`;
-          }
+        const searchData = await searchWeb(prompt, controller.signal);
+        if (searchData.success && Array.isArray(searchData.results)) {
+          const resultsStr = searchData.results
+            .map((r: any, idx: number) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
+            .join('\n\n');
+          searchContext = `\n\nADDITIONAL WEB SEARCH RESULTS:\n${resultsStr}\n`;
         }
       } catch (err) {
         console.error('Web search failed:', err);

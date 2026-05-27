@@ -8,7 +8,7 @@ import { useAgentState } from './useAgentState';
 import { useMessageHistory } from './useMessageHistory';
 import { useAgentPipeline } from './useAgentPipeline';
 import { ChatMessage } from '@src/infrastructure/types';
-import { cancelCurrentRequest } from '@src/core/services/ai.service';
+import { cancelCurrentRequest } from '@src/features/coder/services/ai.service';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
 

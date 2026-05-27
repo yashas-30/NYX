@@ -4,13 +4,12 @@
  *              main chat canvas, and top-level view routing (coder / registry / settings).
  */
 
-import React, { lazy, Suspense, useState } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useDashboardState } from '../hooks/useDashboardState';
 import { useChatSessions } from '@src/shared/hooks/useChatSessions';
-import { CoderPage } from '@src/features/coder/CoderPage';
-import { SettingsView } from '@src/features/settings';
-import { useCoderLogic } from '@src/features/coder/hooks/useCoderLogic';
+import { useCoderLogic } from '@src/features/coder';
+import { AppRouter } from '@src/app/router';
 import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
@@ -21,19 +20,6 @@ import {
   Library
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
-
-const ModelRegistryView = lazy(() =>
-  import('@src/features/model-registry').then(m => ({ default: m.ModelRegistryView }))
-);
-
-const LoadingFallback = () => (
-  <div className="flex items-center justify-center h-full bg-[#0B0E14]">
-    <div className="flex flex-col items-center gap-3">
-      <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-      <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">Loading</span>
-    </div>
-  </div>
-);
 
 type ViewMode = 'coder' | 'registry' | 'settings';
 
@@ -271,96 +257,24 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
         {/* ── Main Content Canvas ────────────────────────────────────────── */}
         <div className="flex-1 min-w-0 h-full relative overflow-hidden bg-background">
           <AnimatePresence mode="wait">
-            {activeMode === 'coder' ? (
-              <motion.div
-                key="coder"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="absolute inset-0"
-              >
-                <ErrorBoundary name="CoderPage">
-                  <CoderPage
-                    allModels={AVAILABLE_MODELS}
-                    apiKeys={apiKeys}
-                    modelSettings={modelSettings}
-                    setModelSettings={setModelSettings}
-                    trackUsage={trackUsage}
-                    providerStatuses={statuses}
-                    activeMode={activeMode}
-                    setActiveMode={setActiveMode}
-                    sidebarOpen={sidebarOpen}
-                    onToggleSidebar={() => setSidebarOpen(p => !p)}
-                    chatSessions={chatSessions}
-                    mode={sidebarTab}
-
-                    // Pass down lifted state props
-                    activeAgent={coderState.activeAgent}
-                    isLoading={coderState.isLoading}
-                    history={coderState.history}
-                    metrics={coderState.metrics}
-                    models={coderState.models}
-                    setModel={coderState.setModel}
-                    runCoder={coderState.runCoder}
-                    stopCoder={coderState.stopCoder}
-                    clearHistory={coderState.clearHistory}
-                    suggestedPrompts={coderState.suggestedPrompts}
-                    subagentTasks={coderState.subagentTasks}
-                    webSearchEnabled={coderState.webSearchEnabled}
-                    setWebSearchEnabled={coderState.setWebSearchEnabled}
-                    codebaseKnowledgeEnabled={coderState.codebaseKnowledgeEnabled}
-                    setCodebaseKnowledgeEnabled={coderState.setCodebaseKnowledgeEnabled}
-                  />
-                </ErrorBoundary>
-              </motion.div>
-
-            ) : activeMode === 'registry' ? (
-              <motion.div
-                key="registry"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="absolute inset-0"
-              >
-                <Suspense fallback={<LoadingFallback />}>
-                  <ErrorBoundary name="ModelRegistry">
-                    <ModelRegistryView
-                      selectModel={(mid) => {
-                        setModel(mid);
-                        setActiveMode('coder');
-                      }}
-                      apiKeys={apiKeys}
-                      providerStatuses={statuses}
-                      activeMode={activeMode}
-                      setActiveMode={setActiveMode}
-                      sidebarOpen={sidebarOpen}
-                    />
-                  </ErrorBoundary>
-                </Suspense>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="settings"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="absolute inset-0 overflow-auto"
-              >
-                <ErrorBoundary name="Settings">
-                  <SettingsView
-                    apiKeys={apiKeys}
-                    updateApiKey={updateApiKey}
-                    clearApiKeys={clearApiKeys}
-                    activeMode={activeMode}
-                    setActiveMode={setActiveMode}
-                    sidebarOpen={sidebarOpen}
-                  />
-                </ErrorBoundary>
-              </motion.div>
-            )}
+            <AppRouter
+              activeMode={activeMode}
+              setActiveMode={setActiveMode}
+              apiKeys={apiKeys}
+              modelSettings={modelSettings}
+              trackUsage={trackUsage}
+              setModelSettings={setModelSettings}
+              statuses={statuses}
+              chatSessions={chatSessions}
+              sidebarOpen={sidebarOpen}
+              onToggleSidebar={() => setSidebarOpen(p => !p)}
+              models={models}
+              setModel={setModel}
+              updateApiKey={updateApiKey}
+              clearApiKeys={clearApiKeys}
+              coderState={coderState}
+              allModels={AVAILABLE_MODELS}
+            />
           </AnimatePresence>
         </div>
       </main>

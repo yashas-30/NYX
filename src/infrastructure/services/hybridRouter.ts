@@ -4,7 +4,7 @@
  */
 
 import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
-import { AIService } from '@src/core/services/ai.service';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { Provider, RoutingDecision, SubagentTask, LocalModelState, AIResponse } from '../types';
 
 let localModelPool: Map<string, LocalModelState> = new Map();
@@ -19,7 +19,7 @@ export class HybridModelRouter {
    */
   static async updateLocalModelPool(): Promise<void> {
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models');
+      const res = await fetchWithAuth('/api/nyx/local-models');
       if (res.ok) {
         const data = await res.json();
         const activeModelId = data.activeModelId;
@@ -46,10 +46,13 @@ export class HybridModelRouter {
    * Selects the cheapest/fastest model for coordinating the planning stage.
    * Priority: local GGUF → local Qwen fallback → cloud free tier.
    */
-  static async selectPlannerModel(apiKeys: Record<string, string>): Promise<RoutingDecision> {
+  static async selectPlannerModel(
+    apiKeys: Record<string, string>,
+    checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>
+  ): Promise<RoutingDecision> {
     await this.updateLocalModelPool();
 
-    const localStatus = await AIService.checkStatus('nyx-native').catch(() => 'offline' as const);
+    const localStatus = await checkStatusFn('nyx-native').catch(() => 'offline' as const);
     if (localStatus === 'online') {
       let activeId = 'nyx-gemma-4-e2b-it';
       const hotModel = Array.from(localModelPool.values()).find(m => m.status === 'hot');
@@ -64,7 +67,7 @@ export class HybridModelRouter {
       };
     }
 
-    const qwenStatus = await AIService.checkStatus('qwen-local').catch(() => 'offline' as const);
+    const qwenStatus = await checkStatusFn('qwen-local').catch(() => 'offline' as const);
     if (qwenStatus === 'online') {
       return {
         modelId: 'qwen-1.5b-local',
@@ -88,13 +91,17 @@ export class HybridModelRouter {
    * Intelligently routes a subagent task based on warmth prediction rules.
    * Simple tasks trigger background boot of cold local models if they fit constraints.
    */
-  static async routeSubagent(task: SubagentTask, apiKeys: Record<string, string>): Promise<RoutingDecision> {
+  static async routeSubagent(
+    task: SubagentTask,
+    apiKeys: Record<string, string>,
+    checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>
+  ): Promise<RoutingDecision> {
     await this.updateLocalModelPool();
 
     const isComplex = task.complexity === 'complex' || task.complexity === 'enterprise';
 
     if (!isComplex && !task.requiresCloud) {
-      const localStatus = await AIService.checkStatus('nyx-native').catch(() => 'offline' as const);
+      const localStatus = await checkStatusFn('nyx-native').catch(() => 'offline' as const);
       if (localStatus === 'online') {
         let activeId = 'nyx-gemma-4-e2b-it';
         const hotModel = Array.from(localModelPool.values()).find(m => m.status === 'hot');
@@ -114,7 +121,7 @@ export class HybridModelRouter {
           console.log(`[HybridModelRouter] Warmth match: booting cold local model for task: "${task.description}"`);
           
           // Fire-and-forget background boot request (keeps context size 4096)
-          AIService.fetchWithAuth('/api/nyx/local-models/run', {
+          fetchWithAuth('/api/nyx/local-models/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ modelId: 'nyx-gemma-4-e2b-it', settings: { contextSize: 4096 } })
@@ -138,6 +145,8 @@ export class HybridModelRouter {
    * Evaluates and fires calls down a structured fallback chain with self-healing OOM migrations.
    */
   static async executeWithFallbackChain(
+    executeWithContinuationFn: any,
+    checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>,
     modelId: string,
     provider: Provider | string,
     prompt: string,
@@ -167,10 +176,10 @@ export class HybridModelRouter {
         console.log(`[FallbackChain] Attempting ${current.id} (${current.provider}) - Step ${i + 1}/${chain.length}`);
 
         if (current.provider === 'nyx-native') {
-          const status = await AIService.checkStatus('nyx-native').catch(() => 'offline');
+          const status = await checkStatusFn('nyx-native').catch(() => 'offline');
           if (status !== 'online') {
             console.log('[FallbackChain] Booting cold local model fallback...');
-            await AIService.fetchWithAuth('/api/nyx/local-models/run', {
+            await fetchWithAuth('/api/nyx/local-models/run', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ modelId: current.id, settings: { contextSize: 4096 } })
@@ -180,7 +189,7 @@ export class HybridModelRouter {
         }
 
         const apiKey = apiKeys[current.provider] || '';
-        return await AIService.executeWithContinuation(
+        return await executeWithContinuationFn(
           current.id,
           current.provider,
           prompt,
@@ -198,7 +207,7 @@ export class HybridModelRouter {
         if (current.provider === 'nyx-native' && 
             (/OOM|out of memory|allocate|vram/i.test(err.message || ''))) {
           console.warn('[FallbackChain] Local VRAM OOM detected! Freeing assets and migrating to cloud fallback...');
-          await AIService.fetchWithAuth('/api/nyx/local-models/stop', { method: 'POST' }).catch(() => {});
+          await fetchWithAuth('/api/nyx/local-models/stop', { method: 'POST' }).catch(() => {});
         }
 
         if (err.name === 'AbortError' || err.message?.includes('aborted') || signal?.aborted) {

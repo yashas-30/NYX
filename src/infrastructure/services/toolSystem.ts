@@ -3,7 +3,7 @@
  * @description Core Tool Registry and Tool Executor for the NYX autonomous agent.
  */
 
-import { AIService } from '@src/core/services/ai.service';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { WorkspaceIntelligence } from './workspaceIntelligence';
 
 export interface ToolDefinition {
@@ -128,7 +128,7 @@ export class ToolExecutor {
     switch (toolName) {
       case 'read_file': {
         WorkspaceIntelligence.trackOpenFile(params.path);
-        const res = await AIService.fetchWithAuth('/api/nyx/read-file', {
+        const res = await fetchWithAuth('/api/nyx/read-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -145,7 +145,7 @@ export class ToolExecutor {
 
       case 'edit_file': {
         WorkspaceIntelligence.trackOpenFile(params.path);
-        const res = await AIService.fetchWithAuth('/api/nyx/write-file', {
+        const res = await fetchWithAuth('/api/nyx/write-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -162,7 +162,7 @@ export class ToolExecutor {
 
       case 'write_file': {
         WorkspaceIntelligence.trackOpenFile(params.path);
-        const res = await AIService.fetchWithAuth('/api/nyx/write-file', {
+        const res = await fetchWithAuth('/api/nyx/write-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -178,7 +178,7 @@ export class ToolExecutor {
       }
 
       case 'search_codebase': {
-        const res = await AIService.fetchWithAuth('/api/nyx/codebase-search', {
+        const res = await fetchWithAuth('/api/nyx/codebase-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: params.query }),
@@ -190,7 +190,7 @@ export class ToolExecutor {
       }
 
       case 'run_terminal': {
-        const res = await AIService.fetchWithAuth('/api/terminal/run', {
+        const res = await fetchWithAuth('/api/terminal/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -210,7 +210,7 @@ export class ToolExecutor {
       }
 
       case 'web_search': {
-        const res = await AIService.fetchWithAuth('/api/nyx/search', {
+        const res = await fetchWithAuth('/api/nyx/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: params.query }),
@@ -222,7 +222,7 @@ export class ToolExecutor {
       }
 
       case 'list_directory': {
-        const res = await AIService.fetchWithAuth('/api/nyx/list-directory', {
+        const res = await fetchWithAuth('/api/nyx/list-directory', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dirPath: params.path }),
@@ -234,7 +234,7 @@ export class ToolExecutor {
       }
 
       case 'git_diff': {
-        const res = await AIService.fetchWithAuth('/api/nyx/git-diff', {
+        const res = await fetchWithAuth('/api/nyx/git-diff', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filePath: params.path }),
@@ -246,7 +246,7 @@ export class ToolExecutor {
       }
 
       case 'git_status': {
-        const res = await AIService.fetchWithAuth('/api/nyx/git-status', {
+        const res = await fetchWithAuth('/api/nyx/git-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({}),

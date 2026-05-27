@@ -10,10 +10,12 @@ import { FREE_OPENCODE_MODELS } from '@src/features/model-registry/config/models
 import { ModelDefinition, Provider } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 
-import { CoderHeader, MessageList, PromptInput } from './components';
-import { AgentPlanner } from './components/AgentPlanner';
-import { getCustomModelIcon } from './utils/modelIcons';
-import { useCoderLogic } from './hooks/useCoderLogic';
+import { CoderHeader } from './CoderHeader';
+import { MessageList } from './MessageList';
+import { PromptInput } from './PromptInput';
+import { AgentPlanner } from './AgentPlanner';
+import { getCustomModelIcon } from '../utils/modelIcons';
+import { useCoderLogic } from '../hooks/useCoderLogic';
 
 interface CoderPageProps {
   allModels: any[];

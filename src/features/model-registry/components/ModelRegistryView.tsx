@@ -8,7 +8,7 @@ import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
 import { ModelOption } from '@src/types';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
-import { AIService } from '@src/core/services/ai.service';
+import { AIService } from '@src/features/coder/services/ai.service';
 
 // Import modular sub-components
 import { SectionHeader } from './RegistryShared';

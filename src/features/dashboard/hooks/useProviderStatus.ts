@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { AIService } from '@src/core/services/ai.service';
+import { AIService } from '@src/features/coder/services/ai.service';
 import { Provider } from '@src/infrastructure/types';
 
 export type Status = 'online' | 'offline' | 'no-key';

@@ -3,7 +3,7 @@
  * @description Client-side workspace intelligence orchestrator. Coordinates project profiling and caches results.
  */
 
-import { AIService } from '@src/core/services/ai.service';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { WorkspaceProfile } from '../types';
 
 let cachedProfile: WorkspaceProfile | null = null;
@@ -45,7 +45,7 @@ export class WorkspaceIntelligence {
     }
 
     try {
-      const response = await AIService.fetchWithAuth('/api/nyx/workspace-profile', {
+      const response = await fetchWithAuth('/api/nyx/workspace-profile', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

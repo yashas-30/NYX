@@ -1,4 +1,4 @@
-import { AIService } from '@src/core/services/ai.service';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 /**
  * Fetches the remaining quota/credits for a given provider.
@@ -6,7 +6,7 @@ import { AIService } from '@src/core/services/ai.service';
  */
 export async function fetchQuota(provider: string, apiKey?: string): Promise<{ total: number; used: number; totalUSD?: number; usedUSD?: number }> {
   try {
-    const response = await (AIService as any).fetchWithAuth('/api/models/quota', {
+    const response = await fetchWithAuth('/api/models/quota', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider, apiKey: apiKey ? apiKey.trim() : undefined })

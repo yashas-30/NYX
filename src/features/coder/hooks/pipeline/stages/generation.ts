@@ -1,4 +1,4 @@
-import { AIService } from '@src/core/services/ai.service';
+import { AIService } from '@src/features/coder/services/ai.service';
 import { AISettings } from '@src/infrastructure/types';
 import { ExecutionPlan } from './planning';
 import { writeFileWithHistory } from '../utils/fileWriter';

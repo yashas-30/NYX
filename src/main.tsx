@@ -1,10 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
+import App from './app/App.tsx';
 import './index.css';
-
-import { ThemeProvider } from '@src/shared/context/ThemeContext';
-import { TokenUsageProvider } from '@src/shared/context/TokenUsageContext';
 
 // ── Transparent Global Session Fetch Interceptor ─────────────────────────────
 let cachedToken: string | null = null;
@@ -71,11 +68,6 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Pr
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider>
-      <TokenUsageProvider>
-        <App />
-
-      </TokenUsageProvider>
-    </ThemeProvider>
+    <App />
   </StrictMode>,
 );

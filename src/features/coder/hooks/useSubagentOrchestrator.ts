@@ -6,12 +6,13 @@
  */
 
 import { useCallback } from 'react';
-import { AIService } from '@src/core/services/ai.service';
+import { AIService } from '@src/features/coder/services/ai.service';
 import { ContinuationManager } from '@src/infrastructure/services/continuationManager';
 import { HybridModelRouter } from '@src/infrastructure/services/hybridRouter';
 import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
 import { TOOL_REGISTRY, ToolExecutor } from '@src/infrastructure/services/toolSystem';
-import { SUBAGENT_PERSONAS } from '@src/config/agents';
+import { SUBAGENT_PERSONAS } from '@src/features/coder/config/agents';
+import { validateWorkspace, searchCodebase, searchWeb } from '../api/coderApi';
 import {
   SubagentTask,
   SubagentResult,
@@ -64,13 +65,14 @@ export class SubagentOrchestrator {
   // ── Planner ────────────────────────────────────────────────────────────────
 
   private async runPlanner(prompt: string, options: OrchestratorOptions): Promise<SubagentPlan> {
-    const decision = await HybridModelRouter.selectPlannerModel(options.apiKeys);
+    const decision = await HybridModelRouter.selectPlannerModel(options.apiKeys, AIService.checkStatus.bind(AIService));
     const systemInstruction = SUBAGENT_PERSONAS.planner;
     
     const profile = await WorkspaceIntelligence.getProfile();
     const profileText = `\n\n[WORKSPACE PROFILE]\n${JSON.stringify(profile, null, 2)}\n[END PROFILE]`;
 
     const result = await ContinuationManager.executeWithContinuation(
+      AIService.execute.bind(AIService),
       decision.modelId,
       decision.provider,
       `Task: ${prompt}${profileText}\n\nDecompose this into subtasks. Output ONLY JSON.`,
@@ -189,7 +191,7 @@ export class SubagentOrchestrator {
     this.emitUpdate();
 
     try {
-      const routing = await HybridModelRouter.routeSubagent(task, options.apiKeys);
+      const routing = await HybridModelRouter.routeSubagent(task, options.apiKeys, AIService.checkStatus.bind(AIService));
       task.assignedModel = routing;
 
       const handoff = await this.buildHandoffSpec(task, originalPrompt, options);
@@ -233,6 +235,8 @@ If you invoke a tool, the system will execute it and return the stdout/output to
         
         // Execute through fallback chain
         const response = await HybridModelRouter.executeWithFallbackChain(
+          AIService.executeWithContinuation.bind(AIService),
+          AIService.checkStatus.bind(AIService),
           routing.modelId,
           routing.provider,
           promptPayload,
@@ -360,17 +364,7 @@ If you invoke a tool, the system will execute it and return the stdout/output to
       console.log(`[Validation] Running linter/compiler checks for ${filePath} (Attempt ${attempts}/${maxValidationAttempts})`);
 
       try {
-        const res = await AIService.fetchWithAuth('/api/nyx/validate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
-        });
-
-        if (!res.ok) {
-          return `[VALIDATION SYSTEM WARNING] Validation status returned: ${res.status}`;
-        }
-
-        const data = await res.json();
+        const data = await validateWorkspace();
         if (data.success) {
           console.log(`[Validation] Verification passed for ${filePath}!`);
           return `[VALIDATION SUCCESS] Linter/compiler check passed. No issues found.`;
@@ -481,24 +475,12 @@ ${profile.openFiles.map(f => `- ${f}`).join('\n') || 'none'}
     let codebaseContext = '';
     if (options.codebaseKnowledgeEnabled && (task.type === 'coder' || task.type === 'researcher')) {
       try {
-        const res = await fetch('/api/nyx/codebase-search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: originalPrompt }),
-          signal: this.controller?.signal ?? undefined
-        });
-        if (res.ok) {
-          const data = await res.json() as {
-            success: boolean;
-            results?: Array<{ relativePath?: string; path?: string; content: string; relevanceScore?: number; score?: number }>;
-            directoryStructure?: string;
-          };
-          if (data.success && Array.isArray(data.results)) {
-            const resultsStr = data.results
-              .map(f => `File: ${f.relativePath ?? f.path} (score: ${f.relevanceScore ?? f.score ?? 0})\n\`\`\`\n${f.content}\n\`\`\``)
-              .join('\n\n');
-            codebaseContext = `[LOCAL CODEBASE CONTEXT]\nDIRECTORY STRUCTURE:\n${data.directoryStructure ?? ''}\n\nRELEVANT FILES:\n${resultsStr}\n[END CODEBASE CONTEXT]`;
-          }
+        const data = await searchCodebase(originalPrompt, this.controller?.signal ?? undefined);
+        if (data.success && Array.isArray(data.results)) {
+          const resultsStr = data.results
+            .map(f => `File: ${f.relativePath ?? f.path} (score: ${f.relevanceScore ?? f.score ?? 0})\n\`\`\`\n${f.content}\n\`\`\``)
+            .join('\n\n');
+          codebaseContext = `[LOCAL CODEBASE CONTEXT]\nDIRECTORY STRUCTURE:\n${data.directoryStructure ?? ''}\n\nRELEVANT FILES:\n${resultsStr}\n[END CODEBASE CONTEXT]`;
         }
       } catch (err) {
         if ((err instanceof Error) && (err.name === 'AbortError' || err.message === 'AbortError')) throw err;
@@ -509,23 +491,12 @@ ${profile.openFiles.map(f => `- ${f}`).join('\n') || 'none'}
     let webContext = '';
     if (options.webSearchEnabled && (task.type === 'researcher' || task.type === 'coder')) {
       try {
-        const res = await fetch('/api/nyx/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: originalPrompt }),
-          signal: this.controller?.signal ?? undefined
-        });
-        if (res.ok) {
-          const data = await res.json() as {
-            success: boolean;
-            results?: Array<{ title: string; link: string; snippet: string }>;
-          };
-          if (data.success && Array.isArray(data.results)) {
-            const resultsStr = data.results
-              .map((r, idx) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
-              .join('\n\n');
-            webContext = `[WEB SEARCH CONTEXT]\n${resultsStr}\n[END WEB SEARCH]`;
-          }
+        const data = await searchWeb(originalPrompt, this.controller?.signal ?? undefined);
+        if (data.success && Array.isArray(data.results)) {
+          const resultsStr = data.results
+            .map((r, idx) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
+            .join('\n\n');
+          webContext = `[WEB SEARCH CONTEXT]\n${resultsStr}\n[END WEB SEARCH]`;
         }
       } catch (err) {
         if ((err instanceof Error) && (err.name === 'AbortError' || err.message === 'AbortError')) throw err;

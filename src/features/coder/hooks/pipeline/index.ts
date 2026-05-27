@@ -1,9 +1,9 @@
 import React from 'react';
-import { AIService } from '@src/core/services/ai.service';
+import { AIService } from '@src/features/coder/services/ai.service';
 import { ChatMessage, TelemetryMetrics, AISettings } from '@src/infrastructure/types';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { toast } from '@src/shared/components/ui/sonner';
-import { getLanguageKnowledge } from '@src/config/codingKnowledge';
+import { getLanguageKnowledge } from '@src/features/coder/config/codingKnowledge';
 
 // Import our modularized stages and utils
 import { buildCodebaseContext, buildWebSearchContext } from './utils/contextBuilder';

@@ -5,8 +5,7 @@
  * re-prompts up to 5 times to guarantee complete output.
  */
 
-import { AISettings, ChatMessage, TelemetryMetrics, Provider } from '../types';
-import { AIService } from '@src/core/services/ai.service';
+import { AISettings, ChatMessage, TelemetryMetrics, Provider, AIResponse } from '../types';
 
 export class ContinuationManager {
   /**
@@ -14,6 +13,17 @@ export class ContinuationManager {
    * Guarantees complete, non-cut-off output by re-prompting up to maxAttempts times.
    */
   static async executeWithContinuation(
+    executeFn: (
+      modelId: string,
+      provider: string,
+      prompt: string,
+      apiKey?: string,
+      systemInstruction?: string,
+      settings?: AISettings,
+      onStream?: (text: string) => void,
+      signal?: AbortSignal,
+      options?: any
+    ) => Promise<AIResponse>,
     modelId: string,
     provider: Provider | string,
     prompt: string,
@@ -44,7 +54,7 @@ export class ContinuationManager {
         ? prompt
         : `Continue exactly from where you left off. Do not repeat any previously generated content. Start immediately with the next character/token after this:\n\n${baseText.slice(-500)}`;
 
-      const result = await AIService.execute(
+      const result = await executeFn(
         modelId,
         provider,
         currentPrompt,
