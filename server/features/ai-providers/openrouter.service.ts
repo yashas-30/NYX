@@ -1,33 +1,33 @@
-/**
- * @file server/routes/openrouter.ts
- * @description OpenRouter direct REST proxy with Cloudflare AI Gateway support.
- */
+import { Gateway } from '../../lib/gateway.js';
 
-import { Router } from 'express';
-import { Gateway } from '../lib/gateway.js';
-import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
-import { validate } from '../middleware/validate.js';
-import { openrouterStreamSchema } from '../schemas/index.js';
+export interface OpenRouterStreamParams {
+  model: string;
+  prompt: string;
+  apiKey: string;
+  settings?: any;
+  systemInstruction?: string;
+  history?: any[];
+  gatewayUrls?: Record<string, string>;
+}
 
-export const openrouterRouter = Router();
-
-openrouterRouter.post('/stream', validate(openrouterStreamSchema), async (req, res) => {
-  const controller = new AbortController();
-  res.on('close', () => {
-    controller.abort();
-  });
-
-  try {
-    const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = req.body;
+export class OpenRouterService {
+  async executeStream(
+    params: OpenRouterStreamParams,
+    signal: AbortSignal,
+    onChunk: (chunk: string) => void,
+    onDone: () => void,
+    onError: (err: any) => void
+  ): Promise<void> {
+    const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = params;
 
     // Auth validation
     const authResult = Gateway.validateAuth('openrouter', model, apiKey);
     if (!authResult.valid) {
-      return res.status(401).json({ error: authResult.error });
+      throw new Error(authResult.error || 'Authentication validation failed');
     }
 
     if (!model || !prompt) {
-      return res.status(400).json({ error: 'Model and prompt are required' });
+      throw new Error('Model and prompt are required');
     }
 
     const activeKey = Gateway.getActiveKey('openrouter', apiKey);
@@ -45,14 +45,6 @@ openrouterRouter.post('/stream', validate(openrouterStreamSchema), async (req, r
     // Build URL with gateway support (custom user gateway takes priority)
     const { url } = Gateway.buildUrl('openrouter', '/chat/completions', gatewayUrls);
 
-    // Set event-stream headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-    sendSseTokenRotate(res);
-
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -69,7 +61,7 @@ openrouterRouter.post('/stream', validate(openrouterStreamSchema), async (req, r
         max_tokens: settings?.maxTokens ?? 4096,
         top_p: settings?.topP ?? 1.0,
       }),
-      signal: controller.signal,
+      signal,
     });
 
     if (!response.ok || !response.body) {
@@ -81,9 +73,7 @@ openrouterRouter.post('/stream', validate(openrouterStreamSchema), async (req, r
       } catch {
         errorMessage = errorText || errorMessage;
       }
-      res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
-      res.end();
-      return;
+      throw new Error(errorMessage);
     }
 
     const reader = response.body.getReader();
@@ -104,15 +94,14 @@ openrouterRouter.post('/stream', validate(openrouterStreamSchema), async (req, r
         if (trimmed.startsWith('data: ')) {
           const dataStr = trimmed.slice(6).trim();
           if (dataStr === '[DONE]') {
-            res.write('data: [DONE]\n\n');
-            res.end();
+            onDone();
             return;
           }
           try {
             const parsed = JSON.parse(dataStr);
             const chunk = parsed.choices?.[0]?.delta?.content ?? '';
             if (chunk) {
-              res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+              onChunk(chunk);
             }
           } catch (e) {
             // ignore JSON errors
@@ -121,15 +110,6 @@ openrouterRouter.post('/stream', validate(openrouterStreamSchema), async (req, r
       }
     }
 
-    res.write('data: [DONE]\n\n');
-    res.end();
-  } catch (e: any) {
-    console.error('[OpenRouter Error]:', e.message);
-    if (e.name === 'AbortError') {
-      res.end();
-      return;
-    }
-    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
-    res.end();
+    onDone();
   }
-});
+}

@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { UnifiedEngine } from '../lib/unifiedEngine.js';
-import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
-import { validate } from '../middleware/validate.js';
-import { geminiStreamSchema } from '../schemas/index.js';
-import logger from '../lib/logger.ts';
+import { sendSseTokenRotate } from '../../lib/sseHelpers.ts';
+import { validate } from '../../middleware/validate.js';
+import { geminiStreamSchema } from './gemini.schema.ts';
+import { GeminiService } from './gemini.service.ts';
+import logger from '../../lib/logger.ts';
 
 export const geminiRouter = Router();
+const service = new GeminiService();
 
 geminiRouter.post('/stream', validate(geminiStreamSchema), async (req, res) => {
   const { model, prompt, settings, systemInstruction, history, apiKey } = req.body;
@@ -30,21 +31,13 @@ geminiRouter.post('/stream', validate(geminiStreamSchema), async (req, res) => {
   try {
     logger.info({ model }, 'Forwarding request to actual Gemini API');
 
-    const messages = [];
-    if (systemInstruction) {
-      messages.push({ role: 'system' as const, content: systemInstruction });
-    }
-    if (history && Array.isArray(history)) {
-      messages.push(...history.map((m: any) => ({ role: m.role as any, content: m.content })));
-    }
-    messages.push({ role: 'user' as const, content: prompt });
-
-    await UnifiedEngine.executeStream(
+    await service.executeStream(
       {
-        provider: 'gemini',
         model,
-        messages,
+        prompt,
         settings,
+        systemInstruction,
+        history,
         apiKey
       },
       (chunk) => {
@@ -67,4 +60,3 @@ geminiRouter.post('/stream', validate(geminiStreamSchema), async (req, res) => {
     }
   }
 });
-

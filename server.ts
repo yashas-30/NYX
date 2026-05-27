@@ -22,20 +22,20 @@ import { metricsRouter } from './server/features/system/metrics.router.ts';
 import { conversationsRouter } from './server/features/conversations/conversations.router.ts';
 import { cacheRouter } from './server/features/cache/cache.router.ts';
 import { workspaceRouter } from './server/features/workspace/workspace.router.ts';
-import { modelProxyRouter } from './server/routes/modelProxy.ts';
-import { fastifyProxyRouter } from './server/routes/fastifyProxy.ts';
+import { modelProxyRouter } from './server/features/model-proxy/modelProxy.router.ts';
+import { fastifyProxyRouter } from './server/features/model-proxy/fastifyProxy.router.ts';
 
 // Existing routes
-import { geminiRouter } from './server/routes/gemini.ts';
-import { openrouterRouter } from './server/routes/openrouter.ts';
-import { nvidiaRouter } from './server/routes/nvidia.ts';
+import { geminiRouter } from './server/features/ai-providers/gemini.router.ts';
+import { openrouterRouter } from './server/features/ai-providers/openrouter.router.ts';
+import { nvidiaRouter } from './server/features/ai-providers/nvidia.router.ts';
 import { terminalRouter } from './server/features/terminal/terminal.router.ts';
 import { agentsRouter } from './server/features/agents/agents.router.ts';
 import { opencodeRouter } from './server/features/opencode/opencode.router.ts';
-import { nyxRouter } from './server/routes/nyx.ts';
-import { pollinationsRouter } from './server/routes/pollinations.ts';
-import { localModelsRouter } from './server/routes/localModels.ts';
-import { qwenLocalRouter } from './server/routes/qwenLocal.ts';
+import { nyxRouter } from './server/features/nyx/nyx.router.ts';
+import { pollinationsRouter } from './server/features/ai-providers/pollinations.router.ts';
+import { localModelsRouter } from './server/features/local-models/localModels.router.ts';
+import { qwenLocalRouter } from './server/features/local-models/qwenLocal.router.ts';
 
 import { warmupDNS, startFastifyServer } from './server/lib/fastifyApi.ts';
 import { requestIdMiddleware } from './server/middleware/requestId.ts';

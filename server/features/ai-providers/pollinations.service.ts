@@ -1,27 +1,24 @@
-/**
- * @file server/routes/pollinations.ts
- * @description Pollinations.ai keyless free AI model proxy.
- */
+import logger from '../../lib/logger.ts';
 
-import { Router } from 'express';
-import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
-import { validate } from '../middleware/validate.js';
-import { pollinationsStreamSchema } from '../schemas/index.js';
-import logger from '../lib/logger.ts';
+export interface PollinationsStreamParams {
+  model: string;
+  prompt: string;
+  settings?: any;
+  systemInstruction?: string;
+  history?: any[];
+}
 
-export const pollinationsRouter = Router();
-
-pollinationsRouter.post('/stream', validate(pollinationsStreamSchema), async (req, res) => {
-  const controller = new AbortController();
-  res.on('close', () => {
-    controller.abort();
-  });
-
-  try {
-    const { model, prompt, settings, systemInstruction, history } = req.body;
+export class PollinationsService {
+  async executeStream(
+    params: PollinationsStreamParams,
+    signal: AbortSignal,
+    onChunk: (chunk: string) => void,
+    onDone: () => void
+  ): Promise<void> {
+    const { model, prompt, settings, systemInstruction, history } = params;
 
     if (!model || !prompt) {
-      return res.status(400).json({ error: 'Model and prompt are required' });
+      throw new Error('Model and prompt are required');
     }
 
     const realModel = model.replace('pollinations/', '');
@@ -45,29 +42,19 @@ pollinationsRouter.post('/stream', validate(pollinationsStreamSchema), async (re
 
     logger.info({ model: realModel }, 'Forwarding stream request to Pollinations.ai');
 
-    // Set event-stream headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-    sendSseTokenRotate(res);
-
     const response = await fetch('https://text.pollinations.ai/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-      signal: controller.signal,
+      signal,
     });
 
     if (!response.ok || !response.body) {
       const errText = await response.text();
       logger.error({ status: response.status, error: errText }, 'Pollinations API response error');
-      res.write(`data: ${JSON.stringify({ error: `Pollinations API Error ${response.status}: ${errText}` })}\n\n`);
-      res.end();
-      return;
+      throw new Error(`Pollinations API Error ${response.status}: ${errText}`);
     }
 
     const reader = response.body.getReader();
@@ -85,20 +72,19 @@ pollinationsRouter.post('/stream', validate(pollinationsStreamSchema), async (re
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        
+
         // Handle raw SSE format from pollinations
         if (trimmed.startsWith('data: ')) {
           const dataStr = trimmed.slice(6).trim();
           if (dataStr === '[DONE]') {
-            res.write('data: [DONE]\n\n');
-            res.end();
+            onDone();
             return;
           }
           try {
             const parsed = JSON.parse(dataStr);
             const chunk = parsed.choices?.[0]?.delta?.content ?? '';
             if (chunk) {
-              res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+              onChunk(chunk);
             }
           } catch (e) {
             // ignore JSON parse errors
@@ -109,24 +95,15 @@ pollinationsRouter.post('/stream', validate(pollinationsStreamSchema), async (re
             const parsed = JSON.parse(trimmed);
             const chunk = parsed.choices?.[0]?.delta?.content ?? parsed.text ?? '';
             if (chunk) {
-              res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+              onChunk(chunk);
             }
           } catch {
-            // Not JSON, just output raw line if it's part of the text
+            // Not JSON, ignore
           }
         }
       }
     }
 
-    res.write('data: [DONE]\n\n');
-    res.end();
-  } catch (e: any) {
-    logger.error({ err: e }, 'Pollinations stream error');
-    if (e.name === 'AbortError') {
-      res.end();
-      return;
-    }
-    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
-    res.end();
+    onDone();
   }
-});
+}

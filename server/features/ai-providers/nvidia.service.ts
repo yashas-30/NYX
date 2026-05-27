@@ -1,19 +1,6 @@
-/**
- * @file server/routes/nvidia.ts
- * @description NVIDIA NIM API direct REST proxy.
- * Requires a valid NVIDIA API key (nvapi-*) for authentication.
- */
+import logger from '../../lib/logger.ts';
 
-import { Router } from 'express';
-import { sendSseTokenRotate } from '../lib/sseHelpers.ts';
-import { validate } from '../middleware/validate.js';
-import { nvidiaStreamSchema } from '../schemas/index.js';
-import logger from '../lib/logger.ts';
-
-export const nvidiaRouter = Router();
-
-// NVIDIA NIM free model mapping (UI ID -> Real API ID)
-const NVIDIA_MODELS: Record<string, string> = {
+export const NVIDIA_MODELS: Record<string, string> = {
   'nvidia/llama-3.3-70b-instruct': 'meta/llama-3.3-70b-instruct',
   'nvidia/deepseek-r1': 'deepseek-ai/deepseek-r1',
   'nvidia/deepseek-v3': 'deepseek-ai/deepseek-v3',
@@ -25,24 +12,33 @@ const NVIDIA_MODELS: Record<string, string> = {
   'nvidia/ministral-8b': 'mistralai/ministral-8b-instruct-v0.3',
 };
 
-nvidiaRouter.post('/stream', validate(nvidiaStreamSchema), async (req, res) => {
-  const controller = new AbortController();
-  res.on('close', () => {
-    controller.abort();
-  });
+export interface NvidiaStreamParams {
+  model: string;
+  prompt: string;
+  apiKey?: string;
+  settings?: any;
+  systemInstruction?: string;
+  history?: any[];
+}
 
-  try {
-    const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = req.body;
+export class NvidiaService {
+  async executeStream(
+    params: NvidiaStreamParams,
+    signal: AbortSignal,
+    onChunk: (chunk: string) => void,
+    onDone: () => void
+  ): Promise<void> {
+    const { model, prompt, apiKey, settings, systemInstruction, history } = params;
 
     if (!model || !prompt) {
-      return res.status(400).json({ error: 'Model and prompt are required' });
+      throw new Error('Model and prompt are required');
     }
 
     // Map UI model ID to real NVIDIA API model ID
     const realModel = NVIDIA_MODELS[model] || model.replace('nvidia/', '');
 
     if (!realModel) {
-      return res.status(400).json({ error: `Unknown NVIDIA model: ${model}` });
+      throw new Error(`Unknown NVIDIA model: ${model}`);
     }
 
     // Build messages
@@ -67,18 +63,10 @@ nvidiaRouter.post('/stream', validate(nvidiaStreamSchema), async (req, res) => {
     // Resolve API key: request body > env var
     const activeKey = apiKey || process.env.NVIDIA_API_KEY || '';
     if (!activeKey || !activeKey.startsWith('nvapi-')) {
-      return res.status(401).json({ error: 'NVIDIA API key is required. Add your nvapi-* key in Settings.' });
+      throw new Error('NVIDIA API key is required. Add your nvapi-* key in Settings.');
     }
 
     logger.info({ model: realModel }, 'Forwarding stream request to NVIDIA NIM');
-
-    // Set event-stream headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-    sendSseTokenRotate(res);
 
     const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
@@ -87,15 +75,13 @@ nvidiaRouter.post('/stream', validate(nvidiaStreamSchema), async (req, res) => {
         'Authorization': `Bearer ${activeKey}`,
       },
       body: JSON.stringify(requestBody),
-      signal: controller.signal,
+      signal,
     });
 
     if (!response.ok || !response.body) {
       const errText = await response.text();
       logger.error({ status: response.status, error: errText }, 'NVIDIA API response error');
-      res.write(`data: ${JSON.stringify({ error: `NVIDIA API Error ${response.status}: ${errText}` })}\n\n`);
-      res.end();
-      return;
+      throw new Error(`NVIDIA API Error ${response.status}: ${errText}`);
     }
 
     const reader = response.body.getReader();
@@ -116,15 +102,14 @@ nvidiaRouter.post('/stream', validate(nvidiaStreamSchema), async (req, res) => {
         if (trimmed.startsWith('data: ')) {
           const dataStr = trimmed.slice(6).trim();
           if (dataStr === '[DONE]') {
-            res.write('data: [DONE]\n\n');
-            res.end();
+            onDone();
             return;
           }
           try {
             const parsed = JSON.parse(dataStr);
             const chunk = parsed.choices?.[0]?.delta?.content ?? '';
             if (chunk) {
-              res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+              onChunk(chunk);
             }
           } catch (e) {
             // ignore JSON errors
@@ -133,15 +118,6 @@ nvidiaRouter.post('/stream', validate(nvidiaStreamSchema), async (req, res) => {
       }
     }
 
-    res.write('data: [DONE]\n\n');
-    res.end();
-  } catch (e: any) {
-    logger.error({ err: e }, 'NVIDIA stream error');
-    if (e.name === 'AbortError') {
-      res.end();
-      return;
-    }
-    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
-    res.end();
+    onDone();
   }
-});
+}
