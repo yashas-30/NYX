@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { ConversationStore } from '../lib/conversationStore.ts';
+import { ConversationStore } from './conversations.service.ts';
 
 export const conversationsRouter = Router();
 

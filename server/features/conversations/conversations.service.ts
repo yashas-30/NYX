@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import { db } from '../db/client.ts';
-import { conversations, messages } from '../db/schema.ts';
+import { db } from '../../db/client.ts';
+import { conversations, messages } from '../../db/schema.ts';
 import { eq, desc } from 'drizzle-orm';
-import { APP_STATE_DIR } from './paths.ts';
+import { APP_STATE_DIR } from '../../lib/paths.ts';
 
 export interface Message {
   id: string;

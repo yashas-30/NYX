@@ -19,7 +19,7 @@ import { adminRouter } from './server/features/admin/admin.router.ts';
 import { systemRouter } from './server/features/system/system.router.ts';
 import { healthRouter } from './server/features/system/health.router.ts';
 import { metricsRouter } from './server/features/system/metrics.router.ts';
-import { conversationsRouter } from './server/routes/conversations.ts';
+import { conversationsRouter } from './server/features/conversations/conversations.router.ts';
 import { cacheRouter } from './server/features/cache/cache.router.ts';
 import { workspaceRouter } from './server/features/workspace/workspace.router.ts';
 import { modelProxyRouter } from './server/routes/modelProxy.ts';
@@ -45,7 +45,7 @@ import { createSessionToken, verifySessionToken } from './server/features/vault/
 import { cleanupProcesses } from './server/lib/processRegistry.ts';
 import { CodebaseScanner } from './server/lib/codebaseScanner.ts';
 import { runMigrations } from './server/db/migrator.ts';
-import { migrateOldStore } from './server/lib/conversationStore.ts';
+import { migrateOldStore } from './server/features/conversations/conversations.service.ts';
 
 // DNS override removed: breaks enterprise VPNs and split-horizon DNS.
 
