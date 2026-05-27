@@ -1,9 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Key, ChevronUp, ChevronDown, Network, Trash2 } from 'lucide-react';
-import { AVAILABLE_MODELS } from '@/src/config/models';
-import { useTokenUsage } from '@/src/context/TokenUsageContext';
-import { toast } from '@/src/components/ui/sonner';
+import { AVAILABLE_MODELS } from '@src/config/models';
+import { useTokenUsage } from '@src/context/TokenUsageContext';
+import { toast } from '@src/components/ui/sonner';
 
 interface ProviderConfig {
   id: string;

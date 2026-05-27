@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { toast } from '@/src/components/ui/sonner';
+import { toast } from '@src/components/ui/sonner';
 
 const QUANT_TIERS = [
   { id: 'Q4_K_M', label: 'Speed',    badge: '3–4× faster',  quality: '95%', vram: '~3.9 GB', warn: 'Higher hallucination risk for complex code.' },

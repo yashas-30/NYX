@@ -1,4 +1,4 @@
-import { ChatMessage } from '@/src/core/types';
+import { ChatMessage } from '@src/core/types';
 
 export interface CodebaseSearchResponse {
   success: boolean;

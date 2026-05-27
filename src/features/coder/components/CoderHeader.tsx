@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Zap, Trash2, Timer, PanelLeftOpen, ChevronDown, Share2 } from 'lucide-react';
-import { StatusBadge } from '@/src/components/ui/StatusBadge';
-import { AgentPersona } from '@/src/core/types';
-import { toast } from '@/src/components/ui/sonner';
+import { StatusBadge } from '@src/components/ui/StatusBadge';
+import { AgentPersona } from '@src/core/types';
+import { toast } from '@src/components/ui/sonner';
 
 interface CoderHeaderProps {
   activeMode?: 'coder' | 'registry' | 'settings';

@@ -1,5 +1,5 @@
-import { AIService } from '@/src/core/services/ai.service';
-import { AISettings } from '@/src/core/types';
+import { AIService } from '@src/core/services/ai.service';
+import { AISettings } from '@src/core/types';
 
 export interface ExecutionPlan {
   summary: string;

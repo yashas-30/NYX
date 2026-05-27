@@ -4,8 +4,8 @@
  */
 
 import { useState, useCallback } from 'react';
-import { AgentPersona } from '@/src/core/types';
-import { DEFAULT_AGENTS } from '@/src/config/agents';
+import { AgentPersona } from '@src/core/types';
+import { DEFAULT_AGENTS } from '@src/config/agents';
 
 interface AgentStateProps {
   models?: Record<'nyx', string>;

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { ChatMessage } from '@/src/core/types';
+import { ChatMessage } from '@src/core/types';
 
 export interface ConversationNode {
   id: string;

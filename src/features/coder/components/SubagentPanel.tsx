@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { SubagentTask } from '@/src/core/types';
+import { SubagentTask } from '@src/core/types';
 import { Cpu, Cloud, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 
 interface SubagentPanelProps {

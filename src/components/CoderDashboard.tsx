@@ -6,12 +6,12 @@
 
 import React, { lazy, Suspense, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useDashboardState } from '@/src/hooks/useDashboardState';
-import { useChatSessions } from '@/src/hooks/useChatSessions';
-import { CoderPage } from '@/src/features/coder/CoderPage';
+import { useDashboardState } from '@src/hooks/useDashboardState';
+import { useChatSessions } from '@src/hooks/useChatSessions';
+import { CoderPage } from '@src/features/coder/CoderPage';
 import { SettingsView } from './dashboard/settings/SettingsView';
-import { useCoderLogic } from '@/src/features/coder/hooks/useCoderLogic';
-import { AVAILABLE_MODELS } from '@/src/config/models';
+import { useCoderLogic } from '@src/features/coder/hooks/useCoderLogic';
+import { AVAILABLE_MODELS } from '@src/config/models';
 import { useTheme } from '../context/ThemeContext';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
@@ -20,7 +20,7 @@ import {
   ArrowLeft, ArrowRight, History, Clock, Folder, ChevronDown,
   Library
 } from 'lucide-react';
-import { toast } from '@/src/components/ui/sonner';
+import { toast } from '@src/components/ui/sonner';
 
 const ModelRegistryView = lazy(() =>
   import('./dashboard/registry/ModelRegistryView').then(m => ({ default: m.ModelRegistryView }))

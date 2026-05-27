@@ -1,9 +1,9 @@
 import React from 'react';
-import { AIService } from '@/src/core/services/ai.service';
-import { ChatMessage, TelemetryMetrics, AISettings } from '@/src/core/types';
-import { detectProvider, getEffectiveApiKey } from '@/src/core/utils/provider';
-import { toast } from '@/src/components/ui/sonner';
-import { getLanguageKnowledge } from '@/src/config/codingKnowledge';
+import { AIService } from '@src/core/services/ai.service';
+import { ChatMessage, TelemetryMetrics, AISettings } from '@src/core/types';
+import { detectProvider, getEffectiveApiKey } from '@src/core/utils/provider';
+import { toast } from '@src/components/ui/sonner';
+import { getLanguageKnowledge } from '@src/config/codingKnowledge';
 
 // Import our modularized stages and utils
 import { buildCodebaseContext, buildWebSearchContext } from './utils/contextBuilder';

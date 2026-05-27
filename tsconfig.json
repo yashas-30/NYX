@@ -22,10 +22,10 @@
     "allowJs": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": [
-        "./src/*",
-        "./*"
-      ],
+      "@/*": ["./*"],
+      "@src/*": ["./src/*"],
+      "@server/*": ["./server/*"],
+      "@shared/*": ["./src/shared/*"],
       "electron-vite": [
         "./node_modules/electron-vite/dist/index.d.ts"
       ],

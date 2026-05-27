@@ -15,8 +15,8 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
-import { SubagentTask } from '@/src/core/types';
-import { NyxLoader } from '@/src/lib/design-system/icons';
+import { SubagentTask } from '@src/core/types';
+import { NyxLoader } from '@src/lib/design-system/icons';
 
 interface Subtask {
   id: string;

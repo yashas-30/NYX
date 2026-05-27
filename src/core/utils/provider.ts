@@ -4,7 +4,7 @@
  */
 
 import { Provider, ModelDefinition } from '../types';
-import { AVAILABLE_MODELS } from '@/src/config/models';
+import { AVAILABLE_MODELS } from '@src/config/models';
 
 const NVIDIA_MODEL_IDS = new Set(AVAILABLE_MODELS.filter(m => m.provider === 'nvidia').map(m => m.id));
 

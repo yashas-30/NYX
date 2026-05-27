@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { 
   updateApiKey as updateApiKeyHelper,
   clearApiKeys as clearApiKeysHelper,
-} from '@/src/lib/state/apiKeyHelpers';
+} from '@src/lib/state/apiKeyHelpers';
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',

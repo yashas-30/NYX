@@ -6,12 +6,12 @@
  */
 
 import { useCallback } from 'react';
-import { AIService } from '@/src/core/services/ai.service';
-import { ContinuationManager } from '@/src/core/services/continuationManager';
-import { HybridModelRouter } from '@/src/core/services/hybridRouter';
-import { WorkspaceIntelligence } from '@/src/core/services/workspaceIntelligence';
-import { TOOL_REGISTRY, ToolExecutor } from '@/src/core/services/toolSystem';
-import { SUBAGENT_PERSONAS } from '@/src/config/agents';
+import { AIService } from '@src/core/services/ai.service';
+import { ContinuationManager } from '@src/core/services/continuationManager';
+import { HybridModelRouter } from '@src/core/services/hybridRouter';
+import { WorkspaceIntelligence } from '@src/core/services/workspaceIntelligence';
+import { TOOL_REGISTRY, ToolExecutor } from '@src/core/services/toolSystem';
+import { SUBAGENT_PERSONAS } from '@src/config/agents';
 import {
   SubagentTask,
   SubagentResult,
@@ -19,7 +19,7 @@ import {
   OrchestratorOptions,
   ChatMessage,
   TelemetryMetrics
-} from '@/src/core/types';
+} from '@src/core/types';
 
 const FALLBACK_ROUTING_DECISION = {
   modelId: 'pollinations/openai-fast',
