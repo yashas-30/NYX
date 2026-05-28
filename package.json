@@ -4,7 +4,7 @@
   "private": true,
   "version": "3.0.0",
   "author": "NYX Dev Team",
-  "description": "NYX is a premium, high-fidelity AI coding environment and runner that executes powerful local models on your GPU and orchestrates cloud LLMs, featuring advanced model management, side-by-side comparisons, and zero-delay streaming inside a beautifully crafted interface.",
+  "description": "NYX is a premium, high-fidelity AI coding environment and runner that executes powerful local models on your GPU and orchestrates cloud LLMs, featuring persistent semantic memory, silent reasoning traces, local Vulkan GPU acceleration, live web search grounding, and a beautifully crafted interface.",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
