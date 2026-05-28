@@ -12,19 +12,34 @@ export class SearchService {
 
   getSearchBackends() {
     const keys = loadKeys();
-    const scraplingUrl = (keys['scrapling_url'] || process.env.SCRAPLING_URL || 'http://localhost:3002').trim();
-    const scraplingActive = !!((keys['scrapling'] && keys['scrapling'].trim().length > 0) || (keys['scrapling_url'] && keys['scrapling_url'].trim().length > 0) || process.env.SCRAPLING_URL || process.env.SCRAPLING_API_KEY);
+    const scraplingUrl = (
+      keys['scrapling_url'] ||
+      process.env.SCRAPLING_URL ||
+      'http://localhost:3002'
+    ).trim();
+    const scraplingActive = !!(
+      (keys['scrapling'] && keys['scrapling'].trim().length > 0) ||
+      (keys['scrapling_url'] && keys['scrapling_url'].trim().length > 0) ||
+      process.env.SCRAPLING_URL ||
+      process.env.SCRAPLING_API_KEY
+    );
     const serpapiActive = !!(keys['SERPAPI_KEY'] || process.env.SERPAPI_KEY);
     const braveActive = !!(keys['BRAVE_API_KEY'] || process.env.BRAVE_API_KEY);
 
     return {
-      activeBackend: scraplingActive ? 'Scrapling' : serpapiActive ? 'SerpAPI' : braveActive ? 'Brave' : 'DuckDuckGo Scraper',
+      activeBackend: scraplingActive
+        ? 'Scrapling'
+        : serpapiActive
+          ? 'SerpAPI'
+          : braveActive
+            ? 'Brave'
+            : 'DuckDuckGo Scraper',
       backends: {
         scrapling: { configured: scraplingActive, url: scraplingUrl },
         serpapi: { configured: serpapiActive },
         brave: { configured: braveActive },
-        duckduckgo: { configured: true, fallback: true }
-      }
+        duckduckgo: { configured: true, fallback: true },
+      },
     };
   }
 
@@ -33,7 +48,7 @@ export class SearchService {
     const directoryStructure = CodebaseScanner.getDirectoryStructure();
     return {
       results,
-      directoryStructure
+      directoryStructure,
     };
   }
 
@@ -47,7 +62,11 @@ export class SearchService {
 
     console.log(`[Web Search] Querying web search for: "${query}"`);
     const keys = loadKeys();
-    const scraplingUrl = (keys['scrapling_url'] || process.env.SCRAPLING_URL || 'http://localhost:3002').trim();
+    const scraplingUrl = (
+      keys['scrapling_url'] ||
+      process.env.SCRAPLING_URL ||
+      'http://localhost:3002'
+    ).trim();
     const scraplingApiKey = keys['scrapling'] || process.env.SCRAPLING_API_KEY || '';
     const serpapiKey = keys['SERPAPI_KEY'] || process.env.SERPAPI_KEY || '';
     const braveApiKey = keys['BRAVE_API_KEY'] || process.env.BRAVE_API_KEY || '';
@@ -68,9 +87,9 @@ export class SearchService {
           headers,
           body: JSON.stringify({
             query: query,
-            limit: 3
+            limit: 3,
           }),
-          signal: AbortSignal.timeout(15000)
+          signal: AbortSignal.timeout(15000),
         });
 
         if (response.ok) {
@@ -79,7 +98,9 @@ export class SearchService {
             results = data.data.map((r: any) => {
               let snippetText = r.markdown || r.description || r.snippet || '';
               if (snippetText.length > 3000) {
-                snippetText = snippetText.substring(0, 3000) + '\n\n[... truncated for context window size ...]';
+                snippetText =
+                  snippetText.substring(0, 3000) +
+                  '\n\n[... truncated for context window size ...]';
               }
               return {
                 title: r.title || r.metadata?.title || 'No Title',
@@ -87,7 +108,9 @@ export class SearchService {
                 snippet: snippetText,
               };
             });
-            console.log(`[Web Search] Scrapling successfully scraped ${results.length} pages (truncated to safe limits).`);
+            console.log(
+              `[Web Search] Scrapling successfully scraped ${results.length} pages (truncated to safe limits).`
+            );
           } else {
             throw new Error(`Invalid Scrapling response structure: success=${data.success}`);
           }
@@ -95,12 +118,16 @@ export class SearchService {
           throw new Error(`HTTP ${response.status}: ${await response.text().catch(() => '')}`);
         }
       } catch (scraplingError: any) {
-        console.warn(`[Web Search] Scrapling failed/offline (URL: ${scraplingUrl}). Details: ${scraplingError.message}. Falling back to default APIs...`);
-        
+        console.warn(
+          `[Web Search] Scrapling failed/offline (URL: ${scraplingUrl}). Details: ${scraplingError.message}. Falling back to default APIs...`
+        );
+
         // 2. Fallback to SerpAPI / Brave / DDG
         if (serpapiKey) {
           console.log('[Web Search] Using SerpAPI backend...');
-          const response = await fetch(`https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${serpapiKey}`);
+          const response = await fetch(
+            `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${serpapiKey}`
+          );
           if (response.ok) {
             const data = await response.json();
             const organic = data.organic_results || [];
@@ -110,13 +137,16 @@ export class SearchService {
               snippet: r.snippet || '',
             }));
           } else {
-            throw new Error(`SerpAPI returned HTTP ${response.status}`);
+            throw new Error(`SerpAPI returned HTTP ${response.status}`, { cause: scraplingError });
           }
         } else if (braveApiKey) {
           console.log('[Web Search] Using Brave Search API backend...');
-          const response = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}`, {
-            headers: { 'Accept': 'application/json', 'X-Subscription-Token': braveApiKey }
-          });
+          const response = await fetch(
+            `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}`,
+            {
+              headers: { Accept: 'application/json', 'X-Subscription-Token': braveApiKey },
+            }
+          );
           if (response.ok) {
             const data = await response.json();
             const webResults = data.web?.results || [];
@@ -126,19 +156,26 @@ export class SearchService {
               snippet: r.description || '',
             }));
           } else {
-            throw new Error(`Brave Search returned HTTP ${response.status}`);
+            throw new Error(`Brave Search returned HTTP ${response.status}`, {
+              cause: scraplingError,
+            });
           }
         } else {
           // Fallback: DuckDuckGo HTML scraper
           console.log('[Web Search] Falling back to DuckDuckGo HTML Scraper...');
-          const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          const response = await fetch(
+            `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+            {
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              },
             }
-          });
-          if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+          );
+          if (!response.ok)
+            throw new Error(`HTTP error ${response.status}`, { cause: scraplingError });
           const html = await response.text();
-          
+
           const decodeHtmlEntities = (str: string): string => {
             return str
               .replace(/&amp;/g, '&')
@@ -160,12 +197,12 @@ export class SearchService {
             const block = blocks[i];
             const titleMatch = titleRegex.exec(block);
             const snippetMatch = snippetRegex.exec(block);
-            
+
             if (titleMatch) {
               let title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
               const hrefMatch = linkRegex.exec(titleMatch[0]) || linkRegex.exec(block);
               let link = hrefMatch ? hrefMatch[1] : '';
-              
+
               if (link.startsWith('//duckduckgo.com/l/?kh=-1&uddg=')) {
                 const rawLink = link.split('uddg=')[1]?.split('&')[0];
                 if (rawLink) link = decodeURIComponent(rawLink);
@@ -176,16 +213,16 @@ export class SearchService {
                 const rawLink = link.split('uddg=')[1]?.split('&')[0];
                 if (rawLink) link = decodeURIComponent(rawLink);
               }
-              
+
               if (link.startsWith('//')) {
                 link = 'https:' + link;
               }
-              
+
               let snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, '').trim() : '';
-              
+
               title = decodeHtmlEntities(title);
               snippet = decodeHtmlEntities(snippet);
-              
+
               results.push({ title, link, snippet });
               count++;
             }
@@ -200,7 +237,7 @@ export class SearchService {
       // Save to TTL cache
       this.searchCache.set(query, {
         results,
-        expiresAt: Date.now() + this.SEARCH_CACHE_TTL_MS
+        expiresAt: Date.now() + this.SEARCH_CACHE_TTL_MS,
       });
 
       return results;
@@ -210,13 +247,13 @@ export class SearchService {
         {
           title: `Best Practices for ${query}`,
           link: 'https://developer.mozilla.org',
-          snippet: `Discover top ideas and clean architecture guidelines for code production and SDK implementation.`
+          snippet: `Discover top ideas and clean architecture guidelines for code production and SDK implementation.`,
         },
         {
           title: `Google API Reference & Development Guide`,
           link: 'https://ai.google.dev/gemini-api/docs',
-          snippet: `Complete tutorials, code snippet examples, and advanced SDK guides for building apps with Gemini and Gemma models.`
-        }
+          snippet: `Complete tutorials, code snippet examples, and advanced SDK guides for building apps with Gemini and Gemma models.`,
+        },
       ];
     }
   }
