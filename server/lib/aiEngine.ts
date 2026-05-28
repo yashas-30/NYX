@@ -17,12 +17,12 @@ IMPORTANT: If you are unsure about an API, function, library, or implementation 
  * Injects abstention instruction into the last system message, or prepends a new one.
  */
 function injectAbstentionInstruction(messages: ChatMessage[]): ChatMessage[] {
-  const systemIdx = messages.findIndex(m => m.role === 'system');
+  const systemIdx = messages.findIndex((m) => m.role === 'system');
   if (systemIdx >= 0) {
     const updated = [...messages];
     updated[systemIdx] = {
       ...updated[systemIdx],
-      content: `${updated[systemIdx].content}\n\n${ABSTENTION_INSTRUCTION}`
+      content: `${updated[systemIdx].content}\n\n${ABSTENTION_INSTRUCTION}`,
     };
     return updated;
   }
@@ -70,16 +70,35 @@ export class UnifiedEngine {
       case 'groq':
       case 'mistral':
       case 'together':
-        return this.streamOpenAICompatible(provider, model, messages, activeKey, settings, writeChunk, onDone);
+        return this.streamOpenAICompatible(
+          provider,
+          model,
+          messages,
+          activeKey,
+          settings,
+          writeChunk,
+          onDone
+        );
 
       case 'nvidia':
-        return this.streamOpenAICompatible(provider, model, messages, activeKey, settings, writeChunk, onDone);
+        return this.streamOpenAICompatible(
+          provider,
+          model,
+          messages,
+          activeKey,
+          settings,
+          writeChunk,
+          onDone
+        );
 
       case 'opencode':
         return this.streamOpenCodeZen(model, messages, activeKey, settings, writeChunk, onDone);
 
       case 'nyx-native':
         return this.streamNyxNative(model, messages, settings, writeChunk, onDone);
+
+      case 'pollinations':
+        return this.streamPollinations(model, messages, settings, writeChunk, onDone);
 
       default:
         throw new Error(`Unsupported provider: ${provider}`);
@@ -106,7 +125,10 @@ export class UnifiedEngine {
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
-    const { url } = Gateway.buildUrl('gemini', `/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`);
+    const { url } = Gateway.buildUrl(
+      'gemini',
+      `/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`
+    );
     const { contents, systemInstruction } = Gateway.formatMessages(messages, 'gemini');
 
     const response = await fetch(url, {
@@ -114,14 +136,16 @@ export class UnifiedEngine {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents,
-        systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction + '\n\n' + ABSTENTION_INSTRUCTION }] } : { parts: [{ text: ABSTENTION_INSTRUCTION }] },
+        systemInstruction: systemInstruction
+          ? { parts: [{ text: systemInstruction + '\n\n' + ABSTENTION_INSTRUCTION }] }
+          : { parts: [{ text: ABSTENTION_INSTRUCTION }] },
         generationConfig: {
-          temperature: settings?.temperature ?? 0.1,  // Near-greedy for code accuracy
+          temperature: settings?.temperature ?? 0.1, // Near-greedy for code accuracy
           maxOutputTokens: settings?.maxTokens,
           topP: settings?.topP ?? 0.9,
           topK: settings?.topK ?? 20,
-        }
-      })
+        },
+      }),
     });
 
     if (!response.ok) throw new Error(`Gemini API Error: ${response.status}`);
@@ -129,7 +153,9 @@ export class UnifiedEngine {
     await Gateway.processSSEStream(response, {
       onChunk: (text) => write({ chunk: text }),
       onDone: done,
-      onError: (err) => { throw new Error(err); }
+      onError: (err) => {
+        throw new Error(err);
+      },
     });
   }
 
@@ -159,7 +185,7 @@ export class UnifiedEngine {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': apiKey ? `Bearer ${apiKey}` : '',
+        Authorization: apiKey ? `Bearer ${apiKey}` : '',
         'HTTP-Referer': 'http://localhost:3000',
         'X-Title': 'NYX Unified Engine',
       },
@@ -167,11 +193,11 @@ export class UnifiedEngine {
         model,
         messages: injectAbstentionInstruction(messages),
         stream: true,
-        temperature: settings?.temperature ?? 0.1,  // Near-greedy for code quality
+        temperature: settings?.temperature ?? 0.1, // Near-greedy for code quality
         max_tokens: settings?.maxTokens,
         top_p: settings?.topP ?? 0.9,
         top_k: settings?.topK ?? 20,
-      })
+      }),
     });
 
     if (!response.ok) {
@@ -187,7 +213,9 @@ export class UnifiedEngine {
     await Gateway.processSSEStream(response, {
       onChunk: (text) => write({ chunk: text }),
       onDone: done,
-      onError: (err) => { throw new Error(err); }
+      onError: (err) => {
+        throw new Error(err);
+      },
     });
   }
 
@@ -227,7 +255,7 @@ export class UnifiedEngine {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'HTTP-Referer': 'http://localhost:3000',
         'X-Title': 'NYX - OpenCode Zen',
       },
@@ -250,14 +278,19 @@ export class UnifiedEngine {
       } catch {
         if (errorText) msg = errorText;
       }
-      console.error('[OpenCode Zen] Request failed:', { status: response.status, error: errorText });
+      console.error('[OpenCode Zen] Request failed:', {
+        status: response.status,
+        error: errorText,
+      });
       throw new Error(msg);
     }
 
     await Gateway.processSSEStream(response, {
       onChunk: (text) => write({ chunk: text }),
       onDone: done,
-      onError: (err) => { throw new Error(err); }
+      onError: (err) => {
+        throw new Error(err);
+      },
     });
   }
 
@@ -277,7 +310,7 @@ export class UnifiedEngine {
   ): Promise<void> {
     const url = 'http://127.0.0.1:12345/v1/chat/completions';
     const augmentedMessages = injectAbstentionInstruction(
-      messages.map(m => ({ role: m.role, content: m.content }))
+      messages.map((m) => ({ role: m.role, content: m.content }))
     );
 
     const response = await fetch(url, {
@@ -287,16 +320,18 @@ export class UnifiedEngine {
         model,
         messages: augmentedMessages,
         stream: true,
-        temperature: settings?.temperature ?? 0.1,  // Layer 1: Near-greedy, reduces hallucinations
+        temperature: settings?.temperature ?? 0.1, // Layer 1: Near-greedy, reduces hallucinations
         max_tokens: settings?.maxTokens ?? 4096,
-        top_p: settings?.topP ?? 0.9,              // Nucleus sampling
-        top_k: settings?.topK ?? 20,              // Top-K filter
-        min_p: (settings as any)?.minP ?? 0.05,   // Layer 1: MinP prevents wildly improbable tokens
-      })
+        top_p: settings?.topP ?? 0.9, // Nucleus sampling
+        top_k: settings?.topK ?? 20, // Top-K filter
+        min_p: (settings as any)?.minP ?? 0.05, // Layer 1: MinP prevents wildly improbable tokens
+      }),
     });
 
     if (!response.ok) {
-      throw new Error(`Native GGUF Runner Error: ${response.status}. Make sure the model is loaded in RAM.`);
+      throw new Error(
+        `Native GGUF Runner Error: ${response.status}. Make sure the model is loaded in RAM.`
+      );
     }
 
     // Collect the full draft response while streaming it to the client
@@ -306,14 +341,19 @@ export class UnifiedEngine {
         fullDraftResponse += text;
         write({ chunk: text });
       },
-      onDone: () => {},  // We call done() after CoVe below
-      onError: (err) => { throw new Error(err); }
+      onDone: () => {}, // We call done() after CoVe below
+      onError: (err) => {
+        throw new Error(err);
+      },
     });
 
     // ── Layer 4: Chain-of-Verification (CoVe) ────────────────────────────────
     // Only run verification if the response contains code blocks (most likely a code task).
     // This avoids latency overhead on pure chat responses.
-    const hasCode = fullDraftResponse.includes('```') || fullDraftResponse.includes('function ') || fullDraftResponse.includes('class ');
+    const hasCode =
+      fullDraftResponse.includes('```') ||
+      fullDraftResponse.includes('function ') ||
+      fullDraftResponse.includes('class ');
 
     if (hasCode && fullDraftResponse.length > 50) {
       try {
@@ -326,9 +366,9 @@ export class UnifiedEngine {
             model,
             messages: [{ role: 'user', content: verifierPrompt }],
             stream: false,
-            temperature: 0.0,  // Fully deterministic for verification
+            temperature: 0.0, // Fully deterministic for verification
             max_tokens: 256,
-          })
+          }),
         });
 
         if (verifyResponse.ok) {
@@ -350,4 +390,39 @@ export class UnifiedEngine {
 
     done();
   }
-}
+
+  /**
+   * Streams responses from Pollinations.ai.
+   */
+  private static async streamPollinations(
+    model: string,
+    messages: ChatMessage[],
+    settings: AISettings | undefined,
+    write: (chunk: any) => void,
+    done: () => void
+  ): Promise<void> {
+    const realModel = model.replace('pollinations/', '');
+    const response = await fetch('https://text.pollinations.ai/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: realModel,
+        messages: injectAbstentionInstruction(messages),
+        stream: true,
+        temperature: settings?.temperature ?? 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Pollinations API Error: ${response.status}`);
+    }
+
+    await Gateway.processSSEStream(response, {
+      onChunk: (text) => write({ chunk: text }),
+      onDone: done,
+      onError: (err) => {
+        throw new Error(err);
+      },
+    });
+  }
+}

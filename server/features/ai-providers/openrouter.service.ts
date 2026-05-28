@@ -8,6 +8,7 @@ export interface OpenRouterStreamParams {
   systemInstruction?: string;
   history?: any[];
   gatewayUrls?: Record<string, string>;
+  images?: any[];
 }
 
 export class OpenRouterService {
@@ -18,7 +19,8 @@ export class OpenRouterService {
     onDone: () => void,
     onError: (err: any) => void
   ): Promise<void> {
-    const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = params;
+    const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls, images } =
+      params;
 
     // Auth validation
     const authResult = Gateway.validateAuth('openrouter', model, apiKey);
@@ -38,9 +40,17 @@ export class OpenRouterService {
       messages.push({ role: 'system', content: systemInstruction });
     }
     if (history && Array.isArray(history)) {
-      messages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
+      messages.push(
+        ...history.map((m: any) => ({ role: m.role, content: m.content, images: m.images }))
+      );
     }
-    messages.push({ role: 'user', content: prompt });
+    const userMsg: any = { role: 'user', content: prompt };
+    if (images && Array.isArray(images) && images.length > 0) {
+      userMsg.images = images;
+    }
+    messages.push(userMsg);
+
+    const formattedMessages = Gateway.formatMessages(messages, 'openrouter');
 
     // Build URL with gateway support (custom user gateway takes priority)
     const { url } = Gateway.buildUrl('openrouter', '/chat/completions', gatewayUrls);
@@ -49,13 +59,13 @@ export class OpenRouterService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${activeKey}`,
+        Authorization: `Bearer ${activeKey}`,
         'HTTP-Referer': 'http://localhost:3000',
         'X-Title': 'LLM Reference Dashboard',
       },
       body: JSON.stringify({
         model,
-        messages,
+        messages: formattedMessages,
         stream: true,
         temperature: settings?.temperature ?? 0.7,
         max_tokens: settings?.maxTokens ?? 4096,

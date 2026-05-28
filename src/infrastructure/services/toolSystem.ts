@@ -25,10 +25,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       properties: {
         path: { type: 'string', description: 'Relative path to the file in the workspace.' },
         startLine: { type: 'number', description: 'Optional 1-based start line (inclusive).' },
-        endLine: { type: 'number', description: 'Optional 1-based end line (inclusive).' }
+        endLine: { type: 'number', description: 'Optional 1-based end line (inclusive).' },
       },
-      required: ['path']
-    }
+      required: ['path'],
+    },
   },
   {
     name: 'edit_file',
@@ -37,10 +37,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Relative path to the file to modify.' },
-        content: { type: 'string', description: 'The complete new content for the file.' }
+        content: { type: 'string', description: 'The complete new content for the file.' },
       },
-      required: ['path', 'content']
-    }
+      required: ['path', 'content'],
+    },
   },
   {
     name: 'write_file',
@@ -49,10 +49,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Relative path where the file should be created.' },
-        content: { type: 'string', description: 'The file contents.' }
+        content: { type: 'string', description: 'The file contents.' },
       },
-      required: ['path', 'content']
-    }
+      required: ['path', 'content'],
+    },
   },
   {
     name: 'search_codebase',
@@ -60,10 +60,13 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Search query describing code blocks, functions, or patterns.' }
+        query: {
+          type: 'string',
+          description: 'Search query describing code blocks, functions, or patterns.',
+        },
       },
-      required: ['query']
-    }
+      required: ['query'],
+    },
   },
   {
     name: 'run_terminal',
@@ -72,10 +75,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       type: 'object',
       properties: {
         command: { type: 'string', description: 'The shell command line to run.' },
-        cwd: { type: 'string', description: 'Optional relative path to execute the command in.' }
+        cwd: { type: 'string', description: 'Optional relative path to execute the command in.' },
       },
-      required: ['command']
-    }
+      required: ['command'],
+    },
   },
   {
     name: 'web_search',
@@ -83,10 +86,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'The web search query.' }
+        query: { type: 'string', description: 'The web search query.' },
       },
-      required: ['query']
-    }
+      required: ['query'],
+    },
   },
   {
     name: 'list_directory',
@@ -94,10 +97,13 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Optional relative path to inspect. Defaults to workspace root.' }
+        path: {
+          type: 'string',
+          description: 'Optional relative path to inspect. Defaults to workspace root.',
+        },
       },
-      required: []
-    }
+      required: [],
+    },
   },
   {
     name: 'git_diff',
@@ -105,10 +111,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Optional relative path to show diff for.' }
+        path: { type: 'string', description: 'Optional relative path to show diff for.' },
       },
-      required: []
-    }
+      required: [],
+    },
   },
   {
     name: 'git_status',
@@ -116,17 +122,30 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {},
-      required: []
-    }
-  }
+      required: [],
+    },
+  },
 ];
 
+function validatePath(pathStr?: string): void {
+  if (pathStr && (pathStr.includes('..') || pathStr.includes('../') || pathStr.includes('..\\'))) {
+    throw new Error(
+      `SECURITY ERROR: Invalid path "${pathStr}". Path traversal (../) is not allowed.`
+    );
+  }
+}
+
 export class ToolExecutor {
-  static async execute(toolName: string, params: Record<string, any>, signal?: AbortSignal): Promise<any> {
+  static async execute(
+    toolName: string,
+    params: Record<string, any>,
+    signal?: AbortSignal
+  ): Promise<any> {
     console.log(`[ToolExecutor] Invoking: ${toolName} with params:`, params);
 
     switch (toolName) {
       case 'read_file': {
+        validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
         const res = await fetchWithAuth('/api/nyx/read-file', {
           method: 'POST',
@@ -134,9 +153,9 @@ export class ToolExecutor {
           body: JSON.stringify({
             filePath: params.path,
             startLine: params.startLine,
-            endLine: params.endLine
+            endLine: params.endLine,
           }),
-          signal
+          signal,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to read file');
@@ -144,6 +163,7 @@ export class ToolExecutor {
       }
 
       case 'edit_file': {
+        validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
         const res = await fetchWithAuth('/api/nyx/write-file', {
           method: 'POST',
@@ -151,9 +171,9 @@ export class ToolExecutor {
           body: JSON.stringify({
             filePath: params.path,
             content: params.content,
-            overwrite: true
+            overwrite: true,
           }),
-          signal
+          signal,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to edit file');
@@ -161,6 +181,7 @@ export class ToolExecutor {
       }
 
       case 'write_file': {
+        validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
         const res = await fetchWithAuth('/api/nyx/write-file', {
           method: 'POST',
@@ -168,9 +189,9 @@ export class ToolExecutor {
           body: JSON.stringify({
             filePath: params.path,
             content: params.content,
-            overwrite: false
+            overwrite: false,
           }),
-          signal
+          signal,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to write file');
@@ -182,7 +203,7 @@ export class ToolExecutor {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: params.query }),
-          signal
+          signal,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Codebase search failed');
@@ -190,14 +211,15 @@ export class ToolExecutor {
       }
 
       case 'run_terminal': {
+        validatePath(params.cwd);
         const res = await fetchWithAuth('/api/terminal/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             command: params.command,
-            cwd: params.cwd
+            cwd: params.cwd,
           }),
-          signal
+          signal,
         });
         const data = await res.json();
         if (!res.ok) {
@@ -205,7 +227,7 @@ export class ToolExecutor {
         }
         return {
           stdout: data.stdout,
-          stderr: data.stderr
+          stderr: data.stderr,
         };
       }
 
@@ -214,7 +236,7 @@ export class ToolExecutor {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: params.query }),
-          signal
+          signal,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Web search failed');
@@ -222,11 +244,12 @@ export class ToolExecutor {
       }
 
       case 'list_directory': {
+        validatePath(params.path);
         const res = await fetchWithAuth('/api/nyx/list-directory', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dirPath: params.path }),
-          signal
+          signal,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to list directory');
@@ -234,11 +257,12 @@ export class ToolExecutor {
       }
 
       case 'git_diff': {
+        validatePath(params.path);
         const res = await fetchWithAuth('/api/nyx/git-diff', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filePath: params.path }),
-          signal
+          signal,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to fetch git diff');
@@ -250,7 +274,7 @@ export class ToolExecutor {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({}),
-          signal
+          signal,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to fetch git status');

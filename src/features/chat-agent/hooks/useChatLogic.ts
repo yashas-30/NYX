@@ -7,7 +7,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { ChatMessage } from '@src/infrastructure/types';
 import { useMessageHistory } from '@src/features/coder/hooks/useMessageHistory';
 import { useChatPipeline } from './useChatPipeline';
-import { cancelCurrentRequest } from '@src/features/coder/services/ai.service';
+import { cancelCurrentRequest } from '@src/core/services/ai.service';
 
 interface ChatLogicProps {
   apiKeys: Record<string, string>;
@@ -18,7 +18,13 @@ interface ChatLogicProps {
   chatSessions: any;
   lightningEnabled?: boolean;
   lightningDirectives?: string[];
-  logRollout?: (agentType: 'chat' | 'coder', task: string, response: string, spans?: any[], initialReward?: number | null) => string;
+  logRollout?: (
+    agentType: 'chat' | 'coder',
+    task: string,
+    response: string,
+    spans?: any[],
+    initialReward?: number | null
+  ) => string;
   submitReward?: (rolloutId: string, reward: number) => void;
 }
 
@@ -35,16 +41,19 @@ export const useChatLogic = ({
   submitReward,
 }: ChatLogicProps) => {
   const [localModels, setLocalModels] = useState<Record<'nyx', string>>({
-    nyx: ''
+    nyx: '',
   });
   const models = propModels ?? localModels;
-  const setModel = useCallback((mid: string) => {
-    if (propSetModel) {
-      propSetModel(mid);
-    } else {
-      setLocalModels({ nyx: mid });
-    }
-  }, [propSetModel]);
+  const setModel = useCallback(
+    (mid: string) => {
+      if (propSetModel) {
+        propSetModel(mid);
+      } else {
+        setLocalModels({ nyx: mid });
+      }
+    },
+    [propSetModel]
+  );
 
   const {
     metrics,
@@ -52,7 +61,7 @@ export const useChatLogic = ({
     setSuggestedPrompts,
     updateMetrics,
     clearMetrics,
-    getSuggestions
+    getSuggestions,
   } = useMessageHistory();
 
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
@@ -93,21 +102,24 @@ export const useChatLogic = ({
   }, [activeSid, activeSessionMessages, clearMetrics]);
 
   // Unified history update callback
-  const updateHistory = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
-    const updated = updater(messagesRef.current);
-    const cloned = updated.map(msg => ({ ...msg }));
-    messagesRef.current = cloned;
-    setLocalMessages(cloned);
+  const updateHistory = useCallback(
+    (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
+      const updated = updater(messagesRef.current);
+      const cloned = updated.map((msg) => ({ ...msg }));
+      messagesRef.current = cloned;
+      setLocalMessages(cloned);
 
-    let sid = activeSidRef.current;
-    if (!sid) {
-      sid = chatSessions?.createSession?.(cloned) || null;
-      activeSidRef.current = sid;
-      createdSessionIdRef.current = sid;
-    } else {
-      chatSessions?.updateSession?.(sid, cloned);
-    }
-  }, [chatSessions]);
+      let sid = activeSidRef.current;
+      if (!sid) {
+        sid = chatSessions?.createSession?.(cloned) || null;
+        activeSidRef.current = sid;
+        createdSessionIdRef.current = sid;
+      } else {
+        chatSessions?.updateSession?.(sid, cloned);
+      }
+    },
+    [chatSessions]
+  );
 
   const clearHistory = useCallback(() => {
     messagesRef.current = [];
@@ -120,7 +132,7 @@ export const useChatLogic = ({
 
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
 
-  const { isLoading, runChat, stopChat } = useChatPipeline({
+  const { isLoading, isSearching, runChat, stopChat } = useChatPipeline({
     models,
     apiKeys,
     modelSettings,
@@ -139,6 +151,7 @@ export const useChatLogic = ({
   return {
     activeAgent: 'nyx' as const,
     isLoading,
+    isSearching,
     history: localMessages,
     metrics,
     models,

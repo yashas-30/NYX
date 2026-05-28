@@ -251,10 +251,11 @@ nyxRouter.post('/validate', async (req, res) => {
 });
 
 // GET /api/nyx/memory
-nyxRouter.get('/memory', async (_req, res) => {
+nyxRouter.get('/memory', async (req, res) => {
   try {
+    const agentType = (req.query.agentType as 'chat' | 'code') || 'code';
     const { MemoryService } = await import('./memory.service.ts');
-    res.json({ success: true, memories: MemoryService.getMemories() });
+    res.json({ success: true, memories: MemoryService.getMemories(agentType) });
   } catch (e: any) {
     console.error('[Nyx Router] Failed to fetch memories:', e);
     res.status(500).json({ error: e.message });
@@ -263,7 +264,7 @@ nyxRouter.get('/memory', async (_req, res) => {
 
 // POST /api/nyx/memory/commit
 nyxRouter.post('/memory/commit', (req, res) => {
-  const { prompt, response, modelId, provider } = req.body;
+  const { prompt, response, modelId, provider, agentType } = req.body;
   if (!prompt || !response) {
     return res.status(400).json({ error: 'Missing prompt or response.' });
   }
@@ -271,7 +272,14 @@ nyxRouter.post('/memory/commit', (req, res) => {
   setImmediate(async () => {
     try {
       const { MemoryService } = await import('./memory.service.ts');
-      await MemoryService.runBackgroundMemoryKeeper(prompt, response, modelId, provider);
+      const targetAgentType = agentType || 'code';
+      await MemoryService.runBackgroundMemoryKeeper(
+        prompt,
+        response,
+        modelId,
+        provider,
+        targetAgentType
+      );
     } catch (memoryError) {
       console.error('[Nyx Memory Keeper Layer Error]:', memoryError);
     }
@@ -279,10 +287,11 @@ nyxRouter.post('/memory/commit', (req, res) => {
 });
 
 // POST /api/nyx/memory/reset
-nyxRouter.post('/memory/reset', async (_req, res) => {
+nyxRouter.post('/memory/reset', async (req, res) => {
   try {
+    const agentType = req.query.agentType as 'chat' | 'code' | undefined;
     const { MemoryService } = await import('./memory.service.ts');
-    MemoryService.resetMemories();
+    MemoryService.resetMemories(agentType);
     res.json({ success: true });
   } catch (e: any) {
     console.error('[Nyx Router] Failed to reset memories:', e);

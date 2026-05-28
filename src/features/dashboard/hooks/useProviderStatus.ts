@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { AIService } from '@src/features/coder/services/ai.service';
+import { AIService } from '@src/core/services/ai.service';
 import { Provider } from '@src/infrastructure/types';
 
 export type Status = 'online' | 'offline' | 'no-key';
@@ -25,16 +25,26 @@ export const useProviderStatus = (
     if (!isVisibleRef.current) return;
 
     const providers: string[] = [
-      'gemini', 'openrouter', 'nvidia',
-      'opencode', 'openai', 'anthropic', 'deepseek', 'groq',
-      'mistral', 'together', 'nyx-native'
+      'gemini',
+      'openrouter',
+      'nvidia',
+      'opencode',
+      'openai',
+      'anthropic',
+      'deepseek',
+      'groq',
+      'mistral',
+      'together',
+      'nyx-native',
     ];
     const newStatuses: Record<string, Status> = {};
 
-    await Promise.all(providers.map(async (p) => {
-      const key = apiKeys[p];
-      newStatuses[p] = await AIService.checkStatus(p, key);
-    }));
+    await Promise.all(
+      providers.map(async (p) => {
+        const key = apiKeys[p];
+        newStatuses[p] = await AIService.checkStatus(p, key);
+      })
+    );
 
     setStatuses(newStatuses);
   }, [apiKeys, localModelsEnabled]);

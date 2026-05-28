@@ -8,7 +8,7 @@ import { useAgentState } from './useAgentState';
 import { useMessageHistory } from './useMessageHistory';
 import { useAgentPipeline } from './useAgentPipeline';
 import { ChatMessage } from '@src/infrastructure/types';
-import { cancelCurrentRequest } from '@src/features/coder/services/ai.service';
+import { cancelCurrentRequest } from '@src/core/services/ai.service';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
 
@@ -21,7 +21,13 @@ interface CoderLogicProps {
   chatSessions: any;
   lightningEnabled?: boolean;
   lightningDirectives?: string[];
-  logRollout?: (agentType: 'chat' | 'coder', task: string, response: string, spans?: any[], initialReward?: number | null) => string;
+  logRollout?: (
+    agentType: 'chat' | 'coder',
+    task: string,
+    response: string,
+    spans?: any[],
+    initialReward?: number | null
+  ) => string;
   submitReward?: (rolloutId: string, reward: number) => void;
 }
 
@@ -39,16 +45,10 @@ export const useCoderLogic = ({
 }: CoderLogicProps) => {
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled] = useState(true);
-  
-  const {
-    activeAgent,
-    models,
-    setModel,
-    agentPersonas,
-    setAgentPersonas
-  } = useAgentState({
+
+  const { activeAgent, models, setModel, agentPersonas, setAgentPersonas } = useAgentState({
     models: propModels,
-    setModel: propSetModel
+    setModel: propSetModel,
   });
 
   const {
@@ -57,7 +57,7 @@ export const useCoderLogic = ({
     setSuggestedPrompts,
     updateMetrics,
     clearMetrics,
-    getSuggestions
+    getSuggestions,
   } = useMessageHistory();
 
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
@@ -74,7 +74,7 @@ export const useCoderLogic = ({
     };
   }, [chatSessions?.activeSid]);
 
-  const workspacePath = useNyxStore(state => state.workspacePath);
+  const workspacePath = useNyxStore((state) => state.workspacePath);
 
   useEffect(() => {
     WorkspaceIntelligence.clearCache();
@@ -105,22 +105,25 @@ export const useCoderLogic = ({
   }, [activeSid, activeSessionMessages, clearMetrics]);
 
   // Unified history update callback
-  const updateHistory = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
-    const updated = updater(messagesRef.current);
-    // Clone array and all message objects to guarantee React and React.memo notice mutations
-    const cloned = updated.map(msg => ({ ...msg }));
-    messagesRef.current = cloned;
-    setLocalMessages(cloned);
+  const updateHistory = useCallback(
+    (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
+      const updated = updater(messagesRef.current);
+      // Clone array and all message objects to guarantee React and React.memo notice mutations
+      const cloned = updated.map((msg) => ({ ...msg }));
+      messagesRef.current = cloned;
+      setLocalMessages(cloned);
 
-    let sid = activeSidRef.current;
-    if (!sid) {
-      sid = chatSessions?.createSession?.(cloned) || null;
-      activeSidRef.current = sid;
-      createdSessionIdRef.current = sid;
-    } else {
-      chatSessions?.updateSession?.(sid, cloned);
-    }
-  }, [chatSessions]);
+      let sid = activeSidRef.current;
+      if (!sid) {
+        sid = chatSessions?.createSession?.(cloned) || null;
+        activeSidRef.current = sid;
+        createdSessionIdRef.current = sid;
+      } else {
+        chatSessions?.updateSession?.(sid, cloned);
+      }
+    },
+    [chatSessions]
+  );
 
   const clearHistory = useCallback(() => {
     messagesRef.current = [];
@@ -131,23 +134,24 @@ export const useCoderLogic = ({
     clearMetrics();
   }, [chatSessions, clearMetrics]);
 
-  const { isLoading, runCoder, stopCoder, subagentTasks, agentMode, agentReasoning } = useAgentPipeline({
-    models,
-    apiKeys,
-    agentPersonas,
-    modelSettings,
-    trackUsage,
-    history: localMessages,
-    updateHistory,
-    updateMetrics,
-    getSuggestions,
-    setSuggestedPrompts,
-    webSearchEnabled,
-    codebaseKnowledgeEnabled,
-    lightningEnabled,
-    lightningDirectives,
-    logRollout,
-  });
+  const { isLoading, runCoder, stopCoder, subagentTasks, agentMode, agentReasoning } =
+    useAgentPipeline({
+      models,
+      apiKeys,
+      agentPersonas,
+      modelSettings,
+      trackUsage,
+      history: localMessages,
+      updateHistory,
+      updateMetrics,
+      getSuggestions,
+      setSuggestedPrompts,
+      webSearchEnabled,
+      codebaseKnowledgeEnabled,
+      lightningEnabled,
+      lightningDirectives,
+      logRollout,
+    });
 
   return {
     activeAgent,

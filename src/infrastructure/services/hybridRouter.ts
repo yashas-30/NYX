@@ -9,6 +9,8 @@ import { Provider, RoutingDecision, SubagentTask, LocalModelState, AIResponse } 
 
 let localModelPool: Map<string, LocalModelState> = new Map();
 
+import { circuitBreakerRegistry } from './circuitBreaker';
+
 export class HybridModelRouter {
   static getLocalModelPool(): Map<string, LocalModelState> {
     return localModelPool;
@@ -29,11 +31,11 @@ export class HybridModelRouter {
           const isHot = activeModelId === m.id;
           localModelPool.set(m.id, {
             modelId: m.id,
-            status: isHot ? 'hot' : (m.status === 'completed' ? 'cold' : 'failed'),
+            status: isHot ? 'hot' : m.status === 'completed' ? 'cold' : 'failed',
             lastUsed: Date.now(),
             vramUsageMB: isHot ? 4096 : 0, // Approx base size
             avgLatencyMs: isHot ? 150 : 0,
-            totalRequests: 0
+            totalRequests: 0,
           });
         }
       }
@@ -55,7 +57,7 @@ export class HybridModelRouter {
     const localStatus = await checkStatusFn('nyx-native').catch(() => 'offline' as const);
     if (localStatus === 'online') {
       let activeId = 'nyx-gemma-4-e2b-it';
-      const hotModel = Array.from(localModelPool.values()).find(m => m.status === 'hot');
+      const hotModel = Array.from(localModelPool.values()).find((m) => m.status === 'hot');
       if (hotModel) activeId = hotModel.modelId;
 
       return {
@@ -63,7 +65,7 @@ export class HybridModelRouter {
         provider: 'nyx-native' as Provider,
         reasoning: 'Local GGUF model active in RAM — zero network latency for planning',
         estimatedLatency: 50,
-        estimatedCost: 'free'
+        estimatedCost: 'free',
       };
     }
     return {
@@ -71,7 +73,7 @@ export class HybridModelRouter {
       provider: 'pollinations' as Provider,
       reasoning: 'Local models cold — calling free pollinations planner',
       estimatedLatency: 800,
-      estimatedCost: 'free'
+      estimatedCost: 'free',
     };
   }
 
@@ -92,7 +94,7 @@ export class HybridModelRouter {
       const localStatus = await checkStatusFn('nyx-native').catch(() => 'offline' as const);
       if (localStatus === 'online') {
         let activeId = 'nyx-gemma-4-e2b-it';
-        const hotModel = Array.from(localModelPool.values()).find(m => m.status === 'hot');
+        const hotModel = Array.from(localModelPool.values()).find((m) => m.status === 'hot');
         if (hotModel) activeId = hotModel.modelId;
 
         return {
@@ -100,27 +102,33 @@ export class HybridModelRouter {
           provider: 'nyx-native' as Provider,
           reasoning: `Local GGUF model is hot in VRAM. Slashes task latency for simple ${task.type}.`,
           estimatedLatency: 150,
-          estimatedCost: 'free'
+          estimatedCost: 'free',
         };
       } else {
         // Cold model warmth prediction check
         const isSimpleTask = task.complexity === 'simple' || task.complexity === 'trivial';
         if (isSimpleTask) {
-          console.log(`[HybridModelRouter] Warmth match: booting cold local model for task: "${task.description}"`);
-          
+          console.log(
+            `[HybridModelRouter] Warmth match: booting cold local model for task: "${task.description}"`
+          );
+
           // Fire-and-forget background boot request (keeps context size 4096)
           fetchWithAuth('/api/nyx/local-models/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ modelId: 'nyx-gemma-4-e2b-it', settings: { contextSize: 4096 } })
+            body: JSON.stringify({
+              modelId: 'nyx-gemma-4-e2b-it',
+              settings: { contextSize: 4096 },
+            }),
           }).catch(() => {});
 
           return {
             modelId: 'nyx-gemma-4-e2b-it',
             provider: 'nyx-native' as Provider,
-            reasoning: 'Warming cold local model: Slices round-trip overhead for simple task execution.',
+            reasoning:
+              'Warming cold local model: Slices round-trip overhead for simple task execution.',
             estimatedLatency: 2500, // Compensates for boot spin-up
-            estimatedCost: 'free'
+            estimatedCost: 'free',
           };
         }
       }
@@ -149,7 +157,7 @@ export class HybridModelRouter {
       { id: 'openrouter/meta-llama/llama-3.3-70b-instruct:free', provider: 'openrouter' },
       { id: 'pollinations/openai-fast', provider: 'pollinations' },
       { id: 'nvidia/meta/llama3-70b-instruct', provider: 'nvidia' },
-      { id: 'nyx-gemma-4-e2b-it', provider: 'nyx-native' }
+      { id: 'nyx-gemma-4-e2b-it', provider: 'nyx-native' },
     ];
 
     let lastError: any = null;
@@ -160,8 +168,24 @@ export class HybridModelRouter {
       if (current.provider === 'openrouter' && !apiKeys['openrouter']) continue;
       if (current.provider === 'nvidia' && !apiKeys['nvidia']) continue;
 
+      // Circuit Breaker check: skip if open (unless it is the last option in fallback chain)
+      if (circuitBreakerRegistry.isOpen(current.provider)) {
+        if (i < chain.length - 1) {
+          console.warn(
+            `[FallbackChain] Skipping provider "${current.provider}" because its circuit breaker is OPEN.`
+          );
+          continue;
+        } else {
+          console.warn(
+            `[FallbackChain] Provider "${current.provider}" circuit breaker is OPEN, but it is the last option. Attempting anyway.`
+          );
+        }
+      }
+
       try {
-        console.log(`[FallbackChain] Attempting ${current.id} (${current.provider}) - Step ${i + 1}/${chain.length}`);
+        console.log(
+          `[FallbackChain] Attempting ${current.id} (${current.provider}) - Step ${i + 1}/${chain.length}`
+        );
 
         if (current.provider === 'nyx-native') {
           const status = await checkStatusFn('nyx-native').catch(() => 'offline');
@@ -170,14 +194,14 @@ export class HybridModelRouter {
             await fetchWithAuth('/api/nyx/local-models/run', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ modelId: current.id, settings: { contextSize: 4096 } })
+              body: JSON.stringify({ modelId: current.id, settings: { contextSize: 4096 } }),
             }).catch(() => {});
-            await new Promise(r => setTimeout(r, 2000)); // Sleep to allow start
+            await new Promise((r) => setTimeout(r, 2000)); // Sleep to allow start
           }
         }
 
         const apiKey = apiKeys[current.provider] || '';
-        return await executeWithContinuationFn(
+        const res = await executeWithContinuationFn(
           current.id,
           current.provider,
           prompt,
@@ -187,18 +211,33 @@ export class HybridModelRouter {
           onStream,
           signal
         );
+
+        // Record success in circuit breaker
+        circuitBreakerRegistry.recordSuccess(current.provider);
+        return res;
       } catch (err: any) {
         lastError = err;
         console.warn(`[FallbackChain] Failed on ${current.id}:`, err.message || err);
 
+        // Record failure in circuit breaker (unless aborted by user)
+        const isAbort =
+          err.name === 'AbortError' || err.message?.includes('aborted') || signal?.aborted;
+        if (!isAbort) {
+          circuitBreakerRegistry.recordFailure(current.provider);
+        }
+
         // Handle native OOM recovery
-        if (current.provider === 'nyx-native' && 
-            (/OOM|out of memory|allocate|vram/i.test(err.message || ''))) {
-          console.warn('[FallbackChain] Local VRAM OOM detected! Freeing assets and migrating to cloud fallback...');
+        if (
+          current.provider === 'nyx-native' &&
+          /OOM|out of memory|allocate|vram/i.test(err.message || '')
+        ) {
+          console.warn(
+            '[FallbackChain] Local VRAM OOM detected! Freeing assets and migrating to cloud fallback...'
+          );
           await fetchWithAuth('/api/nyx/local-models/stop', { method: 'POST' }).catch(() => {});
         }
 
-        if (err.name === 'AbortError' || err.message?.includes('aborted') || signal?.aborted) {
+        if (isAbort) {
           throw err;
         }
       }
@@ -207,19 +246,24 @@ export class HybridModelRouter {
     throw lastError || new Error('Fallback chain exhausted - all providers failed.');
   }
 
-  private static selectCloudModel(task: SubagentTask, apiKeys: Record<string, string>): RoutingDecision {
-    const freeModels = AVAILABLE_MODELS.filter(m => {
+  private static selectCloudModel(
+    task: SubagentTask,
+    apiKeys: Record<string, string>
+  ): RoutingDecision {
+    const freeModels = AVAILABLE_MODELS.filter((m) => {
       if (m.provider === 'pollinations') return true;
       if (m.provider === 'nvidia') return true;
-      if (m.provider === 'opencode' && typeof m.id === 'string' && m.id.includes('free')) return true;
-      if (m.provider === 'openrouter' && typeof m.id === 'string' && m.id.includes(':free')) return true;
+      if (m.provider === 'opencode' && typeof m.id === 'string' && m.id.includes('free'))
+        return true;
+      if (m.provider === 'openrouter' && typeof m.id === 'string' && m.id.includes(':free'))
+        return true;
       return false;
     });
 
-    const availableFree = freeModels.filter(m => {
+    const availableFree = freeModels.filter((m) => {
       if (m.provider === 'pollinations') return true;
       if (m.provider === 'nvidia') return true;
-      return !!(apiKeys[m.provider]?.trim());
+      return !!apiKeys[m.provider]?.trim();
     });
 
     if (availableFree.length > 0) {
@@ -233,13 +277,13 @@ export class HybridModelRouter {
         provider: best.provider as Provider,
         reasoning: `Cloud free tier: optimal context window for ${task.complexity} ${task.type}`,
         estimatedLatency: 1500,
-        estimatedCost: 'free'
+        estimatedCost: 'free',
       };
     }
 
-    const paidModels = AVAILABLE_MODELS.filter(m => {
+    const paidModels = AVAILABLE_MODELS.filter((m) => {
       if (m.provider === 'pollinations') return true;
-      return !!(apiKeys[m.provider]?.trim());
+      return !!apiKeys[m.provider]?.trim();
     });
 
     if (paidModels.length > 0) {
@@ -249,7 +293,7 @@ export class HybridModelRouter {
         provider: model.provider as Provider,
         reasoning: 'Paid cloud model selected based on active API keys',
         estimatedLatency: 2000,
-        estimatedCost: 'medium'
+        estimatedCost: 'medium',
       };
     }
 
@@ -258,7 +302,7 @@ export class HybridModelRouter {
       provider: 'pollinations' as Provider,
       reasoning: 'No keys configured — executing on keyless Pollinations fallback',
       estimatedLatency: 1000,
-      estimatedCost: 'free'
+      estimatedCost: 'free',
     };
   }
 }

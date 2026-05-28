@@ -1,5 +1,5 @@
 import React from 'react';
-import { AIService } from '@src/features/coder/services/ai.service';
+import { AIService, countTokens } from '@src/core/services/ai.service';
 import { ChatMessage, TelemetryMetrics, AISettings } from '@src/infrastructure/types';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -7,7 +7,11 @@ import { getLanguageKnowledge } from '@src/features/coder/config/codingKnowledge
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 // Import our modularized stages and utils
-import { buildCodebaseContext, buildWebSearchContext, shouldTriggerWebSearch } from './utils/contextBuilder';
+import {
+  buildCodebaseContext,
+  buildWebSearchContext,
+  shouldTriggerWebSearch,
+} from './utils/contextBuilder';
 import { createStreamUpdate } from './utils/streamHelpers';
 import { runPlanningStage } from './stages/planning';
 import { runGenerationStage } from './stages/generation';
@@ -19,15 +23,18 @@ const STREAM_THROTTLE_MS = 50;
 /** Check if the prompt is a simple greeting or identity query */
 const isGreetingOrIdentity = (prompt: string): boolean => {
   const trimmed = prompt.trim();
-  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)\b/i;
-  const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx|what\s+can\s+you\s+do|what\s+are\s+you|help\s+me)\b/i;
+  const GREETINGS =
+    /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)\b/i;
+  const IDENTITY =
+    /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx|what\s+can\s+you\s+do|what\s+are\s+you|help\s+me)\b/i;
   return GREETINGS.test(trimmed) || IDENTITY.test(trimmed);
 };
 
 /** Check if the prompt is asking about codebase/project context */
 const isCodebaseQuery = (prompt: string): boolean => {
   const lower = prompt.toLowerCase();
-  const codebaseKeywords = /\b(project|codebase|repository|repo|workspace|directory|folder|files?|src|components|server|routes|package\.json|tsconfig)\b/i;
+  const codebaseKeywords =
+    /\b(project|codebase|repository|repo|workspace|directory|folder|files?|src|components|server|routes|package\.json|tsconfig)\b/i;
   const fileRef = /\b\w+\.(json|ts|tsx|js|jsx|py|cpp|h|ino|md|yml|yaml|css|html)\b/i;
   return codebaseKeywords.test(lower) || fileRef.test(lower);
 };
@@ -85,7 +92,7 @@ export async function runMultiStagePipeline({
   historyRef,
   triggerBackgroundCritic,
   generateHandoffPlan,
-  NYX_SYSTEM_INSTRUCTION
+  NYX_SYSTEM_INSTRUCTION,
 }: MultiStagePipelineParams): Promise<void> {
   const nyxModel = models['nyx'];
   if (!nyxModel) {
@@ -100,9 +107,9 @@ export async function runMultiStagePipeline({
   const isCodebase = codebaseKnowledgeEnabled && isCodebaseQuery(prompt) && !isGreeting;
 
   // Seed empty assistant message
-  updateHistory(prev => [
+  updateHistory((prev) => [
     ...prev,
-    { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }
+    { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' },
   ]);
 
   const startTime = Date.now();
@@ -119,32 +126,37 @@ export async function runMultiStagePipeline({
   );
 
   const needsCorrectiveSearch = isCodebase && maxCodebaseScore < 120 && !isGreeting;
-  const executeWebSearch = ((webSearchEnabled && shouldTriggerWebSearch(prompt, analysis)) || needsCorrectiveSearch) && !isGreeting;
+  const executeWebSearch =
+    ((webSearchEnabled && shouldTriggerWebSearch(prompt, analysis)) || needsCorrectiveSearch) &&
+    !isGreeting;
 
   // ── Web Search Context ────────────────────────────────────────────────
-  const searchContext = await buildWebSearchContext(
-    prompt,
-    executeWebSearch,
-    controller.signal
-  );
+  const searchContext = await buildWebSearchContext(prompt, executeWebSearch, controller.signal);
 
   // Helper: stream content updates to the chat
   const streamUpdate = createStreamUpdate(startTime, updateHistory, updateMetrics);
 
   // Helper: run a command in the sandbox terminal
-  const runSandboxCommand = async (command: string): Promise<{ success: boolean; stdout: string; stderr: string; error?: string }> => {
+  const runSandboxCommand = async (
+    command: string
+  ): Promise<{ success: boolean; stdout: string; stderr: string; error?: string }> => {
     try {
       const res = await fetchWithAuth('/api/terminal/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command }),
-        signal: controller.signal
+        signal: controller.signal,
       });
       const data = await res.json();
       if (res.ok) {
         return { success: true, stdout: data.stdout || '', stderr: data.stderr || '' };
       }
-      return { success: false, stdout: data.stdout || '', stderr: data.stderr || '', error: data.error };
+      return {
+        success: false,
+        stdout: data.stdout || '',
+        stderr: data.stderr || '',
+        error: data.error,
+      };
     } catch (e: any) {
       return { success: false, stdout: '', stderr: '', error: e.message };
     }
@@ -175,7 +187,14 @@ export async function runMultiStagePipeline({
     accumulatedOutput = `## 🚀 NYX Agent — Generating Solution\n\n*Planning step was not needed for this request. Generating complete solution directly...*\n\n`;
     streamUpdate(accumulatedOutput);
 
-    const handoffPlan = await generateHandoffPlan(prompt, codebaseContext, nyxModel, nyxProvider, nyxApiKey, apiKeys);
+    const handoffPlan = await generateHandoffPlan(
+      prompt,
+      codebaseContext,
+      nyxModel,
+      nyxProvider,
+      nyxApiKey,
+      apiKeys
+    );
     const handoffBlock = `\n[NYX AGENT COORDINATOR HANDOFF SPECIFICATION]\n${handoffPlan}\n[END OF HANDOFF SPECIFICATION]\n`;
 
     const instruction = `${NYX_SYSTEM_INSTRUCTION}\n\n${langKnowledge}\n\nYou are Nyx, the premium AI assistant executing the final implementation.\n${rulesBlock}\n\nGEMINI-STYLE RESPONSE RULES:\n- Begin with a brief, premium architectural overview.\n- Deliver COMPLETE, FINAL, production-ready code.\n- Output each file in a properly labeled code block.\n- Do NOT reference internal stages or pipeline steps.\n- Ensure all imports, package names, and APIs are correct.\n- After all code blocks, provide a concise explanation.\n- End with a clear "## How to Use" checklist.\n- Keep the tone highly professional and authoritative.`;
@@ -211,7 +230,7 @@ export async function runMultiStagePipeline({
     const finalTps = finalElapsed > 0 ? Math.round(finalTokens / (finalElapsed / 1000)) : 0;
     const finalMetrics = { latency: finalElapsed, tokens: finalTokens, tps: finalTps };
 
-    updateHistory(prev => {
+    updateHistory((prev) => {
       const h = [...prev];
       const last = h[h.length - 1];
       if (last && last.role === 'assistant') {
@@ -240,7 +259,7 @@ export async function runMultiStagePipeline({
     });
     if (plan.verifyCommands.length > 0) {
       md += `### 🔬 Verification Commands\n\n`;
-      plan.verifyCommands.forEach(cmd => {
+      plan.verifyCommands.forEach((cmd) => {
         md += `- \`${cmd}\`\n`;
       });
       md += `\n`;
@@ -282,7 +301,9 @@ export async function runMultiStagePipeline({
   // ═══════════════════════════════════════════════════════════════════════
   let accumulatedOutputVal = accumulatedOutput;
   const getAccumulatedOutput = () => accumulatedOutputVal;
-  const setAccumulatedOutput = (val: string) => { accumulatedOutputVal = val; };
+  const setAccumulatedOutput = (val: string) => {
+    accumulatedOutputVal = val;
+  };
 
   const verificationLog = await runVerificationStage(
     nyxModel,
@@ -316,11 +337,11 @@ export async function runMultiStagePipeline({
 
   // Commit final output
   const finalElapsed = Date.now() - startTime;
-  const finalTokens = Math.floor(finalSummaryOutput.length / 4);
+  const finalTokens = countTokens(finalSummaryOutput);
   const finalTps = finalElapsed > 0 ? Math.round(finalTokens / (finalElapsed / 1000)) : 0;
   const finalMetrics = { latency: finalElapsed, tokens: finalTokens, tps: finalTps };
 
-  updateHistory(prev => {
+  updateHistory((prev) => {
     const h = [...prev];
     const last = h[h.length - 1];
     if (last && last.role === 'assistant') {

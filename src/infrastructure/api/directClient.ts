@@ -6,6 +6,44 @@
 
 import { AISettings } from './inferenceClient';
 
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  attempt = 1,
+  maxAttempts = 3
+): Promise<Response> {
+  try {
+    const response = await fetch(url, init);
+    if (
+      !response.ok &&
+      (response.status === 429 || response.status === 503) &&
+      attempt <= maxAttempts
+    ) {
+      const delay = Math.pow(2, attempt - 1) * 1000 + Math.random() * 200;
+      console.warn(
+        `[directClient] Retryable HTTP ${response.status} (attempt ${attempt}/${maxAttempts}). Retrying in ${delay.toFixed(0)}ms.`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return fetchWithRetry(url, init, attempt + 1, maxAttempts);
+    }
+    return response;
+  } catch (error: any) {
+    // If aborted, do not retry
+    if (error?.name === 'AbortError' || init.signal?.aborted) {
+      throw error;
+    }
+    if (attempt <= maxAttempts) {
+      const delay = Math.pow(2, attempt - 1) * 1000 + Math.random() * 200;
+      console.warn(
+        `[directClient] Network error (attempt ${attempt}/${maxAttempts}). Retrying in ${delay.toFixed(0)}ms. Error: ${error.message || error}`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return fetchWithRetry(url, init, attempt + 1, maxAttempts);
+    }
+    throw error;
+  }
+}
+
 // Helper to resolve Gemini models
 function resolveRealGeminiModel(model: string): string {
   const modelMap: Record<string, string> = {
@@ -72,23 +110,28 @@ export async function directFetchGemini(
 ): Promise<string> {
   const activeKey = apiKey || (process.env as any).GEMINI_API_KEY || '';
   if (!activeKey) {
-    throw new Error('AUTHENTICATION FAILED: Gemini API key is required. Please check your settings.');
+    throw new Error(
+      'AUTHENTICATION FAILED: Gemini API key is required. Please check your settings.'
+    );
   }
 
   const realModel = resolveRealGeminiModel(model);
-  const gatewayBase = (gatewayUrls?.gemini && gatewayUrls.gemini.trim() !== '')
-    ? gatewayUrls.gemini.replace(/\/$/, '')
-    : 'https://generativelanguage.googleapis.com/v1beta';
+  const gatewayBase =
+    gatewayUrls?.gemini && gatewayUrls.gemini.trim() !== ''
+      ? gatewayUrls.gemini.replace(/\/$/, '')
+      : 'https://generativelanguage.googleapis.com/v1beta';
 
   const url = `${gatewayBase}/models/${realModel}:generateContent?key=${activeKey}`;
 
   // Formulate contents in Gemini format
   const contents: any[] = [];
   if (history && Array.isArray(history)) {
-    contents.push(...history.map((m: any) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    })));
+    contents.push(
+      ...history.map((m: any) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }))
+    );
   }
   contents.push({ role: 'user', parts: [{ text: prompt }] });
 
@@ -98,14 +141,20 @@ export async function directFetchGemini(
     requestBody.systemInstruction = { role: 'system', parts: [{ text: systemInstruction }] };
   }
 
-  if (settings?.temperature !== undefined || settings?.maxTokens !== undefined || settings?.topP !== undefined) {
+  if (
+    settings?.temperature !== undefined ||
+    settings?.maxTokens !== undefined ||
+    settings?.topP !== undefined
+  ) {
     requestBody.generationConfig = {};
-    if (settings.temperature !== undefined) requestBody.generationConfig.temperature = settings.temperature;
+    if (settings.temperature !== undefined)
+      requestBody.generationConfig.temperature = settings.temperature;
     if (settings.topP !== undefined) requestBody.generationConfig.topP = settings.topP;
-    if (settings.maxTokens !== undefined) requestBody.generationConfig.maxOutputTokens = settings.maxTokens;
+    if (settings.maxTokens !== undefined)
+      requestBody.generationConfig.maxOutputTokens = settings.maxTokens;
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(requestBody),
@@ -146,12 +195,15 @@ export async function directFetchOpenRouter(
   gatewayUrls?: Record<string, string>
 ): Promise<string> {
   if (!apiKey) {
-    throw new Error('AUTHENTICATION FAILED: OpenRouter API key is required. Please check your settings.');
+    throw new Error(
+      'AUTHENTICATION FAILED: OpenRouter API key is required. Please check your settings.'
+    );
   }
 
-  const gatewayBase = (gatewayUrls?.openrouter && gatewayUrls.openrouter.trim() !== '')
-    ? gatewayUrls.openrouter.replace(/\/$/, '')
-    : 'https://openrouter.ai/api/v1';
+  const gatewayBase =
+    gatewayUrls?.openrouter && gatewayUrls.openrouter.trim() !== ''
+      ? gatewayUrls.openrouter.replace(/\/$/, '')
+      : 'https://openrouter.ai/api/v1';
 
   const url = `${gatewayBase}/chat/completions`;
 
@@ -173,11 +225,11 @@ export async function directFetchOpenRouter(
     top_p: settings?.topP ?? 1.0,
   };
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'HTTP-Referer': window.location.origin || 'http://localhost:3000',
       'X-Title': 'LLM Reference Dashboard',
     },
@@ -219,13 +271,16 @@ export async function directFetchNvidia(
   gatewayUrls?: Record<string, string>
 ): Promise<string> {
   if (!apiKey || !apiKey.startsWith('nvapi-')) {
-    throw new Error('AUTHENTICATION FAILED: NVIDIA API key is required. Add your nvapi-* key in Settings.');
+    throw new Error(
+      'AUTHENTICATION FAILED: NVIDIA API key is required. Add your nvapi-* key in Settings.'
+    );
   }
 
   const realModel = NVIDIA_MODELS[model] || model.replace('nvidia/', '');
-  const gatewayBase = (gatewayUrls?.nvidia && gatewayUrls.nvidia.trim() !== '')
-    ? gatewayUrls.nvidia.replace(/\/$/, '')
-    : 'https://integrate.api.nvidia.com/v1';
+  const gatewayBase =
+    gatewayUrls?.nvidia && gatewayUrls.nvidia.trim() !== ''
+      ? gatewayUrls.nvidia.replace(/\/$/, '')
+      : 'https://integrate.api.nvidia.com/v1';
 
   const url = `${gatewayBase}/chat/completions`;
 
@@ -247,11 +302,11 @@ export async function directFetchNvidia(
     top_p: settings?.topP ?? 1.0,
   };
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(requestBody),
     signal,
@@ -291,13 +346,16 @@ export async function directFetchOpenCode(
   gatewayUrls?: Record<string, string>
 ): Promise<string> {
   if (!apiKey) {
-    throw new Error('AUTHENTICATION FAILED: OpenCode Zen requires an API key. Get one free at opencode.ai/auth');
+    throw new Error(
+      'AUTHENTICATION FAILED: OpenCode Zen requires an API key. Get one free at opencode.ai/auth'
+    );
   }
 
   const mappedModel = mapOpenCodeModel(model);
-  const gatewayBase = (gatewayUrls?.opencode && gatewayUrls.opencode.trim() !== '')
-    ? gatewayUrls.opencode.replace(/\/$/, '')
-    : 'https://opencode.ai/zen/v1';
+  const gatewayBase =
+    gatewayUrls?.opencode && gatewayUrls.opencode.trim() !== ''
+      ? gatewayUrls.opencode.replace(/\/$/, '')
+      : 'https://opencode.ai/zen/v1';
 
   const url = `${gatewayBase}/chat/completions`;
 
@@ -319,11 +377,11 @@ export async function directFetchOpenCode(
     top_p: settings?.topP ?? 1.0,
   };
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'HTTP-Referer': window.location.origin || 'http://localhost:3000',
       'X-Title': 'LLM Reference - OpenCode Zen',
     },

@@ -31,11 +31,12 @@ interface ChatPageProps {
   // Lifted state props:
   activeAgent: 'nyx';
   isLoading: boolean;
+  isSearching: boolean;
   history: any[];
   metrics: any;
   models: Record<'nyx', string>;
   setModel: (modelId: string) => void;
-  runChat: (prompt: string) => void;
+  runChat: (prompt: string, images?: { name: string; mimeType: string; data: string }[]) => void;
   stopChat: () => void;
   clearHistory: () => void;
   suggestedPrompts: string[];
@@ -66,6 +67,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   // Destructure lifted props:
   activeAgent,
   isLoading,
+  isSearching,
   history,
   metrics,
   models,
@@ -83,10 +85,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   lightningEnabled = true,
   lightningDirectives = [],
 }) => {
-
   const [prompt, setPrompt] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [scraplingStatus, setScraplingStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [scraplingStatus, setScraplingStatus] = useState<'checking' | 'online' | 'offline'>(
+    'checking'
+  );
 
   // Real-time local Scrapling connectivity check
   useEffect(() => {
@@ -114,10 +117,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   }, []);
 
   const currentModelId = models['nyx'];
-  
+
   const mergedModels = useMemo(() => {
     const seenIds = new Set();
-    return [...allModels, ...FREE_OPENCODE_MODELS].filter(m => {
+    return [...allModels, ...FREE_OPENCODE_MODELS].filter((m) => {
       if (seenIds.has(m.id)) return false;
       seenIds.add(m.id);
       return true;
@@ -126,7 +129,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   const currentModel = useMemo(() => {
     if (!currentModelId) return null;
-    return mergedModels.find(m => m.id === currentModelId) || null;
+    return mergedModels.find((m) => m.id === currentModelId) || null;
   }, [currentModelId, mergedModels]);
 
   const badgeStatus = useMemo(() => {
@@ -140,15 +143,18 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     return 'success';
   }, [isLoading, currentModel, providerStatuses]);
 
-  const handleSubmit = useCallback((finalPrompt: string) => {
-    if (!finalPrompt.trim() || isLoading) return;
-    if (!currentModelId) {
-      toast.error('Please select a model first');
-      return;
-    }
-    runChat(finalPrompt);
-    setPrompt('');
-  }, [isLoading, currentModelId, runChat]);
+  const handleSubmit = useCallback(
+    (finalPrompt: string, images?: { name: string; mimeType: string; data: string }[]) => {
+      if ((!finalPrompt.trim() && (!images || images.length === 0)) || isLoading) return;
+      if (!currentModelId) {
+        toast.error('Please select a model first');
+        return;
+      }
+      runChat(finalPrompt, images);
+      setPrompt('');
+    },
+    [isLoading, currentModelId, runChat]
+  );
 
   const copyToClipboard = useCallback((text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -167,10 +173,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative bg-background">
-
         <ChatHeader
           metrics={metrics}
           isLoading={isLoading}
+          isSearching={isSearching}
+          webSearchEnabled={webSearchEnabled}
           onClear={clearHistory}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={onToggleSidebar}
@@ -187,6 +194,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   onPromptChange={setPrompt}
                   onSubmit={handleSubmit}
                   isLoading={isLoading}
+                  isSearching={isSearching}
                   onStop={stopChat}
                   currentModelId={currentModelId}
                   currentModel={currentModel}
@@ -204,7 +212,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                   alignDropdown="bottom"
                 />
               </div>
-
             </div>
           </div>
         ) : (
@@ -225,6 +232,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               onPromptChange={setPrompt}
               onSubmit={handleSubmit}
               isLoading={isLoading}
+              isSearching={isSearching}
               onStop={stopChat}
               currentModelId={currentModelId}
               currentModel={currentModel}
@@ -245,7 +253,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         )}
       </div>
 
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { 
@@ -253,7 +263,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(var(--primary), 0.2); }
-      `}} />
+      `,
+        }}
+      />
     </motion.div>
   );
 };

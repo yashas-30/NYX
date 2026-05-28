@@ -1,15 +1,15 @@
 import { detectHardware, HardwareAnalysis } from '@/shared/promptAnalyzer';
 import { CODING_KNOWLEDGE_SUMMARY } from '@src/features/coder/config/codingKnowledge';
 
-export type PromptIntent = 
-  | 'greeting' 
-  | 'general_chat' 
-  | 'code_generation' 
-  | 'code_debug' 
-  | 'code_review' 
+export type PromptIntent =
+  | 'greeting'
+  | 'general_chat'
+  | 'code_generation'
+  | 'code_debug'
+  | 'code_review'
   | 'architecture_design'
-  | 'refactor' 
-  | 'explain_code' 
+  | 'refactor'
+  | 'explain_code'
   | 'terminal_command'
   | 'file_operation'
   | 'web_search'
@@ -17,13 +17,13 @@ export type PromptIntent =
 
 export interface PromptAnalysis {
   intent: PromptIntent;
-  confidence: number;           // 0-1
-  detectedLanguages: string[];  // typescript, python, rust, etc.
-  frameworks: string[];         // react, express, nextjs, etc.
+  confidence: number; // 0-1
+  detectedLanguages: string[]; // typescript, python, rust, etc.
+  frameworks: string[]; // react, express, nextjs, etc.
   complexity: 'trivial' | 'simple' | 'moderate' | 'complex' | 'enterprise';
-  requiresContext: boolean;     // needs codebase/files
-  requiresExecution: boolean;   // needs terminal/file write
-  estimatedTokens: number;      // rough context size needed
+  requiresContext: boolean; // needs codebase/files
+  requiresExecution: boolean; // needs terminal/file write
+  estimatedTokens: number; // rough context size needed
   suggestedModel: 'fast' | 'balanced' | 'powerful'; // model tier hint
   hardware?: HardwareAnalysis;
 }
@@ -53,9 +53,7 @@ const INTENT_PATTERNS: Record<PromptIntent, RegExp[]> = {
     /\b(design|architect|structure|organize|plan)\b.*\b(system|app|service|microservice|database|schema|api)\b/i,
     /\b(system\s+design|architecture\s+pattern|design\s+pattern)\b/i,
   ],
-  refactor: [
-    /\b(refactor|rewrite|restructure|optimize|clean\s+up|simplify|modernize)\b/i,
-  ],
+  refactor: [/\b(refactor|rewrite|restructure|optimize|clean\s+up|simplify|modernize)\b/i],
   explain_code: [
     /\b(explain|describe|walk\s+me\s+through|what\s+does\s+this\s+code\s+do)\b/i,
     /\b(how\s+(?:is|does)\s+this\s+(?:work|function|operate))\b/i,
@@ -68,9 +66,7 @@ const INTENT_PATTERNS: Record<PromptIntent, RegExp[]> = {
     /\b(read|write|create|delete|modify|update|append)\b.*\b(file|files?)\b/i,
     /\b(save|export|import)\b.*\b(to|from)\b/i,
   ],
-  web_search: [
-    /\b(search|find|look\s+up|google|what's\s+the\s+latest|current|news\s+about)\b/i,
-  ],
+  web_search: [/\b(search|find|look\s+up|google|what's\s+the\s+latest|current|news\s+about)\b/i],
   codebase_query: [
     /\b(project|codebase|repository|repo|workspace|directory|folder)\b/i,
     /\b(where\s+is|find\s+(?:the|a)|locate|show\s+me)\b.*\b(file|function|class|component)\b/i,
@@ -102,79 +98,119 @@ const FRAMEWORK_PATTERNS = [
   { fw: 'angular', pattern: /\b(angular|rxjs|@angular|ng-)\b/i },
   { fw: 'svelte', pattern: /\b(svelte|sveltekit|\.svelte)\b/i },
   { fw: 'express', pattern: /\b(express|middleware|req\.|res\.|router)\b/i },
-  { fw: 'nextjs', pattern: /\b(next\.js|nextjs|app\s+router|pages\s+router|getserversideprops)\b/i },
+  {
+    fw: 'nextjs',
+    pattern: /\b(next\.js|nextjs|app\s+router|pages\s+router|getserversideprops)\b/i,
+  },
   { fw: 'tailwind', pattern: /\b(tailwind|tailwindcss|tw-|className=)\b/i },
   { fw: 'prisma', pattern: /\b(prisma|schema\.prisma|@prisma)\b/i },
   { fw: 'drizzle', pattern: /\b(drizzle|drizzle-orm|db\.select)\b/i },
 ];
 
+// Priority rank helper to prevent downgrading classification (WRONG-7)
+const INTENT_PRIORITY: Record<PromptIntent, number> = {
+  code_generation: 10,
+  code_debug: 9,
+  refactor: 8,
+  code_review: 7,
+  architecture_design: 6,
+  explain_code: 5,
+  terminal_command: 4,
+  file_operation: 3,
+  codebase_query: 3,
+  web_search: 2,
+  general_chat: 1,
+  greeting: 0,
+};
+
 export function analyzePrompt(prompt: string): PromptAnalysis {
   const lower = prompt.toLowerCase();
   const words = lower.split(/\s+/).length;
-  
+
   // --- Intent Detection ---
   let bestIntent: PromptIntent = 'general_chat';
   let bestScore = 0;
-  
+
   for (const [intent, patterns] of Object.entries(INTENT_PATTERNS)) {
     const score = patterns.reduce((sum, regex) => sum + (regex.test(prompt) ? 1 : 0), 0);
     if (score > bestScore) {
       bestScore = score;
       bestIntent = intent as PromptIntent;
+    } else if (score === bestScore && score > 0) {
+      const currentPri = INTENT_PRIORITY[bestIntent] || 0;
+      const newPri = INTENT_PRIORITY[intent as PromptIntent] || 0;
+      if (newPri > currentPri) {
+        bestIntent = intent as PromptIntent;
+      }
     }
   }
-  
-  // Override: code blocks always = code_generation
+
+  // Override: code blocks always = code_generation (if current priority is lower)
   if (/```\w*/.test(prompt)) {
-    bestIntent = 'code_generation';
-    bestScore = Math.max(bestScore, 2);
+    if (INTENT_PRIORITY['code_generation'] > (INTENT_PRIORITY[bestIntent] || 0)) {
+      bestIntent = 'code_generation';
+      bestScore = Math.max(bestScore, 2);
+    }
   }
-  
-  // Override: file paths in prompt = codebase_query or file_operation
-  if (/\b\w+\.(ts|tsx|js|jsx|py|rs|go|java|cpp|c|cs|rb|php|swift|kt|sql|json|md|yml|yaml)\b/.test(prompt)) {
-    if (bestIntent === 'general_chat') bestIntent = 'codebase_query';
+
+  // Override: file paths in prompt = codebase_query (if current priority is lower)
+  if (
+    /\b\w+\.(ts|tsx|js|jsx|py|rs|go|java|cpp|c|cs|rb|php|swift|kt|sql|json|md|yml|yaml)\b/.test(
+      prompt
+    )
+  ) {
+    if (INTENT_PRIORITY['codebase_query'] > (INTENT_PRIORITY[bestIntent] || 0)) {
+      bestIntent = 'codebase_query';
+    }
   }
-  
+
   const confidence = Math.min(1, bestScore * 0.3 + 0.2);
-  
+
   // --- Language Detection ---
-  const detectedLanguages = LANGUAGE_PATTERNS
-    .filter(({ pattern }) => pattern.test(prompt))
-    .map(({ lang }) => lang);
-  
+  const detectedLanguages = LANGUAGE_PATTERNS.filter(({ pattern }) => pattern.test(prompt)).map(
+    ({ lang }) => lang
+  );
+
   // --- Framework Detection ---
-  const frameworks = FRAMEWORK_PATTERNS
-    .filter(({ pattern }) => pattern.test(prompt))
-    .map(({ fw }) => fw);
-  
+  const frameworks = FRAMEWORK_PATTERNS.filter(({ pattern }) => pattern.test(prompt)).map(
+    ({ fw }) => fw
+  );
+
   // --- Complexity Scoring ---
   let complexity: PromptAnalysis['complexity'] = 'simple';
   const codeLines = (prompt.match(/\n/g) || []).length;
-  const hasMultipleFiles = prompt.includes('=== FILE:') || prompt.includes('```') && prompt.split('```').length > 3;
-  
+  const hasMultipleFiles =
+    prompt.includes('=== FILE:') || (prompt.includes('```') && prompt.split('```').length > 3);
+
   if (words > 200 || codeLines > 50 || hasMultipleFiles) complexity = 'enterprise';
   else if (words > 100 || codeLines > 20) complexity = 'complex';
   else if (words > 50 || codeLines > 10) complexity = 'moderate';
   else if (words < 10) complexity = 'trivial';
-  
+
   // --- Context & Execution Needs ---
   const requiresContext = [
-    'code_debug', 'code_review', 'explain_code', 'refactor', 
-    'architecture_design', 'codebase_query', 'file_operation'
+    'code_debug',
+    'code_review',
+    'explain_code',
+    'refactor',
+    'architecture_design',
+    'codebase_query',
+    'file_operation',
   ].includes(bestIntent);
-  
-  const requiresExecution = [
-    'terminal_command', 'file_operation', 'code_generation'
-  ].includes(bestIntent) && complexity !== 'trivial';
-  
+
+  const requiresExecution =
+    ['terminal_command', 'file_operation', 'code_generation'].includes(bestIntent) &&
+    complexity !== 'trivial';
+
   // --- Model Tier Suggestion ---
   let suggestedModel: PromptAnalysis['suggestedModel'] = 'fast';
-  if (complexity === 'enterprise' || bestIntent === 'architecture_design') suggestedModel = 'powerful';
+  if (complexity === 'enterprise' || bestIntent === 'architecture_design')
+    suggestedModel = 'powerful';
   else if (complexity === 'complex' || requiresContext) suggestedModel = 'balanced';
-  
+
   // --- Hardware Critique Audit Integration ---
   const hardware = detectHardware(prompt);
-  
+
   return {
     intent: bestIntent,
     confidence,
@@ -210,7 +246,7 @@ export function routeToAgent(analysis: PromptAnalysis): AgentRoute {
       tools: [],
     };
   }
-  
+
   if (analysis.intent === 'general_chat' && analysis.complexity === 'trivial') {
     return {
       agent: 'chat',
@@ -220,19 +256,19 @@ export function routeToAgent(analysis: PromptAnalysis): AgentRoute {
       tools: analysis.confidence < 0.5 ? ['web_search'] : [],
     };
   }
-  
+
   // Coder agent handles: everything code-related
   const tools: AgentRoute['tools'] = [];
   if (analysis.requiresContext) tools.push('codebase_search');
   if (analysis.requiresExecution) tools.push('terminal', 'file_write');
   if (analysis.complexity === 'enterprise' || analysis.confidence < 0.6) tools.push('web_search');
-  
+
   // Subagent swarm for complex tasks
-  const shouldUseSubagents = 
-    analysis.complexity === 'complex' || 
+  const shouldUseSubagents =
+    analysis.complexity === 'complex' ||
     analysis.complexity === 'enterprise' ||
     (analysis.requiresContext && analysis.requiresExecution);
-  
+
   return {
     agent: 'coder',
     reasoning: `Code intent (${analysis.intent}) with ${analysis.complexity} complexity`,

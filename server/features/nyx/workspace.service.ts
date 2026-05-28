@@ -16,20 +16,64 @@ export class WorkspaceService {
     WorkspaceIntelligence.trackOpenFiles(openFiles);
   }
 
+  /**
+   * BAD-5 fix: Check if lint script exists before running it.
+   * Add monorepo detection for pnpm-workspace.yaml, lerna.json, packages/ directory.
+   */
   async validateWorkspace() {
     const profile = await WorkspaceIntelligence.getProfile();
     const root = getWorkspaceRoot();
+
+    // Monorepo detection
+    const isMonorepo =
+      fs.existsSync(path.join(root, 'pnpm-workspace.yaml')) ||
+      fs.existsSync(path.join(root, 'lerna.json')) ||
+      (fs.existsSync(path.join(root, 'packages')) &&
+        fs.statSync(path.join(root, 'packages')).isDirectory());
+
+    if (isMonorepo) {
+      // For monorepos, run tsc check at root level only — skip lint
+      if (fs.existsSync(path.join(root, 'tsconfig.json'))) {
+        try {
+          const { stdout } = await execAsync('npx tsc --noEmit', { cwd: root, timeout: 30_000 });
+          return { success: true, stdout, monorepo: true };
+        } catch (err: any) {
+          return { success: false, error: err.stderr || err.stdout || err.message, monorepo: true };
+        }
+      }
+      return {
+        success: true,
+        message: 'Monorepo detected — skipped lint (no root tsconfig found)',
+        monorepo: true,
+      };
+    }
+
     let command = '';
 
     if (profile.projectType === 'react' || profile.projectType === 'node') {
       if (fs.existsSync(path.join(root, 'tsconfig.json'))) {
         command = 'npx tsc --noEmit';
-      } else if (profile.packageManager === 'pnpm') {
-        command = 'pnpm run lint';
-      } else if (profile.packageManager === 'yarn') {
-        command = 'yarn run lint';
       } else {
-        command = 'npm run lint';
+        // BAD-5: Check if lint script actually exists in package.json before running it
+        const pkgJsonPath = path.join(root, 'package.json');
+        let hasLintScript = false;
+        if (fs.existsSync(pkgJsonPath)) {
+          try {
+            const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
+            hasLintScript = !!(pkg.scripts && pkg.scripts.lint);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (hasLintScript) {
+          if (profile.packageManager === 'pnpm') {
+            command = 'pnpm run lint';
+          } else if (profile.packageManager === 'yarn') {
+            command = 'yarn run lint';
+          } else {
+            command = 'npm run lint';
+          }
+        }
       }
     } else if (profile.projectType === 'rust') {
       command = 'cargo check';
@@ -51,7 +95,7 @@ export class WorkspaceService {
       console.warn(`[Validation] Validation failed:`, err.stderr || err.stdout || err.message);
       return {
         success: false,
-        error: err.stderr || err.stdout || err.message
+        error: err.stderr || err.stdout || err.message,
       };
     }
   }

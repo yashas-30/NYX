@@ -12,11 +12,17 @@ import dns from 'node:dns';
 import { DNS_CACHE, preWarmDns as resolveHostname } from './apiAgent.ts';
 import { loadKeys, verifySessionToken } from '../features/vault/vault.service.ts';
 import { UnifiedEngine } from './aiEngine.ts';
+import { AVAILABLE_MODELS } from '../../src/features/model-registry/config/models.ts';
+import logger from './logger.ts';
 
 // SSRF protection: reject private/loopback addresses in gateway URLs
 function validateGatewayUrl(url: string): void {
   let parsed: URL;
-  try { parsed = new URL(url); } catch { throw new Error('Invalid gateway URL'); }
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Invalid gateway URL');
+  }
   if (parsed.protocol !== 'https:') throw new Error('Gateway URL must use HTTPS');
   const host = parsed.hostname.toLowerCase();
   if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|::1|localhost$)/.test(host)) {
@@ -43,7 +49,12 @@ const fastify = Fastify({
 
 // Enable CORS for frontend connections
 fastify.register(fastifyCors, {
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ],
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-nyx-session-token'],
   credentials: false,
@@ -77,53 +88,79 @@ interface StreamListener {
 const activeStreams = new Map<string, Set<StreamListener>>();
 
 // High-performance streaming endpoint that bypasses Express entirely
-fastify.post('/api/stream/:provider', { config: { bodyLimit: 1024 * 1024 } }, async (request, reply) => {
-  const { provider } = request.params as { provider: string };
-  const { model, prompt, settings, systemInstruction, history, messages, temperature, max_tokens } = request.body as {
-    model: string;
-    prompt?: string;
-    settings?: any;
-    systemInstruction?: string;
-    history?: any[];
-    messages?: any[];
-    temperature?: number;
-    max_tokens?: number;
-  };
+fastify.post(
+  '/api/stream/:provider',
+  { config: { bodyLimit: 1024 * 1024 } },
+  async (request, reply) => {
+    const { provider } = request.params as { provider: string };
+    const {
+      model,
+      prompt,
+      settings,
+      systemInstruction,
+      history,
+      messages,
+      temperature,
+      max_tokens,
+    } = request.body as {
+      model: string;
+      prompt?: string;
+      settings?: any;
+      systemInstruction?: string;
+      history?: any[];
+      messages?: any[];
+      temperature?: number;
+      max_tokens?: number;
+    };
 
-  const activeKey = getApiKey(provider) || '';
-  if (!activeKey && provider !== 'nyx-native') {
-    return reply.status(401).send({ error: `${provider} API key required` });
-  }
-
-  const fingerprint = JSON.stringify({
-    provider,
-    model,
-    prompt: prompt || '',
-    systemInstruction: systemInstruction || '',
-    messages: messages || [],
-    history: history || [],
-    settings: settings || {}
-  });
-
-  reply.raw.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
-
-  const listener: StreamListener = {
-    write: (chunk: string) => {
-      reply.raw.write(chunk);
-    },
-    end: () => {
-      reply.raw.end();
+    const activeKey = getApiKey(provider) || '';
+    if (!activeKey && provider !== 'nyx-native' && provider !== 'pollinations') {
+      return reply.status(401).send({ error: `${provider} API key required` });
     }
-  };
 
-  if (activeStreams.has(fingerprint)) {
-    console.log(`[Fastify Stream Dedupe] Multiplexing concurrent stream for provider ${provider}, model ${model}`);
-    const listeners = activeStreams.get(fingerprint)!;
-    listeners.add(listener);
+    const fingerprint = JSON.stringify({
+      provider,
+      model,
+      prompt: prompt || '',
+      systemInstruction: systemInstruction || '',
+      messages: messages || [],
+      history: history || [],
+      settings: settings || {},
+    });
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+
+    const listener: StreamListener = {
+      write: (chunk: string) => {
+        reply.raw.write(chunk);
+      },
+      end: () => {
+        reply.raw.end();
+      },
+    };
+
+    if (activeStreams.has(fingerprint)) {
+      logger.info(
+        `[Fastify Stream Dedupe] Multiplexing concurrent stream for provider ${provider}, model ${model}`
+      );
+      const listeners = activeStreams.get(fingerprint)!;
+      listeners.add(listener);
+
+      request.raw.on('close', () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) {
+          activeStreams.delete(fingerprint);
+        }
+      });
+      return;
+    }
+
+    const listeners = new Set<StreamListener>([listener]);
+    activeStreams.set(fingerprint, listeners);
 
     request.raw.on('close', () => {
       listeners.delete(listener);
@@ -131,106 +168,100 @@ fastify.post('/api/stream/:provider', { config: { bodyLimit: 1024 * 1024 } }, as
         activeStreams.delete(fingerprint);
       }
     });
-    return;
-  }
 
-  const listeners = new Set<StreamListener>([listener]);
-  activeStreams.set(fingerprint, listeners);
+    const finalMessages: any[] = [];
+    if (messages && Array.isArray(messages)) {
+      finalMessages.push(...messages);
+    } else {
+      if (systemInstruction) {
+        finalMessages.push({ role: 'system', content: systemInstruction });
+      }
+      if (history && Array.isArray(history)) {
+        finalMessages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
+      }
+      if (prompt) {
+        finalMessages.push({ role: 'user', content: prompt });
+      }
+    }
 
-  request.raw.on('close', () => {
-    listeners.delete(listener);
-    if (listeners.size === 0) {
+    const finalSettings = settings || {
+      temperature: temperature ?? 0.7,
+      maxTokens: max_tokens ?? 4096,
+    };
+
+    try {
+      await UnifiedEngine.executeStream(
+        {
+          provider: provider as any,
+          model,
+          messages: finalMessages,
+          settings: finalSettings,
+          apiKey: activeKey,
+        },
+        (chunk) => {
+          const payload = `data: ${JSON.stringify(chunk)}\n\n`;
+          for (const l of listeners) {
+            try {
+              l.write(payload);
+            } catch {}
+          }
+        },
+        () => {
+          const payload = 'data: [DONE]\n\n';
+          for (const l of listeners) {
+            try {
+              l.write(payload);
+              l.end();
+            } catch {}
+          }
+          activeStreams.delete(fingerprint);
+        }
+      );
+    } catch (err: any) {
+      const payload = `event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`;
+      for (const l of listeners) {
+        try {
+          l.write(payload);
+          l.end();
+        } catch {}
+      }
       activeStreams.delete(fingerprint);
     }
-  });
-
-  const finalMessages: any[] = [];
-  if (messages && Array.isArray(messages)) {
-    finalMessages.push(...messages);
-  } else {
-    if (systemInstruction) {
-      finalMessages.push({ role: 'system', content: systemInstruction });
-    }
-    if (history && Array.isArray(history)) {
-      finalMessages.push(...history.map((m: any) => ({ role: m.role, content: m.content })));
-    }
-    if (prompt) {
-      finalMessages.push({ role: 'user', content: prompt });
-    }
   }
-
-  const finalSettings = settings || {
-    temperature: temperature ?? 0.7,
-    maxTokens: max_tokens ?? 4096
-  };
-
-  try {
-    await UnifiedEngine.executeStream(
-      {
-        provider: provider as any,
-        model,
-        messages: finalMessages,
-        settings: finalSettings,
-        apiKey: activeKey
-      },
-      (chunk) => {
-        const payload = `data: ${JSON.stringify(chunk)}\n\n`;
-        for (const l of listeners) {
-          try { l.write(payload); } catch {}
-        }
-      },
-      () => {
-        const payload = 'data: [DONE]\n\n';
-        for (const l of listeners) {
-          try {
-            l.write(payload);
-            l.end();
-          } catch {}
-        }
-        activeStreams.delete(fingerprint);
-      }
-    );
-  } catch (err: any) {
-    const payload = `event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`;
-    for (const l of listeners) {
-      try {
-        l.write(payload);
-        l.end();
-      } catch {}
-    }
-    activeStreams.delete(fingerprint);
-  }
-});
+);
 
 // Provider URL configuration for fast routing
-const PROVIDER_ENDPOINTS: Record<string, { baseUrl: string; authType: 'bearer' | 'apiKey' | 'none'; endpoint: string; isLocal?: boolean }> = {
+const PROVIDER_ENDPOINTS: Record<
+  string,
+  { baseUrl: string; authType: 'bearer' | 'apiKey' | 'none'; endpoint: string; isLocal?: boolean }
+> = {
   gemini: {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     authType: 'apiKey',
-    endpoint: '/models/{model}:generateContent'
+    endpoint: '/models/{model}:generateContent',
   },
   openrouter: {
     baseUrl: 'https://openrouter.ai/api/v1',
     authType: 'bearer',
-    endpoint: '/chat/completions'
+    endpoint: '/chat/completions',
   },
   nvidia: {
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     authType: 'bearer',
-    endpoint: '/chat/completions'
+    endpoint: '/chat/completions',
   },
   opencode: {
     baseUrl: 'https://opencode.ai/zen/v1',
     authType: 'bearer',
-    endpoint: '/chat/completions'
-  }
+    endpoint: '/chat/completions',
+  },
 };
 
 export async function warmupDNS() {
-  console.log('🚀 Warming up DNS cache for providers...');
+  logger.info('🚀 Warming up DNS cache for providers...');
   const hostnames = Object.values(PROVIDER_ENDPOINTS)
-    .filter(p => !p.isLocal)
-    .map(p => {
+    .filter((p) => !p.isLocal)
+    .map((p) => {
       try {
         return new URL(p.baseUrl).hostname;
       } catch {
@@ -238,9 +269,9 @@ export async function warmupDNS() {
       }
     })
     .filter((h): h is string => h !== null);
-  
-  await Promise.all(hostnames.map(h => resolveHostname(h)));
-  console.log(`✅ DNS warmup complete. Pre-resolved ${hostnames.length} providers.`);
+
+  await Promise.all(hostnames.map((h) => resolveHostname(h)));
+  logger.info(`✅ DNS warmup complete. Pre-resolved ${hostnames.length} providers.`);
 }
 
 // API Key validation and management
@@ -259,19 +290,20 @@ export function getApiKey(provider: string): string | undefined {
       return vaultKey;
     }
   } catch (error: any) {
-    console.error(`[FastifyApi] Failed to load key for ${provider} from vault:`, error.message);
+    logger.error({ err: error }, `[FastifyApi] Failed to load key for ${provider} from vault`);
   }
 
   // Second attempt: check in-memory temp store
   const entry = API_KEY_STORE.get(provider);
-  if (entry && Date.now() - entry.timestamp < 3600000) { // 1 hour cache
+  if (entry && Date.now() - entry.timestamp < 3600000) {
+    // 1 hour cache
     return entry.key;
   }
 
   // Third attempt: env fallback
   const specificKey = process.env[`${provider.toUpperCase()}_API_KEY`]?.trim();
   if (specificKey) return specificKey;
-  
+
   if (provider === 'gemini') {
     return process.env.LLM_API_KEY;
   }
@@ -284,19 +316,11 @@ export function clearApiKey(provider: string): void {
 
 function resolveRealModel(model: string): string {
   const m = model.toLowerCase();
-  const modelMap: Record<string, string> = {
-    'gemini-3.5-flash': 'gemini-3.5-flash',
-    'gemini-3-flash': 'gemini-3-flash',
-    'gemini-3.1-pro-preview': 'gemini-3.1-pro-preview',
-    'gemini-2.5-flash': 'gemini-2.5-flash',
-    'gemini-2.5-pro': 'gemini-2.5-pro',
-    'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
-    'gemma-4-31b-it': 'gemma-4-31b-it',
-    'gemma-4-26b-a4b-it': 'gemma-4-26b-a4b-it',
-    'gemma-4-e4b-it': 'gemma-4-e4b-it',
-    'gemma-4-e2b-it': 'gemma-4-e2b-it',
-  };
-  return modelMap[m] || model;
+  const found = AVAILABLE_MODELS.find(
+    (x) =>
+      x.id.toLowerCase() === m || (x.id.includes('/') && x.id.split('/')[1].toLowerCase() === m)
+  );
+  return found ? found.id : model;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -314,7 +338,7 @@ fastify.post('/gemini/*', { config: { bodyLimit: 1024 * 1024 } }, async (request
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
 
@@ -345,7 +369,7 @@ fastify.post('/gemini/*', { config: { bodyLimit: 1024 * 1024 } }, async (request
         model,
         messages: finalMessages,
         settings,
-        apiKey: activeKey
+        apiKey: activeKey,
       },
       (chunk) => {
         if (!isClosed) {
@@ -378,7 +402,7 @@ fastify.post('/opencode/*', { config: { bodyLimit: 1024 * 1024 } }, async (reque
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
 
@@ -409,7 +433,7 @@ fastify.post('/opencode/*', { config: { bodyLimit: 1024 * 1024 } }, async (reque
         model,
         messages: finalMessages,
         settings,
-        apiKey: activeKey
+        apiKey: activeKey,
       },
       (chunk) => {
         if (!isClosed) {
@@ -442,7 +466,7 @@ fastify.post('/openrouter/*', { config: { bodyLimit: 1024 * 1024 } }, async (req
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
 
@@ -473,7 +497,7 @@ fastify.post('/openrouter/*', { config: { bodyLimit: 1024 * 1024 } }, async (req
         model,
         messages: finalMessages,
         settings,
-        apiKey: activeKey
+        apiKey: activeKey,
       },
       (chunk) => {
         if (!isClosed) {
@@ -504,13 +528,15 @@ fastify.post('/nvidia/*', { config: { bodyLimit: 1024 * 1024 } }, async (request
   // Resolve API key: server-side vault only
   const activeKey = getApiKey('nvidia') || '';
   if (!activeKey || !activeKey.startsWith('nvapi-')) {
-    return reply.status(401).send({ error: 'NVIDIA API key is required. Add your nvapi-* key in Settings.' });
+    return reply
+      .status(401)
+      .send({ error: 'NVIDIA API key is required. Add your nvapi-* key in Settings.' });
   }
 
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
 
@@ -541,7 +567,7 @@ fastify.post('/nvidia/*', { config: { bodyLimit: 1024 * 1024 } }, async (request
         model,
         messages: finalMessages,
         settings,
-        apiKey: activeKey
+        apiKey: activeKey,
       },
       (chunk) => {
         if (!isClosed) {
@@ -596,7 +622,7 @@ fastify.post('/models/list', { config: { bodyLimit: 1024 * 1024 } }, async (requ
   try {
     const response = await fetch(url, {
       headers,
-      signal: AbortSignal.timeout(120_000)
+      signal: AbortSignal.timeout(120_000),
     });
     const data = await response.json();
 
@@ -628,17 +654,20 @@ fastify.post('/quota', { config: { bodyLimit: 1024 * 1024 } }, async (request, r
   try {
     if (provider === 'openrouter') {
       const response = await fetch('https://openrouter.ai/api/v1/credits', {
-        headers: { 'Authorization': `Bearer ${activeKey}` },
-        signal: AbortSignal.timeout(120_000)
+        headers: { Authorization: `Bearer ${activeKey}` },
+        signal: AbortSignal.timeout(120_000),
       });
       const data = await response.json();
       return reply.send(data);
     }
 
     if (provider === 'gemini') {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${activeKey}`, {
-        signal: AbortSignal.timeout(120_000)
-      });
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${activeKey}`,
+        {
+          signal: AbortSignal.timeout(120_000),
+        }
+      );
       if (response.ok) return reply.send({ status: 'ok' });
     }
 
@@ -658,7 +687,7 @@ export async function startFastifyServer(port: number = 3001): Promise<void> {
   }
   try {
     await fastify.listen({ port, host });
-    console.log(`⚡ Fastify API Server running on port ${port}`);
+    logger.info(`⚡ Fastify API Server running on port ${port}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

@@ -2,6 +2,7 @@ import { LocalModelRunner } from './localModelRunner.ts';
 import os from 'os';
 
 export interface OptimizationProfile {
+  taskType: 'chat' | 'code' | 'analysis';
   gpuLayers: number;
   contextSize: number;
   batchSize: number;
@@ -37,6 +38,7 @@ export class ModelOptimizer {
 
     // Task-specific adjustments
     const profile: OptimizationProfile = {
+      taskType,
       gpuLayers: optimal.gpuLayers,
       contextSize: this.getContextSize(taskType, totalRam),
       batchSize: optimal.batchSize,

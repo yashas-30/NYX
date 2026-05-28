@@ -339,9 +339,15 @@ Please analyze the context and provide highly optimized, syntax-correct solution
 
     const activeModel = LocalModelRunner.getActiveModel();
     const activeContextSize = LocalModelRunner.getActiveContextSize();
+    const activeTaskType = (LocalModelRunner as any).getActiveTaskType?.() || 'code';
+    const requestedTaskType = isGeneralChat ? 'chat' : 'code';
 
-    // Only restart the model if it's not loaded, or if the current loaded context is strictly smaller than what is needed for this query.
-    if (activeModel !== requestedModel || activeContextSize < neededContext) {
+    // Only restart the model if it's not loaded, or if the current loaded context is strictly smaller than what is needed for this query, or if the task type has switched.
+    if (
+      activeModel !== requestedModel ||
+      activeContextSize < neededContext ||
+      activeTaskType !== requestedTaskType
+    ) {
       const targetCtxSize = Math.max(autoContextSize, neededContext);
       try {
         const list = LocalModelManager.listModels();
@@ -349,11 +355,11 @@ Please analyze the context and provide highly optimized, syntax-correct solution
         if (targetModel && targetModel.status === 'completed') {
           if (activeModel === requestedModel) {
             console.log(
-              `[Auto-Context] Restarting local model ${requestedModel} to upscale context window from ${activeContextSize} to ${targetCtxSize} tokens...`
+              `[Auto-Context] Restarting local model ${requestedModel} (task: ${activeTaskType} -> ${requestedTaskType}) to upscale context window from ${activeContextSize} to ${targetCtxSize} tokens...`
             );
           } else {
             console.log(
-              `[Auto-Runner] Auto-starting local model ${requestedModel} with ${targetCtxSize} context tokens...`
+              `[Auto-Runner] Auto-starting local model ${requestedModel} (task: ${requestedTaskType}) with ${targetCtxSize} context tokens...`
             );
           }
           // Race the model restart against a 90-second timeout to prevent blocking the HTTP connection.
@@ -370,7 +376,10 @@ Please analyze the context and provide highly optimized, syntax-correct solution
             )
           );
           await Promise.race([
-            ModelWarmCache.getInstance().keepWarm(requestedModel, { contextSize: targetCtxSize }),
+            ModelWarmCache.getInstance().keepWarm(requestedModel, {
+              contextSize: targetCtxSize,
+              taskType: requestedTaskType,
+            }),
             restartTimeout,
           ]);
         }
@@ -380,7 +389,10 @@ Please analyze the context and provide highly optimized, syntax-correct solution
     } else {
       // Refresh sliding TTL on every query
       ModelWarmCache.getInstance()
-        .keepWarm(requestedModel, { contextSize: activeContextSize })
+        .keepWarm(requestedModel, {
+          contextSize: activeContextSize,
+          taskType: requestedTaskType,
+        })
         .catch(() => {});
     }
 

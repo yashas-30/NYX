@@ -35,6 +35,7 @@ let modelState: ModelState = 'idle';
 let activeProcess: ChildProcess | null = null;
 let activeModelId: string | null = null;
 let activeContextSize = 2048;
+let activeTaskType: 'chat' | 'code' | 'analysis' | null = null;
 let startProgress = 0;
 
 // ── Health check / zombie detection ──────────────────────────────────────────
@@ -111,6 +112,7 @@ async function _stop(): Promise<void> {
   stopHealthCheckLoop();
   if (!activeProcess) {
     activeModelId = null;
+    activeTaskType = null;
     modelState = 'idle';
     return;
   }
@@ -128,6 +130,7 @@ async function _stop(): Promise<void> {
           }
           activeProcess = null;
           activeModelId = null;
+          activeTaskType = null;
           modelState = 'idle';
           resolve();
         });
@@ -135,11 +138,13 @@ async function _stop(): Promise<void> {
         activeProcess.kill('SIGKILL');
         activeProcess = null;
         activeModelId = null;
+        activeTaskType = null;
         modelState = 'idle';
         resolve();
       }
     } else {
       activeModelId = null;
+      activeTaskType = null;
       modelState = 'idle';
       resolve();
     }
@@ -221,6 +226,10 @@ export const LocalModelRunner = {
 
   getActiveContextSize() {
     return activeContextSize;
+  },
+
+  getActiveTaskType() {
+    return activeTaskType;
   },
 
   isRunning() {
@@ -591,6 +600,13 @@ export const LocalModelRunner = {
     const maxLayersByVram = Math.floor(availableForLayers / layerSize);
     const safeLayers = Math.max(0, Math.min(totalLayers, maxLayersByVram));
     const pct = Math.round((safeLayers / totalLayers) * 100);
+
+    // Vulkan hybrid splits are highly susceptible to GGML_SCHED_MAX_SPLIT_INPUTS assertion crashes
+    // when processing large batches. Cap batch sizes aggressively for hybrid splits on Vulkan.
+    if (usedBackend === 'vulkan' && safeLayers > 0 && safeLayers < totalLayers) {
+      batchSize = Math.min(512, batchSize);
+      microBatchSize = Math.min(128, microBatchSize);
+    }
 
     let message = '';
     if (safeLayers >= totalLayers) {
@@ -978,6 +994,7 @@ export const LocalModelRunner = {
               modelState = 'running';
               activeModelId = modelId;
               activeContextSize = runningCtxSize || requestedCtx;
+              activeTaskType = settings?.taskType || 'code';
               startHealthCheckLoop();
               return;
             }
@@ -1243,6 +1260,11 @@ export const LocalModelRunner = {
         typeof localSettings?.contextSize === 'number' ? localSettings.contextSize : 8192;
       const contextSize = Math.max(profileCtx, requestedCtx);
 
+      // Task type detection
+      const currentTaskType = optimizationProfile
+        ? optimizationProfile.taskType
+        : localSettings?.taskType || 'code';
+
       // Quantization tier enforcement
       const QUANT_TIERS = ['Q2_K', 'Q3_K_M', 'Q4_K_M', 'Q5_K_M', 'Q6_K', 'Q8_0'];
       const MIN_CODE_QUANT = 'Q4_K_M';
@@ -1252,19 +1274,20 @@ export const LocalModelRunner = {
         : localSettings?.quantization || DEFAULT_CODE_QUANT;
       const quantIdx = QUANT_TIERS.indexOf(selectedQuant);
       const minQuantIdx = QUANT_TIERS.indexOf(MIN_CODE_QUANT);
-      if (quantIdx >= 0 && quantIdx < minQuantIdx) {
+      if (currentTaskType === 'code' && quantIdx >= 0 && quantIdx < minQuantIdx) {
         console.warn(
           `[Quantization Guard] Blocked low-quality quant '${selectedQuant}' — upgrading to minimum safe '${MIN_CODE_QUANT}' for code generation.`
         );
         selectedQuant = MIN_CODE_QUANT;
       }
       console.log(
-        `[Quantization] Using quant tier: ${selectedQuant} (Speed/Quality balance for coding)`
+        `[Quantization] Using quant tier: ${selectedQuant} (Optimized for task type: ${currentTaskType})`
       );
 
-      // Sampling defaults tuned for code generation
+      // Sampling defaults tuned for task type
+      const defaultTemp = currentTaskType === 'chat' ? 0.7 : 0.1;
       const codingTemperature =
-        typeof localSettings?.temperature === 'number' ? localSettings.temperature : 0.1;
+        typeof localSettings?.temperature === 'number' ? localSettings.temperature : defaultTemp;
       const topP = typeof localSettings?.topP === 'number' ? localSettings.topP : 0.9;
       const topK = typeof localSettings?.topK === 'number' ? localSettings.topK : 20;
       const minP = typeof localSettings?.minP === 'number' ? localSettings.minP : 0.05;
@@ -1589,6 +1612,7 @@ export const LocalModelRunner = {
       startProgress = 100;
       modelState = 'running';
       activeContextSize = contextSize;
+      activeTaskType = currentTaskType;
       startHealthCheckLoop();
       console.log(
         `Native llama-server running successfully on http://localhost:12345 with model ${model.name}`

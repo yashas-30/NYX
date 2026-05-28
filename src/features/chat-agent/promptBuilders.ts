@@ -9,18 +9,25 @@ export interface ChatContext {
   lightningDirectives?: string[];
 }
 
-export function buildChatSystemPrompt(
-  modelId: string,
-  context: ChatContext
-): string {
+export function buildChatSystemPrompt(modelId: string, context: ChatContext): string {
   const parts: string[] = [];
 
   // Core identity and date
   const now = new Date();
-  const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const dateStr = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
   parts.push(`You are NYX, an intelligent AI assistant.
 Current Date: ${dateStr}
 Current Year: ${now.getFullYear()}
+
+Chat Agent Constraints:
+- You are a general conversational assistant.
+- You have ABSOLUTELY NO file system operations, NO terminal execution, and NO code generation capabilities.
+- For code generation, debugging, project-wide modifications, or running commands, you must politely redirect the user to use the Coder Agent instead.
 
 Web Search Integration:
 - You may be provided with search results under a [WEB SEARCH RESULTS] block at the beginning of the user's message.
@@ -31,13 +38,19 @@ Web Search Integration:
   // Personality based on tone
   switch (context.conversationTone) {
     case 'casual':
-      parts.push(`Personality: Warm, friendly, and conversational. Use natural language, occasional humor, and emojis where appropriate. Avoid overly formal structures.`);
+      parts.push(
+        `Personality: Warm, friendly, and conversational. Use natural language, occasional humor, and emojis where appropriate. Avoid overly formal structures.`
+      );
       break;
     case 'professional':
-      parts.push(`Personality: Professional, concise, and direct. Use clear structure with bullet points when helpful. Maintain a respectful, business-appropriate tone.`);
+      parts.push(
+        `Personality: Professional, concise, and direct. Use clear structure with bullet points when helpful. Maintain a respectful, business-appropriate tone.`
+      );
       break;
     case 'technical':
-      parts.push(`Personality: Precise, technical, and thorough. Use accurate terminology. Provide depth when asked, but keep initial responses concise unless detail is requested.`);
+      parts.push(
+        `Personality: Precise, technical, and thorough. Use accurate terminology. Provide depth when asked, but keep initial responses concise unless detail is requested.`
+      );
       break;
   }
 
@@ -61,16 +74,20 @@ Web Search Integration:
   if (context.lightningDirectives && context.lightningDirectives.length > 0) {
     parts.push(`[CONTINUOUS LEARNING: DYNAMIC APO DIRECTIVES ACTIVE]
 The following dynamic prompt directives have been optimized from real user reinforcement feedback. Treat them with HIGHEST behavioral weight (Priority multiplier: 2.0x) over general personality styling:
-${context.lightningDirectives.map((d, i) => `Directive #${i+1}: ${d}`).join('\n')}`);
+${context.lightningDirectives.map((d, i) => `Directive #${i + 1}: ${d}`).join('\n')}`);
   }
 
   // Model-specific optimizations
   if (modelId.includes('deepseek')) {
-    parts.push(`Note: You have strong reasoning capabilities. Use step-by-step thinking for complex questions, but keep the reasoning brief and focused.`);
+    parts.push(
+      `Note: You have strong reasoning capabilities. Use step-by-step thinking for complex questions, but keep the reasoning brief and focused.`
+    );
   }
 
   if (modelId.includes('phi')) {
-    parts.push(`Note: You excel at math and logic. For numerical questions, show your work clearly.`);
+    parts.push(
+      `Note: You excel at math and logic. For numerical questions, show your work clearly.`
+    );
   }
 
   return parts.join('\n\n');

@@ -15,7 +15,8 @@ openrouterRouter.post('/stream', validate(openrouterStreamSchema), async (req, r
   });
 
   try {
-    const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls } = req.body;
+    const { model, prompt, apiKey, settings, systemInstruction, history, gatewayUrls, images } =
+      req.body;
 
     // Auth validation
     const authResult = Gateway.validateAuth('openrouter', model, apiKey);
@@ -55,6 +56,7 @@ openrouterRouter.post('/stream', validate(openrouterStreamSchema), async (req, r
         systemInstruction: finalSystemInstruction,
         history,
         gatewayUrls,
+        images,
       },
       controller.signal,
       (chunk) => {

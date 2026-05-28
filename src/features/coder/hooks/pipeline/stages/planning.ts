@@ -1,4 +1,4 @@
-import { AIService } from '@src/features/coder/services/ai.service';
+import { AIService } from '@src/core/services/ai.service';
 import { AISettings } from '@src/infrastructure/types';
 
 export interface ExecutionPlan {
@@ -56,7 +56,11 @@ Agentic Planning Rules:
       signal,
       undefined
     );
-    const planText = planResult.text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+    const planText = planResult.text
+      .trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/```\s*$/, '')
+      .trim();
     const parsed = JSON.parse(planText) as ExecutionPlan;
     trackUsage(nyxProvider, planResult.metrics.tokens);
     return parsed;

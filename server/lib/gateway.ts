@@ -5,12 +5,27 @@
  */
 
 import { loadKeys } from '../features/vault/vault.service.ts';
+import { FREE_OPENCODE_MODELS } from '../../src/features/model-registry/config/models.ts';
+import logger from './logger.ts';
 
-export type Provider = 'gemini' | 'openrouter' | 'nvidia' | 'opencode' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'mistral' | 'together' | 'pollinations' | 'nyx-native';
+export type Provider =
+  | 'gemini'
+  | 'openrouter'
+  | 'nvidia'
+  | 'opencode'
+  | 'openai'
+  | 'anthropic'
+  | 'deepseek'
+  | 'groq'
+  | 'mistral'
+  | 'together'
+  | 'pollinations'
+  | 'nyx-native';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'model';
   content: string;
+  images?: { name: string; mimeType: string; data: string }[];
 }
 
 export interface AISettings {
@@ -63,13 +78,33 @@ const getCloudflareGateway = (provider: Provider): AIGatewayConfig => {
 
   switch (provider) {
     case 'openrouter':
-      return { enabled: true, accountId, gatewayName: gatewayName || 'llm-gateway', baseUrl: `${gatewayBase}/openrouter` };
+      return {
+        enabled: true,
+        accountId,
+        gatewayName: gatewayName || 'llm-gateway',
+        baseUrl: `${gatewayBase}/openrouter`,
+      };
     case 'nvidia':
-      return { enabled: true, accountId, gatewayName: gatewayName || 'llm-gateway', baseUrl: `${gatewayBase}/nvidia` };
+      return {
+        enabled: true,
+        accountId,
+        gatewayName: gatewayName || 'llm-gateway',
+        baseUrl: `${gatewayBase}/nvidia`,
+      };
     case 'gemini':
-      return { enabled: true, accountId, gatewayName: gatewayName || 'llm-gateway', baseUrl: `${gatewayBase}/gemini` };
+      return {
+        enabled: true,
+        accountId,
+        gatewayName: gatewayName || 'llm-gateway',
+        baseUrl: `${gatewayBase}/gemini`,
+      };
     case 'openai':
-      return { enabled: true, accountId, gatewayName: gatewayName || 'llm-gateway', baseUrl: `${gatewayBase}/openai` };
+      return {
+        enabled: true,
+        accountId,
+        gatewayName: gatewayName || 'llm-gateway',
+        baseUrl: `${gatewayBase}/openai`,
+      };
     case 'opencode':
     case 'anthropic':
     case 'deepseek':
@@ -100,19 +135,8 @@ const PROVIDER_URLS: Record<Provider, string> = {
   'nyx-native': '',
 };
 
-// Free models on OpenCode Zen (verified from API)
-export const ZEN_FREE_MODELS = [
-  'big-pickle',
-  'deepseek-v4-flash-free',
-  'minimax-m2.5-free',
-  'ring-2.6-1t-free',
-  'nemotron-3-super-free',
-  'qwen3-30b-a3b-free',
-  'qwen3-coder-14b-free',
-  'llama-3.3-70b-free',
-  'gemma-3-27b-it-free',
-  'deepseek-v3-free',
-];
+// Free models on OpenCode Zen (derived from config models)
+export const ZEN_FREE_MODELS = FREE_OPENCODE_MODELS.map((m) => m.id.replace('opencode/', ''));
 
 export class Gateway {
   private static SYSTEM_KEYS: Record<string, string> = {
@@ -129,11 +153,11 @@ export class Gateway {
   };
 
   /**
- * Resolves the active API key with priority: user key > system key.
- * @param provider - The AI provider
- * @param userKey - Optional user-provided API key
- * @returns The active API key string
- */
+   * Resolves the active API key with priority: user key > system key.
+   * @param provider - The AI provider
+   * @param userKey - Optional user-provided API key
+   * @returns The active API key string
+   */
   static getActiveKey(provider: Provider, userKey?: string): string {
     const isValidKey = (key: string | undefined | null): boolean => {
       if (!key) return false;
@@ -152,7 +176,7 @@ export class Gateway {
         return vaultKeys[provider].trim();
       }
     } catch (err) {
-      console.error(`[Gateway] Failed to retrieve key for ${provider} from keyVault:`, err);
+      logger.error({ err }, `[Gateway] Failed to retrieve key for ${provider} from keyVault`);
     }
 
     return this.SYSTEM_KEYS[provider] || '';
@@ -173,12 +197,15 @@ export class Gateway {
    * @param modelId - The OpenCode model identifier
    * @returns Object with endpoint path and apiType ('openai' | 'anthropic' | 'google')
    */
-  static getOpenCodeZenEndpoint(modelId: string): { endpoint: string; apiType: 'openai' | 'anthropic' | 'google' } {
+  static getOpenCodeZenEndpoint(modelId: string): {
+    endpoint: string;
+    apiType: 'openai' | 'anthropic' | 'google';
+  } {
     const model = modelId.replace('opencode/', '').replace('opencode\\', '');
-    
+
     // Anthropic /messages endpoint - free models that require this format
     const anthropicModels = ['minimax-m2.1-free'];
-    
+
     // OpenAI compatible /chat/completions endpoint
     const openaiModels = [
       'big-pickle',
@@ -192,18 +219,18 @@ export class Gateway {
       'minimax-m2.1',
       'qwen3-coder',
     ];
-    
+
     // Google /models endpoint
     const googleModels = ['gemini-3-pro', 'gemini-3-flash'];
-    
+
     if (anthropicModels.includes(model)) {
       return { endpoint: '/messages', apiType: 'anthropic' };
     }
-    
+
     if (googleModels.includes(model)) {
       return { endpoint: `/models/${model}`, apiType: 'google' };
     }
-    
+
     // Default to OpenAI-compatible /chat/completions
     return { endpoint: '/chat/completions', apiType: 'openai' };
   }
@@ -218,7 +245,7 @@ export class Gateway {
     }
 
     const realModel = modelId.replace('opencode/', '');
-    
+
     // Map to OpenCode Zen model IDs (free tier)
     const modelMap: Record<string, string> = {
       'big-pickle': 'big-pickle',
@@ -232,9 +259,8 @@ export class Gateway {
       'gemma-3-27b-it-free': 'gemma-3-27b-it-free',
       'deepseek-v3-free': 'deepseek-v3-free',
     };
-    
-    return modelMap[realModel] || realModel;
 
+    return modelMap[realModel] || realModel;
   }
 
   /**
@@ -245,7 +271,11 @@ export class Gateway {
    * @param apiKey - Optional user-provided API key
    * @returns Validation result with valid flag and optional error message
    */
-  static validateAuth(provider: Provider, modelId: string, apiKey?: string): { valid: boolean; error?: string } {
+  static validateAuth(
+    provider: Provider,
+    modelId: string,
+    apiKey?: string
+  ): { valid: boolean; error?: string } {
     // Local providers don't need keys
     if (['pollinations', 'nyx-native'].includes(provider)) {
       return { valid: true };
@@ -257,9 +287,9 @@ export class Gateway {
     // OpenCode Zen always requires API key (free tier has free credits)
     if (provider === 'opencode') {
       if (!activeKey) {
-        return { 
-          valid: false, 
-          error: `AUTHENTICATION FAILED: OpenCode Zen requires an API key. Get one free at opencode.ai/auth` 
+        return {
+          valid: false,
+          error: `AUTHENTICATION FAILED: OpenCode Zen requires an API key. Get one free at opencode.ai/auth`,
         };
       }
       return { valid: true };
@@ -271,9 +301,9 @@ export class Gateway {
     }
 
     if (!activeKey) {
-      return { 
-        valid: false, 
-        error: `AUTHENTICATION FAILED: No API key detected for ${provider}. Please add it in Settings.` 
+      return {
+        valid: false,
+        error: `AUTHENTICATION FAILED: No API key detected for ${provider}. Please add it in Settings.`,
       };
     }
 
@@ -288,7 +318,11 @@ export class Gateway {
    * @param customGatewayUrls - Optional custom gateway URLs from user settings
    * @returns Object with url and viaGateway flag
    */
-  static buildUrl(provider: Provider, endpoint: string, customGatewayUrls?: Record<string, string>): { url: string; viaGateway: boolean } {
+  static buildUrl(
+    provider: Provider,
+    endpoint: string,
+    customGatewayUrls?: Record<string, string>
+  ): { url: string; viaGateway: boolean } {
     // Check for custom user-defined gateway URL first
     if (customGatewayUrls && customGatewayUrls[provider]) {
       const customUrl = customGatewayUrls[provider].replace(/\/$/, '');
@@ -314,11 +348,11 @@ export class Gateway {
    */
   static buildAuthHeader(provider: Provider, apiKey: string): string {
     if (!apiKey) return '';
-    
+
     if (provider === 'gemini') {
       return apiKey;
     }
-    
+
     return `Bearer ${apiKey}`;
   }
 
@@ -328,10 +362,7 @@ export class Gateway {
    * @param response - The fetch Response object with streaming body
    * @param callbacks - Stream callbacks for chunk, done, and error events
    */
-  static async processSSEStream(
-    response: Response,
-    callbacks: StreamCallbacks
-  ): Promise<void> {
+  static async processSSEStream(response: Response, callbacks: StreamCallbacks): Promise<void> {
     if (!response.body) {
       callbacks.onError('No response body');
       return;
@@ -361,14 +392,21 @@ export class Gateway {
             try {
               const data = JSON.parse(clean);
               if (data.error) {
-                callbacks.onError(typeof data.error === 'object' ? (data.error.message || JSON.stringify(data.error)) : data.error);
+                callbacks.onError(
+                  typeof data.error === 'object'
+                    ? data.error.message || JSON.stringify(data.error)
+                    : data.error
+                );
                 return;
               }
               // Extract content from OpenAI format
               const chunk = data.choices?.[0]?.delta?.content;
               if (chunk) callbacks.onChunk(chunk);
               // Handle finish_reason to detect end of stream
-              if (data.choices?.[0]?.finish_reason === 'stop' || data.choices?.[0]?.finish_reason === 'length') {
+              if (
+                data.choices?.[0]?.finish_reason === 'stop' ||
+                data.choices?.[0]?.finish_reason === 'length'
+              ) {
                 callbacks.onDone();
                 return;
               }
@@ -380,21 +418,24 @@ export class Gateway {
 
           try {
             const data = JSON.parse(clean.slice(6));
-            
+
             if (data.error) {
-              const msg = typeof data.error === 'object' ? data.error.message || JSON.stringify(data.error) : data.error;
+              const msg =
+                typeof data.error === 'object'
+                  ? data.error.message || JSON.stringify(data.error)
+                  : data.error;
               callbacks.onError(msg);
               return;
             }
 
             // Handle multiple content delta formats
             let chunk = data.choices?.[0]?.delta?.content;
-            
+
             // Fallback: check for content in message.delta
             if (!chunk && data.choices?.[0]?.delta?.message?.content) {
               chunk = data.choices[0].delta.message.content;
             }
-            
+
             // Fallback: check for content.message (non-delta format)
             if (!chunk && data.choices?.[0]?.message?.content) {
               chunk = data.choices[0].message.content;
@@ -403,9 +444,12 @@ export class Gateway {
             if (chunk) {
               callbacks.onChunk(chunk);
             }
-            
+
             // Handle finish_reason to detect end of stream
-            if (data.choices?.[0]?.finish_reason === 'stop' || data.choices?.[0]?.finish_reason === 'length') {
+            if (
+              data.choices?.[0]?.finish_reason === 'stop' ||
+              data.choices?.[0]?.finish_reason === 'length'
+            ) {
               callbacks.onDone();
               return;
             }
@@ -416,7 +460,7 @@ export class Gateway {
       }
       callbacks.onDone();
     } catch (e: any) {
-      console.error('[Gateway.processSSEStream] Stream error:', e.message);
+      logger.error({ err: e }, '[Gateway.processSSEStream] Stream error');
       callbacks.onError(e.message || 'Stream processing failed');
     }
   }
@@ -461,7 +505,7 @@ export class Gateway {
 
           try {
             const data = JSON.parse(clean.slice(6));
-            
+
             if (data.error) {
               const msg = data.error.message || JSON.stringify(data.error);
               callbacks.onError(msg);
@@ -505,17 +549,44 @@ export class Gateway {
    */
   static formatMessages(messages: ChatMessage[], provider: Provider): any {
     if (provider === 'gemini') {
-      const systemInstruction = messages.find(m => m.role === 'system')?.content;
+      const systemInstruction = messages.find((m) => m.role === 'system')?.content;
       const contents = messages
-        .filter(m => m.role !== 'system')
-        .map(m => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }]
-        }));
+        .filter((m) => m.role !== 'system')
+        .map((m) => {
+          const parts: any[] = [{ text: m.content || ' ' }];
+          if (m.images && Array.isArray(m.images)) {
+            for (const img of m.images) {
+              parts.push({
+                inlineData: {
+                  mimeType: img.mimeType,
+                  data: img.data,
+                },
+              });
+            }
+          }
+          return {
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts,
+          };
+        });
       return { systemInstruction, contents };
     }
 
-    return messages.map(m => ({ role: m.role, content: m.content }));
+    return messages.map((m) => {
+      if (m.images && Array.isArray(m.images) && m.images.length > 0) {
+        const contentParts: any[] = [{ type: 'text', text: m.content || ' ' }];
+        for (const img of m.images) {
+          contentParts.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${img.mimeType};base64,${img.data}`,
+            },
+          });
+        }
+        return { role: m.role, content: contentParts };
+      }
+      return { role: m.role, content: m.content };
+    });
   }
 
   /**
@@ -523,18 +594,21 @@ export class Gateway {
    * @param messages - Array of chat messages with role and content
    * @returns Object with optional systemPrompt and formatted messages array
    */
-  static formatMessagesForAnthropic(messages: ChatMessage[]): { systemPrompt?: string; messages: any[] } {
-    const systemMessage = messages.find(m => m.role === 'system');
+  static formatMessagesForAnthropic(messages: ChatMessage[]): {
+    systemPrompt?: string;
+    messages: any[];
+  } {
+    const systemMessage = messages.find((m) => m.role === 'system');
     const chatMessages = messages
-      .filter(m => m.role !== 'system')
-      .map(m => ({
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({
         role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.content
+        content: m.content,
       }));
 
     return {
       systemPrompt: systemMessage?.content,
-      messages: chatMessages
+      messages: chatMessages,
     };
   }
 }

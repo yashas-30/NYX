@@ -15,7 +15,7 @@ import {
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/promptAnalyzer';
 import { toast } from '@src/shared/components/ui/sonner';
-import { triggerCritic, triggerMemoryCommit } from '../api/coderApi';
+import { triggerCritic, triggerMemoryCommit, writeFile } from '../api/coderApi';
 import { analyzePrompt, routeToAgent } from '@src/core/services/promptClassifier';
 import { CoderAgent } from '@src/features/coder-agent/CoderAgent';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
@@ -70,7 +70,25 @@ export const useAgentPipeline = ({
   historyRef.current = history;
 
   const triggerBackgroundCritic = useCallback(
-    async (prompt: string, responseText: string) => {
+    async (prompt: string, responseText: string, complexity?: string) => {
+      // UGLY-3 fix: Skip critic for trivial/simple prompts — saves tokens and reduces noise
+      const trivialComplexities = ['trivial', 'simple'];
+      if (complexity && trivialComplexities.includes(complexity)) {
+        console.debug(
+          '[BackgroundCritic] Skipping critic for low-complexity prompt (complexity:',
+          complexity,
+          ')'
+        );
+        return;
+      }
+      // Also skip very short responses (< 200 chars) — likely single-line completions
+      if (responseText.trim().length < 200) {
+        console.debug(
+          '[BackgroundCritic] Skipping critic — response too short for meaningful evaluation'
+        );
+        return;
+      }
+
       const nyxModel = models['nyx'];
       if (!nyxModel) return;
       const activeProvider = detectProvider(nyxModel);
@@ -195,14 +213,7 @@ export const useAgentPipeline = ({
               break;
             case 'file_write':
               try {
-                await fetchWithAuth('/api/nyx/write-file', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    filePath: chunk.content,
-                    content: chunk.metadata.content,
-                  }),
-                });
+                await writeFile(chunk.content, chunk.metadata.content);
                 console.log(`[File Writer] Successfully wrote file: ${chunk.content}`);
               } catch (writeErr) {
                 console.error('Failed to write file:', writeErr);
@@ -261,7 +272,7 @@ export const useAgentPipeline = ({
         });
 
         if (lastStreamText) {
-          triggerBackgroundCritic(prompt, lastStreamText);
+          triggerBackgroundCritic(prompt, lastStreamText, analysis?.complexity);
 
           // Asynchronously trigger memory keeper commit to distill conversational turn
           triggerMemoryCommit({
@@ -269,6 +280,7 @@ export const useAgentPipeline = ({
             response: lastStreamText,
             provider: nyxProvider,
             modelId: nyxModel,
+            agentType: 'code',
           }).catch((err) => {
             console.warn('[Coder Pipeline] Memory keeper commit failed:', err);
           });

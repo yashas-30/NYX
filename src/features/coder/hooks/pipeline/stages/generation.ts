@@ -1,4 +1,4 @@
-import { AIService } from '@src/features/coder/services/ai.service';
+import { AIService } from '@src/core/services/ai.service';
 import { AISettings } from '@src/infrastructure/types';
 import { ExecutionPlan } from './planning';
 import { writeFileWithHistory } from '../utils/fileWriter';
@@ -60,7 +60,10 @@ Core Rules:
 
       // Clean any accidental markdown fences from the output
       let fileContent = fileResult.text.trim();
-      fileContent = fileContent.replace(/^```\w*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+      fileContent = fileContent
+        .replace(/^```\w*\n?/i, '')
+        .replace(/\n?```\s*$/i, '')
+        .trim();
 
       generatedFiles.push({ path: file.path, content: fileContent });
 
@@ -69,28 +72,37 @@ Core Rules:
         // Read previous content first to supply to writeFileWithHistory if possible
         let prevContent: string | null = null;
         try {
-          const readRes = await fetch(`/api/nyx/read-file?filePath=${encodeURIComponent(file.path)}`, { signal });
+          const readRes = await fetch(
+            `/api/nyx/read-file?filePath=${encodeURIComponent(file.path)}`,
+            { signal }
+          );
           if (readRes.ok) {
             const readData = await readRes.json();
             if (readData.success) {
               prevContent = readData.content;
             }
           }
-        } catch { /* file might not exist, ignore */ }
+        } catch {
+          /* file might not exist, ignore */
+        }
 
         await writeFileWithHistory(file.path, fileContent, prevContent);
         taskStatuses[i] = '✅';
-        const okAcc = renderPlanChecklist() + `---\n\n✅ **Wrote** \`${file.path}\` to workspace\n\n`;
+        const okAcc =
+          renderPlanChecklist() + `---\n\n✅ **Wrote** \`${file.path}\` to workspace\n\n`;
         streamUpdate(okAcc);
       } catch (writeErr: any) {
         taskStatuses[i] = '⚠️';
-        const errAcc = renderPlanChecklist() + `---\n\n⚠️ **Write failed** for \`${file.path}\`: ${writeErr.message}\n*(Code was generated but could not be written to disk)*\n\n`;
+        const errAcc =
+          renderPlanChecklist() +
+          `---\n\n⚠️ **Write failed** for \`${file.path}\`: ${writeErr.message}\n*(Code was generated but could not be written to disk)*\n\n`;
         streamUpdate(errAcc);
       }
-
     } catch (err: any) {
       taskStatuses[i] = '❌';
-      const failAcc = renderPlanChecklist() + `---\n\n❌ **Generation failed** for \`${file.path}\`: ${err.message}\n\n`;
+      const failAcc =
+        renderPlanChecklist() +
+        `---\n\n❌ **Generation failed** for \`${file.path}\`: ${err.message}\n\n`;
       streamUpdate(failAcc);
       console.error(`[Agentic Loop] File generation failed for ${file.path}:`, err);
     }

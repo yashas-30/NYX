@@ -8,11 +8,8 @@ import { ChatMessage, TelemetryMetrics, AISettings } from '@src/infrastructure/t
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { analyzePrompt } from '@src/core/services/promptClassifier';
 import { ChatAgent } from '../ChatAgent';
-import {
-  shouldTriggerWebSearch,
-  buildWebSearchContext,
-} from '@src/features/coder/hooks/pipeline/utils/contextBuilder';
 import { triggerMemoryCommit } from '@src/features/coder/api/coderApi';
+import { countTokens } from '@src/core/services/ai.service';
 
 interface ChatPipelineProps {
   models: Record<'nyx', string>;
@@ -52,14 +49,15 @@ export const useChatPipeline = ({
   webSearchEnabled = true,
 }: ChatPipelineProps) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
   const historyRef = useRef(history);
   historyRef.current = history;
 
   const runChat = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, images?: { name: string; mimeType: string; data: string }[]) => {
       const nyxModel = models['nyx'];
-      if (!prompt.trim() || !nyxModel) return;
+      if ((!prompt.trim() && (!images || images.length === 0)) || !nyxModel) return;
       const nyxProvider = detectProvider(nyxModel);
       const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys) || '';
 
@@ -68,7 +66,7 @@ export const useChatPipeline = ({
       controllerRef.current = controller;
 
       // Append user message
-      const userMsg: ChatMessage = { role: 'user', content: prompt, timestamp: Date.now() };
+      const userMsg: ChatMessage = { role: 'user', content: prompt, timestamp: Date.now(), images };
       updateHistory((prev) => [...prev, userMsg]);
 
       setIsLoading(true);
@@ -83,14 +81,6 @@ export const useChatPipeline = ({
           { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' },
         ]);
 
-        let searchContext = '';
-        if (webSearchEnabled && shouldTriggerWebSearch(prompt, analysis)) {
-          console.log(
-            '[Chat Pipeline] Prompt requires accurate data. Triggering automatic web search...'
-          );
-          searchContext = await buildWebSearchContext(prompt, true, controller.signal);
-        }
-
         const agent = new ChatAgent({
           modelId: nyxModel,
           provider: nyxProvider,
@@ -101,6 +91,17 @@ export const useChatPipeline = ({
           webSearchEnabled: webSearchEnabled,
         });
 
+        let searchContext = '';
+        if (agent.shouldSearchWeb(prompt, analysis)) {
+          console.log('[Chat Pipeline] Web search intent detected. Gathering context...');
+          setIsSearching(true);
+          try {
+            searchContext = await agent.gatherContext(prompt, controller.signal);
+          } finally {
+            setIsSearching(false);
+          }
+        }
+
         let finalMetrics: any = null;
         let lastStreamText = '';
 
@@ -108,7 +109,8 @@ export const useChatPipeline = ({
           prompt,
           analysis,
           controller.signal,
-          searchContext
+          searchContext,
+          images
         )) {
           if (chunk.type === 'thinking') {
             continue;
@@ -131,7 +133,7 @@ export const useChatPipeline = ({
           }
         }
 
-        trackUsage(nyxProvider, finalMetrics?.tokens || Math.floor(lastStreamText.length / 4));
+        trackUsage(nyxProvider, finalMetrics?.tokens || countTokens(lastStreamText));
 
         // Asynchronously trigger memory keeper commit to distill conversational turn
         triggerMemoryCommit({
@@ -139,6 +141,7 @@ export const useChatPipeline = ({
           response: lastStreamText,
           provider: nyxProvider,
           modelId: nyxModel,
+          agentType: 'chat',
         }).catch((err) => {
           console.warn('[Chat Pipeline] Memory keeper commit failed:', err);
         });
@@ -190,6 +193,7 @@ export const useChatPipeline = ({
         });
       } finally {
         controllerRef.current = null;
+        setIsSearching(false);
         setIsLoading(false);
       }
     },
@@ -214,8 +218,9 @@ export const useChatPipeline = ({
       controllerRef.current.abort();
       controllerRef.current = null;
     }
+    setIsSearching(false);
     setIsLoading(false);
   }, []);
 
-  return { isLoading, runChat, stopChat };
+  return { isLoading, isSearching, runChat, stopChat };
 };

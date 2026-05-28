@@ -3,7 +3,7 @@
  * @description Smart prompt classification and routing helper.
  */
 
-import { AIService } from './ai.service';
+import { AIService, countTokens } from '@src/core/services/ai.service';
 import { PromptAnalysis } from '@src/infrastructure/types';
 import { analyzePrompt as localRegexAnalyze } from '@/shared/promptAnalyzer';
 
@@ -36,11 +36,13 @@ export class PromptAnalyzerService {
   ): Promise<PromptAnalysis> {
     // 1. Run quick regex heuristic check first (instant and 100% robust)
     const regexResult = localRegexAnalyze(prompt);
-    
+
     // 2. Try smart LLM prompt analysis using the selected model
     try {
-      console.log(`[PromptAnalyzerService] Attempting LLM prompt analysis with model: ${modelId} (${provider})`);
-      
+      console.log(
+        `[PromptAnalyzerService] Attempting LLM prompt analysis with model: ${modelId} (${provider})`
+      );
+
       const response = await AIService.execute(
         modelId,
         provider,
@@ -49,7 +51,7 @@ export class PromptAnalyzerService {
         PROMPT_ANALYZER_SYSTEM_PROMPT,
         { temperature: 0.1, maxTokens: 400 }
       );
-      
+
       if (response && response.text) {
         const parsed = this.parseJsonResult(response.text);
         if (parsed) {
@@ -61,14 +63,20 @@ export class PromptAnalyzerService {
             requiresExecution: !!parsed.requiresExecution,
             requiresWebSearch: !!parsed.requiresWebSearch,
             requiresCodebaseContext: !!parsed.requiresCodebaseContext,
-            estimatedTokenCount: typeof parsed.estimatedTokenCount === 'number' ? parsed.estimatedTokenCount : Math.ceil(prompt.length / 4),
+            estimatedTokenCount:
+              typeof parsed.estimatedTokenCount === 'number'
+                ? parsed.estimatedTokenCount
+                : Math.ceil(prompt.length / 4),
             suggestedTools: Array.isArray(parsed.suggestedTools) ? parsed.suggestedTools : [],
-            confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.9
+            confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.9,
           };
         }
       }
     } catch (err) {
-      console.warn('[PromptAnalyzerService] LLM prompt analysis failed, falling back to heuristic:', err);
+      console.warn(
+        '[PromptAnalyzerService] LLM prompt analysis failed, falling back to heuristic:',
+        err
+      );
     }
 
     console.log('[PromptAnalyzerService] Running instant isomorphic heuristic prompt analysis.');
@@ -79,7 +87,7 @@ export class PromptAnalyzerService {
     const suggestedTools: string[] = [];
     if (regexResult.intent === 'debug') suggestedTools.push('git_diff', 'read_file');
     if (regexResult.intent === 'generate') suggestedTools.push('write_file', 'edit_file');
-    
+
     // Map intent to PromptAnalysis['intent'] perfectly
     let mappedIntent: PromptAnalysis['intent'] = 'general_chat';
     const regexIntent = regexResult.intent;
@@ -87,7 +95,11 @@ export class PromptAnalyzerService {
       mappedIntent = 'code_generation';
     } else if (regexIntent === 'debug') {
       mappedIntent = 'debugging';
-    } else if (regexIntent === 'refactor' || regexIntent === 'optimize' || regexIntent === 'convert') {
+    } else if (
+      regexIntent === 'refactor' ||
+      regexIntent === 'optimize' ||
+      regexIntent === 'convert'
+    ) {
       mappedIntent = 'refactoring';
     } else if (regexIntent === 'explain' || regexIntent === 'review') {
       mappedIntent = 'explanation';
@@ -100,19 +112,38 @@ export class PromptAnalyzerService {
     return {
       intent: mappedIntent,
       complexity: regexResult.complexity as PromptAnalysis['complexity'],
-      scope: regexResult.complexity === 'complex' || regexResult.complexity === 'enterprise' ? 'project_wide' : 'single_file',
-      requiresExecution: prompt.toLowerCase().includes('run') || prompt.toLowerCase().includes('exec') || prompt.toLowerCase().includes('install') || prompt.toLowerCase().includes('npm') || prompt.toLowerCase().includes('python'),
-      requiresWebSearch: prompt.toLowerCase().includes('search the web') || prompt.toLowerCase().includes('lookup') || prompt.toLowerCase().includes('google') || prompt.toLowerCase().includes('search web'),
-      requiresCodebaseContext: prompt.toLowerCase().includes('codebase') || prompt.toLowerCase().includes('project') || prompt.toLowerCase().includes('repo') || prompt.toLowerCase().includes('files'),
-      estimatedTokenCount: Math.ceil(prompt.length / 4),
+      scope:
+        regexResult.complexity === 'complex' || regexResult.complexity === 'enterprise'
+          ? 'project_wide'
+          : 'single_file',
+      requiresExecution:
+        prompt.toLowerCase().includes('run') ||
+        prompt.toLowerCase().includes('exec') ||
+        prompt.toLowerCase().includes('install') ||
+        prompt.toLowerCase().includes('npm') ||
+        prompt.toLowerCase().includes('python'),
+      requiresWebSearch:
+        prompt.toLowerCase().includes('search the web') ||
+        prompt.toLowerCase().includes('lookup') ||
+        prompt.toLowerCase().includes('google') ||
+        prompt.toLowerCase().includes('search web'),
+      requiresCodebaseContext:
+        prompt.toLowerCase().includes('codebase') ||
+        prompt.toLowerCase().includes('project') ||
+        prompt.toLowerCase().includes('repo') ||
+        prompt.toLowerCase().includes('files'),
+      estimatedTokenCount: countTokens(prompt),
       suggestedTools,
-      confidence: 1.0
+      confidence: 1.0,
     };
   }
 
   private static parseJsonResult(text: string): PromptAnalysis | null {
     try {
-      const cleanText = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+      const cleanText = text
+        .replace(/^```json\s*/i, '')
+        .replace(/```\s*$/, '')
+        .trim();
       const parsed = JSON.parse(cleanText);
       if (parsed && typeof parsed.intent === 'string' && typeof parsed.complexity === 'string') {
         return parsed as PromptAnalysis;

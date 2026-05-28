@@ -3,10 +3,10 @@
  * @description Core domain types for the NYX application.
  */
 
-export type Provider = 
-  | 'gemini' 
-  | 'openrouter' 
-  | 'nvidia' 
+export type Provider =
+  | 'gemini'
+  | 'openrouter'
+  | 'nvidia'
   | 'terminal'
   | 'opencode'
   | 'pollinations'
@@ -27,6 +27,7 @@ export interface ChatMessage {
   metrics?: TelemetryMetrics;
   rolloutId?: string;
   reward?: number | null;
+  images?: { name: string; mimeType: string; data: string }[];
 }
 
 export interface TelemetryMetrics {
@@ -146,7 +147,15 @@ export interface WorkspaceProfile {
 }
 
 export interface PromptAnalysis {
-  intent: 'code_generation' | 'debugging' | 'refactoring' | 'explanation' | 'architecture' | 'testing' | 'deployment' | 'general_chat';
+  intent:
+    | 'code_generation'
+    | 'debugging'
+    | 'refactoring'
+    | 'explanation'
+    | 'architecture'
+    | 'testing'
+    | 'deployment'
+    | 'general_chat';
   complexity: 'trivial' | 'simple' | 'moderate' | 'complex' | 'enterprise';
   scope: 'single_file' | 'multi_file' | 'project_wide' | 'external_knowledge';
   requiresExecution: boolean;

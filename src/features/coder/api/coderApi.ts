@@ -3,7 +3,7 @@
  * @description Encapsulated API/fetch calls for the coder feature.
  */
 
-import { AIService } from '../services/ai.service';
+import { AIService } from '@src/core/services/ai.service';
 
 export interface CriticPayload {
   prompt: string;
@@ -68,6 +68,7 @@ export interface MemoryCommitPayload {
   response: string;
   provider: string;
   modelId: string;
+  agentType?: 'chat' | 'code';
 }
 
 export const triggerMemoryCommit = async (payload: MemoryCommitPayload): Promise<void> => {
@@ -76,4 +77,25 @@ export const triggerMemoryCommit = async (payload: MemoryCommitPayload): Promise
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+};
+
+export const writeFile = async (
+  filePath: string,
+  content: string,
+  overwrite?: boolean
+): Promise<any> => {
+  // Client-side path validation (WRONG-6: reject relative path escapes before hitting server)
+  if (filePath.includes('..') || filePath.includes('../') || filePath.includes('..\\')) {
+    throw new Error(
+      `SECURITY ERROR: Invalid file path "${filePath}". Path traversal (../) is not allowed.`
+    );
+  }
+
+  const res = await AIService.fetchWithAuth('/api/nyx/write-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filePath, content, overwrite }),
+  });
+  if (!res.ok) throw new Error(`File write failed: ${res.statusText}`);
+  return res.json();
 };

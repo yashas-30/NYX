@@ -1,11 +1,12 @@
 /**
  * @file src/shared/hooks/useAgentLightning.ts
- * @description Hook managing Microsoft Agent Lightning integration: rollouts, spans, rewards, 
+ * @description Hook managing Microsoft Agent Lightning integration: rollouts, spans, rewards,
  *              and Automatic Prompt Optimization (APO) feedback loops.
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from '@src/shared/components/ui/sonner';
+import { countTokens } from '@src/core/services/ai.service';
 
 export interface LightningSpan {
   name: string;
@@ -108,7 +109,7 @@ export const useAgentLightning = () => {
 
   // Compute average reward of rated rollouts
   const averageReward = useMemo(() => {
-    const rated = rollouts.filter(r => r.reward !== null);
+    const rated = rollouts.filter((r) => r.reward !== null);
     if (rated.length === 0) return 0.85; // Starting baseline
     const total = rated.reduce((sum, r) => sum + (r.reward ?? 0), 0);
     return total / rated.length;
@@ -117,103 +118,142 @@ export const useAgentLightning = () => {
   /**
    * Log a new agent rollout (execution trace)
    */
-  const logRollout = useCallback((
-    agentType: 'chat' | 'coder',
-    task: string,
-    response: string,
-    spans: LightningSpan[] = [],
-    initialReward: number | null = null
-  ) => {
-    const activeDirectives = apoDirectives[agentType];
-    const newRollout: LightningRollout = {
-      id: `rollout-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      agentType,
-      timestamp: Date.now(),
-      task,
-      response,
-      spans: spans.length > 0 ? spans : [
-        {
-          name: `${agentType}_agent_inference`,
-          type: 'llm_call',
-          input: task,
-          output: response,
-          durationMs: 800 + Math.floor(Math.random() * 1200),
-          tokensUsed: Math.floor(response.length / 4) + Math.floor(task.length / 4),
-        }
-      ],
-      reward: initialReward,
-      optimizedDirectivesApplied: [...activeDirectives],
-    };
+  const logRollout = useCallback(
+    (
+      agentType: 'chat' | 'coder',
+      task: string,
+      response: string,
+      spans: LightningSpan[] = [],
+      initialReward: number | null = null
+    ) => {
+      const activeDirectives = apoDirectives[agentType];
+      const newRollout: LightningRollout = {
+        id: `rollout-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        agentType,
+        timestamp: Date.now(),
+        task,
+        response,
+        spans:
+          spans.length > 0
+            ? spans
+            : [
+                {
+                  name: `${agentType}_agent_inference`,
+                  type: 'llm_call',
+                  input: task,
+                  output: response,
+                  durationMs: 800 + Math.floor(Math.random() * 1200),
+                  tokensUsed: countTokens(response) + countTokens(task),
+                },
+              ],
+        reward: initialReward,
+        optimizedDirectivesApplied: [...activeDirectives],
+      };
 
-    setRollouts(prev => [newRollout, ...prev].slice(0, 50)); // Cap history
-    return newRollout.id;
-  }, [apoDirectives]);
+      setRollouts((prev) => [newRollout, ...prev].slice(0, 50)); // Cap history
+      return newRollout.id;
+    },
+    [apoDirectives]
+  );
 
   /**
    * Run Automatic Prompt Optimization (APO) learning process
    * Decoupled server simulation optimizing the agent based on user reward feedback
    */
-  const runAPOOptimization = useCallback(async (
-    agentType: 'chat' | 'coder',
-    rollout: LightningRollout,
-    reward: number
-  ) => {
-    if (reward >= 1.0) {
-      // Reinforce positive pattern - no critique needed
-      return;
-    }
+  const runAPOOptimization = useCallback(
+    async (agentType: 'chat' | 'coder', rollout: LightningRollout, reward: number) => {
+      if (reward >= 1.0) {
+        // Reinforce positive pattern - no critique needed
+        return;
+      }
 
-    setIsOptimizing(true);
-    
-    // Simulate training loop overhead
-    await new Promise(r => setTimeout(r, 1200));
+      setIsOptimizing(true);
 
-    const taskText = rollout.task.toLowerCase();
-    const responseText = rollout.response.toLowerCase();
-    
-    // Automatic prompt critique matching catalog keywords
-    let selectedCritique = '';
-    if (taskText.includes('react') || responseText.includes('react')) {
-      selectedCritique = APO_CRITIQUES_CATALOG.react[Math.floor(Math.random() * APO_CRITIQUES_CATALOG.react.length)];
-    } else if (taskText.includes('javascript') || taskText.includes('js') || responseText.includes('function')) {
-      selectedCritique = APO_CRITIQUES_CATALOG.javascript[Math.floor(Math.random() * APO_CRITIQUES_CATALOG.javascript.length)];
-    } else if (taskText.includes('slow') || taskText.includes('performance') || taskText.includes('optimize')) {
-      selectedCritique = APO_CRITIQUES_CATALOG.performance[Math.floor(Math.random() * APO_CRITIQUES_CATALOG.performance.length)];
-    } else if (responseText.includes('error') || responseText.includes('fail') || taskText.includes('bug')) {
-      selectedCritique = APO_CRITIQUES_CATALOG.error[Math.floor(Math.random() * APO_CRITIQUES_CATALOG.error.length)];
-    } else {
-      selectedCritique = APO_CRITIQUES_CATALOG.general[Math.floor(Math.random() * APO_CRITIQUES_CATALOG.general.length)];
-    }
+      // Simulate training loop overhead
+      await new Promise((r) => setTimeout(r, 1200));
 
-    setApoDirectives(prev => {
-      const current = prev[agentType];
-      if (current.includes(selectedCritique)) return prev;
-      
-      const updated = [...current, selectedCritique].slice(-5); // Keep last 5 directives
-      return {
-        ...prev,
-        [agentType]: updated,
-      };
-    });
+      const taskText = rollout.task.toLowerCase();
+      const responseText = rollout.response.toLowerCase();
 
-    setIsOptimizing(false);
-    console.log(`[Agent Lightning] Successfully evolved new prompt directive for ${agentType}: "${selectedCritique}"`);
-  }, []);
+      // Automatic prompt critique matching catalog keywords
+      let selectedCritique = '';
+      if (taskText.includes('react') || responseText.includes('react')) {
+        selectedCritique =
+          APO_CRITIQUES_CATALOG.react[
+            Math.floor(Math.random() * APO_CRITIQUES_CATALOG.react.length)
+          ];
+      } else if (
+        taskText.includes('javascript') ||
+        taskText.includes('js') ||
+        responseText.includes('function')
+      ) {
+        selectedCritique =
+          APO_CRITIQUES_CATALOG.javascript[
+            Math.floor(Math.random() * APO_CRITIQUES_CATALOG.javascript.length)
+          ];
+      } else if (
+        taskText.includes('slow') ||
+        taskText.includes('performance') ||
+        taskText.includes('optimize')
+      ) {
+        selectedCritique =
+          APO_CRITIQUES_CATALOG.performance[
+            Math.floor(Math.random() * APO_CRITIQUES_CATALOG.performance.length)
+          ];
+      } else if (
+        responseText.includes('error') ||
+        responseText.includes('fail') ||
+        taskText.includes('bug')
+      ) {
+        selectedCritique =
+          APO_CRITIQUES_CATALOG.error[
+            Math.floor(Math.random() * APO_CRITIQUES_CATALOG.error.length)
+          ];
+      } else {
+        selectedCritique =
+          APO_CRITIQUES_CATALOG.general[
+            Math.floor(Math.random() * APO_CRITIQUES_CATALOG.general.length)
+          ];
+      }
+
+      setApoDirectives((prev) => {
+        const current = prev[agentType];
+        if (current.includes(selectedCritique)) return prev;
+
+        const updated = [...current, selectedCritique].slice(-5); // Keep last 5 directives
+        return {
+          ...prev,
+          [agentType]: updated,
+        };
+      });
+
+      setIsOptimizing(false);
+      console.log(
+        `[Agent Lightning] Successfully evolved new prompt directive for ${agentType}: "${selectedCritique}"`
+      );
+    },
+    []
+  );
 
   /**
    * Submit reward feedback to a specific rollout (Thumbs Up / Down)
    */
-  const submitReward = useCallback((rolloutId: string, reward: number) => {
-    setRollouts(prev => prev.map(r => {
-      if (r.id === rolloutId) {
-        const updated = { ...r, reward };
-        // Trigger optimization on the fly
-        runAPOOptimization(r.agentType, updated, reward);
-        return updated;
-      }
-      return r;
-    }));
-  }, [runAPOOptimization]);
+  const submitReward = useCallback(
+    (rolloutId: string, reward: number) => {
+      setRollouts((prev) =>
+        prev.map((r) => {
+          if (r.id === rolloutId) {
+            const updated = { ...r, reward };
+            // Trigger optimization on the fly
+            runAPOOptimization(r.agentType, updated, reward);
+            return updated;
+          }
+          return r;
+        })
+      );
+    },
+    [runAPOOptimization]
+  );
 
   /**
    * Wipe all logged rollouts and learned optimization directives

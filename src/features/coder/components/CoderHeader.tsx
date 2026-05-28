@@ -6,6 +6,8 @@ import { AgentPersona } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 interface CoderHeaderProps {
   activeMode?: 'coder' | 'registry' | 'settings';
   onModeChange?: (mode: 'coder' | 'registry' | 'settings') => void;
@@ -44,8 +46,36 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
   onOpenLightning,
 }) => {
   const [liveElapsed, setLiveElapsed] = useState(0);
-  const privacyMode = useNyxStore(state => state.privacyMode);
-  const setPrivacyMode = useNyxStore(state => state.setPrivacyMode);
+  const privacyMode = useNyxStore((state) => state.privacyMode);
+  const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
+  const [scraplingStatus, setScraplingStatus] = useState<
+    'checking' | 'running' | 'restarting' | 'offline'
+  >('checking');
+
+  useEffect(() => {
+    let active = true;
+    const checkScrapling = async () => {
+      try {
+        const res = await fetchWithAuth('/api/admin/scrapling-status');
+        if (!active) return;
+        if (res.ok) {
+          const data = await res.json();
+          setScraplingStatus(data.status || 'offline');
+        } else {
+          setScraplingStatus('offline');
+        }
+      } catch {
+        if (!active) return;
+        setScraplingStatus('offline');
+      }
+    };
+    checkScrapling();
+    const interval = setInterval(checkScrapling, 10000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (isLoading) {
@@ -93,10 +123,35 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
 
       {/* Right: share, status, clear */}
       <div className="flex items-center gap-2.5">
+        {/* Scrapling Health Badge */}
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-800/40 border border-white/5 text-[9px] font-extrabold uppercase tracking-wider text-zinc-400 select-none cursor-pointer"
+          title={`Scrapling Health: ${scraplingStatus === 'running' ? 'Running & Healthy' : scraplingStatus === 'restarting' ? 'Restarting...' : scraplingStatus === 'offline' ? 'Offline (using fallback)' : 'Checking Status...'}`}
+          onClick={async () => {
+            toast.info(`Scrapling status is: ${scraplingStatus}`);
+          }}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              scraplingStatus === 'running'
+                ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                : scraplingStatus === 'restarting'
+                  ? 'bg-yellow-400 animate-pulse shadow-[0_0_6px_#facc15]'
+                  : scraplingStatus === 'checking'
+                    ? 'bg-zinc-500'
+                    : 'bg-red-400 shadow-[0_0_6px_#f87171]'
+            }`}
+          />
+          <span>Scrapling</span>
+        </div>
         {/* Agent Lightning Button */}
         {onOpenLightning && (
           <motion.button
-            whileHover={{ scale: 1.05, backgroundColor: 'rgba(6,182,212,0.1)', borderColor: 'rgba(6,182,212,0.25)' }}
+            whileHover={{
+              scale: 1.05,
+              backgroundColor: 'rgba(6,182,212,0.1)',
+              borderColor: 'rgba(6,182,212,0.25)',
+            }}
             whileTap={{ scale: 0.94 }}
             onClick={onOpenLightning}
             className="p-2 rounded-xl text-cyan-400 hover:text-cyan-300 border border-cyan-500/10 bg-cyan-500/[0.03] transition-all cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.1)]"
@@ -108,14 +163,21 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
 
         {/* Privacy Mode Toggle */}
         <motion.button
-          whileHover={{ scale: 1.05, backgroundColor: privacyMode ? 'rgba(239,68,68,0.1)' : 'rgba(34,211,238,0.05)' }}
+          whileHover={{
+            scale: 1.05,
+            backgroundColor: privacyMode ? 'rgba(239,68,68,0.1)' : 'rgba(34,211,238,0.05)',
+          }}
           whileTap={{ scale: 0.94 }}
           onClick={() => {
             setPrivacyMode(!privacyMode);
             if (!privacyMode) {
-              toast.warning('Privacy Mode Enabled: Zero disk footprints, keys and history stored in memory only.');
+              toast.warning(
+                'Privacy Mode Enabled: Zero disk footprints, keys and history stored in memory only.'
+              );
             } else {
-              toast.info('Privacy Mode Disabled: Normal SQLite / local storage persistence active.');
+              toast.info(
+                'Privacy Mode Disabled: Normal SQLite / local storage persistence active.'
+              );
             }
           }}
           className={`p-2 rounded-xl border transition-all cursor-pointer ${
@@ -123,9 +185,13 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
               ? 'text-red-400 bg-red-500/10 border-red-500/20'
               : 'text-zinc-500 hover:text-white border-transparent hover:border-white/5'
           }`}
-          title={privacyMode ? "Privacy Mode Active (Click to disable)" : "Toggle Privacy Mode"}
+          title={privacyMode ? 'Privacy Mode Active (Click to disable)' : 'Toggle Privacy Mode'}
         >
-          {privacyMode ? <Lock size={13} strokeWidth={2.2} /> : <Unlock size={13} strokeWidth={1.8} />}
+          {privacyMode ? (
+            <Lock size={13} strokeWidth={2.2} />
+          ) : (
+            <Unlock size={13} strokeWidth={1.8} />
+          )}
         </motion.button>
 
         {/* Share Action */}
@@ -144,7 +210,11 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
 
         {/* Reset / Clear Chat */}
         <motion.button
-          whileHover={{ scale: 1.05, backgroundColor: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)' }}
+          whileHover={{
+            scale: 1.05,
+            backgroundColor: 'rgba(239,68,68,0.08)',
+            borderColor: 'rgba(239,68,68,0.2)',
+          }}
           whileTap={{ scale: 0.94 }}
           onClick={onClear}
           className="p-2 rounded-xl text-zinc-500 hover:text-red-400 border border-transparent hover:border-white/5 transition-all cursor-pointer"
@@ -156,4 +226,3 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
     </header>
   );
 };
-

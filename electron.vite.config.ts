@@ -2,6 +2,8 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import * as path from 'path';
+import wasm from 'vite-plugin-wasm';
+import topLevelAwait from 'vite-plugin-top-level-await';
 
 export default defineConfig({
   main: {
@@ -33,11 +35,14 @@ export default defineConfig({
   },
   renderer: {
     root: '.',
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), wasm(), topLevelAwait()],
     optimizeDeps: {
       esbuildOptions: {
         target: 'esnext',
       },
+      // tiktoken uses a native WASM binary — exclude from pre-bundling.
+      // The dynamic import in ai.service.ts already has a catch() fallback.
+      exclude: ['tiktoken'],
     },
     resolve: {
       alias: {
@@ -68,8 +73,16 @@ export default defineConfig({
       chunkSizeWarningLimit: 2000,
       rollupOptions: {
         input: 'index.html',
+        // tiktoken ships a native WASM binary that Vite/Rollup cannot bundle.
+        // It is only used via a dynamic import() with a catch fallback in ai.service.ts,
+        // so marking it external is safe — the fallback heuristic activates automatically.
+        external: ['tiktoken'],
         onwarn(warning, warn) {
           if (warning.code === 'EVAL' && warning.id?.includes('lottie-web')) {
+            return;
+          }
+          // Suppress "tiktoken is external" warnings — expected by design
+          if (warning.code === 'UNRESOLVED_IMPORT' && warning.exporter === 'tiktoken') {
             return;
           }
           warn(warning);

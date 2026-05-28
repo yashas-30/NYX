@@ -24,16 +24,16 @@
 
 ## ✨ What Makes NYX Different
 
-| Feature | NYX |
-|---|---|
-| 🖥️ **Local GGUF Models** | Run Llama 3, Qwen, Gemma, Mistral, Phi, DeepSeek **on your GPU** via built-in llama-server |
-| ⚙️ **Per-Model Inference Controls** | GPU layers, context size, temperature, Top-P/K, Mirostat — per model, not global |
-| 🤖 **NYX Agent** | 3-stage Architect → Coder → Optimizer pipeline using whichever model you select |
-| ☁️ **Cloud Orchestration** | Gemini, OpenRouter, NVIDIA NIM, OpenCode — unified under one interface |
-| 📚 **Codebase Knowledge** | Index your local codebase and query it contextually during code generation |
-| ⚡ **Zero-Delay Streaming** | Dual Express + Fastify server with TCP `setNoDelay`, DNS pre-warming, SHA-256 cache |
-| 🔐 **100% Local Keys** | API keys stay in your browser's localStorage — never sent to a database |
-| 🎨 **Premium Design** | Glassmorphism, spring physics, micro-animations, dark-first design |
+| Feature                             | NYX                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| 🖥️ **Local GGUF Models**            | Run Llama 3, Qwen, Gemma, Mistral, Phi, DeepSeek **on your GPU** via built-in llama-server |
+| ⚙️ **Per-Model Inference Controls** | GPU layers, context size, temperature, Top-P/K, Mirostat — per model, not global           |
+| 🤖 **NYX Agent**                    | Planner → SubagentSwarm → Optimizer pipeline using whichever model you select              |
+| ☁️ **Cloud Orchestration**          | Gemini, OpenRouter, NVIDIA NIM, OpenCode — unified under one interface                     |
+| 📚 **Codebase Knowledge**           | Index your local codebase and query it contextually during code generation                 |
+| ⚡ **Zero-Delay Streaming**         | Dual Express + Fastify server with TCP `setNoDelay`, DNS pre-warming, SHA-256 cache        |
+| 🔐 **100% Local Keys**              | API keys stay in your browser's localStorage — never sent to a database                    |
+| 🎨 **Premium Design**               | Glassmorphism, spring physics, micro-animations, dark-first design                         |
 
 ---
 
@@ -64,12 +64,12 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 Paste keys directly in the **Settings** tab inside NYX — no `.env` file needed:
 
-| Provider | Key Format | Free Tier |
-|---|---|---|
-| Google Gemini | `AIzaSy...` | ✅ Yes — [Get Key](https://aistudio.google.com/) |
-| OpenRouter | `sk-or-...` | ✅ Yes — [Get Key](https://openrouter.ai/) |
-| NVIDIA NIM | `nvapi-...` | ✅ 1000 credits — [Get Key](https://build.nvidia.com/) |
-| OpenCode | Token | ✅ Sandbox — [Get Key](https://opencode.ai/) |
+| Provider      | Key Format  | Free Tier                                              |
+| ------------- | ----------- | ------------------------------------------------------ |
+| Google Gemini | `AIzaSy...` | ✅ Yes — [Get Key](https://aistudio.google.com/)       |
+| OpenRouter    | `sk-or-...` | ✅ Yes — [Get Key](https://openrouter.ai/)             |
+| NVIDIA NIM    | `nvapi-...` | ✅ 1000 credits — [Get Key](https://build.nvidia.com/) |
+| OpenCode      | Token       | ✅ Sandbox — [Get Key](https://opencode.ai/)           |
 
 ---
 
@@ -79,15 +79,15 @@ NYX ships with a built-in model downloader and runner. No Ollama, no LM Studio n
 
 ### Supported Model Families
 
-| Family | Sizes | VRAM |
-|---|---|---|
-| **Llama 3.1 / 3.3** | 8B, 70B | 6–48 GB |
-| **Qwen 2.5 / QwQ** | 1.5B → 72B | 1.5–48 GB |
-| **Gemma 3** | 4B, 12B, 27B | 3–20 GB |
-| **DeepSeek R1 / V3** | 7B → 671B | 4 GB+ |
-| **Phi-4** | 14B | 10 GB |
-| **Mistral / Mixtral** | 7B, 8x7B | 5–28 GB |
-| **LLaVA** (multimodal) | 7B, 13B | 6–12 GB |
+| Family                 | Sizes        | VRAM      |
+| ---------------------- | ------------ | --------- |
+| **Llama 3.1 / 3.3**    | 8B, 70B      | 6–48 GB   |
+| **Qwen 2.5 / QwQ**     | 1.5B → 72B   | 1.5–48 GB |
+| **Gemma 3**            | 4B, 12B, 27B | 3–20 GB   |
+| **DeepSeek R1 / V3**   | 7B → 671B    | 4 GB+     |
+| **Phi-4**              | 14B          | 10 GB     |
+| **Mistral / Mixtral**  | 7B, 8x7B     | 5–28 GB   |
+| **LLaVA** (multimodal) | 7B, 13B      | 6–12 GB   |
 
 ### Per-Model Inference Controls
 
@@ -118,17 +118,18 @@ Settings reset automatically when you switch models.
 
 ## 🤖 NYX Agent Pipeline
 
-When you send a prompt with the NYX Agent model selected, it runs a **3-stage sequential pipeline**:
+When you send a prompt with the NYX Agent model selected, it runs an advanced **multi-stage coordination pipeline**:
 
 ```
-Prompt ──→ [ Architect Agent ]  ──→  System Blueprint
-           [ Coder Agent     ]  ──→  Full Implementation
-           [ Optimizer Agent ]  ──→  Final Polished Output
+Prompt ──→ [ Planner Agent ]   ──→  Execution Blueprint
+           [ SubagentSwarm ]   ──→  Parallel Implementation (Coder + Reviewer + Tester)
+           [ Optimizer Agent ] ──→  Final Polished Output
 ```
 
-- Stages 1 & 2 show a compact progress banner
-- **Only the Optimizer's final output is displayed** — no intermediate stages leak through
-- Works with any model you select in the model selector
+- **Planner Agent**: Analyzes requirements and constructs a comprehensive step-by-step execution plan.
+- **SubagentSwarm**: Co-ordinates specialized subagents (Coder, Reviewer, Tester) running in parallel to implement the plan, review for security/correctness, and verify results.
+- **Optimizer Agent**: Takes the raw outputs, applies style guides/critique rules, and returns a single polished block. Only this final output is displayed.
+- Works with any model you select in the model selector.
 
 ---
 
@@ -182,11 +183,13 @@ NYX/
 NYX uses a dual-server design to maximise streaming throughput:
 
 ### Express Gateway (Port 3000)
+
 - Serves the React SPA
 - SHA-256 prompt cache — 0ms for repeated queries
 - API key proxy and quota checking
 
 ### Fastify Engine (Port 3001)
+
 - **TCP `setNoDelay(true)`** — eliminates the 40ms Nagle's Algorithm buffer
 - **DNS pre-warming** — background Cloudflare lookups remove first-request latency
 - **Connection keep-alives** — 75s persistent sockets, no repeated TLS handshakes

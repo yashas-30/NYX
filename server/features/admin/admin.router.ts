@@ -5,8 +5,15 @@ import { LOGS_DIR } from '../../lib/paths.ts';
 import chokidar from 'chokidar';
 import logger from '../../lib/logger.ts';
 import { timingSafeEqual } from 'crypto';
+import { RulesDb, UsageTracker } from './admin.service.ts';
 
 export const adminRouter = Router();
+
+// Scrapling health state (updated by server.ts health-check loop)
+export let scraplingHealthState: 'running' | 'restarting' | 'offline' = 'offline';
+export function setScraplingHealthState(state: 'running' | 'restarting' | 'offline') {
+  scraplingHealthState = state;
+}
 
 function safeCompare(a: string, b: string): boolean {
   try {
@@ -43,7 +50,7 @@ adminRouter.get('/logs', (req, res) => {
   try {
     if (fs.existsSync(logPath)) {
       const stats = fs.statSync(logPath);
-      filePosition = stats.size; // start streaming from current end
+      filePosition = stats.size;
     }
   } catch {}
 
@@ -56,7 +63,6 @@ adminRouter.get('/logs', (req, res) => {
         const buffer = Buffer.alloc(stats.size - filePosition);
         fs.readSync(fd, buffer, 0, buffer.length, filePosition);
         fs.closeSync(fd);
-
         filePosition = stats.size;
         const newLines = buffer.toString('utf8').split('\n');
         for (const line of newLines) {
@@ -79,7 +85,7 @@ adminRouter.get('/logs', (req, res) => {
     watcher = chokidar.watch(logPath, {
       persistent: true,
       ignoreInitial: true,
-      usePolling: false
+      usePolling: false,
     });
     watcher.on('change', () => {
       readNewLogs();
@@ -89,8 +95,75 @@ adminRouter.get('/logs', (req, res) => {
   }
 
   req.on('close', () => {
-    if (watcher) {
-      watcher.close();
-    }
+    if (watcher) watcher.close();
   });
+});
+
+// MISSING-3: Usage cost tracking endpoint (admin-key protected)
+adminRouter.get('/usage', (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey) {
+    const clientKey = (req.headers['x-admin-key'] || req.query.adminKey) as string | undefined;
+    if (!clientKey || !safeCompare(clientKey, adminKey)) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid admin key' });
+    }
+  }
+  try {
+    const days = parseInt(String(req.query.days || '30'), 10);
+    const summary = UsageTracker.getUsageSummary(days);
+    const totalCost = UsageTracker.getTotalCost(days);
+    res.json({ success: true, summary, totalCostUsd: totalCost, days });
+  } catch (err: any) {
+    logger.error({ err }, '[Admin] Failed to get usage summary');
+    res.status(500).json({ error: 'Failed to retrieve usage data' });
+  }
+});
+
+// MISSING-11: Scrapling health status endpoint for frontend indicator
+adminRouter.get('/scrapling-status', (_req, res) => {
+  res.json({ status: scraplingHealthState });
+});
+
+// MISSING-8: Manual rule prune endpoint
+adminRouter.post('/rules/prune', (req, res) => {
+  try {
+    const rules = RulesDb.getRules();
+    const maxCount = parseInt(
+      String(req.body?.maxCount || process.env.RULES_DB_MAX_ENTRIES || '500'),
+      10
+    );
+    const before = rules.length;
+    // Pruning is automatic on addRule — this endpoint forces an immediate prune
+    if (rules.length > maxCount) {
+      const overflow = rules.length - maxCount;
+      rules.splice(0, overflow);
+      const fs2 = require('fs');
+      const path2 = require('path');
+      const { CACHE_DIR } = require('../../lib/paths.ts');
+      fs2.writeFileSync(path2.join(CACHE_DIR, 'critic-rules.json'), JSON.stringify(rules, null, 2));
+    }
+    res.json({ success: true, before, after: rules.length, pruned: before - rules.length });
+  } catch (err: any) {
+    logger.error({ err }, '[Admin] Failed to prune rules');
+    res.status(500).json({ error: 'Failed to prune rules' });
+  }
+});
+
+// Rules management endpoints
+adminRouter.get('/rules', (_req, res) => {
+  try {
+    const rules = RulesDb.getRules();
+    res.json({ success: true, rules, count: rules.length });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to get rules' });
+  }
+});
+
+adminRouter.delete('/rules', (_req, res) => {
+  try {
+    RulesDb.resetRules();
+    res.json({ success: true, message: 'All rules cleared' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to reset rules' });
+  }
 });

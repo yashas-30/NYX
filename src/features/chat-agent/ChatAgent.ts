@@ -1,7 +1,8 @@
-import { AIService } from '@src/features/coder/services/ai.service';
+import { AIService } from '@src/core/services/ai.service';
 import { ChatMessage, AISettings } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 import { buildChatSystemPrompt, buildChatUserPrompt } from './promptBuilders';
+import { searchWeb } from '@src/features/coder/api/coderApi';
 
 export interface ChatAgentConfig {
   modelId: string;
@@ -20,15 +21,104 @@ export class ChatAgent {
     this.config = config;
   }
 
+  /**
+   * BAD-7: Intent detection for web search
+   */
+  shouldSearchWeb(prompt: string, analysis: PromptAnalysis): boolean {
+    if (!this.config.webSearchEnabled) return false;
+
+    // Explicit signal in classifier analysis
+    if (analysis.intent === 'web_search') return true;
+
+    // Local pattern fallback
+    const lower = prompt.toLowerCase();
+    const webKeywords = [
+      'search the web',
+      'lookup',
+      'google',
+      'search web',
+      'current news',
+      'latest release',
+      'weather today',
+      'what is the current',
+      'who is currently',
+      'latest version of',
+      'recent events',
+    ];
+    return webKeywords.some((keyword) => lower.includes(keyword));
+  }
+
+  /**
+   * BAD-7: Web search with fallbacks managed by backend service
+   */
+  async searchWeb(query: string, signal?: AbortSignal): Promise<any> {
+    try {
+      const data = await searchWeb(query, signal);
+      if (data && data.success && Array.isArray(data.results)) {
+        return data.results;
+      }
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      console.warn('[ChatAgent] Web search failed, returning empty:', err);
+      return [];
+    }
+  }
+
+  /**
+   * BAD-7: Gather search context for web search intent
+   */
+  async gatherContext(prompt: string, signal?: AbortSignal): Promise<string> {
+    const rawResults = await this.searchWeb(prompt, signal);
+    return this.formatSearchResults(rawResults);
+  }
+
+  /**
+   * BAD-7: Deduplicate, format, and truncate search results for model context
+   */
+  formatSearchResults(results: any[]): string {
+    if (!Array.isArray(results) || results.length === 0) return '';
+
+    // Deduplicate by URL
+    const seenUrls = new Set<string>();
+    const uniqueResults = results.filter((r) => {
+      if (!r.link) return true;
+      if (seenUrls.has(r.link)) return false;
+      seenUrls.add(r.link);
+      return true;
+    });
+
+    // Format results to markdown block
+    const formatted = uniqueResults
+      .slice(0, 5) // Cap at top 5 unique results
+      .map((r, i) => `[Result ${i + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
+      .join('\n\n');
+
+    // Safe truncation to context limits
+    if (formatted.length > 8000) {
+      return formatted.substring(0, 8000) + '\n\n[... truncated for context limit ...]';
+    }
+    return formatted;
+  }
+
   async *streamResponse(
     prompt: string,
     analysis: PromptAnalysis,
     signal: AbortSignal,
-    webSearchResults?: string
+    prefetchedWebSearchResults?: string,
+    images?: { name: string; mimeType: string; data: string }[]
   ): AsyncGenerator<{ type: 'text' | 'thinking' | 'tool_call'; content: string; metadata?: any }> {
     // Detect language and tone
     const detectedLang = this.detectLanguage(prompt);
     const tone = this.inferTone(prompt, analysis);
+
+    let webSearchResults = prefetchedWebSearchResults || '';
+
+    // BAD-7: WebEnabledAgent search trigger inside pipeline stream
+    if (!webSearchResults && this.shouldSearchWeb(prompt, analysis)) {
+      yield { type: 'thinking', content: 'Searching the web for current information...' };
+      const rawResults = await this.searchWeb(prompt, signal);
+      webSearchResults = this.formatSearchResults(rawResults);
+    }
 
     // Build optimized prompts
     const systemPrompt = buildChatSystemPrompt(this.config.modelId, {
@@ -60,7 +150,7 @@ export class ChatAgent {
       }
     };
 
-    yield { type: 'thinking', content: 'Thinking...' };
+    yield { type: 'thinking', content: 'Generating response...' };
 
     const runPromise = AIService.execute(
       this.config.modelId,
@@ -75,6 +165,7 @@ export class ChatAgent {
         history: this.config.history.slice(-20),
         agentMode: 'chat',
         webSearch: this.config.webSearchEnabled,
+        images,
       } // Chat keeps more history
     )
       .then((result) => {
@@ -100,7 +191,7 @@ export class ChatAgent {
       }
       if (chunks.length > 0) {
         const content = chunks[chunks.length - 1];
-        chunks.length = 0; // Clear the queue since we yielded the latest accumulated text
+        chunks.length = 0; // Clear the queue since we yielded the latest text
         yield { type: 'text', content };
       }
     }

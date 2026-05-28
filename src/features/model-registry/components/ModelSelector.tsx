@@ -1,11 +1,28 @@
 import React, { useMemo, useEffect, useRef } from 'react';
-import { Search, Check, Info, Bot, RefreshCw, X, Sparkles, Zap, HardDrive, Cpu, AlertCircle } from 'lucide-react';
+import {
+  Search,
+  Check,
+  Info,
+  Bot,
+  RefreshCw,
+  X,
+  Sparkles,
+  Zap,
+  HardDrive,
+  Cpu,
+  AlertCircle,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { FREE_OPENCODE_MODELS, CLAUDE_MODELS, AVAILABLE_MODELS, POLLINATIONS_MODELS } from '@src/features/model-registry/config/models';
+import {
+  FREE_OPENCODE_MODELS,
+  CLAUDE_MODELS,
+  AVAILABLE_MODELS,
+  POLLINATIONS_MODELS,
+} from '@src/features/model-registry/config/models';
 import { ModelOption } from '@src/types';
 import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
-import { AIService } from '@src/features/coder/services/ai.service';
+import { AIService } from '@src/core/services/ai.service';
 
 interface Props {
   currentModelId?: string;
@@ -42,24 +59,24 @@ const listContainerVariants = {
     opacity: 1,
     transition: {
       staggerChildren: 0.025,
-      delayChildren: 0.02
-    }
-  }
+      delayChildren: 0.02,
+    },
+  },
 };
 
 const listItemVariants = {
   hidden: { opacity: 0, y: 8, scale: 0.97 },
-  show: { 
-    opacity: 1, 
-    y: 0, 
+  show: {
+    opacity: 1,
+    y: 0,
     scale: 1,
     transition: {
-      type: "spring" as any,
+      type: 'spring' as any,
       stiffness: 380,
       damping: 28,
-      mass: 0.8
-    }
-  }
+      mass: 0.8,
+    },
+  },
 };
 
 export const ModelSelector: React.FC<Props> = ({
@@ -76,7 +93,7 @@ export const ModelSelector: React.FC<Props> = ({
   onResetContext,
   gatewayUrls = {},
   dropdown = false,
-  alignDropdown = 'top'
+  alignDropdown = 'top',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -101,9 +118,9 @@ export const ModelSelector: React.FC<Props> = ({
                   contextWindow: m.contextLength || '8K',
                   trainingData: 'N/A',
                   maxOutput: 'N/A',
-                  modality: 'Text'
+                  modality: 'Text',
                 },
-                status: m.status
+                status: m.status,
               }));
             setLocalLibraryModels(completed);
           }
@@ -143,25 +160,25 @@ export const ModelSelector: React.FC<Props> = ({
   const mergedModels = useMemo(() => {
     const extraModels = [...FREE_OPENCODE_MODELS, ...CLAUDE_MODELS, ...POLLINATIONS_MODELS];
     const seenIds = new Set();
-    
+
     // Filter out static presets if we successfully loaded active models
-    const filteredAllModels = allModels.filter(m => m.provider !== 'nyx-native');
+    const filteredAllModels = allModels.filter((m) => m.provider !== 'nyx-native');
     const nativeSource = localLibraryModels;
 
     const allSources = [...filteredAllModels, ...nativeSource, ...extraModels];
-    return allSources.filter(m => {
+    return allSources.filter((m) => {
       if (seenIds.has(m.id)) return false;
       seenIds.add(m.id);
-      if (!isCoder && (m.provider === 'opencode')) return false;
+      if (!isCoder && m.provider === 'opencode') return false;
       return true;
     });
   }, [allModels, isCoder, localLibraryModels]);
 
   const groupedModels = useMemo(() => {
     const groups: Record<string, any[]> = {
-      'nyx-native': []
+      'nyx-native': [],
     };
-    mergedModels.forEach(model => {
+    mergedModels.forEach((model) => {
       const p = model.provider || 'unknown';
       if (!groups[p]) groups[p] = [];
       groups[p].push(model);
@@ -185,9 +202,8 @@ export const ModelSelector: React.FC<Props> = ({
   const filteredModels = useMemo(() => {
     const query = searchTerm.toLowerCase();
     const modelsForProvider = groupedModels[selectedProvider] || [];
-    return modelsForProvider.filter(m => 
-      m.name.toLowerCase().includes(query) ||
-      m.id.toLowerCase().includes(query)
+    return modelsForProvider.filter(
+      (m) => m.name.toLowerCase().includes(query) || m.id.toLowerCase().includes(query)
     );
   }, [groupedModels, selectedProvider, searchTerm]);
 
@@ -199,51 +215,56 @@ export const ModelSelector: React.FC<Props> = ({
     overscan: 5,
   });
 
-  const dropdownClassName = alignDropdown === 'bottom'
-    ? "absolute top-full left-0 mt-3.5 z-[500] w-[300px]"
-    : "absolute bottom-full left-0 mb-3.5 z-[500] w-[300px]";
+  const dropdownClassName =
+    alignDropdown === 'bottom'
+      ? 'absolute top-full left-0 mt-3.5 z-[500] w-[300px]'
+      : 'absolute bottom-full left-0 mb-3.5 z-[500] w-[300px]';
 
   const transformOrigin = dropdown
-    ? (alignDropdown === 'bottom' ? 'top left' : 'bottom left')
+    ? alignDropdown === 'bottom'
+      ? 'top left'
+      : 'bottom left'
     : 'center';
 
   const entryY = alignDropdown === 'bottom' ? -12 : 12;
   const exitY = alignDropdown === 'bottom' ? -8 : 8;
 
   return (
-    <div 
-      ref={containerRef} 
-      className={dropdown ? dropdownClassName : "fixed inset-0 z-[500] flex items-center justify-center p-4"}
+    <div
+      ref={containerRef}
+      className={
+        dropdown ? dropdownClassName : 'fixed inset-0 z-[500] flex items-center justify-center p-4'
+      }
     >
       {dropdown ? null : (
-        <motion.div 
-          initial={{ opacity: 0 }} 
-          animate={{ opacity: 1 }} 
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
           className="absolute inset-0 bg-black/65 backdrop-blur-sm cursor-pointer"
         />
       )}
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: entryY }} 
-        animate={{ 
-          opacity: 1, 
-          scale: 1, 
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: entryY }}
+        animate={{
+          opacity: 1,
+          scale: 1,
           y: 0,
           transition: {
-            type: "spring",
+            type: 'spring',
             stiffness: 420,
-            damping: 30
-          }
-        }} 
-        exit={{ 
-          opacity: 0, 
-          scale: 0.95, 
+            damping: 30,
+          },
+        }}
+        exit={{
+          opacity: 0,
+          scale: 0.95,
           y: exitY,
           transition: {
             duration: 0.18,
-            ease: [0.23, 1, 0.32, 1]
-          }
+            ease: [0.23, 1, 0.32, 1],
+          },
         }}
         style={{ transformOrigin }}
         onClick={(e) => e.stopPropagation()}
@@ -253,41 +274,51 @@ export const ModelSelector: React.FC<Props> = ({
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
         {/* Main Content Split Area */}
         <div className="flex flex-1 min-h-0 gap-1.5 p-1.5 overflow-hidden">
-          
           {/* Left Box: Providers (Gateways) */}
           <div className="w-[85px] shrink-0 bg-[#161616]/60 border border-white/[0.06] rounded-2xl flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar shadow-inner">
-            <span className="px-1 py-0.5 text-[6.5px] font-black uppercase tracking-[0.2em] text-zinc-500">Gateways</span>
-            {sortedProviders.map(provider => {
+            <span className="px-1 py-0.5 text-[6.5px] font-black uppercase tracking-[0.2em] text-zinc-500">
+              Gateways
+            </span>
+            {sortedProviders.map((provider) => {
               const status = providerStatuses?.[provider];
               const isActive = selectedProvider === provider;
-              
+
               return (
                 <motion.button
                   key={provider}
                   whileTap={{ scale: 0.97 }}
                   type="button"
-                  onClick={() => { onProviderChange(provider); onSearchChange(''); }}
+                  onClick={() => {
+                    onProviderChange(provider);
+                    onSearchChange('');
+                  }}
                   className={`
                     w-full flex items-center justify-between px-1.5 py-1 rounded-lg transition-all duration-300 group cursor-pointer border
-                    ${isActive 
-                      ? (status === 'no-key' 
-                          ? 'bg-zinc-500/10 border-zinc-500/20 text-zinc-300 font-bold' 
-                          : 'bg-white/[0.08] border-white/10 text-white font-bold shadow-sm') 
-                      : 'hover:bg-white/5 border-transparent text-zinc-400 hover:text-zinc-200'}
+                    ${
+                      isActive
+                        ? status === 'no-key'
+                          ? 'bg-zinc-500/10 border-zinc-500/20 text-zinc-300 font-bold'
+                          : 'bg-white/[0.08] border-white/10 text-white font-bold shadow-sm'
+                        : 'hover:bg-white/5 border-transparent text-zinc-400 hover:text-zinc-200'
+                    }
                   `}
                 >
                   <span className="flex-1 text-left text-[8.2px] font-bold truncate leading-none">
                     {getProviderLabel(provider)}
                   </span>
-                  
+
                   {/* Status Indicator Glow Dot */}
                   {providerStatuses && (
                     <div className="relative flex items-center shrink-0 ml-1">
-                      <div className={`w-1.5 h-1.5 rounded-full ${
-                        status === 'online' ? 'bg-emerald-400 animate-pulse' :
-                        status === 'no-key' ? 'bg-zinc-700' :
-                        'bg-zinc-800'
-                      }`} />
+                      <div
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          status === 'online'
+                            ? 'bg-emerald-400 animate-pulse'
+                            : status === 'no-key'
+                              ? 'bg-zinc-700'
+                              : 'bg-zinc-800'
+                        }`}
+                      />
                     </div>
                   )}
                 </motion.button>
@@ -299,12 +330,14 @@ export const ModelSelector: React.FC<Props> = ({
           <div className="flex-1 bg-[#161616]/60 border border-white/[0.06] rounded-2xl overflow-hidden flex flex-col shadow-inner">
             {/* Context Sub-header */}
             <div className="p-1.5 px-2 border-b border-white/[0.04] flex items-center justify-between bg-white/[0.02]">
-              <span className="text-[7px] font-black uppercase tracking-[0.2em] text-zinc-500">Units</span>
+              <span className="text-[7px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                Units
+              </span>
               <div className="px-1.5 py-0.5 rounded-full bg-white/[0.08] border border-white/10 text-[7px] font-mono font-black text-white">
                 {filteredModels.length.toString().padStart(2, '0')}
               </div>
             </div>
-            
+
             {/* Scrollable list of models */}
             <div ref={parentRef} className="flex-1 overflow-y-auto p-2 custom-scrollbar">
               {selectedProvider === 'nyx-native' && filteredModels.length === 0 ? (
@@ -313,7 +346,9 @@ export const ModelSelector: React.FC<Props> = ({
                     <Cpu className="w-5 h-5 text-[#22D3EE] animate-pulse" />
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[9px] font-black uppercase tracking-[0.15em] text-white">No Local Models</p>
+                    <p className="text-[9px] font-black uppercase tracking-[0.15em] text-white">
+                      No Local Models
+                    </p>
                     <p className="text-[7.5px] text-zinc-500 leading-normal max-w-[150px] mx-auto">
                       Run lightweight GGUF models on your own CPU & GPU entirely on-device.
                     </p>
@@ -336,7 +371,9 @@ export const ModelSelector: React.FC<Props> = ({
                   <div className="w-8 h-8 rounded-2xl bg-white/5 flex items-center justify-center border border-dashed border-white/10">
                     <Bot className="w-4 h-4 opacity-25" />
                   </div>
-                  <p className="text-[8px] font-black uppercase tracking-widest opacity-35">None found</p>
+                  <p className="text-[8px] font-black uppercase tracking-widest opacity-35">
+                    None found
+                  </p>
                 </div>
               ) : (
                 <div
@@ -362,25 +399,31 @@ export const ModelSelector: React.FC<Props> = ({
                           width: '100%',
                           height: `${virtualItem.size}px`,
                           transform: `translateY(${virtualItem.start}px)`,
-                          paddingBottom: '4px'
+                          paddingBottom: '4px',
                         }}
                       >
                         <motion.div
                           variants={listItemVariants}
                           whileTap={{ scale: 0.97 }}
-                          onClick={() => { onSelect((model as any).realId || model.id); }}
+                          onClick={() => {
+                            onSelect((model as any).realId || model.id);
+                          }}
                           className={`
                             flex items-center justify-between gap-1.5 p-1.5 rounded-lg transition-all duration-300 border text-left group relative overflow-hidden cursor-pointer h-full
-                            ${isSelected 
-                              ? (isNoKey
+                            ${
+                              isSelected
+                                ? isNoKey
                                   ? 'bg-zinc-500/10 border-zinc-500/20 shadow-sm'
-                                  : 'bg-white/[0.08] border-white/10 shadow-sm')
-                              : 'bg-[#1c1c1c] border-white/[0.04] hover:bg-[#2d2d2d] hover:border-white/10'}
+                                  : 'bg-white/[0.08] border-white/10 shadow-sm'
+                                : 'bg-[#1c1c1c] border-white/[0.04] hover:bg-[#2d2d2d] hover:border-white/10'
+                            }
                           `}
                         >
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1">
-                              <h4 className={`text-[9px] font-bold truncate leading-none ${isSelected ? 'text-foreground font-black' : 'text-foreground/80'}`}>
+                              <h4
+                                className={`text-[9px] font-bold truncate leading-none ${isSelected ? 'text-foreground font-black' : 'text-foreground/80'}`}
+                              >
                                 {model.name}
                               </h4>
 
@@ -402,12 +445,18 @@ export const ModelSelector: React.FC<Props> = ({
 
                               {/* Status Tag */}
                               {providerStatuses && providerStatuses[model.provider] && (
-                                <div className={`
+                                <div
+                                  className={`
                                   text-[5.5px] font-black uppercase tracking-wider px-1 py-0.5 rounded-[3px] border shrink-0
-                                  ${isOnline ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                                    isNoKey ? 'bg-zinc-800 border-white/[0.04] text-zinc-400' :
-                                    'bg-zinc-900 border-white/[0.04] text-zinc-500'}
-                                `}>
+                                  ${
+                                    isOnline
+                                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                      : isNoKey
+                                        ? 'bg-zinc-800 border-white/[0.04] text-zinc-400'
+                                        : 'bg-zinc-900 border-white/[0.04] text-zinc-500'
+                                  }
+                                `}
+                                >
                                   {isOnline ? 'Online' : isNoKey ? 'Auth' : 'Off'}
                                 </div>
                               )}
@@ -419,15 +468,19 @@ export const ModelSelector: React.FC<Props> = ({
                                 </span>
                               )}
                             </div>
-                            
+
                             <p className="text-[7px] font-mono text-zinc-500 truncate uppercase tracking-tight mt-0.5 leading-none">
                               {model.description || model.id}
                             </p>
                           </div>
 
                           {isSelected && (
-                            <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 shadow-md ${isNoKey ? 'bg-zinc-600' : 'bg-white border border-white/10'}`}>
-                              <Check className={`w-2 h-2 ${isNoKey ? 'text-white' : 'text-black'}`} />
+                            <div
+                              className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 shadow-md ${isNoKey ? 'bg-zinc-600' : 'bg-white border border-white/10'}`}
+                            >
+                              <Check
+                                className={`w-2 h-2 ${isNoKey ? 'text-white' : 'text-black'}`}
+                              />
                             </div>
                           )}
                         </motion.div>
@@ -442,7 +495,9 @@ export const ModelSelector: React.FC<Props> = ({
       </motion.div>
 
       {/* CSS Scrollbar Overrides */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { 
@@ -450,7 +505,9 @@ export const ModelSelector: React.FC<Props> = ({
           border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
-      `}} />
+      `,
+        }}
+      />
     </div>
   );
 };

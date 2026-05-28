@@ -9,7 +9,7 @@ export const geminiRouter = Router();
 const service = new GeminiService();
 
 geminiRouter.post('/stream', validate(geminiStreamSchema), async (req, res) => {
-  const { model, prompt, settings, systemInstruction, history, apiKey } = req.body;
+  const { model, prompt, settings, systemInstruction, history, apiKey, images } = req.body;
 
   if (!model) {
     return res.status(400).json({ error: 'Model is required' });
@@ -50,6 +50,7 @@ geminiRouter.post('/stream', validate(geminiStreamSchema), async (req, res) => {
         systemInstruction: finalSystemInstruction,
         history,
         apiKey,
+        images,
       },
       (chunk) => {
         if (!isClosed) {

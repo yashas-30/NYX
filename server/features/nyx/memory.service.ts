@@ -8,6 +8,7 @@ export interface MemoryEntry {
   category: 'user_preference' | 'project_fact' | 'decision' | 'summary';
   relevanceKey: string;
   timestamp: number;
+  agentType?: 'chat' | 'code';
 }
 
 export class MemoryService {
@@ -21,11 +22,20 @@ export class MemoryService {
           content TEXT NOT NULL,
           category TEXT NOT NULL,
           relevance_key TEXT NOT NULL,
-          timestamp INTEGER NOT NULL
+          timestamp INTEGER NOT NULL,
+          agent_type TEXT DEFAULT 'code'
         )
       `
         )
         .run();
+
+      // Migration: Add agent_type if not present in existing table
+      const info = sqlite.pragma('table_info(memories)') as any[];
+      const hasAgentType = info.some((col) => col.name === 'agent_type');
+      if (!hasAgentType) {
+        sqlite.prepare(`ALTER TABLE memories ADD COLUMN agent_type TEXT DEFAULT 'code'`).run();
+        console.log('[MemoryService] Migrated memories table: Added agent_type column.');
+      }
     } catch (e) {
       console.error('[MemoryService] Failed to initialize table rawly:', e);
     }
@@ -34,16 +44,19 @@ export class MemoryService {
   /**
    * Fetches all persistent semantic memories sorted by timestamp
    */
-  public static getMemories(): MemoryEntry[] {
+  public static getMemories(agentType: 'chat' | 'code' = 'code'): MemoryEntry[] {
     try {
       this.ensureInitialized();
-      const rows = sqlite.prepare(`SELECT * FROM memories ORDER BY timestamp DESC`).all() as any[];
+      const rows = sqlite
+        .prepare(`SELECT * FROM memories WHERE agent_type = ? ORDER BY timestamp DESC`)
+        .all(agentType) as any[];
       return rows.map((r) => ({
         id: r.id,
         content: r.content,
         category: r.category as any,
         relevanceKey: r.relevance_key,
         timestamp: r.timestamp,
+        agentType: r.agent_type as any,
       }));
     } catch (e) {
       console.error('[MemoryService] Failed to get memories:', e);
@@ -54,17 +67,22 @@ export class MemoryService {
   /**
    * Appends or updates a memory entry in the database (deduplication based on content)
    */
-  public static addMemory(content: string, category: string, relevanceKey: string): void {
+  public static addMemory(
+    content: string,
+    category: string,
+    relevanceKey: string,
+    agentType: 'chat' | 'code' = 'code'
+  ): void {
     try {
       this.ensureInitialized();
       const trimmedContent = content.trim();
       const trimmedKey = relevanceKey.trim();
       if (!trimmedContent) return;
 
-      // Check if duplicate exists (case-insensitive)
+      // Check if duplicate exists (case-insensitive) under same agentType
       const existing = sqlite
-        .prepare(`SELECT id FROM memories WHERE lower(content) = ?`)
-        .get(trimmedContent.toLowerCase()) as any;
+        .prepare(`SELECT id FROM memories WHERE lower(content) = ? AND agent_type = ?`)
+        .get(trimmedContent.toLowerCase(), agentType) as any;
 
       if (existing) {
         sqlite
@@ -72,7 +90,9 @@ export class MemoryService {
             `UPDATE memories SET timestamp = ?, category = ?, relevance_key = ? WHERE id = ?`
           )
           .run(Date.now(), category, trimmedKey, existing.id);
-        console.log(`[MemoryService] Updated duplicate memory: "${trimmedContent}"`);
+        console.log(
+          `[MemoryService] Updated duplicate memory: "${trimmedContent}" for agentType: ${agentType}`
+        );
         return;
       }
 
@@ -80,25 +100,32 @@ export class MemoryService {
       sqlite
         .prepare(
           `
-        INSERT INTO memories (id, content, category, relevance_key, timestamp)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO memories (id, content, category, relevance_key, timestamp, agent_type)
+        VALUES (?, ?, ?, ?, ?, ?)
       `
         )
-        .run(id, trimmedContent, category, trimmedKey, Date.now());
-      console.log(`[MemoryService] Saved new memory successfully: "${trimmedContent}"`);
+        .run(id, trimmedContent, category, trimmedKey, Date.now(), agentType);
+      console.log(
+        `[MemoryService] Saved new memory successfully: "${trimmedContent}" for agentType: ${agentType}`
+      );
     } catch (e) {
       console.error('[MemoryService] Failed to write memory:', e);
     }
   }
 
   /**
-   * Clears all stored memories
+   * Clears stored memories
    */
-  public static resetMemories(): void {
+  public static resetMemories(agentType?: 'chat' | 'code'): void {
     try {
       this.ensureInitialized();
-      sqlite.prepare(`DELETE FROM memories`).run();
-      console.log('[MemoryService] All persistent memories cleared.');
+      if (agentType) {
+        sqlite.prepare(`DELETE FROM memories WHERE agent_type = ?`).run(agentType);
+        console.log(`[MemoryService] Persistent memories cleared for agentType: ${agentType}.`);
+      } else {
+        sqlite.prepare(`DELETE FROM memories`).run();
+        console.log('[MemoryService] All persistent memories cleared.');
+      }
     } catch (e) {
       console.error('[MemoryService] Failed to clear memories:', e);
     }
@@ -107,8 +134,8 @@ export class MemoryService {
   /**
    * Returns a formatted injection-ready string containing all memories
    */
-  public static getMemoriesString(): string {
-    const list = this.getMemories();
+  public static getMemoriesString(agentType: 'chat' | 'code' = 'code'): string {
+    const list = this.getMemories(agentType);
     if (!list || list.length === 0) return '';
 
     // Group memories by category for cleaner visual styling
@@ -157,9 +184,10 @@ export class MemoryService {
     userPrompt: string,
     nyxResponse: string,
     modelId?: string,
-    provider?: string
+    provider?: string,
+    agentType: 'chat' | 'code' = 'code'
   ): Promise<void> {
-    console.log('[Memory Keeper] Starting background semantic distillation...');
+    console.log(`[Memory Keeper] Starting background semantic distillation for ${agentType}...`);
     const keys = loadKeys();
     const activeKey = keys[provider || ''] || '';
 
@@ -325,12 +353,12 @@ ${nyxResponse}
             let count = 0;
             for (const item of parsed.memories) {
               if (item.content && item.category) {
-                this.addMemory(item.content, item.category, userPrompt);
+                this.addMemory(item.content, item.category, userPrompt, agentType);
                 count++;
               }
             }
             console.log(
-              `[Memory Keeper] Semantic extraction complete! Committed ${count} new memories.`
+              `[Memory Keeper] Semantic extraction complete! Committed ${count} new memories for ${agentType}.`
             );
           }
         }

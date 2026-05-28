@@ -8,7 +8,7 @@ import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
 import { ModelOption } from '@src/types';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
-import { AIService } from '@src/features/coder/services/ai.service';
+import { AIService } from '@src/core/services/ai.service';
 
 // Import modular sub-components
 import { SectionHeader } from './RegistryShared';
@@ -41,7 +41,10 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   // Native GGUF local model states
   const [nativeModels, setNativeModels] = useState<any[]>([]);
   const [activeNativeId, setActiveNativeId] = useState<string | null>(null);
-  const [nativeStatus, setNativeStatus] = useState<{ status: string; error: string | null }>({ status: 'stopped', error: null });
+  const [nativeStatus, setNativeStatus] = useState<{ status: string; error: string | null }>({
+    status: 'stopped',
+    error: null,
+  });
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [customUrl, setCustomUrl] = useState('');
@@ -102,7 +105,9 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        toast.success(data.message || 'Optimal hardware-matched model selected. Initiated download.');
+        toast.success(
+          data.message || 'Optimal hardware-matched model selected. Initiated download.'
+        );
         fetchNativeModels();
         setShowDownloadModal(true); // Keep open to monitor progress
       } else {
@@ -122,8 +127,13 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       toast.error('No compatible GGUF presets detected for your system.');
       return;
     }
-    if (!confirm(`Queue and download all ${allCompatCount} compatible models on your device? This requires significant disk space.`)) return;
-    
+    if (
+      !confirm(
+        `Queue and download all ${allCompatCount} compatible models on your device? This requires significant disk space.`
+      )
+    )
+      return;
+
     setActionInProgress('download-all-compatible');
     try {
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/download-all-compatible', {
@@ -153,13 +163,13 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       toast.error('URL must start with http:// or https://');
       return;
     }
-    
+
     setActionInProgress(customUrl.trim());
     try {
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId: customUrl.trim() })
+        body: JSON.stringify({ modelId: customUrl.trim() }),
       });
       if (res.ok) {
         toast.success('Custom URL download started successfully.');
@@ -183,7 +193,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId })
+        body: JSON.stringify({ modelId }),
       });
       if (res.ok) {
         toast.success('Download started directly within NYX.');
@@ -204,7 +214,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/pause', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId })
+        body: JSON.stringify({ modelId }),
       });
       if (res.ok) {
         toast.success('Download paused. Resume to continue.');
@@ -223,7 +233,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId })
+        body: JSON.stringify({ modelId }),
       });
       if (res.ok) {
         toast.success('Download resumed from where it stopped.');
@@ -242,7 +252,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId })
+        body: JSON.stringify({ modelId }),
       });
       if (res.ok) {
         toast.success('Download cancelled and partial file removed.');
@@ -270,7 +280,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId, settings })
+        body: JSON.stringify({ modelId, settings }),
       });
       if (res.ok) {
         toast.success('Model loaded natively in Resident RAM.');
@@ -291,7 +301,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     try {
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/stop', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
       if (res.ok) {
         toast.success('Model unloaded from Resident RAM. Memory released.');
@@ -314,7 +324,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId })
+        body: JSON.stringify({ modelId }),
       });
       if (res.ok) {
         toast.success(`"${modelName}" removed from disk.`);
@@ -335,19 +345,24 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   /* ── Filtered model lists ─────────────────────────────────────────────── */
 
   const cloudModels = useMemo(
-    () => AVAILABLE_MODELS.filter(m =>
-      m.provider !== 'nyx-native' &&
-      (m.name.toLowerCase().includes(query) || m.provider.toLowerCase().includes(query))
-    ),
+    () =>
+      AVAILABLE_MODELS.filter(
+        (m) =>
+          m.provider !== 'nyx-native' &&
+          (m.name.toLowerCase().includes(query) || m.provider.toLowerCase().includes(query))
+      ),
     [query]
   );
 
   const groupedCloud = useMemo(() => {
-    const grouped = cloudModels.reduce((acc, m) => {
-      if (!acc[m.provider]) acc[m.provider] = [];
-      acc[m.provider].push(m);
-      return acc;
-    }, {} as Record<string, ModelOption[]>);
+    const grouped = cloudModels.reduce(
+      (acc, m) => {
+        if (!acc[m.provider]) acc[m.provider] = [];
+        acc[m.provider].push(m);
+        return acc;
+      },
+      {} as Record<string, ModelOption[]>
+    );
 
     return Object.entries(grouped).sort(([a], [b]) => {
       if (a === 'gemini') return -1;
@@ -357,12 +372,15 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   }, [cloudModels]);
 
   const groupedLocalPresets = useMemo<[string, any[]][]>(() => {
-    const grouped = nativeModels.reduce((acc, m) => {
-      const prov = m.provider || 'local';
-      if (!acc[prov]) acc[prov] = [];
-      acc[prov].push(m);
-      return acc;
-    }, {} as Record<string, any[]>);
+    const grouped = nativeModels.reduce(
+      (acc, m) => {
+        const prov = m.provider || 'local';
+        if (!acc[prov]) acc[prov] = [];
+        acc[prov].push(m);
+        return acc;
+      },
+      {} as Record<string, any[]>
+    );
 
     return (Object.entries(grouped) as [string, any[]][]).sort(([a], [b]) => {
       if (a === 'google') return -1;
@@ -382,27 +400,35 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         {/* ── Page header ──────────────────────────────────────────────── */}
-        <header className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-white/[0.04] shrink-0 select-none bg-background border-b border-white/[0.03] transition-all duration-300`}>
+        <header
+          className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-white/[0.04] shrink-0 select-none bg-background border-b border-white/[0.03] transition-all duration-300`}
+        >
           <div className="flex items-center gap-2">
             <Box size={16} className="text-[#22D3EE]" />
-            <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">Model Registry</h2>
+            <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">
+              Model Registry
+            </h2>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             {/* Search */}
             <div className="relative group">
-              <Search size={12} strokeWidth={1.5} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/30 transition-colors group-focus-within:text-[#22D3EE]" />
+              <Search
+                size={12}
+                strokeWidth={1.5}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/30 transition-colors group-focus-within:text-[#22D3EE]"
+              />
               <input
                 type="text"
                 placeholder="Search models..."
                 value={search}
-                onChange={e => setSearch(e.target.value)}
-                onKeyDown={e => {
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     e.currentTarget.blur();
@@ -420,15 +446,16 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
             {/* Filter tabs */}
             <div className="flex gap-1 bg-background p-1 rounded-full border border-white/[0.04] shadow-sm">
-              {(['nyx', 'cloud'] as const).map(f => (
+              {(['nyx', 'cloud'] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
                   className={`
                     px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-tight transition-all
-                    ${filter === f
-                      ? 'bg-[#22D3EE] text-black shadow-sm'
-                      : 'text-muted-foreground/60 hover:text-foreground hover:bg-white/5'
+                    ${
+                      filter === f
+                        ? 'bg-[#22D3EE] text-black shadow-sm'
+                        : 'text-muted-foreground/60 hover:text-foreground hover:bg-white/5'
                     }
                   `}
                 >
@@ -441,7 +468,6 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
         {/* ── Scrollable content ───────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
-
           {/* ════════════════════════════════════════════════════════════════
            *  NYX NATIVE LOCAL LIBRARY SECTION
            * ════════════════════════════════════════════════════════════════ */}
@@ -454,16 +480,22 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
               >
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Direct RAM Load Status Badge */}
-                  <div className={`
+                  <div
+                    className={`
                     inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-tight
-                    ${activeNativeId 
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                      : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'}
-                  `}>
-                    <div className={`
+                    ${
+                      activeNativeId
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
+                    }
+                  `}
+                  >
+                    <div
+                      className={`
                       w-1.5 h-1.5 rounded-full
                       ${activeNativeId ? 'bg-emerald-400 animate-ping' : 'bg-zinc-400'}
-                    `} />
+                    `}
+                    />
                     {activeNativeId ? 'Model Resident in RAM' : 'No Model Loaded'}
                   </div>
 
@@ -482,7 +514,10 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
               {/* Only show downloaded or actively-downloading models in the library */}
               {(() => {
                 const installedModels = nativeModels.filter(
-                  m => m.status === 'completed' || m.status === 'downloading' || activeNativeId === m.id
+                  (m) =>
+                    m.status === 'completed' ||
+                    m.status === 'downloading' ||
+                    activeNativeId === m.id
                 );
 
                 if (installedModels.length === 0) {
@@ -492,8 +527,14 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                         <Download size={16} className="text-[#22D3EE]" />
                       </div>
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">No models installed</p>
-                        <p className="text-[8px] text-muted-foreground/40 mt-1 font-medium">Click <span className="text-[#22D3EE] font-bold">Browse &amp; Download</span> to add models to your library.</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">
+                          No models installed
+                        </p>
+                        <p className="text-[8px] text-muted-foreground/40 mt-1 font-medium">
+                          Click{' '}
+                          <span className="text-[#22D3EE] font-bold">Browse &amp; Download</span> to
+                          add models to your library.
+                        </p>
                       </div>
                     </div>
                   );
@@ -501,7 +542,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {installedModels.map(m => (
+                    {installedModels.map((m) => (
                       <LocalModelCard
                         key={`native-${m.id}`}
                         m={m}
@@ -546,7 +587,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {models.map(m => (
+                    {models.map((m) => (
                       <ModelCard
                         key={m.id}
                         name={m.name}

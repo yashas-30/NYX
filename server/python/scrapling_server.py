@@ -5,6 +5,12 @@ import json
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import traceback
+import logging
+
+# Configure standard logging to direct to stdout and filter out INFO logs
+logging.basicConfig(level=logging.WARNING, stream=sys.stdout)
+# Explicitly mute scrapling's verbose GET logs
+logging.getLogger('scrapling').setLevel(logging.WARNING)
 
 print("[Scrapling Server] Initializing dependencies...")
 try:

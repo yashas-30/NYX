@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Trash2, PanelLeftOpen, ChevronDown, Share2, Lock, Unlock, Zap } from 'lucide-react';
+import { Trash2, PanelLeftOpen, ChevronDown, Share2, Lock, Unlock, Zap, Globe } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 
 interface ChatHeaderProps {
   metrics: { latency: number; tokens: number; tps: number };
   isLoading: boolean;
+  isSearching: boolean;
+  webSearchEnabled: boolean;
   onClear: () => void;
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
@@ -28,6 +30,8 @@ function formatLatency(ms: number): string {
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
   metrics,
   isLoading,
+  isSearching,
+  webSearchEnabled,
   onClear,
   sidebarOpen = true,
   onToggleSidebar,
@@ -35,8 +39,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onOpenLightning,
 }) => {
   const [liveElapsed, setLiveElapsed] = useState(0);
-  const privacyMode = useNyxStore(state => state.privacyMode);
-  const setPrivacyMode = useNyxStore(state => state.setPrivacyMode);
+  const privacyMode = useNyxStore((state) => state.privacyMode);
+  const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
 
   useEffect(() => {
     if (isLoading) {
@@ -70,24 +74,46 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         )}
       </div>
 
-      {/* Center: Dropdown session title (Claude style) */}
-      <motion.div
-        whileHover={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
-        onClick={() => toast.info(`Active chat: ${sessionTitle}`)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer select-none transition-all duration-200"
-      >
-        <span className="text-[13px] font-semibold text-foreground/85 translate-y-[-0.5px]">
-          {sessionTitle}
-        </span>
-        <ChevronDown size={11} className="text-zinc-500 opacity-60 mt-0.5" />
-      </motion.div>
+      {/* Center: Dropdown session title (Claude style) + Web Search status badge */}
+      <div className="flex items-center gap-3">
+        <motion.div
+          whileHover={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+          onClick={() => toast.info(`Active chat: ${sessionTitle}`)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer select-none transition-all duration-200"
+        >
+          <span className="text-[13px] font-semibold text-foreground/85 translate-y-[-0.5px]">
+            {sessionTitle}
+          </span>
+          <ChevronDown size={11} className="text-zinc-500 opacity-60 mt-0.5" />
+        </motion.div>
+
+        {webSearchEnabled && (
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-extrabold uppercase tracking-wider transition-all duration-300 select-none ${
+              isSearching
+                ? 'bg-sky-500/10 border-sky-400/30 text-sky-400 animate-pulse'
+                : 'bg-zinc-800/40 border-white/5 text-zinc-500'
+            }`}
+          >
+            <Globe
+              size={9}
+              className={isSearching ? 'animate-spin text-sky-400' : 'text-zinc-600'}
+            />
+            <span>{isSearching ? 'Searching...' : 'Web Search'}</span>
+          </div>
+        )}
+      </div>
 
       {/* Right: share, status, clear */}
       <div className="flex items-center gap-2.5">
         {/* Agent Lightning Button */}
         {onOpenLightning && (
           <motion.button
-            whileHover={{ scale: 1.05, backgroundColor: 'rgba(6,182,212,0.1)', borderColor: 'rgba(6,182,212,0.25)' }}
+            whileHover={{
+              scale: 1.05,
+              backgroundColor: 'rgba(6,182,212,0.1)',
+              borderColor: 'rgba(6,182,212,0.25)',
+            }}
             whileTap={{ scale: 0.94 }}
             onClick={onOpenLightning}
             className="p-2 rounded-xl text-cyan-400 hover:text-cyan-300 border border-cyan-500/10 bg-cyan-500/[0.03] transition-all cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.1)]"
@@ -99,14 +125,21 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
         {/* Privacy Mode Toggle */}
         <motion.button
-          whileHover={{ scale: 1.05, backgroundColor: privacyMode ? 'rgba(239,68,68,0.1)' : 'rgba(34,211,238,0.05)' }}
+          whileHover={{
+            scale: 1.05,
+            backgroundColor: privacyMode ? 'rgba(239,68,68,0.1)' : 'rgba(34,211,238,0.05)',
+          }}
           whileTap={{ scale: 0.94 }}
           onClick={() => {
             setPrivacyMode(!privacyMode);
             if (!privacyMode) {
-              toast.warning('Privacy Mode Enabled: Zero disk footprints, keys and history stored in memory only.');
+              toast.warning(
+                'Privacy Mode Enabled: Zero disk footprints, keys and history stored in memory only.'
+              );
             } else {
-              toast.info('Privacy Mode Disabled: Normal SQLite / local storage persistence active.');
+              toast.info(
+                'Privacy Mode Disabled: Normal SQLite / local storage persistence active.'
+              );
             }
           }}
           className={`p-2 rounded-xl border transition-all cursor-pointer ${
@@ -114,9 +147,13 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               ? 'text-red-400 bg-red-500/10 border-red-500/20'
               : 'text-zinc-500 hover:text-white border-transparent hover:border-white/5'
           }`}
-          title={privacyMode ? "Privacy Mode Active (Click to disable)" : "Toggle Privacy Mode"}
+          title={privacyMode ? 'Privacy Mode Active (Click to disable)' : 'Toggle Privacy Mode'}
         >
-          {privacyMode ? <Lock size={13} strokeWidth={2.2} /> : <Unlock size={13} strokeWidth={1.8} />}
+          {privacyMode ? (
+            <Lock size={13} strokeWidth={2.2} />
+          ) : (
+            <Unlock size={13} strokeWidth={1.8} />
+          )}
         </motion.button>
 
         {/* Share Action */}
@@ -135,7 +172,11 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
         {/* Reset / Clear Chat */}
         <motion.button
-          whileHover={{ scale: 1.05, backgroundColor: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)' }}
+          whileHover={{
+            scale: 1.05,
+            backgroundColor: 'rgba(239,68,68,0.08)',
+            borderColor: 'rgba(239,68,68,0.2)',
+          }}
           whileTap={{ scale: 0.94 }}
           onClick={onClear}
           className="p-2 rounded-xl text-zinc-500 hover:text-red-400 border border-transparent hover:border-white/5 transition-all cursor-pointer"

@@ -7,6 +7,7 @@ export interface GeminiStreamParams {
   systemInstruction?: string;
   history?: any[];
   apiKey?: string;
+  images?: any[];
 }
 
 export class GeminiService {
@@ -15,16 +16,22 @@ export class GeminiService {
     onChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
-    const { model, prompt, settings, systemInstruction, history, apiKey } = params;
+    const { model, prompt, settings, systemInstruction, history, apiKey, images } = params;
 
     const messages: any[] = [];
     if (systemInstruction) {
       messages.push({ role: 'system' as const, content: systemInstruction });
     }
     if (history && Array.isArray(history)) {
-      messages.push(...history.map((m: any) => ({ role: m.role as any, content: m.content })));
+      messages.push(
+        ...history.map((m: any) => ({ role: m.role as any, content: m.content, images: m.images }))
+      );
     }
-    messages.push({ role: 'user' as const, content: prompt });
+    const userMsg: any = { role: 'user' as const, content: prompt };
+    if (images && Array.isArray(images) && images.length > 0) {
+      userMsg.images = images;
+    }
+    messages.push(userMsg);
 
     await UnifiedEngine.executeStream(
       {
@@ -32,7 +39,7 @@ export class GeminiService {
         model,
         messages,
         settings,
-        apiKey
+        apiKey,
       },
       onChunk,
       onDone

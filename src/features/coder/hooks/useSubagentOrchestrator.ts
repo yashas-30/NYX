@@ -5,8 +5,8 @@
  * and performs self-correction compilation checks.
  */
 
-import { useCallback } from 'react';
-import { AIService } from '@src/features/coder/services/ai.service';
+import { useRef } from 'react';
+import { AIService, countTokens } from '@src/core/services/ai.service';
 import { ContinuationManager } from '@src/infrastructure/services/continuationManager';
 import { HybridModelRouter } from '@src/infrastructure/services/hybridRouter';
 import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
@@ -19,7 +19,7 @@ import {
   SubagentPlan,
   OrchestratorOptions,
   ChatMessage,
-  TelemetryMetrics
+  TelemetryMetrics,
 } from '@src/infrastructure/types';
 
 const FALLBACK_ROUTING_DECISION = {
@@ -27,7 +27,7 @@ const FALLBACK_ROUTING_DECISION = {
   provider: 'pollinations' as const,
   reasoning: 'Failed before routing',
   estimatedLatency: 0,
-  estimatedCost: 'free' as const
+  estimatedCost: 'free' as const,
 };
 
 export class SubagentOrchestrator {
@@ -55,6 +55,10 @@ export class SubagentOrchestrator {
         console.error('[SubagentOrchestrator] Swarm execution failed:', msg);
       }
       throw error;
+    } finally {
+      // BAD-3: Clear Maps after every execution cycle to prevent memory leaks
+      this.tasks.clear();
+      this.results.clear();
     }
   }
 
@@ -65,9 +69,12 @@ export class SubagentOrchestrator {
   // ── Planner ────────────────────────────────────────────────────────────────
 
   private async runPlanner(prompt: string, options: OrchestratorOptions): Promise<SubagentPlan> {
-    const decision = await HybridModelRouter.selectPlannerModel(options.apiKeys, AIService.checkStatus.bind(AIService));
+    const decision = await HybridModelRouter.selectPlannerModel(
+      options.apiKeys,
+      AIService.checkStatus.bind(AIService)
+    );
     const systemInstruction = SUBAGENT_PERSONAS.planner;
-    
+
     const profile = await WorkspaceIntelligence.getProfile();
     const profileText = `\n\n[WORKSPACE PROFILE]\n${JSON.stringify(profile, null, 2)}\n[END PROFILE]`;
 
@@ -98,14 +105,16 @@ export class SubagentOrchestrator {
     } catch (err) {
       console.warn('[SubagentOrchestrator] Planner failed, creating single task fallback:', err);
       return {
-        subtasks: [{
-          id: '1',
-          type: 'coder',
-          description: 'Execute the user request completely',
-          complexity: 'moderate',
-          requiresCloud: false,
-          dependencies: []
-        }]
+        subtasks: [
+          {
+            id: '1',
+            type: 'coder',
+            description: 'Execute the user request completely',
+            complexity: 'moderate',
+            requiresCloud: false,
+            dependencies: [],
+          },
+        ],
       };
     }
   }
@@ -116,7 +125,7 @@ export class SubagentOrchestrator {
     for (const st of plan.subtasks) {
       const task: SubagentTask = {
         ...st,
-        status: 'queued'
+        status: 'queued',
       };
       this.tasks.set(task.id, task);
     }
@@ -130,10 +139,11 @@ export class SubagentOrchestrator {
     const inFlight = new Map<string, Promise<void>>();
 
     while (completed.size < this.tasks.size) {
-      const ready = Array.from(this.tasks.values()).filter(t =>
-        !completed.has(t.id) &&
-        !inFlight.has(t.id) &&
-        t.dependencies.every(d => completed.has(d))
+      const ready = Array.from(this.tasks.values()).filter(
+        (t) =>
+          !completed.has(t.id) &&
+          !inFlight.has(t.id) &&
+          t.dependencies.every((d) => completed.has(d))
       );
 
       if (ready.length === 0 && inFlight.size === 0) {
@@ -172,10 +182,10 @@ export class SubagentOrchestrator {
         dependents.add(d);
       }
     }
-    const leaves = all.filter(t => !dependents.has(t.id));
+    const leaves = all.filter((t) => !dependents.has(t.id));
     if (leaves.length === 1) return leaves[0].id;
 
-    const coderLeaf = leaves.find(l => l.type === 'coder' || l.type === 'optimizer');
+    const coderLeaf = leaves.find((l) => l.type === 'coder' || l.type === 'optimizer');
     return coderLeaf?.id ?? leaves[0]?.id ?? all[all.length - 1].id;
   }
 
@@ -191,7 +201,11 @@ export class SubagentOrchestrator {
     this.emitUpdate();
 
     try {
-      const routing = await HybridModelRouter.routeSubagent(task, options.apiKeys, AIService.checkStatus.bind(AIService));
+      const routing = await HybridModelRouter.routeSubagent(
+        task,
+        options.apiKeys,
+        AIService.checkStatus.bind(AIService)
+      );
       task.assignedModel = routing;
 
       const handoff = await this.buildHandoffSpec(task, originalPrompt, options);
@@ -215,9 +229,7 @@ If you invoke a tool, the system will execute it and return the stdout/output to
 
       const systemPrompt = `${persona}\n\n${toolsPrompt}`;
 
-      const messages: ChatMessage[] = [
-        { role: 'user', content: handoff, timestamp: Date.now() }
-      ];
+      const messages: ChatMessage[] = [{ role: 'user', content: handoff, timestamp: Date.now() }];
 
       let loopCount = 0;
       const maxLoops = 8;
@@ -232,7 +244,7 @@ If you invoke a tool, the system will execute it and return the stdout/output to
         }
 
         const promptPayload = messages[messages.length - 1].content;
-        
+
         // Execute through fallback chain
         const response = await HybridModelRouter.executeWithFallbackChain(
           AIService.executeWithContinuation.bind(AIService),
@@ -246,7 +258,7 @@ If you invoke a tool, the system will execute it and return the stdout/output to
           isFinalOutput
             ? (chunk: string) => {
                 const elapsed = Date.now() - startTime;
-                const tokens = Math.floor(chunk.length / 4);
+                const tokens = countTokens(chunk);
                 const tps = elapsed > 0 ? Math.round(tokens / (elapsed / 1000)) : 0;
                 const streamMetrics = { latency: elapsed, tokens, tps };
 
@@ -281,15 +293,24 @@ If you invoke a tool, the system will execute it and return the stdout/output to
         const toolOutputs: string[] = [];
         for (const call of toolCalls) {
           try {
-            const result = await ToolExecutor.execute(call.tool, call.params, this.controller?.signal ?? undefined);
-            
+            const result = await ToolExecutor.execute(
+              call.tool,
+              call.params,
+              this.controller?.signal ?? undefined
+            );
+
             // Self-Correction & validation loop on file creation/modification
             let validationResult = '';
-            if (task.type === 'coder' && (call.tool === 'write_file' || call.tool === 'edit_file')) {
+            if (
+              task.type === 'coder' &&
+              (call.tool === 'write_file' || call.tool === 'edit_file')
+            ) {
               validationResult = await this.runValidationLoop(call.params.path, options.apiKeys);
             }
 
-            toolOutputs.push(`[TOOL RESULT - ${call.tool}]\n${typeof result === 'object' ? JSON.stringify(result, null, 2) : result}\n${validationResult}`);
+            toolOutputs.push(
+              `[TOOL RESULT - ${call.tool}]\n${typeof result === 'object' ? JSON.stringify(result, null, 2) : result}\n${validationResult}`
+            );
           } catch (err: any) {
             toolOutputs.push(`[TOOL ERROR - ${call.tool}]\n${err.message || err}`);
           }
@@ -298,7 +319,7 @@ If you invoke a tool, the system will execute it and return the stdout/output to
         messages.push({
           role: 'user',
           content: `Tool Execution Outputs:\n\n${toolOutputs.join('\n\n')}\n\nReview these outputs and proceed with additional tool execution or formulate your final response.`,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
       }
 
@@ -307,7 +328,7 @@ If you invoke a tool, the system will execute it and return the stdout/output to
         output: finalText,
         metrics: finalMetrics,
         modelUsed: routing,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
 
       this.results.set(task.id, subagentResult);
@@ -341,7 +362,7 @@ If you invoke a tool, the system will execute it and return the stdout/output to
         metrics: { latency: 0, tokens: 0, tps: 0 },
         modelUsed: task.assignedModel ?? FALLBACK_ROUTING_DECISION,
         timestamp: Date.now(),
-        error: msg
+        error: msg,
       };
       this.results.set(task.id, failResult);
       task.result = failResult;
@@ -355,13 +376,18 @@ If you invoke a tool, the system will execute it and return the stdout/output to
 
   // ── Validation and Self-Correction Loop ───────────────────────────────────
 
-  private async runValidationLoop(filePath: string, apiKeys: Record<string, string>): Promise<string> {
+  private async runValidationLoop(
+    filePath: string,
+    apiKeys: Record<string, string>
+  ): Promise<string> {
     let attempts = 0;
     const maxValidationAttempts = 3;
 
     while (attempts < maxValidationAttempts) {
       attempts++;
-      console.log(`[Validation] Running linter/compiler checks for ${filePath} (Attempt ${attempts}/${maxValidationAttempts})`);
+      console.log(
+        `[Validation] Running linter/compiler checks for ${filePath} (Attempt ${attempts}/${maxValidationAttempts})`
+      );
 
       try {
         const data = await validateWorkspace();
@@ -393,10 +419,14 @@ Please identify the compile/syntax/import issue, generate the corrected complete
           );
 
           const toolCalls = this.parseToolCalls(response.text);
-          const editCall = toolCalls.find(c => c.tool === 'edit_file' || c.tool === 'write_file');
+          const editCall = toolCalls.find((c) => c.tool === 'edit_file' || c.tool === 'write_file');
 
           if (editCall) {
-            await ToolExecutor.execute(editCall.tool, editCall.params, this.controller?.signal ?? undefined);
+            await ToolExecutor.execute(
+              editCall.tool,
+              editCall.params,
+              this.controller?.signal ?? undefined
+            );
           } else {
             return `[VALIDATION FAILURE] Validation failed and corrector did not supply edit tool call. Logs:\n${data.error}`;
           }
@@ -453,7 +483,9 @@ Please identify the compile/syntax/import issue, generate the corrected complete
         if (excerpt.length > 1200) {
           excerpt = excerpt.slice(0, 1200) + '\n\n[... truncated for context window ...]';
         }
-        parentOutputs.push(`## ${depResult.modelUsed.modelId} (task ${depResult.taskId}) output:\n${excerpt}`);
+        parentOutputs.push(
+          `## ${depResult.modelUsed.modelId} (task ${depResult.taskId}) output:\n${excerpt}`
+        );
       }
     }
 
@@ -467,9 +499,9 @@ Linter: ${profile.lintConfig || 'none'}
 Test Framework: ${profile.testFramework || 'none'}
 Entrypoints: ${profile.entryPoints.join(', ') || 'none'}
 Recent Git Commits:
-${profile.recentGitCommits.map(c => `- ${c}`).join('\n') || 'none'}
+${profile.recentGitCommits.map((c) => `- ${c}`).join('\n') || 'none'}
 Open Files:
-${profile.openFiles.map(f => `- ${f}`).join('\n') || 'none'}
+${profile.openFiles.map((f) => `- ${f}`).join('\n') || 'none'}
 [END METADATA]`;
 
     let codebaseContext = '';
@@ -478,12 +510,16 @@ ${profile.openFiles.map(f => `- ${f}`).join('\n') || 'none'}
         const data = await searchCodebase(originalPrompt, this.controller?.signal ?? undefined);
         if (data.success && Array.isArray(data.results)) {
           const resultsStr = data.results
-            .map((f: any) => `File: ${f.relativePath ?? f.path} (score: ${f.relevanceScore ?? f.score ?? 0})\n\`\`\`\n${f.content}\n\`\`\``)
+            .map(
+              (f: any) =>
+                `File: ${f.relativePath ?? f.path} (score: ${f.relevanceScore ?? f.score ?? 0})\n\`\`\`\n${f.content}\n\`\`\``
+            )
             .join('\n\n');
           codebaseContext = `[LOCAL CODEBASE CONTEXT]\nDIRECTORY STRUCTURE:\n${data.directoryStructure ?? ''}\n\nRELEVANT FILES:\n${resultsStr}\n[END CODEBASE CONTEXT]`;
         }
       } catch (err) {
-        if ((err instanceof Error) && (err.name === 'AbortError' || err.message === 'AbortError')) throw err;
+        if (err instanceof Error && (err.name === 'AbortError' || err.message === 'AbortError'))
+          throw err;
         console.warn('[SubagentOrchestrator] Codebase search failed:', err);
       }
     }
@@ -494,12 +530,16 @@ ${profile.openFiles.map(f => `- ${f}`).join('\n') || 'none'}
         const data = await searchWeb(originalPrompt, this.controller?.signal ?? undefined);
         if (data.success && Array.isArray(data.results)) {
           const resultsStr = data.results
-            .map((r: any, idx: number) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
+            .map(
+              (r: any, idx: number) =>
+                `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`
+            )
             .join('\n\n');
           webContext = `[WEB SEARCH CONTEXT]\n${resultsStr}\n[END WEB SEARCH]`;
         }
       } catch (err) {
-        if ((err instanceof Error) && (err.name === 'AbortError' || err.message === 'AbortError')) throw err;
+        if (err instanceof Error && (err.name === 'AbortError' || err.message === 'AbortError'))
+          throw err;
         console.warn('[SubagentOrchestrator] Web search failed:', err);
       }
     }
@@ -510,10 +550,12 @@ ${profile.openFiles.map(f => `- ${f}`).join('\n') || 'none'}
       `Type: ${task.type}`,
       `Complexity: ${task.complexity}`,
       workspaceProfileContext,
-      parentOutputs.length > 0 ? `Parent Subagent Outputs:\n${parentOutputs.join('\n\n---\n\n')}` : '',
+      parentOutputs.length > 0
+        ? `Parent Subagent Outputs:\n${parentOutputs.join('\n\n---\n\n')}`
+        : '',
       codebaseContext,
       webContext,
-      'Execute your subtask precisely. Output complete, production-ready results. Do not truncate.'
+      'Execute your subtask precisely. Output complete, production-ready results. Do not truncate.',
     ].filter(Boolean);
 
     return sections.join('\n\n');
@@ -524,7 +566,18 @@ ${profile.openFiles.map(f => `- ${f}`).join('\n') || 'none'}
   }
 }
 
+/**
+ * WRONG-5 fix: Use useRef instead of useCallback to maintain a stable orchestrator
+ * instance across renders without recreating it unnecessarily.
+ */
 export function useSubagentOrchestrator() {
-  const createOrchestrator = useCallback(() => new SubagentOrchestrator(), []);
-  return { createOrchestrator };
+  const orchestratorRef = useRef<SubagentOrchestrator | null>(null);
+  if (!orchestratorRef.current) {
+    orchestratorRef.current = new SubagentOrchestrator();
+  }
+  const createOrchestrator = () => {
+    orchestratorRef.current = new SubagentOrchestrator();
+    return orchestratorRef.current;
+  };
+  return { createOrchestrator, orchestrator: orchestratorRef };
 }

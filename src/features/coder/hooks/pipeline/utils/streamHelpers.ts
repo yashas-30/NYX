@@ -1,4 +1,5 @@
 import { ChatMessage, TelemetryMetrics } from '@src/infrastructure/types';
+import { countTokens } from '@src/core/services/ai.service';
 
 export function createStreamUpdate(
   startTime: number,
@@ -8,10 +9,10 @@ export function createStreamUpdate(
   return (text: string) => {
     const now = Date.now();
     const elapsed = now - startTime;
-    const tokens = Math.floor(text.length / 4);
+    const tokens = countTokens(text);
     const tps = elapsed > 0 ? Math.round(tokens / (elapsed / 1000)) : 0;
     const currentMetrics = { latency: elapsed, tokens, tps };
-    updateHistory(prev => {
+    updateHistory((prev) => {
       const h = [...prev];
       const last = h[h.length - 1];
       if (last && last.role === 'assistant') {

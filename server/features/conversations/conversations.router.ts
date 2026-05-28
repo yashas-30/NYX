@@ -3,9 +3,10 @@ import { ConversationStore } from './conversations.service.ts';
 
 export const conversationsRouter = Router();
 
-conversationsRouter.get('/', (_req, res) => {
+conversationsRouter.get('/', (req, res) => {
   try {
-    res.json(ConversationStore.list());
+    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    res.json(ConversationStore.list(agentType));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -13,7 +14,8 @@ conversationsRouter.get('/', (_req, res) => {
 
 conversationsRouter.get('/:id', (req, res) => {
   try {
-    const c = ConversationStore.get(req.params.id);
+    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    const c = ConversationStore.get(req.params.id, agentType);
     if (c) {
       res.json(c);
     } else {
@@ -26,7 +28,8 @@ conversationsRouter.get('/:id', (req, res) => {
 
 conversationsRouter.post('/', (req, res) => {
   try {
-    ConversationStore.upsert(req.body);
+    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    ConversationStore.upsert(req.body, agentType);
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -35,16 +38,18 @@ conversationsRouter.post('/', (req, res) => {
 
 conversationsRouter.delete('/:id', (req, res) => {
   try {
-    ConversationStore.delete(req.params.id);
+    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    ConversationStore.delete(req.params.id, agentType);
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-conversationsRouter.delete('/', (_req, res) => {
+conversationsRouter.delete('/', (req, res) => {
   try {
-    ConversationStore.clear();
+    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    ConversationStore.clear(agentType);
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -53,13 +58,14 @@ conversationsRouter.delete('/', (_req, res) => {
 
 conversationsRouter.get('/:id/export', (req, res) => {
   try {
-    const c = ConversationStore.get(req.params.id);
+    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    const c = ConversationStore.get(req.params.id, agentType);
     if (!c) {
       return res.status(404).json({ error: 'Not found' });
     }
 
-    const format = (req.query.format as string || 'json').toLowerCase();
-    
+    const format = ((req.query.format as string) || 'json').toLowerCase();
+
     if (format === 'markdown' || format === 'md') {
       let md = `# NYX Chat Export\n\n`;
       md += `**Title:** ${c.title}\n`;

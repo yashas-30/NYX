@@ -1,4 +1,4 @@
-import { AIService } from '@src/features/coder/services/ai.service';
+import { AIService } from '@src/core/services/ai.service';
 import { ChatMessage, AISettings, TelemetryMetrics, SubagentTask } from '@src/infrastructure/types';
 import { PromptAnalysis, AgentRoute } from '@src/core/services/promptClassifier';
 import { SubagentOrchestrator } from '@src/features/coder/hooks/useSubagentOrchestrator';
@@ -235,12 +235,23 @@ export class CoderAgent {
     return codeBlockMatch ? codeBlockMatch[1] : undefined;
   }
 
+  /**
+   * UGLY-2 fix: Regex is now whitespace-tolerant — handles variations in:
+   * - Spaces around the === FILE: ... === marker
+   * - Optional language identifier in the code fence
+   * - Windows-style \r\n vs Unix \n line endings
+   */
   private extractFileBlocks(text: string): Array<{ path: string; content: string }> {
     const files: Array<{ path: string; content: string }> = [];
-    const regex = /=== FILE: ([^\n]+) ===\n```[\w]*\n([\s\S]*?)```/g;
+    // Tolerant regex: whitespace-flexible markers, optional lang id, CRLF/LF support
+    const regex = /===\s*FILE:\s*([^\n\r]+?)\s*===[\r\n]+```[\w]*[\r\n]+([\s\S]*?)```/g;
     let match;
     while ((match = regex.exec(text)) !== null) {
-      files.push({ path: match[1].trim(), content: match[2] });
+      const filePath = match[1].trim();
+      const content = match[2];
+      if (filePath) {
+        files.push({ path: filePath, content });
+      }
     }
     return files;
   }
