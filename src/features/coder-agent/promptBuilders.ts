@@ -7,6 +7,7 @@ export interface CodeContext {
   workspaceFiles?: string[];
   existingCode?: string;
   taskType: 'generate' | 'debug' | 'review' | 'refactor' | 'explain';
+  lightningDirectives?: string[];
 }
 
 export function buildCoderSystemPrompt(
@@ -15,8 +16,18 @@ export function buildCoderSystemPrompt(
 ): string {
   const parts: string[] = [];
 
-  // Core identity
-  parts.push(`You are NYX, an expert software engineering AI agent.`);
+  // Core identity and date
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  parts.push(`You are NYX, an expert software engineering AI agent.
+Current Date: ${dateStr}
+Current Year: ${now.getFullYear()}
+
+Web Search Integration:
+- You may be provided with search results under a [RESEARCH] block at the beginning of the user's message.
+- Use these search results as your primary source of truth for temporal, factual, library API releases, documentation, or current event queries.
+- Strictly prioritize this search context over your pre-trained knowledge cutoff.
+- Do not state "As of my knowledge cutoff" or "As an AI..." if the information is available in the search results.`);
 
   // Task-specific instructions
   switch (context.taskType) {
@@ -103,6 +114,20 @@ Rules:
 
   if (modelId.includes('deepseek')) {
     parts.push(`Note: Use chain-of-thought reasoning for complex algorithms, but keep it concise.`);
+  }
+
+  // Strict Anti-Hallucination & Grounding Guardrails (Weight: Highest)
+  parts.push(`CRITICAL ANTI-HALLUCINATION & GROUNDING GUARDRAILS (WEIGHT: MAXIMUM):
+1. Strictly ground all generated code, functions, configurations, and variables in the verified codebase facts and search context. Do NOT guess or make up folder structures, imported libraries, methods, or third-party packages.
+2. Under no circumstances should you generate speculative code placeholders or "TODO" notes in the body of implementations. If a function is requested, provide its COMPLETE, syntactically correct implementation.
+3. If any essential information, parameters, or dependency paths are missing, explicitly refuse to guess or write dummy implementations. Instead, specify the exact missing components and request them.
+4. Verify all import paths, variable declarations, and type signatures. Do not assume APIs or models exist unless verified in context.`);
+
+  // Dynamic APO Prompt Directive Weighting
+  if (context.lightningDirectives && context.lightningDirectives.length > 0) {
+    parts.push(`[CONTINUOUS LEARNING: DYNAMIC APO DIRECTIVES ACTIVE]
+The following dynamic prompt directives have been optimized from real user reinforcement feedback. Treat them with HIGHEST behavioral weight (Priority multiplier: 2.0x) over default coding conventions:
+${context.lightningDirectives.map((d, i) => `Directive #${i+1}: ${d}`).join('\n')}`);
   }
 
   // Output format

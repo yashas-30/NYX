@@ -11,6 +11,7 @@ export const validate = (schema: ZodSchema) => {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
+        console.warn(`[Validation Failed on ${req.method} ${req.originalUrl}]:`, JSON.stringify(error.issues, null, 2));
         return res.status(400).json({
           error: 'Validation failed',
           details: error.issues.map(err => ({

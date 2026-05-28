@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system', 'model']),
-  content: z.string().max(65536)
+  content: z.string().max(10 * 1024 * 1024)
 });
 
 const aiSettingsSchema = z.object({
@@ -17,7 +17,7 @@ const gatewayUrlsSchema = z.record(z.string(), z.string().url()).optional();
 
 export const opencodeStreamSchema = z.object({
   model: z.string().min(1).max(256),
-  prompt: z.string().min(1).max(65536),
+  prompt: z.string().min(1).max(10 * 1024 * 1024),
   apiKey: z.string().max(512).optional(),
   settings: aiSettingsSchema,
   systemInstruction: z.string().max(16384).optional(),

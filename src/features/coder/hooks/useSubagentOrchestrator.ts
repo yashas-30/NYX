@@ -478,7 +478,7 @@ ${profile.openFiles.map(f => `- ${f}`).join('\n') || 'none'}
         const data = await searchCodebase(originalPrompt, this.controller?.signal ?? undefined);
         if (data.success && Array.isArray(data.results)) {
           const resultsStr = data.results
-            .map(f => `File: ${f.relativePath ?? f.path} (score: ${f.relevanceScore ?? f.score ?? 0})\n\`\`\`\n${f.content}\n\`\`\``)
+            .map((f: any) => `File: ${f.relativePath ?? f.path} (score: ${f.relevanceScore ?? f.score ?? 0})\n\`\`\`\n${f.content}\n\`\`\``)
             .join('\n\n');
           codebaseContext = `[LOCAL CODEBASE CONTEXT]\nDIRECTORY STRUCTURE:\n${data.directoryStructure ?? ''}\n\nRELEVANT FILES:\n${resultsStr}\n[END CODEBASE CONTEXT]`;
         }
@@ -494,7 +494,7 @@ ${profile.openFiles.map(f => `- ${f}`).join('\n') || 'none'}
         const data = await searchWeb(originalPrompt, this.controller?.signal ?? undefined);
         if (data.success && Array.isArray(data.results)) {
           const resultsStr = data.results
-            .map((r, idx) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
+            .map((r: any, idx: number) => `[Result ${idx + 1}] Title: ${r.title}\nLink: ${r.link}\nSnippet: ${r.snippet}`)
             .join('\n\n');
           webContext = `[WEB SEARCH CONTEXT]\n${resultsStr}\n[END WEB SEARCH]`;
         }

@@ -147,6 +147,7 @@ export function getVaultStatus(): Record<string, boolean> {
     openrouter: !!(keys.openrouter && keys.openrouter.trim().length > 0),
     nvidia: !!(keys.nvidia && keys.nvidia.trim().length > 0),
     opencode: !!(keys.opencode && keys.opencode.trim().length > 0),
+    scrapling: !!((keys.scrapling && keys.scrapling.trim().length > 0) || (keys.scrapling_url && keys.scrapling_url.trim().length > 0)),
   };
 }
 

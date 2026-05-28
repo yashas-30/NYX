@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { Brain, Trash2 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 interface EvolvedRule {
   metric: string;
@@ -21,7 +22,7 @@ export const EvolutionaryRules: React.FC<EvolutionaryRulesProps> = ({
 }) => {
   const handleClearRules = async () => {
     try {
-      const res = await fetch('/api/nyx/reset', { method: 'POST' });
+      const res = await fetchWithAuth('/api/nyx/reset', { method: 'POST' });
       if (res.ok) {
         setEvolvedRules([]);
         toast.success("Successfully reset evolved memory!");

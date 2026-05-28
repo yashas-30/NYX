@@ -4,10 +4,11 @@ import rateLimit from 'express-rate-limit';
 // @ts-ignore - cors has no default export in CommonJS declaration types
 import cors from 'cors';
 import { fileURLToPath } from 'url';
-import { isProd } from './server/lib/paths.ts';
+import { isProd, findPythonPath } from './server/lib/paths.ts';
 import path from 'path';
 import http from 'node:http';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import compression from 'compression';
 import helmet from 'helmet';
 
@@ -41,7 +42,7 @@ import { requestIdMiddleware } from './server/middleware/requestId.ts';
 import logger from './server/lib/logger.ts';
 import { safetyGateMiddleware } from './server/middleware/safetyGate.ts';
 import { createSessionToken, verifySessionToken } from './server/features/vault/vault.service.ts';
-import { cleanupProcesses } from './server/lib/processRegistry.ts';
+import { cleanupProcesses, registerProcess } from './server/lib/processRegistry.ts';
 import { CodebaseScanner } from './server/features/workspace/codebaseScanner.ts';
 import { runMigrations } from './server/db/migrator.ts';
 import { migrateOldStore } from './server/features/conversations/conversations.service.ts';
@@ -63,6 +64,22 @@ async function startServer() {
     await startFastifyServer(FASTIFY_PORT);
   } catch (err: any) {
     console.error(`Failed to start Fastify server on port ${FASTIFY_PORT}:`, err.message);
+  }
+
+  // Start local Python Scrapling search/scraper service on port 3002
+  try {
+    const pythonPath = findPythonPath();
+    const scraplingScriptPath = path.join(_dirname, 'server', 'python', 'scrapling_server.py');
+    const scraplingPort = 3002;
+    console.log(`[Scrapling] Spawning Scrapling search/scraper server on port ${scraplingPort} using ${pythonPath}...`);
+    const scraplingProc = spawn(pythonPath, [scraplingScriptPath, '--port', String(scraplingPort)], {
+      cwd: path.dirname(scraplingScriptPath),
+      detached: false,
+      stdio: ['ignore', 'inherit', 'inherit']
+    });
+    registerProcess(scraplingProc);
+  } catch (err: any) {
+    console.error('[Scrapling] Failed to spawn Scrapling local service:', err.message);
   }
 
   const app = express();

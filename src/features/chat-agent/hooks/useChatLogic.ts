@@ -1,18 +1,15 @@
 /**
- * @file src/features/coder/hooks/useCoderLogic.ts
- * @description Composed hook that orchestrates NYX agent state, message history, and AI pipeline execution.
+ * @file src/features/chat-agent/hooks/useChatLogic.ts
+ * @description State management and orchestration logic for conversational Chat Agent feature.
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useAgentState } from './useAgentState';
-import { useMessageHistory } from './useMessageHistory';
-import { useAgentPipeline } from './useAgentPipeline';
 import { ChatMessage } from '@src/infrastructure/types';
+import { useMessageHistory } from '@src/features/coder/hooks/useMessageHistory';
+import { useChatPipeline } from './useChatPipeline';
 import { cancelCurrentRequest } from '@src/features/coder/services/ai.service';
-import { useNyxStore } from '@src/shared/store/useNyxStore';
-import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
 
-interface CoderLogicProps {
+interface ChatLogicProps {
   apiKeys: Record<string, string>;
   modelSettings: any;
   trackUsage: (provider: string, tokens: number) => void;
@@ -25,7 +22,7 @@ interface CoderLogicProps {
   submitReward?: (rolloutId: string, reward: number) => void;
 }
 
-export const useCoderLogic = ({
+export const useChatLogic = ({
   apiKeys,
   modelSettings,
   trackUsage,
@@ -36,20 +33,18 @@ export const useCoderLogic = ({
   lightningDirectives,
   logRollout,
   submitReward,
-}: CoderLogicProps) => {
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
-  const [codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled] = useState(true);
-  
-  const {
-    activeAgent,
-    models,
-    setModel,
-    agentPersonas,
-    setAgentPersonas
-  } = useAgentState({
-    models: propModels,
-    setModel: propSetModel
+}: ChatLogicProps) => {
+  const [localModels, setLocalModels] = useState<Record<'nyx', string>>({
+    nyx: ''
   });
+  const models = propModels ?? localModels;
+  const setModel = useCallback((mid: string) => {
+    if (propSetModel) {
+      propSetModel(mid);
+    } else {
+      setLocalModels({ nyx: mid });
+    }
+  }, [propSetModel]);
 
   const {
     metrics,
@@ -73,13 +68,6 @@ export const useCoderLogic = ({
       cancelCurrentRequest();
     };
   }, [chatSessions?.activeSid]);
-
-  const workspacePath = useNyxStore(state => state.workspacePath);
-
-  useEffect(() => {
-    WorkspaceIntelligence.clearCache();
-    WorkspaceIntelligence.getProfile(true).catch(() => {});
-  }, [workspacePath]);
 
   // Sync localMessages when activeSession changes
   const activeSessionMessages = chatSessions?.activeSession?.messages;
@@ -107,7 +95,6 @@ export const useCoderLogic = ({
   // Unified history update callback
   const updateHistory = useCallback((updater: (prev: ChatMessage[]) => ChatMessage[]) => {
     const updated = updater(messagesRef.current);
-    // Clone array and all message objects to guarantee React and React.memo notice mutations
     const cloned = updated.map(msg => ({ ...msg }));
     messagesRef.current = cloned;
     setLocalMessages(cloned);
@@ -131,10 +118,11 @@ export const useCoderLogic = ({
     clearMetrics();
   }, [chatSessions, clearMetrics]);
 
-  const { isLoading, runCoder, stopCoder, subagentTasks, agentMode, agentReasoning } = useAgentPipeline({
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+
+  const { isLoading, runChat, stopChat } = useChatPipeline({
     models,
     apiKeys,
-    agentPersonas,
     modelSettings,
     trackUsage,
     history: localMessages,
@@ -142,33 +130,26 @@ export const useCoderLogic = ({
     updateMetrics,
     getSuggestions,
     setSuggestedPrompts,
-    webSearchEnabled,
-    codebaseKnowledgeEnabled,
     lightningEnabled,
     lightningDirectives,
     logRollout,
+    webSearchEnabled,
   });
 
   return {
-    activeAgent,
+    activeAgent: 'nyx' as const,
     isLoading,
     history: localMessages,
     metrics,
     models,
     setModel,
-    runCoder,
-    stopCoder,
+    runChat,
+    stopChat,
     clearHistory,
-    agentPersonas,
     suggestedPrompts,
+    submitReward,
     webSearchEnabled,
     setWebSearchEnabled,
-    codebaseKnowledgeEnabled,
-    setCodebaseKnowledgeEnabled,
-    subagentTasks,
-    agentMode,
-    agentReasoning,
-    submitReward,
     lightningEnabled,
     lightningDirectives,
   };

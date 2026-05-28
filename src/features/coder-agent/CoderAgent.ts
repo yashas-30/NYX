@@ -24,6 +24,7 @@ export interface CoderAgentConfig {
   originalPrompt?: string;
   triggerBackgroundCritic?: (prompt: string, response: string) => Promise<void>;
   onSubagentTaskUpdate?: (tasks: SubagentTask[]) => void;
+  lightningDirectives?: string[];
 }
 
 export class CoderAgent {
@@ -98,10 +99,12 @@ export class CoderAgent {
       frameworks: analysis.frameworks,
       complexity: analysis.complexity,
       taskType: this.mapIntentToTaskType(analysis.intent),
-      existingCode: this.extractExistingCode(prompt)
+      existingCode: this.extractExistingCode(prompt),
+      lightningDirectives: this.config.lightningDirectives
     };
 
-    const systemPrompt = buildCoderSystemPrompt(this.config.modelId, codeContext);
+    let systemPrompt = buildCoderSystemPrompt(this.config.modelId, codeContext);
+
     const finalPrompt = buildCoderUserPrompt(prompt, codeContext, context.codebase, context.webSearch);
     
     const chunks: string[] = [];
@@ -127,7 +130,7 @@ export class CoderAgent {
       { ...this.config.settings, temperature: 0.1 }, // Low temp for code accuracy
       onStreamCallback,
       signal,
-      { history: this.config.history.slice(-10) }
+      { history: this.config.history.slice(-10), agentMode: 'coder' }
     ).then((result) => {
       finished = true;
       if (resolveStream) resolveStream();

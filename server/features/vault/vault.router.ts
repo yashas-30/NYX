@@ -127,6 +127,43 @@ vaultRouter.post('/validate', vaultLimiter, async (req, res) => {
       }
     }
 
+    if (provider === 'scrapling') {
+      const url = (req.body.scraplingUrl || 'http://localhost:3002').trim();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (key) {
+        headers['Authorization'] = `Bearer ${key}`;
+      }
+      
+      try {
+        const response = await fetch(`${url}/v1/search`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ query: 'test', limit: 1 }),
+          signal: AbortSignal.timeout(5000)
+        });
+        
+        if (response.ok || response.status === 400) {
+          return res.json({ valid: true });
+        }
+        
+        // Try fallback to health check
+        const healthResponse = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
+        if (healthResponse.ok) {
+          return res.json({ valid: true });
+        }
+        return res.status(400).json({ valid: false, error: `Scrapling service returned status ${response.status}` });
+      } catch (err: any) {
+        // Double check health fallback
+        try {
+          const healthResponse = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
+          if (healthResponse.ok) {
+            return res.json({ valid: true });
+          }
+        } catch {}
+        return res.status(400).json({ valid: false, error: `Scrapling service unreachable at ${url}: ${err.message}` });
+      }
+    }
+
     return res.status(400).json({ error: `Validation not supported for provider: ${provider}` });
   } catch (err: any) {
     return res.status(500).json({ error: `Connection failed: ${err.message}` });

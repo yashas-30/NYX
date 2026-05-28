@@ -50,7 +50,7 @@ describe('AI Provider Utility Functions', () => {
 
     it('returns false for local and free providers', () => {
       expect(requiresApiKey('nyx-native')).toBe(false);
-      expect(requiresApiKey('qwen-local')).toBe(false);
+      expect(requiresApiKey('qwen-local' as any)).toBe(false);
       expect(requiresApiKey('pollinations')).toBe(false);
     });
   });

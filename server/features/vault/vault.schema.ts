@@ -18,6 +18,7 @@ export const vaultDeleteKeySchema = z.object({
 });
 
 export const vaultValidateSchema = z.object({
-  provider: z.enum(['gemini', 'openrouter', 'nvidia', 'opencode', 'openai', 'anthropic', 'deepseek', 'groq', 'mistral', 'together', 'serpapi', 'brave']),
-  key: genericKeySchema.optional()
+  provider: z.enum(['gemini', 'openrouter', 'nvidia', 'opencode', 'openai', 'anthropic', 'deepseek', 'groq', 'mistral', 'together', 'serpapi', 'brave', 'scrapling']),
+  key: genericKeySchema.optional(),
+  scraplingUrl: z.string().optional()
 });

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { toast } from '@src/shared/components/ui/sonner';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 const QUANT_TIERS = [
   { id: 'Q4_K_M', label: 'Speed',    badge: '3–4× faster',  quality: '95%', vram: '~3.9 GB', warn: 'Higher hallucination risk for complex code.' },
@@ -25,7 +26,7 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
     localStorage.setItem('nyx_quant', quantId);
     setQuantSaving(true);
     try {
-      await fetch('/api/nyx/local-models/settings', {
+      await fetchWithAuth('/api/nyx/local-models/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quantization: quantId })

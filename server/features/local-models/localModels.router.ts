@@ -160,13 +160,13 @@ localModelsRouter.get('/status', (_req, res) => {
 // Proxy streaming chat completion to port 12345
 localModelsRouter.post('/chat', validate(localModelChatSchema), async (req, res) => {
   const model = req.body.model;
-  const { messages, temperature, max_tokens } = req.body;
+  const { messages, temperature, max_tokens, agentMode } = req.body;
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'Invalid or missing messages in request body.' });
   }
 
   try {
-    const response = await service.chat({ model, messages, temperature, max_tokens });
+    const response = await service.chat({ model, messages, temperature, max_tokens, agentMode });
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

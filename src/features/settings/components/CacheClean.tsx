@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { Trash2 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 interface CacheStats {
   itemCount: number;
@@ -21,7 +22,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
 }) => {
   const handleClearCache = async () => {
     try {
-      const res = await fetch('/api/cache/clear', { method: 'POST' });
+      const res = await fetchWithAuth('/api/cache/clear', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         await fetchCacheStats();

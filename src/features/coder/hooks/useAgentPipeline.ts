@@ -1,7 +1,7 @@
 /**
  * @file src/features/coder/hooks/useAgentPipeline.ts
- * @description Core AI execution pipeline for NYX agent.
- * Dispatches requests to ChatAgent or CoderAgent based on semantic routing.
+ * @description Core AI execution pipeline for NYX Coder agent.
+ * Dispatches requests to CoderAgent and handles streaming code generation.
  */
 
 import { useState, useCallback, useRef } from 'react';
@@ -11,8 +11,8 @@ import { isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/
 import { toast } from '@src/shared/components/ui/sonner';
 import { triggerCritic } from '../api/coderApi';
 import { analyzePrompt, routeToAgent } from '@src/core/services/promptClassifier';
-import { ChatAgent } from '@src/features/chat-agent/ChatAgent';
 import { CoderAgent } from '@src/features/coder-agent/CoderAgent';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 interface PipelineProps {
   models: Record<'nyx', string>;
@@ -27,7 +27,9 @@ interface PipelineProps {
   setSuggestedPrompts: (prompts: string[]) => void;
   webSearchEnabled: boolean;
   codebaseKnowledgeEnabled: boolean;
-  mode: 'chat' | 'code';
+  lightningEnabled?: boolean;
+  lightningDirectives?: string[];
+  logRollout?: (agentType: 'chat' | 'coder', task: string, response: string, spans?: any[], initialReward?: number | null) => string;
 }
 
 export const useAgentPipeline = ({
@@ -42,7 +44,9 @@ export const useAgentPipeline = ({
   setSuggestedPrompts,
   webSearchEnabled,
   codebaseKnowledgeEnabled,
-  mode,
+  lightningEnabled,
+  lightningDirectives,
+  logRollout,
 }: PipelineProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [subagentTasks, setSubagentTasks] = useState<SubagentTask[]>([]);
@@ -101,44 +105,81 @@ export const useAgentPipeline = ({
       const analysis = analyzePrompt(prompt);
       const route = routeToAgent(analysis);
 
-      // Force route agent based on active tab selection to decouple Chat/Coder modes completely
-      if (mode === 'chat') {
-        route.agent = 'chat';
-        route.reasoning = 'Engaging Chat Agent.';
-        route.shouldUseSubagents = false;
-      } else if (mode === 'code') {
-        route.agent = 'coder';
-        route.reasoning = 'Engaging Coder Agent.';
-      }
+      // Force route agent to Coder Agent since this is CoderPage
+      route.agent = 'coder';
+      route.reasoning = 'Engaging Coder Agent.';
 
       // Step 2: Show routing decision to user
       setAgentMode(route.agent);
       setAgentReasoning(route.reasoning);
 
-      // Step 3: Route to appropriate agent
-      if (route.agent === 'chat') {
-        updateHistory(prev => [...prev, { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }]);
+      // Step 3: Execute Coder Agent pipeline
+      if (analysis.intent === 'code_debug' && isMissingDebugDetails(prompt, 'debug')) {
+        updateHistory(prev => [
+          ...prev,
+          { role: 'assistant', content: MISSING_DEBUG_DETAILS_RESPONSE, timestamp: Date.now(), status: 'success' }
+        ]);
+        toast.error('Please provide your code or error logs');
+        setIsLoading(false);
+        controllerRef.current = null;
+        return;
+      }
 
-        const agent = new ChatAgent({
-          modelId: nyxModel,
-          provider: nyxProvider,
-          apiKey: nyxApiKey,
-          settings: modelSettings,
-          history: historyRef.current,
-        });
+      const agent = new CoderAgent({
+        modelId: nyxModel,
+        provider: nyxProvider,
+        apiKey: nyxApiKey,
+        settings: modelSettings,
+        history: historyRef.current,
+        apiKeys,
+        webSearchEnabled,
+        codebaseKnowledgeEnabled,
+        trackUsage,
+        updateHistory,
+        updateMetrics,
+        getSuggestions,
+        setSuggestedPrompts,
+        originalPrompt: prompt,
+        triggerBackgroundCritic,
+        onSubagentTaskUpdate: (tasks) => {
+          setSubagentTasks(tasks);
+        },
+        lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
+      });
 
-        let finalMetrics: any = null;
-        let lastStreamText = '';
+      let finalMetrics: any = null;
+      let lastStreamText = '';
 
-        for await (const chunk of agent.streamResponse(prompt, analysis, controller.signal)) {
-          if (chunk.type === 'thinking') {
-            continue;
-          }
-          if (chunk.type === 'text') {
+      updateHistory(prev => [...prev, { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }]);
+
+      for await (const chunk of agent.streamResponse(prompt, analysis, route, controller.signal)) {
+        switch (chunk.type) {
+          case 'thinking':
+            updateHistory(prev => {
+              const h = [...prev];
+              const last = h[h.length - 1];
+              if (last?.role === 'assistant') {
+                last.content = `_${chunk.content}_`;
+              }
+              return h;
+            });
+            break;
+          case 'file_write':
+            try {
+              await fetchWithAuth('/api/nyx/write-file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filePath: chunk.content, content: chunk.metadata.content }),
+              });
+              console.log(`[File Writer] Successfully wrote file: ${chunk.content}`);
+            } catch (writeErr) {
+              console.error('Failed to write file:', writeErr);
+            }
+            break;
+          case 'text':
             lastStreamText = chunk.content;
             if (chunk.metadata) finalMetrics = chunk.metadata;
 
-            // Stream update
             updateHistory(prev => {
               const h = [...prev];
               const last = h[h.length - 1];
@@ -149,122 +190,44 @@ export const useAgentPipeline = ({
               return h;
             });
             if (chunk.metadata) updateMetrics(chunk.metadata);
+            break;
+          case 'tool_result':
+            break;
+        }
+      }
+
+      updateHistory(prev => {
+        const h = [...prev];
+        const last = h[h.length - 1];
+        if (last?.role === 'assistant') {
+          last.status = 'success';
+          if (finalMetrics) last.metrics = finalMetrics;
+
+          // Log rollout trace in Agent Lightning
+          if (logRollout) {
+            logRollout(
+              'coder',
+              prompt,
+              lastStreamText,
+              finalMetrics ? [
+                {
+                  name: 'coder_agent_inference',
+                  type: 'llm_call',
+                  input: prompt,
+                  output: lastStreamText,
+                  durationMs: finalMetrics.latency || 1000,
+                  tokensUsed: finalMetrics.tokens || 0
+                }
+              ] : []
+            );
           }
         }
+        getSuggestions(h);
+        return h;
+      });
 
-        trackUsage(nyxProvider, finalMetrics?.tokens || Math.floor(lastStreamText.length / 4));
-
-        updateHistory(prev => {
-          const h = [...prev];
-          const last = h[h.length - 1];
-          if (last?.role === 'assistant') {
-            last.status = 'success';
-            if (finalMetrics) last.metrics = finalMetrics;
-          }
-          getSuggestions(h);
-          return h;
-        });
-
+      if (lastStreamText) {
         triggerBackgroundCritic(prompt, lastStreamText);
-
-      } else {
-        // Coder agent pipeline
-        if (analysis.intent === 'code_debug' && isMissingDebugDetails(prompt, 'debug')) {
-          updateHistory(prev => [
-            ...prev,
-            { role: 'assistant', content: MISSING_DEBUG_DETAILS_RESPONSE, timestamp: Date.now(), status: 'success' }
-          ]);
-          toast.error('Please provide your code or error logs');
-          setIsLoading(false);
-          controllerRef.current = null;
-          return;
-        }
-
-        const agent = new CoderAgent({
-          modelId: nyxModel,
-          provider: nyxProvider,
-          apiKey: nyxApiKey,
-          settings: modelSettings,
-          history: historyRef.current,
-          apiKeys,
-          webSearchEnabled,
-          codebaseKnowledgeEnabled,
-          trackUsage,
-          updateHistory,
-          updateMetrics,
-          getSuggestions,
-          setSuggestedPrompts,
-          originalPrompt: prompt,
-          triggerBackgroundCritic,
-          onSubagentTaskUpdate: (tasks) => {
-            setSubagentTasks(tasks);
-          }
-        });
-
-        let finalMetrics: any = null;
-        let lastStreamText = '';
-
-        updateHistory(prev => [...prev, { role: 'assistant', content: '', timestamp: Date.now(), status: 'loading' }]);
-
-        for await (const chunk of agent.streamResponse(prompt, analysis, route, controller.signal)) {
-          switch (chunk.type) {
-            case 'thinking':
-              updateHistory(prev => {
-                const h = [...prev];
-                const last = h[h.length - 1];
-                if (last?.role === 'assistant') {
-                  last.content = `_${chunk.content}_`;
-                }
-                return h;
-              });
-              break;
-            case 'file_write':
-              try {
-                await fetch('/api/nyx/write-file', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ filePath: chunk.content, content: chunk.metadata.content }),
-                });
-                toast.success(`Wrote file: ${chunk.content}`);
-              } catch (writeErr) {
-                console.error('Failed to write file:', writeErr);
-                toast.error(`Failed to write file: ${chunk.content}`);
-              }
-              break;
-            case 'text':
-              lastStreamText = chunk.content;
-              if (chunk.metadata) finalMetrics = chunk.metadata;
-
-              updateHistory(prev => {
-                const h = [...prev];
-                const last = h[h.length - 1];
-                if (last?.role === 'assistant') {
-                  last.content = chunk.content;
-                  if (chunk.metadata) last.metrics = chunk.metadata;
-                }
-                return h;
-              });
-              if (chunk.metadata) updateMetrics(chunk.metadata);
-              break;
-            case 'tool_result':
-              break;
-          }
-        }
-
-        updateHistory(prev => {
-          const h = [...prev];
-          const last = h[h.length - 1];
-          if (last?.role === 'assistant') {
-            last.status = 'success';
-            if (finalMetrics) last.metrics = finalMetrics;
-          }
-          getSuggestions(h);
-          return h;
-        });
-
-        if (lastStreamText) {
-          triggerBackgroundCritic(prompt, lastStreamText);
-        }
       }
     } catch (error: any) {
       const isAborted = error?.name === 'AbortError' || controller.signal.aborted;
@@ -315,8 +278,7 @@ export const useAgentPipeline = ({
     webSearchEnabled,
     codebaseKnowledgeEnabled,
     getSuggestions,
-    triggerBackgroundCritic,
-    mode
+    triggerBackgroundCritic
   ]);
 
   const stopCoder = useCallback(() => {

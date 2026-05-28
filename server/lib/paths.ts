@@ -1,6 +1,7 @@
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { spawnSync } from 'child_process';
 
 // Check if running in production mode or packaged Electron app
 export const isProd = process.env.NODE_ENV === 'production' || 
@@ -34,6 +35,56 @@ export const LOGS_DIR = path.join(APP_STATE_DIR, '.nyx-logs');
 export const MODELS_DIR = path.join(APP_STATE_DIR, '.nyx-models');
 export const CACHE_DIR = path.join(APP_STATE_DIR, '.nyx-cache');
 export const DB_FILE = path.join(APP_STATE_DIR, 'nyx.db');
+
+function isSpawnable(cmd: string): boolean {
+  try {
+    const res = spawnSync(cmd, ['--version'], { timeout: 1000 });
+    return !res.error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Locate the correct Python interpreter on the system.
+ */
+export function findPythonPath(): string {
+  const defaultCommand = process.platform === 'win32' ? 'python' : 'python3';
+  const candidates = [
+    process.env.NYX_PYTHON_PATH,
+    ...(process.platform === 'win32' ? ['python', 'py', 'python3'] : ['python3', 'python']),
+    path.join(os.homedir(), '.conda', 'envs', 'nyx', 'bin', 'python'),
+    path.join(os.homedir(), 'miniconda3', 'envs', 'nyx', 'bin', 'python'),
+    path.join(os.homedir(), '.conda', 'envs', 'nyx', 'python.exe'),
+    path.join(os.homedir(), 'miniconda3', 'envs', 'nyx', 'python.exe'),
+    path.join(os.homedir(), 'anaconda3', 'envs', 'nyx', 'python.exe'),
+  ];
+
+  const vscodeSettingsPath = path.join(findProjectRoot(), '.vscode', 'settings.json');
+  if (fs.existsSync(vscodeSettingsPath)) {
+    try {
+      const vscodeSettings = JSON.parse(fs.readFileSync(vscodeSettingsPath, 'utf-8'));
+      if (vscodeSettings['python.defaultInterpreterPath']) {
+        candidates.unshift(vscodeSettings['python.defaultInterpreterPath']);
+      }
+    } catch {}
+  }
+
+  for (const c of candidates) {
+    if (!c) continue;
+    if (path.isAbsolute(c)) {
+      if (fs.existsSync(c)) {
+        return c;
+      }
+    } else {
+      if (isSpawnable(c)) {
+        return c;
+      }
+    }
+  }
+
+  return defaultCommand;
+}
 
 // Ensure directories exist
 const dirs = [APP_STATE_DIR, VAULT_DIR, LOGS_DIR, MODELS_DIR, CACHE_DIR];

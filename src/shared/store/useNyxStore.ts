@@ -45,6 +45,7 @@ export interface NyxState {
   // Lifecycle & Sync actions
   fetchWorkspacePath: () => Promise<void>;
   selectWorkspace: () => Promise<void>;
+  createWorkspace: (path: string, name: string) => Promise<{ success: boolean; workspace?: string; error?: string }>;
   loadSecureKeys: () => Promise<void>;
   refreshStatuses: () => Promise<void>;
 }
@@ -173,6 +174,25 @@ export const useNyxStore = create<NyxState>()(
           }
         } else {
           console.warn('[Store] Select workspace called outside secure Electron context.');
+        }
+      },
+
+      createWorkspace: async (path: string, name: string) => {
+        try {
+          const res = await fetchWithAuth('/api/workspace/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, name })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            set({ workspacePath: data.workspace });
+            return { success: true, workspace: data.workspace };
+          }
+          const errData = await res.json().catch(() => ({ error: 'Network error creating workspace' }));
+          return { success: false, error: errData.error || 'Failed to create workspace' };
+        } catch (e: any) {
+          return { success: false, error: e.message };
         }
       },
 

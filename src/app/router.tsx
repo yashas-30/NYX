@@ -5,6 +5,7 @@
 
 import React, { lazy, Suspense } from 'react';
 import { CoderPage } from '@src/pages/CoderPage';
+import { ChatPage } from '@src/pages/ChatPage';
 import { SettingsPage } from '@src/pages/SettingsPage';
 import { ModelRegistryPage } from '@src/pages/ModelRegistryPage';
 
@@ -19,8 +20,8 @@ const LoadingFallback = () => (
 );
 
 interface AppRouterProps {
-  activeMode: 'coder' | 'registry' | 'settings';
-  setActiveMode: (mode: 'coder' | 'registry' | 'settings') => void;
+  activeMode: 'chat' | 'coder' | 'registry' | 'settings';
+  setActiveMode: (mode: 'chat' | 'coder' | 'registry' | 'settings') => void;
   apiKeys: Record<string, string>;
   modelSettings: any;
   trackUsage: (provider: string, tokens: number) => void;
@@ -34,7 +35,9 @@ interface AppRouterProps {
   updateApiKey: (provider: string, key: string) => void;
   clearApiKeys: () => void;
   coderState: any;
+  chatState: any;
   allModels: any[];
+  onOpenLightning?: () => void;
 }
 
 export function AppRouter({
@@ -53,7 +56,9 @@ export function AppRouter({
   updateApiKey,
   clearApiKeys,
   coderState,
+  chatState,
   allModels,
+  onOpenLightning,
 }: AppRouterProps) {
   switch (activeMode) {
     case 'settings':
@@ -81,6 +86,24 @@ export function AppRouter({
           />
         </Suspense>
       );
+    case 'chat':
+      return (
+        <ChatPage
+          allModels={allModels}
+          apiKeys={apiKeys}
+          modelSettings={modelSettings}
+          trackUsage={trackUsage}
+          setModelSettings={setModelSettings}
+          providerStatuses={statuses}
+          chatSessions={chatSessions}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={onToggleSidebar}
+          activeMode={activeMode}
+          setActiveMode={setActiveMode}
+          onOpenLightning={onOpenLightning}
+          {...chatState}
+        />
+      );
     default:
       return (
         <CoderPage
@@ -95,6 +118,7 @@ export function AppRouter({
           onToggleSidebar={onToggleSidebar}
           activeMode={activeMode}
           setActiveMode={setActiveMode}
+          onOpenLightning={onOpenLightning}
           {...coderState}
         />
       );

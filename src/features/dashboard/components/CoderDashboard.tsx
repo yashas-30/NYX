@@ -1,7 +1,7 @@
 /**
  * @file src/components/CoderDashboard.tsx
- * @description Claude Desktop-style dashboard with a warm-slate sidebar, Chat/Code tabs,
- *              main chat canvas, and top-level view routing (coder / registry / settings).
+ * @description Claude Desktop-style dashboard with a warm-slate sidebar, Chat/Coder pages,
+ *              main chat canvas, and top-level view routing (chat / coder / registry / settings).
  */
 
 import React, { useState } from 'react';
@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useDashboardState } from '../hooks/useDashboardState';
 import { useChatSessions } from '@src/shared/hooks/useChatSessions';
 import { useCoderLogic } from '@src/features/coder';
+import { useChatLogic } from '@src/features/chat-agent';
 import { AppRouter } from '@src/app/router';
 import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
@@ -16,20 +17,17 @@ import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import {
   PanelLeftClose, PanelLeftOpen, Plus, MessageSquare,
   Box, Settings, Trash2, ChevronRight, User, Activity,
-  ArrowLeft, ArrowRight, History, Clock, Folder, ChevronDown,
-  Library
+  ArrowLeft, ArrowRight, Library
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
-
-type ViewMode = 'coder' | 'registry' | 'settings';
+import { useAgentLightning } from '@src/shared/hooks/useAgentLightning';
+import { AgentLightningPanel } from '@src/shared/components/AgentLightningPanel';
 
 export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sidebarTab, setSidebarTab] = useState<'chat' | 'code'>('chat');
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -52,7 +50,8 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
     apiKeys,
     modelSettings, setModelSettings, trackUsage,
     statuses,
-    models, setModel,
+    models, setModels, setModel,
+    modelsState,
     updateApiKey,
     clearApiKeys,
     localLibraryModels,
@@ -60,7 +59,8 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
   const allModels = React.useMemo(() => {
     const seen = new Set();
-    const merged = [...localLibraryModels, ...AVAILABLE_MODELS];
+    const filteredAvailable = AVAILABLE_MODELS.filter(m => m.provider !== 'nyx-native');
+    const merged = [...localLibraryModels, ...filteredAvailable];
     return merged.filter(m => {
       if (seen.has(m.id)) return false;
       seen.add(m.id);
@@ -69,18 +69,44 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
   }, [localLibraryModels]);
 
   const { theme } = useTheme();
-  const chatSessions = useChatSessions();
+
+  // Instantiate two completely separate session pools
+  const chatSessions = useChatSessions('chat');
+  const coderSessions = useChatSessions('coder');
+
+  // Agent Lightning state
+  const lightningState = useAgentLightning();
+
+  // Select active sessions list depending on active page mode
+  const activeSessions = activeMode === 'coder' ? coderSessions : chatSessions;
+  const { sessions, activeSid, deleteSession, switchSession, createSession } = activeSessions;
+
+  // Dedicated separate frontend state managers
+  const chatState = useChatLogic({
+    apiKeys,
+    modelSettings,
+    trackUsage,
+    models: { nyx: modelsState.chat },
+    setModel: (mid: string) => setModels(prev => ({ ...prev, chat: mid })),
+    chatSessions,
+    lightningEnabled: lightningState.lightningEnabledChat,
+    lightningDirectives: lightningState.apoDirectives.chat,
+    logRollout: lightningState.logRollout,
+    submitReward: lightningState.submitReward,
+  });
 
   const coderState = useCoderLogic({
     apiKeys,
     modelSettings,
     trackUsage,
-    models,
-    setModel,
-    chatSessions,
-    mode: sidebarTab
+    models: { nyx: modelsState.coder },
+    setModel: (mid: string) => setModels(prev => ({ ...prev, coder: mid })),
+    chatSessions: coderSessions,
+    lightningEnabled: lightningState.lightningEnabledCoder,
+    lightningDirectives: lightningState.apoDirectives.coder,
+    logRollout: lightningState.logRollout,
+    submitReward: lightningState.submitReward,
   });
-  const { sessions, activeSid, deleteSession, switchSession, createSession } = chatSessions;
 
   const filteredSessions = sessions.filter(s =>
     s.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -155,7 +181,9 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                 whileTap={{ scale: 0.98 }}
                 onClick={() => {
                   createSession([]);
-                  setActiveMode('coder');
+                  if (activeMode !== 'coder' && activeMode !== 'chat') {
+                    setActiveMode('coder');
+                  }
                 }}
                 className="w-full flex items-center justify-start gap-2 px-3 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer border border-white/[0.04] text-zinc-300 bg-white/[0.02] mb-1"
               >
@@ -165,32 +193,30 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
               <button
                 onClick={() => {
-                  setSidebarTab('chat');
-                  setActiveMode('coder');
+                  setActiveMode('chat');
                 }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left cursor-pointer ${
-                  sidebarTab === 'chat'
+                  activeMode === 'chat'
                     ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
                 }`}
               >
-                <MessageSquare size={13} className={sidebarTab === 'chat' ? 'text-zinc-200' : 'text-zinc-500'} />
-                <span>Chat Agent</span>
+                <MessageSquare size={13} className={activeMode === 'chat' ? 'text-zinc-200' : 'text-zinc-500'} />
+                <span>NYX</span>
               </button>
 
               <button
                 onClick={() => {
-                  setSidebarTab('code');
                   setActiveMode('coder');
                 }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left cursor-pointer ${
-                  sidebarTab === 'code'
+                  activeMode === 'coder'
                     ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
                 }`}
               >
-                <Box size={13} className={sidebarTab === 'code' ? 'text-zinc-200' : 'text-zinc-500'} />
-                <span>Coder Agent</span>
+                <Box size={13} className={activeMode === 'coder' ? 'text-zinc-200' : 'text-zinc-500'} />
+                <span>NYX Coder</span>
               </button>
             </div>
 
@@ -210,7 +236,9 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                         isActive={session.id === activeSid}
                         onClick={() => {
                           switchSession(session.id);
-                          setActiveMode('coder');
+                          if (activeMode !== 'coder' && activeMode !== 'chat') {
+                            setActiveMode('coder');
+                          }
                         }}
                         onDelete={() => deleteSession(session.id)}
                       />
@@ -251,7 +279,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
         {/* ── Collapsed Sidebar Toggle (Floating trigger) ───────────────── */}
         <AnimatePresence>
-          {!sidebarOpen && activeMode !== 'coder' && (
+          {!sidebarOpen && activeMode !== 'coder' && activeMode !== 'chat' && (
             <motion.button
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
@@ -277,7 +305,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               trackUsage={trackUsage}
               setModelSettings={setModelSettings}
               statuses={statuses}
-              chatSessions={chatSessions}
+              chatSessions={activeSessions}
               sidebarOpen={sidebarOpen}
               onToggleSidebar={() => setSidebarOpen(p => !p)}
               models={models}
@@ -285,6 +313,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               updateApiKey={updateApiKey}
               clearApiKeys={clearApiKeys}
               coderState={coderState}
+              chatState={chatState}
               allModels={allModels}
             />
           </AnimatePresence>
@@ -295,9 +324,10 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
           activeMode={activeMode}
           setActiveMode={setActiveMode}
           createSession={createSession}
-          clearHistory={coderState.clearHistory}
+          clearHistory={activeMode === 'coder' ? coderState.clearHistory : chatState.clearHistory}
           models={models}
           setModel={setModel}
+          allModels={allModels}
         />
       </main>
     </ErrorBoundary>

@@ -13,7 +13,7 @@ import { useSecurityState } from './useSecurityState';
 import { useProviderStatus } from './useProviderStatus';
 
 export const useDashboardState = (onExit?: () => void) => {
-  const [activeMode, setActiveMode] = useState<'settings' | 'registry' | 'coder'>('coder');
+  const [activeMode, setActiveMode] = useState<'settings' | 'registry' | 'coder' | 'chat'>('coder');
   const [modelSettings, setModelSettings] = useState(() => {
     const saved = localStorage.getItem('nyx_model_settings');
     if (saved) {
@@ -48,9 +48,10 @@ export const useDashboardState = (onExit?: () => void) => {
     };
   });
   
-  // NYX is the only agent — single model state
-  const [models, setModels] = useState<Record<'nyx', string>>({
-    nyx: ''
+  // Split models for conversational general chat ('chat') and coding ('coder')
+  const [models, setModels] = useState<Record<'chat' | 'coder', string>>({
+    chat: '',
+    coder: ''
   });
 
   const { usage, updateUsage: trackUsage, refreshProviderQuota } = useTokenUsage();
@@ -69,11 +70,16 @@ export const useDashboardState = (onExit?: () => void) => {
 
   // ── Initialization Logic ───────────────────────────────────────────────
   useEffect(() => {
+    // Register global mode switch helper
+    (window as any).nyxSwitchActiveMode = (mode: 'settings' | 'registry' | 'coder' | 'chat') => {
+      setActiveMode(mode);
+    };
+
     // Purge old localStorage keys to ensure compliance with vault policy
     localStorage.removeItem('llm_ref_api_keys');
     localStorage.removeItem('llm_ref_api_key');
 
-    const savedModels = localStorage.getItem('nyx_coder_models_v2');
+    const savedModels = localStorage.getItem('nyx_coder_models_v3');
     const savedLocalModelsEnabled = localStorage.getItem('llm_ref_local_models_enabled');
     if (savedLocalModelsEnabled !== null) {
       setLocalModelsEnabled(savedLocalModelsEnabled === 'true');
@@ -82,19 +88,25 @@ export const useDashboardState = (onExit?: () => void) => {
     if (savedModels) {
       try {
         const parsed = JSON.parse(savedModels);
-        // Treat old defaults as "no selection" so selector shows placeholder
-        const STALE_DEFAULTS = [
-          'anthropic/claude-sonnet-4-20250514',
-          'gemini-2.5-flash',
-          'opencode/big-pickle',
-        ];
-        const clean = (v: string, fallback = '') =>
-          STALE_DEFAULTS.includes(v) ? fallback : (v || fallback);
-        // Migrate: use the nyx model, or fallback to any previously saved model
-        const nyxModel = clean(parsed.nyx) || clean(parsed.open) || clean(parsed.claude) || '';
-        setModels({ nyx: nyxModel });
+        setModels({
+          chat: parsed.chat || '',
+          coder: parsed.coder || ''
+        });
       } catch (e) {
         console.error("Models load fail", e);
+      }
+    } else {
+      // Migrate from old state if exists
+      const oldModels = localStorage.getItem('nyx_coder_models_v2');
+      if (oldModels) {
+        try {
+          const parsed = JSON.parse(oldModels);
+          const legacyModel = parsed.nyx || '';
+          setModels({
+            chat: legacyModel,
+            coder: legacyModel
+          });
+        } catch {}
       }
     }
 
@@ -121,6 +133,9 @@ export const useDashboardState = (onExit?: () => void) => {
     };
     loadSecureKeys();
 
+    return () => {
+      delete (window as any).nyxSwitchActiveMode;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -139,7 +154,7 @@ export const useDashboardState = (onExit?: () => void) => {
   }, [localModelsEnabled]);
 
   useEffect(() => {
-    localStorage.setItem('nyx_coder_models_v2', JSON.stringify(models));
+    localStorage.setItem('nyx_coder_models_v3', JSON.stringify(models));
   }, [models]);
 
   // Load GGUF models dynamically from /api/nyx/local-models
@@ -174,6 +189,8 @@ export const useDashboardState = (onExit?: () => void) => {
 
   useEffect(() => {
     loadLocalLibraryModels();
+    const interval = setInterval(loadLocalLibraryModels, 5000);
+    return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -182,7 +199,11 @@ export const useDashboardState = (onExit?: () => void) => {
   }, [modelSettings]);
 
   const setModel = (mid: string) => {
-    setModels({ nyx: mid });
+    const targetKey = activeMode === 'chat' ? 'chat' : 'coder';
+    setModels(prev => ({
+      ...prev,
+      [targetKey]: mid
+    }));
   };
 
   return {
@@ -193,7 +214,9 @@ export const useDashboardState = (onExit?: () => void) => {
 
     // Coder states — NYX only
     activeAgent: 'nyx' as const,
-    models, setModels, setModel,
+    models: { nyx: models[activeMode === 'chat' ? 'chat' : 'coder'] } as Record<'nyx', string>,
+    modelsState: models,
+    setModels, setModel,
 
     // Registry (simplified)
     localModelsEnabled, setLocalModelsEnabled,

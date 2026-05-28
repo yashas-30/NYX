@@ -1,23 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Zap, Trash2, Timer, PanelLeftOpen, ChevronDown, Share2, Lock, Unlock } from 'lucide-react';
-import { StatusBadge } from '@src/shared/components/ui/StatusBadge';
-import { AgentPersona } from '@src/infrastructure/types';
+import { Trash2, PanelLeftOpen, ChevronDown, Share2, Lock, Unlock, Zap } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 
-interface CoderHeaderProps {
-  activeMode?: 'coder' | 'registry' | 'settings';
-  onModeChange?: (mode: 'coder' | 'registry' | 'settings') => void;
-  currentPersona?: AgentPersona;
+interface ChatHeaderProps {
   metrics: { latency: number; tokens: number; tps: number };
   isLoading: boolean;
-  badgeStatus: 'success' | 'loading' | 'offline' | 'no_key';
   onClear: () => void;
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
   sessionTitle?: string;
-  mode?: 'chat' | 'code';
   onOpenLightning?: () => void;
 }
 
@@ -32,15 +25,13 @@ function formatLatency(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export const CoderHeader: React.FC<CoderHeaderProps> = ({
+export const ChatHeader: React.FC<ChatHeaderProps> = ({
   metrics,
   isLoading,
-  badgeStatus,
   onClear,
   sidebarOpen = true,
   onToggleSidebar,
   sessionTitle = 'New chat',
-  mode = 'chat',
   onOpenLightning,
 }) => {
   const [liveElapsed, setLiveElapsed] = useState(0);
@@ -156,4 +147,3 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
     </header>
   );
 };
-

@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Network, HelpCircle, BookOpen, ExternalLink, Cpu, Zap, Database, Globe, Settings as SettingsIcon, ChevronUp, ChevronDown } from 'lucide-react';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 import { ApiKeyVault } from './ApiKeyVault';
 import { WorkspaceConfig } from './WorkspaceConfig';
@@ -61,7 +62,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fetchWorkspacePath = async () => {
     try {
-      const res = await fetch('/api/workspace');
+      const res = await fetchWithAuth('/api/workspace');
       if (res.ok) {
         const data = await res.json();
         setWorkspacePath(data.workspace);
@@ -85,7 +86,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fetchCacheStats = async () => {
     try {
-      const res = await fetch('/api/cache/stats');
+      const res = await fetchWithAuth('/api/cache/stats');
       if (res.ok) {
         const data = await res.json();
         setCacheStats(data);
@@ -97,7 +98,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fetchEvolvedRules = async () => {
     try {
-      const res = await fetch('/api/nyx/rules');
+      const res = await fetchWithAuth('/api/nyx/rules');
       if (res.ok) {
         const data = await res.json();
         setEvolvedRules(data.rules || data || []);

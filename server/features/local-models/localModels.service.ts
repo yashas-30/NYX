@@ -99,48 +99,85 @@ export class LocalModelsService {
     messages: any[];
     temperature?: number;
     max_tokens?: number;
+    agentMode?: 'chat' | 'coder';
   }, signal?: AbortSignal): Promise<Response> {
     const requestedModel = params.model || 'nyx-gemma-4-e2b-it';
-    const { messages, temperature, max_tokens } = params;
+    const { messages, temperature, max_tokens, agentMode } = params;
 
     // 1. Gather the latest user prompt
     const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
     const query = lastUserMessage ? lastUserMessage.content : '';
 
-    // 2. Perform local codebase RAG search
-    const directoryStructure = CodebaseScanner.getDirectoryStructure();
-    const rules = RulesDb.getRules();
-    
+    // Check if we have a client-defined system prompt and if it is conversational (general chat)
+    const clientSystemMessage = messages.find(m => m.role === 'system');
+    const isGeneralChat = agentMode === 'chat' || (agentMode === undefined && clientSystemMessage && 
+      (clientSystemMessage.content.toLowerCase().includes('assistant') && 
+       !clientSystemMessage.content.toLowerCase().includes('software engineering') &&
+       !clientSystemMessage.content.toLowerCase().includes('expert software engineering')));
+
+    console.log(`[localModels.service.ts] General chat check:`, {
+      isGeneralChat,
+      agentMode,
+      hasSystemMessage: !!clientSystemMessage,
+      systemMessageLength: clientSystemMessage?.content.length,
+      first100Chars: clientSystemMessage?.content.substring(0, 100)
+    });
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const dateDirective = `Current Date: ${dateStr}\nCurrent Year: ${now.getFullYear()}\n`;
+
+    let systemPrompt = '';
+    let directoryStructure = '';
     let codebaseContext = '';
-    if (query) {
-      const searchResults = await CodebaseScanner.search(query, 3);
-      if (searchResults && searchResults.length > 0) {
-        codebaseContext = '\n\n=== RELEVANT CODEBASE FILES ===\n';
-        for (const file of searchResults) {
-          codebaseContext += `\n--- File: ${file.path} ---\n${file.content}\n`;
+    let rulesContext = '';
+
+    if (isGeneralChat) {
+      if (clientSystemMessage?.content) {
+        systemPrompt = clientSystemMessage.content;
+        if (!systemPrompt.includes('Current Date:')) {
+          systemPrompt = `Current Date: ${dateStr}\nCurrent Year: ${now.getFullYear()}\n\n${systemPrompt}`;
+        }
+      } else {
+        systemPrompt = `You are NYX, a helpful assistant.\n${dateDirective}`;
+      }
+    } else {
+      // 2. Perform local codebase RAG search
+      directoryStructure = CodebaseScanner.getDirectoryStructure();
+      const rules = RulesDb.getRules();
+      
+      if (query) {
+        const searchResults = await CodebaseScanner.search(query, 3);
+        if (searchResults && searchResults.length > 0) {
+          codebaseContext = '\n\n=== RELEVANT CODEBASE FILES ===\n';
+          for (const file of searchResults) {
+            codebaseContext += `\n--- File: ${file.path} ---\n${file.content}\n`;
+          }
         }
       }
-    }
-    
-    let rulesContext = '';
-    if (rules && rules.length > 0) {
-      rulesContext = '\n\n=== LEARNED CRITIC RULES ===\n';
-      for (const r of rules) {
-        rulesContext += `- For ${r.metric}: ${r.rule}\n`;
+      
+      if (rules && rules.length > 0) {
+        rulesContext = '\n\n=== LEARNED CRITIC RULES ===\n';
+        for (const r of rules) {
+          rulesContext += `- For ${r.metric}: ${r.rule}\n`;
+        }
       }
-    }
 
-    // 3. Formulate the dynamic system prompt
-    const systemPrompt = `You are NYX, a professional and highly capable AI software engineering assistant.
+      // 3. Formulate the dynamic system prompt
+      systemPrompt = `You are NYX, a professional and highly capable AI software engineering assistant.
 Always identify yourself as NYX. Never claim to be OpenAI, ChatGPT, Anthropic, or any other entity.
 Your tone is highly professional, direct, clear, objective, and authoritative—identical to Google Gemini. Avoid friendly fluff, excessive greetings, or marketing language like "premium". Focus on providing highly structured, precise, clean, and complete code solutions.
  
+Current Date: ${dateStr}
+Current Year: ${now.getFullYear()}
+
 Here is the current directory structure of the repository:
 ${directoryStructure}
 ${codebaseContext}
 ${rulesContext}
  
 Please analyze the context and provide highly optimized, syntax-correct solutions.`;
+    }
 
     const totalCharacters = messages.reduce((sum, m) => sum + (m.content || '').length, 0) + systemPrompt.length;
     const estimatedPromptTokens = Math.ceil(totalCharacters / 3.8);

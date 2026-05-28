@@ -5,6 +5,7 @@ import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 interface ProviderConfig {
   id: string;
@@ -18,6 +19,7 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
   { id: 'openrouter', name: 'OpenRouter', hasModels: true, modelCount: 0 },
   { id: 'nvidia', name: 'NVIDIA NIM', hasModels: true, modelCount: 0 },
   { id: 'opencode', name: 'OpenCode Zen', hasModels: true, modelCount: 0 },
+  { id: 'scrapling', name: 'Scrapling Search & Scraper (Local / Cloud)', hasModels: false, modelCount: 0 },
 ];
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
@@ -25,6 +27,7 @@ const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   openrouter: 'https://openrouter.ai/api/v1',
   nvidia: 'https://integrate.api.nvidia.com/v1',
   opencode: 'https://opencode.ai/zen/v1',
+  scrapling: 'http://localhost:3002',
 };
 
 const getModelCountForProvider = (provider: string): number => {
@@ -87,7 +90,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     }
 
     try {
-      const res = await fetch('/api/vault/store', {
+      const res = await fetchWithAuth('/api/vault/store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keys: keysInput })
@@ -107,10 +110,10 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   const handlePurgeVault = async () => {
     if (confirm("Delete all keys from server vault?")) {
       try {
-        const res = await fetch('/api/vault/store', {
+        const res = await fetchWithAuth('/api/vault/store', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: { gemini: '', openrouter: '', nvidia: '', opencode: '' } })
+          body: JSON.stringify({ keys: { gemini: '', openrouter: '', nvidia: '', opencode: '', scrapling: '', scrapling_url: '' } })
         });
         if (res.ok) {
           toast.success('All API keys removed from server vault');
@@ -205,27 +208,69 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    <input 
-                      type="password" 
-                      value={keysInput[p.id] || ''} 
-                      onChange={e => setKeysInput(prev => ({ ...prev, [p.id]: e.target.value }))} 
-                      placeholder={hasKey ? "••••••••••••••••" : `Enter ${p.name} API key`}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          e.currentTarget.blur();
-                        }
-                      }}
-                      className="flex-1 bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#22D3EE]/50 shadow-inner" 
-                    />
-                    <button
-                      onClick={() => toggleExpanded(p.id)}
-                      className={`p-2 rounded-xl border transition-all cursor-pointer ${
-                        isExpanded ? 'bg-[#22D3EE]/10 border-[#22D3EE]/40 text-[#22D3EE]' : 'bg-white/5 border-white/10 text-muted-foreground/40 hover:text-foreground'
-                      }`}
-                    >
-                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </button>
+                    {p.id === 'scrapling' ? (
+                      <div className="flex flex-col gap-2.5 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[8px] font-black uppercase text-zinc-500 w-16 shrink-0">API Key:</span>
+                          <input 
+                            type="password" 
+                            value={keysInput['scrapling'] ?? apiKeys['scrapling'] ?? ''} 
+                            onChange={e => setKeysInput(prev => ({ ...prev, scrapling: e.target.value }))} 
+                            placeholder={vaultStatus['scrapling'] ? "•••••••••••••••• (Optional for Local)" : "Enter Scrapling API Key (Optional for Local)"}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            className="flex-1 bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#22D3EE]/50 shadow-inner" 
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[8px] font-black uppercase text-zinc-500 w-16 shrink-0">Service URL:</span>
+                          <input 
+                            type="text" 
+                            value={keysInput['scrapling_url'] ?? apiKeys['scrapling_url'] ?? ''} 
+                            onChange={e => setKeysInput(prev => ({ ...prev, scrapling_url: e.target.value }))} 
+                            placeholder="http://localhost:3002"
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            className="flex-1 bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#22D3EE]/50 shadow-inner" 
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <input 
+                          type="password" 
+                          value={keysInput[p.id] || ''} 
+                          onChange={e => setKeysInput(prev => ({ ...prev, [p.id]: e.target.value }))} 
+                          placeholder={hasKey ? "••••••••••••••••" : `Enter ${p.name} API key`}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.currentTarget.blur();
+                            }
+                          }}
+                          className="flex-1 bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#22D3EE]/50 shadow-inner" 
+                        />
+                      </>
+                    )}
+                    {p.hasModels && (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(p.id)}
+                        className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                          isExpanded ? 'bg-[#22D3EE]/10 border-[#22D3EE]/40 text-[#22D3EE]' : 'bg-white/5 border-white/10 text-muted-foreground/40 hover:text-foreground'
+                        }`}
+                      >
+                        <ChevronDown size={14} className={`transform transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

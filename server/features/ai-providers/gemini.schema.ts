@@ -3,7 +3,7 @@ import { aiSettingsSchema, chatMessageSchema, gatewayUrlsSchema } from './shared
 
 export const geminiStreamSchema = z.object({
   model: z.string().min(1).max(256),
-  prompt: z.string().min(1).max(65536),
+  prompt: z.string().min(1).max(10 * 1024 * 1024),
   apiKey: z.string().max(512).optional(),
   settings: aiSettingsSchema,
   systemInstruction: z.string().max(16384).optional(),

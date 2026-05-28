@@ -9,6 +9,7 @@ export interface ChatAgentConfig {
   apiKey: string;
   settings: AISettings;
   history: ChatMessage[];
+  lightningDirectives?: string[];
 }
 
 export class ChatAgent {
@@ -21,7 +22,8 @@ export class ChatAgent {
   async *streamResponse(
     prompt: string, 
     analysis: PromptAnalysis,
-    signal: AbortSignal
+    signal: AbortSignal,
+    webSearchResults?: string
   ): AsyncGenerator<{ type: 'text' | 'thinking' | 'tool_call'; content: string; metadata?: any }> {
     
     // Detect language and tone
@@ -29,17 +31,18 @@ export class ChatAgent {
     const tone = this.inferTone(prompt, analysis);
 
     // Build optimized prompts
-    const systemPrompt = buildChatSystemPrompt(this.config.modelId, {
+    let systemPrompt = buildChatSystemPrompt(this.config.modelId, {
       conversationTone: tone,
       detectedLanguage: detectedLang,
       previousMessages: this.config.history.length,
+      lightningDirectives: this.config.lightningDirectives,
     });
 
     const contextWindow = buildChatUserPrompt(prompt, {
       conversationTone: tone,
       detectedLanguage: detectedLang,
       previousMessages: this.config.history.length,
-    });
+    }, webSearchResults);
     
     const chunks: string[] = [];
     let resolveStream: (() => void) | null = null;
@@ -64,7 +67,7 @@ export class ChatAgent {
       { ...this.config.settings, temperature: 0.7 }, // Higher temp for creativity
       onStreamCallback,
       signal,
-      { history: this.config.history.slice(-20) } // Chat keeps more history
+      { history: this.config.history.slice(-20), agentMode: 'chat' } // Chat keeps more history
     ).then((result) => {
       finished = true;
       if (resolveStream) resolveStream();

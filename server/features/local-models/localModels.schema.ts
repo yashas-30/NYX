@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system', 'model']),
-  content: z.string().max(65536)
+  content: z.string().max(10 * 1024 * 1024)
 });
 
 const aiSettingsSchema = z.object({
@@ -38,12 +38,13 @@ export const localModelChatSchema = z.object({
   model: z.string().min(1).max(256),
   messages: z.array(chatMessageSchema).min(1).max(500),
   temperature: z.number().min(0).max(2).optional(),
-  max_tokens: z.number().int().min(1).max(131072).optional()
+  max_tokens: z.number().int().min(1).max(131072).optional(),
+  agentMode: z.enum(['chat', 'coder']).optional()
 });
 
 export const qwenLocalStreamSchema = z.object({
   model: z.string().min(1).max(256).optional(),
-  prompt: z.string().min(1).max(65536),
+  prompt: z.string().min(1).max(10 * 1024 * 1024),
   settings: aiSettingsSchema,
   systemInstruction: z.string().max(16384).optional(),
   history: z.array(chatMessageSchema).max(500).optional(),

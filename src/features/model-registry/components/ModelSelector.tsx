@@ -113,8 +113,10 @@ export const ModelSelector: React.FC<Props> = ({
       }
     };
     loadLocalModels();
+    const interval = setInterval(loadLocalModels, 3000);
     return () => {
       active = false;
+      clearInterval(interval);
     };
   }, []);
 
@@ -144,9 +146,7 @@ export const ModelSelector: React.FC<Props> = ({
     
     // Filter out static presets if we successfully loaded active models
     const filteredAllModels = allModels.filter(m => m.provider !== 'nyx-native');
-    const nativeSource = localLibraryModels.length > 0 
-      ? localLibraryModels 
-      : allModels.filter(m => m.provider === 'nyx-native');
+    const nativeSource = localLibraryModels;
 
     const allSources = [...filteredAllModels, ...nativeSource, ...extraModels];
     return allSources.filter(m => {
@@ -158,7 +158,9 @@ export const ModelSelector: React.FC<Props> = ({
   }, [allModels, isCoder, localLibraryModels]);
 
   const groupedModels = useMemo(() => {
-    const groups: Record<string, any[]> = {};
+    const groups: Record<string, any[]> = {
+      'nyx-native': []
+    };
     mergedModels.forEach(model => {
       const p = model.provider || 'unknown';
       if (!groups[p]) groups[p] = [];
@@ -305,7 +307,31 @@ export const ModelSelector: React.FC<Props> = ({
             
             {/* Scrollable list of models */}
             <div ref={parentRef} className="flex-1 overflow-y-auto p-2 custom-scrollbar">
-              {filteredModels.length === 0 ? (
+              {selectedProvider === 'nyx-native' && filteredModels.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-zinc-400 text-center p-3 py-6 space-y-3">
+                  <div className="w-10 h-10 rounded-2xl bg-[#22D3EE]/10 flex items-center justify-center border border-[#22D3EE]/20 shadow-inner">
+                    <Cpu className="w-5 h-5 text-[#22D3EE] animate-pulse" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-black uppercase tracking-[0.15em] text-white">No Local Models</p>
+                    <p className="text-[7.5px] text-zinc-500 leading-normal max-w-[150px] mx-auto">
+                      Run lightweight GGUF models on your own CPU & GPU entirely on-device.
+                    </p>
+                  </div>
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      if (onClose) onClose();
+                      if (typeof (window as any).nyxSwitchActiveMode === 'function') {
+                        (window as any).nyxSwitchActiveMode('registry');
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-full bg-[#22D3EE] text-black text-[8px] font-black uppercase tracking-wider shadow-md hover:bg-[#22D3EE]/90 transition-all cursor-pointer"
+                  >
+                    Go to Registry
+                  </motion.button>
+                </div>
+              ) : filteredModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-zinc-500 text-center space-y-2 py-6">
                   <div className="w-8 h-8 rounded-2xl bg-white/5 flex items-center justify-center border border-dashed border-white/10">
                     <Bot className="w-4 h-4 opacity-25" />

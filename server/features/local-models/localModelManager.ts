@@ -662,6 +662,7 @@ export interface DownloadProgress {
   progressPercentage: number;
   speedMbps: number;
   error?: string;
+  message?: string;
 }
 
 import { MODELS_DIR as BASE_DIR } from '../../lib/paths.ts';
@@ -802,19 +803,39 @@ export const LocalModelManager = {
         }
       }
 
+      const partPath = filePath + '.part';
+      const partExists = fs.existsSync(partPath);
+
       if (exists) {
         status = 'completed';
-        downloadStates[preset.id] = 'completed';
+        if (downloadStates[preset.id] !== 'completed') {
+          downloadStates[preset.id] = 'completed';
+          saveStates();
+        }
       } else if (activeDownloads.has(preset.id)) {
         status = activeDownloads.get(preset.id)!.status;
       } else if (downloadStates[preset.id] === 'completed') {
         // GGUF was deleted manually — reset to idle
         downloadStates[preset.id] = 'idle';
         status = 'idle';
+        saveStates();
       } else if (downloadStates[preset.id] === 'paused') {
-        status = 'paused';
+        if (isAirLLM || partExists) {
+          status = 'paused';
+        } else {
+          // Part file deleted manually — reset to idle
+          downloadStates[preset.id] = 'idle';
+          status = 'idle';
+          saveStates();
+        }
       } else if (downloadStates[preset.id]) {
-        status = downloadStates[preset.id] === 'downloading' ? 'idle' : (downloadStates[preset.id] as any);
+        if (downloadStates[preset.id] === 'downloading') {
+          downloadStates[preset.id] = 'idle';
+          status = 'idle';
+          saveStates();
+        } else {
+          status = downloadStates[preset.id] as any;
+        }
       }
 
       const activeProgress = activeDownloads.get(preset.id);

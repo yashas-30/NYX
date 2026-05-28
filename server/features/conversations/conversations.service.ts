@@ -84,7 +84,7 @@ export const ConversationStore = {
           .values({
             id: conv.id,
             title: conv.title,
-            model: conv.model,
+            model: conv.model || 'default',
             createdAt: conv.createdAt,
             updatedAt: conv.updatedAt,
           })
@@ -92,7 +92,7 @@ export const ConversationStore = {
             target: conversations.id,
             set: {
               title: conv.title,
-              model: conv.model,
+              model: conv.model || 'default',
               updatedAt: conv.updatedAt,
             },
           })
@@ -110,7 +110,7 @@ export const ConversationStore = {
                 conversationId: conv.id,
                 role: msg.role,
                 content: msg.content,
-                model: msg.model || conv.model,
+                model: msg.model || conv.model || 'default',
                 timestamp: msg.timestamp || Date.now(),
               })
               .run();

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system', 'model']),
-  content: z.string().max(65536)
+  content: z.string().max(10 * 1024 * 1024)
 });
 
 export const conversationSchema = z.object({

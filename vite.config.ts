@@ -58,6 +58,8 @@ export default defineConfig(({mode}) => {
         ignored: [
           '**/.nyx-cache/**',
           '**/.nyx-models/**',
+          '**/.nyx-logs/**',
+          '**/nyx.db*',
           '**/scratch/**',
           '**/server.log',
           '**/server.err'

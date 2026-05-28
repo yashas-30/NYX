@@ -72,7 +72,7 @@ export class AIService {
     settings?: AISettings,
     onStream?: (text: string) => void,
     signal?: AbortSignal,
-    options?: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> }
+    options?: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string>; agentMode?: 'chat' | 'coder' }
   ): Promise<AIResponse> {
     const dedupeKey = JSON.stringify({
       provider,
@@ -154,7 +154,7 @@ export class AIService {
     settings?: AISettings,
     onStream?: (text: string) => void,
     signal?: AbortSignal,
-    options?: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> }
+    options?: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string>; agentMode?: 'chat' | 'coder' }
   ): Promise<AIResponse> {
     cancelCurrentRequest();
     currentAbortController = new AbortController();
@@ -163,6 +163,16 @@ export class AIService {
     const startTime = Date.now();
     let resultText = "";
     
+    // Filter history to exclude the final user prompt if it is already at the end of the history.
+    // This prevents back-to-back duplicate user messages from confusing local or cloud model chat templates.
+    let historyToUse = options?.history;
+    if (historyToUse && Array.isArray(historyToUse) && historyToUse.length > 0) {
+      const lastMsg = historyToUse[historyToUse.length - 1];
+      if (lastMsg.role === 'user') {
+        historyToUse = historyToUse.slice(0, -1);
+      }
+    }
+
     // ── Validation ──────────────────────────────────────────────────────────
     this.validateApiKey(provider, apiKey);
 
@@ -177,7 +187,7 @@ export class AIService {
           model: modelId,
           prompt,
           systemInstruction,
-          history: options?.history || [],
+          history: historyToUse || [],
           settings: settings || {}
         }),
         signal
@@ -208,17 +218,17 @@ export class AIService {
     }
 
     if (provider === 'gemini') {
-      resultText = await this.executeGemini(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
+      resultText = await this.executeGemini(modelId, prompt, apiKey, settings, systemInstruction, historyToUse, onStream, signal, options?.gatewayUrls);
     } else if (provider === 'openrouter') {
-      resultText = await this.executeOpenRouter(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
+      resultText = await this.executeOpenRouter(modelId, prompt, apiKey!, settings, systemInstruction, historyToUse, onStream, signal, options?.gatewayUrls);
     } else if (provider === 'nvidia') {
-      resultText = await this.executeNvidia(modelId, prompt, apiKey!, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
+      resultText = await this.executeNvidia(modelId, prompt, apiKey!, settings, systemInstruction, historyToUse, onStream, signal, options?.gatewayUrls);
     } else if (provider === 'opencode') {
-      resultText = await this.executeOpencode(modelId, prompt, apiKey, settings, systemInstruction, options?.history, onStream, signal, options?.gatewayUrls);
+      resultText = await this.executeOpencode(modelId, prompt, apiKey, settings, systemInstruction, historyToUse, onStream, signal, options?.gatewayUrls);
     } else if (provider === 'pollinations') {
-      resultText = await this.executePollinations(modelId, prompt, settings, systemInstruction, options?.history, onStream, signal);
+      resultText = await this.executePollinations(modelId, prompt, settings, systemInstruction, historyToUse, onStream, signal);
     } else if (provider === 'nyx-native') {
-      resultText = await this.executeNyxNative(modelId, prompt, systemInstruction, settings, options?.history, onStream, signal);
+      resultText = await this.executeNyxNative(modelId, prompt, systemInstruction, settings, historyToUse, onStream, signal, options?.agentMode);
     } else {
       throw new Error(`Unsupported provider: ${provider}`);
     }
@@ -295,7 +305,8 @@ export class AIService {
     settings?: AISettings,
     history?: ChatMessage[],
     onStream?: (t: string) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    agentMode?: 'chat' | 'coder'
   ): Promise<string> {
     const messages: any[] = [];
     if (systemInstruction) {
@@ -313,7 +324,8 @@ export class AIService {
         model,
         messages,
         temperature: settings?.temperature ?? 0.7,
-        max_tokens: settings?.maxTokens ?? 4096
+        max_tokens: settings?.maxTokens ?? 4096,
+        agentMode
       }),
       signal,
     });

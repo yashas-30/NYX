@@ -28,3 +28,20 @@ workspaceRouter.post('/select', async (req, res) => {
     return res.status(500).json({ error: `Electron dialog error: ${e.message}` });
   }
 });
+
+workspaceRouter.post('/create', async (req, res) => {
+  try {
+    const { path: dirPath, name } = req.body;
+    if (!dirPath) {
+      return res.status(400).json({ error: 'Directory path is required' });
+    }
+    const result = await service.createWorkspace(dirPath, name);
+    if (result.success) {
+      return res.json(result);
+    } else {
+      return res.status(400).json(result);
+    }
+  } catch (e: any) {
+    return res.status(500).json({ error: `Failed to create workspace: ${e.message}` });
+  }
+});

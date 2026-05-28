@@ -19,12 +19,13 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { AVAILABLE_MODELS } from '@src/features/model-registry/config/models';
 
 interface CommandPaletteProps {
-  activeMode: 'coder' | 'registry' | 'settings';
-  setActiveMode: (mode: 'coder' | 'registry' | 'settings') => void;
+  activeMode: 'coder' | 'registry' | 'settings' | 'chat';
+  setActiveMode: (mode: 'coder' | 'registry' | 'settings' | 'chat') => void;
   createSession: (initialMessages?: any[]) => string;
   clearHistory: () => void;
   models: Record<'nyx', string>;
   setModel: (modelId: string) => void;
+  allModels?: any[];
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -34,6 +35,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   clearHistory,
   models,
   setModel,
+  allModels,
 }) => {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'commands' | 'models'>('commands');
@@ -72,7 +74,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       if (cmdOrCtrl && e.key.toLowerCase() === 'n' && !e.shiftKey) {
         e.preventDefault();
         createSession([]);
-        setActiveMode('coder');
+        setActiveMode(activeMode === 'chat' ? 'chat' : 'coder');
         toast.success('Started a new conversation');
         setOpen(false);
       }
@@ -110,7 +112,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [createSession, clearHistory, privacyMode, setPrivacyMode, setActiveMode]);
+  }, [createSession, clearHistory, privacyMode, setPrivacyMode, setActiveMode, activeMode]);
 
   // Focus input when palette opens
   useEffect(() => {
@@ -135,7 +137,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         shortcut: ['⌘', 'N'],
         action: () => {
           createSession([]);
-          setActiveMode('coder');
+          setActiveMode(activeMode === 'chat' ? 'chat' : 'coder');
           toast.success('New conversation started');
         }
       },
@@ -175,8 +177,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         action: () => setView('models')
       },
       {
+        id: 'go_chat',
+        title: 'Go to NYX',
+        subtitle: 'Open the conversational AI workspace',
+        icon: <MessageSquare size={16} />,
+        action: () => {
+          setActiveMode('chat');
+        }
+      },
+      {
         id: 'go_coder',
-        title: 'Go to Coder Agent',
+        title: 'Go to NYX Coder',
         subtitle: 'Open the code editing and chat workspace',
         icon: <MessageSquare size={16} />,
         action: () => {
@@ -212,12 +223,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   // Models list filter
   const filteredModels = useMemo(() => {
     if (view !== 'models') return [];
-    return AVAILABLE_MODELS.filter(model =>
+    const source = allModels || AVAILABLE_MODELS;
+    return source.filter(model =>
       model.name.toLowerCase().includes(query.toLowerCase()) ||
       model.provider.toLowerCase().includes(query.toLowerCase()) ||
       model.id.toLowerCase().includes(query.toLowerCase())
     );
-  }, [view, query]);
+  }, [view, query, allModels]);
 
   // Keyboard navigation inside the open palette
   const handleKeyDown = (e: React.KeyboardEvent) => {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ChatMessage } from '@src/infrastructure/types';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 export interface ChatSession {
   id: string;
@@ -13,8 +14,9 @@ export interface ChatSession {
 const STORAGE_KEY = 'nyx-chat-sessions';
 const MAX_SESSIONS = 50;
 
-function generateId(): string {
-  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+function generateId(agentType?: 'chat' | 'coder'): string {
+  const prefix = agentType ? `${agentType}-session` : 'session';
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 function deriveTitleFromMessages(messages: ChatMessage[]): string {
@@ -24,15 +26,26 @@ function deriveTitleFromMessages(messages: ChatMessage[]): string {
   return words.length > 0 ? words : 'New Chat';
 }
 
-export function useChatSessions() {
+export function useChatSessions(agentType?: 'chat' | 'coder') {
   const privacyMode = useNyxStore(state => state.privacyMode);
   
   const [privacySessions, setPrivacySessions] = useState<ChatSession[]>([]);
   const [regularSessions, setRegularSessions] = useState<ChatSession[]>([]);
   const [activeSid, setActiveSid] = useState<string | null>(null);
 
+  // Helper to check if session matches the agentType
+  const matchesAgentType = useCallback((sid: string) => {
+    if (agentType === 'coder') {
+      return sid.startsWith('coder-session-');
+    } else if (agentType === 'chat') {
+      return sid.startsWith('chat-session-') || (!sid.startsWith('coder-session-') && !sid.startsWith('chat-session-'));
+    }
+    return true;
+  }, [agentType]);
+
   // Computed sessions list
-  const sessions = privacyMode ? privacySessions : regularSessions;
+  const allSessions = privacyMode ? privacySessions : regularSessions;
+  const sessions = allSessions.filter(s => matchesAgentType(s.id));
 
   // Load sessions from API or fallback to localStorage on mount
   useEffect(() => {
@@ -40,13 +53,16 @@ export function useChatSessions() {
 
     async function loadSessions() {
       try {
-        const res = await fetch('/api/conversations');
+        const res = await fetchWithAuth('/api/conversations');
         if (res.ok) {
           const serverSessions = await res.json();
           if (Array.isArray(serverSessions) && activeToken) {
             setRegularSessions(serverSessions);
             if (serverSessions.length > 0 && !privacyMode) {
-              setActiveSid(serverSessions[0].id);
+              const matching = serverSessions.find(s => matchesAgentType(s.id));
+              if (matching) {
+                setActiveSid(matching.id);
+              }
             }
             return;
           }
@@ -63,7 +79,10 @@ export function useChatSessions() {
           if (Array.isArray(parsed)) {
             setRegularSessions(parsed);
             if (parsed.length > 0 && !privacyMode) {
-              setActiveSid(parsed[0].id);
+              const matching = parsed.find(s => matchesAgentType(s.id));
+              if (matching) {
+                setActiveSid(matching.id);
+              }
             }
           }
         }
@@ -77,7 +96,7 @@ export function useChatSessions() {
     return () => {
       activeToken = false;
     };
-  }, [privacyMode]);
+  }, [privacyMode, matchesAgentType]);
 
   // Persist sessions on every change (regular sessions only!)
   useEffect(() => {
@@ -92,10 +111,11 @@ export function useChatSessions() {
   // Manage initial session creation when switching modes
   useEffect(() => {
     if (privacyMode) {
-      if (privacySessions.length > 0) {
-        setActiveSid(privacySessions[0].id);
+      const matchingPrivacy = privacySessions.find(s => matchesAgentType(s.id));
+      if (matchingPrivacy) {
+        setActiveSid(matchingPrivacy.id);
       } else {
-        const id = generateId();
+        const id = generateId(agentType);
         const now = Date.now();
         const session: ChatSession = {
           id,
@@ -104,17 +124,18 @@ export function useChatSessions() {
           createdAt: now,
           updatedAt: now,
         };
-        setPrivacySessions([session]);
+        setPrivacySessions(prev => [session, ...prev]);
         setActiveSid(id);
       }
     } else {
-      if (regularSessions.length > 0) {
-        setActiveSid(regularSessions[0].id);
+      const matchingRegular = regularSessions.find(s => matchesAgentType(s.id));
+      if (matchingRegular) {
+        setActiveSid(matchingRegular.id);
       } else {
         setActiveSid(null);
       }
     }
-  }, [privacyMode]);
+  }, [privacyMode, agentType, matchesAgentType]);
 
   // Listen for inactivity self-destruct trigger
   useEffect(() => {
@@ -129,7 +150,7 @@ export function useChatSessions() {
   }, []);
 
   const createSession = useCallback((initialMessages: ChatMessage[] = []): string => {
-    const id = generateId();
+    const id = generateId(agentType);
     const now = Date.now();
     const session: ChatSession = {
       id,
@@ -149,14 +170,14 @@ export function useChatSessions() {
     setActiveSid(id);
 
     // Sync to backend
-    fetch('/api/conversations', {
+    fetchWithAuth('/api/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(session)
     }).catch(err => console.warn('[useChatSessions] Failed to sync session creation:', err));
 
     return id;
-  }, [privacyMode]);
+  }, [privacyMode, agentType]);
 
   const updateSession = useCallback((sid: string, messages: ChatMessage[]) => {
     const now = Date.now();
@@ -188,7 +209,7 @@ export function useChatSessions() {
             updatedAt: now,
           };
           // Sync to backend
-          fetch('/api/conversations', {
+          fetchWithAuth('/api/conversations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(updated)
@@ -211,7 +232,7 @@ export function useChatSessions() {
     setActiveSid(prev => (prev === sid ? null : prev));
 
     // Sync to backend
-    fetch(`/api/conversations/${sid}`, {
+    fetchWithAuth(`/api/conversations/${sid}`, {
       method: 'DELETE'
     }).catch(err => console.warn('[useChatSessions] Failed to sync session deletion:', err));
   }, [privacyMode]);

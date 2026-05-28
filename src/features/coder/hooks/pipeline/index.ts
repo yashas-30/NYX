@@ -4,9 +4,10 @@ import { ChatMessage, TelemetryMetrics, AISettings } from '@src/infrastructure/t
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { toast } from '@src/shared/components/ui/sonner';
 import { getLanguageKnowledge } from '@src/features/coder/config/codingKnowledge';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 // Import our modularized stages and utils
-import { buildCodebaseContext, buildWebSearchContext } from './utils/contextBuilder';
+import { buildCodebaseContext, buildWebSearchContext, shouldTriggerWebSearch } from './utils/contextBuilder';
 import { createStreamUpdate } from './utils/streamHelpers';
 import { runPlanningStage } from './stages/planning';
 import { runGenerationStage } from './stages/generation';
@@ -118,7 +119,7 @@ export async function runMultiStagePipeline({
   );
 
   const needsCorrectiveSearch = isCodebase && maxCodebaseScore < 120 && !isGreeting;
-  const executeWebSearch = (webSearchEnabled || needsCorrectiveSearch) && !isGreeting;
+  const executeWebSearch = ((webSearchEnabled && shouldTriggerWebSearch(prompt, analysis)) || needsCorrectiveSearch) && !isGreeting;
 
   // ── Web Search Context ────────────────────────────────────────────────
   const searchContext = await buildWebSearchContext(
@@ -133,7 +134,7 @@ export async function runMultiStagePipeline({
   // Helper: run a command in the sandbox terminal
   const runSandboxCommand = async (command: string): Promise<{ success: boolean; stdout: string; stderr: string; error?: string }> => {
     try {
-      const res = await fetch('/api/terminal/run', {
+      const res = await fetchWithAuth('/api/terminal/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command }),

@@ -25,6 +25,8 @@ export interface ChatMessage {
   timestamp: number;
   status?: 'success' | 'error' | 'stopped' | 'loading';
   metrics?: TelemetryMetrics;
+  rolloutId?: string;
+  reward?: number | null;
 }
 
 export interface TelemetryMetrics {

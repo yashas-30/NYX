@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { Globe } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 interface WorkspaceConfigProps {
   workspacePath: string;
@@ -14,7 +15,7 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
 }) => {
   const handleSelectWorkspace = async () => {
     try {
-      const res = await fetch('/api/workspace/select', { method: 'POST' });
+      const res = await fetchWithAuth('/api/workspace/select', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         if (data.workspace) {
@@ -35,7 +36,7 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
       const val = e.currentTarget.value.trim();
       if (val) {
         try {
-          const res = await fetch('/api/workspace', {
+          const res = await fetchWithAuth('/api/workspace', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path: val })

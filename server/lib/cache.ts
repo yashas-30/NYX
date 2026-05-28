@@ -246,8 +246,9 @@ export class CacheServer {
     try {
       const files = fs.readdirSync(CACHE_DIR);
       let clearedCount = 0;
+      const hashRegex = /^[a-f0-9]{64}\.json$/i;
       files.forEach(file => {
-        if (file.endsWith('.json')) {
+        if (hashRegex.test(file)) {
           fs.unlinkSync(path.join(CACHE_DIR, file));
           clearedCount++;
         }

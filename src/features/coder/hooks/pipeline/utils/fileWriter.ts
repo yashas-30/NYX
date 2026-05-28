@@ -1,3 +1,5 @@
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 interface FileOperation {
   type: 'write';
   path: string;
@@ -30,7 +32,7 @@ export async function writeFileWithHistory(
   }
 
   // Write file via backend API
-  const response = await fetch('/api/nyx/write-file', {
+  const response = await fetchWithAuth('/api/nyx/write-file', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filePath, content, overwrite: true })
@@ -48,14 +50,14 @@ export async function undo(): Promise<boolean> {
   
   try {
     if (op.previousContent !== null) {
-      await fetch('/api/nyx/write-file', {
+      await fetchWithAuth('/api/nyx/write-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath: op.path, content: op.previousContent, overwrite: true })
       });
     } else {
       // If it didn't exist previously, write empty to simulate deletion safely
-      await fetch('/api/nyx/write-file', {
+      await fetchWithAuth('/api/nyx/write-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath: op.path, content: '', overwrite: true })
@@ -75,7 +77,7 @@ export async function redo(): Promise<boolean> {
   const op = history[historyIndex];
   
   try {
-    await fetch('/api/nyx/write-file', {
+    await fetchWithAuth('/api/nyx/write-file', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filePath: op.path, content: op.newContent, overwrite: true })

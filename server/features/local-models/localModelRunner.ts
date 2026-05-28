@@ -11,7 +11,7 @@ import { MODEL_LAYERS } from '../../config/constants.ts';
 import { Mutex } from 'async-mutex';
 import { ModelOptimizer, OptimizationProfile } from './modelOptimizer.ts';
 
-import { MODELS_DIR as BASE_DIR } from '../../lib/paths.ts';
+import { MODELS_DIR as BASE_DIR, findPythonPath } from '../../lib/paths.ts';
 const BIN_DIR = path.join(BASE_DIR, 'bin');
 const BINARY_PATH = path.join(BIN_DIR, 'llama-server.exe');
 
@@ -19,43 +19,6 @@ const BINARY_PATH = path.join(BIN_DIR, 'llama-server.exe');
 if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
 
 type ModelState = 'idle' | 'downloading' | 'starting' | 'running' | 'stopping';
-
-function findPythonPath(): string {
-  const candidates = [
-    process.env.NYX_PYTHON_PATH,
-    'python3',
-    'python',
-    'py',
-    path.join(os.homedir(), '.conda', 'envs', 'nyx', 'bin', 'python'),
-    path.join(os.homedir(), 'miniconda3', 'envs', 'nyx', 'bin', 'python'),
-    path.join(os.homedir(), '.conda', 'envs', 'nyx', 'python.exe'),
-    path.join(os.homedir(), 'miniconda3', 'envs', 'nyx', 'python.exe'),
-    path.join(os.homedir(), 'anaconda3', 'envs', 'nyx', 'python.exe'),
-  ];
-
-  const vscodeSettingsPath = path.join(BASE_DIR, '..', '.vscode', 'settings.json');
-  if (fs.existsSync(vscodeSettingsPath)) {
-    try {
-      const vscodeSettings = JSON.parse(fs.readFileSync(vscodeSettingsPath, 'utf-8'));
-      if (vscodeSettings['python.defaultInterpreterPath']) {
-        candidates.unshift(vscodeSettings['python.defaultInterpreterPath']);
-      }
-    } catch {}
-  }
-
-  for (const c of candidates) {
-    if (!c) continue;
-    if (path.isAbsolute(c)) {
-      if (fs.existsSync(c)) {
-        return c;
-      }
-    } else {
-      return c;
-    }
-  }
-
-  return 'python';
-}
 
 function getModelFormat(modelId: string): 'gguf' | 'airllm' | 'unknown' {
   if (modelId.startsWith('airllm-')) return 'airllm';
@@ -1322,16 +1285,16 @@ export const LocalModelRunner = {
       if (fallbackStage === 'none' && gpuLayers > 0) {
         if (usedBackend === 'cuda') {
           console.warn(`[Local Runner] Spawn failed with CUDA offload (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with Vulkan backend...`);
-          return this._startInternal(modelId, localSettings, 'vulkan');
+          return this._startInternal(modelId, localSettings, undefined, 'vulkan');
         } else {
           console.warn(`[Local Runner] Spawn failed with Vulkan offload (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with CPU-only mode (-ngl 0)...`);
           const fallbackSettings = { ...localSettings, gpuLayers: 0 };
-          return this._startInternal(modelId, fallbackSettings, 'cpu');
+          return this._startInternal(modelId, fallbackSettings, undefined, 'cpu');
         }
       } else if (fallbackStage === 'vulkan' && gpuLayers > 0) {
         console.warn(`[Local Runner] Spawn failed with Vulkan fallback (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with CPU-only mode (-ngl 0)...`);
         const fallbackSettings = { ...localSettings, gpuLayers: 0 };
-        return this._startInternal(modelId, fallbackSettings, 'cpu');
+        return this._startInternal(modelId, fallbackSettings, undefined, 'cpu');
       }
 
       throw e;

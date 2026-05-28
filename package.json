@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run build:server && electron-vite build",
-    "build:server": "esbuild server.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist-server/server.cjs --packages=external",
+    "build:server": "esbuild server.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist-server/server.cjs --packages=external && node -e \"const fs = require('fs'); fs.mkdirSync('dist-server/server/python', { recursive: true }); fs.readdirSync('server/python').forEach(f => { if (fs.statSync('server/python/' + f).isFile()) fs.copyFileSync('server/python/' + f, 'dist-server/server/python/' + f); })\"",
     "package": "npm run build && electron-builder --config electron-builder.config.cjs",
     "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true }); if (fs.existsSync('dist-server')) fs.rmSync('dist-server', { recursive: true, force: true }); if (fs.existsSync('dist-desktop')) fs.rmSync('dist-desktop', { recursive: true, force: true })\"",
     "prepare": "husky",

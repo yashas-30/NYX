@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system', 'model']),
-  content: z.string().max(65536)
+  content: z.string().max(10 * 1024 * 1024)
 });
 
 const aiSettingsSchema = z.object({
@@ -23,7 +23,7 @@ export const cacheSetSchema = z.object({
 export const cacheGetSchema = z.object({
   provider: z.string().min(1).max(64),
   model: z.string().min(1).max(128),
-  prompt: z.string().max(65536).optional(),
+  prompt: z.string().max(10 * 1024 * 1024).optional(),
   systemInstruction: z.string().max(16384).optional(),
   history: z.array(chatMessageSchema).max(500).optional(),
   settings: aiSettingsSchema
