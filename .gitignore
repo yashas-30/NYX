@@ -25,3 +25,9 @@ src-tauri/target/
 src-tauri/target/
 
 src-tauri/target/
+
+.nyx-keys/
+.gemini/
+.commandcode/
+.opencode/
+claude-obsidian/

@@ -1,0 +1,8 @@
+# Tauri file watcher ignore list
+# Prevents ghost file events from triggering endless rebuilds on Windows
+
+target/
+*.txt
+nul*
+*.log
+*.lock
