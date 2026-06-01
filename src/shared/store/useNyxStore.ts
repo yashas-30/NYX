@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ModelProvider, ModelInfo } from '@src/types';
+import { ModelProvider, ModelOption } from '@src/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 export interface ModelSettings {
@@ -28,7 +28,7 @@ export interface NyxState {
   statuses: Record<string, 'online' | 'offline' | 'no-key'>;
   privacyMode: boolean;
   rememberKeys: boolean;
-  currentModel: ModelInfo;
+  currentModel: ModelOption;
   
   // Actions
   setActiveMode: (mode: ActiveMode) => void;
@@ -42,7 +42,7 @@ export interface NyxState {
   setPrivacyMode: (enabled: boolean) => void;
   setRememberKeys: (enabled: boolean) => void;
   clearPrivacyData: () => void;
-  setCurrentModel: (model: ModelInfo) => void;
+  setCurrentModel: (model: ModelOption) => void;
   
   // Lifecycle & Sync actions
   fetchWorkspacePath: () => Promise<void>;
@@ -65,15 +65,17 @@ const DEFAULT_SETTINGS: ModelSettings = {
   mirostat: 0,
 };
 
-const DEFAULT_MODEL: ModelInfo = {
-  id: 'gemini-2.5-flash-preview-05-20',
+const DEFAULT_MODEL: ModelOption = {
+  id: 'gemini-2.5-flash',
   name: 'Gemini 2.5 Flash',
   provider: 'gemini',
-  tier: 'balanced',
-  contextWindow: 1048576,
-  supportsVision: true,
-  supportsTools: true,
-  description: 'Fast multimodal Gemini model',
+  description: 'Highly Stable Flash model.',
+  specs: {
+    contextWindow: '1M',
+    trainingData: '2025',
+    maxOutput: '32K',
+    modality: 'Multimodal',
+  },
 };
 
 export const useNyxStore = create<NyxState>()(
