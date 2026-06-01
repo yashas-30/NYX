@@ -72,7 +72,6 @@ const COST_TABLE: Record<string, number> = {
   'qwen2.5-coder-1.5b-native': 0,
   'qwen2.5-coder-3b-native': 0,
   'llama-3.2-3b-native': 0,
-  'airllm-llama-3.3-70b': 0,
 };
 
 // ---------------------------------------------------------------------------

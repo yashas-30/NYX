@@ -232,12 +232,6 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
         )}
 
         <div className="flex flex-col gap-1.5 mt-1">
-          {isCompleted && !isResident && m.id.startsWith('airllm-') && (
-            <div className="p-2.5 rounded-xl border border-cyan-500/25 bg-cyan-500/5 text-cyan-300 text-[10px] leading-relaxed font-semibold">
-              ⚠️ Metadata saved. Layer shards will download on first run (~10-30 min for 70B).
-            </div>
-          )}
-
           {isIdle && (
             <motion.button
               whileTap={{ scale: 0.96 }}

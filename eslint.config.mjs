@@ -22,7 +22,9 @@ export default tseslint.config(
       '.vscode/**',
       'release/**',
       'src-tauri/**',
-      'scripts/**'
+      'scripts/**',
+      'claude-obsidian/**',
+      'graphify-out/**'
     ]
   },
   js.configs.recommended,

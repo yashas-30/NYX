@@ -12,7 +12,6 @@ describe('AI Provider Utility Functions', () => {
     it('detects local GGUF model patterns', () => {
       expect(detectProvider('nyx-gemma-4-e2b-it')).toBe('nyx-native');
       expect(detectProvider('my-model.gguf')).toBe('nyx-native');
-      expect(detectProvider('airllm-local-llama')).toBe('nyx-native');
     });
 
     it('detects custom patterns as nyx-native', () => {
@@ -53,7 +52,6 @@ describe('AI Provider Utility Functions', () => {
     it('retrieves and trims non-empty keys correctly', () => {
       const keys = { gemini: '  my-gemini-key  ' };
       expect(getEffectiveApiKey('gemini', keys)).toBe('my-gemini-key');
-      expect(getEffectiveApiKey('nvidia' as any, keys)).toBeUndefined();
     });
   });
 });
