@@ -61,10 +61,8 @@ geminiRouter.post('/stream', async (req, res) => {
       ws.on('error', () => {});
     } catch(e) {}
 
-    const resAntigravity = await fetch('http://127.0.0.1:3003/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await service.executeStream(
+      {
         model,
         prompt,
         settings,
@@ -72,27 +70,19 @@ geminiRouter.post('/stream', async (req, res) => {
         history,
         apiKey,
         images,
-      })
-    });
-
-    if (!resAntigravity.ok) {
-      throw new Error(`Antigravity proxy error: ${resAntigravity.statusText}`);
-    }
-
-    if (resAntigravity.body) {
-      const reader = resAntigravity.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!isClosed && value) {
-          res.write(Buffer.from(value));
+      },
+      (chunk) => {
+        if (!isClosed) {
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      },
+      () => {
+        if (!isClosed) {
+          res.write('data: [DONE]\n\n');
+          res.end();
         }
       }
-    }
-
-    if (!isClosed) {
-      res.end();
-    }
+    );
   } catch (e: any) {
     console.error('[Gemini Route Proxy Error]:', e.message);
     if (!isClosed) {
