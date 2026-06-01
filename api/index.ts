@@ -5,13 +5,9 @@ import compression from 'compression';
 import '../server/lib/apiAgent.ts'; // 🚀 Init global connection pooling
 
 import { geminiRouter }     from '../server/routes/gemini.ts';
-import { openrouterRouter } from '../server/routes/openrouter.ts';
-import { nvidiaRouter }     from '../server/routes/nvidia.ts';
 import { terminalRouter }   from '../server/routes/terminal.ts';
 import { agentsRouter }     from '../server/routes/agents.ts';
-import { opencodeRouter }   from '../server/routes/opencode.ts';
 import { nyxRouter }        from '../server/routes/nyx.ts';
-import { pollinationsRouter } from '../server/routes/pollinations.ts';
 import { CacheServer }      from '../server/lib/cache.ts';
 
 const app = express();
@@ -40,13 +36,9 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
 // ── Provider routes ───────────────────────────────────────────────────────────
 app.use('/api/gemini',     geminiRouter);
-app.use('/api/openrouter', openrouterRouter);
-app.use('/api/nvidia',     nvidiaRouter);
 app.use('/api/terminal',   terminalRouter);
 app.use('/api/agents',     agentsRouter);
-app.use('/api/opencode',   opencodeRouter);
 app.use('/api/nyx',        nyxRouter);
-app.use('/api/pollinations', pollinationsRouter);
 
 // ── Model list proxy (Settings page live model discovery) ────────────────────
 app.post('/api/models/list', async (req, res) => {
@@ -55,16 +47,12 @@ app.post('/api/models/list', async (req, res) => {
     let url = '';
     const headers: Record<string, string> = {};
     if (provider === 'gemini')     url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-    if (provider === 'openrouter') { url = 'https://openrouter.ai/api/v1/models'; headers['Authorization'] = `Bearer ${apiKey}`; }
-    if (provider === 'nvidia')     { url = 'https://integrate.api.nvidia.com/v1/models'; headers['Authorization'] = `Bearer ${apiKey}`; }
 
     const r = await fetch(url, { headers });
     const data = await r.json();
 
     let models: string[] = [];
     if (provider === 'gemini')     models = data.models?.map((m: any) => m.name.replace('models/', '')) || [];
-    if (provider === 'openrouter') models = data.data?.map((m: any) => m.id) || [];
-    if (provider === 'nvidia')     models = data.data?.map((m: any) => m.id) || [];
 
     res.json({ models });
   } catch (e: any) {
@@ -76,14 +64,6 @@ app.post('/api/models/list', async (req, res) => {
 app.post('/api/models/quota', async (req, res) => {
   const { provider, apiKey } = req.body;
   try {
-    if (provider === 'openrouter') {
-      if (!apiKey) return res.status(401).json({ error: 'API key required for OpenRouter' });
-      const r = await fetch('https://openrouter.ai/api/v1/credits', {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
-      });
-      const data = await r.json();
-      return res.json(data);
-    }
     if (provider === 'gemini') {
       if (!apiKey) return res.status(401).json({ error: 'API key required for Gemini' });
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);

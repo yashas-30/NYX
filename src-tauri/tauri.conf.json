@@ -27,7 +27,7 @@
         "script-src": "'self' 'unsafe-eval' 'unsafe-inline'",
         "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src": "'self' https://fonts.gstatic.com",
-        "connect-src": "'self' http://127.0.0.1:* ws://127.0.0.1:* https://*.googleapis.com https://*.huggingface.co https://*.openrouter.ai https://*.nvidia.com https://*.opencode.ai https://*.pollinations.ai",
+        "connect-src": "'self' http://127.0.0.1:* ws://127.0.0.1:* https://*.googleapis.com https://*.huggingface.co",
         "img-src": "'self' data: https:",
         "media-src": "'self'"
       },

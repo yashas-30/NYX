@@ -39,8 +39,7 @@ if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
 
 type ModelState = 'idle' | 'downloading' | 'starting' | 'running' | 'stopping';
 
-function getModelFormat(modelId: string): 'gguf' | 'airllm' | 'unknown' {
-  if (modelId.startsWith('airllm-')) return 'airllm';
+function getModelFormat(modelId: string): 'gguf' | 'unknown' {
   const presets = LocalModelManager.listModels();
   const preset = presets.find((p) => p.id === modelId);
   if (preset?.fileName.endsWith('.gguf')) return 'gguf';
@@ -84,7 +83,7 @@ function startHealthCheckLoop(): void {
     }
 
     try {
-      const port = activeModelId && activeModelId.startsWith('airllm-') ? 12346 : 12345;
+      const port = 12345;
       const res = await fetch(`http://127.0.0.1:${port}/health`, {
         signal: AbortSignal.timeout(10000),
       });
@@ -954,7 +953,7 @@ export const LocalModelRunner = {
       return; // Already running with equal or larger context window
     }
 
-    const port = modelId.startsWith('airllm-') ? 12346 : 12345;
+    const port = 12345;
 
     // Check if the port is already alive and running the correct model
     try {
@@ -1035,159 +1034,6 @@ export const LocalModelRunner = {
       throw new Error(`Unsupported model format or preset for modelId: '${modelId}'`);
     }
 
-    if (modelId.startsWith('airllm-')) {
-      if (modelState !== 'idle' && modelState !== 'running') {
-        throw new Error(`Cannot start model: currently ${modelState}`);
-      }
-
-      if (activeProcess) {
-        console.log('Stopping active local model runner to load AirLLM model...');
-        await _stop();
-      }
-
-      modelState = 'starting';
-      startProgress = 5;
-
-      try {
-        const presets = LocalModelManager.listModels();
-        const modelPreset = presets.find((m) => m.id === modelId);
-        if (!modelPreset) {
-          throw new Error(`AirLLM Model preset '${modelId}' not found.`);
-        }
-
-        let hfRepoId = modelPreset.url;
-        if (hfRepoId === 'local-model-llama') {
-          hfRepoId = path.join(BASE_DIR, 'models', 'local-llama');
-          if (!fs.existsSync(hfRepoId) || fs.readdirSync(hfRepoId).length === 0) {
-            throw new Error(
-              `Local model weights folder not found. Please create a folder named 'local-llama' inside your '.nyx-models/models/' directory (e.g. .nyx-models/models/local-llama) and place your Llama PyTorch/Safetensors files in it.`
-            );
-          }
-        }
-
-        const airllmSavingPath = path.join(BASE_DIR, 'airllm', modelId);
-
-        const pythonPath = findPythonPath();
-        const pythonScriptPath = path.join(BASE_DIR, '..', 'server', 'python', 'airllm_service.py');
-        const compression = '4bit';
-        const port = 12346;
-
-        console.log(
-          `Spawning Python AirLLM server for: ${modelPreset.name} (repo: ${hfRepoId}, compression: ${compression}) using ${pythonPath}`
-        );
-        startProgress = 30;
-
-        const args = [
-          pythonScriptPath,
-          '--model',
-          hfRepoId,
-          '--port',
-          String(port),
-          '--compression',
-          compression,
-          '--saving-path',
-          airllmSavingPath,
-        ];
-
-        activeProcess = spawn(pythonPath, args, {
-          cwd: path.dirname(pythonScriptPath),
-          detached: false,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        registerProcess(activeProcess);
-
-        const currentProc = activeProcess;
-        currentProc.on('exit', (code, signal) => {
-          console.log(
-            `[LocalModelRunner] AirLLM process exited with code ${code} and signal ${signal}`
-          );
-          if (modelState !== 'stopping' && activeProcess === currentProc) {
-            stopHealthCheckLoop();
-            activeProcess = null;
-            activeModelId = null;
-            modelState = 'idle';
-          }
-        });
-
-        activeModelId = modelId;
-
-        const logFilePath = path.join(BASE_DIR, '..', '.nyx-logs', 'llama-server.log');
-        try {
-          const logsDir = path.dirname(logFilePath);
-          if (!fs.existsSync(logsDir)) {
-            fs.mkdirSync(logsDir, { recursive: true });
-          }
-          fs.writeFileSync(logFilePath, '', 'utf-8');
-        } catch {}
-
-        const stderrLogs: string[] = [];
-
-        activeProcess.stdout?.on('data', (data) => {
-          const str = data.toString().trim();
-          if (str) {
-            console.log(`[AirLLM Server]: ${str}`);
-            try {
-              fs.appendFileSync(logFilePath, `[STDOUT] ${str}\n`, 'utf-8');
-            } catch {}
-          }
-        });
-
-        activeProcess.stderr?.on('data', (data) => {
-          const str = data.toString().trim();
-          if (str) {
-            stderrLogs.push(str);
-            if (stderrLogs.length > 20) stderrLogs.shift();
-            console.error(`[AirLLM Server Err]: ${str}`);
-            try {
-              fs.appendFileSync(logFilePath, `[STDERR] ${str}\n`, 'utf-8');
-            } catch {}
-          }
-        });
-
-        startProgress = 60;
-        let healthy = false;
-        const maxAttempts = 1200;
-        for (let i = 0; i < maxAttempts; i++) {
-          if (activeProcess.exitCode !== null) {
-            const exitMsg = stderrLogs.join('\n') || `Exit code: ${activeProcess.exitCode}`;
-            throw new Error(`AirLLM server exited prematurely. Stderr:\n${exitMsg}`);
-          }
-
-          await new Promise((r) => setTimeout(r, 1000));
-          try {
-            const res = await fetch('http://127.0.0.1:12346/health');
-            if (res.ok) {
-              const data = await res.json();
-              if (data.status === 'ok') {
-                healthy = true;
-                break;
-              }
-            }
-          } catch {
-            // Keep waiting
-          }
-        }
-
-        if (!healthy) {
-          throw new Error('AirLLM server did not become healthy in time.');
-        }
-
-        startProgress = 100;
-        modelState = 'running';
-        activeContextSize = 4096;
-        startHealthCheckLoop();
-        console.log(
-          `AirLLM server running successfully on http://localhost:12346 with model ${modelPreset.name}`
-        );
-        return;
-      } catch (err: any) {
-        modelState = 'idle';
-        startProgress = 0;
-        await _stop();
-        throw err;
-      }
-    }
-
     if (modelState !== 'idle' && modelState !== 'downloading' && modelState !== 'running') {
       throw new Error(`Cannot start model: currently ${modelState}`);
     }
@@ -1204,7 +1050,7 @@ export const LocalModelRunner = {
     modelState = 'starting';
     startProgress = 5;
 
-    if (!optimizationProfile && !modelId.startsWith('airllm-')) {
+    if (!optimizationProfile) {
       try {
         const optimizer = new ModelOptimizer();
         optimizationProfile = await optimizer.generateProfile(
@@ -1675,7 +1521,6 @@ export const LocalModelRunner = {
   },
 
   getModelPort(modelId: string | null): number {
-    if (modelId && modelId.startsWith('airllm-')) return 12346;
     return 12345;
   },
 

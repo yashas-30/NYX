@@ -14,7 +14,6 @@ export default tseslint.config(
       '.agents/**',
       '.claude/**',
       '.github/**',
-      '.opencode/**',
       '.nyx-state/**',
       '.nyx-cache/**',
       '.nyx-models/**',

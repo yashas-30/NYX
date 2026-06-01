@@ -43,12 +43,7 @@ const LOCAL_MODEL_IDS = new Set([
   'deepseek-r1-distill-qwen-14b',
   'deepseek-r1-distill-llama-8b',
   'mistral-7b-v0.3',
-  'openchat-3.5-7b',
-  'nemotron-mini-4b',
-  'airllm-llama-3.3-70b',
-  'airllm-qwen-2.5-coder-32b',
-  'airllm-deepseek-r1-8b',
-  'airllm-local-llama'
+  'openchat-3.5-7b'
 ]);
 
 /**
@@ -59,8 +54,8 @@ export const detectProvider = (
 ): Provider => {
   if (!modelId) return 'gemini';
 
-  // 1. Check in local GGUF/AirLLM model presets first
-  if (LOCAL_MODEL_IDS.has(modelId) || modelId.startsWith('airllm-')) {
+  // 1. Check in local GGUF model presets first
+  if (LOCAL_MODEL_IDS.has(modelId)) {
     return 'nyx-native';
   }
 
@@ -83,8 +78,8 @@ export const detectProvider = (
  * Gets provider from model ID with proper fallback to AVAILABLE_MODELS.
  */
 export const getProviderForModel = (modelId: string): Provider => {
-  // 1. Check in local GGUF/AirLLM model presets first
-  if (LOCAL_MODEL_IDS.has(modelId) || modelId.startsWith('airllm-')) {
+  // 1. Check in local GGUF model presets first
+  if (LOCAL_MODEL_IDS.has(modelId)) {
     return 'nyx-native';
   }
 
@@ -119,7 +114,7 @@ export const requiresApiKey = (provider: Provider): boolean => {
 };
 
 /**
- * Resolves the effective API key for a given provider, handling fallbacks (e.g., opencode -> openrouter).
+ * Resolves the effective API key for a given provider.
  */
 export const getEffectiveApiKey = (provider: string, apiKeys: Record<string, string>): string | undefined => {
   const key = apiKeys[provider]?.trim();

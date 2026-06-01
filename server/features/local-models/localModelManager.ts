@@ -564,93 +564,6 @@ export const MODEL_PRESETS: ModelPreset[] = [
     description: 'OpenChat 3.5 — breakthrough fine-tune that outperformed ChatGPT-3.5 on many benchmarks when released.',
     ramRequired: '6 GB RAM',
     vramRequired: '4 GB VRAM'
-  },
-
-  // ── NVIDIA ───────────────────────────────────────────────────────────────
-  {
-    id: 'nemotron-mini-4b',
-    name: 'Nemotron Mini 4B Instruct (Q4_K_M)',
-    provider: 'nvidia',
-    paramCount: '4B',
-    quantization: 'Q4_K_M',
-    contextLength: '4K',
-    size: '2.8 GB',
-    url: 'https://huggingface.co/bartowski/Nemotron-Mini-4B-Instruct-GGUF/resolve/main/Nemotron-Mini-4B-Instruct-Q4_K_M.gguf',
-    fileName: 'Nemotron-Mini-4B-Instruct-Q4_K_M.gguf',
-    description: 'NVIDIA\'s Nemotron Mini — optimized for enterprise inference with strong instruction following.',
-    ramRequired: '4 GB RAM',
-    vramRequired: '3 GB VRAM'
-  },
-  {
-    id: 'nemotron-70b-instruct',
-    name: 'Llama 3 Nemotron 70B Instruct (Q4_K_M)',
-    provider: 'nvidia',
-    paramCount: '70B',
-    quantization: 'Q4_K_M',
-    contextLength: '8K',
-    size: '42.5 GB',
-    url: 'https://huggingface.co/bartowski/Llama-3-Nemotron-70B-Instruct-GGUF/resolve/main/Llama-3-Nemotron-70B-Instruct-Q4_K_M.gguf',
-    fileName: 'Llama-3-Nemotron-70B-Instruct-Q4_K_M.gguf',
-    description: 'NVIDIA\'s customized Llama-3 70B model with superior instruction following and conversation quality.',
-    ramRequired: '48 GB RAM',
-    vramRequired: '24 GB VRAM'
-  },
-  // ── AIRLLM LARGE SCALE ENGINE ──────────────────────────────────────────────
-  {
-    id: 'airllm-llama-3.3-70b',
-    name: 'Llama 3.3 70B Instruct (AirLLM)',
-    provider: 'meta',
-    paramCount: '70B',
-    quantization: '4-bit Layered',
-    contextLength: '128K',
-    size: '42.5 GB',
-    url: 'meta-llama/Llama-3.3-70B-Instruct',
-    fileName: 'Llama-3.3-70B-Instruct',
-    description: 'Run Meta\'s flagship 70B model layer-by-layer on standard GPUs. Perfect for limited VRAM systems (4GB+). Uses disk-streaming.',
-    ramRequired: '8 GB RAM',
-    vramRequired: '4 GB VRAM'
-  },
-  {
-    id: 'airllm-qwen-2.5-coder-32b',
-    name: 'Qwen 2.5 Coder 32B (AirLLM)',
-    provider: 'qwen',
-    paramCount: '32B',
-    quantization: '4-bit Layered',
-    contextLength: '32K',
-    size: '20.3 GB',
-    url: 'Qwen/Qwen2.5-Coder-32B-Instruct',
-    fileName: 'Qwen2.5-Coder-32B-Instruct',
-    description: 'Run Qwen\'s flagship 32B code generation model layer-by-layer on consumer GPUs. Optimized for deep codebase comprehension.',
-    ramRequired: '8 GB RAM',
-    vramRequired: '4 GB VRAM'
-  },
-  {
-    id: 'airllm-deepseek-r1-8b',
-    name: 'DeepSeek R1 Distill Llama 8B (AirLLM)',
-    provider: 'deepseek',
-    paramCount: '8B',
-    quantization: '4-bit Layered',
-    contextLength: '32K',
-    size: '4.9 GB',
-    url: 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B',
-    fileName: 'DeepSeek-R1-Distill-Llama-8B',
-    description: 'Run DeepSeek\'s Transfer-Reasoning 8B Llama model. Extremely deep reasoning patterns offloaded sequentially to low VRAM.',
-    ramRequired: '8 GB RAM',
-    vramRequired: '4 GB VRAM'
-  },
-  {
-    id: 'airllm-local-llama',
-    name: 'My Local Llama Model (AirLLM)',
-    provider: 'meta',
-    paramCount: 'Custom',
-    quantization: '4-bit Layered',
-    contextLength: '8K',
-    size: 'Custom',
-    url: 'local-model-llama',
-    fileName: 'local-llama-folder',
-    description: 'Load your own local Llama weights folder from .nyx-models/models/local-llama (safetensors format) layer-by-layer using AirLLM.',
-    ramRequired: '8 GB RAM',
-    vramRequired: '4 GB VRAM'
   }
 ];
 
@@ -768,38 +681,23 @@ export const LocalModelManager = {
     }
 
     return scannedPresets.map(preset => {
-      const isAirLLM = preset.id.startsWith('airllm-');
-      const airllmPath = path.join(BASE_DIR, 'airllm', preset.id);
-      const filePath = isAirLLM ? airllmPath : path.join(MODELS_DIR, preset.fileName);
+      const filePath = path.join(MODELS_DIR, preset.fileName);
       let exists = false;
       let fileSizeBytes = 0;
       let status: 'idle' | 'downloading' | 'paused' | 'completed' | 'failed' = 'idle';
 
-      if (isAirLLM) {
-        exists = fs.existsSync(airllmPath) && fs.readdirSync(airllmPath).length > 0;
-        if (exists) {
-          try {
-            const files = fs.readdirSync(airllmPath);
-            for (const file of files) {
-              const stat = fs.statSync(path.join(airllmPath, file));
-              if (stat.isFile()) fileSizeBytes += stat.size;
-            }
-          } catch {}
-        }
-      } else {
-        exists = fs.existsSync(filePath);
-        if (exists) {
-          try {
-            fileSizeBytes = fs.statSync(filePath).size;
-            if (fileSizeBytes < 10 * 1024 * 1024) { // Under 10MB is definitely corrupt for these models
-              logger.warn({ modelName: preset.name, fileSizeBytes }, 'Model is corrupt. Deleting and recovering...');
-              fs.unlinkSync(filePath);
-              exists = false;
-              fileSizeBytes = 0;
-            }
-          } catch {
+      exists = fs.existsSync(filePath);
+      if (exists) {
+        try {
+          fileSizeBytes = fs.statSync(filePath).size;
+          if (fileSizeBytes < 10 * 1024 * 1024) { // Under 10MB is definitely corrupt for these models
+            logger.warn({ modelName: preset.name, fileSizeBytes }, 'Model is corrupt. Deleting and recovering...');
+            fs.unlinkSync(filePath);
             exists = false;
+            fileSizeBytes = 0;
           }
+        } catch {
+          exists = false;
         }
       }
 
@@ -820,7 +718,7 @@ export const LocalModelManager = {
         status = 'idle';
         saveStates();
       } else if (downloadStates[preset.id] === 'paused') {
-        if (isAirLLM || partExists) {
+        if (partExists) {
           status = 'paused';
         } else {
           // Part file deleted manually — reset to idle
@@ -923,15 +821,8 @@ export const LocalModelManager = {
     const activePreset = preset!;
     const filePath = path.join(MODELS_DIR, activePreset.fileName);
     
-    if (activePreset.id.startsWith('airllm-')) {
-      const airllmPath = path.join(BASE_DIR, 'airllm', activePreset.id);
-      if (fs.existsSync(airllmPath) && fs.readdirSync(airllmPath).length > 0) {
-        return { status: 'completed', message: 'Model already sharded.' };
-      }
-    } else {
-      if (fs.existsSync(filePath)) {
-        return { status: 'completed', message: 'Model already downloaded.' };
-      }
+    if (fs.existsSync(filePath)) {
+      return { status: 'completed', message: 'Model already downloaded.' };
     }
 
     if (activeDownloads.has(modelId) && activeDownloads.get(modelId)!.status === 'downloading') {
@@ -958,48 +849,32 @@ export const LocalModelManager = {
     downloadStates[modelId] = 'downloading';
     saveStates();
 
-    if (activePreset.id.startsWith('airllm-')) {
-      const airllmPath = path.join(BASE_DIR, 'airllm', activePreset.id);
-      fs.mkdirSync(airllmPath, { recursive: true });
-      fs.writeFileSync(path.join(airllmPath, 'metadata.json'), JSON.stringify({ sharded: false, hf_repo: activePreset.url }), 'utf-8');
-      
-      setTimeout(() => {
-        progress.status = 'completed';
-        progress.progressPercentage = 100;
-        progress.message = 'Metadata saved. Layer shards will download on first run (~10-30 min for 70B)';
-        activeDownloads.delete(modelId);
-        downloadStates[modelId] = 'completed';
-        saveStates();
-        logger.info({ modelName: activePreset.name }, 'Completed mock download for AirLLM metadata folder. Real loading triggers on first run.');
-      }, 500);
-    } else {
-      this.downloadFile(activePreset.url, filePath, progress).then(() => {
-        // If the promise resolved due to a deliberate pause or cancel, don't mark as completed
-        if (progress.status === 'paused' || progress.status === 'failed') {
-          return;
-        }
-        progress.status = 'completed';
-        progress.progressPercentage = 100;
-        activeDownloads.delete(modelId);
-        downloadStates[modelId] = 'completed';
-        saveStates();
-        logger.info({ modelName: activePreset.name, filePath }, 'Successfully downloaded local model');
-      }).catch((err) => {
-        // Don't clobber a deliberate cancel/pause state
-        if (progress.status === 'paused' || progress.status === 'failed') {
-          return;
-        }
-        progress.status = 'failed';
-        progress.error = err.message || 'Download failed';
-        activeDownloads.delete(modelId);
-        downloadStates[modelId] = 'failed';
-        saveStates();
-        logger.error({ err, modelName: preset!.name }, 'Failed to download local model');
-        if (fs.existsSync(filePath)) {
-          try { fs.unlinkSync(filePath); } catch {}
-        }
-      });
-    }
+    this.downloadFile(activePreset.url, filePath, progress).then(() => {
+      // If the promise resolved due to a deliberate pause or cancel, don't mark as completed
+      if (progress.status === 'paused' || progress.status === 'failed') {
+        return;
+      }
+      progress.status = 'completed';
+      progress.progressPercentage = 100;
+      activeDownloads.delete(modelId);
+      downloadStates[modelId] = 'completed';
+      saveStates();
+      logger.info({ modelName: activePreset.name, filePath }, 'Successfully downloaded local model');
+    }).catch((err) => {
+      // Don't clobber a deliberate cancel/pause state
+      if (progress.status === 'paused' || progress.status === 'failed') {
+        return;
+      }
+      progress.status = 'failed';
+      progress.error = err.message || 'Download failed';
+      activeDownloads.delete(modelId);
+      downloadStates[modelId] = 'failed';
+      saveStates();
+      logger.error({ err, modelName: preset!.name }, 'Failed to download local model');
+      if (fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch {}
+      }
+    });
 
     return { status: 'downloading', message: 'Download started.', modelId };
   },
@@ -1096,27 +971,16 @@ export const LocalModelManager = {
     }
 
     let deleted = false;
+    const filePath = path.join(MODELS_DIR, preset.fileName);
+    const partPath = filePath + '.part';
 
-    if (modelId.startsWith('airllm-')) {
-      const airllmPath = path.join(BASE_DIR, 'airllm', modelId);
-      if (fs.existsSync(airllmPath)) {
-        try {
-          fs.rmSync(airllmPath, { recursive: true, force: true });
-          deleted = true;
-        } catch {}
-      }
-    } else {
-      const filePath = path.join(MODELS_DIR, preset.fileName);
-      const partPath = filePath + '.part';
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      deleted = true;
+    }
 
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        deleted = true;
-      }
-
-      if (fs.existsSync(partPath)) {
-        try { fs.unlinkSync(partPath); } catch {}
-      }
+    if (fs.existsSync(partPath)) {
+      try { fs.unlinkSync(partPath); } catch {}
     }
 
     downloadStates[modelId] = 'idle';

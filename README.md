@@ -29,7 +29,7 @@
 | 🖥️ **Local GGUF Models**            | Run Llama 3, Qwen, Gemma, Mistral, Phi, DeepSeek **on your GPU** via built-in llama-server |
 | ⚙️ **Per-Model Inference Controls** | GPU layers, context size, temperature, Top-P/K, Mirostat — per model, not global           |
 | 🤖 **NYX Agent**                    | Planner → SubagentSwarm → Optimizer pipeline using whichever model you select              |
-| ☁️ **Cloud Orchestration**          | Gemini, OpenRouter, NVIDIA NIM, OpenCode — unified under one interface                     |
+| ☁️ **Cloud Orchestration**          | Gemini — unified under one interface                     |
 | 📚 **Codebase Knowledge**           | Index your local codebase and query it contextually during code generation                 |
 | ⚡ **Zero-Delay Streaming**         | Dual Express + Fastify server with TCP `setNoDelay`, DNS pre-warming, SHA-256 cache        |
 | 🔐 **100% Local Keys**              | API keys stay in your browser's localStorage — never sent to a database                    |
@@ -67,9 +67,6 @@ Paste keys directly in the **Settings** tab inside NYX — no `.env` file needed
 | Provider      | Key Format  | Free Tier                                              |
 | ------------- | ----------- | ------------------------------------------------------ |
 | Google Gemini | `AIzaSy...` | ✅ Yes — [Get Key](https://aistudio.google.com/)       |
-| OpenRouter    | `sk-or-...` | ✅ Yes — [Get Key](https://openrouter.ai/)             |
-| NVIDIA NIM    | `nvapi-...` | ✅ 1000 credits — [Get Key](https://build.nvidia.com/) |
-| OpenCode      | Token       | ✅ Sandbox — [Get Key](https://opencode.ai/)           |
 
 ---
 

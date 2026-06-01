@@ -26,7 +26,6 @@ src-tauri/target/
 .nyx-keys/
 .gemini/
 .commandcode/
-.opencode/
 claude-obsidian/
 
 # Local databases and runtime state
