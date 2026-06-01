@@ -27,7 +27,7 @@ const transport = pino.transport({
 });
 
 // Configure base pino logger
-const logger = pino({
+const logger: any = pino({
   level: process.env.LOG_LEVEL || 'info',
   timestamp: () => `,"time":${Date.now()}`,
   formatters: {

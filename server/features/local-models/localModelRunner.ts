@@ -860,12 +860,12 @@ export const LocalModelRunner = {
               `[Binary Downloader] curl download failed or not available, falling back to Node https:`,
               err || stderr
             );
-            this.downloadBinaryZipNode(url, destPath).then(resolve).catch (reject: any);
+            this.downloadBinaryZipNode(url, destPath).then(resolve).catch((err: any) => reject(err));
           }
         });
         return;
       }
-      this.downloadBinaryZipNode(url, destPath).then(resolve).catch (reject: any);
+      this.downloadBinaryZipNode(url, destPath).then(resolve).catch((err: any) => reject(err));
     });
   },
 

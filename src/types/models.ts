@@ -51,5 +51,6 @@ export interface LocalModelPreset {
   contextLength?: string;
   featured?: boolean;
   status?: string;
+  progress?: any;
 }
 

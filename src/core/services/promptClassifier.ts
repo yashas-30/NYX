@@ -5,7 +5,7 @@
  *   hardware-aware model routing. Targets Claude/Kimi-level accuracy.
  */
 
-import { detectHardware, HardwareAnalysis } from '@src/shared/promptAnalyzer';
+import { detectHardware, HardwareAnalysis } from '../../../shared/promptAnalyzer';
 import { CODING_KNOWLEDGE_SUMMARY } from '@src/shared/config/codingKnowledge';
 
 // ---------------------------------------------------------------------------
@@ -732,7 +732,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
     1024;
   
   return {
-    agent: shouldUseSubagents ? 'orchestrator' : 'coder',
+    agent: shouldUseSubagents ? 'architect' : 'coder',
     reasoning: `${analysis.intent} (${analysis.complexity})${analysis.multiIntent ? ` + [${analysis.multiIntent.join(', ')}]` : ''}`,
     shouldUseSubagents,
     systemPrompt: SYSTEM_PROMPTS.coder,
