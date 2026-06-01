@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 import fs from 'fs';
 import path from 'path';
 import { getWorkspaceRoot } from '../../lib/paths.ts';
@@ -54,9 +55,9 @@ export class FilesystemService {
       
       try {
         await fs.promises.copyFile(fullPath, backupPath);
-        console.log(`[Backup System] Created backup of ${filePath} at: ${backupPath}`);
+        logger.info(`[Backup System] Created backup of ${filePath} at: ${backupPath}`);
       } catch (backupErr: any) {
-        console.warn(`[Backup System] Failed to create backup, proceeding anyway:`, backupErr.message);
+        logger.warn(`[Backup System] Failed to create backup, proceeding anyway:`, backupErr.message);
       }
     }
 
@@ -65,7 +66,7 @@ export class FilesystemService {
     
     // Write file
     await fs.promises.writeFile(fullPath, content, 'utf8');
-    console.log(`[File System] Successfully wrote file to: ${fullPath}`);
+    logger.info(`[File System] Successfully wrote file to: ${fullPath}`);
     return { success: true, path: fullPath };
   }
 

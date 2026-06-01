@@ -374,7 +374,7 @@ export function useOrchestrator(
                 toolCall.result = result;
                 toolCall.output = result.content || result.error || result;
                 toolCall.durationMs = Date.now() - startTime;
-              } catch (err) {
+              } catch (err: any) {
                 toolCall.status = 'error';
                 toolCall.result = { content: '', error: (err as Error).message };
                 toolCall.output = (err as Error).message;
@@ -473,7 +473,7 @@ export function useOrchestrator(
         abortController: null,
       }));
 
-    } catch (err) {
+    } catch (err: any) {
       if ((err as Error).name !== 'AbortError') {
         setState(prev => ({
           ...prev,

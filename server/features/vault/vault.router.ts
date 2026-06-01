@@ -27,8 +27,8 @@ vaultRouter.post('/store', validate(vaultStoreSchema), vaultLimiter, (req, res) 
     const updatedKeys = { ...currentKeys, ...keys };
     saveKeys(updatedKeys);
     res.json({ status: 'ok' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -47,8 +47,8 @@ vaultRouter.post('/backup', vaultLimiter, (req, res) => {
   try {
     const backupPath = backupVault();
     res.json({ status: 'ok', path: backupPath });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -56,8 +56,8 @@ vaultRouter.post('/export', vaultLimiter, (req, res) => {
   try {
     const data = exportVault();
     res.json({ status: 'ok', data });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -69,8 +69,8 @@ vaultRouter.post('/import', vaultLimiter, (req, res) => {
   try {
     importVault(data);
     res.json({ status: 'ok' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -94,7 +94,8 @@ vaultRouter.post('/validate', vaultLimiter, async (req, res) => {
     } 
     
     if (provider === 'scrapling') {
-      const url = (req.body.scraplingUrl || 'http://localhost:3002').trim();
+      const scraplingPort = process.env.SCRAPLING_PORT || '3002';
+      const url = (req.body.scraplingUrl || `http://localhost:${scraplingPort}`).trim();
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (key) {
         headers['Authorization'] = `Bearer ${key}`;
@@ -118,7 +119,7 @@ vaultRouter.post('/validate', vaultLimiter, async (req, res) => {
           return res.json({ valid: true });
         }
         return res.status(400).json({ valid: false, error: `Scrapling service returned status ${response.status}` });
-      } catch (err: any) {
+      } catch (error: any) {
         // Double check health fallback
         try {
           const healthResponse = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
@@ -126,12 +127,12 @@ vaultRouter.post('/validate', vaultLimiter, async (req, res) => {
             return res.json({ valid: true });
           }
         } catch {}
-        return res.status(400).json({ valid: false, error: `Scrapling service unreachable at ${url}: ${err.message}` });
+        return res.status(400).json({ valid: false, error: `Scrapling service unreachable at ${url}: ${error.message}` });
       }
     }
 
     return res.status(400).json({ error: `Validation not supported for provider: ${provider}` });
-  } catch (err: any) {
-    return res.status(500).json({ error: `Connection failed: ${err.message}` });
+  } catch (error: any) {
+    return res.status(500).json({ error: `Connection failed: ${error.message}` });
   }
 });

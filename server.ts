@@ -14,6 +14,7 @@ import { promisify } from 'util';
 import compression from 'compression';
 import helmet from 'helmet';
 
+// Side-effect import to register apiAgent in the factory
 import './server/lib/apiAgent.ts'; // 🚀 Init global connection pooling
 
 // New extracted routes
@@ -33,7 +34,6 @@ import { workspaceRouter } from './server/features/workspace/workspace.router.ts
  * zero-copy streaming. Both are intentionally kept as thin routing layers.
  */
 import { modelProxyRouter } from './server/features/model-proxy/modelProxy.router.ts';
-import { fastifyProxyRouter } from './server/features/model-proxy/fastifyProxy.router.ts';
 
 // Existing routes
 import { geminiRouter } from './server/features/ai-providers/gemini.router.ts';
@@ -42,7 +42,6 @@ import { agentsRouter } from './server/features/agents/agents.router.ts';
 import { nyxRouter } from './server/features/nyx/nyx.router.ts';
 import { localModelsRouter } from './server/features/local-models/localModels.router.ts';
 
-import { warmupDNS, startFastifyServer } from './server/lib/fastifyApi.ts';
 import { requestIdMiddleware } from './server/middleware/requestId.ts';
 import logger from './server/lib/logger.ts';
 import { safetyGateMiddleware } from './server/middleware/safetyGate.ts';
@@ -59,14 +58,16 @@ import { pluginRegistry } from './server/lib/pluginRegistry.ts';
 
 const execAsync = promisify(exec);
 
-// DNS override removed: breaks enterprise VPNs and split-horizon DNS.
+// Removed DNS override as it breaks enterprise VPNs and split-horizon DNS.
+
+import { PORTS } from './src/shared/constants.ts';
 
 const _dirname = typeof __dirname !== 'undefined' ? __dirname : '';
-const PORT = parseInt(process.env.PORT || '3000', 10);
-const FASTIFY_PORT = parseInt(process.env.FASTIFY_PORT || '3001', 10);
+const PORT = parseInt(process.env.PORT || String(PORTS.API), 10);
+const FASTIFY_PORT = parseInt(process.env.FASTIFY_PORT || String(PORTS.FASTIFY), 10);
 
 /**
- * MISSING-7: Startup dependency health checks.
+ * TODO(github-issue): MISSING-7: Startup dependency health checks.
  * Warns (not fatal) for optional deps (Vulkan, Python).
  * All results logged via pino structured logger.
  */
@@ -78,9 +79,9 @@ async function runDependencyHealthChecks() {
     const pythonPath = findPythonPath();
     await execAsync(`"${pythonPath}" --version`, { timeout: 5_000 });
     logger.info({ pythonPath }, '[DepCheck] Python: OK');
-  } catch (err: any) {
+  } catch (error: any) {
     logger.warn(
-      { err: err.message },
+      { error: error.message },
       '[DepCheck] Python: NOT FOUND — Scrapling service will be unavailable'
     );
   }
@@ -126,23 +127,16 @@ async function startServer() {
   migrateSqliteStore();
   migrateOldStore();
 
-  // MISSING-7: Startup dependency health checks
+  // TODO(github-issue): MISSING-7: Startup dependency health checks
   await runDependencyHealthChecks();
 
-  // MISSING-6: Scan and load plugins
+  // TODO(github-issue): MISSING-6: Scan and load plugins
   await pluginRegistry.loadPlugins();
 
-  try {
-    await warmupDNS();
-    await startFastifyServer(FASTIFY_PORT);
-  } catch (err: any) {
-    logger.error({ err: err.message }, `Failed to start Fastify server on port ${FASTIFY_PORT}`);
-  }
-
-  const SCRAPLING_PORT = parseInt(process.env.SCRAPLING_PORT || '3002', 10);
+  const SCRAPLING_PORT = parseInt(process.env.SCRAPLING_PORT || String(PORTS.SCRAPLING), 10);
   let scraplingProc: ReturnType<typeof spawn> | null = null;
 
-  const ANTIGRAVITY_PORT = parseInt(process.env.ANTIGRAVITY_PORT || '3003', 10);
+  const ANTIGRAVITY_PORT = parseInt(process.env.ANTIGRAVITY_PORT || String(PORTS.ANTIGRAVITY), 10);
   let antigravityProc: ReturnType<typeof spawn> | null = null;
 
   function spawnScrapling() {
@@ -164,8 +158,8 @@ async function startServer() {
         setScraplingHealthState('offline');
         scraplingProc = null;
       });
-    } catch (err: any) {
-      logger.error({ err: err.message }, '[Scrapling] Failed to spawn Scrapling local service');
+    } catch (error: any) {
+      logger.error({ error: error.message }, '[Scrapling] Failed to spawn Scrapling local service');
       setScraplingHealthState('offline');
     }
   }
@@ -187,8 +181,8 @@ async function startServer() {
       proc.on('exit', () => {
         antigravityProc = null;
       });
-    } catch (err: any) {
-      logger.error({ err: err.message }, '[Antigravity] Failed to spawn Antigravity local service');
+    } catch (error: any) {
+      logger.error({ error: error.message }, '[Antigravity] Failed to spawn Antigravity local service');
     }
   }
 
@@ -223,6 +217,31 @@ async function startServer() {
     }
   }, 15_000);
   scraplingHealthInterval.unref(); // Don't keep Node.js alive just for this timer
+
+  const antigravityHealthInterval = setInterval(async () => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`http://127.0.0.1:${ANTIGRAVITY_PORT}/health`, {
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout));
+      if (!res.ok) {
+        throw new Error(`Antigravity health check returned ${res.status}`);
+      }
+    } catch {
+      logger.warn('[Antigravity] Health check failed — restarting Antigravity service...');
+      if (antigravityProc) {
+        try {
+          antigravityProc.kill('SIGTERM');
+        } catch {
+          /* ignore */
+        }
+        antigravityProc = null;
+      }
+      setTimeout(() => spawnAntigravity(), 2000);
+    }
+  }, 15_000);
+  antigravityHealthInterval.unref();
 
   const app = express();
   app.use(requestIdMiddleware);
@@ -285,7 +304,9 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
   app.use(
     cors({
-      origin: '*',
+      origin: isProd
+        ? ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:1420', 'tauri://localhost', 'nyx://localhost']
+        : '*',
       methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-NYX-Session-Token', 'x-nyx-session-token', 'traceparent', 'tracestate', 'Connection', 'Accept'],
       credentials: false,
@@ -336,26 +357,16 @@ async function startServer() {
   app.use('/api', systemRouter);
   app.use('/api', healthRouter);
   app.use('/api', metricsRouter);
-  app.use(express.json({ limit: '10mb' })); // Ensure consistency after limit updates
   app.use('/api/conversations', conversationsRouter);
   app.use('/api/chat', chatRouter);
   app.use('/api/cache', cacheRouter);
   app.use('/api/workspace', workspaceRouter);
   app.use('/api/models', modelProxyRouter);
-  app.use('/api/fastify', fastifyProxyRouter);
-
-  // Existing Provider routes with per-provider rate limits
-  const localModelLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 10000,
-    message: { error: 'Local model rate limit exceeded.' },
-    skip: () => true,
-  });
 
   app.use('/api/gemini', providerRateLimiter('gemini'), geminiRouter);
-  app.use('/api/terminal', sessionValidationMiddleware, terminalRouter);
+  app.use('/api/terminal', terminalRouter);
   app.use('/api/agents', agentsRouter);
-  app.use('/api/nyx/local-models', localModelLimiter, localModelsRouter);
+  app.use('/api/nyx/local-models', localModelsRouter);
   app.use('/api/nyx', nyxRouter);
 
   if (isProd) {
@@ -453,8 +464,8 @@ async function startServer() {
     cleanupProcesses();
     try {
       CodebaseScanner.dispose();
-    } catch (e: any) {
-      logger.error({ err: e }, '[Shutdown] Failed to dispose CodebaseScanner');
+    } catch (error: any) {
+      logger.error({ err: error }, '[Shutdown] Failed to dispose CodebaseScanner');
     }
     server.close(() => {
       process.exit(0);
@@ -473,8 +484,8 @@ process.on('uncaughtException', (e) => {
   cleanupProcesses();
   try {
     CodebaseScanner.dispose();
-  } catch (err: any) {
-    logger.error({ err }, '[UncaughtException] Failed to dispose CodebaseScanner');
+  } catch (error: any) {
+    logger.error({ error }, '[UncaughtException] Failed to dispose CodebaseScanner');
   }
   process.exit(1);
 });

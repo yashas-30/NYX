@@ -24,8 +24,8 @@ workspaceRouter.post('/select', async (req, res) => {
   try {
     const result = await service.selectWorkspace();
     return res.json(result);
-  } catch (e: any) {
-    return res.status(500).json({ error: `Native dialog error: ${e.message}` });
+  } catch (error: any) {
+    return res.status(500).json({ error: `Native dialog error: ${error.message}` });
   }
 });
 
@@ -41,7 +41,7 @@ workspaceRouter.post('/create', async (req, res) => {
     } else {
       return res.status(400).json(result);
     }
-  } catch (e: any) {
-    return res.status(500).json({ error: `Failed to create workspace: ${e.message}` });
+  } catch (error: any) {
+    return res.status(500).json({ error: `Failed to create workspace: ${error.message}` });
   }
 });

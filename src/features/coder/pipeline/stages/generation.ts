@@ -98,13 +98,13 @@ Core Rules:
           `---\n\n⚠️ **Write failed** for \`${file.path}\`: ${writeErr.message}\n*(Code was generated but could not be written to disk)*\n\n`;
         streamUpdate(errAcc);
       }
-    } catch (err: any) {
+    } catch (error: any) {
       taskStatuses[i] = '❌';
       const failAcc =
         renderPlanChecklist() +
-        `---\n\n❌ **Generation failed** for \`${file.path}\`: ${err.message}\n\n`;
+        `---\n\n❌ **Generation failed** for \`${file.path}\`: ${error.message}\n\n`;
       streamUpdate(failAcc);
-      console.error(`[Agentic Loop] File generation failed for ${file.path}:`, err);
+      console.error(`[Agentic Loop] File generation failed for ${file.path}:`, error);
     }
   }
 }

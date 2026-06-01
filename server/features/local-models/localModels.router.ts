@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 import { Router } from 'express';
 import { validate } from '../../middleware/validate.ts';
 import { sendSseTokenRotate } from '../../lib/sseHelpers.ts';
@@ -16,8 +17,8 @@ const service = new LocalModelsService();
 localModelsRouter.get('/', (_req, res) => {
   try {
     res.json(service.listModels());
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -25,8 +26,8 @@ localModelsRouter.get('/', (_req, res) => {
 localModelsRouter.get('/compatibility', async (_req, res) => {
   try {
     res.json(await service.getDeviceCompatibility());
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -34,8 +35,8 @@ localModelsRouter.get('/compatibility', async (_req, res) => {
 localModelsRouter.post('/auto-setup', async (_req, res) => {
   try {
     res.json(await service.autoSetup());
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -43,8 +44,8 @@ localModelsRouter.post('/auto-setup', async (_req, res) => {
 localModelsRouter.post('/download-all-compatible', async (_req, res) => {
   try {
     res.json(await service.downloadAllCompatible());
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -56,8 +57,8 @@ localModelsRouter.post('/download', validate(localModelDownloadSchema), (req, re
   }
   try {
     res.json(service.startDownload(modelId));
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -69,8 +70,8 @@ localModelsRouter.get('/download-progress', (req, res) => {
   }
   try {
     res.json(service.getProgress(modelId));
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -82,8 +83,8 @@ localModelsRouter.post('/pause', (req, res) => {
   }
   try {
     res.json(service.pauseDownload(modelId));
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -95,8 +96,8 @@ localModelsRouter.post('/resume', (req, res) => {
   }
   try {
     res.json(service.resumeDownload(modelId));
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -108,8 +109,8 @@ localModelsRouter.post('/cancel', (req, res) => {
   }
   try {
     res.json(service.cancelDownload(modelId));
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -121,8 +122,8 @@ localModelsRouter.post('/run', validate(localModelStartSchema), async (req, res)
   }
   try {
     res.json(await service.runModel(modelId, settings));
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -130,8 +131,8 @@ localModelsRouter.post('/run', validate(localModelStartSchema), async (req, res)
 localModelsRouter.post('/stop', async (_req, res) => {
   try {
     res.json(await service.stopModel());
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -143,8 +144,8 @@ localModelsRouter.delete('/delete', validate(localModelDeleteSchema), (req, res)
   }
   try {
     res.json(service.deleteModel(modelId));
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -152,12 +153,12 @@ localModelsRouter.delete('/delete', validate(localModelDeleteSchema), (req, res)
 localModelsRouter.get('/status', (_req, res) => {
   try {
     res.json(service.getStartStatus());
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Proxy streaming chat completion to port 12345
+// Proxy streaming chat completion to llama-server port
 localModelsRouter.post('/chat', validate(localModelChatSchema), async (req, res) => {
   const model = req.body.model;
   const { messages, temperature, max_tokens, agentMode, webSearch } = req.body;
@@ -190,18 +191,18 @@ localModelsRouter.post('/chat', validate(localModelChatSchema), async (req, res)
       }
     }
     res.end();
-  } catch (e: any) {
-    console.error('[Local runner proxy error]:', e.message);
+  } catch (error: any) {
+    logger.error('[Local runner proxy error]:', error.message);
     if (res.headersSent) {
       // Headers already sent (streaming started) — write an SSE error event and close
       try {
-        res.write(`event: error\ndata: ${JSON.stringify({ error: e.message })}\n\n`);
+        res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
         res.end();
       } catch {
         /* socket already closed */
       }
     } else {
-      res.status(500).json({ error: `Connection to local model runner failed: ${e.message}` });
+      res.status(500).json({ error: `Connection to local model runner failed: ${error.message}` });
     }
   }
 });

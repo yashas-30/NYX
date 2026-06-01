@@ -86,7 +86,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
             return;
           }
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn('[useChatSessions] Backend fetch failed, falling back to localStorage:', e);
       }
 
@@ -115,7 +115,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
             }
           }
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn('[useChatSessions] Fallback load failed:', e);
       }
     }
@@ -132,7 +132,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
     if (regularSessions.length === 0) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(regularSessions.slice(0, MAX_SESSIONS)));
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[useChatSessions] Failed to save sessions:', e);
     }
   }, [regularSessions]);

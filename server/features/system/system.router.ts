@@ -9,7 +9,7 @@ systemRouter.get('/system', async (req, res) => {
   try {
     const specs = await service.getSystemSpecs(modelId);
     res.json(specs);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });

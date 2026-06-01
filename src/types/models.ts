@@ -36,3 +36,20 @@ export interface ModelInfo {
   description: string;
 }
 
+export interface LocalModelPreset {
+  id: string;
+  name: string;
+  provider?: string;
+  size?: string;
+  url?: string;
+  fileName?: string;
+  description?: string;
+  ramRequired?: string;
+  vramRequired?: string;
+  paramCount?: string;
+  quantization?: string;
+  contextLength?: string;
+  featured?: boolean;
+  status?: string;
+}
+

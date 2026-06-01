@@ -61,8 +61,9 @@ export class UnifiedEngine {
 
     // Prompt pre-processing middleware using Antigravity service
     let processedMessages = messages;
-    const userMessages = messages.filter((m) => m.role === 'user');
-    if (userMessages.length > 0) {
+    if (settings?.antigravity) {
+      const userMessages = messages.filter((m) => m.role === 'user');
+      if (userMessages.length > 0) {
       const lastUserMessage = userMessages[userMessages.length - 1];
       const originalPrompt = lastUserMessage.content;
       
@@ -101,6 +102,7 @@ export class UnifiedEngine {
       } catch (err: any) {
         console.warn('[Antigravity Middleware] Prompt preprocessing failed (non-fatal):', err.message);
       }
+    }
     }
 
     // 2. Route to provider-specific handler

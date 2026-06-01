@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -18,7 +19,7 @@ function getMasterKey(): Buffer {
       fs.mkdirSync(VAULT_DIR, { recursive: true });
     }
     fs.writeFileSync(fallbackPath, newKey, { mode: 0o600 });
-    console.warn('[KeyVault] Generated new master key. BACK UP .nyx-keys/.master-key!');
+    logger.warn('[KeyVault] Generated new master key. BACK UP .nyx-keys/.master-key!');
     return newKey;
   }
   return crypto.createHash('sha256').update(masterKey).digest();
@@ -60,7 +61,7 @@ export function loadKeys(): Record<string, string> {
     const decryptedJson = decryptText(encryptedData);
     return JSON.parse(decryptedJson);
   } catch (error: any) {
-    console.error('[KeyVault] Failed to decrypt vault keys:', error.message);
+    logger.error('[KeyVault] Failed to decrypt vault keys:', error.message);
     return {};
   }
 }
@@ -75,7 +76,7 @@ export function saveKeys(keys: Record<string, string>): void {
     const encryptedData = encryptText(jsonStr);
     fs.writeFileSync(VAULT_FILE, encryptedData, 'utf8');
   } catch (error: any) {
-    console.error('[KeyVault] Failed to save keys to vault:', error.message);
+    logger.error('[KeyVault] Failed to save keys to vault:', error.message);
     throw new Error(`Vault save failed: ${error.message}`);
   }
 }
@@ -190,8 +191,8 @@ export function backupVault(): string {
         }
       }
     }
-  } catch (err: any) {
-    console.error('[KeyVault] Backup rotation failed:', err.message);
+  } catch (error: any) {
+    logger.error('[KeyVault] Backup rotation failed:', error.message);
   }
 
   return backupPath;

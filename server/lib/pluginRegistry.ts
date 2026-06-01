@@ -40,7 +40,7 @@ class PluginRegistry {
           if (result !== undefined) {
             currentContext = result;
           }
-        } catch (err) {
+        } catch (err: any) {
           logger.error(
             { err, pluginName: name, hookName },
             `[PluginRegistry] Plugin hook execution failed`
@@ -89,13 +89,13 @@ class PluginRegistry {
             } else {
               logger.warn(`[PluginRegistry] Module at ${file} did not export a valid NYXPlugin`);
             }
-          } catch (err: any) {
-            logger.error({ err, file }, `[PluginRegistry] Failed to import plugin module`);
+          } catch (error: any) {
+            logger.error({ error, file }, `[PluginRegistry] Failed to import plugin module`);
           }
         }
       }
-    } catch (err: any) {
-      logger.error({ err }, '[PluginRegistry] Error scanning plugins directory');
+    } catch (error: any) {
+      logger.error({ error }, '[PluginRegistry] Error scanning plugins directory');
     }
   }
 

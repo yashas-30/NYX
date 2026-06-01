@@ -75,10 +75,10 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
         const err = await response.json();
         throw new Error(err.error || 'Failed to write file');
       }
-    } catch (e: any) {
+    } catch (error: any) {
       setApplyStatus('error');
-      setErrorMsg(e.message);
-      toast.error(`Failed to apply file: ${e.message}`);
+      setErrorMsg(error.message);
+      toast.error(`Failed to apply file: ${error.message}`);
     }
   };
 
@@ -98,8 +98,8 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
       if (data.stderr) output += `\nError Output:\n${data.stderr}`;
       if (data.error) output += `\nExecution Error:\n${data.error}`;
       setTerminalOutput(output || 'Command executed with no output.');
-    } catch (e: any) {
-      setTerminalOutput(`Failed to execute command: ${e.message}`);
+    } catch (error: any) {
+      setTerminalOutput(`Failed to execute command: ${error.message}`);
     } finally {
       setIsRunning(false);
     }

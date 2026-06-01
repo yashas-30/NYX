@@ -1,5 +1,7 @@
+import logger from '../../lib/logger.ts';
 import { sqlite } from '../../db/client.ts';
 import { loadKeys } from '../vault/vault.service.ts';
+import { LOCAL_MODEL_PORT } from '../../../src/config/ports.ts';
 import crypto from 'crypto';
 
 export interface MemoryEntry {
@@ -12,8 +14,15 @@ export interface MemoryEntry {
 }
 
 export class MemoryService {
+  private static inMemoryFallback: MemoryEntry[] = [];
+  private static useFallback = false;
+
   private static ensureInitialized() {
+    if (this.useFallback) return;
     try {
+      if (!sqlite) {
+        throw new Error('SQLite client is not defined or is null');
+      }
       sqlite
         .prepare(
           `
@@ -34,19 +43,62 @@ export class MemoryService {
       const hasAgentType = info.some((col) => col.name === 'agent_type');
       if (!hasAgentType) {
         sqlite.prepare(`ALTER TABLE memories ADD COLUMN agent_type TEXT DEFAULT 'code'`).run();
-        console.log('[MemoryService] Migrated memories table: Added agent_type column.');
+        logger.info('[MemoryService] Migrated memories table: Added agent_type column.');
       }
-    } catch (e) {
-      console.error('[MemoryService] Failed to initialize table rawly:', e);
+    } catch (e: any) {
+      logger.error('[MemoryService] Failed to initialize table rawly, switching to in-memory fallback:', e);
+      this.useFallback = true;
     }
+  }
+
+  private static addMemoryInMemory(
+    content: string,
+    category: string,
+    relevanceKey: string,
+    agentType: 'chat' | 'code'
+  ): void {
+    const existingIdx = this.inMemoryFallback.findIndex(
+      (m) => m.content.toLowerCase() === content.toLowerCase() && m.agentType === agentType
+    );
+
+    if (existingIdx >= 0) {
+      this.inMemoryFallback[existingIdx] = {
+        ...this.inMemoryFallback[existingIdx],
+        timestamp: Date.now(),
+        category: category as any,
+        relevanceKey,
+      };
+      logger.info(
+        `[MemoryService] Updated duplicate memory in-memory: "${content}" for agentType: ${agentType}`
+      );
+      return;
+    }
+
+    const id = crypto.randomUUID();
+    this.inMemoryFallback.push({
+      id,
+      content,
+      category: category as any,
+      relevanceKey,
+      timestamp: Date.now(),
+      agentType,
+    });
+    logger.info(
+      `[MemoryService] Saved new memory successfully in-memory: "${content}" for agentType: ${agentType}`
+    );
   }
 
   /**
    * Fetches all persistent semantic memories sorted by timestamp
    */
   public static getMemories(agentType: 'chat' | 'code' = 'code'): MemoryEntry[] {
+    this.ensureInitialized();
+    if (this.useFallback) {
+      return [...this.inMemoryFallback]
+        .filter((m) => m.agentType === agentType)
+        .sort((a, b) => b.timestamp - a.timestamp);
+    }
     try {
-      this.ensureInitialized();
       const rows = sqlite
         .prepare(`SELECT * FROM memories WHERE agent_type = ? ORDER BY timestamp DESC`)
         .all(agentType) as any[];
@@ -58,9 +110,12 @@ export class MemoryService {
         timestamp: r.timestamp,
         agentType: r.agent_type as any,
       }));
-    } catch (e) {
-      console.error('[MemoryService] Failed to get memories:', e);
-      return [];
+    } catch (e: any) {
+      logger.error('[MemoryService] Failed to get memories, using in-memory fallback:', e);
+      this.useFallback = true;
+      return [...this.inMemoryFallback]
+        .filter((m) => m.agentType === agentType)
+        .sort((a, b) => b.timestamp - a.timestamp);
     }
   }
 
@@ -73,12 +128,16 @@ export class MemoryService {
     relevanceKey: string,
     agentType: 'chat' | 'code' = 'code'
   ): void {
-    try {
-      this.ensureInitialized();
-      const trimmedContent = content.trim();
-      const trimmedKey = relevanceKey.trim();
-      if (!trimmedContent) return;
+    const trimmedContent = content.trim();
+    const trimmedKey = relevanceKey.trim();
+    if (!trimmedContent) return;
 
+    this.ensureInitialized();
+    if (this.useFallback) {
+      this.addMemoryInMemory(trimmedContent, category, trimmedKey, agentType);
+      return;
+    }
+    try {
       // Check if duplicate exists (case-insensitive) under same agentType
       const existing = sqlite
         .prepare(`SELECT id FROM memories WHERE lower(content) = ? AND agent_type = ?`)
@@ -90,7 +149,7 @@ export class MemoryService {
             `UPDATE memories SET timestamp = ?, category = ?, relevance_key = ? WHERE id = ?`
           )
           .run(Date.now(), category, trimmedKey, existing.id);
-        console.log(
+        logger.info(
           `[MemoryService] Updated duplicate memory: "${trimmedContent}" for agentType: ${agentType}`
         );
         return;
@@ -105,11 +164,13 @@ export class MemoryService {
       `
         )
         .run(id, trimmedContent, category, trimmedKey, Date.now(), agentType);
-      console.log(
+      logger.info(
         `[MemoryService] Saved new memory successfully: "${trimmedContent}" for agentType: ${agentType}`
       );
-    } catch (e) {
-      console.error('[MemoryService] Failed to write memory:', e);
+    } catch (e: any) {
+      logger.error('[MemoryService] Failed to write memory, falling back to in-memory:', e);
+      this.useFallback = true;
+      this.addMemoryInMemory(trimmedContent, category, trimmedKey, agentType);
     }
   }
 
@@ -117,17 +178,33 @@ export class MemoryService {
    * Clears stored memories
    */
   public static resetMemories(agentType?: 'chat' | 'code'): void {
+    this.ensureInitialized();
+    if (this.useFallback) {
+      if (agentType) {
+        this.inMemoryFallback = this.inMemoryFallback.filter((m) => m.agentType !== agentType);
+        logger.info(`[MemoryService] In-memory memories cleared for agentType: ${agentType}.`);
+      } else {
+        this.inMemoryFallback = [];
+        logger.info('[MemoryService] All in-memory memories cleared.');
+      }
+      return;
+    }
     try {
-      this.ensureInitialized();
       if (agentType) {
         sqlite.prepare(`DELETE FROM memories WHERE agent_type = ?`).run(agentType);
-        console.log(`[MemoryService] Persistent memories cleared for agentType: ${agentType}.`);
+        logger.info(`[MemoryService] Persistent memories cleared for agentType: ${agentType}.`);
       } else {
         sqlite.prepare(`DELETE FROM memories`).run();
-        console.log('[MemoryService] All persistent memories cleared.');
+        logger.info('[MemoryService] All persistent memories cleared.');
       }
-    } catch (e) {
-      console.error('[MemoryService] Failed to clear memories:', e);
+    } catch (e: any) {
+      logger.error('[MemoryService] Failed to clear memories, clearing in-memory fallback:', e);
+      this.useFallback = true;
+      if (agentType) {
+        this.inMemoryFallback = this.inMemoryFallback.filter((m) => m.agentType !== agentType);
+      } else {
+        this.inMemoryFallback = [];
+      }
     }
   }
 
@@ -187,7 +264,7 @@ export class MemoryService {
     provider?: string,
     agentType: 'chat' | 'code' = 'code'
   ): Promise<void> {
-    console.log(`[Memory Keeper] Starting background semantic distillation for ${agentType}...`);
+    logger.info(`[Memory Keeper] Starting background semantic distillation for ${agentType}...`);
     const keys = loadKeys();
     const activeKey = keys[provider || ''] || '';
 
@@ -227,7 +304,7 @@ ${nyxResponse}
 
     if (modelId && provider) {
       try {
-        console.log(`[Memory Keeper] Executing extraction using model ${modelId} (${provider})`);
+        logger.info(`[Memory Keeper] Executing extraction using model ${modelId} (${provider})`);
 
         if (provider === 'gemini') {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${activeKey}`;
@@ -246,7 +323,8 @@ ${nyxResponse}
           const data: any = await res.json();
           responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         } else if (provider === 'nyx-native') {
-          const res = await fetch('http://127.0.0.1:12345/v1/chat/completions', {
+          const llamaPort = process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString();
+          const res = await fetch(`http://127.0.0.1:${llamaPort}/v1/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -267,10 +345,10 @@ ${nyxResponse}
         } else {
           throw new Error(`Unsupported provider for memory keeper: ${provider}`);
         }
-      } catch (err: any) {
-        console.warn(
+      } catch (error: any) {
+        logger.warn(
           '[Memory Keeper] Selected model run failed, falling back to local Python server:',
-          err.message
+          error.message
         );
       }
     }
@@ -278,7 +356,8 @@ ${nyxResponse}
     // Fallback to local Python HF service
     if (!responseText) {
       try {
-        const hfRes = await fetch('http://127.0.0.1:3002/api/gemini/generate', {
+        const scraplingPort = process.env.SCRAPLING_PORT || '3002';
+        const hfRes = await fetch(`http://127.0.0.1:${scraplingPort}/api/gemini/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -296,8 +375,8 @@ ${nyxResponse}
           const data: any = await hfRes.json();
           responseText = data.text || '';
         }
-      } catch (error) {
-        console.error('[Memory Keeper] Fallback model execution failed:', error);
+      } catch (error: any) {
+        logger.error('[Memory Keeper] Fallback model execution failed:', error);
       }
     }
 
@@ -314,13 +393,13 @@ ${nyxResponse}
                 count++;
               }
             }
-            console.log(
+            logger.info(
               `[Memory Keeper] Semantic extraction complete! Committed ${count} new memories for ${agentType}.`
             );
           }
         }
-      } catch (err: any) {
-        console.error('[Memory Keeper] Failed to parse or save semantic memories:', err.message);
+      } catch (error: any) {
+        logger.error('[Memory Keeper] Failed to parse or save semantic memories:', error.message);
       }
     }
   }

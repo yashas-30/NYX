@@ -1,3 +1,4 @@
+import logger from '../lib/logger.ts';
 import { Request, Response, NextFunction } from 'express';
 import { ZodSchema, ZodError } from 'zod';
 
@@ -9,9 +10,9 @@ export const validate = (schema: ZodSchema) => {
     try {
       req.body = schema.parse(req.body);
       next();
-    } catch (error) {
+    } catch (error: any) {
       if (error instanceof ZodError) {
-        console.warn(`[Validation Failed on ${req.method} ${req.originalUrl}]:`, JSON.stringify(error.issues, null, 2));
+        logger.warn(`[Validation Failed on ${req.method} ${req.originalUrl}]:`, JSON.stringify(error.issues, null, 2));
         return res.status(400).json({
           error: 'Validation failed',
           details: error.issues.map(err => ({

@@ -124,7 +124,7 @@ export const ModelSelector: React.FC<Props> = ({
             setLocalLibraryModels(completed);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('[ModelSelector] Failed to load local models:', err);
       }
     };

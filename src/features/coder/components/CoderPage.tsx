@@ -18,7 +18,7 @@ import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useCoderLogic } from '../hooks/useCoderLogic';
 
 interface CoderPageProps {
-  allModels: any[];
+  allModels: ModelDefinition[];
   apiKeys: Record<string, string>;
   modelSettings: any;
   trackUsage: (provider: string, tokens: number) => void;
@@ -187,7 +187,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
         if (directory) {
           setParentPath(directory);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('[Create Project] Browse parent directory failed:', err);
       }
     } else {
@@ -216,8 +216,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
       } else {
         toast.error(`Failed to create project: ${result.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     } finally {
       setIsCreatingProject(false);
     }

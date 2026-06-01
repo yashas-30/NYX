@@ -20,7 +20,7 @@ import { triggerCritic, triggerMemoryCommit, writeFile } from '@src/infrastructu
 import { analyzePrompt, routeToAgent } from '@src/core/services/promptClassifier';
 import { CoderAgent } from '@src/core/agents/coderAgent';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
-import { SubagentOrchestrator } from './useSubagentOrchestrator';
+import { SubagentOrchestrator } from '../services/SubagentOrchestrator';
 
 interface PipelineProps {
   models: Record<'nyx', string>;
@@ -104,7 +104,7 @@ export const useAgentPipeline = ({
           provider: activeProvider,
           modelId: nyxModel,
         });
-      } catch (err) {
+      } catch (err: any) {
         console.error('[useAgentPipeline] Background critic failed:', err);
       }
     },
@@ -219,7 +219,7 @@ export const useAgentPipeline = ({
                     console.log(`[File Writer] Successfully wrote file: ${chunk.content}`);
                   }
                 }
-              } catch (writeErr) {
+              } catch (writeErr: any) {
                 console.error('Failed to write file:', writeErr);
               }
               break;
@@ -292,7 +292,8 @@ export const useAgentPipeline = ({
                         tokensUsed: finalMetrics.tokens || 0,
                       },
                     ]
-                  : []
+                  : [],
+                null
               );
             }
           }
@@ -370,6 +371,9 @@ export const useAgentPipeline = ({
       codebaseKnowledgeEnabled,
       getSuggestions,
       triggerBackgroundCritic,
+      lightningEnabled,
+      lightningDirectives,
+      logRollout,
     ]
   );
 

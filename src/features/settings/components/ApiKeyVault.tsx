@@ -108,8 +108,8 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
       } else {
         toast.error('Failed to save keys to server vault.');
       }
-    } catch (e: any) {
-      toast.error(`Error saving keys: ${e.message}`);
+    } catch (error: any) {
+      toast.error(`Error saving keys: ${error.message}`);
     }
   };
 
@@ -128,8 +128,8 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
         } else {
           toast.error('Failed to purge server vault.');
         }
-      } catch (e: any) {
-        toast.error(`Error: ${e.message}`);
+      } catch (error: any) {
+        toast.error(`Error: ${error.message}`);
       }
     }
   };

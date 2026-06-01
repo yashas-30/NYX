@@ -64,7 +64,7 @@ Agentic Planning Rules:
     const parsed = JSON.parse(planText) as ExecutionPlan;
     trackUsage(nyxProvider, planResult.metrics.tokens);
     return parsed;
-  } catch (err) {
+  } catch (err: any) {
     console.warn('[Agentic Loop] Plan generation failed:', err);
     return null;
   }

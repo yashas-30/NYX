@@ -133,7 +133,7 @@ export const useNyxStore = create<NyxState>()(
               apiKeys: { ...state.apiKeys, [provider]: key },
             }));
             await get().refreshStatuses();
-          } catch (err) {
+          } catch (err: any) {
             console.error(`[Vault Store key failed for ${provider}]:`, err);
           }
         } else {
@@ -152,7 +152,7 @@ export const useNyxStore = create<NyxState>()(
           for (const provider of providers) {
             try {
               await ipc.invoke('vault:delete-key', { provider });
-            } catch (err) {
+            } catch (err: any) {
               console.error(`[Vault delete key failed for ${provider}]:`, err);
             }
           }
@@ -167,7 +167,7 @@ export const useNyxStore = create<NyxState>()(
             const data = await res.json();
             set({ workspacePath: data.workspace || '' });
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error('[Store] Failed to fetch workspace path:', e);
         }
       },
@@ -188,7 +188,7 @@ export const useNyxStore = create<NyxState>()(
                 set({ workspacePath: directory });
               }
             }
-          } catch (err) {
+          } catch (err: any) {
             console.error('[Store] Directory selection failed:', err);
           }
         } else {
@@ -210,8 +210,8 @@ export const useNyxStore = create<NyxState>()(
           }
           const errData = await res.json().catch(() => ({ error: 'Network error creating workspace' }));
           return { success: false, error: errData.error || 'Failed to create workspace' };
-        } catch (e: any) {
-          return { success: false, error: e.message };
+        } catch (error: any) {
+          return { success: false, error: error.message };
         }
       },
 
@@ -234,7 +234,7 @@ export const useNyxStore = create<NyxState>()(
               set({ apiKeys: keys });
               await get().refreshStatuses();
             }
-          } catch (err) {
+          } catch (err: any) {
             console.error('[Store] Failed to retrieve secure keys on mount:', err);
           }
         }
@@ -271,7 +271,7 @@ export const useNyxStore = create<NyxState>()(
             }
           }
           set({ statuses: newStatuses });
-        } catch (e) {
+        } catch (e: any) {
           console.warn('[Store] Status checks failed:', e);
         }
       },

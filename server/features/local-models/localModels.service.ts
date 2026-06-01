@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 import { LocalModelManager } from './localModelManager.ts';
 import { LocalModelRunner } from './localModelRunner.ts';
 import { ModelWarmCache } from './warmCache.ts';
@@ -108,8 +109,8 @@ export class LocalModelsService {
     for (const modelId of allCompatibleModelIds) {
       try {
         results[modelId] = LocalModelManager.startDownload(modelId);
-      } catch (err: any) {
-        results[modelId] = { error: err.message };
+      } catch (error: any) {
+        results[modelId] = { error: error.message };
       }
     }
     return {
@@ -192,7 +193,7 @@ export class LocalModelsService {
         !clientSystemMessage.content.toLowerCase().includes('software engineering') &&
         !clientSystemMessage.content.toLowerCase().includes('expert software engineering'));
 
-    console.log(`[localModels.service.ts] General chat check:`, {
+    logger.info(`[localModels.service.ts] General chat check:`, {
       isGeneralChat,
       agentMode,
       hasSystemMessage: !!clientSystemMessage,
@@ -214,7 +215,7 @@ export class LocalModelsService {
     const shouldSearch = webSearch !== false && query && shouldTriggerWebSearch(query);
     if (shouldSearch) {
       try {
-        console.log(
+        logger.info(
           `[localModels.service.ts] Automatically triggering backend web search for: "${query.substring(0, 60)}..."`
         );
         const { SearchService } = await import('../nyx/search.service.ts');
@@ -241,8 +242,8 @@ export class LocalModelsService {
             .join('\n\n');
           webSearchContext = `\n\n=== ADDITIONAL WEB SEARCH RESULTS ===\n${resultsStr}\n\n`;
         }
-      } catch (err: any) {
-        console.error('[localModels.service.ts] Backend web search failed:', err.message);
+      } catch (error: any) {
+        logger.error('[localModels.service.ts] Backend web search failed:', error.message);
       }
     }
 
@@ -251,8 +252,8 @@ export class LocalModelsService {
     try {
       const { MemoryService } = await import('../nyx/memory.service.ts');
       persistentMemoryContext = MemoryService.getMemoriesString();
-    } catch (e: any) {
-      console.error('[localModels.service.ts] Failed to load memory keeper context:', e.message);
+    } catch (error: any) {
+      logger.error('[localModels.service.ts] Failed to load memory keeper context:', error.message);
     }
 
     let systemPrompt: string;
@@ -355,11 +356,11 @@ Please analyze the context and provide highly optimized, syntax-correct solution
         const targetModel = list.find((m) => m.id === requestedModel);
         if (targetModel && targetModel.status === 'completed') {
           if (activeModel === requestedModel) {
-            console.log(
+            logger.info(
               `[Auto-Context] Restarting local model ${requestedModel} (task: ${activeTaskType} -> ${requestedTaskType}) to upscale context window from ${activeContextSize} to ${targetCtxSize} tokens...`
             );
           } else {
-            console.log(
+            logger.info(
               `[Auto-Runner] Auto-starting local model ${requestedModel} (task: ${requestedTaskType}) with ${targetCtxSize} context tokens...`
             );
           }
@@ -385,7 +386,7 @@ Please analyze the context and provide highly optimized, syntax-correct solution
           ]);
         }
       } catch (startErr: any) {
-        console.warn('[Auto-Runner] Model restart skipped or failed:', startErr.message);
+        logger.warn('[Auto-Runner] Model restart skipped or failed:', startErr.message);
       }
     } else {
       // Refresh sliding TTL on every query
@@ -409,7 +410,7 @@ Please analyze the context and provide highly optimized, syntax-correct solution
     ];
 
     const currentActiveModel = LocalModelRunner.getActiveModel() || requestedModel;
-    const port = LOCAL_MODEL_PORT;
+    const port = process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString();
     const targetUrl = `http://127.0.0.1:${port}/v1/chat/completions`;
 
     const response = await fetch(targetUrl, {
@@ -423,6 +424,8 @@ Please analyze the context and provide highly optimized, syntax-correct solution
         temperature: temperature ?? 0.7,
         max_tokens: max_tokens ?? 4096,
         stream: true,
+        agentMode,
+        webSearch,
       }),
       signal,
     });
@@ -449,7 +452,7 @@ Please analyze the context and provide highly optimized, syntax-correct solution
           32768,
           Math.ceil((needed * 1.25 + (max_tokens ?? 4096)) / 512) * 512
         );
-        console.warn(
+        logger.warn(
           `[Auto-Context] EXCEED_CONTEXT_SIZE_ERROR: prompt=${needed} tokens, ctx=${errData.n_ctx}. Restarting with ctx=${fixedCtx}...`
         );
         try {
@@ -464,6 +467,8 @@ Please analyze the context and provide highly optimized, syntax-correct solution
               temperature: temperature ?? 0.7,
               max_tokens: max_tokens ?? 4096,
               stream: true,
+              agentMode,
+              webSearch,
             }),
             signal,
           });

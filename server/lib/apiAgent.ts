@@ -1,3 +1,4 @@
+import logger from './logger.ts';
 import { Agent, setGlobalDispatcher } from 'undici';
 import dns from 'node:dns';
 
@@ -65,7 +66,7 @@ export const globalAgent = new Agent({
 // Set as global dispatcher for all native 'fetch' calls in the app (Express & Fastify)
 setGlobalDispatcher(globalAgent);
 
-console.log('[ConnectionPool] Global undici dispatcher initialized with keep-alive & 0ms DNS lookup.');
+logger.info('[ConnectionPool] Global undici dispatcher initialized with keep-alive & 0ms DNS lookup.');
 
 const criticalHosts = [
   'generativelanguage.googleapis.com',
@@ -73,6 +74,6 @@ const criticalHosts = [
 
 criticalHosts.forEach(host => {
   preWarmDns(host).then(ip => {
-    console.log(`[DNS Warmup] ${host} pre-cached to ${ip} for ZERO latency connection routing.`);
+    logger.info(`[DNS Warmup] ${host} pre-cached to ${ip} for ZERO latency connection routing.`);
   }).catch(() => {});
 });

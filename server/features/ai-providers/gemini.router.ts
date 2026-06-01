@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { sendSseTokenRotate } from '../../lib/sseHelpers.ts';
 import { GeminiService } from './gemini.service.ts';
 import logger from '../../lib/logger.ts';
@@ -6,16 +6,23 @@ import logger from '../../lib/logger.ts';
 export const geminiRouter = Router();
 const service = new GeminiService();
 
+interface StreamListener {
+  write: (chunk: string) => void;
+  end: () => void;
+}
+
+const activeStreams = new Map<string, { listeners: Set<StreamListener>; controller: AbortController }>();
+
 geminiRouter.post('/stream', async (req, res) => {
-  console.log('[Gemini Router] Received /stream request:', {
+  logger.info('[Gemini Router] Received /stream request:', {
     headers: req.headers,
-    body: req.body,
     model: req.body?.model
   });
+  
   const { model, prompt, settings, systemInstruction, history, apiKey, images } = req.body || {};
 
   if (!model) {
-    console.error('[Gemini Router] Returning 400 because model is missing. Body was:', req.body);
+    logger.error('[Gemini Router] Returning 400 because model is missing. Body was:', req.body);
     return res.status(400).json({ error: 'Model is required' });
   }
 
@@ -27,11 +34,6 @@ geminiRouter.post('/stream', async (req, res) => {
   res.flushHeaders();
   sendSseTokenRotate(res);
 
-  let isClosed = false;
-  res.on('close', () => {
-    isClosed = true;
-  });
-
   let finalSystemInstruction = systemInstruction || '';
   try {
     const { MemoryService } = await import('../nyx/memory.service.ts');
@@ -39,27 +41,73 @@ geminiRouter.post('/stream', async (req, res) => {
     if (memories) {
       finalSystemInstruction = `${finalSystemInstruction}\n\n${memories}`.trim();
     }
-  } catch (e: any) {
-    logger.warn('[Gemini Router] Failed to load memory keeper context: ' + e.message);
+  } catch (error: any) {
+    logger.warn('[Gemini Router] Failed to load memory keeper context: ' + error.message);
   }
 
+  const fingerprint = JSON.stringify({
+    model,
+    prompt: prompt || '',
+    systemInstruction: finalSystemInstruction,
+    history: history || [],
+    settings: settings || {},
+    images: images || [],
+    apiKey: apiKey || '',
+  });
+
+  const listener: StreamListener = {
+    write: (chunk: string) => {
+      res.write(chunk);
+    },
+    end: () => {
+      res.end();
+    },
+  };
+
+  if (activeStreams.has(fingerprint)) {
+    logger.info(`[Express Stream Dedupe] Multiplexing concurrent stream for model ${model}`);
+    const streamGroup = activeStreams.get(fingerprint)!;
+    streamGroup.listeners.add(listener);
+
+    req.on('close', () => {
+      streamGroup.listeners.delete(listener);
+      if (streamGroup.listeners.size === 0) {
+        streamGroup.controller.abort();
+        activeStreams.delete(fingerprint);
+      }
+    });
+    return;
+  }
+
+  const controller = new AbortController();
+  const listeners = new Set<StreamListener>([listener]);
+  activeStreams.set(fingerprint, { listeners, controller });
+
+  req.on('close', () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      controller.abort();
+      activeStreams.delete(fingerprint);
+    }
+  });
+
   try {
-    logger.info({ model }, 'Routing request to Antigravity SDK Chat Agent integration');
+    logger.info({ model }, 'Routing request to LLM Service');
 
     // Telemetry to NYX Debug Console
-    fetch('http://localhost:3099', { method: 'POST' }).catch(() => {}); // Optional HTTP hook if supported
+    fetch('http://localhost:3099', { method: 'POST' }).catch(() => {});
     try {
       const WebSocket = require('ws');
       const ws = new WebSocket('ws://localhost:3099?client=server');
       ws.on('open', () => {
         ws.send(JSON.stringify({
           type: 'LOG',
-          message: `🚀 Antigravity SDK is generating response for model: ${model}...`
+          message: `dYs? LLM is generating response for model: ${model}...`
         }));
         ws.close();
       });
       ws.on('error', () => {});
-    } catch(e) {}
+    } catch (e: any) {}
 
     await service.executeStream(
       {
@@ -72,22 +120,33 @@ geminiRouter.post('/stream', async (req, res) => {
         images,
       },
       (chunk) => {
-        if (!isClosed) {
-          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        const payload = `data: ${JSON.stringify(chunk)}\n\n`;
+        for (const l of listeners) {
+          try {
+            l.write(payload);
+          } catch {}
         }
       },
       () => {
-        if (!isClosed) {
-          res.write('data: [DONE]\n\n');
-          res.end();
+        const payload = 'data: [DONE]\n\n';
+        for (const l of listeners) {
+          try {
+            l.write(payload);
+            l.end();
+          } catch {}
         }
+        activeStreams.delete(fingerprint);
       }
     );
-  } catch (e: any) {
-    console.error('[Gemini Route Proxy Error]:', e.message);
-    if (!isClosed) {
-      res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
-      res.end();
+  } catch (error: any) {
+    logger.error('[Gemini Route Proxy Error]:', error.message);
+    const payload = `data: ${JSON.stringify({ error: error.message })}\n\n`;
+    for (const l of listeners) {
+      try {
+        l.write(payload);
+        l.end();
+      } catch {}
     }
+    activeStreams.delete(fingerprint);
   }
 });

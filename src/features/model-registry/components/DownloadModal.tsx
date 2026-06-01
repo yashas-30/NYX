@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Cpu, HardDrive, Zap, Loader2, RefreshCw, Activity, Layers, Download, Check, Trash2, Sparkles } from 'lucide-react';
+import { Download, X, AlertTriangle, MonitorPlay, Zap, Loader2, Play, Square, RefreshCcw, HardDrive, Cpu, Terminal as TerminalIcon, Activity, Layers, Check, Trash2, Sparkles, RefreshCw } from 'lucide-react';
+import { LocalModelPreset } from '@src/types';
 import { getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
 
 interface DownloadModalProps {
@@ -8,17 +9,17 @@ interface DownloadModalProps {
   setShowDownloadModal: (val: boolean) => void;
   customUrl: string;
   setCustomUrl: (val: string) => void;
-  handleCustomUrlDownload: () => Promise<void>;
+  handleCustomUrlDownload: () => void;
   compatibility: any;
-  fetchCompatibility: () => Promise<void>;
+  fetchCompatibility: () => void;
   loadingCompatibility: boolean;
   actionInProgress: string | null;
-  handleAutoSetup: () => Promise<void>;
-  handleDownloadAllCompatible: () => Promise<void>;
+  handleAutoSetup: () => void;
+  handleDownloadAllCompatible: () => void;
   showCompatibleOnly: boolean;
   setShowCompatibleOnly: (val: boolean) => void;
-  groupedLocalPresets: [string, any[]][];
-  nativeModels: any[];
+  groupedLocalPresets: [string, LocalModelPreset[]][];
+  nativeModels: LocalModelPreset[];
   activeNativeId: string | null;
   handleDownload: (modelId: string) => Promise<void>;
   handlePause: (modelId: string) => Promise<void>;

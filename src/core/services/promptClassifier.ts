@@ -5,8 +5,8 @@
  *   hardware-aware model routing. Targets Claude/Kimi-level accuracy.
  */
 
-import { detectHardware, HardwareAnalysis } from '@/shared/promptAnalyzer';
-import { CODING_KNOWLEDGE_SUMMARY } from '@shared/config/codingKnowledge';
+import { detectHardware, HardwareAnalysis } from '@src/shared/promptAnalyzer';
+import { CODING_KNOWLEDGE_SUMMARY } from '@src/shared/config/codingKnowledge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -711,8 +711,11 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
     tools.push('image_analysis'); // For UI generation
   }
   
-  // Subagent swarm trigger (DISABLED: User requested single-shot requests to avoid API rate limits)
-  const shouldUseSubagents = false;
+  // Subagent swarm trigger: Activate for highly complex or multi-step tasks
+  const shouldUseSubagents = 
+    analysis.complexity === 'enterprise' || 
+    (analysis.complexity === 'complex' && analysis.requiresExecution) ||
+    analysis.intent === 'architecture_design';
   
   // Temperature tuning based on intent
   const temperature = 
@@ -729,7 +732,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
     1024;
   
   return {
-    agent: 'coder', // ALWAYS use coder for single-shot
+    agent: shouldUseSubagents ? 'orchestrator' : 'coder',
     reasoning: `${analysis.intent} (${analysis.complexity})${analysis.multiIntent ? ` + [${analysis.multiIntent.join(', ')}]` : ''}`,
     shouldUseSubagents,
     systemPrompt: SYSTEM_PROMPTS.coder,

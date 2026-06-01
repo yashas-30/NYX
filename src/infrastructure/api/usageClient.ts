@@ -59,7 +59,6 @@ const REQUEST_TIMEOUT_MS = 10000;
 
 const PROVIDER_DEFAULTS: Record<string, Partial<QuotaResult>> = {
   'nyx-native': { status: 'unlimited' as const, total: Infinity, used: 0, remaining: Infinity },
-  'qwen-local': { status: 'unlimited' as const, total: Infinity, used: 0, remaining: Infinity },
 };
 
 // ---------------------------------------------------------------------------

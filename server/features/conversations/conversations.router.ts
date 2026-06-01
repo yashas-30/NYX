@@ -12,8 +12,8 @@ conversationsRouter.get('/', (req, res) => {
   try {
     const agentType = getAgentType(req);
     res.json(ConversationStore.list(agentType));
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -26,8 +26,8 @@ conversationsRouter.get('/:id', (req, res) => {
     } else {
       res.status(404).json({ error: 'Not found' });
     }
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -36,8 +36,8 @@ conversationsRouter.post('/', (req, res) => {
     const agentType = getAgentType(req);
     ConversationStore.upsert(req.body, agentType);
     res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -46,8 +46,8 @@ conversationsRouter.delete('/:id', (req, res) => {
     const agentType = getAgentType(req);
     ConversationStore.delete(req.params.id, agentType);
     res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -56,8 +56,8 @@ conversationsRouter.delete('/', (req, res) => {
     const agentType = getAgentType(req);
     ConversationStore.clear(agentType);
     res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -93,7 +93,7 @@ conversationsRouter.get('/:id/export', (req, res) => {
       res.setHeader('Content-Disposition', `attachment; filename="nyx-chat-${c.id}.json"`);
       return res.json(c);
     }
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });

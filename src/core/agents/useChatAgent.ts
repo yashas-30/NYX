@@ -195,14 +195,14 @@ export function useChatAgent() {
           messagesRef.current = next;
           return next;
         });
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
-          setError(err.message);
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          setError(error.message);
           setMessages((prev) => {
             const next = [...prev];
             const idx = next.findIndex((m) => m.id === assistantId);
             if (idx !== -1 && !next[idx].content) {
-              next[idx] = { ...next[idx], status: 'error', content: `Error: ${err.message}` };
+              next[idx] = { ...next[idx], status: 'error', content: `Error: ${error.message}` };
             }
             messagesRef.current = next;
             return next;

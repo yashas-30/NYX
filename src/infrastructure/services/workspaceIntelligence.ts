@@ -763,7 +763,7 @@ export class WorkspaceIntelligence {
         return profile;
       }
       throw new Error(data.error || 'Unknown error');
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[WorkspaceIntelligence] Server fetch failed, loading from local cache:', err);
       
       const cached = PersistentStore.get<WorkspaceProfile | null>('workspace-profile', null);

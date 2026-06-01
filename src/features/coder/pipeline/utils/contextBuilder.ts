@@ -52,7 +52,7 @@ export async function buildCodebaseContext(
         return { context, maxScore };
       }
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('Codebase search API failed:', err);
   }
   return { context: '', maxScore: 0 };
@@ -179,7 +179,7 @@ export async function buildWebSearchContext(
         return `\n\nADDITIONAL WEB SEARCH RESULTS:\n${resultsStr}\n`;
       }
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('Web search API failed:', err);
   }
   return '';

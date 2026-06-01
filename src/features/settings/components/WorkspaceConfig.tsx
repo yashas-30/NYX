@@ -25,8 +25,8 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
           toast.info('Please enter the workspace directory path in the text field.');
         }
       }
-    } catch (e: any) {
-      toast.error(`Directory selection failed: ${e.message}`);
+    } catch (error: any) {
+      toast.error(`Directory selection failed: ${error.message}`);
     }
   };
 
@@ -50,8 +50,8 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
             const err = await res.json();
             toast.error(`Error: ${err.error}`);
           }
-        } catch (err: any) {
-          toast.error(`Failed to update workspace: ${err.message}`);
+        } catch (error: any) {
+          toast.error(`Failed to update workspace: ${error.message}`);
         }
       }
     }

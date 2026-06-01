@@ -29,8 +29,8 @@ export const EvolutionaryRules: React.FC<EvolutionaryRulesProps> = ({
       } else {
         toast.error("Failed to reset evolved memory.");
       }
-    } catch (e: any) {
-      toast.error(`Error: ${e.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     }
   };
 

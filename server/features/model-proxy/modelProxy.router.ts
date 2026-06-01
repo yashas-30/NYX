@@ -14,8 +14,8 @@ modelProxyRouter.post('/list', validate(modelQuerySchema), async (req, res) => {
   try {
     const models = await service.listModels(provider, apiKey);
     res.json({ models });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -27,7 +27,7 @@ modelProxyRouter.post('/quota', validate(modelQuerySchema), async (req, res) => 
   try {
     const quota = await service.getQuota(provider, apiKey);
     res.json(quota);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });

@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 /* eslint-disable */
 import fs from 'fs';
 import path from 'path';
@@ -11,6 +12,7 @@ import kill from 'tree-kill';
 import { MODEL_LAYERS } from '../../config/constants.ts';
 import { Mutex } from 'async-mutex';
 import { ModelOptimizer, OptimizationProfile } from './modelOptimizer.ts';
+import { LOCAL_MODEL_PORT } from '../../../src/config/ports.ts';
 
 import { MODELS_DIR as BASE_DIR, findPythonPath } from '../../lib/paths.ts';
 const BIN_DIR = path.join(BASE_DIR, 'bin');
@@ -48,6 +50,9 @@ function getModelFormat(modelId: string): 'gguf' | 'unknown' {
 
 // ── State machine (mutex-protected) ──────────────────────────────────────────
 const runnerMutex = new Mutex();
+function getLlamaPort(): number {
+  return parseInt(process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString(), 10);
+}
 let modelState: ModelState = 'idle';
 let activeProcess: ChildProcess | null = null;
 let activeModelId: string | null = null;
@@ -72,7 +77,7 @@ function startHealthCheckLoop(): void {
 
     // Check if the process exited/died on its own
     if (activeProcess && activeProcess.exitCode !== null) {
-      console.warn(
+      logger.warn(
         `[LocalModelRunner] Process has exited with code ${activeProcess.exitCode}. Resetting state to idle.`
       );
       stopHealthCheckLoop();
@@ -83,7 +88,7 @@ function startHealthCheckLoop(): void {
     }
 
     try {
-      const port = 12345;
+      const port = getLlamaPort();
       const res = await fetch(`http://127.0.0.1:${port}/health`, {
         signal: AbortSignal.timeout(10000),
       });
@@ -96,17 +101,17 @@ function startHealthCheckLoop(): void {
     }
 
     consecutiveHealthFailures++;
-    console.warn(
+    logger.warn(
       `[LocalModelRunner] Health check failed (${consecutiveHealthFailures}/${MAX_HEALTH_FAILURES})`
     );
     if (consecutiveHealthFailures >= MAX_HEALTH_FAILURES) {
       if (activeProcess && activeProcess.exitCode === null) {
-        console.log(
+        logger.info(
           `[LocalModelRunner] Health check failure threshold reached, but process is still running (busy processing inference). Skipping auto-kill to avoid cutting off prompt.`
         );
         consecutiveHealthFailures = MAX_HEALTH_FAILURES - 1; // Cap to prevent infinite logs but avoid killing
       } else {
-        console.error(
+        logger.error(
           '[LocalModelRunner] Process is unresponsive and has exited or is invalid. Cleaning up...'
         );
         stopHealthCheckLoop();
@@ -134,7 +139,7 @@ async function _stop(): Promise<void> {
     return;
   }
 
-  console.log('Terminating local model runner child process...');
+  logger.info('Terminating local model runner child process...');
   modelState = 'stopping';
 
   return new Promise<void>((resolve) => {
@@ -143,7 +148,7 @@ async function _stop(): Promise<void> {
       if (pid) {
         kill(pid, 'SIGKILL', (err) => {
           if (err) {
-            console.warn(`[LocalModelRunner] Failed to tree-kill process ${pid}:`, err.message);
+            logger.warn(`[LocalModelRunner] Failed to tree-kill process ${pid}:`, err.message);
           }
           activeProcess = null;
           activeModelId = null;
@@ -220,7 +225,7 @@ function killProcessOnPort(port: number): Promise<void> {
         return new Promise<void>((res) => {
           const killCmd =
             process.platform === 'win32' ? `taskkill /F /PID ${pid}` : `kill -9 ${pid}`;
-          console.log(`[Local Runner] Zombie detection: Killing process ${pid} on port ${port}...`);
+          logger.info(`[Local Runner] Zombie detection: Killing process ${pid} on port ${port}...`);
           exec(killCmd, () => res());
         });
       });
@@ -400,7 +405,7 @@ export const LocalModelRunner = {
         try {
           const freeVram = await this.getFreeVram();
           if (freeVram > 0) {
-            console.log('[GPU Detection] Synthesizing primary NVIDIA GPU from nvidia-smi query');
+            logger.info('[GPU Detection] Synthesizing primary NVIDIA GPU from nvidia-smi query');
             parsedList.push({
               vendor: 'NVIDIA',
               model: 'GeForce Dedicated GPU',
@@ -439,8 +444,8 @@ export const LocalModelRunner = {
       });
 
       return sortedList.filter((g) => g.vramBytes > 0);
-    } catch (err) {
-      console.warn('[GPU Detection] Failed to query systeminformation graphics:', err);
+    } catch (err: any) {
+      logger.warn('[GPU Detection] Failed to query systeminformation graphics:', err);
       try {
         const freeVram = await this.getFreeVram();
         if (freeVram > 0) {
@@ -688,7 +693,7 @@ export const LocalModelRunner = {
         fs.existsSync(vulkanDllPath) &&
         (installedVersion === `${CURRENT_VERSION}-vulkan` || installedVersion === CURRENT_VERSION);
       if (vulkanReady) {
-        console.log(
+        logger.info(
           '[GPU Optimizer] CUDA backend is preferred but not downloaded. Vulkan is already installed and ready. Using Vulkan to avoid slow download.'
         );
         backend = 'vulkan';
@@ -725,7 +730,7 @@ export const LocalModelRunner = {
 
     modelState = 'downloading';
     startProgress = 10;
-    console.log(
+    logger.info(
       `Portable llama-server.exe version ${CURRENT_VERSION} (${backend.toUpperCase()} backend) not found. Preparing direct download...`
     );
 
@@ -743,16 +748,16 @@ export const LocalModelRunner = {
         startProgress = 40;
 
         // Download CUDA runtime DLLs
-        console.log('Downloading CUDA runtime libraries...');
+        logger.info('Downloading CUDA runtime libraries...');
         await this.downloadBinaryZip(cudartUrl, cudartZipPath);
         startProgress = 60;
 
-        console.log('Extracting main CUDA archive natively via PowerShell...');
+        logger.info('Extracting main CUDA archive natively via PowerShell...');
         await new Promise<void>((resolve, reject) => {
           const cmd = `powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
           exec(cmd, (err, stdout, stderr) => {
             if (err) {
-              console.error('PowerShell extraction of CUDA binary failed:', stderr);
+              logger.error('PowerShell extraction of CUDA binary failed:', stderr);
               reject(err);
             } else {
               resolve();
@@ -760,12 +765,12 @@ export const LocalModelRunner = {
           });
         });
 
-        console.log('Extracting CUDA runtime libraries natively via PowerShell...');
+        logger.info('Extracting CUDA runtime libraries natively via PowerShell...');
         await new Promise<void>((resolve, reject) => {
           const cmd = `powershell -Command "Expand-Archive -Path '${cudartZipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
           exec(cmd, (err, stdout, stderr) => {
             if (err) {
-              console.error('PowerShell extraction of CUDA runtime failed:', stderr);
+              logger.error('PowerShell extraction of CUDA runtime failed:', stderr);
               reject(err);
             } else {
               resolve();
@@ -778,7 +783,7 @@ export const LocalModelRunner = {
         startProgress = 20;
         await this.downloadBinaryZip(zipUrl, zipPath);
         startProgress = 60;
-        console.log(
+        logger.info(
           'Vulkan GPU binary downloaded successfully. Extracting archive natively via PowerShell...'
         );
 
@@ -786,7 +791,7 @@ export const LocalModelRunner = {
           const cmd = `powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
           exec(cmd, (err, stdout, stderr) => {
             if (err) {
-              console.error('PowerShell extraction failed:', stderr);
+              logger.error('PowerShell extraction failed:', stderr);
               reject(err);
             } else {
               resolve();
@@ -799,8 +804,8 @@ export const LocalModelRunner = {
       // Write the installed version
       try {
         fs.writeFileSync(versionFilePath, expectedVersion, 'utf-8');
-      } catch (err: any) {
-        console.error('Failed to write .version file:', err.message);
+      } catch (error: any) {
+        logger.error('Failed to write .version file:', error.message);
       }
 
       // Clean up zip files
@@ -817,11 +822,11 @@ export const LocalModelRunner = {
 
       startProgress = 100;
       modelState = 'idle';
-      console.log(
+      logger.info(
         `Binary extraction complete. Native llama-server.exe version ${CURRENT_VERSION} (${backend.toUpperCase()} backend) is ready.`
       );
       return backend;
-    } catch (e: any) {
+    } catch (error: any) {
       modelState = 'idle';
       startProgress = 0;
       if (fs.existsSync(zipPath)) {
@@ -834,7 +839,7 @@ export const LocalModelRunner = {
           fs.unlinkSync(cudartZipPath);
         } catch {}
       }
-      throw new Error(`Failed to initialize built-in llama-server executable: ${e.message}`);
+      throw new Error(`Failed to initialize built-in llama-server executable: ${error.message}`);
     }
   },
 
@@ -842,25 +847,25 @@ export const LocalModelRunner = {
     return new Promise<void>((resolve, reject) => {
       // Prefer native curl on Windows for speed and system-proxy compatibility
       if (process.platform === 'win32') {
-        console.log(`[Binary Downloader] Attempting download via curl.exe from: ${url}`);
+        logger.info(`[Binary Downloader] Attempting download via curl.exe from: ${url}`);
         const cmd = `curl.exe -L "${url}" -o "${destPath}"`;
         exec(cmd, (err, stdout, stderr) => {
           if (!err && fs.existsSync(destPath) && fs.statSync(destPath).size > 0) {
-            console.log(
+            logger.info(
               `[Binary Downloader] Successfully downloaded via curl: ${path.basename(destPath)}`
             );
             resolve();
           } else {
-            console.warn(
+            logger.warn(
               `[Binary Downloader] curl download failed or not available, falling back to Node https:`,
               err || stderr
             );
-            this.downloadBinaryZipNode(url, destPath).then(resolve).catch(reject);
+            this.downloadBinaryZipNode(url, destPath).then(resolve).catch (reject: any);
           }
         });
         return;
       }
-      this.downloadBinaryZipNode(url, destPath).then(resolve).catch(reject);
+      this.downloadBinaryZipNode(url, destPath).then(resolve).catch (reject: any);
     });
   },
 
@@ -953,7 +958,7 @@ export const LocalModelRunner = {
       return; // Already running with equal or larger context window
     }
 
-    const port = 12345;
+    const port = getLlamaPort();
 
     // Check if the port is already alive and running the correct model
     try {
@@ -1001,13 +1006,13 @@ export const LocalModelRunner = {
 
             const requestedCtx = settings?.contextSize || 8192;
             if (runningCtxSize > 0 && runningCtxSize < requestedCtx) {
-              console.log(
+              logger.info(
                 `[Local Runner] Port ${port} has model ${modelId} but ctx=${runningCtxSize} < needed=${requestedCtx}. Restarting with larger context...`
               );
               await killProcessOnPort(port);
               // Fall through to spawn a new process below
             } else {
-              console.log(
+              logger.info(
                 `[Local Runner] Port ${port} is already running the correct model: ${modelId} (ctx=${runningCtxSize || 'unknown'}). Adopting running server...`
               );
               modelState = 'running';
@@ -1018,7 +1023,7 @@ export const LocalModelRunner = {
               return;
             }
           } else {
-            console.log(
+            logger.info(
               `[Local Runner] Port ${port} is active but running a different model or unresponsive. Freeing port...`
             );
             await killProcessOnPort(port);
@@ -1039,7 +1044,7 @@ export const LocalModelRunner = {
     }
 
     if (activeProcess) {
-      console.log('Stopping active local model runner to load new model...');
+      logger.info('Stopping active local model runner to load new model...');
       await _stop();
       // Wait for Windows to fully release GPU VRAM after killing the old process.
       // Without this delay, nvidia-smi still reports the old VRAM as used for ~1-2s,
@@ -1058,12 +1063,12 @@ export const LocalModelRunner = {
           settings?.taskType || 'code',
           settings?.priority || 'balanced'
         );
-        console.log(
+        logger.info(
           '[GPU Optimizer] Generated optimization profile:',
           JSON.stringify(optimizationProfile, null, 2)
         );
-      } catch (err: any) {
-        console.error('[GPU Optimizer] Failed to auto-generate optimization profile:', err.message);
+      } catch (error: any) {
+        logger.error('[GPU Optimizer] Failed to auto-generate optimization profile:', error.message);
       }
     }
 
@@ -1083,8 +1088,8 @@ export const LocalModelRunner = {
       if (fs.existsSync(CONFIG_PATH)) {
         try {
           existingSettings = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-        } catch (err: any) {
-          console.error('Failed to read local models config.json:', err.message);
+        } catch (error: any) {
+          logger.error('Failed to read local models config.json:', error.message);
         }
       }
 
@@ -1092,8 +1097,8 @@ export const LocalModelRunner = {
         localSettings = { ...existingSettings, ...localSettings };
         try {
           fs.writeFileSync(CONFIG_PATH, JSON.stringify(localSettings, null, 2));
-        } catch (err: any) {
-          console.error('Failed to write local models config.json:', err.message);
+        } catch (error: any) {
+          logger.error('Failed to write local models config.json:', error.message);
         }
       } else {
         localSettings = existingSettings;
@@ -1141,12 +1146,12 @@ export const LocalModelRunner = {
       const quantIdx = QUANT_TIERS.indexOf(selectedQuant);
       const minQuantIdx = QUANT_TIERS.indexOf(MIN_CODE_QUANT);
       if (currentTaskType === 'code' && quantIdx >= 0 && quantIdx < minQuantIdx) {
-        console.warn(
+        logger.warn(
           `[Quantization Guard] Blocked low-quality quant '${selectedQuant}' — upgrading to minimum safe '${MIN_CODE_QUANT}' for code generation.`
         );
         selectedQuant = MIN_CODE_QUANT;
       }
-      console.log(
+      logger.info(
         `[Quantization] Using quant tier: ${selectedQuant} (Optimized for task type: ${currentTaskType})`
       );
 
@@ -1180,13 +1185,13 @@ export const LocalModelRunner = {
         fileSizeBytes = optimal.fileSize;
         hasGPU = optimal.hasGPU;
         gpuInfoList = optimal.gpuInfo;
-        console.log(
+        logger.info(
           `[GPU Optimizer] VRAM analysis for ${modelId}: max safe layers = ${maxGpuLayers}/${optimal.totalLayers}. (${optimal.message})`
         );
-      } catch (err: any) {
-        console.error(
+      } catch (error: any) {
+        logger.error(
           '[GPU Optimizer] Failed to dynamically calculate offload capacity:',
-          err.message
+          error.message
         );
       }
 
@@ -1196,22 +1201,22 @@ export const LocalModelRunner = {
       } else {
         if (gpuLayers === 99) {
           gpuLayers = maxGpuLayers;
-          console.log(
+          logger.info(
             `[GPU Optimizer] Maximum offload mode active. Offloading exactly ${gpuLayers} layers to GPU VRAM. Remaining layers run on CPU/RAM.`
           );
         } else if (gpuLayers > maxGpuLayers) {
-          console.log(
+          logger.info(
             `[GPU Optimizer] Requested GPU layers (${gpuLayers}) exceeds calculated safe limit (${maxGpuLayers}). Capping to ${maxGpuLayers} to prevent GPU OOM crash. Remaining layers run on CPU/RAM.`
           );
           gpuLayers = maxGpuLayers;
         } else {
-          console.log(
+          logger.info(
             `[GPU Optimizer] Using requested GPU layers: ${gpuLayers}. Remaining layers run on CPU/RAM.`
           );
         }
       }
 
-      console.log(
+      logger.info(
         `Spawning native llama-server.exe for GGUF: ${model.name} (ngl: ${gpuLayers}, threads: ${threads}, ctx: ${contextSize}, batch: ${batchSize}, backend: ${usedBackend})`
       );
       startProgress = 60;
@@ -1221,7 +1226,7 @@ export const LocalModelRunner = {
         '-m',
         model.filePath,
         '--port',
-        '12345',
+        String(getLlamaPort()),
         '--host',
         '127.0.0.1', // Bind strictly to localhost
         '-c',
@@ -1244,6 +1249,7 @@ export const LocalModelRunner = {
         String(topK), // Top-k filter
         '--min-p',
         String(minP), // MinP: filters wildly unlikely tokens — reduces hallucinations
+        '--mlock', // --mlock prevents swapping (locks RAM on Windows/Unix)
       ];
 
       // Enable optimizations if GPU offloading is active
@@ -1295,7 +1301,7 @@ export const LocalModelRunner = {
         if (fs.existsSync(draftModelPath)) {
           args.push('--draft-model', draftModelPath);
           args.push('--draft', '5');
-          console.log(
+          logger.info(
             `[Speculative Decoding] Draft model found: ${draftModelPath}. Speculating 5 tokens per step.`
           );
         } else {
@@ -1307,7 +1313,7 @@ export const LocalModelRunner = {
           if (foundDraft && foundDraft !== model.filePath) {
             args.push('--draft-model', foundDraft);
             args.push('--draft', '5');
-            console.log(
+            logger.info(
               `[Speculative Decoding] Generic draft model found at: ${foundDraft}. Speculating 5 tokens per step.`
             );
           }
@@ -1323,19 +1329,19 @@ export const LocalModelRunner = {
 
       if (optimalDevice) {
         args.push('--device', optimalDevice.name);
-        console.log(
+        logger.info(
           `[GPU Optimizer] Forcing llama-server to run on optimal device: ${optimalDevice.name} (Index ${optimalDevice.index})`
         );
 
         if (optimalDevice.type === 'device' || optimalDevice.type === 'vulkan') {
           spawnEnv['GGML_VK_VISIBLE_DEVICES'] = String(optimalDevice.index);
           spawnEnv['GGML_VULKAN_DEVICE'] = String(optimalDevice.index);
-          console.log(
+          logger.info(
             `[GPU Optimizer] Setting environment variables: GGML_VK_VISIBLE_DEVICES = ${optimalDevice.index}, GGML_VULKAN_DEVICE = ${optimalDevice.index}`
           );
         } else if (optimalDevice.type === 'cuda') {
           spawnEnv['CUDA_VISIBLE_DEVICES'] = String(optimalDevice.index);
-          console.log(
+          logger.info(
             `[GPU Optimizer] Setting environment variable: CUDA_VISIBLE_DEVICES = ${optimalDevice.index}`
           );
         }
@@ -1353,7 +1359,7 @@ export const LocalModelRunner = {
           );
         });
         if (discreteGPU) {
-          console.log(
+          logger.info(
             `[GPU Optimizer] Fallback: Forcing discrete GPU visible devices at index: ${discreteGPU.index}`
           );
           spawnEnv['GGML_VK_VISIBLE_DEVICES'] = String(discreteGPU.index);
@@ -1378,7 +1384,7 @@ export const LocalModelRunner = {
 
       const currentProc = activeProcess;
       currentProc.on('exit', (code, signal) => {
-        console.log(
+        logger.info(
           `[LocalModelRunner] llama-server process exited with code ${code} and signal ${signal}`
         );
         if (modelState !== 'stopping' && activeProcess === currentProc) {
@@ -1406,7 +1412,7 @@ export const LocalModelRunner = {
       activeProcess.stdout?.on('data', (data) => {
         const str = data.toString().trim();
         if (str) {
-          console.log(`[llama-server]: ${str}`);
+          logger.info(`[llama-server]: ${str}`);
           try {
             fs.appendFileSync(logFilePath, `[STDOUT] ${str}\n`, 'utf-8');
           } catch {}
@@ -1420,9 +1426,9 @@ export const LocalModelRunner = {
           if (stderrLogs.length > 20) stderrLogs.shift();
 
           if (str.toLowerCase().includes('error') || str.toLowerCase().includes('fail')) {
-            console.error(`[llama-server-err]: ${str}`);
+            logger.error(`[llama-server-err]: ${str}`);
           } else {
-            console.log(`[llama-server-log]: ${str}`);
+            logger.info(`[llama-server-log]: ${str}`);
           }
           try {
             fs.appendFileSync(logFilePath, `[STDERR] ${str}\n`, 'utf-8');
@@ -1434,7 +1440,7 @@ export const LocalModelRunner = {
             str.toLowerCase().includes('oom') ||
             str.includes('failed to allocate')
           ) {
-            console.error(
+            logger.error(
               '[llama-server] Critical GPU VRAM OOM crash detected! Auto-evicting model runner...'
             );
             this.stop().catch(() => {});
@@ -1457,7 +1463,8 @@ export const LocalModelRunner = {
 
         await new Promise((r) => setTimeout(r, 1000));
         try {
-          const res = await fetch('http://127.0.0.1:12345/health');
+          const port = getLlamaPort();
+          const res = await fetch(`http://127.0.0.1:${port}/health`);
           if (res.ok) {
             const data = await res.json();
             if (data.status === 'ok' || data.status === 'success') {
@@ -1481,36 +1488,36 @@ export const LocalModelRunner = {
       activeContextSize = contextSize;
       activeTaskType = currentTaskType;
       startHealthCheckLoop();
-      console.log(
-        `Native llama-server running successfully on http://localhost:12345 with model ${model.name}`
+      logger.info(
+        `Native llama-server running successfully on http://localhost:${getLlamaPort()} with model ${model.name}`
       );
-    } catch (e: any) {
+    } catch (error: any) {
       modelState = 'idle';
       startProgress = 0;
       await _stop();
 
       if (fallbackStage === 'none' && gpuLayers > 0) {
         if (usedBackend === 'cuda') {
-          console.warn(
-            `[Local Runner] Spawn failed with CUDA offload (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with Vulkan backend...`
+          logger.warn(
+            `[Local Runner] Spawn failed with CUDA offload (ngl: ${gpuLayers}). Error: ${error.message}. Retrying with Vulkan backend...`
           );
           return this._startInternal(modelId, localSettings, undefined, 'vulkan');
         } else {
-          console.warn(
-            `[Local Runner] Spawn failed with Vulkan offload (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with CPU-only mode (-ngl 0)...`
+          logger.warn(
+            `[Local Runner] Spawn failed with Vulkan offload (ngl: ${gpuLayers}). Error: ${error.message}. Retrying with CPU-only mode (-ngl 0)...`
           );
           const fallbackSettings = { ...localSettings, gpuLayers: 0 };
           return this._startInternal(modelId, fallbackSettings, undefined, 'cpu');
         }
       } else if (fallbackStage === 'vulkan' && gpuLayers > 0) {
-        console.warn(
-          `[Local Runner] Spawn failed with Vulkan fallback (ngl: ${gpuLayers}). Error: ${e.message}. Retrying with CPU-only mode (-ngl 0)...`
+        logger.warn(
+          `[Local Runner] Spawn failed with Vulkan fallback (ngl: ${gpuLayers}). Error: ${error.message}. Retrying with CPU-only mode (-ngl 0)...`
         );
         const fallbackSettings = { ...localSettings, gpuLayers: 0 };
         return this._startInternal(modelId, fallbackSettings, undefined, 'cpu');
       }
 
-      throw e;
+      throw error;
     }
   },
 
@@ -1521,7 +1528,7 @@ export const LocalModelRunner = {
   },
 
   getModelPort(modelId: string | null): number {
-    return 12345;
+    return getLlamaPort();
   },
 
   async monitorAndAdjust(modelId: string): Promise<void> {
@@ -1544,7 +1551,7 @@ export const LocalModelRunner = {
     const vramPressure = vramUsed / primaryGPU.vramBytes;
 
     if (vramPressure > 0.9 && config.enableDynamicUnload) {
-      console.warn(
+      logger.warn(
         '[LocalModelRunner] VRAM pressure detected (>90%). Consider reducing context or layers.'
       );
     }
@@ -1552,7 +1559,7 @@ export const LocalModelRunner = {
     // Monitor system RAM
     const freeRam = os.freemem();
     if (freeRam < config.ramHeadroomMB * 1024 * 1024) {
-      console.warn('[LocalModelRunner] System RAM critically low.');
+      logger.warn('[LocalModelRunner] System RAM critically low.');
     }
   },
 

@@ -53,7 +53,7 @@ metricsRouter.get('/metrics', (req, res) => {
         memory,
       },
     });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });

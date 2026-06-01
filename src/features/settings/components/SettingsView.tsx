@@ -67,7 +67,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         const data = await res.json();
         setWorkspacePath(data.workspace);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to fetch workspace path:', e);
     }
   };
@@ -79,7 +79,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         const data = await res.json();
         setVaultStatus(data);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to fetch vault status:', e);
     }
   };
@@ -91,7 +91,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         const data = await res.json();
         setCacheStats(data);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to fetch cache stats:', e);
     }
   };
@@ -103,7 +103,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         const data = await res.json();
         setEvolvedRules(data.rules || data || []);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to fetch evolved rules:', e);
     }
   };

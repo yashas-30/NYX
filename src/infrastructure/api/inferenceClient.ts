@@ -17,6 +17,7 @@ export interface AISettings {
   topK?: number;
   frequencyPenalty?: number;
   presencePenalty?: number;
+  antigravity?: boolean;
   responseFormat?: 'text' | 'json' | { type: 'json_schema'; schema: object };
 }
 

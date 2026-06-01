@@ -36,7 +36,12 @@ interface CircuitState {
 const circuitStates = new Map<string, CircuitState>();
 
 // Request deduplication
-const inflightRequests = new Map<string, Promise<Response>>();
+interface PendingDedupe {
+  resolve: (res: Response) => void;
+  reject: (err: any) => void;
+}
+const inflightResolvers = new Map<string, PendingDedupe[]>();
+const inflightRequests = new Set<string>();
 let dedupeTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ---------------------------------------------------------------------------
@@ -228,7 +233,12 @@ export async function fetchWithAuth(
   // Request deduplication for non-mutating requests
   const dedupeKey = getDedupeKey(targetUrl, init);
   if (method === 'GET' && inflightRequests.has(dedupeKey)) {
-    return inflightRequests.get(dedupeKey)!.then(res => res.clone());
+    return new Promise<Response>((resolve, reject) => {
+      if (!inflightResolvers.has(dedupeKey)) {
+        inflightResolvers.set(dedupeKey, []);
+      }
+      inflightResolvers.get(dedupeKey)!.push({ resolve, reject });
+    });
   }
 
   const startTime = performance.now();
@@ -299,6 +309,14 @@ export async function fetchWithAuth(
         throw new Error('Authentication failed after token refresh. Please log in again.');
       }
 
+      // Resolve all pending resolvers with clones of the retry response
+      const resolvers = inflightResolvers.get(dedupeKey) || [];
+      inflightResolvers.delete(dedupeKey);
+      inflightRequests.delete(dedupeKey);
+      for (const r of resolvers) {
+        r.resolve(retryResponse.clone());
+      }
+
       return retryResponse;
     }
 
@@ -310,10 +328,25 @@ export async function fetchWithAuth(
       recordFailure(targetUrl);
     }
 
+    // Resolve all pending resolvers with clones of the original response
+    const resolvers = inflightResolvers.get(dedupeKey) || [];
+    inflightResolvers.delete(dedupeKey);
+    inflightRequests.delete(dedupeKey);
+    for (const r of resolvers) {
+      r.resolve(response.clone());
+    }
+
     return response;
   }).catch((error) => {
     inflightRequests.delete(dedupeKey);
     const latency = Math.round(performance.now() - startTime);
+
+    const resolvers = inflightResolvers.get(dedupeKey) || [];
+    inflightResolvers.delete(dedupeKey);
+    inflightRequests.delete(dedupeKey);
+    for (const r of resolvers) {
+      r.reject(error);
+    }
 
     if (error.name === 'AbortError') {
       if (signal.aborted && !init?.signal?.aborted) {
@@ -334,7 +367,7 @@ export async function fetchWithAuth(
 
   // Track inflight for deduplication
   if (method === 'GET') {
-    inflightRequests.set(dedupeKey, requestPromise);
+    inflightRequests.add(dedupeKey);
     cleanupDedupe();
   }
 
@@ -363,5 +396,6 @@ export async function checkBackendHealth(url?: string): Promise<boolean> {
 export function cleanupAuthFetch(): void {
   if (dedupeTimer) clearTimeout(dedupeTimer);
   inflightRequests.clear();
+  inflightResolvers.clear();
   circuitStates.clear();
 }

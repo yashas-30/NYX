@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 import { Router } from 'express';
 import { validate } from '../../middleware/validate.ts';
 import {
@@ -12,6 +13,7 @@ import { SearchService } from './search.service.ts';
 import { FilesystemService } from './filesystem.service.ts';
 import { GitService } from './git.service.ts';
 import { WorkspaceService } from './workspace.service.ts';
+import { MemoryService } from './memory.service.ts';
 
 export const nyxRouter = Router();
 
@@ -62,9 +64,9 @@ nyxRouter.get('/rules', (_req, res) => {
   try {
     const rules = agentService.getRules();
     res.json({ success: true, rules });
-  } catch (e: any) {
-    console.error('[Nyx Router] Failed to fetch rules:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Failed to fetch rules:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -76,9 +78,9 @@ nyxRouter.post('/reset', (req, res) => {
   try {
     agentService.resetRules();
     res.json({ success: true });
-  } catch (e: any) {
-    console.error('[Nyx Router] Failed to reset rules:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Failed to reset rules:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -92,8 +94,8 @@ nyxRouter.post('/critic', validate(nyxCriticSchema), (req, res) => {
   setImmediate(async () => {
     try {
       await agentService.runBackgroundCritic(prompt, response, modelId, provider);
-    } catch (criticError) {
-      console.error('[Nyx Critic Layer Error]:', criticError);
+    } catch (criticError: any) {
+      logger.error('[Nyx Critic Layer Error]:', criticError);
     }
   });
 });
@@ -104,8 +106,8 @@ nyxRouter.post('/critic', validate(nyxCriticSchema), (req, res) => {
 nyxRouter.get('/search/backends', (_req, res) => {
   try {
     res.json({ success: true, ...searchService.getSearchBackends() });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -118,9 +120,9 @@ nyxRouter.post('/codebase-search', validate(codebaseSearchSchema), async (req, r
   try {
     const result = await searchService.codebaseSearch(query);
     res.json({ success: true, ...result });
-  } catch (e: any) {
-    console.error('[Nyx Router] Codebase search failed:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Codebase search failed:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -133,9 +135,9 @@ nyxRouter.post('/search', validate(nyxSearchSchema), async (req, res) => {
   try {
     const results = await searchService.performWebSearch(query);
     res.json({ success: true, results });
-  } catch (e: any) {
-    console.error('[Nyx Router] Web search route handler failed:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Web search route handler failed:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -150,9 +152,9 @@ nyxRouter.post('/write-file', validate(writeFileSchema), async (req, res) => {
       return res.status(409).json(result);
     }
     res.json(result);
-  } catch (e: any) {
-    console.error('[File System Error]:', e.message);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[File System Error]:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -169,9 +171,9 @@ nyxRouter.post('/read-file', async (req, res) => {
     }
     const content = await filesystemService.readFile(filePath, startLine, endLine);
     res.json({ success: true, content });
-  } catch (e: any) {
-    console.error('[Nyx Router] read-file failed:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] read-file failed:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -181,9 +183,9 @@ nyxRouter.post('/list-directory', async (req, res) => {
     const { dirPath } = req.body as { dirPath?: string };
     const files = filesystemService.listDirectory(dirPath);
     res.json({ success: true, files });
-  } catch (e: any) {
-    console.error('[Nyx Router] list-directory failed:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] list-directory failed:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -195,9 +197,9 @@ nyxRouter.post('/git-diff', async (req, res) => {
     const { filePath } = req.body as { filePath?: string };
     const diff = await gitService.getDiff(filePath);
     res.json({ success: true, diff });
-  } catch (e: any) {
-    console.error('[Nyx Router] git-diff failed:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] git-diff failed:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -206,27 +208,196 @@ nyxRouter.post('/git-status', async (req, res) => {
   try {
     const status = await gitService.getStatus();
     res.json({ success: true, status });
-  } catch (e: any) {
-    console.error('[Nyx Router] git-status failed:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] git-status failed:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
 // ── Intelligence Endpoints ───────────────────────────────────────────────────────
 
 // POST /api/nyx/claude-md-hierarchy
-nyxRouter.post('/claude-md-hierarchy', (req, res) => {
-  res.json({ files: [] });
+nyxRouter.post('/claude-md-hierarchy', async (req, res) => {
+  try {
+    const { rootPath, currentFile } = req.body as { rootPath?: string; currentFile?: string };
+    if (!rootPath) {
+      return res.status(400).json({ error: 'rootPath is required' });
+    }
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const files: any[] = [];
+    const targetNames = ['CLAUDE.md', 'GEMINI.md', 'AGENTS.md', 'DESIGN.md', '.claude.md'];
+
+    // 1. Scan root directory
+    for (const name of targetNames) {
+      const fullPath = path.join(rootPath, name);
+      if (fs.existsSync(fullPath)) {
+        const stats = fs.statSync(fullPath);
+        if (stats.isFile()) {
+          const content = fs.readFileSync(fullPath, 'utf8');
+          files.push({
+            path: name,
+            level: name === 'CLAUDE.md' ? 'global' : 'project',
+            content,
+            lastModified: stats.mtime.toISOString(),
+          });
+        }
+      }
+    }
+
+    // 2. Scan subdirectories up to the currentFile if provided
+    if (currentFile && currentFile.startsWith(rootPath)) {
+      let currentDir = path.dirname(currentFile);
+      // Traverse up to rootPath
+      while (currentDir.length >= rootPath.length && currentDir !== rootPath) {
+        for (const name of targetNames) {
+          const fullPath = path.join(currentDir, name);
+          if (fs.existsSync(fullPath)) {
+            const stats = fs.statSync(fullPath);
+            if (stats.isFile()) {
+              const content = fs.readFileSync(fullPath, 'utf8');
+              const relPath = path.relative(rootPath, fullPath).replace(/\\/g, '/');
+              files.push({
+                path: relPath,
+                level: 'directory',
+                content,
+                lastModified: stats.mtime.toISOString(),
+              });
+            }
+          }
+        }
+        const parentDir = path.dirname(currentDir);
+        if (parentDir === currentDir) break;
+        currentDir = parentDir;
+      }
+    }
+
+    res.json({ files });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // POST /api/nyx/memory-index
-nyxRouter.post('/memory-index', (req, res) => {
-  res.json({ entries: [] });
+nyxRouter.post('/memory-index', async (req, res) => {
+  try {
+    const codeMemories = MemoryService.getMemories('code');
+    const chatMemories = MemoryService.getMemories('chat');
+    const allMemories = [...codeMemories, ...chatMemories];
+    const mapped = allMemories.map(m => {
+      let type: 'user' | 'feedback' | 'project' | 'reference' = 'project';
+      if (m.category === 'user_preference') type = 'user';
+      else if (m.category === 'project_fact') type = 'project';
+      else if (m.category === 'decision') type = 'reference';
+      else if (m.category === 'summary') type = 'feedback';
+      return {
+        id: m.id,
+        type,
+        content: m.content,
+        timestamp: new Date(m.timestamp).toISOString(),
+        tags: [m.category, m.agentType || 'code'].filter(Boolean) as string[],
+        sourceFile: undefined
+      };
+    });
+    res.json({ entries: mapped });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // POST /api/nyx/semantic-index
-nyxRouter.post('/semantic-index', (req, res) => {
-  res.json({ snippets: [] });
+nyxRouter.post('/semantic-index', async (req, res) => {
+  try {
+    const { rootPath } = req.body as { rootPath?: string };
+    if (!rootPath) {
+      return res.status(400).json({ error: 'rootPath is required' });
+    }
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const snippets: any[] = [];
+    const EXCLUDE_DIRS = new Set([
+      'node_modules', '.git', '.nyx-cache', '.stitch', '.agents',
+      '.antigravitycli', '.claude', '.vscode', 'dist', 'dist-server',
+      'dist-desktop', 'public', 'graphify-out', 'scratch'
+    ]);
+    const ALLOWED_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs']);
+
+    function scanDir(dir: string) {
+      if (!fs.existsSync(dir)) return;
+      const list = fs.readdirSync(dir);
+      for (const file of list) {
+        const fullPath = path.join(dir, file);
+        const relPath = path.relative(rootPath, fullPath).replace(/\\/g, '/');
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+          if (!EXCLUDE_DIRS.has(file)) {
+            scanDir(fullPath);
+          }
+        } else {
+          const ext = path.extname(file).toLowerCase();
+          if (ALLOWED_EXTENSIONS.has(ext)) {
+            parseFile(fullPath, relPath);
+          }
+        }
+      }
+    }
+
+    function parseFile(filePath: string, relPath: string) {
+      try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          let match = line.match(/(?:export\s+)?class\s+(\w+)/);
+          if (match) {
+            snippets.push(createSnippet(relPath, match[1], 'class', i + 1, lines));
+            continue;
+          }
+          match = line.match(/(?:export\s+)?function\s+(\w+)/);
+          if (match) {
+            snippets.push(createSnippet(relPath, match[1], 'function', i + 1, lines));
+            continue;
+          }
+          match = line.match(/(?:export\s+)?interface\s+(\w+)/);
+          if (match) {
+            snippets.push(createSnippet(relPath, match[1], 'interface', i + 1, lines));
+            continue;
+          }
+          match = line.match(/(?:export\s+)?type\s+(\w+)\s*=/);
+          if (match) {
+            snippets.push(createSnippet(relPath, match[1], 'type', i + 1, lines));
+            continue;
+          }
+        }
+      } catch {}
+    }
+
+    function createSnippet(relPath: string, name: string, type: string, lineNum: number, lines: string[]) {
+      const startLine = Math.max(1, lineNum - 1);
+      const endLine = Math.min(lines.length, lineNum + 8);
+      const snippetContent = lines.slice(startLine - 1, endLine).join('\n');
+      return {
+        id: `sem_${relPath.replace(/\//g, '_')}_${lineNum}`,
+        filePath: relPath,
+        content: snippetContent,
+        startLine,
+        endLine,
+        metadata: {
+          type,
+          name,
+          signature: lines[lineNum - 1].trim(),
+          dependencies: []
+        }
+      };
+    }
+
+    scanDir(rootPath);
+    res.json({ snippets: snippets.slice(0, 500) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ── Workspace Endpoints ────────────────────────────────────────────────────────
@@ -236,9 +407,9 @@ nyxRouter.get('/workspace-profile', async (req, res) => {
   try {
     const profile = await workspaceService.getProfile();
     res.json({ success: true, profile });
-  } catch (e: any) {
-    console.error('[Nyx Router] Failed to fetch workspace profile:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Failed to fetch workspace profile:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -251,9 +422,9 @@ nyxRouter.post('/workspace-profile', async (req, res) => {
     }
     const profile = await workspaceService.getProfile();
     res.json({ success: true, profile });
-  } catch (e: any) {
-    console.error('[Nyx Router] Failed to update/fetch workspace profile:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Failed to update/fetch workspace profile:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -262,8 +433,8 @@ nyxRouter.post('/validate', async (req, res) => {
   try {
     const result = await workspaceService.validateWorkspace();
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -271,11 +442,10 @@ nyxRouter.post('/validate', async (req, res) => {
 nyxRouter.get('/memory', async (req, res) => {
   try {
     const agentType = (req.query.agentType as 'chat' | 'code') || 'code';
-    const { MemoryService } = await import('./memory.service.ts');
     res.json({ success: true, memories: MemoryService.getMemories(agentType) });
-  } catch (e: any) {
-    console.error('[Nyx Router] Failed to fetch memories:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Failed to fetch memories:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -288,7 +458,6 @@ nyxRouter.post('/memory/commit', (req, res) => {
   res.json({ success: true, processing: true });
   setImmediate(async () => {
     try {
-      const { MemoryService } = await import('./memory.service.ts');
       const targetAgentType = agentType || 'code';
       await MemoryService.runBackgroundMemoryKeeper(
         prompt,
@@ -297,8 +466,8 @@ nyxRouter.post('/memory/commit', (req, res) => {
         provider,
         targetAgentType
       );
-    } catch (memoryError) {
-      console.error('[Nyx Memory Keeper Layer Error]:', memoryError);
+    } catch (memoryError: any) {
+      logger.error('[Nyx Memory Keeper Layer Error]:', memoryError);
     }
   });
 });
@@ -307,11 +476,10 @@ nyxRouter.post('/memory/commit', (req, res) => {
 nyxRouter.post('/memory/reset', async (req, res) => {
   try {
     const agentType = req.query.agentType as 'chat' | 'code' | undefined;
-    const { MemoryService } = await import('./memory.service.ts');
     MemoryService.resetMemories(agentType);
     res.json({ success: true });
-  } catch (e: any) {
-    console.error('[Nyx Router] Failed to reset memories:', e);
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Failed to reset memories:', error);
+    res.status(500).json({ error: error.message });
   }
 });

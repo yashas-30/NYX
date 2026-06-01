@@ -74,8 +74,8 @@ export const ConversationStore = {
           })),
         };
       });
-    } catch (err) {
-      console.error(`[ConversationStore] list failed for ${agentType}:`, err);
+    } catch (err: any) {
+      logger.error(`[ConversationStore] list failed for ${agentType}:`, err);
       return [];
     }
   },
@@ -107,8 +107,8 @@ export const ConversationStore = {
           toolCalls: (m as any).toolCalls || undefined,
         })),
       };
-    } catch (err) {
-      console.error(`[ConversationStore] get failed for ${id}:`, err);
+    } catch (err: any) {
+      logger.error(`[ConversationStore] get failed for ${id}:`, err);
       return null;
     }
   },
@@ -168,8 +168,8 @@ export const ConversationStore = {
           }
         }
       });
-    } catch (err) {
-      console.error(`[ConversationStore] upsert failed for ${conv.id}:`, err);
+    } catch (err: any) {
+      logger.error(`[ConversationStore] upsert failed for ${conv.id}:`, err);
     }
   },
 
@@ -177,8 +177,8 @@ export const ConversationStore = {
     try {
       const { conversationsTable } = getTables(agentType);
       db.delete(conversationsTable).where(eq(conversationsTable.id, id)).run();
-    } catch (err) {
-      console.error(`[ConversationStore] delete failed for ${id}:`, err);
+    } catch (err: any) {
+      logger.error(`[ConversationStore] delete failed for ${id}:`, err);
     }
   },
 
@@ -186,8 +186,8 @@ export const ConversationStore = {
     try {
       const { conversationsTable } = getTables(agentType);
       db.delete(conversationsTable).run();
-    } catch (err) {
-      console.error(`[ConversationStore] clear failed for ${agentType}:`, err);
+    } catch (err: any) {
+      logger.error(`[ConversationStore] clear failed for ${agentType}:`, err);
     }
   },
 };
@@ -292,8 +292,8 @@ export function migrateSqliteStore() {
     logger.info(
       `[DB] Successfully migrated ${chatCountMigrated} chat and ${codeCountMigrated} code sessions to separate stores.`
     );
-  } catch (err: any) {
-    logger.error({ err }, '[DB] Failed to migrate split database tables');
+  } catch (error: any) {
+    logger.error({ error }, '[DB] Failed to migrate split database tables');
   }
 }
 
@@ -330,7 +330,7 @@ export function migrateOldStore() {
       fs.renameSync(STORE_PATH, backupPath);
       logger.info(`[DB] Backup stored at: ${backupPath}`);
     }
-  } catch (err: any) {
-    logger.error({ err }, '[DB] Automatic legacy migration failed');
+  } catch (error: any) {
+    logger.error({ error }, '[DB] Automatic legacy migration failed');
   }
 }

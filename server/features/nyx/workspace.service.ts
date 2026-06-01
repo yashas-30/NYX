@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 import { WorkspaceIntelligence } from '../workspace/workspaceIntelligence.ts';
 import { getWorkspaceRoot } from '../../lib/paths.ts';
 import fs from 'fs';
@@ -37,8 +38,8 @@ export class WorkspaceService {
         try {
           const { stdout } = await execAsync('npx tsc --noEmit', { cwd: root, timeout: 30_000 });
           return { success: true, stdout, monorepo: true };
-        } catch (err: any) {
-          return { success: false, error: err.stderr || err.stdout || err.message, monorepo: true };
+        } catch (error: any) {
+          return { success: false, error: error.stderr || error.stdout || error.message, monorepo: true };
         }
       }
       return {
@@ -87,15 +88,15 @@ export class WorkspaceService {
       return { success: true, message: 'No validation command defined for this project type' };
     }
 
-    console.log(`[Validation] Running validation command: "${command}" in ${root}`);
+    logger.info(`[Validation] Running validation command: "${command}" in ${root}`);
     try {
       const { stdout } = await execAsync(command, { cwd: root, timeout: 25_000 });
       return { success: true, stdout };
-    } catch (err: any) {
-      console.warn(`[Validation] Validation failed:`, err.stderr || err.stdout || err.message);
+    } catch (error: any) {
+      logger.warn(`[Validation] Validation failed:`, error.stderr || error.stdout || error.message);
       return {
         success: false,
-        error: err.stderr || err.stdout || err.message,
+        error: error.stderr || error.stdout || error.message,
       };
     }
   }

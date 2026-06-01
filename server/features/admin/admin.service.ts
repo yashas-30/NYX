@@ -22,7 +22,6 @@ export interface CriticRule {
 const COST_PER_MILLION_OUTPUT: Record<string, number> = {
   gemini: 0.375,
   'nyx-native': 0,
-  'qwen-local': 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -33,14 +32,14 @@ export class RulesDb {
     if (!fs.existsSync(CACHE_DIR)) {
       try {
         fs.mkdirSync(CACHE_DIR, { recursive: true });
-      } catch (e) {
+      } catch (e: any) {
         logger.error({ err: e }, '[RulesDb] Failed to create cache directory');
       }
     }
     if (!fs.existsSync(RULES_FILE)) {
       try {
         fs.writeFileSync(RULES_FILE, JSON.stringify([], null, 2), 'utf-8');
-      } catch (e) {
+      } catch (e: any) {
         logger.error({ err: e }, '[RulesDb] Failed to create initial rules file');
       }
     }
@@ -54,7 +53,7 @@ export class RulesDb {
       const rules = JSON.parse(raw);
       if (Array.isArray(rules)) return rules;
       return [];
-    } catch (e) {
+    } catch (e: any) {
       logger.error({ err: e }, '[RulesDb] Failed to read rules file');
       return [];
     }
@@ -85,7 +84,7 @@ export class RulesDb {
       this.pruneRules(rules);
       fs.writeFileSync(RULES_FILE, JSON.stringify(rules, null, 2), 'utf-8');
       logger.info({ rule }, '[RulesDb] Saved new rule successfully');
-    } catch (e) {
+    } catch (e: any) {
       logger.error({ err: e }, '[RulesDb] Failed to write rule to file');
     }
   }
@@ -109,7 +108,7 @@ export class RulesDb {
       this.ensureInitialized();
       fs.writeFileSync(RULES_FILE, JSON.stringify([], null, 2), 'utf-8');
       logger.info('[RulesDb] All critic rules cleared.');
-    } catch (e) {
+    } catch (e: any) {
       logger.error({ err: e }, '[RulesDb] Failed to reset rules database');
     }
   }
@@ -141,7 +140,7 @@ export class UsageTracker {
       `
         )
         .run(provider, model, promptTokens, completionTokens, estimatedCostUsd, sessionId || null);
-    } catch (e) {
+    } catch (e: any) {
       logger.error({ err: e }, '[UsageTracker] Failed to persist usage record');
     }
   }
@@ -171,7 +170,7 @@ export class UsageTracker {
       `
         )
         .all(`-${safeDays}`);
-    } catch (e) {
+    } catch (e: any) {
       logger.error({ err: e }, '[UsageTracker] Failed to query usage summary');
       return [];
     }

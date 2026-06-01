@@ -1,3 +1,4 @@
+import logger from '../lib/logger.ts';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { db } from './client.ts';
 import path from 'path';
@@ -17,7 +18,7 @@ const currentDirname = (() => {
 
 export function runMigrations() {
   try {
-    console.log('[DB] Running database migrations...');
+    logger.info('[DB] Running database migrations...');
     // Resolve path to standard packaging migrations location
     const migrationsFolder = path.join(currentDirname, 'migrations');
     
@@ -25,15 +26,15 @@ export function runMigrations() {
       const fallbackFolder = path.resolve(currentDirname, '..', 'server', 'db', 'migrations');
       if (fs.existsSync(fallbackFolder)) {
         migrate(db, { migrationsFolder: fallbackFolder });
-        console.log('[DB] Migrations completed using workspace fallback.');
+        logger.info('[DB] Migrations completed using workspace fallback.');
         return;
       }
       throw new Error(`Migration directory not found at packaged path (${migrationsFolder}) or fallback (${fallbackFolder})`);
     }
 
     migrate(db, { migrationsFolder });
-    console.log('[DB] Database migrations completed successfully.');
-  } catch (err: any) {
-    console.error('[DB] Failed to run database migrations:', err);
+    logger.info('[DB] Database migrations completed successfully.');
+  } catch (error: any) {
+    logger.error('[DB] Failed to run database migrations:', error);
   }
 }

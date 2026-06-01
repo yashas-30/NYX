@@ -157,8 +157,8 @@ export async function runMultiStagePipeline({
         stderr: data.stderr || '',
         error: data.error,
       };
-    } catch (e: any) {
-      return { success: false, stdout: '', stderr: '', error: e.message };
+    } catch (error: any) {
+      return { success: false, stdout: '', stderr: '', error: error.message };
     }
   };
 

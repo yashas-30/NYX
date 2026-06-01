@@ -1,3 +1,4 @@
+import logger from '../lib/logger.ts';
 import { Request, Response, NextFunction } from 'express';
 import { 
   analyzePrompt, 
@@ -52,8 +53,8 @@ export function safetyGateMiddleware(req: Request, res: Response, next: NextFunc
     // Hardware safety hazards are informational for warnings/optimization recommendations, not reasons to block execution.
     (req as any).promptAnalysis = analysis;
     next();
-  } catch (err: any) {
-    console.error('[Safety Gate Middleware Error]:', err.message);
+  } catch (error: any) {
+    logger.error('[Safety Gate Middleware Error]:', error.message);
     next(); // Fail-open if analyzer itself crashes to prevent denial of service
   }
 }

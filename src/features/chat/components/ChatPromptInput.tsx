@@ -190,15 +190,15 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
           } else {
             throw new Error(data.error || 'Upload failed');
           }
-        } catch (err: any) {
-          toast.error(`Image upload failed: ${err.message}`);
+        } catch (error: any) {
+          toast.error(`Image upload failed: ${error.message}`);
         } finally {
           setIsUploadingImage(false);
         }
       };
       reader.readAsDataURL(file);
-    } catch (err: any) {
-      toast.error(`Image reading failed: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Image reading failed: ${error.message}`);
       setIsUploadingImage(false);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -420,7 +420,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                             }
 
                             toast.success(message);
-                          } catch (e) {
+                          } catch (e: any) {
                             toast.error('Failed to analyze system');
                           }
                         }}

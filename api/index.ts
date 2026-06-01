@@ -55,8 +55,8 @@ app.post('/api/models/list', async (req, res) => {
     if (provider === 'gemini')     models = data.models?.map((m: any) => m.name.replace('models/', '')) || [];
 
     res.json({ models });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -70,8 +70,8 @@ app.post('/api/models/quota', async (req, res) => {
       if (r.ok) return res.json({ status: 'ok' });
     }
     res.json({});
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -84,8 +84,8 @@ app.post('/api/cache/get', async (req, res) => {
       return res.json({ hit: true, text, key });
     }
     return res.json({ hit: false, key });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -94,8 +94,8 @@ app.post('/api/cache/set', async (req, res) => {
   try {
     await CacheServer.set(key, data, provider, model);
     res.json({ success: true });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -103,8 +103,8 @@ app.get('/api/cache/stats', (_req, res) => {
   try {
     const stats = CacheServer.getStats();
     res.json(stats);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -112,8 +112,8 @@ app.post('/api/cache/clear', (_req, res) => {
   try {
     const result = CacheServer.clear();
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 

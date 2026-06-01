@@ -5,8 +5,10 @@ import {
   fetchEvolutionaryRules,
   searchCodebase,
   searchWeb,
+  writeFile,
 } from '@src/infrastructure/api/coderApi';
 import { buildCoderSystemPrompt, buildCoderUserPrompt, CodeContext } from '../prompts/coderPrompts';
+import { BaseAgent, BaseAgentConfig } from './baseAgent';
 
 // ── Stream Event Types (Claude/Kimi-style rich events) ───────────────────────
 
@@ -60,45 +62,11 @@ const DEFAULT_RETRY: RetryConfig = {
   maxDelayMs: 8000,
 };
 
-// ── Token Budget Manager ─────────────────────────────────────────────────────
-
-class TokenBudget {
-  constructor(
-    private maxTokens: number,
-    private reservedForResponse: number = 4000
-  ) {}
-
-  get availableForContext(): number {
-    return this.maxTokens - this.reservedForResponse;
-  }
-
-  truncate(text: string, maxChars: number): string {
-    if (text.length <= maxChars) return text;
-    const truncated = text.slice(0, maxChars);
-    const lastNewline = truncated.lastIndexOf('\n');
-    return truncated.slice(0, lastNewline > 0 ? lastNewline : maxChars) + '\n\n[... truncated for token budget ...]';
-  }
-
-  distribute(budgets: { codebase?: number; webSearch?: number; rules?: number; history?: number }): Record<string, number> {
-    const total = Object.values(budgets).reduce((a, b) => (a || 0) + (b || 0), 0);
-    const ratio = Math.min(1, this.availableForContext / total);
-    return Object.fromEntries(
-      Object.entries(budgets).map(([k, v]) => [k, Math.floor((v || 0) * ratio)])
-    );
-  }
-}
-
 // ── Enhanced CoderAgent ──────────────────────────────────────────────────────
 
-export interface CoderAgentConfig {
-  modelId: string;
-  provider: string;
-  apiKey: string;
-  settings: AISettings;
-  history: ChatMessage[];
+export interface CoderAgentConfig extends BaseAgentConfig {
   workspacePath?: string;
   apiKeys: Record<string, string>;
-  webSearchEnabled: boolean;
   codebaseKnowledgeEnabled: boolean;
   trackUsage: (provider: string, tokens: number) => void;
   updateHistory: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
@@ -108,24 +76,16 @@ export interface CoderAgentConfig {
   originalPrompt?: string;
   triggerBackgroundCritic?: (prompt: string, response: string) => Promise<void>;
   onSubagentTaskUpdate?: (tasks: SubagentTask[]) => void;
-  lightningDirectives?: string[];
   createOrchestrator?: () => ISubagentOrchestrator;
-  /** Max context tokens for the model (auto-detected if not set) */
-  maxContextTokens?: number;
-  /** Enable code validation after generation */
   validateCode?: boolean;
-  /** Enable reasoning chain visibility (Claude-style) */
   showReasoning?: boolean;
 }
 
-export class CoderAgent {
-  private config: CoderAgentConfig;
-  private tokenBudget: TokenBudget;
+export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
   private retryConfig: RetryConfig;
 
   constructor(config: CoderAgentConfig) {
-    this.config = config;
-    this.tokenBudget = new TokenBudget(config.maxContextTokens || 128000);
+    super(config);
     this.retryConfig = DEFAULT_RETRY;
   }
 
@@ -157,7 +117,7 @@ export class CoderAgent {
 
       const context = await this.gatherContextWithRetry(prompt, analysis, route.tools, signal, (msg) => {
         // Emit sub-thinkings during context gathering
-        this.emitThinking(msg, reasoningChain).next();
+        reasoningChain.push(msg);
       });
 
       yield* this.emitThinking(
@@ -177,7 +137,7 @@ export class CoderAgent {
         this.config.triggerBackgroundCritic(prompt, reasoningChain.join('\n')).catch(() => {});
       }
 
-    } catch (err) {
+    } catch (err: any) {
       yield {
         type: 'error',
         content: err instanceof Error ? err.message : 'Unknown error occurred',
@@ -404,8 +364,13 @@ export class CoderAgent {
       yield* this.emitThinking(`Writing ${files.length} files...`, reasoningChain);
       for (const file of files) {
         try {
-          // Here you would actually write the file
-          // await fs.writeFile(path.join(this.config.workspacePath || '', file.path), file.content);
+          const fullPath = this.config.workspacePath
+            ? `${this.config.workspacePath}/${file.path}`.replace(/\/+/g, '/')
+            : file.path;
+          const writeRes = await writeFile(fullPath, file.content, true);
+          if (!writeRes.success) {
+            throw new Error(`Write operation failed for ${file.path}`);
+          }
           yield {
             type: 'file_write',
             content: file.path,
@@ -415,7 +380,7 @@ export class CoderAgent {
               lineCount: file.content.split('\n').length,
             },
           };
-        } catch (writeErr) {
+        } catch (writeErr: any) {
           yield {
             type: 'file_error',
             content: `Failed to write ${file.path}: ${writeErr instanceof Error ? writeErr.message : 'Unknown error'}`,
@@ -489,7 +454,7 @@ export class CoderAgent {
         lastTaskCount = tasks.length;
         for (const task of newTasks) {
           // This would need to be bridged to the generator — simplified here
-          this.emitThinking(`Subagent task: [${task.type}] ${task.description} - ${task.status}`, reasoningChain).next();
+          reasoningChain.push(`Subagent task: [${task.type}] ${task.description} - ${task.status}`);
         }
         this.config.onSubagentTaskUpdate!(tasks);
       };
@@ -507,8 +472,8 @@ export class CoderAgent {
         updateMetrics: this.config.updateMetrics,
         getSuggestions: this.config.getSuggestions,
         setSuggestedPrompts: this.config.setSuggestedPrompts,
-        webSearchEnabled: this.config.webSearchEnabled,
-        codebaseKnowledgeEnabled: this.config.codebaseKnowledgeEnabled,
+        webSearchEnabled: this.config.webSearchEnabled ?? false,
+        codebaseKnowledgeEnabled: this.config.codebaseKnowledgeEnabled ?? false,
         signal,
         originalPrompt: this.config.originalPrompt || prompt,
         triggerBackgroundCritic: this.config.triggerBackgroundCritic,
@@ -531,7 +496,7 @@ export class CoderAgent {
         metadata: { results },
       };
 
-    } catch (err) {
+    } catch (err: any) {
       yield {
         type: 'error',
         content: `Subagent pipeline failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
@@ -556,7 +521,7 @@ export class CoderAgent {
         const result = await fn();
         onSuccess(result);
         return;
-      } catch (err) {
+      } catch (err: any) {
         lastError = err instanceof Error ? err : new Error(String(err));
         if (attempt < this.retryConfig.maxRetries - 1) {
           const delay = Math.min(

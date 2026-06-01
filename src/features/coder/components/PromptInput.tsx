@@ -450,7 +450,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                              }
                             
                             toast.success(message);
-                          } catch (e) {
+                          } catch (e: any) {
                             toast.error('Failed to analyze system');
                           }
                         }}

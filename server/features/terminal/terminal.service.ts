@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 import { spawn, exec, execSync, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -165,8 +166,8 @@ function logSecurityBlock(command: string, reason: string): void {
     const timestamp = new Date().toISOString();
     const entry = `[${timestamp}] BLOCKED: "${command}" | REASON: ${reason}\n`;
     fs.appendFileSync(logFilePath, entry, 'utf8');
-  } catch (err) {
-    console.error('[Sandbox] Failed to write security blocks log:', err);
+  } catch (err: any) {
+    logger.error('[Sandbox] Failed to write security blocks log:', err);
   }
 }
 
@@ -250,7 +251,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   const ALLOW_RAW = process.env.NYX_ALLOW_RAW_TERMINAL === 'true' && 
                     process.env.NODE_ENV === 'development';
   if (ALLOW_RAW) {
-    console.warn('[Sandbox] WARNING: Raw terminal mode enabled. All sandbox protections disabled.');
+    logger.warn('[Sandbox] WARNING: Raw terminal mode enabled. All sandbox protections disabled.');
   }
 
   // 4. Force Docker Execution Gate
@@ -264,12 +265,12 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     }
 
     // Docker is available, proceed to run in Docker container
-    console.log(`[Sandbox] Forcing Docker sandboxed execution for command with eval flags: ${trimmedCmd}`);
+    logger.info(`[Sandbox] Forcing Docker sandboxed execution for command with eval flags: ${trimmedCmd}`);
   }
 
   // 5. Host execution fallback (if ALLOW_RAW_TERMINAL=true and not forced to Docker)
   if (ALLOW_RAW && !forceDocker) {
-    console.log(`[Sandbox] Executing command on host (NYX_ALLOW_RAW_TERMINAL=true): ${trimmedCmd}`);
+    logger.info(`[Sandbox] Executing command on host (NYX_ALLOW_RAW_TERMINAL=true): ${trimmedCmd}`);
     const shellBin = process.platform === 'win32' ? 'cmd.exe' : 'sh';
     const shellArgs = process.platform === 'win32' ? ['/c', trimmedCmd] : ['-c', trimmedCmd];
     
@@ -311,7 +312,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     image, 'sh', '-c', trimmedCmd,
   ];
 
-  console.log(`[Sandbox] Spawning command inside Docker (${image}): docker ${dockerArgs.join(' ')}`);
+  logger.info(`[Sandbox] Spawning command inside Docker (${image}): docker ${dockerArgs.join(' ')}`);
 
   const child = spawn('docker', dockerArgs, {
     cwd: resolvedCwd,

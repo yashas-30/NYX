@@ -23,6 +23,7 @@ export interface AISettings {
   topP?: number;
   topK?: number;
   stream?: boolean;
+  antigravity?: boolean;
 }
 
 export interface GatewayRequest {
@@ -112,7 +113,7 @@ export class Gateway {
       if (isValidKey(vaultKeys[provider])) {
         return vaultKeys[provider].trim();
       }
-    } catch (err) {
+    } catch (err: any) {
       logger.error({ err }, `[Gateway] Failed to retrieve key for ${provider} from keyVault`);
     }
 
@@ -315,9 +316,9 @@ export class Gateway {
         }
       }
       callbacks.onDone();
-    } catch (e: any) {
-      logger.error({ err: e }, '[Gateway.processSSEStream] Stream error');
-      callbacks.onError(e.message || 'Stream processing failed');
+    } catch (error: any) {
+      logger.error({ err: error }, '[Gateway.processSSEStream] Stream error');
+      callbacks.onError(error.message || 'Stream processing failed');
     }
   }
 

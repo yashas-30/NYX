@@ -19,7 +19,8 @@ export class QwenLocalService {
 
     logger.info({ model }, 'Forwarding stream request to local Python server');
 
-    const response = await fetch('http://127.0.0.1:3002/api/gemini/stream', {
+    const scraplingPort = process.env.SCRAPLING_PORT || '3002';
+    const response = await fetch(`http://127.0.0.1:${scraplingPort}/api/gemini/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

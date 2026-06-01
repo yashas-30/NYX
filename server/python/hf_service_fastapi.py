@@ -24,7 +24,7 @@ def ndjson_sink(message: Any) -> None:
         "request_id": record["extra"].get("request_id", "system-main"),
         "stage": record["extra"].get("stage", "critic"),
         "model": record["extra"].get("model", "Qwen2.5-Coder-1.5B"),
-        "provider": "qwen-local",
+        "provider": "hf-local",
         "msg": record["message"]
     }
     sys.stdout.write(json.dumps(log_data) + "\n")

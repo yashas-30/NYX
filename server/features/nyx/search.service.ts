@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 import { CodebaseScanner } from '../workspace/codebaseScanner.ts';
 import { loadKeys } from '../vault/vault.service.ts';
 
@@ -12,10 +13,11 @@ export class SearchService {
 
   getSearchBackends() {
     const keys = loadKeys();
+    const scraplingPort = process.env.SCRAPLING_PORT || '3002';
     const scraplingUrl = (
       keys['scrapling_url'] ||
       process.env.SCRAPLING_URL ||
-      'http://localhost:3002'
+      `http://localhost:${scraplingPort}`
     ).trim();
     const scraplingActive = !!(
       (keys['scrapling'] && keys['scrapling'].trim().length > 0) ||
@@ -56,16 +58,17 @@ export class SearchService {
     // Check TTL cache
     const cached = this.searchCache.get(query);
     if (cached && cached.expiresAt > Date.now()) {
-      console.log(`[Web Search] Cache hit for: "${query}"`);
+      logger.info(`[Web Search] Cache hit for: "${query}"`);
       return cached.results;
     }
 
-    console.log(`[Web Search] Querying web search for: "${query}"`);
+    logger.info(`[Web Search] Querying web search for: "${query}"`);
     const keys = loadKeys();
+    const scraplingPort = process.env.SCRAPLING_PORT || '3002';
     const scraplingUrl = (
       keys['scrapling_url'] ||
       process.env.SCRAPLING_URL ||
-      'http://localhost:3002'
+      `http://localhost:${scraplingPort}`
     ).trim();
     const scraplingApiKey = keys['scrapling'] || process.env.SCRAPLING_API_KEY || '';
     const serpapiKey = keys['SERPAPI_KEY'] || process.env.SERPAPI_KEY || '';
@@ -77,7 +80,7 @@ export class SearchService {
     try {
       // 1. Try Scrapling
       try {
-        console.log(`[Web Search] Attempting Scrapling search at: ${scraplingUrl}`);
+        logger.info(`[Web Search] Attempting Scrapling search at: ${scraplingUrl}`);
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (scraplingApiKey) {
           headers['Authorization'] = `Bearer ${scraplingApiKey}`;
@@ -108,7 +111,7 @@ export class SearchService {
                 snippet: snippetText,
               };
             });
-            console.log(
+            logger.info(
               `[Web Search] Scrapling successfully scraped ${results.length} pages (truncated to safe limits).`
             );
           } else {
@@ -118,13 +121,13 @@ export class SearchService {
           throw new Error(`HTTP ${response.status}: ${await response.text().catch(() => '')}`);
         }
       } catch (scraplingError: any) {
-        console.warn(
+        logger.warn(
           `[Web Search] Scrapling failed/offline (URL: ${scraplingUrl}). Details: ${scraplingError.message}. Falling back to default APIs...`
         );
 
         // 2. Fallback to SerpAPI / Brave / DDG
         if (serpapiKey) {
-          console.log('[Web Search] Using SerpAPI backend...');
+          logger.info('[Web Search] Using SerpAPI backend...');
           const response = await fetch(
             `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${serpapiKey}`
           );
@@ -140,7 +143,7 @@ export class SearchService {
             throw new Error(`SerpAPI returned HTTP ${response.status}`, { cause: scraplingError });
           }
         } else if (braveApiKey) {
-          console.log('[Web Search] Using Brave Search API backend...');
+          logger.info('[Web Search] Using Brave Search API backend...');
           const response = await fetch(
             `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}`,
             {
@@ -162,7 +165,7 @@ export class SearchService {
           }
         } else {
           // Fallback: DuckDuckGo HTML scraper
-          console.log('[Web Search] Falling back to DuckDuckGo HTML Scraper...');
+          logger.info('[Web Search] Falling back to DuckDuckGo HTML Scraper...');
           const response = await fetch(
             `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
             {
@@ -241,8 +244,8 @@ export class SearchService {
       });
 
       return results;
-    } catch (error) {
-      console.error('[Web Search Scraper Error]:', error);
+    } catch (error: any) {
+      logger.error('[Web Search Scraper Error]:', error);
       return [
         {
           title: `Best Practices for ${query}`,

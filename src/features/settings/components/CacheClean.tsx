@@ -30,8 +30,8 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
       } else {
         toast.error("Failed to clear cache.");
       }
-    } catch (e: any) {
-      toast.error(`Error: ${e.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     }
   };
 

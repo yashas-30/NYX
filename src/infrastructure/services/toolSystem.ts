@@ -445,7 +445,7 @@ export class ToolExecutor {
       let parsed: Record<string, any>;
       try {
         parsed = JSON.parse(raw.arguments);
-      } catch (e) {
+      } catch (e: any) {
         throw new Error(`Invalid JSON arguments for tool ${raw.name}: ${e}`);
       }
 
@@ -503,7 +503,7 @@ export class ToolExecutor {
         await config.onStream?.({ type: 'tool_result_complete', callId: call.id, result: toolResult });
         return toolResult;
 
-      } catch (error) {
+      } catch (error: any) {
         lastError = error as Error;
         retryCount++;
 
@@ -759,21 +759,15 @@ export class ToolExecutor {
 
       case 'view_image': {
         validatePath(params.path);
-        try {
-          const res = await fetchWithAuth('/api/nyx/view-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filePath: params.path }),
-            signal,
-          });
-          const data = await res.json();
-          if (res.ok) {
-            return data.description || data.content;
-          }
-        } catch (err) {
-          // Fall back gracefully for backends without the view-image route
-        }
-        return `[IMAGE VIEW]: Image metadata retrieved successfully for "${params.path}". (Visual analysis is mocked or unavailable on this backend).`;
+        const res = await fetchWithAuth('/api/nyx/view-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filePath: params.path }),
+          signal,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to view image');
+        return data.description || data.content;
       }
 
       default:

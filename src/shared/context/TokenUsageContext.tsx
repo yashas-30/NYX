@@ -29,7 +29,7 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch (e) {
+      } catch (e: any) {
         console.error('Failed to parse token usage', e);
       }
     }

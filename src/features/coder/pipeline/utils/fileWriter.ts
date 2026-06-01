@@ -65,8 +65,8 @@ export async function undo(): Promise<boolean> {
     }
     historyIndex--;
     return true;
-  } catch (err: any) {
-    console.error('[FileWriter] Undo failed:', err.message);
+  } catch (error: any) {
+    console.error('[FileWriter] Undo failed:', error.message);
     return false;
   }
 }
@@ -83,8 +83,8 @@ export async function redo(): Promise<boolean> {
       body: JSON.stringify({ filePath: op.path, content: op.newContent, overwrite: true })
     });
     return true;
-  } catch (err: any) {
-    console.error('[FileWriter] Redo failed:', err.message);
+  } catch (error: any) {
+    console.error('[FileWriter] Redo failed:', error.message);
     return false;
   }
 }

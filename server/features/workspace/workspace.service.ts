@@ -35,8 +35,8 @@ export class WorkspaceService {
       
       setWorkspaceRoot(targetDir);
       return { success: true, workspace: targetDir };
-    } catch (e: any) {
-      return { success: false, error: e.message };
+    } catch (error: any) {
+      return { success: false, error: error.message };
     }
   }
 }

@@ -1,0 +1,19 @@
+export const PORTS = {
+  WEB: 3000,
+  API: 3010,
+  FASTIFY: 3001,
+  SCRAPLING: 3002,
+  ANTIGRAVITY: 3003,
+  FALLBACK: 12345
+};
+
+export const CONTEXT_SIZES = {
+  DEFAULT: 2048,
+  COMPLEX: 4096,
+  ENTERPRISE: 8192
+};
+
+export const TOKEN_ESTIMATE_DIVISORS = {
+  DEFAULT: 4,
+  TIGHT: 3.8
+};

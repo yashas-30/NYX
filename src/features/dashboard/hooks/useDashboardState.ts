@@ -98,7 +98,7 @@ export const useDashboardState = (onExit?: () => void) => {
           chat: parsed.chat || '',
           coder: parsed.coder || ''
         });
-      } catch (e) {
+      } catch (e: any) {
         console.error("Models load fail", e);
       }
     } else {
@@ -132,7 +132,7 @@ export const useDashboardState = (onExit?: () => void) => {
             }
             useNyxStore.getState().setApiKeys(keys);
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error('[Vault] Failed to retrieve secure keys on mount:', err);
         }
       }
@@ -192,7 +192,7 @@ export const useDashboardState = (onExit?: () => void) => {
           setLocalLibraryModels(completed);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[useDashboardState] Failed to load local models:', err);
     }
   };

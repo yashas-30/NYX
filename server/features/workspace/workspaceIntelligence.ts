@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 /**
  * @file server/lib/workspaceIntelligence.ts
  * @description Analyzes the current workspace to build a project profile (entry points, dependencies, ASCII tree, linter, tests, etc.)
@@ -125,8 +126,8 @@ export class WorkspaceIntelligence {
             keyDependencies[k] = deps[k];
           }
         }
-      } catch (err) {
-        console.error('[WorkspaceIntelligence] Error parsing package.json:', err);
+      } catch (err: any) {
+        logger.error('[WorkspaceIntelligence] Error parsing package.json:', err);
       }
     }
 

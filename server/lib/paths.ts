@@ -1,3 +1,4 @@
+import logger from './logger.ts';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -95,8 +96,8 @@ dirs.forEach((dir) => {
   if (!fs.existsSync(dir)) {
     try {
       fs.mkdirSync(dir, { recursive: true });
-    } catch (e) {
-      console.error(`[Paths] Failed to create directory: ${dir}`, e);
+    } catch (e: any) {
+      logger.error(`[Paths] Failed to create directory: ${dir}`, e);
     }
   }
 });
@@ -114,11 +115,11 @@ export function loadWorkspaceRoot() {
       const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
       if (config.workspaceRoot && fs.existsSync(config.workspaceRoot)) {
         workspaceRoot = path.resolve(config.workspaceRoot);
-        console.log(`[Paths] Loaded workspace root: ${workspaceRoot}`);
+        logger.info(`[Paths] Loaded workspace root: ${workspaceRoot}`);
       }
     }
-  } catch (e) {
-    console.error('[Paths] Failed to load workspace config:', e);
+  } catch (e: any) {
+    logger.error('[Paths] Failed to load workspace config:', e);
   }
 }
 
@@ -135,11 +136,11 @@ export function setWorkspaceRoot(newRoot: string): boolean {
         : {};
       config.workspaceRoot = workspaceRoot;
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
-      console.log(`[Paths] Workspace root updated and saved: ${workspaceRoot}`);
+      logger.info(`[Paths] Workspace root updated and saved: ${workspaceRoot}`);
       return true;
     }
-  } catch (e) {
-    console.error(`[Paths] Failed to set workspace root to ${newRoot}:`, e);
+  } catch (e: any) {
+    logger.error(`[Paths] Failed to set workspace root to ${newRoot}:`, e);
   }
   return false;
 }

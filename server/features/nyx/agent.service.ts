@@ -1,5 +1,7 @@
+import logger from '../../lib/logger.ts';
 import { RulesDb } from '../admin/admin.service.ts';
 import { loadKeys } from '../vault/vault.service.ts';
+import { LOCAL_MODEL_PORT } from '../../../src/config/ports.ts';
 
 interface SubagentStatusEntry {
   tasks: unknown[];
@@ -43,7 +45,7 @@ export class AgentService {
     modelId?: string,
     provider?: string
   ): Promise<void> {
-    console.log('[Background Critic] Starting meta-cognitive analysis...');
+    logger.info('[Background Critic] Starting meta-cognitive analysis...');
     const keys = loadKeys();
     const activeKey = keys[provider || ''] || '';
 
@@ -80,7 +82,7 @@ ${nyxResponse}
         const keys = loadKeys();
         const activeKey = keys[provider] || '';
         
-        console.log(`[Background Critic] Executing meta-critic using selected model ${modelId} (${provider})`);
+        logger.info(`[Background Critic] Executing meta-critic using selected model ${modelId} (${provider})`);
 
         if (provider === 'gemini') {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${activeKey}`;
@@ -100,7 +102,8 @@ ${nyxResponse}
           const data: any = await res.json();
           responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         } else if (provider === 'nyx-native') {
-          const res = await fetch('http://127.0.0.1:12345/v1/chat/completions', {
+          const llamaPort = process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString();
+          const res = await fetch(`http://127.0.0.1:${llamaPort}/v1/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -130,21 +133,22 @@ ${nyxResponse}
               !analysis.rule.toLowerCase().includes('none');
             if (hasImprovement) {
               RulesDb.addRule(analysis.metric, analysis.critique, analysis.rule);
-              console.log(`[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`);
+              logger.info(`[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`);
             } else {
-              console.log('[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.');
+              logger.info('[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.');
             }
             return;
           }
         }
-      } catch (err: any) {
-        console.warn('[Background Critic] Selected model run failed, falling back to local Python server:', err.message);
+      } catch (error: any) {
+        logger.warn('[Background Critic] Selected model run failed, falling back to local Python server:', error.message);
       }
     }
 
     // Fallback to local Python HF service
     try {
-      const hfRes = await fetch('http://127.0.0.1:3002/api/gemini/generate', {
+      const scraplingPort = process.env.SCRAPLING_PORT || '3002';
+      const hfRes = await fetch(`http://127.0.0.1:${scraplingPort}/api/gemini/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -164,13 +168,13 @@ ${nyxResponse}
       const data: any = await hfRes.json();
       const outputText = data.text;
       if (!outputText) {
-        console.log('[Background Critic] Empty response received.');
+        logger.info('[Background Critic] Empty response received.');
         return;
       }
 
       const jsonMatch = outputText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.log('[Background Critic] Could not parse JSON block from output:', outputText);
+        logger.info('[Background Critic] Could not parse JSON block from output:', outputText);
         return;
       }
 
@@ -180,12 +184,12 @@ ${nyxResponse}
         !analysis.rule.toLowerCase().includes('none');
       if (hasImprovement) {
         RulesDb.addRule(analysis.metric, analysis.critique, analysis.rule);
-        console.log(`[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`);
+        logger.info(`[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`);
       } else {
-        console.log('[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.');
+        logger.info('[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.');
       }
-    } catch (error) {
-      console.error('[Background Critic] Error during evaluation or parsing:', error);
+    } catch (error: any) {
+      logger.error('[Background Critic] Error during evaluation or parsing:', error);
     }
   }
 }

@@ -2,7 +2,7 @@
  * @file src/infrastructure/services/hybridRouter.ts
  * @description Production-grade hybrid model router with predictive latency,
  *   cost optimization, per-request isolation, and Claude/Kimi-parity routing.
- *   Exclusively supports Gemini and local models (nyx-native, qwen-local).
+ *   Exclusively supports Gemini and local models (nyx-native).
  */
 
 import { AVAILABLE_MODELS } from '@shared/config/models';
@@ -136,7 +136,7 @@ export class HybridModelRouter {
           totalRequests: existing?.totalRequests || 0,
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[HybridModelRouter] Pool refresh failed:', e);
     }
   }
@@ -446,7 +446,7 @@ export class HybridModelRouter {
       const current = chain[i];
       const apiKey = apiKeys[current.provider] || '';
 
-      if (current.provider !== 'nyx-native' && current.provider !== 'qwen-local' && !apiKey) {
+      if (current.provider !== 'nyx-native' && !apiKey) {
         continue;
       }
 
@@ -481,16 +481,16 @@ export class HybridModelRouter {
         const latency = Math.round(performance.now() - startTime);
         this.recordSuccess(current.id, latency);
         return res;
-      } catch (err: any) {
-        lastError = err;
-        const isAbort = err.name === 'AbortError' || signal?.aborted;
-        if (isAbort) throw err;
+      } catch (error: any) {
+        lastError = error;
+        const isAbort = error.name === 'AbortError' || signal?.aborted;
+        if (isAbort) throw error;
 
         this.recordFailure(current.id);
-        console.warn(`[FallbackChain] Failed: ${err.message}`);
+        console.warn(`[FallbackChain] Failed: ${error.message}`);
 
         // OOM recovery
-        if (/OOM|out of memory|vram|allocate/i.test(err.message)) {
+        if (/OOM|out of memory|vram|allocate/i.test(error.message)) {
           await this.handleOOM(current.id);
         }
       }
@@ -521,7 +521,7 @@ export class HybridModelRouter {
           this.localModelPool.set(id, { ...state, status: 'cold', vramUsageMB: 0 });
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('[HybridModelRouter] OOM recovery failed:', e);
     }
   }

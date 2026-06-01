@@ -17,8 +17,8 @@ cacheRouter.post('/get', async (req, res) => {
       return res.json({ hit: true, text, key });
     }
     return res.json({ hit: false, key });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -27,8 +27,8 @@ cacheRouter.post('/set', validate(cacheSetSchema), async (req, res) => {
   try {
     await service.set(key, data, provider, model);
     res.json({ success: true });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -36,8 +36,8 @@ cacheRouter.get('/stats', (_req, res) => {
   try {
     const stats = service.getStats();
     res.json(stats);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -45,7 +45,7 @@ cacheRouter.post('/clear', (_req, res) => {
   try {
     const result = service.clear();
     res.json(result);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });

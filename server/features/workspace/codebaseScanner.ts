@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 /**
  * @file server/lib/codebaseScanner.ts
  * @description Local repository neural RAG search engine with sqlite-vec and all-MiniLM-L6-v2 embeddings.
@@ -91,7 +92,7 @@ export class CodebaseScanner {
       this.vectors.delete(item.key);
       this.accessTimes.delete(item.key);
     }
-    console.log(`[RAG] Cap at 5000 reached. Evicted ${excess} oldest files from codebase scanner cache.`);
+    logger.info(`[RAG] Cap at 5000 reached. Evicted ${excess} oldest files from codebase scanner cache.`);
   }
 
   private static async getPipeline(): Promise<any> {
@@ -99,9 +100,9 @@ export class CodebaseScanner {
       try {
         const mod = await import('@huggingface/transformers');
         this.pipelineModule = mod.pipeline;
-      } catch (err: any) {
-        console.error('[RAG] Failed to load @huggingface/transformers:', err);
-        throw err;
+      } catch (error: any) {
+        logger.error('[RAG] Failed to load @huggingface/transformers:', error);
+        throw error;
       }
     }
     return this.pipelineModule;
@@ -115,13 +116,13 @@ export class CodebaseScanner {
     
     // Self-healing reset if workspace root changes
     if (this.isInitialized && this.currentWatchedRoot !== root) {
-      console.log(`[RAG] Workspace root changed from "${this.currentWatchedRoot}" to "${root}". Disposing old vector index and file watchers...`);
+      logger.info(`[RAG] Workspace root changed from "${this.currentWatchedRoot}" to "${root}". Disposing old vector index and file watchers...`);
       this.dispose();
     }
 
     if (this.isInitialized) return;
     try {
-      console.log('[RAG] Loading neural embedding model (all-MiniLM-L6-v2)...');
+      logger.info('[RAG] Loading neural embedding model (all-MiniLM-L6-v2)...');
       const pipelineFn = await this.getPipeline();
       this.embedder = await pipelineFn('feature-extraction', 'onnx-community/all-MiniLM-L6-v2');
       
@@ -137,12 +138,12 @@ export class CodebaseScanner {
       
       // Perform initial indexing asynchronously
       setImmediate(() => {
-        this.indexWorkspace().catch(err => console.error('[RAG] Indexing failed:', err));
+        this.indexWorkspace().catch(err => logger.error('[RAG] Indexing failed:', err));
       });
       
-      console.log('[RAG] Neural Codebase Scanner initialized successfully.');
-    } catch (err) {
-      console.error('[RAG] Failed to initialize codebase scanner:', err);
+      logger.info('[RAG] Neural Codebase Scanner initialized successfully.');
+    } catch (err: any) {
+      logger.error('[RAG] Failed to initialize codebase scanner:', err);
     }
   }
 
@@ -155,10 +156,10 @@ export class CodebaseScanner {
         for (const k of this.vectors.keys()) {
           this.touch(k);
         }
-        console.log(`[RAG] Loaded ${this.vectors.size} cached vector embeddings.`);
+        logger.info(`[RAG] Loaded ${this.vectors.size} cached vector embeddings.`);
       }
-    } catch (err) {
-      console.error('[RAG] Failed to load embeddings cache:', err);
+    } catch (err: any) {
+      logger.error('[RAG] Failed to load embeddings cache:', err);
     }
   }
 
@@ -166,8 +167,8 @@ export class CodebaseScanner {
     try {
       const obj = Object.fromEntries(this.vectors.entries());
       fs.writeFileSync(this.cacheFilePath, JSON.stringify(obj, null, 2), 'utf8');
-    } catch (err) {
-      console.error('[RAG] Failed to save embeddings cache:', err);
+    } catch (err: any) {
+      logger.error('[RAG] Failed to save embeddings cache:', err);
     }
   }
 
@@ -182,8 +183,8 @@ export class CodebaseScanner {
     try {
       const output = await this.embedder(text, { pooling: 'mean', normalize: true });
       return Array.from(output.data);
-    } catch (err) {
-      console.error('[RAG] Failed to generate embedding:', err);
+    } catch (err: any) {
+      logger.error('[RAG] Failed to generate embedding:', err);
       return new Array(384).fill(0);
     }
   }
@@ -193,7 +194,7 @@ export class CodebaseScanner {
    */
   public static async indexWorkspace(): Promise<void> {
     const root = getWorkspaceRoot();
-    console.log(`[RAG] Indexing workspace files at: ${root}`);
+    logger.info(`[RAG] Indexing workspace files at: ${root}`);
     const files = this.scanDirectory(root);
     
     let indexCount = 0;
@@ -209,7 +210,7 @@ export class CodebaseScanner {
             this.evictOldestVectors();
             indexCount++;
           }
-        } catch (err) {
+        } catch (err: any) {
           // skip failed files
         }
       }
@@ -217,9 +218,9 @@ export class CodebaseScanner {
     
     if (indexCount > 0) {
       this.saveEmbeddingsCache();
-      console.log(`[RAG] Incremental indexing complete. Indexed ${indexCount} new files.`);
+      logger.info(`[RAG] Incremental indexing complete. Indexed ${indexCount} new files.`);
     } else {
-      console.log('[RAG] Index is fully up to date.');
+      logger.info('[RAG] Index is fully up to date.');
     }
   }
 
@@ -236,7 +237,7 @@ export class CodebaseScanner {
     
     this.currentWatchedRoot = root;
     try {
-      console.log(`[RAG] Setting up codebase file watcher at: ${root}`);
+      logger.info(`[RAG] Setting up codebase file watcher at: ${root}`);
       this.watcher = fs.watch(root, { recursive: true }, (eventType, filename) => {
         if (!filename) return;
         
@@ -261,7 +262,7 @@ export class CodebaseScanner {
                 this.touch(relativePath);
                 this.evictOldestVectors();
                 this.saveEmbeddingsCache();
-                console.log(`[RAG] Watcher triggered re-indexing for modified file: ${relativePath}`);
+                logger.info(`[RAG] Watcher triggered re-indexing for modified file: ${relativePath}`);
               }
             } catch {}
           });
@@ -270,12 +271,12 @@ export class CodebaseScanner {
           if (this.vectors.has(relativePath)) {
             this.vectors.delete(relativePath);
             this.saveEmbeddingsCache();
-            console.log(`[RAG] Watcher removed deleted file from index: ${relativePath}`);
+            logger.info(`[RAG] Watcher removed deleted file from index: ${relativePath}`);
           }
         }
       });
-    } catch (err) {
-      console.error('[RAG] Failed to setup codebase file watcher:', err);
+    } catch (err: any) {
+      logger.error('[RAG] Failed to setup codebase file watcher:', err);
     }
   }
 
@@ -308,8 +309,8 @@ export class CodebaseScanner {
           }
         }
       }
-    } catch (e) {
-      console.error(`[RAG] Error scanning directory ${dir}:`, e);
+    } catch (e: any) {
+      logger.error(`[RAG] Error scanning directory ${dir}:`, e);
     }
     return results;
   }
@@ -380,7 +381,7 @@ export class CodebaseScanner {
   public static async search(query: string, maxResults = 5): Promise<SearchResult[]> {
     await this.init();
     const root = getWorkspaceRoot();
-    console.log(`[RAG] Searching index in "${root}" semantically for: "${query}"`);
+    logger.info(`[RAG] Searching index in "${root}" semantically for: "${query}"`);
     
     const queryVector = await this.generateEmbedding(query);
     const scoredResults: SearchResult[] = [];
@@ -403,7 +404,7 @@ export class CodebaseScanner {
     scoredResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
     
     const topResults = scoredResults.slice(0, maxResults);
-    console.log(`[RAG] Semantic search top matches:`, topResults.map(r => `${r.path} (similarity: ${r.relevanceScore.toFixed(2)}%)`));
+    logger.info(`[RAG] Semantic search top matches:`, topResults.map(r => `${r.path} (similarity: ${r.relevanceScore.toFixed(2)}%)`));
     return topResults;
   }
 
@@ -421,7 +422,7 @@ export class CodebaseScanner {
       }
       
       return fs.readFileSync(absolutePath, 'utf8');
-    } catch (e) {
+    } catch (e: any) {
       return '';
     }
   }
@@ -430,7 +431,7 @@ export class CodebaseScanner {
    * Disposes model instances and clears file watchers
    */
   public static dispose(): void {
-    console.log('[RAG] Disposing codebase scanner assets...');
+    logger.info('[RAG] Disposing codebase scanner assets...');
     this.embedder = null;
     this.vectors.clear();
     this.isInitialized = false;

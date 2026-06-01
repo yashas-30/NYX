@@ -280,7 +280,7 @@ async function encryptKey(plaintext: string): Promise<string> {
     try {
       const res = await (window as any).nyxIPC.invoke('vault:encrypt', { plaintext });
       if (res?.success) return res.ciphertext as string;
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[Vault] Native encryption unavailable, falling back:', err);
     }
   }
@@ -313,7 +313,7 @@ async function decryptKey(ciphertext: string): Promise<string> {
     try {
       const res = await (window as any).nyxIPC.invoke('vault:decrypt', { ciphertext });
       if (res?.success) return res.plaintext as string;
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[Vault] Native decryption unavailable, falling back:', err);
     }
   }
@@ -383,7 +383,7 @@ async function validateGeminiKey(key: string): Promise<KeyValidationResult> {
     }
 
     return { valid: false, provider: 'gemini', error: `HTTP ${response.status}` };
-  } catch (err) {
+  } catch (err: any) {
     // Network errors don't mean the key is invalid — assume valid
     return { valid: true, provider: 'gemini', error: err instanceof Error ? err.message : 'Network error (key assumed valid)' };
   }
@@ -508,7 +508,7 @@ export const updateApiKey = async (
   let ciphertext: string;
   try {
     ciphertext = await encryptKey(trimmed);
-  } catch (err) {
+  } catch (err: any) {
     toast.error('Failed to encrypt key securely');
     console.error('[Vault] Encryption error:', err);
     return false;
@@ -545,7 +545,7 @@ export const updateApiKey = async (
     try {
       // Use the legacy vault:store-key call for compatibility with main process
       await (window as any).nyxIPC.invoke('vault:store-key', { provider: resolvedProvider, key: trimmed });
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[Vault] Native IPC unavailable:', err);
     }
   }
@@ -608,7 +608,7 @@ export const retrieveKey = async (provider: string): Promise<string | null> => {
 
     registry.clearFailure(provider);
     return plaintext;
-  } catch (err) {
+  } catch (err: any) {
     registry.recordFailure(provider);
     registry.logAudit({
       id: `audit_${Date.now()}`,
@@ -670,7 +670,7 @@ export const clearApiKeys = async (
       for (const provider of providers) {
         await ipc.invoke('vault:delete-key', { provider }).catch(() => {});
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[Vault] Native clear failed:', err);
     }
   }
@@ -772,7 +772,7 @@ export const revalidateAllKeys = async (): Promise<Record<string, KeyValidationR
         source: 'scheduled',
         biometricUsed: false,
       });
-    } catch (err) {
+    } catch (err: any) {
       results[entry.provider] = {
         valid: false,
         provider: entry.provider,

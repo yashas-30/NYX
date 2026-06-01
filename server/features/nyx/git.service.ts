@@ -31,9 +31,9 @@ export class GitService {
       const cmd = filePath ? `git diff HEAD -- "${filePath}"` : 'git diff HEAD';
       const { stdout } = await execAsync(cmd, { cwd, timeout: 10_000 });
       return { success: true, diff: stdout };
-    } catch (err: any) {
-      logger.warn({ err: err.message }, '[GitService] getDiff failed');
-      return { success: false, diff: '', message: err.message || 'git diff failed' };
+    } catch (error: any) {
+      logger.warn({ error: error.message }, '[GitService] getDiff failed');
+      return { success: false, diff: '', message: error.message || 'git diff failed' };
     }
   }
 
@@ -45,9 +45,9 @@ export class GitService {
       }
       const { stdout } = await execAsync('git status --short', { cwd, timeout: 10_000 });
       return { success: true, status: stdout };
-    } catch (err: any) {
-      logger.warn({ err: err.message }, '[GitService] getStatus failed');
-      return { success: false, status: '', message: err.message || 'git status failed' };
+    } catch (error: any) {
+      logger.warn({ error: error.message }, '[GitService] getStatus failed');
+      return { success: false, status: '', message: error.message || 'git status failed' };
     }
   }
 
@@ -69,9 +69,9 @@ export class GitService {
           return { hash, message: rest.join(' ') };
         });
       return { success: true, log };
-    } catch (err: any) {
-      logger.warn({ err: err.message }, '[GitService] getLog failed');
-      return { success: false, log: [], message: err.message || 'git log failed' };
+    } catch (error: any) {
+      logger.warn({ error: error.message }, '[GitService] getLog failed');
+      return { success: false, log: [], message: error.message || 'git log failed' };
     }
   }
 }

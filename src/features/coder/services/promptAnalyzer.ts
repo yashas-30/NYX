@@ -72,7 +72,7 @@ export class PromptAnalyzerService {
           };
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn(
         '[PromptAnalyzerService] LLM prompt analysis failed, falling back to heuristic:',
         err

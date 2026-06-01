@@ -45,7 +45,7 @@ class DebugLoggerService {
       this.ws.onerror = () => {
         this.isConnecting = false;
       };
-    } catch (e) {
+    } catch (e: any) {
       this.isConnecting = false;
     }
   }

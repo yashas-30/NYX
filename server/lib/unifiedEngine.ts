@@ -81,7 +81,7 @@ export class UnifiedEngine {
             const data = JSON.parse(line.slice(6));
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
             if (text) onChunk({ chunk: text });
-          } catch (e) {
+          } catch (e: any) {
             // ignore JSON parse errors for incomplete chunks
           }
         }
@@ -126,7 +126,7 @@ export class UnifiedEngine {
           try {
             const data = JSON.parse(line.slice(6));
             if (data.content) onChunk({ chunk: data.content });
-          } catch (e) {
+          } catch (e: any) {
             // ignore JSON parse errors
           }
         }

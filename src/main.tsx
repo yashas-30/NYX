@@ -42,7 +42,7 @@ if (typeof window !== 'undefined') {
         invoke: async (cmd: string, args?: any) => {
           try {
             return await invoke(cmd, args);
-          } catch (e) {
+          } catch (e: any) {
             console.error(`[nyxIPC] Invoke error for ${cmd}:`, e);
             throw e;
           }
@@ -51,7 +51,7 @@ if (typeof window !== 'undefined') {
           try {
             const res = await invoke<any>('dialog_open_directory');
             return res && res.success ? res.data : null;
-          } catch (e) {
+          } catch (e: any) {
             console.error('[nyxIPC] showOpenDirectory error:', e);
             return null;
           }
@@ -76,7 +76,7 @@ async function initBackendUrl() {
         console.log(`[Tauri] Dynamically resolved Express backend URL: ${backendBaseUrl}`);
         return;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[Tauri] Failed to query server ports via IPC:', e);
     }
   }
@@ -99,7 +99,7 @@ async function getOrFetchSessionToken(): Promise<string> {
       cachedToken = data.token;
       tokenExpiresAt = data.expiresAt || (Date.now() + 5 * 60 * 1000);
       return data.token || '';
-    } catch (err) {
+    } catch (err: any) {
       console.error('[Session Interceptor] Failed to fetch session token:', err);
       return '';
     } finally {
@@ -139,7 +139,7 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Pr
         }
         init.headers = headers;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[Fetch Interceptor] Error applying auth header:', err);
     }
   }
@@ -163,7 +163,7 @@ function RootContainer() {
             if (mounted) setIsBackendReady(true);
             return;
           }
-        } catch (e) {
+        } catch (e: any) {
           // Backend not up yet
         }
         await new Promise(r => setTimeout(r, 1000));

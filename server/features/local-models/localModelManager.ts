@@ -613,14 +613,14 @@ try {
     }
     if (sanitized) saveStates();
   }
-} catch (e) {
+} catch (e: any) {
   logger.error({ err: e }, 'Error loading model download state file');
 }
 
 function saveStates() {
   try {
     fs.writeFileSync(STATE_FILE, JSON.stringify(downloadStates, null, 2), 'utf8');
-  } catch (e) {
+  } catch (e: any) {
     logger.error({ err: e }, 'Error saving model download state file');
   }
 }
@@ -676,7 +676,7 @@ export const LocalModelManager = {
           }
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       logger.error({ err }, 'Error scanning local model directory');
     }
 
@@ -998,7 +998,7 @@ export const LocalModelManager = {
       if (fs.existsSync(partPath)) {
         try {
           existingBytes = fs.statSync(partPath).size;
-        } catch (e) {
+        } catch (e: any) {
           existingBytes = 0;
         }
       }
@@ -1071,8 +1071,8 @@ export const LocalModelManager = {
 
           try {
             fileStream = fs.createWriteStream(partPath, { flags: isRangeSupported ? 'a' : 'w' });
-          } catch (err: any) {
-            done(err);
+          } catch (error: any) {
+            done(error);
             return;
           }
 
@@ -1110,8 +1110,8 @@ export const LocalModelManager = {
                 try {
                   fs.renameSync(partPath, destPath);
                   done();
-                } catch (e: any) {
-                  done(e);
+                } catch (error: any) {
+                  done(error);
                 }
               });
             }
@@ -1216,7 +1216,7 @@ export const LocalModelManager = {
           };
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       logger.warn({ err }, 'Failed to query systeminformation graphics');
     }
 

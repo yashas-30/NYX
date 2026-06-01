@@ -72,8 +72,8 @@ adminRouter.get('/logs', (req, res) => {
           }
         }
       }
-    } catch (err: any) {
-      res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
+    } catch (error: any) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
     }
   };
 
@@ -90,8 +90,8 @@ adminRouter.get('/logs', (req, res) => {
     watcher.on('change', () => {
       readNewLogs();
     });
-  } catch (err: any) {
-    logger.error({ err }, 'Failed to start chokidar watcher for logs');
+  } catch (error: any) {
+    logger.error({ error }, 'Failed to start chokidar watcher for logs');
   }
 
   req.on('close', () => {
@@ -113,8 +113,8 @@ adminRouter.get('/usage', (req, res) => {
     const summary = UsageTracker.getUsageSummary(days);
     const totalCost = UsageTracker.getTotalCost(days);
     res.json({ success: true, summary, totalCostUsd: totalCost, days });
-  } catch (err: any) {
-    logger.error({ err }, '[Admin] Failed to get usage summary');
+  } catch (error: any) {
+    logger.error({ error }, '[Admin] Failed to get usage summary');
     res.status(500).json({ error: 'Failed to retrieve usage data' });
   }
 });
@@ -143,8 +143,8 @@ adminRouter.post('/rules/prune', (req, res) => {
       fs2.writeFileSync(path2.join(CACHE_DIR, 'critic-rules.json'), JSON.stringify(rules, null, 2));
     }
     res.json({ success: true, before, after: rules.length, pruned: before - rules.length });
-  } catch (err: any) {
-    logger.error({ err }, '[Admin] Failed to prune rules');
+  } catch (error: any) {
+    logger.error({ error }, '[Admin] Failed to prune rules');
     res.status(500).json({ error: 'Failed to prune rules' });
   }
 });
@@ -154,7 +154,7 @@ adminRouter.get('/rules', (_req, res) => {
   try {
     const rules = RulesDb.getRules();
     res.json({ success: true, rules, count: rules.length });
-  } catch (err: any) {
+  } catch (error: any) {
     res.status(500).json({ error: 'Failed to get rules' });
   }
 });
@@ -163,7 +163,7 @@ adminRouter.delete('/rules', (_req, res) => {
   try {
     RulesDb.resetRules();
     res.json({ success: true, message: 'All rules cleared' });
-  } catch (err: any) {
+  } catch (error: any) {
     res.status(500).json({ error: 'Failed to reset rules' });
   }
 });

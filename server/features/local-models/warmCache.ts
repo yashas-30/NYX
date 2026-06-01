@@ -1,3 +1,4 @@
+import logger from '../../lib/logger.ts';
 import { LocalModelRunner } from './localModelRunner.ts';
 
 interface CachedModel {
@@ -50,7 +51,7 @@ export class ModelWarmCache {
     // Stop current model if different
     const currentModel = LocalModelRunner.getActiveModel();
     if (currentModel && currentModel !== modelId) {
-      console.log(`[ModelWarmCache] Evicting active model ${currentModel} to load ${modelId}`);
+      logger.info(`[ModelWarmCache] Evicting active model ${currentModel} to load ${modelId}`);
       await LocalModelRunner.stop();
     }
 
@@ -85,7 +86,7 @@ export class ModelWarmCache {
         await LocalModelRunner.stop();
       }
       this.cache.delete(oldestKey);
-      console.log(`[ModelCache] Evicted ${oldestKey} (LRU)`);
+      logger.info(`[ModelCache] Evicted ${oldestKey} (LRU)`);
     }
   }
 
@@ -100,7 +101,7 @@ export class ModelWarmCache {
             LocalModelRunner.stop().catch(() => {});
           }
           this.cache.delete(key);
-          console.log(`[ModelCache] Evicted ${key} (TTL expired)`);
+          logger.info(`[ModelCache] Evicted ${key} (TTL expired)`);
         }
       }
 

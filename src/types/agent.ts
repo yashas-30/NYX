@@ -115,6 +115,7 @@ export interface AISettings {
   maxTokens?: number;
   topP?: number;
   topK?: number;
+  antigravity?: boolean;
 }
 
 export interface ToolCall {

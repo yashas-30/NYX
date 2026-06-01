@@ -1,17 +1,30 @@
+import logger from './logger.ts';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-// @ts-ignore
-import { lock } from 'proper-lockfile';
-
 import { CACHE_DIR } from './paths.ts';
+
+let lockFn: any = null;
+async function getLockFn() {
+  if (lockFn !== null) return lockFn;
+  try {
+    const mod = await import('proper-lockfile');
+    lockFn = mod.lock || (mod as any).default?.lock || (mod as any).default;
+    if (typeof lockFn !== 'function') throw new Error('Not a function');
+    return lockFn;
+  } catch (err: any) {
+    // Graceful fallback to prevent crashes if proper-lockfile fails or is missing
+    lockFn = async () => () => Promise.resolve();
+    return lockFn;
+  }
+}
 
 // Ensure cache directory exists
 if (!fs.existsSync(CACHE_DIR)) {
   try {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
-  } catch (e) {
-    console.error('[CacheServer] Failed to create cache dir:', e);
+  } catch (e: any) {
+    logger.error('[CacheServer] Failed to create cache dir:', e);
   }
 }
 
@@ -75,7 +88,8 @@ export class CacheServer {
     
     let release: (() => Promise<void>) | null = null;
     try {
-      release = await lock(filePath, { realpath: false, retries: 3 });
+      const lockInstance = await getLockFn();
+      release = await lockInstance(filePath, { realpath: false, retries: 3 });
       const raw = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(raw);
 
@@ -96,8 +110,8 @@ export class CacheServer {
       fs.utimesSync(filePath, now, now);
 
       return parsed.data || null;
-    } catch (e: any) {
-      console.error('[CacheServer] Failed to read cache file:', e.message);
+    } catch (error: any) {
+      logger.error('[CacheServer] Failed to read cache file:', error.message);
       return null;
     } finally {
       if (release) {
@@ -134,7 +148,7 @@ export class CacheServer {
       // Attach expiry timestamp if TTL is specified
       if (ttlMs > 0) {
         payload.expiresAt = Date.now() + ttlMs;
-        console.log(`[CacheServer] Storing entry with TTL=${ttlMs}ms (expires in ${(ttlMs / 1000).toFixed(0)}s): ${key.slice(0, 12)}...`);
+        logger.info(`[CacheServer] Storing entry with TTL=${ttlMs}ms (expires in ${(ttlMs / 1000).toFixed(0)}s): ${key.slice(0, 12)}...`);
       }
 
       const fileExists = fs.existsSync(filePath);
@@ -142,15 +156,16 @@ export class CacheServer {
         fs.writeFileSync(filePath, '', 'utf8'); // Touch file
       }
 
-      release = await lock(filePath, { realpath: false, retries: 5 });
+      const lockInstance = await getLockFn();
+      release = await lockInstance(filePath, { realpath: false, retries: 5 });
       fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf-8');
       
       // Perform LRU Eviction Check asynchronously
       this.evictOldestIfNeeded().catch(err => {
-        console.error('[CacheServer] LRU Eviction failed:', err.message);
+        logger.error('[CacheServer] LRU Eviction failed:', err.message);
       });
-    } catch (e: any) {
-      console.error('[CacheServer] Failed to write cache file:', e.message);
+    } catch (error: any) {
+      logger.error('[CacheServer] Failed to write cache file:', error.message);
     } finally {
       if (release) {
         try {
@@ -180,12 +195,12 @@ export class CacheServer {
         for (const file of toEvict) {
           try {
             fs.unlinkSync(file.path);
-            console.log(`[CacheServer] LRU Evicted old cache entry: ${file.name}`);
+            logger.info(`[CacheServer] LRU Evicted old cache entry: ${file.name}`);
           } catch {}
         }
       }
-    } catch (e: any) {
-      console.error('[CacheServer] Eviction check failed:', e.message);
+    } catch (error: any) {
+      logger.error('[CacheServer] Eviction check failed:', error.message);
     }
   }
 
@@ -227,8 +242,8 @@ export class CacheServer {
         misses: this.stats.misses,
         items: items.sort((a, b) => b.createdAt - a.createdAt).slice(0, 50)
       };
-    } catch (e) {
-      console.error('[CacheServer] Failed to get stats:', e);
+    } catch (e: any) {
+      logger.error('[CacheServer] Failed to get stats:', e);
       return {
         itemCount: 0,
         totalSizeBytes: 0,
@@ -256,8 +271,8 @@ export class CacheServer {
       this.stats.hits = 0;
       this.stats.misses = 0;
       return { success: true, clearedCount };
-    } catch (e) {
-      console.error('[CacheServer] Failed to clear cache:', e);
+    } catch (e: any) {
+      logger.error('[CacheServer] Failed to clear cache:', e);
       return { success: false, clearedCount: 0 };
     }
   }

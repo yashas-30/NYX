@@ -5,7 +5,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Search, Box, Cpu, Download, Globe, Layers } from 'lucide-react';
 import { AVAILABLE_MODELS } from '@shared/config/models';
-import { ModelOption } from '@src/types';
+import { ModelOption, LocalModelPreset } from '@src/types';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
 import { AIService } from '@src/core/services/ai.service';
@@ -39,7 +39,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const [filter, setFilter] = useState<'nyx' | 'cloud'>('nyx');
 
   // Native GGUF local model states
-  const [nativeModels, setNativeModels] = useState<any[]>([]);
+  const [nativeModels, setNativeModels] = useState<LocalModelPreset[]>([]);
   const [activeNativeId, setActiveNativeId] = useState<string | null>(null);
   const [nativeStatus, setNativeStatus] = useState<{ status: string; error: string | null }>({
     status: 'stopped',
@@ -64,7 +64,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         else setActiveNativeId(null);
         if (data.runnerStatus) setNativeStatus(data.runnerStatus);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[Registry] Failed to fetch native models:', err);
     }
   }, []);
@@ -77,7 +77,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const data = await res.json();
         setCompatibility(data);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[Registry] Failed to fetch device compatibility:', err);
     } finally {
       setLoadingCompatibility(false);
@@ -114,8 +114,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Auto-setup failed: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Auto-setup error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Auto-setup error: ${error.message}`);
     } finally {
       setActionInProgress(null);
     }
@@ -147,8 +147,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Bulk download failed: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Bulk download error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Bulk download error: ${error.message}`);
     } finally {
       setActionInProgress(null);
     }
@@ -180,8 +180,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Download failed: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     } finally {
       setActionInProgress(null);
     }
@@ -202,8 +202,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Download failed to start: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     } finally {
       setActionInProgress(null);
     }
@@ -223,8 +223,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Pause failed: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     }
   };
 
@@ -242,8 +242,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Resume failed: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     }
   };
 
@@ -261,8 +261,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Cancel failed: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     }
   };
 
@@ -289,8 +289,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Failed to load model: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     } finally {
       setActionInProgress(null);
     }
@@ -310,8 +310,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Failed to unload model: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     } finally {
       setActionInProgress(null);
     }
@@ -333,8 +333,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         const errData = await res.json();
         toast.error(`Delete failed: ${errData.error}`);
       }
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`);
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
     } finally {
       setActionInProgress(null);
     }
@@ -371,7 +371,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     });
   }, [cloudModels]);
 
-  const groupedLocalPresets = useMemo<[string, any[]][]>(() => {
+  const groupedLocalPresets = useMemo<[string, LocalModelPreset[]][]>(() => {
     const grouped = nativeModels.reduce(
       (acc, m) => {
         const prov = m.provider || 'local';
@@ -379,10 +379,10 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         acc[prov].push(m);
         return acc;
       },
-      {} as Record<string, any[]>
+      {} as Record<string, LocalModelPreset[]>
     );
 
-    return (Object.entries(grouped) as [string, any[]][]).sort(([a], [b]) => {
+    return (Object.entries(grouped) as [string, LocalModelPreset[]][]).sort(([a], [b]) => {
       if (a === 'google') return -1;
       if (b === 'google') return 1;
       return a.localeCompare(b);

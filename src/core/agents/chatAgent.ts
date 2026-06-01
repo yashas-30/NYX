@@ -1,8 +1,9 @@
-import { AIService } from '@src/core/services/ai.service';
+import { AIService, countTokens } from '@src/core/services/ai.service';
 import { ChatMessage, AISettings } from '@src/infrastructure/types';
 import { PromptAnalysis, ConversationState } from '@src/core/services/promptClassifier';
 import { buildChatSystemPrompt, buildChatUserPrompt } from '../prompts/chatPrompts';
 import { searchWeb } from '@src/infrastructure/api/coderApi';
+import { BaseAgent, BaseAgentConfig } from './baseAgent';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,14 +48,7 @@ export interface StreamEvent {
   metadata?: any;
 }
 
-export interface ChatAgentConfig {
-  modelId: string;
-  provider: string;
-  apiKey: string;
-  settings: AISettings;
-  history: ChatMessage[];
-  lightningDirectives?: string[];
-  webSearchEnabled?: boolean;
+export interface ChatAgentConfig extends BaseAgentConfig {
   maxSearchResults?: number;
   maxContextLength?: number;
   conversationState?: ConversationState;
@@ -62,23 +56,13 @@ export interface ChatAgentConfig {
 
 // ── Agent ─────────────────────────────────────────────────────────────────────
 
-export class ChatAgent {
-  private config: ChatAgentConfig;
-  private abortController: AbortController | null = null;
-
+export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
   constructor(config: ChatAgentConfig) {
-    this.config = {
+    super({
       maxSearchResults: 5,
       maxContextLength: 8000,
       ...config,
-    };
-  }
-
-  // ── Abort Control ─────────────────────────────────────────────────────────
-
-  abort(): void {
-    this.abortController?.abort();
-    this.abortController = null;
+    });
   }
 
   // ── Web Search ────────────────────────────────────────────────────────────
@@ -119,7 +103,7 @@ export class ChatAgent {
         if (data?.success && Array.isArray(data.results)) return data.results;
         if (Array.isArray(data)) return data;
         return [];
-      } catch (err) {
+      } catch (err: any) {
         if (signal.aborted) throw err;
         if (attempt === 2) {
           console.warn('[ChatAgent] Web search failed after 3 attempts:', err);
@@ -181,7 +165,7 @@ export class ChatAgent {
         const rawResults = await this.searchWeb(prompt, combinedSignal);
         webSearchResults = this.formatSearchResults(rawResults);
         yield { type: 'thinking', content: `✓ Found ${rawResults.length} results` };
-      } catch (err) {
+      } catch (err: any) {
         if ((err as Error).name !== 'AbortError') {
           yield { type: 'thinking', content: '⚠ Web search unavailable, using local knowledge...' };
         }
@@ -224,7 +208,7 @@ export class ChatAgent {
       // AIService gives accumulated text — we need to compute delta
       const delta = text.slice(accumulatedText.length);
       accumulatedText = text;
-      totalTokens += 1;
+      totalTokens += countTokens(delta);
 
       chunkQueue.push(delta);
       if (resolveChunk) {
@@ -309,35 +293,97 @@ export class ChatAgent {
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  private combineSignals(...signals: AbortSignal[]): AbortSignal {
-    const controller = new AbortController();
-    for (const signal of signals) {
-      if (signal.aborted) {
-        controller.abort();
-        return controller.signal;
-      }
-      signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
-    return controller.signal;
-  }
-
   private extractArtifacts(text: string): Artifact[] {
     const artifacts: Artifact[] = [];
+    let index = 0;
+    const generateId = () => `art-${Date.now()}-${index++}`;
+
+    const getType = (lang: string): Artifact['type'] => {
+      lang = lang.toLowerCase();
+      if (['diff', 'patch'].includes(lang)) return 'diff';
+      if (['json', 'json5'].includes(lang)) return 'json';
+      if (['html', 'xml'].includes(lang)) return 'html';
+      if (['svg'].includes(lang)) return 'svg';
+      if (['md', 'markdown'].includes(lang)) return 'markdown';
+      return 'code';
+    };
+
+    // 1. Code blocks
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
     let match;
-    let index = 0;
-
     while ((match = codeBlockRegex.exec(text)) !== null) {
       const lang = match[1] || 'text';
       const content = match[2].trim();
-      if (content.length > 100) { // Only significant blocks
+      if (content.length > 50) {
         artifacts.push({
-          id: `art-${Date.now()}-${index++}`,
-          type: 'code',
+          id: generateId(),
+          type: getType(lang),
           title: `snippet.${lang}`,
           content,
           language: lang,
         });
+      }
+    }
+
+    const textWithoutBlocks = text.replace(codeBlockRegex, '');
+
+    // 2. Inline SVG
+    const svgRegex = /<svg[\s\S]*?<\/svg>/gi;
+    let svgMatch;
+    while ((svgMatch = svgRegex.exec(textWithoutBlocks)) !== null) {
+      const content = svgMatch[0].trim();
+      if (content.length > 50) {
+        artifacts.push({ id: generateId(), type: 'svg', title: 'Inline SVG', content });
+      }
+    }
+
+    // 3. Markdown Tables
+    const tableRegex = /(?:^|\n)( *\|.*\|\s*\n *\|[\s\-:|]+\|\s*\n(?: *\|.*\|\s*(?:\n|$))+)/g;
+    let tableMatch;
+    while ((tableMatch = tableRegex.exec(textWithoutBlocks)) !== null) {
+      const content = tableMatch[1].trim();
+      if (content.length > 50) {
+        artifacts.push({ id: generateId(), type: 'markdown', title: 'Markdown Table', content });
+      }
+    }
+
+    // 4. Inline JSON (Schemas, objects, arrays)
+    let depth = 0;
+    let startIndex = -1;
+    let inString = false;
+    let escape = false;
+    for (let i = 0; i < textWithoutBlocks.length; i++) {
+      const char = textWithoutBlocks[i];
+      if (inString) {
+        if (escape) escape = false;
+        else if (char === '\\') escape = true;
+        else if (char === '"') inString = false;
+      } else {
+        if (char === '"') inString = true;
+        else if (char === '{' || char === '[') {
+          if (depth === 0) startIndex = i;
+          depth++;
+        } else if (char === '}' || char === ']') {
+          depth--;
+          if (depth === 0 && startIndex !== -1) {
+            const possibleJson = textWithoutBlocks.slice(startIndex, i + 1);
+            if (possibleJson.length > 100) {
+              try {
+                const parsed = JSON.parse(possibleJson);
+                if (parsed && typeof parsed === 'object') {
+                  artifacts.push({
+                    id: generateId(),
+                    type: 'json',
+                    title: 'Inline JSON',
+                    content: possibleJson,
+                    language: 'json',
+                  });
+                }
+              } catch {}
+            }
+            startIndex = -1;
+          } else if (depth < 0) depth = 0;
+        }
       }
     }
 

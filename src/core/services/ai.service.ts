@@ -476,9 +476,6 @@ export class AIService {
       case 'nyx-native':
         result = await this.executeNyxNative(providerConfig);
         break;
-      case 'qwen-local':
-        result = await this.executeQwenLocal(providerConfig);
-        break;
       default:
         throw new Error(`Unsupported provider: ${provider}`);
     }
@@ -579,26 +576,7 @@ export class AIService {
     return this.processStream(response, modelId, 'nyx-native', onStream, streamEvents);
   }
 
-  private static async executeQwenLocal(config: ProviderConfig): Promise<EnhancedAIResponse> {
-    const {
-      modelId, prompt, systemInstruction, settings, history, onStream, signal, streamEvents
-    } = config;
 
-    const messages = this.buildMessages(prompt, systemInstruction, history);
-    const response = await this.fetchWithAuth('/api/nyx/local-models/qwen-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: modelId,
-        messages,
-        temperature: settings?.temperature ?? 0.7,
-        max_tokens: settings?.maxTokens ?? 4096,
-      }),
-      signal,
-    });
-    if (!response.ok) await this.handleNonOkResponse(response, 'Qwen Local');
-    return this.processStream(response, modelId, 'qwen-local', onStream, streamEvents);
-  }
 
   // -------------------------------------------------------------------------
   // Stream processing — token-by-token with reasoning extraction
@@ -722,12 +700,12 @@ export class AIService {
                 }
               }
             }
-          } catch (e: any) {
-            if (e.message?.includes('JSON') || e.message?.includes('Unexpected token')) {
-              console.warn('[AIService] JSON parse error in stream:', e.message);
+          } catch (error: any) {
+            if (error.message?.includes('JSON') || error.message?.includes('Unexpected token')) {
+              console.warn('[AIService] JSON parse error in stream:', error.message);
               continue;
             }
-            throw e;
+            throw error;
           }
         }
       }
@@ -802,7 +780,7 @@ export class AIService {
   }
 
   private static validateApiKey(provider: Provider | string, key?: string) {
-    const noKeyProviders = ['nyx-native', 'qwen-local'];
+    const noKeyProviders = ['nyx-native'];
     if (noKeyProviders.includes(String(provider))) return;
     if (!key?.trim()) return;
     
@@ -824,7 +802,7 @@ export class AIService {
     provider: Provider | string,
     apiKey?: string
   ): Promise<'online' | 'offline' | 'no-key'> {
-    if (provider === 'nyx-native' || provider === 'qwen-local') {
+    if (provider === 'nyx-native') {
       try {
         const res = await this.fetchWithAuth('/api/nyx/local-models/status');
         if (!res.ok) return 'offline';

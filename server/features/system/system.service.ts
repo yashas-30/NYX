@@ -6,6 +6,7 @@ import { APP_STATE_DIR } from '../../lib/paths.ts';
 import { CacheServer } from '../../lib/cache.ts';
 import { LocalModelRunner } from '../local-models/localModelRunner.ts';
 import logger from '../../lib/logger.ts';
+import { LOCAL_MODEL_PORT } from '../../../src/config/ports.ts';
 
 interface VRAMResult {
   vram: number;
@@ -133,10 +134,11 @@ export class SystemService {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 2000);
-      const r = await fetch('http://127.0.0.1:12345/health', { signal: controller.signal });
+      const llamaPort = process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString();
+      const r = await fetch(`http://127.0.0.1:${llamaPort}/health`, { signal: controller.signal });
       clearTimeout(timeout);
       checks.dependencies.llamaServer = r.ok ? 'ok' : 'degraded';
-    } catch (err: any) {
+    } catch (error: any) {
       checks.dependencies.llamaServer = 'down';
     }
 
@@ -152,7 +154,7 @@ export class SystemService {
         });
       });
       checks.dependencies.docker = 'ok';
-    } catch (err: any) {
+    } catch (error: any) {
       checks.dependencies.docker = 'down';
     }
 
@@ -161,7 +163,7 @@ export class SystemService {
       const disk = await checkDiskSpace(APP_STATE_DIR);
       // Degraded if less than 1GB free
       checks.dependencies.disk = disk.free > 1 * 1024 * 1024 * 1024 ? 'ok' : 'degraded';
-    } catch (err: any) {
+    } catch (error: any) {
       checks.dependencies.disk = 'down';
     }
 
@@ -196,8 +198,8 @@ export class SystemService {
     if (modelId) {
       try {
         optimalLayers = await LocalModelRunner.calculateOptimalLayers(modelId);
-      } catch (err: any) {
-        logger.error({ err }, 'Error calculating optimal layers on SystemService');
+      } catch (error: any) {
+        logger.error({ error }, 'Error calculating optimal layers on SystemService');
       }
     }
 
