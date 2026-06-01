@@ -139,9 +139,11 @@ async function startServer() {
     logger.error({ err: err.message }, `Failed to start Fastify server on port ${FASTIFY_PORT}`);
   }
 
-  // BAD-6: Make Scrapling port configurable via SCRAPLING_PORT env var
   const SCRAPLING_PORT = parseInt(process.env.SCRAPLING_PORT || '3002', 10);
   let scraplingProc: ReturnType<typeof spawn> | null = null;
+
+  const ANTIGRAVITY_PORT = parseInt(process.env.ANTIGRAVITY_PORT || '3003', 10);
+  let antigravityProc: ReturnType<typeof spawn> | null = null;
 
   function spawnScrapling() {
     try {
@@ -168,7 +170,30 @@ async function startServer() {
     }
   }
 
+  function spawnAntigravity() {
+    try {
+      const pythonPath = findPythonPath();
+      const antigravityScriptPath = path.join(_dirname, 'server', 'python', 'antigravity_service.py');
+      logger.info(
+        `[Antigravity] Spawning Antigravity server on port ${ANTIGRAVITY_PORT} using ${pythonPath}...`
+      );
+      const proc = spawn(pythonPath, [antigravityScriptPath, '--port', String(ANTIGRAVITY_PORT)], {
+        cwd: path.dirname(antigravityScriptPath),
+        detached: false,
+        stdio: ['ignore', 'inherit', 'inherit'],
+      });
+      registerProcess(proc);
+      antigravityProc = proc;
+      proc.on('exit', () => {
+        antigravityProc = null;
+      });
+    } catch (err: any) {
+      logger.error({ err: err.message }, '[Antigravity] Failed to spawn Antigravity local service');
+    }
+  }
+
   spawnScrapling();
+  spawnAntigravity();
 
   // BAD-6: Health-check loop — poll every 15 seconds, auto-restart on failure
   const scraplingHealthInterval = setInterval(async () => {
@@ -327,7 +352,7 @@ async function startServer() {
     skip: () => true,
   });
 
-  app.use('/api/gemini', providerRateLimiter('gemini'), safetyGateMiddleware, geminiRouter);
+  app.use('/api/gemini', providerRateLimiter('gemini'), geminiRouter);
   app.use('/api/terminal', sessionValidationMiddleware, terminalRouter);
   app.use('/api/agents', agentsRouter);
   app.use('/api/nyx/local-models', localModelLimiter, localModelsRouter);

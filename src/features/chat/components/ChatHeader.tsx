@@ -15,7 +15,6 @@ import {
   Lock,
   Unlock,
   Zap,
-  Globe,
   Square,
   Paperclip,
   Bot,
@@ -31,6 +30,7 @@ import {
   MoreHorizontal,
   Keyboard,
   AlertCircle,
+  HardDrive,
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
@@ -56,8 +56,6 @@ export interface ChatMetrics {
 export interface ChatHeaderProps {
   metrics: ChatMetrics;
   isLoading: boolean;
-  isSearching: boolean;
-  webSearchEnabled: boolean;
   onClear: () => void;
   onStopGeneration?: () => void;
   sidebarOpen?: boolean;
@@ -301,8 +299,6 @@ const ShareMenu: React.FC<{ onExport: ChatHeaderProps['onExportChat']; title: st
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
   metrics,
   isLoading,
-  isSearching,
-  webSearchEnabled,
   onClear,
   onStopGeneration,
   sidebarOpen = true,
@@ -458,7 +454,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           </div>
         </div>
 
-        {/* Center zone: Session title + Context + Web Search */}
+        {/* Center zone: Session title + Context */}
         <div className="flex items-center gap-3 absolute left-1/2 -translate-x-1/2">
           {/* Editable session title */}
           <div className="flex items-center gap-2">
@@ -501,25 +497,28 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             )}
           </div>
 
-          {/* Web Search badge */}
-          {webSearchEnabled && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-extrabold uppercase tracking-wider transition-all duration-300 select-none ${
-                isSearching
-                  ? 'bg-sky-500/10 border-sky-400/30 text-sky-400'
-                  : 'bg-zinc-800/40 border-white/5 text-zinc-500'
-              }`}
-            >
-              <Globe size={9} className={isSearching ? 'animate-spin text-sky-400' : 'text-zinc-600'} />
-              <span className="hidden sm:inline">{isSearching ? 'Searching...' : 'Web'}</span>
-            </motion.div>
-          )}
         </div>
 
         {/* Right zone: Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Response metrics */}
+          <div className="hidden md:flex items-center gap-3 px-3 py-1 bg-white/[0.02] border border-white/[0.04] rounded-xl text-zinc-500 font-mono text-[10px] mr-1">
+            <div className="flex items-center gap-1.5" title="Response latency">
+              <Wifi size={11} className="text-zinc-500" />
+              <span>{displayLatency > 0 ? formatLatency(displayLatency) : '0ms'}</span>
+            </div>
+            <div className="w-[1px] h-3 bg-white/[0.08]" />
+            <div className="flex items-center gap-1.5" title="Tokens per second">
+              <Zap size={11} className="text-zinc-500" />
+              <span>{metrics.tps} tok/s</span>
+            </div>
+            <div className="w-[1px] h-3 bg-white/[0.08]" />
+            <div className="flex items-center gap-1.5" title="Tokens generated">
+              <HardDrive size={11} className="text-zinc-500" />
+              <span>{formatTokens(metrics.tokens)} tok</span>
+            </div>
+          </div>
+
           {/* Stop generation button (replaces everything during loading) */}
           <AnimatePresence mode="wait">
             {isLoading && onStopGeneration ? (
@@ -635,51 +634,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           </AnimatePresence>
         </div>
       </div>
-
-      {/* Metrics bar (collapsible, shows on hover or during loading) */}
-      <AnimatePresence>
-        {(isLoading || metrics.totalMessages > 0) && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden border-t border-white/[0.02]"
-          >
-            <div className="flex items-center gap-4 px-4 py-1.5">
-              <div className="flex items-center gap-1.5" title="Response latency">
-                <Clock size={10} className="text-zinc-600" />
-                <span className="text-[10px] font-mono text-zinc-500">{latencyText}</span>
-              </div>
-              
-              <div className="flex items-center gap-1.5" title="Tokens generated">
-                <Cpu size={10} className="text-zinc-600" />
-                <span className="text-[10px] font-mono text-zinc-500">{formatTokens(metrics.tokens)} tok</span>
-              </div>
-              
-              {metrics.tps > 0 && (
-                <div className="flex items-center gap-1.5" title="Tokens per second">
-                  <Zap size={10} className="text-zinc-600" />
-                  <span className="text-[10px] font-mono text-zinc-500">{metrics.tps} t/s</span>
-                </div>
-              )}
-              
-              <div className="flex items-center gap-1.5" title="Messages in conversation">
-                <MessageSquare size={10} className="text-zinc-600" />
-                <span className="text-[10px] font-mono text-zinc-500">{metrics.totalMessages} msgs</span>
-              </div>
-
-              {contextRatio > CONTEXT_WARNING_THRESHOLD && (
-                <div className="flex items-center gap-1.5 ml-auto" title="Context window nearly full">
-                  <AlertCircle size={10} className={contextRatio > CONTEXT_CRITICAL_THRESHOLD ? 'text-red-500' : 'text-amber-500'} />
-                  <span className={`text-[10px] font-medium ${contextRatio > CONTEXT_CRITICAL_THRESHOLD ? 'text-red-400' : 'text-amber-400'}`}>
-                    {contextRatio > CONTEXT_CRITICAL_THRESHOLD ? 'Context critical' : 'Context warning'}
-                  </span>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </header>
   );
 };

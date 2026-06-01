@@ -36,10 +36,10 @@
       --surface: rgba(16, 20, 31, 0.65);
       --surface-hover: rgba(22, 28, 44, 0.85);
       --border: rgba(255, 255, 255, 0.06);
-      --border-glow: rgba(34, 211, 238, 0.15);
+      --border-glow: rgba(255, 51, 102, 0.15);
       
-      --cyan: #22d3ee;
-      --cyan-glow: rgba(34, 211, 238, 0.25);
+      --cyan: #FF3366;
+      --cyan-glow: rgba(255, 51, 102, 0.25);
       --blue: #3b82f6;
       --blue-glow: rgba(59, 130, 246, 0.25);
       --violet: #8b5cf6;
@@ -82,7 +82,7 @@
     }
     .orb-1 {
       width: 700px; height: 700px;
-      background: rgba(34, 211, 238, 0.06);
+      background: rgba(255, 51, 102, 0.06);
       top: -250px; left: -250px;
       animation-delay: 0s;
     }
@@ -215,8 +215,8 @@
       gap: 8px;
       padding: 7px 16px;
       border-radius: 100px;
-      border: 1px solid rgba(34, 211, 238, 0.2);
-      background: rgba(34, 211, 238, 0.07);
+      border: 1px solid rgba(255, 51, 102, 0.2);
+      background: rgba(255, 51, 102, 0.07);
       color: #9bf3ff;
       font-family: var(--display);
       font-size: 11.5px;
@@ -224,7 +224,7 @@
       letter-spacing: 0.12em;
       text-transform: uppercase;
       margin-bottom: 2.2rem;
-      box-shadow: 0 0 20px rgba(34, 211, 238, 0.05);
+      box-shadow: 0 0 20px rgba(255, 51, 102, 0.05);
     }
 
     .hero-title {
@@ -241,7 +241,7 @@
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      filter: drop-shadow(0 0 30px rgba(34, 211, 238, 0.1));
+      filter: drop-shadow(0 0 30px rgba(255, 51, 102, 0.1));
     }
 
     .hero-sub {
@@ -278,7 +278,7 @@
     .btn-primary:hover {
       background: #06b6d4;
       transform: translateY(-2px);
-      box-shadow: 0 0 45px rgba(34, 211, 238, 0.45);
+      box-shadow: 0 0 45px rgba(255, 51, 102, 0.45);
     }
 
     .btn-secondary {
@@ -353,7 +353,7 @@
     }
     .glass-card:hover {
       border-color: var(--border-glow);
-      box-shadow: 0 15px 45px -12px rgba(34, 211, 238, 0.05);
+      box-shadow: 0 15px 45px -12px rgba(255, 51, 102, 0.05);
     }
 
     /* ── Features Grid ── */
@@ -517,7 +517,7 @@
       background: rgba(255,255,255,0.02);
       border-color: var(--border);
     }
-    .pipeline-step.active[data-stage="architect"] { border-color: rgba(34, 211, 238, 0.2); }
+    .pipeline-step.active[data-stage="architect"] { border-color: rgba(255, 51, 102, 0.2); }
     .pipeline-step.active[data-stage="coder"] { border-color: rgba(139, 92, 246, 0.2); }
     .pipeline-step.active[data-stage="optimizer"] { border-color: rgba(16, 185, 129, 0.2); }
     
@@ -634,7 +634,7 @@
     }
 
     .badge-gemini { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.15); }
-    .badge-gemma { background: rgba(34, 211, 238, 0.15); color: #22d3ee; border: 1px solid rgba(34, 211, 238, 0.15); }
+    .badge-gemma { background: rgba(255, 51, 102, 0.15); color: #FF3366; border: 1px solid rgba(255, 51, 102, 0.15); }
     .badge-opencode { background: rgba(139, 92, 246, 0.15); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.15); }
     .badge-pollinations { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.15); }
     .badge-nvidia { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.15); }
@@ -843,7 +843,7 @@
 
     <div class="feature-grid">
       <div class="feature-card glass-card">
-        <div class="feature-icon" style="background: rgba(34, 211, 238, 0.08); color: var(--cyan)">🖥️</div>
+        <div class="feature-icon" style="background: rgba(255, 51, 102, 0.08); color: var(--cyan)">🖥️</div>
         <div class="feature-title">Native GGUF Loader</div>
         <div class="feature-desc">Spawns a highly-optimized local llama-server dynamically. Download and run weights locally on your VRAM without wrapping other heavyweight desktop servers.</div>
       </div>
@@ -1082,7 +1082,7 @@ Done in 24ms.`;
         '  <span class="kw">return</span> (',
         '    &lt;<span class="tag">motion.div</span>',
         '      whileHover={{ scale: <span class="nm">1.02</span> }}',
-        '      className=<span class="st">"glass-card p-6 border border-white/6 hover:border-cyan/30 rounded-2xl relative overflow-hidden transition-all shadow-[0_0_20px_rgba(34,211,238,0.05)]"</span>',
+        '      className=<span class="st">"glass-card p-6 border border-white/6 hover:border-flame/30 rounded-2xl relative overflow-hidden transition-all shadow-[0_0_20px_rgba(255,51,102,0.05)]"</span>',
         '      style={{',
         '        background: <span class="st">\'rgba(16, 20, 31, 0.7)\'</span>,',
         '        backdropFilter: <span class="st">\'blur(20px)\'</span>,',
@@ -1090,7 +1090,7 @@ Done in 24ms.`;
         '    &gt;',
         '      &lt;<span class="tag">div</span> className=<span class="st">"flex items-center justify-between"</span>&gt;',
         '        &lt;<span class="tag">span</span> className=<span class="st">"text-xs font-bold text-violet"</span>&gt;Local Preset&lt;/<span class="tag">span</span>&gt;',
-        '        &lt;<span class="tag">span</span> className=<span class="st">"text-[10px] font-mono text-cyan"</span>&gt;Qwen 2.5 Coder 32B&lt;/<span class="tag">span</span>&gt;',
+        '        &lt;<span class="tag">span</span> className=<span class="st">"text-[10px] font-mono text-flame"</span>&gt;Qwen 2.5 Coder 32B&lt;/<span class="tag">span</span>&gt;',
         '      &lt;/<span class="tag">div</span>&gt;',
         '      ',
         '      &lt;<span class="tag">div</span> className=<span class="st">"mt-4 flex flex-col gap-2"</span>&gt;',
@@ -1100,7 +1100,7 @@ Done in 24ms.`;
         '          min=<span class="nm">0</span> max=<span class="nm">99</span> ',
         '          value={offload} ',
         '          onChange={e =&gt; setOffload(Number(e.target.value))} ',
-        '          className=<span class="st">"w-full accent-cyan h-1 bg-zinc-800 rounded-lg cursor-pointer"</span>',
+        '          className=<span class="st">"w-full accent-flame h-1 bg-zinc-800 rounded-lg cursor-pointer"</span>',
         '        /&gt;',
         '      &lt;/<span class="tag">div</span>&gt;',
         '    &lt;/<span class="tag">motion.div</span>&gt;',

@@ -1,5 +1,5 @@
 import { AIService } from '@src/core/services/ai.service';
-import { ChatMessage, AISettings, TelemetryMetrics, SubagentTask, ISubagentOrchestrator } from '@src/types';
+import { ChatMessage, AISettings, TelemetryMetrics, SubagentTask, ISubagentOrchestrator } from '@src/infrastructure/types';
 import { PromptAnalysis, AgentRoute } from '@src/core/services/promptClassifier';
 import {
   fetchEvolutionaryRules,

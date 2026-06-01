@@ -240,6 +240,7 @@ ${nyxResponse}
               systemInstruction: { parts: [{ text: memorySystemPrompt }] },
               generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
             }),
+            signal: AbortSignal.timeout(15000),
           });
           if (!res.ok) throw new Error(`Gemini Critic API error: ${res.statusText}`);
           const data: any = await res.json();
@@ -258,6 +259,7 @@ ${nyxResponse}
               temperature: 0.2,
               max_tokens: 512,
             }),
+            signal: AbortSignal.timeout(15000),
           });
           if (!res.ok) throw new Error(`Local GGUF Critic error: ${res.statusText}`);
           const data: any = await res.json();
@@ -287,6 +289,7 @@ ${nyxResponse}
               temperature: 0.2,
             },
           }),
+          signal: AbortSignal.timeout(15000),
         });
 
         if (hfRes.ok) {

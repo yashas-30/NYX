@@ -67,7 +67,6 @@ interface ConversationMetrics {
 interface ChatLogicReturn {
   activeAgent: 'nyx';
   isLoading: boolean;
-  isSearching: boolean;
   history: ChatMessage[];
   metrics: ConversationMetrics;
   models: Record<'nyx', string>;
@@ -77,8 +76,6 @@ interface ChatLogicReturn {
   clearHistory: () => void;
   suggestedPrompts: string[];
   submitReward?: (rolloutId: string, reward: number) => void;
-  webSearchEnabled: boolean;
-  setWebSearchEnabled: (val: boolean) => void;
   lightningEnabled: boolean;
   lightningDirectives: string[];
   
@@ -163,10 +160,24 @@ function generateTitle(messages: ChatMessage[]): string {
 function estimateContextTokens(messages: ChatMessage[]): number {
   return messages.reduce((sum, m) => {
     const base = m.role === 'system' ? 50 : 0;
-    const contentTokens = Math.ceil((m.content || '').length / 3.5);
+    const contentTokens = Math.ceil((m.content || '').length / 4);
     const imageTokens = (m.images?.length || 0) * 512;
     return sum + base + contentTokens + imageTokens;
   }, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Check if two message lists have the same content
+// ---------------------------------------------------------------------------
+
+function areMessagesEqual(a: ChatMessage[], b: ChatMessage[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].role !== b[i].role) return false;
+    if (a[i].content !== b[i].content) return false;
+    if (a[i].status !== b[i].status) return false;
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +224,7 @@ export const useChatLogic = ({
 
   // --- Session tracking ---
   const activeSidRef = useRef<string | null>(null);
+  const newlyCreatedSidRef = useRef<string | null>(null);
   const isCreatingSessionRef = useRef(false);
   const [sessionTitle, setSessionTitleState] = useState('New chat');
 
@@ -250,19 +262,6 @@ export const useChatLogic = ({
   const activeSessionMessages = chatSessions?.activeSession?.messages;
   const lastActiveSidRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (activeSid !== lastActiveSidRef.current) {
-      lastActiveSidRef.current = activeSid || null;
-      activeSidRef.current = activeSid || null;
-      const msgs = activeSessionMessages || [];
-      dispatch({ type: 'SET', messages: msgs });
-      clearMetrics();
-      setSessionTitleState(chatSessions?.activeSession?.title || generateTitle(msgs));
-    } else if (activeSessionMessages && activeSessionMessages !== historyRef.current) {
-      dispatch({ type: 'SET', messages: activeSessionMessages });
-    }
-  }, [activeSid, activeSessionMessages, clearMetrics, chatSessions?.activeSession?.title]);
-
   // Persist history changes to session storage
   const persistHistory = useCallback(
     (messages: ChatMessage[], options?: { newSession?: boolean; title?: string }) => {
@@ -273,13 +272,16 @@ export const useChatLogic = ({
         isCreatingSessionRef.current = true;
         
         const title = options?.title || generateTitle(messages);
-        const newSid = chatSessions.createSession?.(messages, title);
-        
-        if (newSid) {
-          activeSidRef.current = newSid;
-          setSessionTitleState(title);
+        try {
+          const newSid = chatSessions.createSession?.(messages, title);
+          if (newSid) {
+            activeSidRef.current = newSid;
+            newlyCreatedSidRef.current = newSid;
+            setSessionTitleState(title);
+          }
+        } finally {
+          isCreatingSessionRef.current = false;
         }
-        isCreatingSessionRef.current = false;
         return;
       }
 
@@ -344,7 +346,7 @@ export const useChatLogic = ({
     [persistHistory]
   );
 
-  const { isLoading, isSearching, runChat: pipelineRunChat, stopChat: pipelineStopChat } = useChatPipeline({
+  const chatPipeline = useChatPipeline({
     models,
     apiKeys,
     modelSettings,
@@ -357,8 +359,31 @@ export const useChatLogic = ({
     lightningEnabled,
     lightningDirectives,
     logRollout,
-    webSearchEnabled,
   });
+  
+  const isLoading = chatPipeline.isLoading;
+  const isSearching = chatPipeline.isSearching;
+  const pipelineRunChat = chatPipeline.runChat;
+  const pipelineStopChat = chatPipeline.stopChat;
+
+  useEffect(() => {
+    if (activeSid !== lastActiveSidRef.current) {
+      const isOurNewSession = activeSid && activeSid === newlyCreatedSidRef.current;
+      lastActiveSidRef.current = activeSid || null;
+      activeSidRef.current = activeSid || null;
+      
+      if (isOurNewSession) {
+        newlyCreatedSidRef.current = null;
+      } else {
+        const msgs = activeSessionMessages || [];
+        dispatch({ type: 'SET', messages: msgs });
+        clearMetrics();
+        setSessionTitleState(chatSessions?.activeSession?.title || generateTitle(msgs));
+      }
+    } else if (!isLoading && activeSessionMessages && activeSessionMessages.length >= historyRef.current.length && !areMessagesEqual(activeSessionMessages, historyRef.current)) {
+      dispatch({ type: 'SET', messages: activeSessionMessages });
+    }
+  }, [activeSid, activeSessionMessages, clearMetrics, chatSessions?.activeSession?.title, isLoading]);
 
   // Store ref for message actions to call
   const runChatRef = useRef(pipelineRunChat);
@@ -368,11 +393,28 @@ export const useChatLogic = ({
   // Public runChat wrapper with budget check
   // -------------------------------------------------------------------------
 
+  const lastRunRef = useRef<number>(0);
   const runChat = useCallback(
     async (prompt: string, images?: ChatImage[]): Promise<void> => {
+      const now = Date.now();
+      if (now - lastRunRef.current < 300) {
+        return; // Debounce 300ms
+      }
+      lastRunRef.current = now;
+
       if ((!prompt.trim() && (!images || images.length === 0))) return;
 
-      const estimatedInput = Math.ceil(prompt.length / 3.5) + (images?.length || 0) * 512;
+      if (prompt.length > 50000) {
+        toast.error('Message exceeds maximum length of 50,000 characters.');
+        return;
+      }
+
+      if (historyRef.current.length >= 1000) {
+        toast.warning('Maximum message limit (1000) reached. Consider starting a new conversation.');
+        return;
+      }
+
+      const estimatedInput = Math.ceil(prompt.length / 4) + (images?.length || 0) * 512;
       const contextTokens = estimateContextTokens(historyRef.current);
       const projectedTotal = contextTokens + estimatedInput + 4096; // Assume 4k output
 
@@ -527,10 +569,11 @@ export const useChatLogic = ({
   // Return
   // -------------------------------------------------------------------------
 
+
+
   return {
     activeAgent: 'nyx',
     isLoading,
-    isSearching,
     history,
     metrics,
     models,
@@ -540,8 +583,6 @@ export const useChatLogic = ({
     clearHistory,
     suggestedPrompts,
     submitReward,
-    webSearchEnabled,
-    setWebSearchEnabled,
     lightningEnabled,
     lightningDirectives,
     

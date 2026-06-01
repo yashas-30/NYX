@@ -36,6 +36,7 @@ export interface UnifiedRequest {
   settings?: AISettings;
   apiKey?: string;
   baseUrl?: string;
+  signal?: AbortSignal;
 }
 
 export class UnifiedEngine {
@@ -73,6 +74,18 @@ export class UnifiedEngine {
 
   // ─── Provider-specific streamers ───────────────────────────────────────────
 
+  private static resolveRealGeminiModel(model: string): string {
+    const modelMap: Record<string, string> = {
+      'gemma-4-31b-it': 'gemma-4-31b-it',
+      'gemma-4-27b-it': 'gemma-4-26b-a4b-it',
+      'gemini-3.5-flash': 'gemini-3.5-flash',
+      'gemini-3-flash': 'gemini-3-flash-preview',
+      'gemini-3.1-pro': 'gemini-3.1-pro-preview',
+      'gemini-2.5-flash': 'gemini-2.5-flash',
+    };
+    return modelMap[model] || model;
+  }
+
   /**
    * Streams responses from Gemini using Google's generative language API.
    * Supports system instructions and Gemini-specific generation config.
@@ -91,9 +104,10 @@ export class UnifiedEngine {
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
+    const realModel = this.resolveRealGeminiModel(model);
     const { url } = Gateway.buildUrl(
       'gemini',
-      `/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`
+      `/models/${realModel}:streamGenerateContent?alt=sse&key=${apiKey}`
     );
     const { contents, systemInstruction } = Gateway.formatMessages(messages, 'gemini');
 

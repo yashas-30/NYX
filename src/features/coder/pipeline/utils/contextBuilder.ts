@@ -60,68 +60,68 @@ export async function buildCodebaseContext(
 
 export function shouldTriggerWebSearch(query: string, analysis?: any): boolean {
   const trimmed = query.trim();
+  const lower = trimmed.toLowerCase();
 
-  // Greetings / Identity regex checks
-  const GREETINGS =
-    /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)\b/i;
-  const IDENTITY =
-    /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx|what\s+can\s+you\s+do|what\s+are\s+you|help\s+me)\b/i;
+  // -------------------------------------------------------------------------
+  // PARAMETRIC KNOWLEDGE PATTERNS (FORCE SEARCH = FALSE)
+  // These categories bypass search immediately to save tokens.
+  // -------------------------------------------------------------------------
 
-  if (GREETINGS.test(trimmed) || IDENTITY.test(trimmed)) {
-    return false;
-  }
+  // 1. Static & Historical Facts
+  const staticFacts = /\b(when was|who was|who is|capital of|define|theorem|law of|history of|biography)\b/i;
+  // 2. Reasoning, Math, Logic & Code Generation
+  const reasoningAndCode = /\b(write|create|build|script|debug|refactor|solve|equation|riddle|algorithm|architecture|boilerplate)\b/i;
+  // 3. Creative & Textual Tasks
+  const creativeTasks = /\b(draft|email|resume|essay|story|brainstorm|roleplay|summarize|translate|rewrite)\b/i;
+  // 4. Conceptual Explanations
+  const conceptual = /\b(how does.*work|explain the concept|what is the concept|explain how)\b/i;
 
-  const lower = query.toLowerCase();
-
-  // Factual, temporal or technical query keywords requiring scraping
-  const searchKeywords = [
-    'latest',
-    'recent',
-    'current',
-    'today',
-    'news',
-    'price',
-    'weather',
-    'documentation',
-    'docs',
-    'release',
-    'version',
-    'modern',
-    'how to use',
-    'api of',
-    'npm',
-    'pip',
-    'github link',
-    'url',
-    'webpage',
-    'scrape',
-    'scrapling',
-    'search',
-    'google',
-    'find out',
-    'lookup',
-    'what is the current',
-    'current state',
-  ];
-  if (searchKeywords.some((keyword) => lower.includes(keyword))) {
-    return true;
-  }
-
-  // Common question words
-  const questionWords = /\b(what|how|who|where|when|why|which|show|find|search|lookup)\b/i;
-  if (questionWords.test(trimmed)) {
-    return true;
-  }
-
-  // If prompt classifier indicates debugging complexity or missing details, scrape
-  if (analysis) {
-    if (
-      analysis.isMissingDebugDetails ||
-      analysis.complexity === 'complex' ||
-      analysis.complexity === 'enterprise'
-    ) {
-      return true;
+  if (
+    staticFacts.test(lower) ||
+    reasoningAndCode.test(lower) ||
+    creativeTasks.test(lower) ||
+    conceptual.test(lower)
+  ) {
+    // Unless there is an explicit OVERRIDE word, we return false.
+    const explicitOverride = /\b(search the web|verify online|latest|current|recent)\b/i;
+    if (!explicitOverride.test(lower)) {
+      return false;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // CRITICAL TRIGGER PATTERNS (FORCE SEARCH = TRUE)
+  // -------------------------------------------------------------------------
+
+  // 1. Temporal Gaps & News
+  const temporal = /\b(recent|latest|current|this week|today|yesterday|newest|news|update|2025|2026)\b/i;
+  
+  // 2. Highly Dynamic & Volatile Data
+  const dynamicData = /\b(live|crypto|stock|valuation|market trend|weather|travel advisory|flight status|score|match table|tournament|bracket|price)\b/i;
+  
+  // 3. Low-Tolerance Technical / API Specifications
+  const techSpecs = /\b(api docs|api documentation|library version|syntax change|langchain|openai api|next\.js|nextjs|claude code|documentation|version)\b/i;
+  const hasUrl = /(https?:\/\/[^\s]+)/i;
+
+  // 4. Explicit Intent / Verification
+  const explicitIntent = /\b(search the web|look up|browse|verify online|competitive market intelligence|pricing table|scrape|find online)\b/i;
+
+  if (
+    temporal.test(lower) ||
+    dynamicData.test(lower) ||
+    techSpecs.test(lower) ||
+    hasUrl.test(lower) ||
+    explicitIntent.test(lower)
+  ) {
+    return true;
+  }
+
+  // Fallback: If it's a general question and missing details, maybe search. 
+  // Otherwise, default to false to save tokens.
+  if (analysis && (analysis.isMissingDebugDetails || analysis.complexity === 'enterprise')) {
+    // Only search if it strongly looks like it needs external context that is missing.
+    // However, the prompt rules say to minimize use, so we strictly return false if it's not matched.
+    return false;
   }
 
   return false;

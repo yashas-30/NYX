@@ -95,6 +95,12 @@ export const ModelSelector: React.FC<Props> = ({
   React.useEffect(() => {
     let active = true;
     const loadLocalModels = async () => {
+      if (localStorage.getItem('llm_ref_local_models_enabled') !== 'true') {
+        if (active) {
+          setLocalLibraryModels([]);
+        }
+        return;
+      }
       try {
         const res = await AIService.fetchWithAuth('/api/nyx/local-models');
         if (res.ok) {
@@ -333,8 +339,8 @@ export const ModelSelector: React.FC<Props> = ({
             <div ref={parentRef} className="flex-1 overflow-y-auto p-2 custom-scrollbar">
               {selectedProvider === 'nyx-native' && filteredModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-zinc-400 text-center p-3 py-6 space-y-3">
-                  <div className="w-10 h-10 rounded-2xl bg-[#22D3EE]/10 flex items-center justify-center border border-[#22D3EE]/20 shadow-inner">
-                    <Cpu className="w-5 h-5 text-[#22D3EE] animate-pulse" />
+                  <div className="w-10 h-10 rounded-2xl bg-[#FF3366]/10 flex items-center justify-center border border-[#FF3366]/20 shadow-inner">
+                    <Cpu className="w-5 h-5 text-[#FF3366] animate-pulse" />
                   </div>
                   <div className="space-y-1">
                     <p className="text-[9px] font-black uppercase tracking-[0.15em] text-white">
@@ -352,7 +358,7 @@ export const ModelSelector: React.FC<Props> = ({
                         (window as any).nyxSwitchActiveMode('registry');
                       }
                     }}
-                    className="px-3 py-1.5 rounded-full bg-[#22D3EE] text-black text-[8px] font-black uppercase tracking-wider shadow-md hover:bg-[#22D3EE]/90 transition-all cursor-pointer"
+                    className="px-3 py-1.5 rounded-full bg-[#FF3366] text-black text-[8px] font-black uppercase tracking-wider shadow-md hover:bg-[#FF3366]/90 transition-all cursor-pointer"
                   >
                     Go to Registry
                   </motion.button>

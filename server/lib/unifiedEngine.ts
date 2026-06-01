@@ -1,3 +1,5 @@
+import { LOCAL_MODEL_PORT } from '../../src/config/ports.ts';
+
 export interface ModelSettings {
   temperature?: number;
   maxTokens?: number;
@@ -96,7 +98,7 @@ export class UnifiedEngine {
     onComplete: () => void
   ) {
     // Dynamic LLAMA_PORT would be resolved from env or state here
-    const LLAMA_PORT = process.env.LLAMA_PORT || 8080;
+    const LLAMA_PORT = process.env.LLAMA_PORT || LOCAL_MODEL_PORT;
     const response = await fetch(`http://127.0.0.1:${LLAMA_PORT}/completion`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

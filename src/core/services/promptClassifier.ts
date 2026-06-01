@@ -33,6 +33,7 @@ export type PromptIntent =
 
 export interface PromptAnalysis {
   intent: PromptIntent;
+  tone?: string;
   confidence: number;
   detectedLanguages: string[];
   frameworks: string[];
@@ -710,12 +711,8 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
     tools.push('image_analysis'); // For UI generation
   }
   
-  // Subagent swarm trigger
-  const shouldUseSubagents =
-    analysis.complexity === 'enterprise' ||
-    analysis.complexity === 'complex' ||
-    (analysis.requiresContext && analysis.requiresExecution) ||
-    !!(analysis.multiIntent && analysis.multiIntent.length > 1);
+  // Subagent swarm trigger (DISABLED: User requested single-shot requests to avoid API rate limits)
+  const shouldUseSubagents = false;
   
   // Temperature tuning based on intent
   const temperature = 
@@ -732,10 +729,10 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
     1024;
   
   return {
-    agent: shouldUseSubagents ? 'architect' : 'coder',
+    agent: 'coder', // ALWAYS use coder for single-shot
     reasoning: `${analysis.intent} (${analysis.complexity})${analysis.multiIntent ? ` + [${analysis.multiIntent.join(', ')}]` : ''}`,
     shouldUseSubagents,
-    systemPrompt: shouldUseSubagents ? SYSTEM_PROMPTS.architect : SYSTEM_PROMPTS.coder,
+    systemPrompt: SYSTEM_PROMPTS.coder,
     tools,
     modelTier: analysis.suggestedModel,
     temperature,

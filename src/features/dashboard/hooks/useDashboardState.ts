@@ -9,7 +9,7 @@ import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 // Modular Hooks
-import { useSecurityState } from './useSecurityState';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useProviderStatus } from './useProviderStatus';
 
 export const useDashboardState = (onExit?: () => void) => {
@@ -59,12 +59,18 @@ export const useDashboardState = (onExit?: () => void) => {
   const [localModelsEnabled, setLocalModelsEnabled] = useState(false);
   const [localLibraryModels, setLocalLibraryModels] = useState<any[]>([]);
 
-  // 2. Security & API Keys
-  const security = useSecurityState({}, (provider, key) => refreshProviderQuota(provider, key));
+  // 2. Security & API Keys from Zustand store
+  const apiKeys = useNyxStore(state => state.apiKeys);
+  const updateApiKey = useNyxStore(state => state.updateApiKey);
+  const clearApiKeys = useNyxStore(state => state.clearApiKeys);
+  const [gatewayUrls, setGatewayUrls] = useState<Record<string, string>>({});
+  const updateGatewayUrl = (provider: string, url: string) => {
+    setGatewayUrls(prev => ({ ...prev, [provider]: url }));
+  };
 
   // 3. Provider Connectivity Status
   const { statuses, refreshStatuses } = useProviderStatus(
-    security.apiKeys,
+    apiKeys,
     localModelsEnabled
   );
 
@@ -124,7 +130,7 @@ export const useDashboardState = (onExit?: () => void) => {
                 keys[provider] = getRes.data;
               }
             }
-            security.setApiKeys(keys);
+            useNyxStore.getState().setApiKeys(keys);
           }
         } catch (err) {
           console.error('[Vault] Failed to retrieve secure keys on mount:', err);
@@ -142,11 +148,11 @@ export const useDashboardState = (onExit?: () => void) => {
   // ── Side Effects (Persistence & Lifecycle) ─────────────────────────────
   useEffect(() => {
     // Only refresh quota for providers that actually have keys (performance fix)
-    Object.entries(security.apiKeys).forEach(([p, k]) => {
+    Object.entries(apiKeys).forEach(([p, k]) => {
       if (k) refreshProviderQuota(p, k);
     });
     refreshStatuses();
-  }, [security.apiKeys, refreshProviderQuota]);
+  }, [apiKeys, refreshProviderQuota]);
 
   useEffect(() => {
     localStorage.setItem('llm_ref_local_models_enabled', String(localModelsEnabled));
@@ -159,6 +165,10 @@ export const useDashboardState = (onExit?: () => void) => {
 
   // Load GGUF models dynamically from /api/nyx/local-models
   const loadLocalLibraryModels = async () => {
+    if (!localModelsEnabled) {
+      setLocalLibraryModels([]);
+      return;
+    }
     try {
       const res = await fetchWithAuth('/api/nyx/local-models');
       if (res.ok) {
@@ -191,8 +201,7 @@ export const useDashboardState = (onExit?: () => void) => {
     loadLocalLibraryModels();
     const interval = setInterval(loadLocalLibraryModels, 30_000);
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [localModelsEnabled]);
 
   useEffect(() => {
     localStorage.setItem('nyx_model_settings', JSON.stringify(modelSettings));
@@ -223,7 +232,11 @@ export const useDashboardState = (onExit?: () => void) => {
     localLibraryModels,
 
     // Security
-    ...security,
+    apiKeys,
+    updateApiKey,
+    clearApiKeys,
+    gatewayUrls,
+    updateGatewayUrl,
 
     // Connectivity
     statuses,

@@ -65,13 +65,10 @@ const POOL_REFRESH_INTERVAL_MS = 30000;
 const COST_TABLE: Record<string, number> = {
   'gemini-3.5-flash': 0.000075,
   'gemini-3-flash': 0.000075,
-  'gemini-3.1-pro-preview': 0.00125,
+  'gemini-3.1-pro': 0.00125,
   'gemini-2.5-flash': 0.000075,
-  'gemini-2.5-pro': 0.00125,
-  'gemini-2.5-flash-lite': 0.0000375,
   'gemma-4-31b-it': 0.0001,
-  'gemma-4-e2b-it': 0,
-  'nyx-gemma-4-e2b-it': 0,
+  'gemma-4-27b-it': 0.0001,
   'qwen2.5-coder-1.5b-native': 0,
   'qwen2.5-coder-3b-native': 0,
   'llama-3.2-3b-native': 0,
@@ -114,6 +111,11 @@ export class HybridModelRouter {
   }
 
   private async doRefreshPool(): Promise<void> {
+    const localEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('llm_ref_local_models_enabled') === 'true';
+    if (!localEnabled) {
+      this.localModelPool.clear();
+      return;
+    }
     try {
       const res = await fetchWithAuth('/api/nyx/local-models');
       if (!res.ok) return;
@@ -306,9 +308,10 @@ export class HybridModelRouter {
   async selectModel(context: RoutingContext): Promise<RoutingDecision> {
     await this.refreshLocalModelPool();
 
+    const localEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('llm_ref_local_models_enabled') === 'true';
     const candidates = AVAILABLE_MODELS.filter((m) => {
       // Exclusively support Gemini and local models (nyx-native)
-      if (m.provider === 'nyx-native') return true;
+      if (m.provider === 'nyx-native') return localEnabled;
       if (m.provider === 'gemini') return !!context.apiKeys['gemini']?.trim();
       return false;
     });

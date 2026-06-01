@@ -13,7 +13,6 @@ import {
   Info,
   ChevronDown,
   Bot,
-  Globe,
   Mic,
   SlidersHorizontal,
   MemoryStick,
@@ -38,7 +37,6 @@ interface ChatPromptInputProps {
     images?: { name: string; mimeType: string; data: string }[]
   ) => void;
   isLoading: boolean;
-  isSearching?: boolean;
   onStop: () => void;
   currentModelId: string | null;
   currentModel: ModelDefinition | null;
@@ -51,8 +49,6 @@ interface ChatPromptInputProps {
   suggestedPrompts: string[];
   onSuggestedPromptClick?: (prompt: string) => void;
   getCustomModelIcon: (model: ModelDefinition | null | undefined) => React.ReactNode;
-  webSearchEnabled: boolean;
-  onWebSearchToggle: (enabled: boolean) => void;
   alignDropdown?: 'top' | 'bottom';
   pendingImages?: { name: string; mimeType: string; data: string }[];
   onRemoveImage?: (index: number) => void;
@@ -97,7 +93,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   onPromptChange,
   onSubmit,
   isLoading,
-  isSearching = false,
   onStop,
   currentModelId,
   currentModel,
@@ -108,8 +103,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   onModelSettingsChange,
   modelSettings,
   getCustomModelIcon,
-  webSearchEnabled,
-  onWebSearchToggle,
   alignDropdown = 'top',
   pendingImages,
   onRemoveImage,
@@ -330,8 +323,8 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     localSettings.gpuLayers === 0
       ? 'text-zinc-400'
       : localSettings.gpuLayers < 50
-        ? 'text-[#22D3EE]/70'
-        : 'text-[#22D3EE]';
+        ? 'text-[#FF3366]/70'
+        : 'text-[#FF3366]';
 
   return (
     <div className="shrink-0 w-full flex flex-col items-center px-4 pb-4 pt-2 bg-background z-30 gap-2">
@@ -355,14 +348,14 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                 <div className="w-full bg-card/98 border border-white/[0.04] rounded-[calc(1.5rem-4px)] overflow-hidden">
                   <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/[0.05]">
                     <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 flex items-center justify-center">
-                        <SlidersHorizontal size={13} className="text-[#22D3EE]" />
+                      <div className="w-7 h-7 rounded-xl bg-[#FF3366]/10 border border-[#FF3366]/20 flex items-center justify-center">
+                        <SlidersHorizontal size={13} className="text-[#FF3366]" />
                       </div>
                       <div>
                         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-foreground/85">
                           Local Inference
                         </p>
-                        <p className="text-[8px] text-[#22D3EE]/80 font-semibold uppercase tracking-wider mt-0.5">
+                        <p className="text-[8px] text-[#FF3366]/80 font-semibold uppercase tracking-wider mt-0.5">
                           {currentModel?.name || 'GGUF Model'} · settings
                         </p>
                       </div>
@@ -442,7 +435,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                         type="button"
                         onClick={resetLocalSettings}
                         title="Reset to defaults"
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-[#22D3EE] hover:bg-[#22D3EE]/8 border border-transparent hover:border-[#22D3EE]/15 transition-all"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-[#FF3366] hover:bg-[#FF3366]/8 border border-transparent hover:border-[#FF3366]/15 transition-all"
                       >
                         <RotateCcw size={9} />
                         Reset
@@ -468,9 +461,9 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                           <SectionLabel
                             icon={<MemoryStick size={9} />}
                             label="GPU / VRAM"
-                            color="text-[#22D3EE]"
+                            color="text-[#FF3366]"
                           />
-                          <div className="mt-3 p-3.5 rounded-2xl bg-[#22D3EE]/[0.04] border border-[#22D3EE]/10 space-y-2.5">
+                          <div className="mt-3 p-3.5 rounded-2xl bg-[#FF3366]/[0.04] border border-[#FF3366]/10 space-y-2.5">
                             <div className="flex items-center justify-between">
                               <span className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wider">
                                 GPU Layers (ngl)
@@ -493,7 +486,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                               step={1}
                               value={localSettings.gpuLayers}
                               onChange={(e) => updateLocal('gpuLayers', Number(e.target.value))}
-                              className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#22D3EE] bg-white/8"
+                              className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#FF3366] bg-white/8"
                             />
                             <div className="flex justify-between">
                               <span className="text-[7px] text-muted-foreground/25">CPU Only</span>
@@ -506,7 +499,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                           <SectionLabel
                             icon={<Layers size={9} />}
                             label="Context & Memory"
-                            color="text-[#22D3EE]"
+                            color="text-[#FF3366]"
                           />
                           <div className="mt-3">
                             <ParamSlider
@@ -517,7 +510,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                               max={32768}
                               step={512}
                               display={(v) => `${Math.round(v / 1024)}K`}
-                              accent="accent-[#22D3EE]"
+                              accent="accent-[#FF3366]"
                               onChange={(v) => updateLocal('contextSize', v)}
                             />
                           </div>
@@ -529,7 +522,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                           <SectionLabel
                             icon={<Thermometer size={9} />}
                             label="Sampling"
-                            color="text-[#22D3EE]"
+                            color="text-[#FF3366]"
                           />
                           <div className="mt-3 space-y-4">
                             <ParamSlider
@@ -540,7 +533,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                               max={2}
                               step={0.05}
                               display={(v) => (v ?? 0.7).toFixed(2)}
-                              accent="accent-[#22D3EE]"
+                              accent="accent-[#FF3366]"
                               onChange={(v) => updateLocal('temperature', v)}
                               isFloat
                             />
@@ -552,7 +545,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                               max={1}
                               step={0.01}
                               display={(v) => (v ?? 0.95).toFixed(2)}
-                              accent="accent-[#22D3EE]"
+                              accent="accent-[#FF3366]"
                               onChange={(v) => updateLocal('topP', v)}
                               isFloat
                             />
@@ -603,41 +596,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   <span className="text-[9.5px] font-bold tracking-tight">Optimize prompt</span>
                 </motion.button>
 
-                {/* Web Search Toggle Tag */}
-                <motion.button
-                  variants={tagItemVariants}
-                  whileHover={{ y: -1.5, scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="button"
-                  onClick={() => {
-                    onWebSearchToggle(!webSearchEnabled);
-                    toast.success(`Web search ${!webSearchEnabled ? 'enabled' : 'disabled'}`);
-                  }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all text-left cursor-pointer shrink-0 ${
-                    isSearching
-                      ? 'bg-sky-500/20 border border-sky-400 text-sky-300 animate-pulse'
-                      : webSearchEnabled
-                        ? 'bg-sky-500/10 border border-sky-500/35 text-white'
-                        : 'bg-sky-500/[0.03] border border-sky-500/10 text-zinc-300 hover:text-white hover:border-sky-500/25'
-                  }`}
-                >
-                  {isSearching ? (
-                    <Globe size={10} className="animate-spin text-sky-400" />
-                  ) : (
-                    <span
-                      className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[9px] font-black leading-none font-mono ${
-                        webSearchEnabled
-                          ? 'bg-sky-500 text-black font-extrabold'
-                          : 'bg-sky-500/15 text-sky-400'
-                      }`}
-                    >
-                      /
-                    </span>
-                  )}
-                  <span className="text-[9.5px] font-bold tracking-tight">
-                    {isSearching ? 'Searching...' : 'Web search'}
-                  </span>
-                </motion.button>
 
                 <motion.button
                   variants={tagItemVariants}
@@ -662,7 +620,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
             <div
               className={`w-full bg-[#121214] border rounded-[16px] p-3 mt-1.5 flex flex-col gap-2 relative shadow-inner transition-all duration-300 border-white/[0.02] ${
                 isFocused
-                  ? 'border-[#22D3EE]/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02)]'
+                  ? 'border-[#FF3366]/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02)]'
                   : ''
               }`}
             >
@@ -737,14 +695,14 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   <motion.button
                     whileHover={{
                       scale: canSubmit ? 1.05 : 1,
-                      boxShadow: canSubmit ? '0 0 10px rgba(34, 211, 238, 0.25)' : 'none',
+                      boxShadow: canSubmit ? '0 0 10px rgba(255, 51, 102, 0.25)' : 'none',
                     }}
                     whileTap={{ scale: canSubmit ? 0.95 : 1 }}
                     type="submit"
                     disabled={!canSubmit}
                     className={`h-7 w-7 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
                       canSubmit
-                        ? 'bg-[#22D3EE] text-black border-[#22D3EE] font-bold'
+                        ? 'bg-[#FF3366] text-black border-[#FF3366] font-bold'
                         : 'bg-white/5 border-transparent text-zinc-700 cursor-not-allowed'
                     }`}
                   >
@@ -785,7 +743,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     }}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
                       showSettings
-                        ? 'bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30'
+                        ? 'bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/30'
                         : 'bg-white/[0.03] border border-white/5 text-zinc-400 hover:text-white'
                     }`}
                   >

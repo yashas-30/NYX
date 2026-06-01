@@ -14,10 +14,13 @@ import {
   ToolCall,
 } from '@src/infrastructure/types';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
-import { analyzePrompt, PromptAnalysis } from '@src/core/services/promptClassifier';
+import { analyzePrompt, PromptAnalysis, createConversationState, updateConversationState, ConversationState } from '@src/core/services/promptClassifier';
 import { ChatAgent } from '@src/core/agents/chatAgent';
 import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
 import { countTokens } from '@src/core/services/ai.service';
+import { toast } from '@src/shared/components/ui/sonner';
+import { ContextManager } from '../utils/ContextManager';
+import { formatProviderError } from '@src/infrastructure/api/streamParser';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,51 +70,6 @@ interface PipelineState {
   isSearching: boolean;
   isThinking: boolean;
   finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'error' | 'stopped' | null;
-}
-
-// ---------------------------------------------------------------------------
-// Batched update queue (prevents render thrashing)
-// ---------------------------------------------------------------------------
-
-class UpdateBatcher {
-  private queue: Array<(prev: ChatMessage[]) => ChatMessage[]> = [];
-  private rafId: number | null = null;
-  private flushCallback: ((updater: (prev: ChatMessage[]) => ChatMessage[]) => void) | null = null;
-
-  constructor(flushCallback: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void) {
-    this.flushCallback = flushCallback;
-  }
-
-  push(updater: (prev: ChatMessage[]) => ChatMessage[]) {
-    this.queue.push(updater);
-    if (!this.rafId) {
-      this.rafId = requestAnimationFrame(() => this.flush());
-    }
-  }
-
-  private flush() {
-    if (!this.flushCallback || this.queue.length === 0) {
-      this.rafId = null;
-      return;
-    }
-
-    // Combine all queued updates into single transaction
-    const combined = (prev: ChatMessage[]): ChatMessage[] => {
-      return this.queue.reduce((acc, updater) => updater(acc), prev);
-    };
-
-    this.flushCallback(combined);
-    this.queue = [];
-    this.rafId = null;
-  }
-
-  dispose() {
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-    this.queue = [];
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -175,10 +133,12 @@ export const useChatPipeline = ({
   });
 
   const controllerRef = useRef<AbortController | null>(null);
-  const batcherRef = useRef<UpdateBatcher | null>(null);
   const historySnapshotRef = useRef<ChatMessage[]>([]);
   const isMountedRef = useRef(true);
   const streamMetricsRef = useRef<TelemetryMetrics | null>(null);
+  const conversationStateRef = useRef<ConversationState>(createConversationState());
+  const onStreamRef = useRef(onStream);
+  useEffect(() => { onStreamRef.current = onStream; }, [onStream]);
 
   // Keep snapshot in sync without triggering re-renders
   useEffect(() => {
@@ -189,35 +149,31 @@ export const useChatPipeline = ({
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
-      batcherRef.current?.dispose();
-      controllerRef.current?.abort();
+      if (controllerRef.current) {
+        controllerRef.current.abort();
+      }
     };
   }, []);
 
   // -------------------------------------------------------------------------
-  // Safe history update through batcher
+  // Safe history update
   // -------------------------------------------------------------------------
 
   const safeUpdateHistory = useCallback(
     (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
       if (!isMountedRef.current) return;
 
-      if (!batcherRef.current) {
-        batcherRef.current = new UpdateBatcher((combinedUpdater) => {
-          updateHistory((prev) => {
-            // Deep clone to prevent mutation
-            const cloned = prev.map((m) => ({
-              ...m,
-              toolCalls: m.toolCalls ? m.toolCalls.map((t) => ({ ...t })) : undefined,
-              citations: m.citations ? [...m.citations] : undefined,
-              artifacts: m.artifacts ? [...m.artifacts] : undefined,
-            }));
-            return combinedUpdater(cloned);
-          });
-        });
-      }
-
-      batcherRef.current.push(updater);
+      updateHistory((prev) => {
+        const cloned = prev.map((m) => ({
+          ...m,
+          toolCalls: m.toolCalls ? m.toolCalls.map((t) => ({ ...t })) : undefined,
+          citations: m.citations ? [...m.citations] : undefined,
+          artifacts: m.artifacts ? [...m.artifacts] : undefined,
+        }));
+        const nextHistory = updater(cloned);
+        historySnapshotRef.current = nextHistory;
+        return nextHistory;
+      });
     },
     [updateHistory]
   );
@@ -242,6 +198,11 @@ export const useChatPipeline = ({
       for await (const chunk of generator) {
         if (signal.aborted) break;
 
+        if (!chunk || !chunk.type) {
+          console.warn('[Chat Pipeline] Invalid chunk received:', chunk);
+          continue;
+        }
+
         switch (chunk.type) {
           case 'text': {
             const delta = chunk.content || '';
@@ -259,7 +220,7 @@ export const useChatPipeline = ({
               return next;
             });
 
-            onStream?.({
+            onStreamRef.current?.({
               type: 'text',
               content: accumulatedText,
             } as any);
@@ -283,7 +244,7 @@ export const useChatPipeline = ({
               return next;
             });
 
-            onStream?.({
+            onStreamRef.current?.({
               type: 'thinking',
               content: accumulatedReasoning,
             } as any);
@@ -322,7 +283,7 @@ export const useChatPipeline = ({
               return next;
             });
 
-            onStream?.({
+            onStreamRef.current?.({
               type: 'tool_use',
               content: JSON.stringify(calls),
             } as any);
@@ -374,9 +335,21 @@ export const useChatPipeline = ({
 
           case 'metrics': {
             if (chunk.metadata) {
-              finalMetrics = chunk.metadata;
-              streamMetricsRef.current = chunk.metadata;
-              updateMetrics(chunk.metadata);
+              const meta = chunk.metadata as any;
+              const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;
+              const latency = meta.latencyMs || meta.latency || 0;
+              const tps = meta.tokensPerSecond || meta.tps || (latency > 0 ? (tokens / (latency / 1000)) : 0);
+              
+              const mappedMetrics: TelemetryMetrics = {
+                latency,
+                tokens,
+                tps,
+                ttft: meta.ttft,
+              };
+
+              finalMetrics = mappedMetrics;
+              streamMetricsRef.current = mappedMetrics;
+              updateMetrics(mappedMetrics);
             }
             break;
           }
@@ -388,6 +361,9 @@ export const useChatPipeline = ({
             }
             break;
           }
+          default:
+            console.warn(`[Chat Pipeline] Unknown chunk type received: ${(chunk as any).type}`);
+            break;
         }
       }
 
@@ -412,15 +388,22 @@ export const useChatPipeline = ({
       setState((s) => ({ ...s, isSearching: true }));
 
       try {
-        return await withRetry(
+        const searchPromise = withRetry(
           () => agent.gatherContext(prompt, signal),
-          1, // Only 1 retry for search
+          maxRetries,
           (attempt, delay) => {
             console.log(`[Chat Pipeline] Search retry ${attempt} in ${delay}ms`);
           }
         );
+
+        const timeoutPromise = new Promise<string>((_, reject) => 
+          setTimeout(() => reject(new Error('Web search timed out after 30s')), 30000)
+        );
+
+        return await Promise.race([searchPromise, timeoutPromise]);
       } catch (error: any) {
         console.warn('[Chat Pipeline] Search failed:', error.message);
+        toast.error(`Web Search Failed: ${error.message}`);
         return ''; // Continue without search context
       } finally {
         if (isMountedRef.current) {
@@ -428,7 +411,7 @@ export const useChatPipeline = ({
         }
       }
     },
-    []
+    [maxRetries]
   );
 
   // -------------------------------------------------------------------------
@@ -446,8 +429,6 @@ export const useChatPipeline = ({
       // Cancel any existing request
       if (controllerRef.current) {
         controllerRef.current.abort();
-        batcherRef.current?.dispose();
-        batcherRef.current = null;
       }
 
       const controller = new AbortController();
@@ -478,7 +459,8 @@ export const useChatPipeline = ({
         safeUpdateHistory((prev) => [...prev, userMsg]);
 
         // 2. Analyze prompt
-        const analysis = analyzePrompt(prompt);
+        const analysis = analyzePrompt(prompt, conversationStateRef.current);
+        conversationStateRef.current = updateConversationState(conversationStateRef.current, analysis);
 
         // 3. Add loading assistant message
         safeUpdateHistory((prev) => [
@@ -491,39 +473,33 @@ export const useChatPipeline = ({
           },
         ]);
 
+        // Optimize conversation history
+        const optimizedHistory = ContextManager.optimizeContextWindow(historySnapshotRef.current, 8192, 5);
+
         // 4. Initialize agent with snapshot (not live ref)
         const agent = new ChatAgent({
           modelId: nyxModel,
           provider: nyxProvider,
           apiKey: nyxApiKey,
           settings: modelSettings,
-          history: historySnapshotRef.current,
+          history: optimizedHistory,
           lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
-          webSearchEnabled,
+          webSearchEnabled: true,
+          conversationState: conversationStateRef.current,
         });
 
         // 5. Gather search context (non-blocking UI)
         const searchContext = await gatherSearchContext(agent, prompt, analysis, controller.signal);
 
-        // 6. Stream response with retry
-        const { text, metrics, finishReason } = await withRetry(
-          async () => {
-            const generator = agent.streamResponse(
-              prompt,
-              analysis,
-              controller.signal,
-              searchContext,
-              images
-            ) as AsyncGenerator<StreamChunk>;
-            return processStream(generator, controller.signal);
-          },
-          maxRetries,
-          (attempt, delay, error) => {
-            console.warn(
-              `[Chat Pipeline] Retry ${attempt}/${maxRetries} in ${delay}ms: ${error.message}`
-            );
-          }
-        );
+        // 6. Stream response (Retries are handled natively by AIService)
+        const generator = agent.streamResponse(
+          prompt,
+          analysis,
+          controller.signal,
+          searchContext,
+          images
+        ) as AsyncGenerator<any>;
+        const { text, metrics, finishReason } = await processStream(generator, controller.signal);
 
         // 7. Finalize assistant message
         const finalMetrics: TelemetryMetrics = metrics || {
@@ -588,25 +564,27 @@ export const useChatPipeline = ({
         getSuggestions(historySnapshotRef.current);
 
         // 10. Fire-and-forget memory commit
-        const memoryPromise = triggerMemoryCommit({
-          prompt,
-          response: text,
-          provider: nyxProvider,
-          modelId: nyxModel,
-          agentType: 'chat',
-        });
+        if (text.trim()) {
+          const memoryPromise = triggerMemoryCommit({
+            prompt,
+            response: text,
+            provider: nyxProvider,
+            modelId: nyxModel,
+            agentType: 'chat',
+          });
 
-        // Don't await — but catch errors
-        memoryPromise.catch((err) => {
-          console.warn('[Chat Pipeline] Memory commit failed:', err);
-        });
+          // Don't await — but catch errors
+          memoryPromise.catch((err) => {
+            console.warn('[Chat Pipeline] Memory commit failed:', err);
+          });
 
-        // Set timeout to prevent hanging if component unmounts
-        const memoryTimeout = setTimeout(() => {
-          console.warn('[Chat Pipeline] Memory commit timeout');
-        }, 30000);
+          // Set timeout to prevent hanging if component unmounts
+          const memoryTimeout = setTimeout(() => {
+            console.warn('[Chat Pipeline] Memory commit timeout');
+          }, 30000);
 
-        memoryPromise.finally(() => clearTimeout(memoryTimeout));
+          memoryPromise.finally(() => clearTimeout(memoryTimeout));
+        }
 
         setState((s) => ({ ...s, finishReason: finishReason as any }));
       } catch (error: any) {
@@ -627,8 +605,8 @@ export const useChatPipeline = ({
                 partialContent ||
                 (isAborted
                   ? 'Generation stopped.'
-                  : error.message ||
-                    'Error: Generation failed. Please check your model settings or connection.'),
+                  : formatProviderError(error.message ||
+                    'Error: Generation failed. Please check your model settings or connection.')),
               metrics: {
                 ...(last.metrics || {}),
                 finishReason: isAborted ? 'stopped' : 'error',
@@ -645,9 +623,6 @@ export const useChatPipeline = ({
       } finally {
         if (isMountedRef.current) {
           controllerRef.current = null;
-          batcherRef.current?.dispose();
-          batcherRef.current = null;
-
           setState((s) => ({
             ...s,
             isLoading: false,
@@ -683,8 +658,6 @@ export const useChatPipeline = ({
   const stopChat = useCallback(() => {
     controllerRef.current?.abort();
     controllerRef.current = null;
-    batcherRef.current?.dispose();
-    batcherRef.current = null;
 
     setState({
       isLoading: false,

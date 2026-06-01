@@ -115,6 +115,9 @@ export function formatProviderError(message: string): string {
   if (/timeout|ETIMEDOUT|took too long/i.test(message)) {
     return 'Request timed out. The model may be overloaded or your connection is slow.';
   }
+  if (/Circuit breaker open/i.test(message)) {
+    return 'Too many consecutive errors from this provider. The system has temporarily paused requests to prevent spam. Please wait a moment and try again.';
+  }
   return message;
 }
 

@@ -258,7 +258,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                   activeMode === 'registry' ? 'text-white font-bold' : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                <Library size={13} className={activeMode === 'registry' ? 'text-[#22D3EE]' : 'text-zinc-500'} />
+                <Library size={13} className={activeMode === 'registry' ? 'text-[#FF3366]' : 'text-zinc-500'} />
                 <span>Model Library</span>
               </button>
 
@@ -351,7 +351,7 @@ const SideNavButton: React.FC<{
         : 'text-zinc-400 hover:text-white hover:bg-white/[0.03] border border-transparent'
     }`}
   >
-    <span className={`transition-all duration-200 ${active ? 'scale-105 text-[#22D3EE]' : 'opacity-70 text-zinc-400'}`}>{icon}</span>
+    <span className={`transition-all duration-200 ${active ? 'scale-105 text-[#FF3366]' : 'opacity-70 text-zinc-400'}`}>{icon}</span>
     <span className="translate-y-[-0.5px]">{label}</span>
   </motion.button>
 );

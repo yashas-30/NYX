@@ -168,12 +168,11 @@ function mergeSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
 // ---------------------------------------------------------------------------
 
 function resolveTargetUrl(url: string): string {
-  const streamMatch = url.match(/^\/api\/(gemini)\/stream(?:\?|$)/);
-  if (!streamMatch) return url;
-
-  // Use environment variable for backend host, fallback to localhost
-  const backendHost = (typeof process !== 'undefined' ? process.env?.NYX_STREAM_BACKEND : null) || 'http://127.0.0.1:3011';
-  return `${backendHost}/api/stream/${streamMatch[1]}`;
+  // Do not rewrite URLs — let them flow through the Vite proxy → Express
+  // which correctly handles /api/gemini/stream via the geminiRouter.
+  // Previously this rewrote to port 3001 (Fastify), but Tauri uses dynamic
+  // port allocation so 3001 is not guaranteed.
+  return url;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +228,7 @@ export async function fetchWithAuth(
   // Request deduplication for non-mutating requests
   const dedupeKey = getDedupeKey(targetUrl, init);
   if (method === 'GET' && inflightRequests.has(dedupeKey)) {
-    return inflightRequests.get(dedupeKey)!;
+    return inflightRequests.get(dedupeKey)!.then(res => res.clone());
   }
 
   const startTime = performance.now();
@@ -258,6 +257,9 @@ export async function fetchWithAuth(
     headers,
     signal,
   }).then(async (response) => {
+    // Delete immediately to prevent microtask-level key re-use on resolved response stream
+    inflightRequests.delete(dedupeKey);
+
     const latency = Math.round(performance.now() - startTime);
 
     // Handle 401 with synchronized retry
@@ -310,6 +312,7 @@ export async function fetchWithAuth(
 
     return response;
   }).catch((error) => {
+    inflightRequests.delete(dedupeKey);
     const latency = Math.round(performance.now() - startTime);
 
     if (error.name === 'AbortError') {
@@ -335,7 +338,7 @@ export async function fetchWithAuth(
     cleanupDedupe();
   }
 
-  return requestPromise;
+  return requestPromise.then(res => res.clone());
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +346,8 @@ export async function fetchWithAuth(
 // ---------------------------------------------------------------------------
 
 export async function checkBackendHealth(url?: string): Promise<boolean> {
-  const target = url || `${(typeof process !== 'undefined' ? process.env?.NYX_STREAM_BACKEND : null) || 'http://127.0.0.1:3011'}/health`;
+  // Health check goes through the Express API (proxied by Vite in dev)
+  const target = url || '/api/health';
   try {
     const res = await fetch(target, { signal: createTimeoutSignal(5000) });
     return res.ok;

@@ -15,6 +15,7 @@ import {
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/promptAnalyzer';
 import { toast } from '@src/shared/components/ui/sonner';
+import { formatProviderError } from '@src/infrastructure/api/streamParser';
 import { triggerCritic, triggerMemoryCommit, writeFile } from '@src/infrastructure/api/coderApi';
 import { analyzePrompt, routeToAgent } from '@src/core/services/promptClassifier';
 import { CoderAgent } from '@src/core/agents/coderAgent';
@@ -63,7 +64,7 @@ export const useAgentPipeline = ({
 }: PipelineProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [subagentTasks, setSubagentTasks] = useState<SubagentTask[]>([]);
-  const [agentMode, setAgentMode] = useState<'chat' | 'coder' | null>(null);
+  const [agentMode, setAgentMode] = useState<'chat' | 'coder' | 'architect' | null>(null);
   const [agentReasoning, setAgentReasoning] = useState<string>('');
 
   const controllerRef = useRef<AbortController | null>(null);
@@ -139,10 +140,6 @@ export const useAgentPipeline = ({
         // Step 1: Analyze prompt
         const analysis = analyzePrompt(prompt);
         const route = routeToAgent(analysis);
-
-        // Force route agent to Coder Agent since this is CoderPage
-        route.agent = 'coder';
-        route.reasoning = 'Engaging Coder Agent.';
 
         // Step 2: Show routing decision to user
         setAgentMode(route.agent);
@@ -228,24 +225,41 @@ export const useAgentPipeline = ({
               break;
             case 'text':
               lastStreamText = chunk.content || '';
-              if (chunk.metadata) finalMetrics = chunk.metadata;
 
-              updateHistory((prev) => {
-                const h = [...prev];
-                const last = h[h.length - 1];
-                if (last?.role === 'assistant') {
-                  last.content = chunk.content || '';
-                  if (chunk.metadata) last.metrics = chunk.metadata;
-                }
-                return h;
-              });
               if (chunk.metadata) {
-                const meta = chunk.metadata;
-                updateMetrics({
-                  latency: typeof meta.latency === 'number' ? meta.latency : 0,
-                  tokens: typeof meta.tokens === 'number' ? meta.tokens : 0,
-                  tps: typeof meta.tps === 'number' ? meta.tps : 0,
-                  ttft: typeof meta.ttft === 'number' ? meta.ttft : undefined,
+                const meta = chunk.metadata as any;
+                const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;
+                const latency = meta.latencyMs || meta.latency || 0;
+                const tps = meta.tokensPerSecond || meta.tps || (latency > 0 ? (tokens / (latency / 1000)) : 0);
+                
+                const mappedMetrics: TelemetryMetrics = {
+                  latency,
+                  tokens,
+                  tps,
+                  ttft: meta.ttft,
+                };
+                
+                finalMetrics = mappedMetrics;
+
+                updateHistory((prev) => {
+                  const h = [...prev];
+                  const last = h[h.length - 1];
+                  if (last?.role === 'assistant') {
+                    last.content = chunk.content || '';
+                    last.metrics = mappedMetrics;
+                  }
+                  return h;
+                });
+                
+                updateMetrics(mappedMetrics);
+              } else {
+                updateHistory((prev) => {
+                  const h = [...prev];
+                  const last = h[h.length - 1];
+                  if (last?.role === 'assistant') {
+                    last.content = chunk.content || '';
+                  }
+                  return h;
                 });
               }
               break;
@@ -332,9 +346,10 @@ export const useAgentPipeline = ({
           const last = h[h.length - 1];
           if (last && last.role === 'assistant') {
             last.status = isAborted ? 'stopped' : 'error';
-            last.content =
+            last.content = formatProviderError(
               error.message ||
-              'Error: Generation failed. Please check your model settings or connection.';
+              'Error: Generation failed. Please check your model settings or connection.'
+            );
           }
           return h;
         });

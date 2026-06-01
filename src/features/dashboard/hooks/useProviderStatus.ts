@@ -24,11 +24,14 @@ export const useProviderStatus = (
     // Skip polling when tab is hidden (performance optimization)
     if (!isVisibleRef.current) return;
 
-    const providers: string[] = [
-      'gemini',
-      'nyx-native',
-    ];
+    const providers: string[] = ['gemini'];
+    if (localModelsEnabled) {
+      providers.push('nyx-native');
+    }
     const newStatuses: Record<string, Status> = {};
+    if (!localModelsEnabled) {
+      newStatuses['nyx-native'] = 'offline';
+    }
 
     await Promise.all(
       providers.map(async (p) => {

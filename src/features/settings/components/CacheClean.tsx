@@ -38,15 +38,15 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
   const totalCalls = cacheStats.hits + cacheStats.misses;
 
   return (
-    <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#22D3EE]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
-      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#22D3EE]/20 via-[#22D3EE]/10 to-[#22D3EE]/20 opacity-70 group-hover:opacity-100 transition-opacity" />
+    <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
+      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity" />
       
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#22D3EE]">CACHE STORAGE MANAGER</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">CACHE STORAGE MANAGER</p>
           <h3 className="text-xs font-bold text-foreground mt-0.5">Persistent Query Acceleration</h3>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-widest text-[#22D3EE] bg-[#22D3EE]/10 px-2 py-0.5 rounded-full border border-[#22D3EE]/20">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-2 py-0.5 rounded-full border border-[#FF3366]/20">
           Active Server
         </span>
       </div>
@@ -67,7 +67,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
         </div>
         <div className="bg-background/60 border border-white/[0.04] rounded-2xl p-3 flex flex-col justify-between">
           <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">HIT EFFICIENCY</span>
-          <span className="text-[15px] font-black font-mono text-[#22D3EE] mt-1.5">
+          <span className="text-[15px] font-black font-mono text-[#FF3366] mt-1.5">
             {totalCalls > 0
               ? `${((cacheStats.hits / totalCalls) * 100).toFixed(1)}%`
               : '0.0%'
@@ -85,7 +85,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
         </div>
         <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
           <div 
-            className="h-full bg-gradient-to-r from-[#22D3EE] to-emerald-500 rounded-full transition-all duration-500" 
+            className="h-full bg-gradient-to-r from-[#FF3366] to-emerald-500 rounded-full transition-all duration-500" 
             style={{ 
               width: totalCalls > 0 
                 ? `${Math.min(100, (cacheStats.hits / totalCalls) * 100)}%`

@@ -1,11 +1,16 @@
 import { Router } from 'express';
 import { ConversationStore } from './conversations.service.ts';
 
+function getAgentType(req: any): 'chat' | 'code' {
+  const t = req.query.agentType;
+  return t === 'coder' || t === 'code' ? 'code' : 'chat';
+}
+
 export const conversationsRouter = Router();
 
 conversationsRouter.get('/', (req, res) => {
   try {
-    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    const agentType = getAgentType(req);
     res.json(ConversationStore.list(agentType));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -14,7 +19,7 @@ conversationsRouter.get('/', (req, res) => {
 
 conversationsRouter.get('/:id', (req, res) => {
   try {
-    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    const agentType = getAgentType(req);
     const c = ConversationStore.get(req.params.id, agentType);
     if (c) {
       res.json(c);
@@ -28,7 +33,7 @@ conversationsRouter.get('/:id', (req, res) => {
 
 conversationsRouter.post('/', (req, res) => {
   try {
-    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    const agentType = getAgentType(req);
     ConversationStore.upsert(req.body, agentType);
     res.json({ ok: true });
   } catch (err: any) {
@@ -38,7 +43,7 @@ conversationsRouter.post('/', (req, res) => {
 
 conversationsRouter.delete('/:id', (req, res) => {
   try {
-    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    const agentType = getAgentType(req);
     ConversationStore.delete(req.params.id, agentType);
     res.json({ ok: true });
   } catch (err: any) {
@@ -48,7 +53,7 @@ conversationsRouter.delete('/:id', (req, res) => {
 
 conversationsRouter.delete('/', (req, res) => {
   try {
-    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    const agentType = getAgentType(req);
     ConversationStore.clear(agentType);
     res.json({ ok: true });
   } catch (err: any) {
@@ -58,7 +63,7 @@ conversationsRouter.delete('/', (req, res) => {
 
 conversationsRouter.get('/:id/export', (req, res) => {
   try {
-    const agentType = (req.query.agentType as 'chat' | 'code') || 'chat';
+    const agentType = getAgentType(req);
     const c = ConversationStore.get(req.params.id, agentType);
     if (!c) {
       return res.status(404).json({ error: 'Not found' });

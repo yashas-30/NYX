@@ -22,12 +22,21 @@ dist-desktop/
 dist-electron/
 *.pdf
 src-tauri/target/
-src-tauri/target/
-
-src-tauri/target/
 
 .nyx-keys/
 .gemini/
 .commandcode/
 .opencode/
 claude-obsidian/
+
+# Local databases and runtime state
+.nyx-state/
+*.db
+*.db-shm
+*.db-wal
+
+# Temporary text extracts and test files
+extracted_text*.txt
+nul .txt
+test_api.py
+scripts/debug-console.cjs

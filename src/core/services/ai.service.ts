@@ -78,18 +78,29 @@ export function countTokens(text: string): number {
 // ---------------------------------------------------------------------------
 // Per-request abort controllers (not global singleton)
 // ---------------------------------------------------------------------------
-const activeControllers = new Map<string, AbortController>();
+const activeControllers = new Map<string, { controller: AbortController, timestamp: number }>();
+
+// Periodic cleanup of stale controllers (older than 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, data] of activeControllers.entries()) {
+    if (now - data.timestamp > 300000) {
+      data.controller.abort();
+      activeControllers.delete(id);
+    }
+  }
+}, 60000);
 
 export function cancelRequest(requestId: string): void {
-  const ctrl = activeControllers.get(requestId);
-  if (ctrl) {
-    ctrl.abort();
+  const data = activeControllers.get(requestId);
+  if (data) {
+    data.controller.abort();
     activeControllers.delete(requestId);
   }
 }
 
 export function cancelAllRequests(): void {
-  activeControllers.forEach((ctrl) => ctrl.abort());
+  activeControllers.forEach((data) => data.controller.abort());
   activeControllers.clear();
 }
 
@@ -370,7 +381,7 @@ export class AIService {
     options: ExecuteOptions = {}
   ): Promise<EnhancedAIResponse> {
     const controller = new AbortController();
-    activeControllers.set(requestId, controller);
+    activeControllers.set(requestId, { controller, timestamp: Date.now() });
 
     // Link external signal
     if (externalSignal) {
@@ -519,7 +530,7 @@ export class AIService {
         signal,
       });
       if (!response.ok) await this.handleNonOkResponse(response, 'Gemini');
-      return this.processStream(response, modelId, 'gemini', onStream, streamEvents);
+      return await this.processStream(response, modelId, 'gemini', onStream, streamEvents);
     } catch (error: any) {
       if (error.name === 'AbortError' || error.message?.includes('aborted')) throw error;
       const { directFetchGemini } = await import('@src/infrastructure/api/directClient');
@@ -607,9 +618,10 @@ export class AIService {
     let buffer = '';
     let toolCalls: ToolCall[] = [];
     let finishReason: EnhancedAIResponse['finishReason'] = 'stop';
+    let isStreamFinished = false;
 
     try {
-      while (true) {
+      while (!isStreamFinished) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
@@ -620,10 +632,13 @@ export class AIService {
           const trimmed = line.trim();
           if (!trimmed || trimmed.startsWith(':')) continue;
           
+          if (trimmed.startsWith('event: ')) continue;
+          
           const dataStr = trimmed.startsWith('data: ') ? trimmed.slice(6).trim() : trimmed;
           if (dataStr === '[DONE]' || dataStr === '[done]') {
             finishReason = 'stop';
-            continue;
+            isStreamFinished = true;
+            break;
           }
           if (!dataStr) continue;
 

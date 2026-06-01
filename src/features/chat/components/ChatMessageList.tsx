@@ -36,6 +36,7 @@ import {
   Loader2,
   Globe,
   Square,
+  Download,
 } from 'lucide-react';
 import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import ReactMarkdown from 'react-markdown';
@@ -45,10 +46,24 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { toast } from '@src/shared/components/ui/sonner';
 import { Logo, NyxLoader } from '@src/assets/icons/icons';
+import { ThinkingBlock } from './ThinkingBlock';
+import { ArtifactPanel } from './ArtifactPanel';
+import { CitationCard } from './CitationCard';
+import { SearchResultsPanel } from './SearchResultsPanel';
+import { MemoryPanel } from './MemoryPanel';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export interface Citation {
+  id?: string;
+  source?: string;
+  quote?: string;
+  url?: string;
+  title?: string;
+  snippet?: string;
+}
 
 export interface ChatMessageListProps {
   history: ChatMessage[];
@@ -159,64 +174,6 @@ const ToolCallCard: React.FC<{ tool: ToolCall; status: 'pending' | 'running' | '
   }
 );
 ToolCallCard.displayName = 'ToolCallCard';
-
-// ---------------------------------------------------------------------------
-// Reasoning Block (Claude-style thinking)
-// ---------------------------------------------------------------------------
-
-const ReasoningBlock: React.FC<{ content: string; isStreaming?: boolean }> = memo(
-  ({ content, isStreaming }) => {
-    const [expanded, setExpanded] = useState(true);
-
-    if (!content) return null;
-
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="my-3 rounded-xl border border-amber-500/10 bg-amber-500/[0.02] overflow-hidden"
-      >
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left cursor-pointer hover:bg-amber-500/[0.03] transition-colors"
-        >
-          <Sparkles size={13} className="text-amber-400 shrink-0" />
-          <span className="text-[11px] font-semibold text-amber-400/80">
-            {isStreaming ? 'Thinking...' : 'Thought Process'}
-          </span>
-          {isStreaming && <Loader2 size={11} className="text-amber-400 animate-spin" />}
-          <span className="ml-auto">
-            {expanded ? (
-              <ChevronDown size={12} className="text-amber-400/50" />
-            ) : (
-              <ChevronRight size={12} className="text-amber-400/50" />
-            )}
-          </span>
-        </button>
-
-        <AnimatePresence>
-          {expanded && (
-            <motion.div
-              initial={{ height: 0 }}
-              animate={{ height: 'auto' }}
-              exit={{ height: 0 }}
-              transition={{ duration: 0.25, ease: 'easeInOut' }}
-              className="overflow-hidden"
-            >
-              <div className="px-3.5 pb-3 pt-1 border-t border-amber-500/10">
-                <div className="text-[12px] leading-relaxed text-amber-200/60 font-mono whitespace-pre-wrap">
-                  {content}
-                  {isStreaming && <span className="inline-block w-1.5 h-3.5 bg-amber-400/40 ml-0.5 animate-pulse align-middle" />}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-    );
-  }
-);
-ReasoningBlock.displayName = 'ReasoningBlock';
 
 // ---------------------------------------------------------------------------
 // Code Block with Syntax Highlighting
@@ -344,7 +301,7 @@ ImageAttachment.displayName = 'ImageAttachment';
 
 const StreamingCursor: React.FC = memo(() => (
   <span className="inline-flex items-center ml-1">
-    <span className="w-[7px] h-[14px] bg-[#22D3EE]/60 rounded-sm animate-pulse" />
+    <span className="w-[7px] h-[14px] bg-[#FF3366]/60 rounded-sm animate-pulse" />
   </span>
 ));
 StreamingCursor.displayName = 'StreamingCursor';
@@ -356,7 +313,19 @@ StreamingCursor.displayName = 'StreamingCursor';
 const MarkdownContent: React.FC<{
   content: string;
   isStreaming?: boolean;
-}> = memo(({ content, isStreaming }) => {
+  citations?: Citation[];
+}> = memo(({ content, isStreaming, citations }) => {
+  let processedContent = content;
+  if (citations && citations.length > 0) {
+    processedContent = content.replace(/\[(\d+)\]/g, (match, id) => {
+      const cite = citations.find(c => c.id === id);
+      if (cite) {
+        return `[${match}](#cite-${id})`;
+      }
+      return match;
+    });
+  }
+
   const components = useMemo(
     () => ({
       code({ className, children, ...props }: any) {
@@ -369,7 +338,7 @@ const MarkdownContent: React.FC<{
 
         return (
           <code
-            className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-[#22D3EE] text-[11px] font-mono font-semibold"
+            className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-[#FF3366] text-[11px] font-mono font-semibold"
             {...props}
           >
             {children}
@@ -383,7 +352,7 @@ const MarkdownContent: React.FC<{
       ),
       h2: ({ children }: any) => (
         <h2 className="text-[13px] font-black tracking-tight text-foreground mt-4 mb-2 flex items-center gap-2">
-          <span className="w-1 h-4 rounded-full bg-[#22D3EE] inline-block shrink-0" />
+          <span className="w-1 h-4 rounded-full bg-[#FF3366] inline-block shrink-0" />
           {children}
         </h2>
       ),
@@ -403,23 +372,43 @@ const MarkdownContent: React.FC<{
       ),
       li: ({ children }: any) => <li className="leading-relaxed pl-1">{children}</li>,
       strong: ({ children }: any) => <strong className="font-bold text-foreground">{children}</strong>,
-      em: ({ children }: any) => <em className="italic text-[#22D3EE]/80">{children}</em>,
+      em: ({ children }: any) => <em className="italic text-[#FF3366]/80">{children}</em>,
       blockquote: ({ children }: any) => (
-        <blockquote className="my-2 pl-3 py-1 border-l-2 border-[#22D3EE]/45 bg-white/[0.01] rounded-r-lg text-sm text-foreground/65 italic">
+        <blockquote className="my-2 pl-3 py-1 border-l-2 border-[#FF3366]/45 bg-white/[0.01] rounded-r-lg text-sm text-foreground/65 italic">
           {children}
         </blockquote>
       ),
       hr: () => <div className="my-4 h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />,
-      a: ({ href, children }: any) => (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[#22D3EE] hover:underline underline-offset-2 decoration-[#22D3EE]/30"
-        >
-          {children}
-        </a>
-      ),
+      a: ({ href, children }: any) => {
+        if (href?.startsWith('#cite-')) {
+          const id = href.replace('#cite-', '');
+          const cite = citations?.find(c => c.id === id);
+          return (
+            <a
+              href={cite?.url || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={cite?.source || cite?.url}
+              className="inline-flex items-center justify-center min-w-[16px] h-4 ml-0.5 px-1 text-[9px] font-bold text-[#FF3366] bg-[#FF3366]/10 rounded-full hover:bg-[#FF3366]/20 hover:scale-110 transition-all align-super no-underline cursor-pointer"
+              onClick={(e) => {
+                if (!cite?.url) e.preventDefault();
+              }}
+            >
+              {id}
+            </a>
+          );
+        }
+        return (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#FF3366] hover:underline underline-offset-2 decoration-[#FF3366]/30"
+          >
+            {children}
+          </a>
+        );
+      },
       table: ({ children }: any) => (
         <div className="my-3 overflow-x-auto">
           <table className="w-full text-sm border-collapse">{children}</table>
@@ -441,7 +430,7 @@ const MarkdownContent: React.FC<{
   return (
     <div className="prose-nyx w-full">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {content}
+        {processedContent}
       </ReactMarkdown>
       {isStreaming && <StreamingCursor />}
     </div>
@@ -496,12 +485,12 @@ const MessageActions: React.FC<{
               if (e.key === 'Enter' && e.metaKey) handleEditSubmit();
               if (e.key === 'Escape') setIsEditing(false);
             }}
-            className="w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-xl p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#22D3EE]/30"
+            className="w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-xl p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
           />
           <div className="flex items-center gap-2">
             <button
               onClick={handleEditSubmit}
-              className="px-3 py-1.5 rounded-lg bg-[#22D3EE]/10 border border-[#22D3EE]/20 text-[#22D3EE] text-[11px] font-semibold hover:bg-[#22D3EE]/20 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-lg bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer"
             >
               Save & Submit
             </button>
@@ -520,7 +509,7 @@ const MessageActions: React.FC<{
       <div className="mt-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
         <button
           onClick={() => onCopy(content, msgId)}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#22D3EE] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
         >
           {copiedId === msgId ? (
             <>
@@ -538,7 +527,7 @@ const MessageActions: React.FC<{
         {isUser && onEdit && (
           <button
             onClick={() => setIsEditing(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#22D3EE] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
           >
             <Pencil size={10} />
             <span>Edit</span>
@@ -548,7 +537,7 @@ const MessageActions: React.FC<{
         {!isUser && onRegenerate && (
           <button
             onClick={() => onRegenerate(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#22D3EE] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
             title={`Regenerate with ${activeModel || 'current model'}`}
           >
             <RefreshCw size={10} />
@@ -559,7 +548,7 @@ const MessageActions: React.FC<{
         {!isUser && onBranch && (
           <button
             onClick={() => onBranch(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#22D3EE] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
           >
             <GitBranch size={10} />
             <span>Branch</span>
@@ -627,29 +616,49 @@ FeedbackButtons.displayName = 'FeedbackButtons';
 const ArtifactCard: React.FC<{ artifact: any }> = memo(({ artifact }) => {
   const [expanded, setExpanded] = useState(false);
 
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const blob = new Blob([artifact.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = artifact.title || `artifact.${artifact.language || 'txt'}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      className="my-3 rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/[0.02] overflow-hidden"
+      className="my-3 rounded-xl border border-[#FF3366]/20 bg-[#FF3366]/[0.02] overflow-hidden"
     >
-      <button
+      <div
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-[#22D3EE]/[0.05] transition-colors"
+        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-[#FF3366]/[0.05] transition-colors"
       >
-        <FileText size={13} className="text-[#22D3EE] shrink-0" />
-        <span className="text-[11px] font-semibold text-[#22D3EE]/90 truncate">
+        <FileText size={13} className="text-[#FF3366] shrink-0" />
+        <span className="text-[11px] font-semibold text-[#FF3366]/90 truncate flex-1">
           {artifact.title || 'Generated Artifact'}
         </span>
-        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider ml-auto shrink-0 bg-[#22D3EE]/10 text-[#22D3EE]">
+        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider ml-auto shrink-0 bg-[#FF3366]/10 text-[#FF3366]">
           {artifact.type || 'code'}
         </span>
+        <button 
+          onClick={handleDownload} 
+          className="p-1.5 hover:bg-[#FF3366]/20 rounded-md transition-colors ml-1" 
+          title="Download Artifact"
+        >
+          <Download size={12} className="text-[#FF3366]" />
+        </button>
         {expanded ? (
-          <ChevronDown size={12} className="text-zinc-500 shrink-0" />
+          <ChevronDown size={12} className="text-zinc-500 shrink-0 ml-1" />
         ) : (
-          <ChevronRight size={12} className="text-zinc-500 shrink-0" />
+          <ChevronRight size={12} className="text-zinc-500 shrink-0 ml-1" />
         )}
-      </button>
+      </div>
 
       <AnimatePresence>
         {expanded && (
@@ -660,7 +669,7 @@ const ArtifactCard: React.FC<{ artifact: any }> = memo(({ artifact }) => {
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="border-t border-[#22D3EE]/10 bg-black/40">
+            <div className="border-t border-[#FF3366]/10 bg-black/40">
               {artifact.type === 'code' ? (
                 <CodeBlock language={artifact.language} code={artifact.content} />
               ) : (
@@ -707,12 +716,12 @@ const MessageBubble = React.memo<MessageBubbleProps>(
       >
         {isUser ? (
           <div className="max-w-[85%] sm:max-w-[75%]">
-            <div className="py-2 px-1">
-              <div className="text-[13px] font-semibold leading-[1.75] text-zinc-200 select-text whitespace-pre-wrap">
+            <div className="py-3 px-4 bg-zinc-800/80 rounded-2xl rounded-tr-sm border border-zinc-700/50 shadow-sm">
+              <div className="text-[14px] font-medium leading-relaxed text-zinc-100 select-text whitespace-pre-wrap">
                 {msg.content}
               </div>
               {msg.images && msg.images.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
+                <div className="flex flex-wrap gap-2 mt-3">
                   {msg.images.map((img, i) => (
                     <ImageAttachment key={i} src={img.url || img.dataUrl || img.data || ''} alt={img.name} />
                   ))}
@@ -762,11 +771,11 @@ const MessageBubble = React.memo<MessageBubbleProps>(
             {/* Content rendering */}
             {(msg.content || msg.reasoning || (msg.toolCalls && msg.toolCalls.length > 0)) && (
               <>
-                {/* Reasoning block */}
+                {/* Reasoning Block */}
                 {msg.reasoning && (
-                  <ReasoningBlock
+                  <ThinkingBlock
                     content={msg.reasoning}
-                    isStreaming={isStreaming && isLast}
+                    isComplete={!isStreaming}
                   />
                 )}
 
@@ -788,6 +797,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                   <MarkdownContent
                     content={msg.content}
                     isStreaming={isStreaming && isLast}
+                    citations={msg.citations}
                   />
                 )}
 
@@ -811,13 +821,14 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       {msg.citations.map((cite, i) => (
                         <a
                           key={i}
+                          id={`cite-${cite.id}`}
                           href={cite.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#22D3EE] hover:border-[#22D3EE]/20 transition-all"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
                         >
                           <Globe size={9} />
-                          <span className="truncate max-w-[200px]">{cite.title || cite.url}</span>
+                          <span className="truncate max-w-[200px]">{cite.source || cite.title || cite.url}</span>
                         </a>
                       ))}
                     </div>
@@ -870,7 +881,7 @@ const EmptyState: React.FC<{
     transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
     className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
   >
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#22D3EE]/[0.02] rounded-full blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-full blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
 
     <motion.div
       initial={{ opacity: 0 }}
@@ -883,7 +894,7 @@ const EmptyState: React.FC<{
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
         className="relative flex items-center justify-center transform-gpu"
       >
-        <div className="absolute w-24 h-24 bg-[#22D3EE]/[0.08] rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
+        <div className="absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
         <Logo size={90} className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default" />
       </motion.div>
     </motion.div>
@@ -897,7 +908,7 @@ const EmptyState: React.FC<{
       >
         Chat with{' '}
         <span className="font-black text-foreground">
-          NY<span className="text-[#22D3EE]">X</span>
+          NY<span className="text-[#FF3366]">X</span>
         </span>
       </motion.h1>
       <motion.p
@@ -922,15 +933,15 @@ const EmptyState: React.FC<{
             key={idx}
             whileHover={{
               scale: 1.01,
-              backgroundColor: 'rgba(34, 211, 238, 0.05)',
-              borderColor: 'rgba(34, 211, 238, 0.2)',
+              backgroundColor: 'rgba(255, 51, 102, 0.05)',
+              borderColor: 'rgba(255, 51, 102, 0.2)',
             }}
             whileTap={{ scale: 0.99 }}
             onClick={() => onSuggestedPromptClick?.(p)}
-            className="p-4 text-[11px] font-bold text-left rounded-2xl bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#22D3EE] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
+            className="p-4 text-[11px] font-bold text-left rounded-2xl bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
           >
             <span>{p}</span>
-            <span className="text-[10px] text-[#22D3EE]/70 font-extrabold ml-2">➔</span>
+            <span className="text-[10px] text-[#FF3366]/70 font-extrabold ml-2">➔</span>
           </motion.button>
         ))}
       </motion.div>
@@ -1031,6 +1042,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
+
+
   return (
     <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-background">
       <div
@@ -1042,8 +1055,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       >
         {history.length === 0 ? (
           isLoading ? (
-            <div className="flex-1 flex items-center justify-center min-h-[65vh]">
-              <NyxLoader size={45} className="text-zinc-500" />
+            <div className="flex-1 flex flex-col items-center justify-center min-h-[65vh] gap-4">
+              <NyxLoader size={20} className="text-zinc-500" />
+              <span className="text-xs text-zinc-500 tracking-widest uppercase font-semibold">Initializing...</span>
             </div>
           ) : (
             <EmptyState
@@ -1119,7 +1133,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             <ArrowDown className="w-3 h-3" />
             Latest
             {isLoading && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[#22D3EE] animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#FF3366] animate-pulse" />
             )}
           </motion.button>
         )}
@@ -1128,7 +1142,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       {/* New messages indicator */}
       {!autoScroll && isLoading && (
         <div className="absolute top-0 left-0 right-0 z-10 flex justify-center pt-2 pointer-events-none">
-          <div className="px-3 py-1 rounded-full bg-[#22D3EE]/10 border border-[#22D3EE]/20 text-[10px] text-[#22D3EE] font-semibold animate-pulse">
+          <div className="px-3 py-1 rounded-full bg-[#FF3366]/10 border border-[#FF3366]/20 text-[10px] text-[#FF3366] font-semibold animate-pulse">
             Generating...
           </div>
         </div>

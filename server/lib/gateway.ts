@@ -287,14 +287,24 @@ export class Gateway {
               chunk = data.choices[0].message.content;
             }
 
+            // Fallback: check for Gemini format
+            if (!chunk && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+              chunk = data.candidates[0].content.parts[0].text;
+            }
+
             if (chunk) {
               callbacks.onChunk(chunk);
             }
 
             // Handle finish_reason to detect end of stream
+            const finishReason = 
+              data.choices?.[0]?.finish_reason || 
+              data.candidates?.[0]?.finishReason;
+              
             if (
-              data.choices?.[0]?.finish_reason === 'stop' ||
-              data.choices?.[0]?.finish_reason === 'length'
+              finishReason === 'stop' ||
+              finishReason === 'length' ||
+              finishReason === 'STOP' // Gemini format
             ) {
               callbacks.onDone();
               return;

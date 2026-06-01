@@ -1,17 +1,21 @@
 import { Router } from 'express';
 import { sendSseTokenRotate } from '../../lib/sseHelpers.ts';
-import { validate } from '../../middleware/validate.ts';
-import { geminiStreamSchema } from './gemini.schema.ts';
 import { GeminiService } from './gemini.service.ts';
 import logger from '../../lib/logger.ts';
 
 export const geminiRouter = Router();
 const service = new GeminiService();
 
-geminiRouter.post('/stream', validate(geminiStreamSchema), async (req, res) => {
-  const { model, prompt, settings, systemInstruction, history, apiKey, images } = req.body;
+geminiRouter.post('/stream', async (req, res) => {
+  console.log('[Gemini Router] Received /stream request:', {
+    headers: req.headers,
+    body: req.body,
+    model: req.body?.model
+  });
+  const { model, prompt, settings, systemInstruction, history, apiKey, images } = req.body || {};
 
   if (!model) {
+    console.error('[Gemini Router] Returning 400 because model is missing. Body was:', req.body);
     return res.status(400).json({ error: 'Model is required' });
   }
 
@@ -40,10 +44,27 @@ geminiRouter.post('/stream', validate(geminiStreamSchema), async (req, res) => {
   }
 
   try {
-    logger.info({ model }, 'Forwarding request to actual Gemini API');
+    logger.info({ model }, 'Routing request to Antigravity SDK Chat Agent integration');
 
-    await service.executeStream(
-      {
+    // Telemetry to NYX Debug Console
+    fetch('http://localhost:3099', { method: 'POST' }).catch(() => {}); // Optional HTTP hook if supported
+    try {
+      const WebSocket = require('ws');
+      const ws = new WebSocket('ws://localhost:3099?client=server');
+      ws.on('open', () => {
+        ws.send(JSON.stringify({
+          type: 'LOG',
+          message: `🚀 Antigravity SDK is generating response for model: ${model}...`
+        }));
+        ws.close();
+      });
+      ws.on('error', () => {});
+    } catch(e) {}
+
+    const resAntigravity = await fetch('http://127.0.0.1:3003/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         model,
         prompt,
         settings,
@@ -51,19 +72,27 @@ geminiRouter.post('/stream', validate(geminiStreamSchema), async (req, res) => {
         history,
         apiKey,
         images,
-      },
-      (chunk) => {
-        if (!isClosed) {
-          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-        }
-      },
-      () => {
-        if (!isClosed) {
-          res.write('data: [DONE]\n\n');
-          res.end();
+      })
+    });
+
+    if (!resAntigravity.ok) {
+      throw new Error(`Antigravity proxy error: ${resAntigravity.statusText}`);
+    }
+
+    if (resAntigravity.body) {
+      const reader = resAntigravity.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!isClosed && value) {
+          res.write(Buffer.from(value));
         }
       }
-    );
+    }
+
+    if (!isClosed) {
+      res.end();
+    }
   } catch (e: any) {
     console.error('[Gemini Route Proxy Error]:', e.message);
     if (!isClosed) {

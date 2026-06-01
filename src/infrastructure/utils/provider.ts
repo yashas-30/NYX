@@ -125,9 +125,93 @@ export const getEffectiveApiKey = (provider: string, apiKeys: Record<string, str
   const key = apiKeys[provider]?.trim();
   if (key && key !== '') return key;
 
+  if (provider === 'gemini') {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) {
+      return (import.meta as any).env.VITE_GEMINI_API_KEY;
+    }
+    if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
+      return process.env.GEMINI_API_KEY;
+    }
+  }
+
   return undefined;
 };
 
 export const getApiKeyName = (provider: Provider): string => {
   return provider.toUpperCase();
+};
+
+export interface ModelCapabilities {
+  supportsVision: boolean;
+  supportsStreaming: boolean;
+  supportsTools: boolean;
+  supportsSystemPrompt: boolean;
+  contextWindow: number;
+}
+
+export const getModelCapabilities = (modelId: string): ModelCapabilities => {
+  const lowerId = modelId.toLowerCase();
+  
+  const caps: ModelCapabilities = {
+    supportsVision: false,
+    supportsStreaming: true,
+    supportsTools: false,
+    supportsSystemPrompt: true,
+    contextWindow: 8192,
+  };
+
+  if (lowerId.includes('gemini')) {
+    caps.supportsVision = true;
+    caps.supportsTools = true;
+    caps.contextWindow = 1048576;
+  } else if (lowerId.includes('llama-3.2')) {
+    caps.supportsVision = lowerId.includes('vision');
+    caps.supportsTools = true;
+    caps.contextWindow = 128000;
+  } else if (lowerId.includes('qwen')) {
+    caps.supportsTools = true;
+    caps.contextWindow = 32768;
+  } else if (lowerId.includes('deepseek')) {
+    caps.supportsTools = false;
+    caps.contextWindow = 128000;
+  } else if (lowerId.includes('phi-4') || lowerId.includes('phi-3')) {
+    caps.contextWindow = 16384;
+  }
+
+  return caps;
+};
+
+// ── Health Tracking ──
+
+interface HealthRecord {
+  failures: number;
+  lastFailure: number;
+}
+
+const healthCache = new Map<string, HealthRecord>();
+const HEALTH_THRESHOLD = 3;
+const COOLDOWN_MS = 60 * 1000; // 1 minute
+
+export const recordModelError = (modelId: string) => {
+  const record = healthCache.get(modelId) || { failures: 0, lastFailure: 0 };
+  record.failures += 1;
+  record.lastFailure = Date.now();
+  healthCache.set(modelId, record);
+};
+
+export const recordModelSuccess = (modelId: string) => {
+  healthCache.delete(modelId);
+};
+
+export const isModelHealthy = (modelId: string): boolean => {
+  const record = healthCache.get(modelId);
+  if (!record) return true;
+  
+  if (record.failures >= HEALTH_THRESHOLD) {
+    if (Date.now() - record.lastFailure > COOLDOWN_MS) {
+      return true; // Cooldown expired, optimistic retry
+    }
+    return false; // Circuit breaker open
+  }
+  return true;
 };

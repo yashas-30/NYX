@@ -169,7 +169,7 @@ export class SubagentOrchestrator {
       }
 
       if (inFlight.size > 0) {
-        await Promise.race(inFlight.values());
+        await Promise.all(Array.from(inFlight.values()));
       }
     }
   }

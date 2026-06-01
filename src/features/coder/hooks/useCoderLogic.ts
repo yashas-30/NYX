@@ -12,6 +12,16 @@ import { cancelCurrentRequest } from '@src/core/services/ai.service';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
 
+function areMessagesEqual(a: ChatMessage[], b: ChatMessage[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].role !== b[i].role) return false;
+    if (a[i].content !== b[i].content) return false;
+    if (a[i].status !== b[i].status) return false;
+  }
+  return true;
+}
+
 interface CoderLogicProps {
   apiKeys: Record<string, string>;
   modelSettings: any;
@@ -98,7 +108,7 @@ export const useCoderLogic = ({
       messagesRef.current = msgs;
       setLocalMessages(msgs);
       clearMetrics();
-    } else if (activeSessionMessages && activeSessionMessages !== messagesRef.current) {
+    } else if (activeSessionMessages && activeSessionMessages.length >= messagesRef.current.length && !areMessagesEqual(activeSessionMessages, messagesRef.current)) {
       messagesRef.current = activeSessionMessages;
       setLocalMessages(activeSessionMessages);
     }

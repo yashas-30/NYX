@@ -42,15 +42,15 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
   const activeQuantInfo = QUANT_TIERS.find(t => t.id === selectedQuant);
 
   return (
-    <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#22D3EE]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
-      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#22D3EE]/50 via-[#22D3EE]/30 to-[#22D3EE]/50 opacity-70 group-hover:opacity-100 transition-opacity" />
+    <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
+      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/50 via-[#FF3366]/30 to-[#FF3366]/50 opacity-70 group-hover:opacity-100 transition-opacity" />
       
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#22D3EE]">LOCAL INFERENCE ENGINE</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">LOCAL INFERENCE ENGINE</p>
           <h3 className="text-xs font-bold text-foreground mt-0.5">Quantization Quality / Speed</h3>
         </div>
-        <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${quantSaving ? 'text-[#22D3EE]/80 bg-[#22D3EE]/5 border-[#22D3EE]/15' : 'text-[#22D3EE] bg-[#22D3EE]/10 border-[#22D3EE]/20'}`}>
+        <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${quantSaving ? 'text-[#FF3366]/80 bg-[#FF3366]/5 border-[#FF3366]/15' : 'text-[#FF3366] bg-[#FF3366]/10 border-[#FF3366]/20'}`}>
           {quantSaving ? 'Saving...' : selectedQuant}
         </span>
       </div>
@@ -64,14 +64,14 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
               onClick={() => handleQuantChange(tier.id)}
               className={`relative p-3 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${
                 isSelected
-                  ? 'bg-[#22D3EE]/10 border-[#22D3EE]/40 shadow-md shadow-[#22D3EE]/5'
+                  ? 'bg-[#FF3366]/10 border-[#FF3366]/40 shadow-md shadow-[#FF3366]/5'
                   : 'bg-background/60 border-white/[0.04] hover:border-white/20 hover:bg-white/[0.04]'
               }`}
             >
               {isSelected && (
-                <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#22D3EE] animate-pulse" />
+                <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#FF3366] animate-pulse" />
               )}
-              <div className={`text-[10px] font-black uppercase tracking-wider mb-1 ${isSelected ? 'text-[#22D3EE]' : 'text-muted-foreground/80'}`}>
+              <div className={`text-[10px] font-black uppercase tracking-wider mb-1 ${isSelected ? 'text-[#FF3366]' : 'text-muted-foreground/80'}`}>
                 {tier.label}
               </div>
               <div className={`text-[11px] font-bold font-mono mb-2 ${isSelected ? 'text-foreground' : 'text-foreground/70'}`}>
@@ -84,11 +84,11 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
                 </div>
                 <div className="flex justify-between text-[9px] font-bold uppercase tracking-wider">
                   <span className="text-muted-foreground/60">VRAM</span>
-                  <span className={isSelected ? 'text-[#22D3EE]' : 'text-muted-foreground/80'}>{tier.vram}</span>
+                  <span className={isSelected ? 'text-[#FF3366]' : 'text-muted-foreground/80'}>{tier.vram}</span>
                 </div>
               </div>
               <span className={`mt-2 inline-block text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full ${
-                isSelected ? 'bg-[#22D3EE]/20 text-[#22D3EE] border border-[#22D3EE]/30' : 'bg-white/5 text-muted-foreground/60 border border-white/10'
+                isSelected ? 'bg-[#FF3366]/20 text-[#FF3366] border border-[#FF3366]/30' : 'bg-white/5 text-muted-foreground/60 border border-white/10'
               }`}>
                 {tier.badge}
               </span>
@@ -98,8 +98,8 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
       </div>
 
       {activeQuantInfo?.warn && (
-        <div className="mb-3 px-3 py-2 rounded-xl bg-[#22D3EE]/5 border border-[#22D3EE]/20 text-[10px] text-[#22D3EE]/90 flex items-center gap-2">
-          <span className="text-[#22D3EE] shrink-0">⚠</span>
+        <div className="mb-3 px-3 py-2 rounded-xl bg-[#FF3366]/5 border border-[#FF3366]/20 text-[10px] text-[#FF3366]/90 flex items-center gap-2">
+          <span className="text-[#FF3366] shrink-0">⚠</span>
           {activeQuantInfo.warn}
         </div>
       )}

@@ -18,6 +18,8 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { ChatHeader } from './ChatHeader';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatPromptInput } from './ChatPromptInput';
+import { ChatSidebar } from './ChatSidebar';
+import { ChatSettings } from './ChatSettings';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 
 // ---------------------------------------------------------------------------
@@ -41,7 +43,6 @@ interface ChatPageProps {
   // Lifted state from parent:
   activeAgent: 'nyx';
   isLoading: boolean;
-  isSearching: boolean;
   history: ChatMessage[];
   metrics: { latency: number; tokens: number; tps: number };
   models: Record<'nyx', string>;
@@ -50,8 +51,6 @@ interface ChatPageProps {
   stopChat: () => void;
   clearHistory: () => void;
   suggestedPrompts: string[];
-  webSearchEnabled: boolean;
-  setWebSearchEnabled: (val: boolean) => void;
   onOpenLightning?: () => void;
   submitReward?: (id: string, reward: number) => void;
 
@@ -116,7 +115,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   // Lifted props:
   activeAgent,
   isLoading,
-  isSearching,
   history,
   metrics: parentMetrics,
   models,
@@ -125,8 +123,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   stopChat,
   clearHistory: parentClearHistory,
   suggestedPrompts,
-  webSearchEnabled,
-  setWebSearchEnabled,
   onOpenLightning,
   submitReward,
 
@@ -137,6 +133,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [prompt, setPrompt] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingImages, setPendingImages] = useState<ChatImage[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // --- Model resolution ---
   const currentModelId = models['nyx'];
@@ -361,15 +358,20 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="h-full w-full flex flex-col min-h-0 overflow-hidden"
+      className="h-full w-full flex min-h-0 overflow-hidden bg-background relative"
     >
-      <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative bg-background">
+      {/* Global sidebar is managed by CoderDashboard */}
+      
+      <ChatSettings 
+        isOpen={settingsOpen} 
+        onClose={() => setSettingsOpen(false)} 
+      />
+
+      <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         {/* CHAT HEADER */}
         <ChatHeader
           metrics={metrics}
           isLoading={isLoading}
-          isSearching={isSearching}
-          webSearchEnabled={webSearchEnabled}
           onClear={parentClearHistory}
           onStopGeneration={stopChat}
           sidebarOpen={sidebarOpen}
@@ -387,7 +389,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onModelSelect={(id) => handleModelChange(id)}
           providerStatuses={providerStatuses}
           gatewayUrls={gatewayUrls || {}}
-          onClearHistory={parentClearHistory}
           onAttachFiles={handleAttachFiles}
           onExportChat={handleExport}
           connectionStatus={connectionStatus}
@@ -419,10 +420,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onPromptChange={setPrompt}
           onSubmit={handleSubmit}
           isLoading={isLoading}
-          isSearching={isSearching}
           onStop={stopChat}
           currentModelId={currentModelId}
           currentModel={currentModel}
+          onClearHistory={parentClearHistory}
+          onModelSelect={handleModelChange}
 
           onModelSettingsChange={setModelSettings}
           modelSettings={modelSettings}
@@ -432,8 +434,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             handleSubmit(p);
           }}
           getCustomModelIcon={getCustomModelIcon}
-          webSearchEnabled={webSearchEnabled}
-          onWebSearchToggle={setWebSearchEnabled}
           pendingImages={pendingImages}
           onRemoveImage={handleRemoveImage}
           onImagesChange={setPendingImages}

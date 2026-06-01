@@ -3,6 +3,7 @@ import { LocalModelRunner } from './localModelRunner.ts';
 import { ModelWarmCache } from './warmCache.ts';
 import { CodebaseScanner } from '../workspace/codebaseScanner.ts';
 import { RulesDb } from '../admin/admin.service.ts';
+import { LOCAL_MODEL_PORT } from '../../../src/config/ports.ts';
 
 function shouldTriggerWebSearch(query: string): boolean {
   const trimmed = query.trim();
@@ -408,7 +409,7 @@ Please analyze the context and provide highly optimized, syntax-correct solution
     ];
 
     const currentActiveModel = LocalModelRunner.getActiveModel() || requestedModel;
-    const port = currentActiveModel.startsWith('airllm-') ? 12346 : 12345;
+    const port = currentActiveModel.startsWith('airllm-') ? 12346 : LOCAL_MODEL_PORT;
     const targetUrl = `http://127.0.0.1:${port}/v1/chat/completions`;
 
     const response = await fetch(targetUrl, {

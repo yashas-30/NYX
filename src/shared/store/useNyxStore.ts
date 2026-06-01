@@ -139,6 +139,7 @@ export const useNyxStore = create<NyxState>()(
           set((state) => ({
             apiKeys: { ...state.apiKeys, [provider]: key },
           }));
+          await get().refreshStatuses();
         }
       },
 
@@ -243,9 +244,14 @@ export const useNyxStore = create<NyxState>()(
         
         try {
           // Check local models status
-          const nativeRes = await fetchWithAuth('/api/nyx/local-models/status').catch(() => null);
-          const nativeOnline = nativeRes && nativeRes.ok && (await nativeRes.json()).activeModelId;
-          newStatuses['nyx-native'] = nativeOnline ? 'online' : 'offline';
+          const localEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('llm_ref_local_models_enabled') === 'true';
+          if (localEnabled) {
+            const nativeRes = await fetchWithAuth('/api/nyx/local-models/status').catch(() => null);
+            const nativeOnline = nativeRes && nativeRes.ok && (await nativeRes.json()).activeModelId;
+            newStatuses['nyx-native'] = nativeOnline ? 'online' : 'offline';
+          } else {
+            newStatuses['nyx-native'] = 'offline';
+          }
 
           // Check safeStorage vault configuration for cloud providers
           const vaultRes = await fetch('/api/vault/status').catch(() => null);
@@ -275,6 +281,7 @@ export const useNyxStore = create<NyxState>()(
         localModelsEnabled: state.localModelsEnabled,
         modelSettings: state.modelSettings,
         models: state.models,
+        apiKeys: state.rememberKeys ? state.apiKeys : {},
         privacyMode: state.privacyMode,
         rememberKeys: state.rememberKeys,
         currentModel: state.currentModel,

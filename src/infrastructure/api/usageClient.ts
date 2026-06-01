@@ -334,11 +334,13 @@ export function invalidateQuotaCache(provider?: string): void {
  * Get cache status for debugging.
  */
 export function getQuotaCacheStatus(): Array<{ provider: string; ageMs: number; expiresInMs: number }> {
-  return Array.from(quotaCache.entries()).map(([provider, entry]) => ({
-    provider,
-    ageMs: Date.now() - entry.data.fetchedAt,
-    expiresInMs: entry.data.expiresAt - Date.now(),
-  }));
+  return Array.from(quotaCache.entries())
+    .filter(([_, entry]) => entry.data)
+    .map(([provider, entry]) => ({
+      provider,
+      ageMs: Date.now() - entry.data!.fetchedAt,
+      expiresInMs: entry.data!.expiresAt - Date.now(),
+    }));
 }
 
 // ---------------------------------------------------------------------------

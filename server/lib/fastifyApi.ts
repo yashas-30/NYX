@@ -80,7 +80,7 @@ interface StreamListener {
   end: () => void;
 }
 
-const activeStreams = new Map<string, Set<StreamListener>>();
+const activeStreams = new Map<string, { listeners: Set<StreamListener>; controller: AbortController }>();
 
 // High-performance streaming endpoint that bypasses Express entirely
 fastify.post(
@@ -127,11 +127,10 @@ fastify.post(
       settings: settings || {},
     });
 
+    reply.hijack();
     const headers = reply.getHeaders();
     reply.raw.writeHead(200, {
-      ...headers,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-nyx-session-token, traceparent, tracestate, Connection, Accept',
+      ...(headers as Record<string, any>),
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
@@ -150,24 +149,27 @@ fastify.post(
       logger.info(
         `[Fastify Stream Dedupe] Multiplexing concurrent stream for provider ${provider}, model ${model}`
       );
-      const listeners = activeStreams.get(fingerprint)!;
-      listeners.add(listener);
+      const streamGroup = activeStreams.get(fingerprint)!;
+      streamGroup.listeners.add(listener);
 
       request.raw.on('close', () => {
-        listeners.delete(listener);
-        if (listeners.size === 0) {
+        streamGroup.listeners.delete(listener);
+        if (streamGroup.listeners.size === 0) {
+          streamGroup.controller.abort();
           activeStreams.delete(fingerprint);
         }
       });
       return;
     }
 
+    const controller = new AbortController();
     const listeners = new Set<StreamListener>([listener]);
-    activeStreams.set(fingerprint, listeners);
+    activeStreams.set(fingerprint, { listeners, controller });
 
     request.raw.on('close', () => {
       listeners.delete(listener);
       if (listeners.size === 0) {
+        controller.abort();
         activeStreams.delete(fingerprint);
       }
     });
@@ -200,6 +202,7 @@ fastify.post(
           messages: finalMessages,
           settings: finalSettings,
           apiKey: activeKey,
+          signal: controller.signal,
         },
         (chunk) => {
           const payload = `data: ${JSON.stringify(chunk)}\n\n`;
@@ -322,11 +325,10 @@ fastify.post('/gemini/*', { config: { bodyLimit: 1024 * 1024 } }, async (request
   const activeKey = getApiKey('gemini') || '';
   if (!activeKey) return reply.status(401).send({ error: 'Gemini API key required' });
 
+  reply.hijack();
   const headers = reply.getHeaders();
   reply.raw.writeHead(200, {
-    ...headers,
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-nyx-session-token, traceparent, tracestate, Connection, Accept',
+    ...(headers as Record<string, any>),
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
@@ -349,8 +351,10 @@ fastify.post('/gemini/*', { config: { bodyLimit: 1024 * 1024 } }, async (request
   }
 
   let isClosed = false;
+  const controller = new AbortController();
   request.raw.on('close', () => {
     isClosed = true;
+    controller.abort();
   });
 
   try {
@@ -361,6 +365,7 @@ fastify.post('/gemini/*', { config: { bodyLimit: 1024 * 1024 } }, async (request
         messages: finalMessages,
         settings,
         apiKey: activeKey,
+        signal: controller.signal,
       },
       (chunk) => {
         if (!isClosed) {

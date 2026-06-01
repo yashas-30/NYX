@@ -138,7 +138,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         <header className={`flex items-center justify-between p-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-white/[0.04] shrink-0 select-none bg-zinc-950 backdrop-blur-md transition-all duration-300`}>
           <div className="flex items-center gap-2">
-            <SettingsIcon size={16} className="text-[#22D3EE]" />
+            <SettingsIcon size={16} className="text-[#FF3366]" />
             <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">Settings</h2>
           </div>
 
@@ -146,8 +146,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             onClick={() => setShowGateways(!showGateways)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${
               showGateways 
-                ? 'bg-[#22D3EE]/20 text-[#22D3EE] border border-[#22D3EE]/30' 
-                : 'bg-white/5 text-muted-foreground border border-white/5 hover:border-[#22D3EE]/30'
+                ? 'bg-[#FF3366]/20 text-[#FF3366] border border-[#FF3366]/30' 
+                : 'bg-white/5 text-muted-foreground border border-white/5 hover:border-[#FF3366]/30'
             }`}
           >
             <Network size={12} />
@@ -192,12 +192,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             />
 
             {/* Learning Hub: App Workflow & Free Keys Guide */}
-            <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#22D3EE]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
-              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#22D3EE]/20 via-[#22D3EE]/10 to-[#22D3EE]/20 opacity-70 group-hover:opacity-100 transition-opacity" />
+            <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity" />
               
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#22D3EE]">LEARNING & CREDENTIALS HUB</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">LEARNING & CREDENTIALS HUB</p>
                   <h3 className="text-xs font-bold text-foreground mt-0.5">Walkthrough & Free API Keys</h3>
                 </div>
                 
@@ -206,7 +206,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     onClick={() => setActiveGuideTab('workflow')}
                     className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                       activeGuideTab === 'workflow'
-                        ? 'bg-[#22D3EE] text-black shadow-sm'
+                        ? 'bg-[#FF3366] text-black shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -216,7 +216,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     onClick={() => setActiveGuideTab('keys')}
                     className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                       activeGuideTab === 'keys'
-                        ? 'bg-[#22D3EE] text-black shadow-sm'
+                        ? 'bg-[#FF3366] text-black shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -234,7 +234,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="bg-white/[0.01] border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-white/[0.03] transition-colors">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-[#22D3EE]/10 text-[#22D3EE]">
+                        <div className="p-1 rounded-lg bg-[#FF3366]/10 text-[#FF3366]">
                           <Zap size={12} />
                         </div>
                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">1. Pipeline</h4>
@@ -246,7 +246,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                     <div className="bg-white/[0.01] border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-white/[0.03] transition-colors">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-[#22D3EE]/10 text-[#22D3EE]">
+                        <div className="p-1 rounded-lg bg-[#FF3366]/10 text-[#FF3366]">
                           <Cpu size={12} />
                         </div>
                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">2. Sockets</h4>
@@ -258,7 +258,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                     <div className="bg-white/[0.01] border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-white/[0.03] transition-colors">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-[#22D3EE]/10 text-[#22D3EE]">
+                        <div className="p-1 rounded-lg bg-[#FF3366]/10 text-[#FF3366]">
                           <Database size={12} />
                         </div>
                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">3. Cache</h4>
@@ -273,19 +273,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">Features Walkthrough</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[10px] text-muted-foreground/90">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-[#22D3EE] shrink-0" />
+                        <div className="w-1 h-1 rounded-full bg-[#FF3366] shrink-0" />
                         <span><strong>Compare Workspace</strong>: Benchmark model outputs side-by-side.</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-[#22D3EE] shrink-0" />
+                        <div className="w-1 h-1 rounded-full bg-[#FF3366] shrink-0" />
                         <span><strong>Performance Evaluation</strong>: Evaluate reasoning, response depth, & code.</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-[#22D3EE] shrink-0" />
+                        <div className="w-1 h-1 rounded-full bg-[#FF3366] shrink-0" />
                         <span><strong>Agent Workspace</strong>: Specialized editor with multiline code playground.</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-[#22D3EE] shrink-0" />
+                        <div className="w-1 h-1 rounded-full bg-[#FF3366] shrink-0" />
                         <span><strong>Model Registry</strong>: Manage model configurations & discover local instances.</span>
                       </div>
                     </div>
@@ -305,7 +305,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         className="w-full px-3 py-2 flex items-center justify-between text-left cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 rounded-full bg-[#22D3EE]/10 text-[#22D3EE] flex items-center justify-center text-[10px] font-black">G</div>
+                          <div className="w-4 h-4 rounded-full bg-[#FF3366]/10 text-[#FF3366] flex items-center justify-center text-[10px] font-black">G</div>
                           <span className="text-[10px] font-bold text-foreground">Google Gemini API</span>
                           <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/20">Free Tier</span>
                         </div>
@@ -316,7 +316,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="px-3 pb-3 pt-1 border-t border-white/10 text-[11px] text-muted-foreground/90 space-y-2 leading-relaxed">
                           <p>Google offers robust free tiers for Google Gemini keys directly within Google AI Studio, granting developers massive rate limits at no cost.</p>
                           <ol className="list-decimal pl-4 space-y-1">
-                            <li>Go to the <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-[#22D3EE] hover:underline font-bold inline-flex items-center gap-0.5">Google AI Studio Console <ExternalLink size={8} /></a>.</li>
+                            <li>Go to the <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-[#FF3366] hover:underline font-bold inline-flex items-center gap-0.5">Google AI Studio Console <ExternalLink size={8} /></a>.</li>
                             <li>Log in with any Google account.</li>
                             <li>Click the prominent <strong>"Get API Key"</strong> or <strong>"Create API Key"</strong> button on the sidebar.</li>
                             <li>Select <strong>"Create API key in new project"</strong>.</li>

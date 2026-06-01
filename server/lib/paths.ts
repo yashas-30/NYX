@@ -28,7 +28,7 @@ function findProjectRoot(): string {
 }
 
 // Base user data directory for NYX application state
-export const APP_STATE_DIR = isProd ? path.join(os.homedir(), '.nyx') : findProjectRoot();
+export const APP_STATE_DIR = isProd ? path.join(os.homedir(), '.nyx') : path.join(findProjectRoot(), '.nyx-state');
 
 // Specific sub-folders for keys, logs, models, and cache
 export const VAULT_DIR = path.join(APP_STATE_DIR, '.nyx-keys');

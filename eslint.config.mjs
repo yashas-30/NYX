@@ -15,6 +15,7 @@ export default tseslint.config(
       '.claude/**',
       '.github/**',
       '.opencode/**',
+      '.nyx-state/**',
       '.nyx-cache/**',
       '.nyx-models/**',
       '.nyx-logs/**',
@@ -28,6 +29,25 @@ export default tseslint.config(
   js.configs.recommended,
   tseslint.configs.recommended,
   {
+    languageOptions: {
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
+        exports: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
+        __dirname: 'readonly'
+      }
+    },
     linterOptions: {
       reportUnusedDisableDirectives: 'off'
     },
@@ -57,6 +77,7 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-expressions': 'off',
       'no-useless-assignment': 'off',
       'no-empty': 'off',
       '@typescript-eslint/no-require-imports': 'off',

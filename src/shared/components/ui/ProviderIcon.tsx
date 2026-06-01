@@ -21,7 +21,7 @@ function getIcon(provider: string | undefined, size: number, className: string):
   switch (provider) {
     case 'gemini':    return <Logo size={size + 4} className={className} />;
     case 'terminal':  return <Cpu size={size} strokeWidth={1.5} className={className} />;
-    case 'nyx-native': return <Cpu size={size} strokeWidth={1.5} className={`${className} text-[#22D3EE] animate-pulse`} />;
+    case 'nyx-native': return <Cpu size={size} strokeWidth={1.5} className={`${className} text-[#FF3366] animate-pulse`} />;
     default:          return <Cpu size={size} strokeWidth={1.5} className={className} />;
   }
 }

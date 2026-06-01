@@ -373,7 +373,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     onClick={selectWorkspace}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-zinc-400 border border-white/[0.04] bg-card hover:bg-white/[0.03] transition-all cursor-pointer select-none"
                   >
-                    <Folder size={12} className="text-[#22D3EE] fill-cyan-500/10" />
+                    <Folder size={12} className="text-[#FF3366] fill-cyan-500/10" />
                     <span>{workspacePath.split(/[/\\]/).pop() || 'NYX'}</span>
                     <ChevronDown size={10} className="text-zinc-500 opacity-60" />
                   </div>

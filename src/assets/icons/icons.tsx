@@ -32,11 +32,11 @@ export const Logo = React.memo(({ size = 24, className = "" }: { size?: number; 
       <defs>
         <linearGradient id="goldGradient" x1="20" y1="80" x2="85" y2="20" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#D97706" />
-          <stop offset="50%" stopColor="#22D3EE" />
+          <stop offset="50%" stopColor="#FF3366" />
           <stop offset="100%" stopColor="#FBBF24" />
         </linearGradient>
         <linearGradient id="goldGradientLight" x1="30" y1="70" x2="80" y2="25" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#22D3EE" />
+          <stop offset="0%" stopColor="#FF3366" />
           <stop offset="100%" stopColor="#FFFBEB" />
         </linearGradient>
       </defs>

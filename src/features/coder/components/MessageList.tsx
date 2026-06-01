@@ -115,9 +115,9 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
       <div className="rounded-[calc(1rem-1px)] overflow-hidden bg-[#111622] border border-white/[0.03]">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[#1B2336] border-b border-white/[0.03]">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#4A5059] border-b border-white/[0.03]">
           <div className="flex items-center gap-2">
-            <Terminal size={10} className="text-[#22D3EE]" />
+            <Terminal size={10} className="text-[#FF3366]" />
             <span className="text-[9px] font-black uppercase tracking-[0.25em] text-zinc-400">{lang}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -135,10 +135,10 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
             )}
             {canApply && (
               <motion.button
-                whileHover={{ scale: 1.02, backgroundColor: 'rgba(34, 211, 238,0.15)', borderColor: 'rgba(34, 211, 238,0.3)' }}
+                whileHover={{ scale: 1.02, backgroundColor: 'rgba(255, 51, 102,0.15)', borderColor: 'rgba(255, 51, 102,0.3)' }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowApplyPanel(!showApplyPanel)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#22D3EE]/10 border border-[#22D3EE]/20 text-[#22D3EE] hover:text-white transition-all text-[8px] font-black uppercase tracking-widest shadow-sm cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] hover:text-white transition-all text-[8px] font-black uppercase tracking-widest shadow-sm cursor-pointer"
               >
                 <Save size={9} />
                 <span>Apply</span>
@@ -169,7 +169,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
               className="bg-[#111622] border-b border-white/5 px-4 py-3.5 flex flex-col gap-2.5"
             >
               <div className="flex items-center gap-2">
-                <FileText size={12} className="text-[#22D3EE]" />
+                <FileText size={12} className="text-[#FF3366]" />
                 <span className="text-[10px] text-muted-foreground/75 font-black uppercase tracking-wider">Save to Workspace:</span>
               </div>
               <div className="flex items-center gap-2">
@@ -178,12 +178,12 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
                   value={filePath}
                   onChange={(e) => setFilePath(e.target.value)}
                   placeholder="e.g., src/components/Button.tsx"
-                  className="flex-1 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/5 text-xs text-foreground placeholder-muted-foreground/30 focus:outline-none focus:border-[#22D3EE]/50 transition-colors font-mono"
+                  className="flex-1 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/5 text-xs text-foreground placeholder-muted-foreground/30 focus:outline-none focus:border-[#FF3366]/50 transition-colors font-mono"
                 />
                 <button
                   onClick={handleApplyFile}
                   disabled={applyStatus === 'writing'}
-                  className="px-4 py-2 rounded-xl bg-[#22D3EE] text-[#0B0E14] font-bold text-[10px] uppercase tracking-wider transition-colors hover:opacity-95 disabled:opacity-50 shrink-0 cursor-pointer shadow-[0_0_12px_rgba(34, 211, 238,0.2)]"
+                  className="px-4 py-2 rounded-xl bg-[#FF3366] text-[#0B0E14] font-bold text-[10px] uppercase tracking-wider transition-colors hover:opacity-95 disabled:opacity-50 shrink-0 cursor-pointer shadow-[0_0_12px_rgba(255, 51, 102,0.2)]"
                 >
                   {applyStatus === 'writing' ? 'Writing...' : 'Write File'}
                 </button>
@@ -274,7 +274,7 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = ({
             return <CodeBlock language={match ? match[1] : 'text'} code={String(children).replace(/\n$/, '')} />;
           }
           return (
-            <code className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-[#22D3EE] text-[11px] font-mono font-semibold" {...props}>
+            <code className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-[#FF3366] text-[11px] font-mono font-semibold" {...props}>
               {children}
             </code>
           );
@@ -282,7 +282,7 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = ({
         h1: ({ children }) => <h1 className="text-base font-black tracking-tight text-foreground mt-5 mb-2 pb-2 border-b border-white/10">{children}</h1>,
         h2: ({ children }) => (
           <h2 className="text-[13px] font-black tracking-tight text-foreground mt-4 mb-2 flex items-center gap-2">
-            <span className="w-1 h-4 rounded-full bg-[#22D3EE] inline-block shrink-0" />
+            <span className="w-1 h-4 rounded-full bg-[#FF3366] inline-block shrink-0" />
             {children}
           </h2>
         ),
@@ -293,9 +293,9 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = ({
         ol: ({ children }) => <ol className="list-decimal pl-6 space-y-1 my-2 text-sm text-foreground/75">{children}</ol>,
         li: ({ children }) => <li className="leading-relaxed pl-1">{children}</li>,
         strong: ({ children }) => <strong className="font-bold text-foreground">{children}</strong>,
-        em: ({ children }) => <em className="italic text-[#22D3EE]/80">{children}</em>,
+        em: ({ children }) => <em className="italic text-[#FF3366]/80">{children}</em>,
         blockquote: ({ children }) => (
-          <blockquote className="my-2 pl-3 py-1 border-l-2 border-[#22D3EE]/45 bg-white/[0.01] rounded-r-lg text-sm text-foreground/65 italic">
+          <blockquote className="my-2 pl-3 py-1 border-l-2 border-[#FF3366]/45 bg-white/[0.01] rounded-r-lg text-sm text-foreground/65 italic">
             {children}
           </blockquote>
         ),
@@ -305,11 +305,11 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean }> = ({
             <table className="w-full text-[11px]">{children}</table>
           </div>
         ),
-        thead: ({ children }) => <thead className="bg-white/[0.04] text-[#22D3EE] border-b border-white/8">{children}</thead>,
+        thead: ({ children }) => <thead className="bg-white/[0.04] text-[#FF3366] border-b border-white/8">{children}</thead>,
         th: ({ children }) => <th className="px-3 py-2 text-left font-bold uppercase tracking-wider text-[9px] text-zinc-400">{children}</th>,
         td: ({ children }) => <td className="px-3 py-2 border-t border-white/4 text-foreground/75">{children}</td>,
         a: ({ href, children }) => (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#22D3EE] underline underline-offset-2 hover:opacity-85 transition-colors">
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#FF3366] underline underline-offset-2 hover:opacity-85 transition-colors">
             {children}
           </a>
         ),
@@ -340,7 +340,7 @@ const EmptyState: React.FC<{
     className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
   >
     {/* Background warm aesthetic glow */}
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#22D3EE]/[0.02] rounded-full blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-full blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
  
     {/* Elegant bird logo with entrance and floating animations split to prevent Lottie measurement glitch */}
     <motion.div
@@ -355,7 +355,7 @@ const EmptyState: React.FC<{
         className="relative flex items-center justify-center transform-gpu"
       >
         {/* Premium static hardware-accelerated logo glow */}
-        <div className="absolute w-24 h-24 bg-[#22D3EE]/[0.08] rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
+        <div className="absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
  
         <Logo size={90} className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default" />
       </motion.div>
@@ -369,7 +369,7 @@ const EmptyState: React.FC<{
         transition={{ delay: 0.3, duration: 0.5 }}
         className="text-[20px] font-black tracking-tight text-foreground/80 leading-tight"
       >
-        How can <span className="font-black text-foreground">NY<span className="text-[#22D3EE]">X</span></span> assist your project today?
+        How can <span className="font-black text-foreground">NY<span className="text-[#FF3366]">X</span></span> assist your project today?
       </motion.h1>
       <motion.p
         initial={{ opacity: 0, y: 8 }}
@@ -392,13 +392,13 @@ const EmptyState: React.FC<{
         {suggestedPrompts.slice(0, 4).map((p, idx) => (
           <motion.button
             key={idx}
-            whileHover={{ scale: 1.01, backgroundColor: 'rgba(34, 211, 238, 0.05)', borderColor: 'rgba(34, 211, 238, 0.2)' }}
+            whileHover={{ scale: 1.01, backgroundColor: 'rgba(255, 51, 102, 0.05)', borderColor: 'rgba(255, 51, 102, 0.2)' }}
             whileTap={{ scale: 0.99 }}
             onClick={() => onSuggestedPromptClick?.(p)}
-            className="p-4 text-[11px] font-bold text-left rounded-2xl bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#22D3EE] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
+            className="p-4 text-[11px] font-bold text-left rounded-2xl bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
           >
             <span>{p}</span>
-            <span className="text-[10px] text-[#22D3EE]/70 font-extrabold ml-2">➔</span>
+            <span className="text-[10px] text-[#FF3366]/70 font-extrabold ml-2">➔</span>
           </motion.button>
         ))}
       </motion.div>
@@ -465,7 +465,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(({
                 <div className="mt-3 flex items-center gap-3.5 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity duration-300">
                   <button
                     onClick={() => onCopy(msg.content, `msg-${index}`)}
-                    className="flex items-center gap-1 text-[9px] text-muted-foreground/30 hover:text-[#22D3EE] transition-colors cursor-pointer uppercase font-black tracking-widest"
+                    className="flex items-center gap-1 text-[9px] text-muted-foreground/30 hover:text-[#FF3366] transition-colors cursor-pointer uppercase font-black tracking-widest"
                   >
                     {copiedId === `msg-${index}` ? (
                       <><Check size={9} className="text-emerald-400" /><span className="text-emerald-400">Copied</span></>

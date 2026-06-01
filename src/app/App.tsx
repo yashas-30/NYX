@@ -5,6 +5,7 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { useTheme } from '@src/shared/context/ThemeContext';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { DebugLogger } from '@src/core/utils/DebugLogger';
 import { Providers } from './providers';
 
 export default function App() {
@@ -21,6 +22,7 @@ function AppContent() {
   const clearPrivacyData = useNyxStore(state => state.clearPrivacyData);
 
   useEffect(() => {
+    DebugLogger.init();
     if (!privacyMode) return;
 
     let timeoutId: NodeJS.Timeout;

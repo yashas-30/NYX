@@ -409,7 +409,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
           className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-white/[0.04] shrink-0 select-none bg-background border-b border-white/[0.03] transition-all duration-300`}
         >
           <div className="flex items-center gap-2">
-            <Box size={16} className="text-[#22D3EE]" />
+            <Box size={16} className="text-[#FF3366]" />
             <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">
               Model Registry
             </h2>
@@ -421,7 +421,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
               <Search
                 size={12}
                 strokeWidth={1.5}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/30 transition-colors group-focus-within:text-[#22D3EE]"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/30 transition-colors group-focus-within:text-[#FF3366]"
               />
               <input
                 type="text"
@@ -438,7 +438,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   bg-background border border-white/[0.04] rounded-full
                   text-[11px] font-medium text-foreground
                   pl-8 pr-3 py-1.5 w-40 sm:w-48
-                  outline-none focus:border-[#22D3EE]/30
+                  outline-none focus:border-[#FF3366]/30
                   transition-all placeholder:text-muted-foreground/20 shadow-sm
                 "
               />
@@ -454,7 +454,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-tight transition-all
                     ${
                       filter === f
-                        ? 'bg-[#22D3EE] text-black shadow-sm'
+                        ? 'bg-[#FF3366] text-black shadow-sm'
                         : 'text-muted-foreground/60 hover:text-foreground hover:bg-white/5'
                     }
                   `}
@@ -474,7 +474,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
           {showNyx && (
             <section className="space-y-4 p-5 rounded-2xl bg-card border border-white/[0.04] shadow-sm">
               <SectionHeader
-                icon={<Cpu size={18} className="text-[#22D3EE] animate-pulse" />}
+                icon={<Cpu size={18} className="text-[#FF3366] animate-pulse" />}
                 title="NYX Native Local Library"
                 subtitle="Directly download and host GGUF models natively"
               >
@@ -503,7 +503,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   <motion.button
                     whileTap={{ scale: 0.96 }}
                     onClick={() => setShowDownloadModal(true)}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#22D3EE] hover:bg-[#22D3EE]/90 border border-transparent text-[11px] font-bold uppercase tracking-wider text-black shadow-lg transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#FF3366] hover:bg-[#FF3366]/90 border border-transparent text-[11px] font-bold uppercase tracking-wider text-black shadow-lg transition-all cursor-pointer"
                   >
                     <Download size={10} />
                     <span>Browse &amp; Download</span>
@@ -522,9 +522,9 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
                 if (installedModels.length === 0) {
                   return (
-                    <div className="py-10 rounded-2xl border border-dashed border-[#22D3EE]/20 flex flex-col items-center justify-center text-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-[#22D3EE]/10 border border-[#22D3EE]/20 flex items-center justify-center">
-                        <Download size={16} className="text-[#22D3EE]" />
+                    <div className="py-10 rounded-2xl border border-dashed border-[#FF3366]/20 flex flex-col items-center justify-center text-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-[#FF3366]/10 border border-[#FF3366]/20 flex items-center justify-center">
+                        <Download size={16} className="text-[#FF3366]" />
                       </div>
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">
@@ -532,7 +532,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                         </p>
                         <p className="text-[8px] text-muted-foreground/40 mt-1 font-medium">
                           Click{' '}
-                          <span className="text-[#22D3EE] font-bold">Browse &amp; Download</span> to
+                          <span className="text-[#FF3366] font-bold">Browse &amp; Download</span> to
                           add models to your library.
                         </p>
                       </div>

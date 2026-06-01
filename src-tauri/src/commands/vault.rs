@@ -16,7 +16,7 @@ pub struct StoreKeyPayload { pub provider: String, pub key: String }
 #[derive(Deserialize)]
 pub struct ProviderPayload { pub provider: String }
 
-#[tauri::command]
+#[tauri::command(rename = "vault:store-key")]
 pub async fn vault_store_key(payload: StoreKeyPayload) -> VaultResult<()> {
     let entry = match Entry::new(SERVICE_NAME, &payload.provider) {
         Ok(e) => e,
@@ -28,7 +28,7 @@ pub async fn vault_store_key(payload: StoreKeyPayload) -> VaultResult<()> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename = "vault:get-key")]
 pub async fn vault_get_key(payload: ProviderPayload) -> VaultResult<String> {
     let entry = match Entry::new(SERVICE_NAME, &payload.provider) {
         Ok(e) => e,
@@ -41,7 +41,7 @@ pub async fn vault_get_key(payload: ProviderPayload) -> VaultResult<String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename = "vault:delete-key")]
 pub async fn vault_delete_key(payload: ProviderPayload) -> VaultResult<()> {
     let entry = match Entry::new(SERVICE_NAME, &payload.provider) {
         Ok(e) => e,
@@ -54,7 +54,7 @@ pub async fn vault_delete_key(payload: ProviderPayload) -> VaultResult<()> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename = "vault:list-keys")]
 pub async fn vault_list_keys() -> VaultResult<Vec<String>> {
     VaultResult { success: true, data: Some(vec![]), error: None }
 }

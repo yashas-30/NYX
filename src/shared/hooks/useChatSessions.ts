@@ -64,12 +64,24 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
         if (res.ok) {
           const serverSessions = await res.json();
           if (Array.isArray(serverSessions) && activeToken) {
-            setRegularSessions(serverSessions);
-            if (serverSessions.length > 0 && !privacyMode) {
-              const matching = serverSessions.find((s) => matchesAgentType(s.id));
-              if (matching) {
-                setActiveSid(matching.id);
+            setRegularSessions((prev) => {
+              const prevMap = new Map(prev.map((s) => [s.id, s]));
+              const merged = [...prev];
+              for (const s of serverSessions) {
+                if (!prevMap.has(s.id)) {
+                  merged.push(s);
+                  prevMap.set(s.id, s);
+                }
               }
+              return merged.sort((a, b) => b.updatedAt - a.updatedAt);
+            });
+            if (serverSessions.length > 0 && !privacyMode) {
+              // Only auto-switch if we don't already have an active session for this agent
+              setActiveSid((prevSid) => {
+                if (prevSid) return prevSid; // Keep existing selection
+                const matching = serverSessions.find((s) => matchesAgentType(s.id));
+                return matching ? matching.id : prevSid;
+              });
             }
             return;
           }
@@ -84,11 +96,21 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
         if (raw && activeToken) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
-            setRegularSessions(parsed);
+            setRegularSessions((prev) => {
+              const prevMap = new Map(prev.map((s) => [s.id, s]));
+              const merged = [...prev];
+              for (const s of parsed) {
+                if (!prevMap.has(s.id)) {
+                  merged.push(s);
+                  prevMap.set(s.id, s);
+                }
+              }
+              return merged.sort((a, b) => b.updatedAt - a.updatedAt);
+            });
             if (parsed.length > 0 && !privacyMode) {
               const matching = parsed.find((s) => matchesAgentType(s.id));
               if (matching) {
-                setActiveSid(matching.id);
+                setActiveSid((prevSid) => prevSid || matching.id);
               }
             }
           }
@@ -118,6 +140,11 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
   // Manage initial session creation when switching modes
   useEffect(() => {
     if (privacyMode) {
+      // If we already have a valid active session in privacy mode, do nothing
+      const hasMatchingActiveSid = activeSid && matchesAgentType(activeSid) && privacySessions.some((s) => s.id === activeSid);
+      if (hasMatchingActiveSid) {
+        return;
+      }
       const matchingPrivacy = privacySessions.find((s) => matchesAgentType(s.id));
       if (matchingPrivacy) {
         setActiveSid(matchingPrivacy.id);
@@ -135,14 +162,29 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
         setActiveSid(id);
       }
     } else {
+      // If we already have a valid active session in regular mode, do nothing
+      const hasMatchingActiveSid = activeSid && matchesAgentType(activeSid) && regularSessions.some((s) => s.id === activeSid);
+      if (hasMatchingActiveSid) {
+        return;
+      }
       const matchingRegular = regularSessions.find((s) => matchesAgentType(s.id));
       if (matchingRegular) {
         setActiveSid(matchingRegular.id);
       } else {
-        setActiveSid(null);
+        const id = generateId(agentType);
+        const now = Date.now();
+        const session: ChatSession = {
+          id,
+          title: 'New Chat',
+          messages: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+        setRegularSessions((prev) => [session, ...prev]);
+        setActiveSid(id);
       }
     }
-  }, [privacyMode, agentType, matchesAgentType]);
+  }, [privacyMode, agentType, matchesAgentType, privacySessions, regularSessions, activeSid]);
 
   // Listen for inactivity self-destruct trigger
   useEffect(() => {

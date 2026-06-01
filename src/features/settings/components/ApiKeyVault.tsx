@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Key, ChevronUp, ChevronDown, Network, Trash2 } from 'lucide-react';
+import { Key, ChevronUp, ChevronDown, Network, Trash2, Eye, EyeOff } from 'lucide-react';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -60,6 +60,12 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   const setRememberKeys = useNyxStore(state => state.setRememberKeys);
   const updateApiKey = useNyxStore(state => state.updateApiKey);
 
+  const [visibleKeys, setVisibleKeys] = React.useState<Record<string, boolean>>({});
+
+  const toggleVisibility = (id: string) => {
+    setVisibleKeys(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   const providers = PROVIDER_CONFIGS.map(p => ({
     ...p,
     modelCount: getModelCountForProvider(p.id)
@@ -90,6 +96,12 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
         body: JSON.stringify({ keys: keysInput })
       });
       if (res.ok) {
+        for (const provider of Object.keys(keysInput)) {
+          const val = keysInput[provider];
+          if (val !== undefined && val.trim().length > 0) {
+            await updateApiKey(provider, val);
+          }
+        }
         toast.success('API keys successfully saved to secure server vault!');
         setKeysInput({});
         await fetchVaultStatus();
@@ -146,20 +158,20 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
             }}
             className="sr-only peer"
           />
-          <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-400 after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#22D3EE] peer-checked:after:bg-zinc-950" />
+          <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-400 after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#FF3366] peer-checked:after:bg-zinc-950" />
         </label>
       </div>
 
       <div className="space-y-2">
         {providers.map(p => {
-          const hasKey = vaultStatus[p.id];
+          const hasKey = vaultStatus[p.id] || !!(apiKeys[p.id] && apiKeys[p.id].trim().length > 0);
           const isExpanded = expandedProvider === p.id;
           const providerUsage = usage[p.id];
 
           return (
-            <div key={p.id} className="group p-3.5 rounded-2xl bg-card border border-white/[0.04] hover:border-[#22D3EE]/30 transition-all duration-300 shadow-sm hover:shadow-md">
+            <div key={p.id} className="group p-3.5 rounded-2xl bg-card border border-white/[0.04] hover:border-[#FF3366]/30 transition-all duration-300 shadow-sm hover:shadow-md">
               <div className="flex items-start gap-3">
-                <div className="w-7 h-7 shrink-0 rounded-[10px] flex items-center justify-center text-[10px] font-black uppercase bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/20">
+                <div className="w-7 h-7 shrink-0 rounded-[10px] flex items-center justify-center text-[10px] font-black uppercase bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/20">
                   {p.name[0]}
                 </div>
                 
@@ -168,8 +180,8 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                     <div className="flex items-center gap-2">
                       <p className="text-[10px] font-black uppercase tracking-[0.1em] text-muted-foreground/80">{p.name}</p>
                       {hasKey && (
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-[#22D3EE] bg-[#22D3EE]/10 px-1.5 py-0.5 rounded-full border border-[#22D3EE]/20">
-                          Vault Locked
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-1.5 py-0.5 rounded-full border border-[#FF3366]/20">
+                          {vaultStatus[p.id] ? 'Vault Locked' : 'In Memory'}
                         </span>
                       )}
                     </div>
@@ -178,8 +190,8 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] font-bold">
                           {providerUsage.totalUSD !== undefined && (
                             <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-white/10">
-                              <span className="text-[9px] font-black uppercase tracking-widest text-[#22D3EE]/75">USD</span>
-                              <span className="text-[10px] font-mono text-[#22D3EE] font-bold tracking-tight">${(providerUsage.totalUSD - (providerUsage.usedUSD || 0)).toFixed(2)}</span>
+                              <span className="text-[9px] font-black uppercase tracking-widest text-[#FF3366]/75">USD</span>
+                              <span className="text-[10px] font-mono text-[#FF3366] font-bold tracking-tight">${(providerUsage.totalUSD - (providerUsage.usedUSD || 0)).toFixed(2)}</span>
                             </div>
                           )}
                           <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-white/10">
@@ -206,19 +218,29 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                       <div className="flex flex-col gap-2.5 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-[8px] font-black uppercase text-zinc-500 w-16 shrink-0">API Key:</span>
-                          <input 
-                            type="password" 
-                            value={keysInput['scrapling'] ?? apiKeys['scrapling'] ?? ''} 
-                            onChange={e => setKeysInput(prev => ({ ...prev, scrapling: e.target.value }))} 
-                            placeholder={vaultStatus['scrapling'] ? "•••••••••••••••• (Optional for Local)" : "Enter Scrapling API Key (Optional for Local)"}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                e.currentTarget.blur();
-                              }
-                            }}
-                            className="flex-1 bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#22D3EE]/50 shadow-inner" 
-                          />
+                          <div className="relative flex-1 flex items-center">
+                            <input 
+                              type={visibleKeys['scrapling'] ? "text" : "password"} 
+                              value={keysInput['scrapling'] ?? apiKeys['scrapling'] ?? ''} 
+                              onChange={e => setKeysInput(prev => ({ ...prev, scrapling: e.target.value }))} 
+                              placeholder={vaultStatus['scrapling'] ? "•••••••••••••••• (Optional for Local)" : "Enter Scrapling API Key (Optional for Local)"}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  e.currentTarget.blur();
+                                }
+                              }}
+                              className="w-full bg-background border border-white/[0.04] rounded-xl pl-3.5 pr-10 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#FF3366]/50 shadow-inner" 
+                            />
+                            <button
+                              type="button"
+                              onClick={() => toggleVisibility('scrapling')}
+                              className="absolute right-2.5 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                              title={visibleKeys['scrapling'] ? "Hide API key" : "Show API key"}
+                            >
+                              {visibleKeys['scrapling'] ? <EyeOff size={12} /> : <Eye size={12} />}
+                            </button>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-[8px] font-black uppercase text-zinc-500 w-16 shrink-0">Service URL:</span>
@@ -229,19 +251,19 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                             placeholder="http://localhost:3012"
                             onKeyDown={e => {
                               if (e.key === 'Enter') {
-                                e.preventDefault();
-                                e.currentTarget.blur();
+                                  e.preventDefault();
+                                  e.currentTarget.blur();
                               }
                             }}
-                            className="flex-1 bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#22D3EE]/50 shadow-inner" 
+                            className="flex-1 bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#FF3366]/50 shadow-inner" 
                           />
                         </div>
                       </div>
                     ) : (
-                      <>
+                      <div className="relative flex-1 flex items-center">
                         <input 
-                          type="password" 
-                          value={keysInput[p.id] || ''} 
+                          type={visibleKeys[p.id] ? "text" : "password"} 
+                          value={keysInput[p.id] ?? apiKeys[p.id] ?? ''} 
                           onChange={e => setKeysInput(prev => ({ ...prev, [p.id]: e.target.value }))} 
                           placeholder={hasKey ? "••••••••••••••••" : `Enter ${p.name} API key`}
                           onKeyDown={e => {
@@ -250,16 +272,24 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                               e.currentTarget.blur();
                             }
                           }}
-                          className="flex-1 bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#22D3EE]/50 shadow-inner" 
+                          className="w-full bg-background border border-white/[0.04] rounded-xl pl-3.5 pr-10 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#FF3366]/50 shadow-inner" 
                         />
-                      </>
+                        <button
+                          type="button"
+                          onClick={() => toggleVisibility(p.id)}
+                          className="absolute right-2.5 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                          title={visibleKeys[p.id] ? "Hide API key" : "Show API key"}
+                        >
+                          {visibleKeys[p.id] ? <EyeOff size={12} /> : <Eye size={12} />}
+                        </button>
+                      </div>
                     )}
                     {p.hasModels && (
                       <button
                         type="button"
                         onClick={() => toggleExpanded(p.id)}
                         className={`p-2 rounded-xl border transition-all cursor-pointer ${
-                          isExpanded ? 'bg-[#22D3EE]/10 border-[#22D3EE]/40 text-[#22D3EE]' : 'bg-white/5 border-white/10 text-muted-foreground/40 hover:text-foreground'
+                          isExpanded ? 'bg-[#FF3366]/10 border-[#FF3366]/40 text-[#FF3366]' : 'bg-white/5 border-white/10 text-muted-foreground/40 hover:text-foreground'
                         }`}
                       >
                         <ChevronDown size={14} className={`transform transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
@@ -278,7 +308,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                     className="mt-3 pt-3 border-t border-white/10 overflow-hidden"
                   >
                     <div className="flex items-center gap-2 mb-2.5">
-                      <Key size={10} className="text-[#22D3EE]/60" />
+                      <Key size={10} className="text-[#FF3366]/60" />
                       <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">
                         {p.modelCount} Models Available
                       </span>
@@ -287,7 +317,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                       {AVAILABLE_MODELS.filter(m => m.provider === p.id).slice(0, 20).map(m => (
                         <span 
                           key={m.id} 
-                          className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#22D3EE]/5 text-[#22D3EE]/80 border border-[#22D3EE]/10"
+                          className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#FF3366]/5 text-[#FF3366]/80 border border-[#FF3366]/10"
                         >
                           {m.name.length > 25 ? m.name.slice(0, 25) + '...' : m.name}
                         </span>
@@ -309,7 +339,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                   className="mt-3 pt-3 border-t border-white/10"
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <Network size={10} className="text-[#22D3EE]/60" />
+                    <Network size={10} className="text-[#FF3366]/60" />
                     <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">
                       Gateway URL
                     </span>
@@ -325,7 +355,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                         e.currentTarget.blur();
                       }
                     }}
-                    className="w-full bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono text-muted-foreground/85 focus:border-[#22D3EE]/50 focus:text-foreground transition-all outline-none" 
+                    className="w-full bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono text-muted-foreground/85 focus:border-[#FF3366]/50 focus:text-foreground transition-all outline-none" 
                   />
                 </motion.div>
               )}
@@ -338,7 +368,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={handleSaveToVault}
-          className="w-full mt-2 py-2.5 rounded-xl bg-[#22D3EE] hover:bg-[#22D3EE]/90 text-black text-[11px] font-bold uppercase tracking-[0.2em] transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+          className="w-full mt-2 py-2.5 rounded-xl bg-[#FF3366] hover:bg-[#FF3366]/90 text-black text-[11px] font-bold uppercase tracking-[0.2em] transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-95"
         >
           {rememberKeys ? "Save to Secure Device Vault" : "Apply Ephemerally (In-Memory Only)"}
         </motion.button>

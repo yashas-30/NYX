@@ -6,9 +6,13 @@ export const chatMessageSchema = z.object({
   images: z
     .array(
       z.object({
-        name: z.string().max(256),
-        mimeType: z.string().max(128),
-        data: z.string().max(10 * 1024 * 1024),
+        inlineData: z.object({
+          mimeType: z.string().max(128),
+          data: z.string(),
+        }).optional(),
+        name: z.string().max(256).optional(),
+        mimeType: z.string().max(128).optional(),
+        data: z.string().optional(),
       })
     )
     .optional(),
@@ -29,9 +33,13 @@ export const gatewayUrlsSchema = z.record(z.string(), z.string().url()).optional
 export const imagesSchema = z
   .array(
     z.object({
-      name: z.string().max(256),
-      mimeType: z.string().max(128),
-      data: z.string().max(10 * 1024 * 1024),
+      inlineData: z.object({
+        mimeType: z.string().max(128),
+        data: z.string(),
+      }).optional(),
+      name: z.string().max(256).optional(),
+      mimeType: z.string().max(128).optional(),
+      data: z.string().optional(),
     })
   )
   .optional();

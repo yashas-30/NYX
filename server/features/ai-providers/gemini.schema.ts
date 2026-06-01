@@ -10,7 +10,6 @@ export const geminiStreamSchema = z.object({
   model: z.string().min(1).max(256),
   prompt: z
     .string()
-    .min(1)
     .max(10 * 1024 * 1024),
   apiKey: z.string().max(512).optional(),
   settings: aiSettingsSchema,

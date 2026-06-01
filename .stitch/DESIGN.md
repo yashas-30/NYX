@@ -7,9 +7,9 @@ A high-performance, clinical yet visceral comparison environment for LLM models.
 - **OLED Void** (#000000) — Primary background for maximum contrast.
 - **Surface Deep** (#09090B) — Primary card and modal fill.
 - **Surface Elevated** (#18181B) — Hover states and nested containers.
-- **Aether Cyan** (#22D3EE) — Singular accent for active states, focal points, and progress indicators. (Saturation 72%).
+- **Flame Azalea** (#FF3366) — Singular accent for active states, focal points, and progress indicators. (Saturation 72%).
 - **Ghost Text** (#F8FAFC) — Primary information, high readability.
-- **Muted Zinc** (#71717A) — Secondary metadata, timestamps, and inactive states.
+- **Thundercloud Ash** (#4A5059) — Secondary metadata, timestamps, and inactive states.
 - **Structure Border** (rgba(255, 255, 255, 0.06)) — 1px hair-line dividers and structural boundaries.
 
 ## 3. Typography Rules
@@ -33,7 +33,7 @@ A high-performance, clinical yet visceral comparison environment for LLM models.
 ## 6. Motion & Interaction
 - **Spring Physics**: `stiffness: 120, damping: 25`.
 - **Waterfall Cascade**: Model cards reveal sequentially when results stream in.
-- **Perpetual Micro-Loop**: Active model nodes have a subtle "breathing" cyan glow (opacity 0.1 to 0.3).
+- **Perpetual Micro-Loop**: Active model nodes have a subtle "breathing" Flame Azalea glow (opacity 0.1 to 0.3).
 
 ## 7. Anti-Patterns (Banned)
 - No emojis.

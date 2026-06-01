@@ -424,7 +424,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                             <span
                               className={`p-1.5 rounded-lg border transition-all ${
                                 idx === selectedIndex
-                                  ? 'bg-[#22D3EE]/10 border-[#22D3EE]/20 text-[#22D3EE]'
+                                  ? 'bg-[#FF3366]/10 border-[#FF3366]/20 text-[#FF3366]'
                                   : 'bg-white/[0.02] border-white/[0.03] text-zinc-500'
                               }`}
                             >
@@ -443,7 +443,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                             </div>
                           </div>
                           <div className="flex items-center gap-2 select-none">
-                            {isSelected && <Check size={14} className="text-[#22D3EE]" />}
+                            {isSelected && <Check size={14} className="text-[#FF3366]" />}
                             {idx === selectedIndex && (
                               <CornerDownLeft size={10} className="text-zinc-500 opacity-60" />
                             )}

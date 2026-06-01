@@ -16,6 +16,7 @@ export interface ChatContext {
   enableReasoning?: boolean;
   enableCitations?: boolean;
   maxResponseTokens?: number;
+  historySummary?: string;
 }
 
 export interface UserPreferences {
@@ -36,10 +37,37 @@ export interface ChatPromptBuildResult {
   systemPrompt: string;
   userPrompt: string;
   metadata: {
+    version: string;
     estimatedTokens: number;
     contextBreakdown: Record<string, number>;
     safetyLevel: 'standard' | 'enhanced' | 'strict';
   };
+}
+
+class PromptLRUCache {
+  private cache = new Map<string, ChatPromptBuildResult>();
+  private maxSize = 100;
+
+  get(key: string) {
+    if (!this.cache.has(key)) return undefined;
+    const val = this.cache.get(key)!;
+    this.cache.delete(key);
+    this.cache.set(key, val);
+    return val;
+  }
+
+  set(key: string, val: ChatPromptBuildResult) {
+    if (this.cache.size >= this.maxSize) {
+      this.cache.delete(this.cache.keys().next().value!);
+    }
+    this.cache.set(key, val);
+  }
+}
+
+const promptCache = new PromptLRUCache();
+
+function generateCacheKey(modelId: string, context: ChatContext, rawPrompt: string, historyLength: number): string {
+  return `${modelId}:${context.conversationTone}:${context.detectedLanguage}:${historyLength}:${rawPrompt.length}:${rawPrompt.slice(0, 20)}`;
 }
 
 // ── Token Estimation (rough: ~4 chars per token) ─────────────────────────────
@@ -58,6 +86,13 @@ export function buildChatPrompts(
   history: ChatMessage[],
   webSearchResults?: string
 ): ChatPromptBuildResult {
+  const cacheKey = generateCacheKey(modelId, context, rawPrompt, history.length);
+  const cached = promptCache.get(cacheKey);
+  if (cached && !webSearchResults) {
+    // Return cached if available and no dynamic web search
+    return cached;
+  }
+
   const now = new Date(); // Fresh date per call
   const contextBreakdown: Record<string, number> = {};
 
@@ -75,15 +110,22 @@ export function buildChatPrompts(
 
   const totalTokens = Object.values(contextBreakdown).reduce((a, b) => a + b, 0);
 
-  return {
+  const result: ChatPromptBuildResult = {
     systemPrompt,
     userPrompt: historyText ? `${historyText}\n\n${userPrompt}` : userPrompt,
     metadata: {
+      version: '1.0.0',
       estimatedTokens: totalTokens,
       contextBreakdown,
       safetyLevel: detectSafetyLevel(rawPrompt),
     },
   };
+
+  if (!webSearchResults) {
+    promptCache.set(cacheKey, result);
+  }
+
+  return result;
 }
 
 // ── System Prompt Builder ─────────────────────────────────────────────────────
@@ -266,22 +308,17 @@ ${context.lightningDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 
   // ── Model-Specific Optimizations ──────────────────────────────────────────
 
-  if (modelId.includes('deepseek')) {
-    parts.push(`<model_note>
-You have strong reasoning capabilities. For complex questions, use step-by-step thinking inside <thinking> tags. Keep reasoning focused and under 100 words.
-</model_note>`);
-  }
+  const MODEL_OPTIMIZATIONS: Record<string, string> = {
+    deepseek: 'You have strong reasoning capabilities. For complex questions, use step-by-step thinking inside <thinking> tags. Keep reasoning focused and under 100 words.',
+    phi: 'You excel at math, logic, and structured reasoning. Show your work for numerical problems. Use LaTeX for equations when helpful.',
+    qwen: `You have strong multilingual capabilities. Maintain fluency and cultural appropriateness in ${detectedLanguage}.`
+  };
 
-  if (modelId.includes('phi')) {
-    parts.push(`<model_note>
-You excel at math, logic, and structured reasoning. Show your work for numerical problems. Use LaTeX for equations when helpful.
-</model_note>`);
-  }
-
-  if (modelId.includes('qwen')) {
-    parts.push(`<model_note>
-You have strong multilingual capabilities. Maintain fluency and cultural appropriateness in ${detectedLanguage}.
-</model_note>`);
+  for (const [key, note] of Object.entries(MODEL_OPTIMIZATIONS)) {
+    if (modelId.toLowerCase().includes(key)) {
+      parts.push(`<model_note>\n${note}\n</model_note>`);
+      break;
+    }
   }
 
   return parts.join('\n\n');
@@ -306,13 +343,13 @@ ${webSearchResults}
   }
 
   // Recent conversation summary (for continuity)
-  if (history.length > 0 && context.previousMessages > 0) {
+  if (context.historySummary) {
+    parts.push(`<conversation_context>\n${context.historySummary}\n</conversation_context>`);
+  } else if (history.length > 0 && context.previousMessages > 0) {
     const recentHistory = history.slice(-context.previousMessages);
     const summary = summarizeHistory(recentHistory);
     if (summary) {
-      parts.push(`<conversation_context>
-${summary}
-</conversation_context>`);
+      parts.push(`<conversation_context>\n${summary}\n</conversation_context>`);
     }
   }
 
@@ -342,8 +379,8 @@ function formatHistoryForPrompt(history: ChatMessage[], maxMessages: number): st
   const recent = history.slice(-maxMessages);
   const formatted = recent.map((msg, i) => {
     const role = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
-    const content = msg.content.length > 500 
-      ? msg.content.slice(0, 500) + '... [truncated]' 
+    const content = msg.content.length > 2000 
+      ? msg.content.slice(0, 2000) + '... [truncated]' 
       : msg.content;
     return `[${role}]: ${content}`;
   }).join('\n\n');
@@ -373,6 +410,16 @@ function summarizeHistory(history: ChatMessage[]): string {
 
 function detectSafetyLevel(prompt: string): 'standard' | 'enhanced' | 'strict' {
   const lower = prompt.toLowerCase();
+  
+  // False positive patterns (safe contexts)
+  const safePatterns = [
+    /(audit|review|harden|protect|secure)\s+(security|auth|login|firewall)/i,
+    /(how\s+to|guide)\s+(protect|defend|secure)\s+(against|from)/i,
+    /prevent\s+(hack|exploit|bypass)/i,
+  ];
+
+  if (safePatterns.some(p => p.test(lower))) return 'standard';
+
   const sensitivePatterns = [
     /(hack|exploit|vulnerability|bypass)\s+(security|auth|login|firewall)/i,
     /(create|make|build)\s+(virus|malware|trojan|ransomware|keylogger)/i,
@@ -389,10 +436,12 @@ function detectSafetyLevel(prompt: string): 'standard' | 'enhanced' | 'strict' {
 
 // ── Backward-Compatible Exports ─────────────────────────────────────────────
 
+/** @deprecated Use buildChatPrompts instead */
 export function buildChatSystemPrompt(modelId: string, context: ChatContext): string {
   return buildChatPrompts(modelId, context, '', [], undefined).systemPrompt;
 }
 
+/** @deprecated Use buildChatPrompts instead */
 export function buildChatUserPrompt(
   rawPrompt: string,
   context: ChatContext,

@@ -1,6 +1,6 @@
 import { AIService } from '@src/core/services/ai.service';
 import { ChatMessage, AISettings } from '@src/infrastructure/types';
-import { PromptAnalysis } from '@src/core/services/promptClassifier';
+import { PromptAnalysis, ConversationState } from '@src/core/services/promptClassifier';
 import { buildChatSystemPrompt, buildChatUserPrompt } from '../prompts/chatPrompts';
 import { searchWeb } from '@src/infrastructure/api/coderApi';
 
@@ -57,6 +57,7 @@ export interface ChatAgentConfig {
   webSearchEnabled?: boolean;
   maxSearchResults?: number;
   maxContextLength?: number;
+  conversationState?: ConversationState;
 }
 
 // ── Agent ─────────────────────────────────────────────────────────────────────
@@ -83,17 +84,31 @@ export class ChatAgent {
   // ── Web Search ────────────────────────────────────────────────────────────
 
   shouldSearchWeb(prompt: string, analysis: PromptAnalysis): boolean {
-    if (!this.config.webSearchEnabled) return false;
     if (analysis.intent === 'web_search') return true;
 
     const lower = prompt.toLowerCase();
-    const webKeywords = [
-      'search the web', 'lookup', 'google', 'search web', 'current news',
-      'latest release', 'weather today', 'what is the current', 'who is currently',
-      'latest version of', 'recent events', 'today', 'now', 'current price',
-      'stock price', 'breaking news', 'live', 'real-time',
-    ];
-    return webKeywords.some((k) => lower.includes(k));
+    
+    // Traffic Controller & Token Optimizer Rules (Local Regex triggers)
+    // 1. Temporal Gaps & News
+    const temporalKeywords = ['current news', 'latest release', 'breaking news', 'recent events', 'today', 'now', 'recently', 'newest', 'latest', 'current'];
+    const infoKeywords = ['price', 'weather', 'status', 'news', 'release', 'update', 'version', 'score', 'match', 'event'];
+    
+    // Check for explicit temporal/live requests
+    if (lower.includes('live') || lower.includes('real-time') || lower.includes('realtime')) return true;
+    
+    // Check for status requests
+    if (lower.includes('is currently') || lower.includes('what is the current') || lower.includes('who is currently')) return true;
+
+    // Check combinations that strongly imply real-time or recent need
+    const hasTemporal = temporalKeywords.some(k => lower.includes(k)) || /(2025|2026|2027)/.test(lower);
+    const hasInfo = infoKeywords.some(k => lower.includes(k));
+
+    if (hasTemporal && hasInfo) {
+      return true;
+    }
+
+    // Default to false (save tokens, do not search for every prompt)
+    return false;
   }
 
   async searchWeb(query: string, signal: AbortSignal): Promise<any[]> {
@@ -251,7 +266,7 @@ export class ChatAgent {
         await new Promise<void>((resolve) => { resolveChunk = resolve; });
       }
 
-      if (streamError && !streamDone) throw streamError;
+      if (streamError) throw streamError;
 
       while (chunkQueue.length > 0) {
         const delta = chunkQueue.shift()!;

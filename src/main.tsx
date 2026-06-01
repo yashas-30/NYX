@@ -31,6 +31,58 @@ let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
 let inFlightTokenPromise: Promise<string> | null = null;
 
+// ── Tauri IPC Bridge & Dynamic Port Resolution ─────────────────────────────
+let backendBaseUrl = '';
+
+if (typeof window !== 'undefined') {
+  const isTauri = !!(window as any).__TAURI__ || !!(window as any).__TAURI_INTERNALS__;
+  if (isTauri) {
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      (window as any).nyxIPC = {
+        invoke: async (cmd: string, args?: any) => {
+          try {
+            return await invoke(cmd, args);
+          } catch (e) {
+            console.error(`[nyxIPC] Invoke error for ${cmd}:`, e);
+            throw e;
+          }
+        },
+        showOpenDirectory: async () => {
+          try {
+            const res = await invoke<any>('dialog_open_directory');
+            return res && res.success ? res.data : null;
+          } catch (e) {
+            console.error('[nyxIPC] showOpenDirectory error:', e);
+            return null;
+          }
+        }
+      };
+      console.log('[nyxIPC] Initialized Tauri bridge on window.nyxIPC');
+    }).catch((err) => {
+      console.error('[nyxIPC] Failed to load Tauri core APIs:', err);
+    });
+  }
+}
+
+async function initBackendUrl() {
+  const isTauri = typeof window !== 'undefined' && 
+    (!!(window as any).__TAURI__ || !!(window as any).__TAURI_INTERNALS__);
+  if (isTauri) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const res = await invoke<any>('server_get_ports');
+      if (res && res.success && res.data && res.data.express_port) {
+        backendBaseUrl = `http://127.0.0.1:${res.data.express_port}`;
+        console.log(`[Tauri] Dynamically resolved Express backend URL: ${backendBaseUrl}`);
+        return;
+      }
+    } catch (e) {
+      console.warn('[Tauri] Failed to query server ports via IPC:', e);
+    }
+  }
+  backendBaseUrl = '';
+}
+
 async function getOrFetchSessionToken(): Promise<string> {
   if (cachedToken && Date.now() < tokenExpiresAt - 10000) {
     return cachedToken;
@@ -60,7 +112,13 @@ async function getOrFetchSessionToken(): Promise<string> {
 
 const originalFetch = window.fetch;
 window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
+  let urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
+  
+  if (urlStr.startsWith('/api/') && backendBaseUrl) {
+    urlStr = `${backendBaseUrl}${urlStr}`;
+    input = urlStr;
+  }
+
   const isApiCall = urlStr.includes('/api/') && 
                     !urlStr.includes('/api/auth/session') && 
                     !urlStr.includes('/api/vault/token') && 
@@ -95,9 +153,11 @@ function RootContainer() {
   useEffect(() => {
     let mounted = true;
     const checkBackend = async () => {
+      await initBackendUrl();
       while (mounted) {
         try {
-          const res = await originalFetch('/api/auth/session', { headers: { Accept: 'application/json' }});
+          const url = backendBaseUrl ? `${backendBaseUrl}/api/auth/session` : '/api/auth/session';
+          const res = await originalFetch(url, { headers: { Accept: 'application/json' }});
           if (res.ok || res.status === 401 || res.status === 403) {
             // Backend is up and responding (even if unauthorized)
             if (mounted) setIsBackendReady(true);

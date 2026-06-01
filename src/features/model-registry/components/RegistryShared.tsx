@@ -10,7 +10,7 @@ export const SectionHeader: React.FC<{
 }> = ({ icon, title, subtitle, children }) => (
   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10 dark:border-white/5">
     <div className="flex items-center gap-4">
-      <div className="w-10 h-10 rounded-[12px] bg-[#22D3EE]/10 border border-[#22D3EE]/20 flex items-center justify-center text-[#22D3EE] shrink-0 shadow-sm transition-transform duration-500 hover:rotate-6">
+      <div className="w-10 h-10 rounded-[12px] bg-[#FF3366]/10 border border-[#FF3366]/20 flex items-center justify-center text-[#FF3366] shrink-0 shadow-sm transition-transform duration-500 hover:rotate-6">
         {icon}
       </div>
       <div>

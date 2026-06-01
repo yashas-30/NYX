@@ -25,3 +25,25 @@ try {
   console.error('[pre-dev] Error purging EBWebView cache:', e.message);
 }
 
+// 3. Launch NYX Debug Console in a new terminal window
+try {
+  const { spawn, exec } = require('child_process');
+  if (process.platform === 'win32') {
+    // Spawns a new visible command prompt window on Windows, avoiding PowerShell syntax errors
+    const child = spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', 'title NYX Debug Console & node scripts/debug-console.cjs'], { 
+      detached: true, 
+      stdio: 'ignore' 
+    });
+    child.unref();
+    console.log('[pre-dev] Spawned NYX Debug Console');
+  } else if (process.platform === 'darwin') {
+    // macOS
+    exec('osascript -e \'tell application "Terminal" to do script "cd ' + process.cwd() + ' && node scripts/debug-console.cjs"\'');
+  } else {
+    // Linux (GNOME terminal as fallback)
+    exec('gnome-terminal -- node scripts/debug-console.cjs');
+  }
+} catch (e) {
+  console.error('[pre-dev] Error launching Debug Console:', e.message);
+}
+

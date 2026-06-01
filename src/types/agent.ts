@@ -26,6 +26,7 @@ export interface CodeAnalysis {
 // Canonical PromptAnalysis incorporating fields from all definitions
 export interface PromptAnalysis {
   intent: any; // Can be string, IntentType, or PromptIntent
+  tone?: string;
   complexity: any;
   confidence: number;
   detectedLanguages?: string[];
@@ -127,6 +128,7 @@ export interface ToolCall {
 }
 
 export interface ChatMessage {
+  id?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;

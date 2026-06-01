@@ -28,7 +28,22 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build()
+        )
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -44,15 +59,15 @@ pub fn run() {
         .manage(AppState::default())
         .setup(|app| {
             let handle = app.handle().clone();
-            tauri::async_runtime::block_on(async move {
+            tauri::async_runtime::spawn(async move {
                 setup_app(&handle).await;
             });
 
             // Open DevTools in debug builds to see console errors
-            #[cfg(debug_assertions)]
-            if let Some(window) = app.get_webview_window("main") {
-                window.open_devtools();
-            }
+            // #[cfg(debug_assertions)]
+            // if let Some(window) = app.get_webview_window("main") {
+            //     window.open_devtools();
+            // }
 
             Ok(())
         })
@@ -114,7 +129,6 @@ async fn setup_app(handle: &tauri::AppHandle) {
     let window = create_main_window(handle, ports.express_port).await;
     tray::create_tray(handle, &window).expect("Failed to create tray");
     setup_menus(handle);
-    register_global_shortcuts(handle).await;
 
     // Show the window now that everything is ready
     let _ = window.show();
@@ -187,24 +201,7 @@ fn setup_menus(handle: &tauri::AppHandle) {
     let _ = handle.set_menu(menu);
 }
 
-async fn register_global_shortcuts(handle: &tauri::AppHandle) {
-    let _ = handle.plugin(
-        tauri_plugin_global_shortcut::Builder::new()
-            .with_handler(move |app, _shortcut, event| {
-                if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                    if let Some(window) = app.get_webview_window("main") {
-                        if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                }
-            })
-            .build(),
-    );
-}
+// Global shortcut registration is handled in main()
 
 fn main() {
     run();
