@@ -48,7 +48,7 @@ export class WorkspaceIntelligence {
 
   static async getProfile(): Promise<WorkspaceProfile> {
     const now = Date.now();
-    if (cachedProfile && (now - lastScanTime < CACHE_TTL_MS)) {
+    if (cachedProfile && now - lastScanTime < CACHE_TTL_MS) {
       // Sync openFiles with current tracking
       cachedProfile.openFiles = sessionOpenFiles;
       return cachedProfile;
@@ -73,9 +73,23 @@ export class WorkspaceIntelligence {
 
     // Excluded folders for the ASCII tree to prevent deep scans or performance bottlenecks
     const EXCLUDE_DIRS = new Set([
-      'node_modules', '.git', '.nyx-cache', '.nyx-logs', '.nyx-models', '.stitch', '.agents',
-      'dist', 'dist-server', 'dist-desktop', 'build', 'out', 'target',
-      '.antigravitycli', '.vscode', 'graphify-out', 'scratch'
+      'node_modules',
+      '.git',
+      '.nyx-cache',
+      '.nyx-logs',
+      '.nyx-models',
+      '.stitch',
+      '.agents',
+      'dist',
+      'dist-server',
+      'dist-desktop',
+      'build',
+      'out',
+      'target',
+      '.antigravitycli',
+      '.vscode',
+      'graphify-out',
+      'scratch',
     ]);
 
     // Check project config files
@@ -91,7 +105,7 @@ export class WorkspaceIntelligence {
       try {
         const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
         const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-        
+
         // Detect project type
         if (deps.react || deps['react-dom']) {
           projectType = 'react';
@@ -113,14 +127,30 @@ export class WorkspaceIntelligence {
         else if (deps.jest) testFramework = 'jest';
 
         // Lint Config
-        if (deps.eslint || fs.existsSync(path.join(root, 'eslint.config.js')) || fs.existsSync(path.join(root, '.eslintrc.json')) || fs.existsSync(path.join(root, '.eslintrc.js'))) {
+        if (
+          deps.eslint ||
+          fs.existsSync(path.join(root, 'eslint.config.js')) ||
+          fs.existsSync(path.join(root, '.eslintrc.json')) ||
+          fs.existsSync(path.join(root, '.eslintrc.js'))
+        ) {
           lintConfig = 'eslint';
         } else if (deps.biome || fs.existsSync(path.join(root, 'biome.json'))) {
           lintConfig = 'biome';
         }
 
         // Key dependencies (extract main frameworks)
-        const keysToExtract = ['react', 'react-dom', 'express', 'fastify', 'vite', 'typescript', 'next', 'tailwindcss', 'zod', 'zustand'];
+        const keysToExtract = [
+          'react',
+          'react-dom',
+          'express',
+          'fastify',
+          'vite',
+          'typescript',
+          'next',
+          'tailwindcss',
+          'zod',
+          'zustand',
+        ];
         for (const k of keysToExtract) {
           if (deps[k]) {
             keyDependencies[k] = deps[k];
@@ -143,7 +173,7 @@ export class WorkspaceIntelligence {
     if (fs.existsSync(pyprojectTomlPath) || fs.existsSync(requirementsTxtPath)) {
       projectType = 'python';
       packageManager = fs.existsSync(path.join(root, 'poetry.lock')) ? 'poetry' : 'pip';
-      
+
       // Test framework & linter
       if (fs.existsSync(requirementsTxtPath)) {
         try {
@@ -185,8 +215,16 @@ export class WorkspaceIntelligence {
 
     // 7. Find entrypoints
     const possibleEntrypoints = [
-      'src/main.tsx', 'src/index.tsx', 'src/main.ts', 'src/index.ts',
-      'server.ts', 'app.js', 'main.py', 'src/main.rs', 'main.go', 'src/main.cpp'
+      'src/main.tsx',
+      'src/index.tsx',
+      'src/main.ts',
+      'src/index.ts',
+      'server.ts',
+      'app.js',
+      'main.py',
+      'src/main.rs',
+      'main.go',
+      'src/main.cpp',
     ];
     for (const ep of possibleEntrypoints) {
       if (fs.existsSync(path.join(root, ep))) {
@@ -219,16 +257,16 @@ export class WorkspaceIntelligence {
       lintConfig,
       typescriptConfig,
       recentGitCommits,
-      openFiles: sessionOpenFiles
+      openFiles: sessionOpenFiles,
     };
   }
 
   private static generateAsciiTree(
-    dir: string, 
-    prefix: string, 
-    excludeDirs: Set<string>, 
-    lines: string[], 
-    depth: number, 
+    dir: string,
+    prefix: string,
+    excludeDirs: Set<string>,
+    lines: string[],
+    depth: number,
     maxLines: number
   ) {
     if (lines.length >= maxLines || depth > 3) return;
@@ -241,7 +279,7 @@ export class WorkspaceIntelligence {
     }
 
     // Sort: directories first, then files
-    const stats = list.map(name => {
+    const stats = list.map((name) => {
       const fullPath = path.join(dir, name);
       try {
         return { name, isDir: fs.statSync(fullPath).isDirectory() };
@@ -271,7 +309,14 @@ export class WorkspaceIntelligence {
 
       if (item.isDir) {
         const newPrefix = prefix + (isLast ? '    ' : '│   ');
-        this.generateAsciiTree(path.join(dir, item.name), newPrefix, excludeDirs, lines, depth + 1, maxLines);
+        this.generateAsciiTree(
+          path.join(dir, item.name),
+          newPrefix,
+          excludeDirs,
+          lines,
+          depth + 1,
+          maxLines
+        );
       }
     }
   }

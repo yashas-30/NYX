@@ -12,7 +12,15 @@ interface ModelCardProps {
 }
 
 /** Pure display model card — library view only, no add functionality */
-export const ModelCard: React.FC<ModelCardProps> = ({ name, provider, description, specs, usage, hasKey, status }) => {
+export const ModelCard: React.FC<ModelCardProps> = ({
+  name,
+  provider,
+  description,
+  specs,
+  usage,
+  hasKey,
+  status,
+}) => {
   const providerLabel = provider;
 
   return (
@@ -30,12 +38,18 @@ export const ModelCard: React.FC<ModelCardProps> = ({ name, provider, descriptio
               {providerLabel}
             </span>
             {status && (
-              <span className={`
+              <span
+                className={`
                 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border
-                ${status === 'online' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
-                  status === 'offline' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
-                  'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'}
-              `}>
+                ${
+                  status === 'online'
+                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                    : status === 'offline'
+                      ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                      : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
+                }
+              `}
+              >
                 {status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Auth'}
               </span>
             )}
@@ -47,7 +61,9 @@ export const ModelCard: React.FC<ModelCardProps> = ({ name, provider, descriptio
       </div>
 
       {/* Description */}
-      <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed font-medium">{description}</p>
+      <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed font-medium">
+        {description}
+      </p>
 
       {/* Specs grid */}
       {(specs || (usage && hasKey)) && (
@@ -55,24 +71,40 @@ export const ModelCard: React.FC<ModelCardProps> = ({ name, provider, descriptio
           {specs && (
             <>
               <div className="flex flex-col">
-                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Context</span>
-                <span className="text-[10px] font-mono font-bold text-foreground/80">{specs.contextWindow}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">
+                  Context
+                </span>
+                <span className="text-[10px] font-mono font-bold text-foreground/80">
+                  {specs.contextWindow}
+                </span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Modality</span>
-                <span className="text-[10px] font-mono font-bold text-foreground/80">{specs.modality}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">
+                  Modality
+                </span>
+                <span className="text-[10px] font-mono font-bold text-foreground/80">
+                  {specs.modality}
+                </span>
               </div>
             </>
           )}
           {usage && hasKey && (
             <>
               <div className="flex flex-col">
-                <span className="text-[9px] font-black uppercase tracking-widest text-[#FF3366]/75">Used</span>
-                <span className="text-[10px] font-mono font-bold text-[#FF3366]/80">{(usage.used / 1000).toFixed(1)}k</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-[#FF3366]/75">
+                  Used
+                </span>
+                <span className="text-[10px] font-mono font-bold text-[#FF3366]/80">
+                  {(usage.used / 1000).toFixed(1)}k
+                </span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500/75">Remaining</span>
-                <span className="text-[10px] font-mono font-bold text-emerald-400">{(usage.remaining / 1000).toFixed(1)}k</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500/75">
+                  Remaining
+                </span>
+                <span className="text-[10px] font-mono font-bold text-emerald-400">
+                  {(usage.remaining / 1000).toFixed(1)}k
+                </span>
               </div>
             </>
           )}
@@ -87,7 +119,9 @@ export const ModelCard: React.FC<ModelCardProps> = ({ name, provider, descriptio
           className="mt-2 p-2.5 rounded-full bg-destructive/10 border border-destructive/20 flex items-center justify-center gap-2"
         >
           <div className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-destructive">Quota Reached</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-destructive">
+            Quota Reached
+          </span>
         </motion.div>
       )}
     </motion.div>

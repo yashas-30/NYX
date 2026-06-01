@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
         'remark-gfm',
         '@tanstack/react-virtual',
         'async-mutex',
-        '@opentelemetry/api'
+        '@opentelemetry/api',
       ],
       entries: ['src/**/*.{ts,tsx}'],
     },
@@ -71,7 +71,8 @@ export default defineConfig(({ mode }) => {
               if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
               if (id.includes('lottie-web') || id.includes('lottie')) return 'vendor-lottie';
               if (id.includes('@codemirror')) return 'vendor-codemirror';
-              if (id.includes('react-syntax-highlighter') || id.includes('refractor')) return 'vendor-syntax';
+              if (id.includes('react-syntax-highlighter') || id.includes('refractor'))
+                return 'vendor-syntax';
               if (id.includes('@base-ui')) return 'vendor-base-ui';
             }
           },
@@ -115,6 +116,5 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-
   };
 });

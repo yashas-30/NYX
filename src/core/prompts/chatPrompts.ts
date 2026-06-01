@@ -66,8 +66,18 @@ class PromptLRUCache {
 
 const promptCache = new PromptLRUCache();
 
-function generateCacheKey(modelId: string, context: ChatContext, rawPrompt: string, historyLength: number): string {
-  return `${modelId}:${context.conversationTone}:${context.detectedLanguage}:${historyLength}:${rawPrompt.length}:${rawPrompt.slice(0, 20)}`;
+function generateCacheKey(
+  modelId: string,
+  context: ChatContext,
+  rawPrompt: string,
+  historyLength: number
+): string {
+  // Simple hash of full prompt
+  const promptHash = rawPrompt.split('').reduce((a, b) => {
+    a = (a << 5) - a + b.charCodeAt(0);
+    return a & a;
+  }, 0);
+  return `${modelId}:${context.conversationTone}:${context.detectedLanguage}:${historyLength}:${promptHash}`;
 }
 
 // ── Token Estimation (rough: ~4 chars per token) ─────────────────────────────
@@ -101,7 +111,13 @@ export function buildChatPrompts(
   contextBreakdown.system = estimateTokens(systemPrompt);
 
   // Build user prompt with history injection
-  const userPrompt = buildChatUserPromptInternal(rawPrompt, context, history, webSearchResults, now);
+  const userPrompt = buildChatUserPromptInternal(
+    rawPrompt,
+    context,
+    history,
+    webSearchResults,
+    now
+  );
   contextBreakdown.user = estimateTokens(userPrompt);
 
   // History tokens
@@ -130,13 +146,17 @@ export function buildChatPrompts(
 
 // ── System Prompt Builder ─────────────────────────────────────────────────────
 
-function buildChatSystemPromptInternal(
-  modelId: string,
-  context: ChatContext,
-  now: Date
-): string {
+function buildChatSystemPromptInternal(modelId: string, context: ChatContext, now: Date): string {
   const parts: string[] = [];
-  const { userName, userPreferences, conversationTone, detectedLanguage, enableReasoning, enableCitations, availableTools } = context;
+  const {
+    userName,
+    userPreferences,
+    conversationTone,
+    detectedLanguage,
+    enableReasoning,
+    enableCitations,
+    availableTools,
+  } = context;
 
   // ── Identity & Temporal Context ───────────────────────────────────────────
 
@@ -213,8 +233,10 @@ Examples: "The core mechanism is...", "At the protocol level, this works by..."
   const detailLevel = userPreferences?.detailPreference || 'balanced';
   const lengthGuide: Record<string, string> = {
     concise: 'Keep responses under 150 words. One paragraph preferred. Be direct.',
-    balanced: 'Keep responses under 400 words. Use paragraphs with occasional bullets for complex topics.',
-    thorough: 'Provide comprehensive responses. Use sections, examples, and depth. No arbitrary length limit.',
+    balanced:
+      'Keep responses under 400 words. Use paragraphs with occasional bullets for complex topics.',
+    thorough:
+      'Provide comprehensive responses. Use sections, examples, and depth. No arbitrary length limit.',
   };
 
   parts.push(`<response_rules>
@@ -231,7 +253,7 @@ Examples: "The core mechanism is...", "At the protocol level, this works by..."
 
   if (enableCitations !== false) {
     parts.push(`<web_search_guidelines>
-When [WEB SEARCH RESULTS] are provided in the user message:
+When [RESEARCH] results are provided in the user message:
 - Treat search results as PRIMARY source for temporal/factual/current events
 - Cite sources using [^1^], [^2^] format referencing the result number
 - Prioritize search context over training knowledge cutoff
@@ -260,7 +282,7 @@ Keep thinking concise (2-4 sentences). The user can expand/collapse this section
   if (availableTools && availableTools.length > 0) {
     parts.push(`<tools>
 You have access to the following tools. Use them when appropriate:
-${availableTools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
+${availableTools.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
 
 To use a tool, respond with:
 <tool_call>
@@ -309,15 +331,15 @@ ${context.lightningDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n')}
   // ── Model-Specific Optimizations ──────────────────────────────────────────
 
   const MODEL_OPTIMIZATIONS: Record<string, string> = {
-    deepseek: 'You have strong reasoning capabilities. For complex questions, use step-by-step thinking inside <thinking> tags. Keep reasoning focused and under 100 words.',
+    deepseek:
+      'You have strong reasoning capabilities. For complex questions, use step-by-step thinking inside <thinking> tags. Keep reasoning focused and under 100 words.',
     phi: 'You excel at math, logic, and structured reasoning. Show your work for numerical problems. Use LaTeX for equations when helpful.',
-    qwen: `You have strong multilingual capabilities. Maintain fluency and cultural appropriateness in ${detectedLanguage}.`
+    qwen: `You have strong multilingual capabilities. Maintain fluency and cultural appropriateness in ${detectedLanguage}.`,
   };
 
   for (const [key, note] of Object.entries(MODEL_OPTIMIZATIONS)) {
     if (modelId.toLowerCase().includes(key)) {
       parts.push(`<model_note>\n${note}\n</model_note>`);
-      break;
     }
   }
 
@@ -337,9 +359,9 @@ function buildChatUserPromptInternal(
 
   // Web search context (if available)
   if (webSearchResults) {
-    parts.push(`<web_search_results timestamp="${now.toISOString()}">
+    parts.push(`[RESEARCH]
 ${webSearchResults}
-</web_search_results>`);
+[END RESEARCH]`);
   }
 
   // Recent conversation summary (for continuity)
@@ -377,13 +399,14 @@ function formatHistoryForPrompt(history: ChatMessage[], maxMessages: number): st
   if (!history.length || maxMessages <= 0) return '';
 
   const recent = history.slice(-maxMessages);
-  const formatted = recent.map((msg, i) => {
-    const role = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
-    const content = msg.content.length > 2000 
-      ? msg.content.slice(0, 2000) + '... [truncated]' 
-      : msg.content;
-    return `[${role}]: ${content}`;
-  }).join('\n\n');
+  const formatted = recent
+    .map((msg, i) => {
+      const role = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
+      const content =
+        msg.content.length > 2000 ? msg.content.slice(0, 2000) + '... [truncated]' : msg.content;
+      return `[${role}]: ${content}`;
+    })
+    .join('\n\n');
 
   return `<conversation_history>
 ${formatted}
@@ -394,11 +417,14 @@ function summarizeHistory(history: ChatMessage[]): string {
   if (history.length < 3) return '';
 
   const topics = new Set<string>();
-  const lastUserMsgs = history.filter(m => m.role === 'user').slice(-3);
+  const lastUserMsgs = history.filter((m) => m.role === 'user').slice(-3);
 
   for (const msg of lastUserMsgs) {
-    const words = msg.content.toLowerCase().split(/\s+/).filter(w => w.length > 5);
-    words.slice(0, 5).forEach(w => topics.add(w));
+    const words = msg.content
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 5);
+    words.slice(0, 5).forEach((w) => topics.add(w));
   }
 
   if (topics.size === 0) return '';
@@ -410,15 +436,15 @@ function summarizeHistory(history: ChatMessage[]): string {
 
 function detectSafetyLevel(prompt: string): 'standard' | 'enhanced' | 'strict' {
   const lower = prompt.toLowerCase();
-  
-  // False positive patterns (safe contexts)
-  const safePatterns = [
-    /(audit|review|harden|protect|secure)\s+(security|auth|login|firewall)/i,
-    /(how\s+to|guide)\s+(protect|defend|secure)\s+(against|from)/i,
-    /prevent\s+(hack|exploit|bypass)/i,
+
+  // Safe contexts (defensive security work)
+  const safeContexts = [
+    /how\s+(to|do\s+i)\s+(fix|patch|secure|harden|protect)/i,
+    /(audit|review|assessment)\s+of\s+(my|our|the)\s+(security|auth|system)/i,
+    /prevent\s+(hacking|exploits|attacks)/i,
   ];
 
-  if (safePatterns.some(p => p.test(lower))) return 'standard';
+  if (safeContexts.some((p) => p.test(lower))) return 'standard';
 
   const sensitivePatterns = [
     /(hack|exploit|vulnerability|bypass)\s+(security|auth|login|firewall)/i,
@@ -427,7 +453,7 @@ function detectSafetyLevel(prompt: string): 'standard' | 'enhanced' | 'strict' {
     /(how\s+to|steps\s+to)\s+(illegal|crime|fraud|scam)/i,
   ];
 
-  const matchCount = sensitivePatterns.filter(p => p.test(lower)).length;
+  const matchCount = sensitivePatterns.filter((p) => p.test(lower)).length;
 
   if (matchCount >= 2) return 'strict';
   if (matchCount === 1) return 'enhanced';

@@ -1,9 +1,30 @@
 ---
 name: redesign-existing-projects
-description: Upgrades existing websites and apps to premium quality. Audits current design, identifies generic AI patterns, and applies high-end design standards without breaking functionality. Works with any CSS framework or vanilla CSS.
+description: 'Use when upgrading existing websites or apps by auditing generic UI patterns and applying premium design fixes without rewrites.'
+category: frontend
+risk: safe
+source: community
+source_repo: Leonxlnx/taste-skill
+source_type: community
+date_added: '2026-04-17'
+author: Leonxlnx
+tags: [frontend, redesign, design-audit, ui]
+tools: [claude, cursor, codex, antigravity]
 ---
 
 # Redesign Skill
+
+## When to Use
+
+- Use when the user asks to redesign, restyle, modernize, polish, or improve an existing website or app UI.
+- Use when the task is to audit current frontend code and make targeted visual improvements without changing the product architecture.
+- Use when the design feels generic, AI-generated, poorly spaced, visually flat, or missing responsive, interactive, loading, empty, or error states.
+
+## Limitations
+
+- This skill upgrades existing UI but does not authorize framework migrations, information-architecture rewrites, or product-scope expansion by default.
+- Preserve working behavior, routing, data flows, accessibility semantics, and tests while making visual changes.
+- Validate redesigned screens in the actual app across supported browsers and viewport sizes before considering the work complete.
 
 ## How This Works
 
@@ -134,23 +155,27 @@ Check for these problems and fix them:
 When upgrading a project, pull from these high-impact techniques to replace generic patterns:
 
 ### Typography Upgrades
+
 - **Variable font animation.** Interpolate weight or width on scroll or hover for text that feels alive.
 - **Outlined-to-fill transitions.** Text starts as a stroke outline and fills with color on scroll entry or interaction.
 - **Text mask reveals.** Large typography acting as a window to video or animated imagery behind it.
 
 ### Layout Upgrades
+
 - **Broken grid / asymmetry.** Elements that deliberately ignore column structure — overlapping, bleeding off-screen, or offset with calculated randomness.
 - **Whitespace maximization.** Aggressive use of negative space to force focus on a single element.
 - **Parallax card stacks.** Sections that stick and physically stack over each other during scroll.
 - **Split-screen scroll.** Two halves of the screen sliding in opposite directions.
 
 ### Motion Upgrades
+
 - **Smooth scroll with inertia.** Decouple scrolling from browser defaults for a heavier, cinematic feel.
 - **Staggered entry.** Elements cascade in with slight delays, combining Y-axis translation with opacity fade. Never mount everything at once.
 - **Spring physics.** Replace linear easing with spring-based motion for a natural, weighty feel on all interactive elements.
 - **Scroll-driven reveals.** Content entering through expanding masks, wipes, or draw-on SVG paths tied to scroll progress.
 
 ### Surface Upgrades
+
 - **True glassmorphism.** Go beyond `backdrop-filter: blur`. Add a 1px inner border and a subtle inner shadow to simulate edge refraction.
 - **Spotlight borders.** Card borders that illuminate dynamically under the cursor.
 - **Grain and noise overlays.** A fixed, pointer-events-none overlay with subtle noise to break digital flatness.

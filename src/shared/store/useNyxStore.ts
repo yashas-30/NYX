@@ -25,11 +25,11 @@ export interface NyxState {
   modelSettings: ModelSettings;
   models: Record<'nyx', string>;
   apiKeys: Record<string, string>;
-  statuses: Record<string, 'online' | 'offline' | 'no-key'>;
+  statuses: Record<string, 'online' | 'offline' | 'no-key' | 'invalid-key'>;
   privacyMode: boolean;
   rememberKeys: boolean;
   currentModel: ModelOption;
-  
+
   // Actions
   setActiveMode: (mode: ActiveMode) => void;
   setWorkspacePath: (path: string) => void;
@@ -43,11 +43,14 @@ export interface NyxState {
   setRememberKeys: (enabled: boolean) => void;
   clearPrivacyData: () => void;
   setCurrentModel: (model: ModelOption) => void;
-  
+
   // Lifecycle & Sync actions
   fetchWorkspacePath: () => Promise<void>;
   selectWorkspace: () => Promise<void>;
-  createWorkspace: (path: string, name: string) => Promise<{ success: boolean; workspace?: string; error?: string }>;
+  createWorkspace: (
+    path: string,
+    name: string
+  ) => Promise<{ success: boolean; workspace?: string; error?: string }>;
   loadSecureKeys: () => Promise<void>;
   refreshStatuses: () => Promise<void>;
 }
@@ -182,7 +185,7 @@ export const useNyxStore = create<NyxState>()(
               const res = await fetchWithAuth('/api/workspace/select', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: directory })
+                body: JSON.stringify({ path: directory }),
               });
               if (res.ok) {
                 set({ workspacePath: directory });
@@ -201,14 +204,16 @@ export const useNyxStore = create<NyxState>()(
           const res = await fetchWithAuth('/api/workspace/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path, name })
+            body: JSON.stringify({ path, name }),
           });
           if (res.ok) {
             const data = await res.json();
             set({ workspacePath: data.workspace });
             return { success: true, workspace: data.workspace };
           }
-          const errData = await res.json().catch(() => ({ error: 'Network error creating workspace' }));
+          const errData = await res
+            .json()
+            .catch(() => ({ error: 'Network error creating workspace' }));
           return { success: false, error: errData.error || 'Failed to create workspace' };
         } catch (error: any) {
           return { success: false, error: error.message };
@@ -242,32 +247,61 @@ export const useNyxStore = create<NyxState>()(
 
       refreshStatuses: async () => {
         const cloudProviders: ModelProvider[] = ['gemini'];
-        const newStatuses: Record<string, 'online' | 'offline' | 'no-key'> = {};
-        
+        const newStatuses: Record<string, 'online' | 'offline' | 'no-key' | 'invalid-key'> = {};
+
         try {
           // Check local models status
-          const localEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('llm_ref_local_models_enabled') === 'true';
+          const localEnabled =
+            get().localModelsEnabled ||
+            (typeof localStorage !== 'undefined' &&
+              localStorage.getItem('nyx_local_models_enabled') === 'true');
           if (localEnabled) {
             const nativeRes = await fetchWithAuth('/api/nyx/local-models/status').catch(() => null);
-            const nativeOnline = nativeRes && nativeRes.ok && (await nativeRes.json()).activeModelId;
-            newStatuses['nyx-native'] = nativeOnline ? 'online' : 'offline';
+            if (nativeRes && nativeRes.ok) {
+              const data = await nativeRes.json();
+              if (data.activeModelId) {
+                // Ping the model with a trivial request
+                const healthRes = await fetchWithAuth('/api/nyx/local-models/chat', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    model: data.activeModelId,
+                    messages: [{ role: 'user', content: 'hi' }],
+                    max_tokens: 1,
+                  }),
+                }).catch(() => null);
+                newStatuses['nyx-native'] = healthRes?.ok ? 'online' : 'offline';
+              } else {
+                newStatuses['nyx-native'] = 'offline';
+              }
+            } else {
+              newStatuses['nyx-native'] = 'offline';
+            }
           } else {
             newStatuses['nyx-native'] = 'offline';
           }
 
           // Check safeStorage vault configuration for cloud providers
           const vaultRes = await fetch('/api/vault/status').catch(() => null);
-          if (vaultRes && vaultRes.ok) {
-            const vaultStatus = await vaultRes.json();
-            for (const p of cloudProviders) {
-              const hasVaultKey = vaultStatus[p];
-              const hasMemoryKey = !!get().apiKeys[p];
-              newStatuses[p] = (hasVaultKey || hasMemoryKey) ? 'online' : 'no-key';
-            }
-          } else {
-            // Fallback: check key memory store
-            for (const p of cloudProviders) {
-              newStatuses[p] = get().apiKeys[p] ? 'online' : 'no-key';
+          const vaultStatus = vaultRes && vaultRes.ok ? await vaultRes.json() : {};
+
+          for (const p of cloudProviders) {
+            const hasVaultKey = vaultStatus[p];
+            const hasMemoryKey = !!get().apiKeys[p];
+
+            if (hasVaultKey || hasMemoryKey) {
+              try {
+                const validateRes = await fetchWithAuth('/api/vault/validate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ provider: p, apiKey: get().apiKeys[p] || '' }),
+                });
+                newStatuses[p] = validateRes.ok ? 'online' : 'invalid-key';
+              } catch {
+                newStatuses[p] = 'offline';
+              }
+            } else {
+              newStatuses[p] = 'no-key';
             }
           }
           set({ statuses: newStatuses });
@@ -283,7 +317,6 @@ export const useNyxStore = create<NyxState>()(
         localModelsEnabled: state.localModelsEnabled,
         modelSettings: state.modelSettings,
         models: state.models,
-        apiKeys: state.rememberKeys ? state.apiKeys : {},
         privacyMode: state.privacyMode,
         rememberKeys: state.rememberKeys,
         currentModel: state.currentModel,

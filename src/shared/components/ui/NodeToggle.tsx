@@ -25,9 +25,7 @@ export const NodeToggle: React.FC<NodeToggleProps> = ({ isSelected, onToggle }) 
         animate={{ x: isSelected ? 24 : 0 }}
         transition={{ type: 'spring', stiffness: 500, damping: 30 }}
         className={`absolute left-1 top-1 w-4 h-4 rounded-full transition-colors shadow-sm ${
-          isSelected
-            ? 'bg-white'
-            : 'bg-muted-foreground/20 group-hover/switch:bg-primary/40'
+          isSelected ? 'bg-white' : 'bg-muted-foreground/20 group-hover/switch:bg-primary/40'
         }`}
       />
     </button>

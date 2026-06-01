@@ -10,11 +10,26 @@ import { z } from 'zod';
 // ── Zod Validation Schemas ──────────────────────────────────────────────────
 
 export const PromptIntentSchema = z.enum([
-  'generate', 'refactor', 'debug', 'explain', 'convert',
-  'optimize', 'review', 'integrate', 'test', 'deploy', 'general'
+  'generate',
+  'refactor',
+  'debug',
+  'explain',
+  'convert',
+  'optimize',
+  'review',
+  'integrate',
+  'test',
+  'deploy',
+  'general',
 ]);
 
-export const ComplexityLevelSchema = z.enum(['trivial', 'simple', 'moderate', 'complex', 'enterprise']);
+export const ComplexityLevelSchema = z.enum([
+  'trivial',
+  'simple',
+  'moderate',
+  'complex',
+  'enterprise',
+]);
 
 export const HardwareAnalysisSchema = z.object({
   isHardware: z.boolean(),
@@ -40,17 +55,23 @@ export const PromptAnalysisSchema = z.object({
 
 export const PromptRequestSchema = z.object({
   prompt: z.string().min(1, 'Prompt is required'),
-  history: z.array(z.object({
-    role: z.string(),
-    content: z.string()
-  })).optional(),
+  history: z
+    .array(
+      z.object({
+        role: z.string(),
+        content: z.string(),
+      })
+    )
+    .optional(),
   systemInstruction: z.string().optional(),
-  settings: z.object({
-    temperature: z.number().optional(),
-    maxTokens: z.number().optional(),
-    topP: z.number().optional(),
-    topK: z.number().optional()
-  }).optional(),
+  settings: z
+    .object({
+      temperature: z.number().optional(),
+      maxTokens: z.number().optional(),
+      topP: z.number().optional(),
+      topK: z.number().optional(),
+    })
+    .optional(),
 });
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -77,217 +98,676 @@ const LANG_SIGNATURES: LangSignature[] = [
     name: 'TypeScript',
     codeBlockTags: ['typescript', 'ts', 'tsx'],
     extensions: [/\.tsx?/i],
-    keywords: [/\binterface\s+\w+/i, /\btype\s+\w+\s*=/i, /\benum\s+/i, /\bas\s+\w+/i, /:\s*(string|number|boolean|any|unknown|void|never)\b/i, /\bReadonly</i, /\bPartial</i, /\bRecord</i, /\bgenerics?\b/i],
-    frameworkHints: [/\bnext\.?js\b/i, /\bangular\b/i, /\bnestjs\b/i, /\btrpc\b/i, /\bzod\b/i, /\bprisma\b/i, /\bdrizzle\b/i]
+    keywords: [
+      /\binterface\s+\w+/i,
+      /\btype\s+\w+\s*=/i,
+      /\benum\s+/i,
+      /\bas\s+\w+/i,
+      /:\s*(string|number|boolean|any|unknown|void|never)\b/i,
+      /\bReadonly</i,
+      /\bPartial</i,
+      /\bRecord</i,
+      /\bgenerics?\b/i,
+    ],
+    frameworkHints: [
+      /\bnext\.?js\b/i,
+      /\bangular\b/i,
+      /\bnestjs\b/i,
+      /\btrpc\b/i,
+      /\bzod\b/i,
+      /\bprisma\b/i,
+      /\bdrizzle\b/i,
+    ],
   },
   {
     id: 'javascript',
     name: 'JavaScript',
     codeBlockTags: ['javascript', 'js', 'jsx', 'node'],
     extensions: [/\.jsx?/i, /\.mjs/i, /\.cjs/i],
-    keywords: [/\bconst\s+\w+\s*=/i, /\blet\s+\w+\s*=/i, /\bfunction\s+\w+/i, /=>\s*[{(]/i, /\bconsole\.log/i, /\brequire\s*\(/i, /\bimport\s+/i, /\bexport\s+(default\s+)?/i, /\bdocument\.\w+/i],
-    frameworkHints: [/\breact\b/i, /\bvue\b/i, /\bsvelte\b/i, /\bexpress\b/i, /\bfastify\b/i, /\bhono\b/i, /\bnode\.?js\b/i, /\bvite\b/i, /\bwebpack\b/i, /\bjquery\b/i, /\bd3\.?js\b/i, /\bthree\.?js\b/i]
+    keywords: [
+      /\bconst\s+\w+\s*=/i,
+      /\blet\s+\w+\s*=/i,
+      /\bfunction\s+\w+/i,
+      /=>\s*[{(]/i,
+      /\bconsole\.log/i,
+      /\brequire\s*\(/i,
+      /\bimport\s+/i,
+      /\bexport\s+(default\s+)?/i,
+      /\bdocument\.\w+/i,
+    ],
+    frameworkHints: [
+      /\breact\b/i,
+      /\bvue\b/i,
+      /\bsvelte\b/i,
+      /\bexpress\b/i,
+      /\bfastify\b/i,
+      /\bhono\b/i,
+      /\bnode\.?js\b/i,
+      /\bvite\b/i,
+      /\bwebpack\b/i,
+      /\bjquery\b/i,
+      /\bd3\.?js\b/i,
+      /\bthree\.?js\b/i,
+    ],
   },
   {
     id: 'python',
     name: 'Python',
     codeBlockTags: ['python', 'py', 'python3'],
     extensions: [/\.py/i, /\.pyx/i],
-    keywords: [/\bdef\s+\w+\s*\(/i, /\bclass\s+\w+/i, /\bimport\s+\w+/i, /\bfrom\s+\w+\s+import/i, /\bprint\s*\(/i, /\bself\.\w+/i, /\b__init__/i, /\bif\s+__name__/i, /\basync\s+def\b/i, /\bpip\s+install\b/i, /\bpython3?\b/i],
-    frameworkHints: [/\bdjango\b/i, /\bflask\b/i, /\bfastapi\b/i, /\bpydantic\b/i, /\bpandas\b/i, /\bnumpy\b/i, /\bpytest\b/i, /\bcelery\b/i, /\btensorflow\b/i, /\bpytorch\b/i, /\bstreamlit\b/i, /\blangchain\b/i, /\bscikit[-_]learn\b/i]
+    keywords: [
+      /\bdef\s+\w+\s*\(/i,
+      /\bclass\s+\w+/i,
+      /\bimport\s+\w+/i,
+      /\bfrom\s+\w+\s+import/i,
+      /\bprint\s*\(/i,
+      /\bself\.\w+/i,
+      /\b__init__/i,
+      /\bif\s+__name__/i,
+      /\basync\s+def\b/i,
+      /\bpip\s+install\b/i,
+      /\bpython3?\b/i,
+    ],
+    frameworkHints: [
+      /\bdjango\b/i,
+      /\bflask\b/i,
+      /\bfastapi\b/i,
+      /\bpydantic\b/i,
+      /\bpandas\b/i,
+      /\bnumpy\b/i,
+      /\bpytest\b/i,
+      /\bcelery\b/i,
+      /\btensorflow\b/i,
+      /\bpytorch\b/i,
+      /\bstreamlit\b/i,
+      /\blangchain\b/i,
+      /\bscikit[-_]learn\b/i,
+    ],
   },
   {
     id: 'rust',
     name: 'Rust',
     codeBlockTags: ['rust', 'rs'],
     extensions: [/\.rs/i],
-    keywords: [/\bfn\s+\w+/i, /\blet\s+mut\b/i, /\bimpl\s+/i, /\bstruct\s+\w+/i, /\benum\s+\w+/i, /\btrait\s+\w+/i, /\bpub\s+(fn|struct|enum|mod)\b/i, /\buse\s+\w+::/i, /\bmatch\s+\w+/i, /\bcargo\b/i, /\bResult</i, /\bOption</i, /::new\(\)/i],
-    frameworkHints: [/\btokio\b/i, /\bactix[-_]?web\b/i, /\baxum\b/i, /\brooket\b/i, /\bserde\b/i, /\btauri\b/i, /\bbevy\b/i, /\bwasm[-_]?bindgen\b/i]
+    keywords: [
+      /\bfn\s+\w+/i,
+      /\blet\s+mut\b/i,
+      /\bimpl\s+/i,
+      /\bstruct\s+\w+/i,
+      /\benum\s+\w+/i,
+      /\btrait\s+\w+/i,
+      /\bpub\s+(fn|struct|enum|mod)\b/i,
+      /\buse\s+\w+::/i,
+      /\bmatch\s+\w+/i,
+      /\bcargo\b/i,
+      /\bResult</i,
+      /\bOption</i,
+      /::new\(\)/i,
+    ],
+    frameworkHints: [
+      /\btokio\b/i,
+      /\bactix[-_]?web\b/i,
+      /\baxum\b/i,
+      /\brooket\b/i,
+      /\bserde\b/i,
+      /\btauri\b/i,
+      /\bbevy\b/i,
+      /\bwasm[-_]?bindgen\b/i,
+    ],
   },
   {
     id: 'go',
     name: 'Go',
     codeBlockTags: ['go', 'golang'],
     extensions: [/\.go/i],
-    keywords: [/\bfunc\s+(\(\w+\s+\*?\w+\)\s+)?\w+\s*\(/i, /\bpackage\s+\w+/i, /\bimport\s*\(/i, /\bgo\s+func/i, /\bchan\s+/i, /\bgoroutine/i, /\bdefer\s+/i, /\b:=\b/i, /\bfmt\.\w+/i, /\berr\s*!=\s*nil/i],
-    frameworkHints: [/\bgin\b/i, /\becho\b/i, /\bfiber\b/i, /\bchi\b/i, /\bgrpc\b/i, /\bgorm\b/i]
+    keywords: [
+      /\bfunc\s+(\(\w+\s+\*?\w+\)\s+)?\w+\s*\(/i,
+      /\bpackage\s+\w+/i,
+      /\bimport\s*\(/i,
+      /\bgo\s+func/i,
+      /\bchan\s+/i,
+      /\bgoroutine/i,
+      /\bdefer\s+/i,
+      /\b:=\b/i,
+      /\bfmt\.\w+/i,
+      /\berr\s*!=\s*nil/i,
+    ],
+    frameworkHints: [/\bgin\b/i, /\becho\b/i, /\bfiber\b/i, /\bchi\b/i, /\bgrpc\b/i, /\bgorm\b/i],
   },
   {
     id: 'java',
     name: 'Java',
     codeBlockTags: ['java'],
     extensions: [/\.java/i],
-    keywords: [/\bpublic\s+class\b/i, /\bprivate\s+\w+\s+\w+/i, /\bSystem\.out\.print/i, /\bString\[\]/i, /\bvoid\s+main\b/i, /\bnew\s+\w+\(/i, /\bimplements\s+/i, /\bextends\s+/i, /\b@Override\b/i, /\b@Autowired\b/i],
-    frameworkHints: [/\bspring\s*boot\b/i, /\bhibernate\b/i, /\bmaven\b/i, /\bgradle\b/i, /\bquarkus\b/i, /\bmicronaut\b/i, /\bjunit\b/i]
+    keywords: [
+      /\bpublic\s+class\b/i,
+      /\bprivate\s+\w+\s+\w+/i,
+      /\bSystem\.out\.print/i,
+      /\bString\[\]/i,
+      /\bvoid\s+main\b/i,
+      /\bnew\s+\w+\(/i,
+      /\bimplements\s+/i,
+      /\bextends\s+/i,
+      /\b@Override\b/i,
+      /\b@Autowired\b/i,
+    ],
+    frameworkHints: [
+      /\bspring\s*boot\b/i,
+      /\bhibernate\b/i,
+      /\bmaven\b/i,
+      /\bgradle\b/i,
+      /\bquarkus\b/i,
+      /\bmicronaut\b/i,
+      /\bjunit\b/i,
+    ],
   },
   {
     id: 'kotlin',
     name: 'Kotlin',
     codeBlockTags: ['kotlin', 'kt'],
     extensions: [/\.kt/i, /\.kts/i],
-    keywords: [/\bfun\s+\w+\s*\(/i, /\bval\s+\w+/i, /\bvar\s+\w+/i, /\bdata\s+class\b/i, /\bsealed\s+class\b/i, /\bsuspend\s+fun\b/i, /\bobject\s+\w+/i, /\bcompanion\s+object\b/i, /\bwhen\s*\(/i],
-    frameworkHints: [/\bktor\b/i, /\bjetpack\s*compose\b/i, /\bkoroutines?\b/i, /\bandroid\b/i, /\bkmm\b/i]
+    keywords: [
+      /\bfun\s+\w+\s*\(/i,
+      /\bval\s+\w+/i,
+      /\bvar\s+\w+/i,
+      /\bdata\s+class\b/i,
+      /\bsealed\s+class\b/i,
+      /\bsuspend\s+fun\b/i,
+      /\bobject\s+\w+/i,
+      /\bcompanion\s+object\b/i,
+      /\bwhen\s*\(/i,
+    ],
+    frameworkHints: [
+      /\bktor\b/i,
+      /\bjetpack\s*compose\b/i,
+      /\bkoroutines?\b/i,
+      /\bandroid\b/i,
+      /\bkmm\b/i,
+    ],
   },
   {
     id: 'c',
     name: 'C',
     codeBlockTags: ['c'],
     extensions: [/\.c$/i, /\.h$/i],
-    keywords: [/\b#include\s*</i, /\bint\s+main\s*\(/i, /\bprintf\s*\(/i, /\bmalloc\s*\(/i, /\bfree\s*\(/i, /\bsizeof\s*\(/i, /\btypedef\s+struct\b/i, /\bvoid\s*\*/i, /\bstdio\.h\b/i, /\bstdlib\.h\b/i],
-    frameworkHints: [/\bSDL2?\b/i, /\bOpenGL\b/i, /\bposix\b/i, /\bpthread/i]
+    keywords: [
+      /\b#include\s*</i,
+      /\bint\s+main\s*\(/i,
+      /\bprintf\s*\(/i,
+      /\bmalloc\s*\(/i,
+      /\bfree\s*\(/i,
+      /\bsizeof\s*\(/i,
+      /\btypedef\s+struct\b/i,
+      /\bvoid\s*\*/i,
+      /\bstdio\.h\b/i,
+      /\bstdlib\.h\b/i,
+    ],
+    frameworkHints: [/\bSDL2?\b/i, /\bOpenGL\b/i, /\bposix\b/i, /\bpthread/i],
   },
   {
     id: 'cpp',
     name: 'C++',
     codeBlockTags: ['cpp', 'c++', 'cxx'],
     extensions: [/\.cpp/i, /\.cxx/i, /\.cc/i, /\.hpp/i],
-    keywords: [/\bstd::/i, /\bnamespace\s+\w+/i, /\bclass\s+\w+\s*[:{]/i, /\btemplate\s*</i, /\bcout\s*<</i, /\bvector</i, /\bunique_ptr</i, /\bshared_ptr</i, /\bauto\s+\w+\s*=/i, /\bconstexpr\b/i],
-    frameworkHints: [/\bqt\b/i, /\bboost\b/i, /\bunreal\b/i, /\bsfml\b/i, /\bcmake\b/i, /\bimgui\b/i]
+    keywords: [
+      /\bstd::/i,
+      /\bnamespace\s+\w+/i,
+      /\bclass\s+\w+\s*[:{]/i,
+      /\btemplate\s*</i,
+      /\bcout\s*<</i,
+      /\bvector</i,
+      /\bunique_ptr</i,
+      /\bshared_ptr</i,
+      /\bauto\s+\w+\s*=/i,
+      /\bconstexpr\b/i,
+    ],
+    frameworkHints: [
+      /\bqt\b/i,
+      /\bboost\b/i,
+      /\bunreal\b/i,
+      /\bsfml\b/i,
+      /\bcmake\b/i,
+      /\bimgui\b/i,
+    ],
   },
   {
     id: 'csharp',
     name: 'C#',
     codeBlockTags: ['csharp', 'cs', 'c#'],
     extensions: [/\.cs$/i],
-    keywords: [/\bnamespace\s+\w+/i, /\busing\s+\w+/i, /\bpublic\s+class\b/i, /\basync\s+Task</i, /\bawait\s+/i, /\bvar\s+\w+\s*=/i, /\bLINQ\b/i, /\b\[HttpGet\]/i, /\b\[ApiController\]/i, /\bConsole\.Write/i],
-    frameworkHints: [/\basp\.?net\b/i, /\benzor\b/i, /\bentity\s*framework\b/i, /\bmaui\b/i, /\bunity\s+(engine|3d|game)?\b/i, /\bxamarin\b/i, /\.net\s*(core|8|9)?\b/i]
+    keywords: [
+      /\bnamespace\s+\w+/i,
+      /\busing\s+\w+/i,
+      /\bpublic\s+class\b/i,
+      /\basync\s+Task</i,
+      /\bawait\s+/i,
+      /\bvar\s+\w+\s*=/i,
+      /\bLINQ\b/i,
+      /\b\[HttpGet\]/i,
+      /\b\[ApiController\]/i,
+      /\bConsole\.Write/i,
+    ],
+    frameworkHints: [
+      /\basp\.?net\b/i,
+      /\benzor\b/i,
+      /\bentity\s*framework\b/i,
+      /\bmaui\b/i,
+      /\bunity\s+(engine|3d|game)?\b/i,
+      /\bxamarin\b/i,
+      /\.net\s*(core|8|9)?\b/i,
+    ],
   },
   {
     id: 'swift',
     name: 'Swift',
     codeBlockTags: ['swift'],
     extensions: [/\.swift/i],
-    keywords: [/\bfunc\s+\w+\s*\(/i, /\bvar\s+\w+\s*:\s*\w+/i, /\blet\s+\w+\s*:\s*\w+/i, /\bguard\s+let\b/i, /\bif\s+let\b/i, /\bstruct\s+\w+/i, /\bprotocol\s+\w+/i, /\b@State\b/i, /\b@Published\b/i, /\bimport\s+SwiftUI\b/i],
-    frameworkHints: [/\bswiftui\b/i, /\buikit\b/i, /\bcombine\b/i, /\bvapor\b/i, /\bswiftdata\b/i, /\bcore\s*data\b/i]
+    keywords: [
+      /\bfunc\s+\w+\s*\(/i,
+      /\bvar\s+\w+\s*:\s*\w+/i,
+      /\blet\s+\w+\s*:\s*\w+/i,
+      /\bguard\s+let\b/i,
+      /\bif\s+let\b/i,
+      /\bstruct\s+\w+/i,
+      /\bprotocol\s+\w+/i,
+      /\b@State\b/i,
+      /\b@Published\b/i,
+      /\bimport\s+SwiftUI\b/i,
+    ],
+    frameworkHints: [
+      /\bswiftui\b/i,
+      /\buikit\b/i,
+      /\bcombine\b/i,
+      /\bvapor\b/i,
+      /\bswiftdata\b/i,
+      /\bcore\s*data\b/i,
+    ],
   },
   {
     id: 'ruby',
     name: 'Ruby',
     codeBlockTags: ['ruby', 'rb'],
     extensions: [/\.rb/i, /\.rake/i, /Gemfile/i],
-    keywords: [/\bdef\s+\w+/i, /\bclass\s+\w+\s*<?\s*\w*/i, /\brequire\s+['"]?\w+/i, /\battr_(accessor|reader|writer)\b/i, /\bputs\s+/i, /\bdo\s*\|/i, /\.each\s+do\b/i, /\bend\s*$/im, /\bmodule\s+\w+/i],
-    frameworkHints: [/\brails\b/i, /\bsinatra\b/i, /\brspec\b/i, /\bsidekiq\b/i, /\bactive\s*record\b/i]
+    keywords: [
+      /\bdef\s+\w+/i,
+      /\bclass\s+\w+\s*<?\s*\w*/i,
+      /\brequire\s+['"]?\w+/i,
+      /\battr_(accessor|reader|writer)\b/i,
+      /\bputs\s+/i,
+      /\bdo\s*\|/i,
+      /\.each\s+do\b/i,
+      /\bend\s*$/im,
+      /\bmodule\s+\w+/i,
+    ],
+    frameworkHints: [
+      /\brails\b/i,
+      /\bsinatra\b/i,
+      /\brspec\b/i,
+      /\bsidekiq\b/i,
+      /\bactive\s*record\b/i,
+    ],
   },
   {
     id: 'php',
     name: 'PHP',
     codeBlockTags: ['php'],
     extensions: [/\.php/i],
-    keywords: [/\b<\?php\b/i, /\$\w+\s*=/i, /\bfunction\s+\w+\s*\(/i, /\b->\w+\s*\(/i, /\bnew\s+\w+\(/i, /\becho\s+/i, /\bnamespace\s+\w+/i, /\buse\s+\w+\\/i, /\bpublic\s+function\b/i],
-    frameworkHints: [/\blaravel\b/i, /\bsymfony\b/i, /\bcomposer\b/i, /\bwordpress\b/i, /\blivewire\b/i, /\bdrupal\b/i]
+    keywords: [
+      /\b<\?php\b/i,
+      /\$\w+\s*=/i,
+      /\bfunction\s+\w+\s*\(/i,
+      /\b->\w+\s*\(/i,
+      /\bnew\s+\w+\(/i,
+      /\becho\s+/i,
+      /\bnamespace\s+\w+/i,
+      /\buse\s+\w+\\/i,
+      /\bpublic\s+function\b/i,
+    ],
+    frameworkHints: [
+      /\blaravel\b/i,
+      /\bsymfony\b/i,
+      /\bcomposer\b/i,
+      /\bwordpress\b/i,
+      /\blivewire\b/i,
+      /\bdrupal\b/i,
+    ],
   },
   {
     id: 'dart',
     name: 'Dart',
     codeBlockTags: ['dart'],
     extensions: [/\.dart/i],
-    keywords: [/\bvoid\s+main\s*\(/i, /\bWidget\s+build\b/i, /\bStatelessWidget\b/i, /\bStatefulWidget\b/i, /\bfinal\s+\w+\s*=/i, /\bclass\s+\w+\s+extends\b/i, /\b@override\b/i, /\bFuture</i],
-    frameworkHints: [/\bflutter\b/i, /\bmaterial\s*design\b/i, /\briverpod\b/i, /\bbloc\b/i, /\bGetX\b/i]
+    keywords: [
+      /\bvoid\s+main\s*\(/i,
+      /\bWidget\s+build\b/i,
+      /\bStatelessWidget\b/i,
+      /\bStatefulWidget\b/i,
+      /\bfinal\s+\w+\s*=/i,
+      /\bclass\s+\w+\s+extends\b/i,
+      /\b@override\b/i,
+      /\bFuture</i,
+    ],
+    frameworkHints: [
+      /\bflutter\b/i,
+      /\bmaterial\s*design\b/i,
+      /\briverpod\b/i,
+      /\bbloc\b/i,
+      /\bGetX\b/i,
+    ],
   },
   {
     id: 'sql',
     name: 'SQL',
     codeBlockTags: ['sql', 'psql', 'mysql', 'sqlite'],
     extensions: [/\.sql/i],
-    keywords: [/\bSELECT\s+/i, /\bFROM\s+\w+/i, /\bWHERE\s+/i, /\bJOIN\s+/i, /\bINSERT\s+INTO\b/i, /\bUPDATE\s+\w+\s+SET\b/i, /\bCREATE\s+TABLE\b/i, /\bALTER\s+TABLE\b/i, /\bDELETE\s+FROM\b/i, /\bGROUP\s+BY\b/i],
-    frameworkHints: [/\bpostgres(ql)?\b/i, /\bmysql\b/i, /\bsqlite\b/i, /\bsupabase\b/i, /\bprisma\b/i, /\bdrizzle\b/i]
+    keywords: [
+      /\bSELECT\s+/i,
+      /\bFROM\s+\w+/i,
+      /\bWHERE\s+/i,
+      /\bJOIN\s+/i,
+      /\bINSERT\s+INTO\b/i,
+      /\bUPDATE\s+\w+\s+SET\b/i,
+      /\bCREATE\s+TABLE\b/i,
+      /\bALTER\s+TABLE\b/i,
+      /\bDELETE\s+FROM\b/i,
+      /\bGROUP\s+BY\b/i,
+    ],
+    frameworkHints: [
+      /\bpostgres(ql)?\b/i,
+      /\bmysql\b/i,
+      /\bsqlite\b/i,
+      /\bsupabase\b/i,
+      /\bprisma\b/i,
+      /\bdrizzle\b/i,
+    ],
   },
   {
     id: 'html',
     name: 'HTML',
     codeBlockTags: ['html', 'htm'],
     extensions: [/\.html?/i],
-    keywords: [/\b<html\b/i, /\b<div\b/i, /\b<head\b/i, /\b<body\b/i, /\b<script\b/i, /\b<link\b/i, /\b<form\b/i, /\b<button\b/i, /\b<input\b/i, /\b<canvas\b/i, /\b<section\b/i, /\bclass="/i],
-    frameworkHints: [/\bhtmx\b/i, /\balpine\.?js\b/i, /\bwebpack\b/i, /\btailwind\b/i, /\bbootstrap\b/i]
+    keywords: [
+      /\b<html\b/i,
+      /\b<div\b/i,
+      /\b<head\b/i,
+      /\b<body\b/i,
+      /\b<script\b/i,
+      /\b<link\b/i,
+      /\b<form\b/i,
+      /\b<button\b/i,
+      /\b<input\b/i,
+      /\b<canvas\b/i,
+      /\b<section\b/i,
+      /\bclass="/i,
+    ],
+    frameworkHints: [
+      /\bhtmx\b/i,
+      /\balpine\.?js\b/i,
+      /\bwebpack\b/i,
+      /\btailwind\b/i,
+      /\bbootstrap\b/i,
+    ],
   },
   {
     id: 'css',
     name: 'CSS',
     codeBlockTags: ['css', 'scss', 'sass', 'less'],
     extensions: [/\.css/i, /\.scss/i, /\.sass/i, /\.less/i],
-    keywords: [/\b\.\w+\s*\{/i, /\b#\w+\s*\{/i, /\bdisplay:\s*/i, /\bflex\b/i, /\bgrid\b/i, /\bmargin\b/i, /\bpadding\b/i, /\b@media\b/i, /\b@keyframes\b/i, /\b--\w+:/i, /\bbackground/i],
-    frameworkHints: [/\btailwind\b/i, /\bbootstrap\b/i, /\bstyled[-_]?components\b/i, /\bcss\s*modules\b/i]
+    keywords: [
+      /\b\.\w+\s*\{/i,
+      /\b#\w+\s*\{/i,
+      /\bdisplay:\s*/i,
+      /\bflex\b/i,
+      /\bgrid\b/i,
+      /\bmargin\b/i,
+      /\bpadding\b/i,
+      /\b@media\b/i,
+      /\b@keyframes\b/i,
+      /\b--\w+:/i,
+      /\bbackground/i,
+    ],
+    frameworkHints: [
+      /\btailwind\b/i,
+      /\bbootstrap\b/i,
+      /\bstyled[-_]?components\b/i,
+      /\bcss\s*modules\b/i,
+    ],
   },
   {
     id: 'shell',
     name: 'Shell/Bash',
     codeBlockTags: ['bash', 'sh', 'shell', 'zsh'],
     extensions: [/\.sh/i, /\.bash/i, /\.zsh/i],
-    keywords: [/\b#!/i, /\becho\s+/i, /\bif\s+\[\[?\s*/i, /\bfor\s+\w+\s+in\b/i, /\bwhile\s+/i, /\bgrep\s+/i, /\bsed\s+/i, /\bawk\s+/i, /\bchmod\b/i, /\bsudo\b/i, /\bexport\s+\w+=/i, /\bcurl\s+/i],
-    frameworkHints: [/\bdocker\b/i, /\bkubernetes\b/i, /\bterraform\b/i, /\bgithub\s*actions\b/i, /\bci\/cd\b/i]
+    keywords: [
+      /\b#!/i,
+      /\becho\s+/i,
+      /\bif\s+\[\[?\s*/i,
+      /\bfor\s+\w+\s+in\b/i,
+      /\bwhile\s+/i,
+      /\bgrep\s+/i,
+      /\bsed\s+/i,
+      /\bawk\s+/i,
+      /\bchmod\b/i,
+      /\bsudo\b/i,
+      /\bexport\s+\w+=/i,
+      /\bcurl\s+/i,
+    ],
+    frameworkHints: [
+      /\bdocker\b/i,
+      /\bkubernetes\b/i,
+      /\bterraform\b/i,
+      /\bgithub\s*actions\b/i,
+      /\bci\/cd\b/i,
+    ],
   },
   {
     id: 'elixir',
     name: 'Elixir',
     codeBlockTags: ['elixir', 'ex'],
     extensions: [/\.ex/i, /\.exs/i],
-    keywords: [/\bdefmodule\s+/i, /\bdef\s+\w+\s*\(/i, /\bdefp\s+/i, /\b\|>\s*/i, /\bcase\s+\w+\s+do\b/i, /\b:ok\b/i, /\b:error\b/i, /\bGenServer\b/i, /\b@moduledoc\b/i],
-    frameworkHints: [/\bphoenix\b/i, /\bliveview\b/i, /\becto\b/i, /\bnerves\b/i]
+    keywords: [
+      /\bdefmodule\s+/i,
+      /\bdef\s+\w+\s*\(/i,
+      /\bdefp\s+/i,
+      /\b\|>\s*/i,
+      /\bcase\s+\w+\s+do\b/i,
+      /\b:ok\b/i,
+      /\b:error\b/i,
+      /\bGenServer\b/i,
+      /\b@moduledoc\b/i,
+    ],
+    frameworkHints: [/\bphoenix\b/i, /\bliveview\b/i, /\becto\b/i, /\bnerves\b/i],
   },
   {
     id: 'haskell',
     name: 'Haskell',
     codeBlockTags: ['haskell', 'hs'],
     extensions: [/\.hs/i],
-    keywords: [/\bmodule\s+\w+\s+where\b/i, /\bimport\s+(qualified\s+)?\w+/i, /\b::\s*\w+/i, /\bdo\s*$/im, /\b<-\s*/i, /\bdata\s+\w+\s*=/i, /\bnewtype\s+/i, /\bclass\s+\w+\s+where\b/i, /\binstance\s+/i, /\bIO\s*\(/i],
-    frameworkHints: [/\byesod\b/i, /\bservant\b/i, /\bscotty\b/i, /\bcabal\b/i, /\bstack\b/i]
+    keywords: [
+      /\bmodule\s+\w+\s+where\b/i,
+      /\bimport\s+(qualified\s+)?\w+/i,
+      /\b::\s*\w+/i,
+      /\bdo\s*$/im,
+      /\b<-\s*/i,
+      /\bdata\s+\w+\s*=/i,
+      /\bnewtype\s+/i,
+      /\bclass\s+\w+\s+where\b/i,
+      /\binstance\s+/i,
+      /\bIO\s*\(/i,
+    ],
+    frameworkHints: [/\byesod\b/i, /\bservant\b/i, /\bscotty\b/i, /\bcabal\b/i, /\bstack\b/i],
   },
   {
     id: 'solidity',
     name: 'Solidity',
     codeBlockTags: ['solidity', 'sol'],
     extensions: [/\.sol/i],
-    keywords: [/\bpragma\s+solidity\b/i, /\bcontract\s+\w+/i, /\bfunction\s+\w+\s*\(.*\)\s*(public|private|external|internal)/i, /\bmapping\s*\(/i, /\bevent\s+\w+/i, /\bmodifier\s+\w+/i, /\brequire\s*\(/i, /\bmsg\.sender\b/i, /\buint256\b/i],
-    frameworkHints: [/\bopenzeppelin\b/i, /\bhardhat\b/i, /\bfoundry\b/i, /\bethers\.?js\b/i, /\bviem\b/i, /\bwagmi\b/i]
+    keywords: [
+      /\bpragma\s+solidity\b/i,
+      /\bcontract\s+\w+/i,
+      /\bfunction\s+\w+\s*\(.*\)\s*(public|private|external|internal)/i,
+      /\bmapping\s*\(/i,
+      /\bevent\s+\w+/i,
+      /\bmodifier\s+\w+/i,
+      /\brequire\s*\(/i,
+      /\bmsg\.sender\b/i,
+      /\buint256\b/i,
+    ],
+    frameworkHints: [
+      /\bopenzeppelin\b/i,
+      /\bhardhat\b/i,
+      /\bfoundry\b/i,
+      /\bethers\.?js\b/i,
+      /\bviem\b/i,
+      /\bwagmi\b/i,
+    ],
   },
   {
     id: 'lua',
     name: 'Lua',
     codeBlockTags: ['lua'],
     extensions: [/\.lua/i],
-    keywords: [/\bfunction\s+\w+\s*\(/i, /\blocal\s+\w+\s*=/i, /\bthen\b/i, /\bend\b/i, /\brepeat\b/i, /\buntil\b/i, /\brequire\s*[("']/i, /\bprint\s*\(/i, /\bipairs\b/i, /\bpairs\b/i],
-    frameworkHints: [/\bl[oö]ve\b/i, /\bneovim\b/i, /\broblox\b/i, /\bcoronasdk\b/i, /\bopenresty\b/i]
+    keywords: [
+      /\bfunction\s+\w+\s*\(/i,
+      /\blocal\s+\w+\s*=/i,
+      /\bthen\b/i,
+      /\bend\b/i,
+      /\brepeat\b/i,
+      /\buntil\b/i,
+      /\brequire\s*[("']/i,
+      /\bprint\s*\(/i,
+      /\bipairs\b/i,
+      /\bpairs\b/i,
+    ],
+    frameworkHints: [
+      /\bl[oö]ve\b/i,
+      /\bneovim\b/i,
+      /\broblox\b/i,
+      /\bcoronasdk\b/i,
+      /\bopenresty\b/i,
+    ],
   },
   {
     id: 'r',
     name: 'R',
     codeBlockTags: ['r', 'rlang'],
     extensions: [/\.R$/i, /\.Rmd/i],
-    keywords: [/\b<-\s*/i, /\blibrary\s*\(/i, /\bfunction\s*\(/i, /\bdata\.frame\b/i, /\bggplot\b/i, /\bmutate\b/i, /\bfilter\b/i, /\bsummarise\b/i, /\b%>%\b/i, /\b\|\>\s*/i],
-    frameworkHints: [/\bshiny\b/i, /\btidyverse\b/i, /\bggplot2\b/i, /\bdplyr\b/i, /\bplumber\b/i]
+    keywords: [
+      /\b<-\s*/i,
+      /\blibrary\s*\(/i,
+      /\bfunction\s*\(/i,
+      /\bdata\.frame\b/i,
+      /\bggplot\b/i,
+      /\bmutate\b/i,
+      /\bfilter\b/i,
+      /\bsummarise\b/i,
+      /\b%>%\b/i,
+      /\b\|\>\s*/i,
+    ],
+    frameworkHints: [/\bshiny\b/i, /\btidyverse\b/i, /\bggplot2\b/i, /\bdplyr\b/i, /\bplumber\b/i],
   },
   {
     id: 'scala',
     name: 'Scala',
     codeBlockTags: ['scala'],
     extensions: [/\.scala/i, /\.sc/i],
-    keywords: [/\bdef\s+\w+\s*[\[(]/i, /\bval\s+\w+/i, /\bvar\s+\w+/i, /\bobject\s+\w+/i, /\btrait\s+\w+/i, /\bcase\s+class\b/i, /\bsealed\s+trait\b/i, /\bimplicit\b/i, /\bfor\s*\{/i],
-    frameworkHints: [/\bakka\b/i, /\bzio\b/i, /\bcats\b/i, /\bplay\s*framework\b/i, /\bspark\b/i, /\bsbt\b/i]
+    keywords: [
+      /\bdef\s+\w+\s*[\[(]/i,
+      /\bval\s+\w+/i,
+      /\bvar\s+\w+/i,
+      /\bobject\s+\w+/i,
+      /\btrait\s+\w+/i,
+      /\bcase\s+class\b/i,
+      /\bsealed\s+trait\b/i,
+      /\bimplicit\b/i,
+      /\bfor\s*\{/i,
+    ],
+    frameworkHints: [
+      /\bakka\b/i,
+      /\bzio\b/i,
+      /\bcats\b/i,
+      /\bplay\s*framework\b/i,
+      /\bspark\b/i,
+      /\bsbt\b/i,
+    ],
   },
   {
     id: 'zig',
     name: 'Zig',
     codeBlockTags: ['zig'],
     extensions: [/\.zig/i],
-    keywords: [/\bpub\s+fn\b/i, /\bconst\s+\w+\s*=\s*struct\b/i, /\b@import\b/i, /\bcomptime\b/i, /\banyerror\b/i, /\borelse\b/i, /\bdefer\b/i, /\berrdefer\b/i, /\btry\s+/i, /\ballocator\b/i],
-    frameworkHints: [/\bzig\s+build\b/i, /\bstd\.http\b/i]
+    keywords: [
+      /\bpub\s+fn\b/i,
+      /\bconst\s+\w+\s*=\s*struct\b/i,
+      /\b@import\b/i,
+      /\bcomptime\b/i,
+      /\banyerror\b/i,
+      /\borelse\b/i,
+      /\bdefer\b/i,
+      /\berrdefer\b/i,
+      /\btry\s+/i,
+      /\ballocator\b/i,
+    ],
+    frameworkHints: [/\bzig\s+build\b/i, /\bstd\.http\b/i],
   },
   {
     id: 'arduino',
     name: 'Arduino / Embedded C++',
     codeBlockTags: ['arduino', 'ino'],
     extensions: [/\.ino/i, /\.pde/i],
-    keywords: [/\bvoid\s+setup\s*\(/i, /\bvoid\s+loop\s*\(/i, /\bdigitalWrite\b/i, /\bdigitalRead\b/i, /\banalogRead\b/i, /\banalogWrite\b/i, /\bpinMode\b/i, /\bSerial\.begin/i, /\bSerial\.print/i, /\bdelay\s*\(/i, /\b#include\s*<Arduino/i],
-    frameworkHints: [/\barduino\b/i, /\besp32\b/i, /\besp8266\b/i, /\bplatformio\b/i, /\bteensy\b/i, /\badafruit\b/i, /\bsparkfun\b/i, /\bstm32\b/i, /\bavr\b/i, /\bneopixel\b/i, /\bservo\b/i]
+    keywords: [
+      /\bvoid\s+setup\s*\(/i,
+      /\bvoid\s+loop\s*\(/i,
+      /\bdigitalWrite\b/i,
+      /\bdigitalRead\b/i,
+      /\banalogRead\b/i,
+      /\banalogWrite\b/i,
+      /\bpinMode\b/i,
+      /\bSerial\.begin/i,
+      /\bSerial\.print/i,
+      /\bdelay\s*\(/i,
+      /\b#include\s*<Arduino/i,
+    ],
+    frameworkHints: [
+      /\barduino\b/i,
+      /\besp32\b/i,
+      /\besp8266\b/i,
+      /\bplatformio\b/i,
+      /\bteensy\b/i,
+      /\badafruit\b/i,
+      /\bsparkfun\b/i,
+      /\bstm32\b/i,
+      /\bavr\b/i,
+      /\bneopixel\b/i,
+      /\bservo\b/i,
+    ],
   },
   {
     id: 'micropython',
     name: 'MicroPython / CircuitPython',
     codeBlockTags: ['micropython', 'circuitpython'],
     extensions: [/\.py/i],
-    keywords: [/\bfrom\s+machine\s+import/i, /\bimport\s+machine\b/i, /\bPin\s*\(/i, /\bmachine\.Pin/i, /\bnetwork\.WLAN/i, /\busocket\b/i, /\butime\b/i, /\bboard\./i, /\bdigitalio\./i, /\banalogio\./i],
-    frameworkHints: [/\bmicropython\b/i, /\bcircuitpython\b/i, /\braspberry\s*pi\s*pico\b/i, /\brp2040\b/i, /\badafruit\b/i, /\bthonny\b/i]
-  }
+    keywords: [
+      /\bfrom\s+machine\s+import/i,
+      /\bimport\s+machine\b/i,
+      /\bPin\s*\(/i,
+      /\bmachine\.Pin/i,
+      /\bnetwork\.WLAN/i,
+      /\busocket\b/i,
+      /\butime\b/i,
+      /\bboard\./i,
+      /\bdigitalio\./i,
+      /\banalogio\./i,
+    ],
+    frameworkHints: [
+      /\bmicropython\b/i,
+      /\bcircuitpython\b/i,
+      /\braspberry\s*pi\s*pico\b/i,
+      /\brp2040\b/i,
+      /\badafruit\b/i,
+      /\bthonny\b/i,
+    ],
+  },
 ];
 
 // ── Intent Detection ─────────────────────────────────────────────────────────
@@ -304,79 +784,79 @@ const INTENT_PATTERNS: IntentPattern[] = [
     patterns: [
       /\b(create|build|make|write|generate|develop|implement|scaffold|code|program|design|construct|produce|craft|set\s*up)\b/i,
       /\b(new|from\s+scratch|starter|boilerplate|template|skeleton)\b/i,
-      /\b(webapp?|website|app|application|dashboard|page|component|api|server|cli|tool|game|bot|extension|plugin|script|function|library|module|service|microservice)\b/i
+      /\b(webapp?|website|app|application|dashboard|page|component|api|server|cli|tool|game|bot|extension|plugin|script|function|library|module|service|microservice)\b/i,
     ],
-    weight: 3
+    weight: 3,
   },
   {
     intent: 'debug',
     patterns: [
       /\b(debug|fix|solve|resolve|troubleshoot|diagnose|repair|patch)\b/i,
       /\b(error|bug|issue|crash|exception|fail|broken|wrong|incorrect|doesn'?t\s+work|not\s+working|unexpected)\b/i,
-      /\b(stack\s*trace|traceback|segfault|panic|undefined|null\s*ref|type\s*error|syntax\s*error|runtime\s*error)\b/i
+      /\b(stack\s*trace|traceback|segfault|panic|undefined|null\s*ref|type\s*error|syntax\s*error|runtime\s*error)\b/i,
     ],
-    weight: 4
+    weight: 4,
   },
   {
     intent: 'refactor',
     patterns: [
       /\b(refactor|restructure|reorganize|clean\s*up|improve|rewrite|modernize|simplify|reduce|decouple)\b/i,
-      /\b(code\s+smell|technical\s+debt|legacy|spaghetti|dry|solid|clean\s+code|maintainab)/i
+      /\b(code\s+smell|technical\s+debt|legacy|spaghetti|dry|solid|clean\s+code|maintainab)/i,
     ],
-    weight: 3
+    weight: 3,
   },
   {
     intent: 'explain',
     patterns: [
       /\b(explain|describe|what\s+(is|are|does)|how\s+(does|do|is|are)|why\s+(does|do|is|are)|tell\s+me\s+about|understand|clarify|elaborate|break\s*down|walk\s+through|teach)\b/i,
-      /\b(concept|meaning|difference|between|purpose|reason|logic|flow|algorithm)\b/i
+      /\b(concept|meaning|difference|between|purpose|reason|logic|flow|algorithm)\b/i,
     ],
-    weight: 2
+    weight: 2,
   },
   {
     intent: 'convert',
     patterns: [
       /\b(convert|translate|port|migrate|transform|transpile|rewrite\s+in|change\s+to)\b/i,
       /\bfrom\s+\w+\s+to\s+\w+/i,
-      /\b(python\s+to|to\s+python|rust\s+to|to\s+rust|java\s+to|to\s+java|js\s+to|to\s+js|typescript\s+to|to\s+typescript)\b/i
+      /\b(python\s+to|to\s+python|rust\s+to|to\s+rust|java\s+to|to\s+java|js\s+to|to\s+js|typescript\s+to|to\s+typescript)\b/i,
     ],
-    weight: 4
+    weight: 4,
   },
   {
     intent: 'optimize',
     patterns: [
-      /\b(optimize|optimise|speed\s*up|faster|performance|efficient|reduce\s+memory|minimize|cache|benchmark|profil|latency|throughput|bottleneck)\b/i
+      /\b(optimize|optimise|speed\s*up|faster|performance|efficient|reduce\s+memory|minimize|cache|benchmark|profil|latency|throughput|bottleneck)\b/i,
     ],
-    weight: 3
+    weight: 3,
   },
   {
     intent: 'review',
     patterns: [
-      /\b(review|audit|analyze|assess|evaluate|check|inspect|critique|feedback|best\s+practice|anti[-\s]?pattern|code\s+quality)\b/i
+      /\b(review|audit|analyze|assess|evaluate|check|inspect|critique|feedback|best\s+practice|anti[-\s]?pattern|code\s+quality)\b/i,
     ],
-    weight: 2
+    weight: 2,
   },
   {
     intent: 'integrate',
     patterns: [
-      /\b(integrate|connect|hook\s*up|wire|plug\s*in|api\s+call|fetch\s+data|webhook|auth|authentication|oauth|jwt|cors|endpoint|rest\s*api|graphql|sdk|third[-\s]?party)\b/i
+      /\b(integrate|connect|hook\s*up|wire|plug\s*in|api\s+call|fetch\s+data|webhook|auth|authentication|oauth|jwt|cors|endpoint|rest\s*api|graphql|sdk|third[-\s]?party)\b/i,
     ],
-    weight: 3
+    weight: 3,
   },
   {
     intent: 'test',
     patterns: [
-      /\b(test|spec|unit\s+test|e2e|end[-\s]to[-\s]end|integration\s+test|mock|stub|fixture|assertion|coverage|tdd|bdd|expect\s*\(|describe\s*\(|it\s*\()\b/i
+      /\b(test|spec|unit\s+test|e2e|end[-\s]to[-\s]end|integration\s+test|mock|stub|fixture|assertion|coverage|tdd|bdd|expect\s*\(|describe\s*\(|it\s*\()\b/i,
     ],
-    weight: 3
+    weight: 3,
   },
   {
     intent: 'deploy',
     patterns: [
-      /\b(deploy|deployment|ci\/?cd|docker|kubernetes|k8s|terraform|aws|azure|gcp|cloud|hosting|server\s+setup|nginx|production|pipeline|github\s+actions|vercel|netlify|heroku|fly\.io)\b/i
+      /\b(deploy|deployment|ci\/?cd|docker|kubernetes|k8s|terraform|aws|azure|gcp|cloud|hosting|server\s+setup|nginx|production|pipeline|github\s+actions|vercel|netlify|heroku|fly\.io)\b/i,
     ],
-    weight: 3
-  }
+    weight: 3,
+  },
 ];
 
 // ── Code-Relatedness Detection ───────────────────────────────────────────────
@@ -393,13 +873,13 @@ const CODE_RELATED_PATTERNS: RegExp[] = [
   /\b(async|await|promise|callback|closure|recursion|inheritance|polymorphism|encapsulation|abstraction|mutex|thread|process|memory|pointer|reference|generic|type|interface|protocol|trait|mixin|decorator|annotation|hook|state|prop|context|store|reducer|saga|thunk|observable|signal|ref|reactive|promise|callback|closure|recursion|iteration|inheritance|polymorphism|encapsulation|abstraction|composition|mixin|trait|protocol|interface|generic|template|decorator|annotation|middleware|router|controller|model|view|presenter|viewmodel|schema|migration|seed|orm|odm|query\s*builder|active\s*record|data\s*mapper|index|cache|memoiz|buffer|stream|pipe|channel|thread|process|mutex|semaphore|lock|deadlock|race\s*condition|async|await|coroutine|goroutine|green\s*thread|actor|fiber|event\s*loop|...)\b/i,
   /\b(index\.\w+|package\.json|tsconfig|webpack|vite\.config|dockerfile|makefile|cargo\.toml|go\.mod|requirements\.txt|gemfile|composer\.json|pubspec\.yaml|pom\.xml|build\.gradle)\b/i,
   /\b(error|exception|bug|stack\s*trace|traceback|segfault|null\s*pointer|undefined|type\s*error|syntax\s*error|runtime|compile|lint)\b/i,
-  /\b(docker|container|kubernetes|k8s|ci\/cd|pipeline|workflow|terraform|ansible|jenkins|github\s*actions|gitlab\s*ci)\b/i
+  /\b(docker|container|kubernetes|k8s|ci\/cd|pipeline|workflow|terraform|ansible|jenkins|github\s*actions|gitlab\s*ci)\b/i,
 ];
 
 const NON_CODE_PATTERNS: RegExp[] = [
   /\b(weather|recipe|cooking|sports|news|politics|movie|music|song|celebrity|gossip|horoscope|astrology|dating|relationship|love|poem|story|novel|fiction|essay|homework|geography|capital\s+of|president\s+of|history\s+of|how\s+old|what\s+time|joke|riddle|trivia)\b/i,
   /\b(how\s+to\s+cook|how\s+to\s+lose\s+weight|best\s+restaurants|travel\s+to|vacation|flight|hotel|recommendation|suggest\s+a\s+movie)\b/i,
-  /\b(write\s+(?:a\s+)?(?:poem|essay|letter|email\s+to\s+(?:my|a)\s+(?:friend|boss|teacher)|story|song\s+lyrics))\b/i
+  /\b(write\s+(?:a\s+)?(?:poem|essay|letter|email\s+to\s+(?:my|a)\s+(?:friend|boss|teacher)|story|song\s+lyrics))\b/i,
 ];
 
 const ALL_FRAMEWORKS: Array<{ name: string; pattern: RegExp }> = [
@@ -491,23 +971,50 @@ export function analyzePrompt(prompt: string): PromptAnalysis {
     keywords,
     summary,
     isCodeRelated,
-    hardware
+    hardware,
   };
 }
 
 export function detectHardware(prompt: string): HardwareAnalysis {
   const lower = prompt.toLowerCase();
-  
+
   const platformRules = [
-    { id: 'arduino', name: 'Arduino', patterns: [/\barduino\b/i, /\buno\b/i, /\bnano\b/i, /\bmega\b/i, /\batmega\b/i, /\bavr\b/i, /\.ino\b/i] },
-    { id: 'esp32', name: 'ESP32', patterns: [/\besp32\b/i, /\besp8266\b/i, /\bnodemcu\b/i, /\bfreertos\b/i] },
-    { id: 'raspberrypi', name: 'Raspberry Pi', patterns: [/\braspberry\s*pi\b/i, /\braspi\b/i, /\brpi\b/i, /\bpi\s*3\b/i, /\bpi\s*4\b/i, /\bpi\s*5\b/i] },
-    { id: 'pico', name: 'Pi Pico', patterns: [/\bpico\b/i, /\brp2040\b/i, /\brp2350\b/i] }
+    {
+      id: 'arduino',
+      name: 'Arduino',
+      patterns: [
+        /\barduino\b/i,
+        /\buno\b/i,
+        /\bnano\b/i,
+        /\bmega\b/i,
+        /\batmega\b/i,
+        /\bavr\b/i,
+        /\.ino\b/i,
+      ],
+    },
+    {
+      id: 'esp32',
+      name: 'ESP32',
+      patterns: [/\besp32\b/i, /\besp8266\b/i, /\bnodemcu\b/i, /\bfreertos\b/i],
+    },
+    {
+      id: 'raspberrypi',
+      name: 'Raspberry Pi',
+      patterns: [
+        /\braspberry\s*pi\b/i,
+        /\braspi\b/i,
+        /\brpi\b/i,
+        /\bpi\s*3\b/i,
+        /\bpi\s*4\b/i,
+        /\bpi\s*5\b/i,
+      ],
+    },
+    { id: 'pico', name: 'Pi Pico', patterns: [/\bpico\b/i, /\brp2040\b/i, /\brp2350\b/i] },
   ];
-  
+
   const detectedPlatforms: string[] = [];
   for (const rule of platformRules) {
-    if (rule.patterns.some(p => p.test(prompt))) {
+    if (rule.patterns.some((p) => p.test(prompt))) {
       detectedPlatforms.push(rule.name);
     }
   }
@@ -517,55 +1024,112 @@ export function detectHardware(prompt: string): HardwareAnalysis {
     { name: 'LCD Display', patterns: [/\blcd\b/i, /\b16x2\b/i, /\b20x4\b/i, /\bliquidcrystal\b/i] },
     { name: 'DHT Temperature/Humidity Sensor', patterns: [/\bdht11\b/i, /\bdht22\b/i, /\bdht\b/i] },
     { name: 'Servo Motor', patterns: [/\bservo\b/i, /\bsg90\b/i, /\bmg90\b/i] },
-    { name: 'Stepper Motor', patterns: [/\bstepper\b/i, /\b28byj\b/i, /\buln2003\b/i, /\ba4988\b/i] },
-    { name: 'DC Motor / Driver', patterns: [/\bdc\s*motor\b/i, /\bl298n\b/i, /\bh-bridge\b/i, /\bmotor\s+driver\b/i] },
-    { name: 'NeoPixel LED Strip', patterns: [/\bneopixel\b/i, /\bws2812\b/i, /\bws2812b\b/i, /\bled\s*strip\b/i, /\baddressable\s+led\b/i] },
+    {
+      name: 'Stepper Motor',
+      patterns: [/\bstepper\b/i, /\b28byj\b/i, /\buln2003\b/i, /\ba4988\b/i],
+    },
+    {
+      name: 'DC Motor / Driver',
+      patterns: [/\bdc\s*motor\b/i, /\bl298n\b/i, /\bh-bridge\b/i, /\bmotor\s+driver\b/i],
+    },
+    {
+      name: 'NeoPixel LED Strip',
+      patterns: [
+        /\bneopixel\b/i,
+        /\bws2812\b/i,
+        /\bws2812b\b/i,
+        /\bled\s*strip\b/i,
+        /\baddressable\s+led\b/i,
+      ],
+    },
     { name: 'Relay Module', patterns: [/\brelay\b/i, /\brelays\b/i] },
-    { name: 'Ultrasonic Sensor', patterns: [/\bultrasonic\b/i, /\bhc-sr04\b/i, /\bdistance\s+sensor\b/i] },
+    {
+      name: 'Ultrasonic Sensor',
+      patterns: [/\bultrasonic\b/i, /\bhc-sr04\b/i, /\bdistance\s+sensor\b/i],
+    },
     { name: 'PIR Motion Sensor', patterns: [/\bpir\b/i, /\bmotion\s+sensor\b/i, /\bhc-sr501\b/i] },
-    { name: 'LDR Light Sensor', patterns: [/\bldr\b/i, /\blight\s+sensor\b/i, /\bphotoresistor\b/i] },
+    {
+      name: 'LDR Light Sensor',
+      patterns: [/\bldr\b/i, /\blight\s+sensor\b/i, /\bphotoresistor\b/i],
+    },
     { name: 'Potentiometer', patterns: [/\bpotentiometer\b/i, /\bpot\b/i, /\banalog\s+dial\b/i] },
-    { name: 'IMU / Gyroscope', patterns: [/\bimu\b/i, /\bmpu6050\b/i, /\bmpu9250\b/i, /\bgyro\b/i, /\baccelerometer\b/i] },
-    { name: 'RTC Real Time Clock', patterns: [/\brtc\b/i, /\bds3231\b/i, /\bds1307\b/i, /\bclock\s+module\b/i] }
+    {
+      name: 'IMU / Gyroscope',
+      patterns: [/\bimu\b/i, /\bmpu6050\b/i, /\bmpu9250\b/i, /\bgyro\b/i, /\baccelerometer\b/i],
+    },
+    {
+      name: 'RTC Real Time Clock',
+      patterns: [/\brtc\b/i, /\bds3231\b/i, /\bds1307\b/i, /\bclock\s+module\b/i],
+    },
   ];
 
   const detectedComponents: string[] = [];
   for (const rule of componentRules) {
-    if (rule.patterns.some(p => p.test(prompt))) {
+    if (rule.patterns.some((p) => p.test(prompt))) {
       detectedComponents.push(rule.name);
     }
   }
 
   const protocolRules = [
     { name: 'I2C', patterns: [/\bi2c\b/i, /\bsda\b/i, /\bscl\b/i, /\bwire\.h\b/i] },
-    { name: 'SPI', patterns: [/\bspi\b/i, /\bmiso\b/i, /\bmosi\b/i, /\bsck\b/i, /\bcs\s+pin\b/i, /\bspi\.h\b/i] },
-    { name: 'UART / Serial', patterns: [/\buart\b/i, /\btx\b/i, /\brx\b/i, /\bserial\b/i, /\bsoftware\s*serial\b/i] },
+    {
+      name: 'SPI',
+      patterns: [/\bspi\b/i, /\bmiso\b/i, /\bmosi\b/i, /\bsck\b/i, /\bcs\s+pin\b/i, /\bspi\.h\b/i],
+    },
+    {
+      name: 'UART / Serial',
+      patterns: [/\buart\b/i, /\btx\b/i, /\brx\b/i, /\bserial\b/i, /\bsoftware\s*serial\b/i],
+    },
     { name: 'PWM', patterns: [/\bpwm\b/i, /\bpulse\s*width\b/i, /\banalogwrite\b/i] },
-    { name: 'One-Wire', patterns: [/\bonewire\b/i, /\b1-wire\b/i, /\bdallas\b/i, /\bds18b20\b/i] }
+    { name: 'One-Wire', patterns: [/\bonewire\b/i, /\b1-wire\b/i, /\bdallas\b/i, /\bds18b20\b/i] },
   ];
 
   const detectedProtocols: string[] = [];
   for (const rule of protocolRules) {
-    if (rule.patterns.some(p => p.test(prompt))) {
+    if (rule.patterns.some((p) => p.test(prompt))) {
       detectedProtocols.push(rule.name);
     }
   }
 
-  if (detectedComponents.some(c => c.includes('OLED') || c.includes('LCD') || c.includes('RTC')) && !detectedProtocols.includes('I2C')) {
+  if (
+    detectedComponents.some((c) => c.includes('OLED') || c.includes('LCD') || c.includes('RTC')) &&
+    !detectedProtocols.includes('I2C')
+  ) {
     detectedProtocols.push('I2C');
   }
-  if (detectedComponents.some(c => c.includes('NeoPixel') || c.includes('Servo') || c.includes('Stepper') || c.includes('DC Motor')) && !detectedProtocols.includes('PWM') && !lower.includes('i2c')) {
+  if (
+    detectedComponents.some(
+      (c) =>
+        c.includes('NeoPixel') ||
+        c.includes('Servo') ||
+        c.includes('Stepper') ||
+        c.includes('DC Motor')
+    ) &&
+    !detectedProtocols.includes('PWM') &&
+    !lower.includes('i2c')
+  ) {
     detectedProtocols.push('PWM / Timing');
   }
 
-  const isHardware = detectedPlatforms.length > 0 || detectedComponents.length > 0 || detectedProtocols.length > 0 || lower.includes('microcontroller') || lower.includes('sensor') || lower.includes('actuator') || lower.includes('gpio');
+  const isHardware =
+    detectedPlatforms.length > 0 ||
+    detectedComponents.length > 0 ||
+    detectedProtocols.length > 0 ||
+    lower.includes('microcontroller') ||
+    lower.includes('sensor') ||
+    lower.includes('actuator') ||
+    lower.includes('gpio');
 
   const gaps: string[] = [];
   const safetyHazards: string[] = [];
   const optimizations: string[] = [];
 
   if (isHardware) {
-    const isArduinoHost = detectedPlatforms.includes('Arduino') || (!detectedPlatforms.includes('Raspberry Pi') && !detectedPlatforms.includes('Pi Pico') && !detectedPlatforms.includes('ESP32'));
+    const isArduinoHost =
+      detectedPlatforms.includes('Arduino') ||
+      (!detectedPlatforms.includes('Raspberry Pi') &&
+        !detectedPlatforms.includes('Pi Pico') &&
+        !detectedPlatforms.includes('ESP32'));
     const isESP32Host = detectedPlatforms.includes('ESP32');
     const isPiHost = detectedPlatforms.includes('Raspberry Pi');
     const isPicoHost = detectedPlatforms.includes('Pi Pico');
@@ -573,66 +1137,116 @@ export function detectHardware(prompt: string): HardwareAnalysis {
     const pinRegex = /\b(pin\s*\d+|gpio\s*\d+|d\d+|a\d+)\b/i;
     const hasPins = pinRegex.test(prompt);
 
-    if (detectedComponents.some(c => c.includes('DHT') || c.includes('Servo') || c.includes('NeoPixel') || c.includes('Relay') || c.includes('Ultrasonic'))) {
+    if (
+      detectedComponents.some(
+        (c) =>
+          c.includes('DHT') ||
+          c.includes('Servo') ||
+          c.includes('NeoPixel') ||
+          c.includes('Relay') ||
+          c.includes('Ultrasonic')
+      )
+    ) {
       if (!hasPins) {
         let suggestedPin = 'D2';
         if (isPiHost) suggestedPin = 'GPIO 4';
         else if (isESP32Host) suggestedPin = 'GPIO 4 / D4';
         else if (isPicoHost) suggestedPin = 'GP15';
-        gaps.push(`Pin assignment undefined. We will default to a standard GPIO pin (${suggestedPin}). Make sure to specify your exact wiring if it differs.`);
+        gaps.push(
+          `Pin assignment undefined. We will default to a standard GPIO pin (${suggestedPin}). Make sure to specify your exact wiring if it differs.`
+        );
       }
     }
 
-    if (detectedComponents.some(c => c.includes('LCD') || c.includes('OLED'))) {
+    if (detectedComponents.some((c) => c.includes('LCD') || c.includes('OLED'))) {
       const hexAddrRegex = /\b0x[0-9a-f]{2}\b/i;
       const hasHexAddr = hexAddrRegex.test(prompt);
       if (!hasHexAddr) {
-        const isLCD = detectedComponents.some(c => c.includes('LCD'));
+        const isLCD = detectedComponents.some((c) => c.includes('LCD'));
         const defaultAddr = isLCD ? '0x27' : '0x3C';
         const componentName = isLCD ? 'I2C LCD' : 'SSD1306 OLED';
-        gaps.push(`I2C address is missing. The ${componentName} typically defaults to '${defaultAddr}'. We will initialize it with this address, but verify your hardware configuration.`);
+        gaps.push(
+          `I2C address is missing. The ${componentName} typically defaults to '${defaultAddr}'. We will initialize it with this address, but verify your hardware configuration.`
+        );
       }
     }
 
     const libraries: string[] = [];
-    if (detectedComponents.some(c => c.includes('LCD'))) {
+    if (detectedComponents.some((c) => c.includes('LCD'))) {
       libraries.push(isArduinoHost ? 'LiquidCrystal_I2C' : 'smbus2 (Python)');
     }
-    if (detectedComponents.some(c => c.includes('OLED'))) {
+    if (detectedComponents.some((c) => c.includes('OLED'))) {
       libraries.push(isArduinoHost ? 'Adafruit_SSD1306 and Adafruit_GFX' : 'luma.oled (Python)');
     }
-    if (detectedComponents.some(c => c.includes('DHT'))) {
+    if (detectedComponents.some((c) => c.includes('DHT'))) {
       libraries.push(isArduinoHost ? 'DHT sensor library (Adafruit)' : 'Adafruit_DHT (Python)');
     }
-    if (detectedComponents.some(c => c.includes('NeoPixel'))) {
+    if (detectedComponents.some((c) => c.includes('NeoPixel'))) {
       libraries.push(isArduinoHost ? 'Adafruit_NeoPixel' : 'rpi_ws281x (Python)');
     }
     if (libraries.length > 0) {
-      gaps.push(`Missing library context. The following library headers must be included: ${libraries.join(', ')}.`);
+      gaps.push(
+        `Missing library context. The following library headers must be included: ${libraries.join(', ')}.`
+      );
     }
 
     const is33VHost = isESP32Host || isPiHost || isPicoHost;
     if (is33VHost) {
-      const has5VComponents = detectedComponents.some(c => c.includes('Ultrasonic') || c.includes('LCD') || c.includes('Relay'));
+      const has5VComponents = detectedComponents.some(
+        (c) => c.includes('Ultrasonic') || c.includes('LCD') || c.includes('Relay')
+      );
       if (has5VComponents || lower.includes('5v')) {
-        safetyHazards.push(`Voltage Level Mismatch (3.3V vs 5V): Your selected host (${detectedPlatforms.join('/') || '3.3V MCU'}) operates at 3.3V logic levels. Connecting a 5V sensor output directly to a 3.3V GPIO will damage the pin. Recommend using a bidirectional logic level shifter (like TXS0108E) or a voltage divider for signals going from sensor to MCU.`);
+        safetyHazards.push(
+          `Voltage Level Mismatch (3.3V vs 5V): Your selected host (${detectedPlatforms.join('/') || '3.3V MCU'}) operates at 3.3V logic levels. Connecting a 5V sensor output directly to a 3.3V GPIO will damage the pin. Recommend using a bidirectional logic level shifter (like TXS0108E) or a voltage divider for signals going from sensor to MCU.`
+        );
       }
     }
 
-    const isHighFrequency = lower.includes('continuous') || lower.includes('realtime') || lower.includes('every second') || lower.includes('real-time') || lower.includes('fast') || lower.includes('constantly');
-    const hasDelayKeywords = lower.includes('delay') || lower.includes('sleep') || lower.includes('wait');
+    const isHighFrequency =
+      lower.includes('continuous') ||
+      lower.includes('realtime') ||
+      lower.includes('every second') ||
+      lower.includes('real-time') ||
+      lower.includes('fast') ||
+      lower.includes('constantly');
+    const hasDelayKeywords =
+      lower.includes('delay') || lower.includes('sleep') || lower.includes('wait');
     if (isHighFrequency && hasDelayKeywords) {
-      safetyHazards.push(`Blocking execution delay() hazard: High-frequency tasks or sensor polling should avoid blocking delays. Using delay() freezes execution and blocks interrupts, network events, or button presses. Recommend implementing a non-blocking millis() or timer interrupt cycle instead.`);
+      safetyHazards.push(
+        `Blocking execution delay() hazard: High-frequency tasks or sensor polling should avoid blocking delays. Using delay() freezes execution and blocks interrupts, network events, or button presses. Recommend implementing a non-blocking millis() or timer interrupt cycle instead.`
+      );
     }
 
-    const isAVR = lower.includes('uno') || lower.includes('nano') || lower.includes('mega') || lower.includes('atmega328') || lower.includes('avr');
-    if (isAVR && (lower.includes('string') || lower.includes('json') || lower.includes('web') || lower.includes('server') || detectedComponents.some(c => c.includes('OLED')))) {
-      optimizations.push(`AVR RAM Constraint (2KB SRAM limit): Arduino Uno/Nano are highly memory-constrained. Using the dynamic 'String' class or allocating large display buffers leads to rapid heap fragmentation and silent crashes. Use static character arrays (char[]), avoid dynamic allocation, and wrap serial string literals in the F() macro (e.g. Serial.println(F("Hello"))).`);
+    const isAVR =
+      lower.includes('uno') ||
+      lower.includes('nano') ||
+      lower.includes('mega') ||
+      lower.includes('atmega328') ||
+      lower.includes('avr');
+    if (
+      isAVR &&
+      (lower.includes('string') ||
+        lower.includes('json') ||
+        lower.includes('web') ||
+        lower.includes('server') ||
+        detectedComponents.some((c) => c.includes('OLED')))
+    ) {
+      optimizations.push(
+        `AVR RAM Constraint (2KB SRAM limit): Arduino Uno/Nano are highly memory-constrained. Using the dynamic 'String' class or allocating large display buffers leads to rapid heap fragmentation and silent crashes. Use static character arrays (char[]), avoid dynamic allocation, and wrap serial string literals in the F() macro (e.g. Serial.println(F("Hello"))).`
+      );
     }
 
-    const isBatteryPowered = lower.includes('battery') || lower.includes('solar') || lower.includes('low power') || lower.includes('power saving') || lower.includes('lipo') || lower.includes('power-saving');
+    const isBatteryPowered =
+      lower.includes('battery') ||
+      lower.includes('solar') ||
+      lower.includes('low power') ||
+      lower.includes('power saving') ||
+      lower.includes('lipo') ||
+      lower.includes('power-saving');
     if (isBatteryPowered) {
-      optimizations.push(`Battery/Low-Power Mode detected: To maximize battery life, avoid active loop polling which consumes high power (~15-80mA). Recommend putting the MCU into deep sleep mode, configuring a timer or external GPIO interrupt to wake the board up, performing the reading, and immediately going back to sleep.`);
+      optimizations.push(
+        `Battery/Low-Power Mode detected: To maximize battery life, avoid active loop polling which consumes high power (~15-80mA). Recommend putting the MCU into deep sleep mode, configuring a timer or external GPIO interrupt to wake the board up, performing the reading, and immediately going back to sleep.`
+      );
     }
   }
 
@@ -643,33 +1257,41 @@ export function detectHardware(prompt: string): HardwareAnalysis {
     detectedProtocols,
     gaps,
     safetyHazards,
-    optimizations
+    optimizations,
   };
 }
 
 export function optimizePromptText(prompt: string, analysis: PromptAnalysis): string {
   const normalized = prompt.trim();
-  
+
   if (analysis.hardware && analysis.hardware.isHardware) {
     const hw = analysis.hardware;
-    const host = hw.detectedPlatforms.length > 0 ? hw.detectedPlatforms.join('/') : 'Microcontroller (e.g. Arduino Nano / ESP32)';
-    
-    const componentsList = hw.detectedComponents.length > 0 
-      ? hw.detectedComponents.map(c => `  - ${c}`).join('\n')
-      : '  - [Specify sensor/actuator model here]';
-      
-    const protocolsList = hw.detectedProtocols.length > 0
-      ? hw.detectedProtocols.map(p => `  - ${p}`).join('\n')
-      : '  - GPIO / Digital Signals';
+    const host =
+      hw.detectedPlatforms.length > 0
+        ? hw.detectedPlatforms.join('/')
+        : 'Microcontroller (e.g. Arduino Nano / ESP32)';
 
-    const pinsList = hw.detectedComponents.length > 0
-      ? hw.detectedComponents.map((c, i) => {
-          let pin = `D${2 + i}`;
-          if (host.includes('Raspberry Pi') && !host.includes('Pico')) pin = `GPIO ${4 + i}`;
-          if (host.includes('Pico')) pin = `GP${15 + i}`;
-          return `  - ${c}: connected to ${pin}`;
-        }).join('\n')
-      : '  - [Map your components to specific GPIO pins]';
+    const componentsList =
+      hw.detectedComponents.length > 0
+        ? hw.detectedComponents.map((c) => `  - ${c}`).join('\n')
+        : '  - [Specify sensor/actuator model here]';
+
+    const protocolsList =
+      hw.detectedProtocols.length > 0
+        ? hw.detectedProtocols.map((p) => `  - ${p}`).join('\n')
+        : '  - GPIO / Digital Signals';
+
+    const pinsList =
+      hw.detectedComponents.length > 0
+        ? hw.detectedComponents
+            .map((c, i) => {
+              let pin = `D${2 + i}`;
+              if (host.includes('Raspberry Pi') && !host.includes('Pico')) pin = `GPIO ${4 + i}`;
+              if (host.includes('Pico')) pin = `GP${15 + i}`;
+              return `  - ${c}: connected to ${pin}`;
+            })
+            .join('\n')
+        : '  - [Map your components to specific GPIO pins]';
 
     let optimized = `[SYSTEM: HARDWARE ENGINEERING SPECIFICATION]
 # Target Platform & Board
@@ -698,11 +1320,15 @@ ${pinsList}
 `;
     return optimized;
   } else {
-    const lang = analysis.primaryLanguage 
-      ? LANG_SIGNATURES.find(s => s.id === analysis.primaryLanguage)?.name || analysis.primaryLanguage
+    const lang = analysis.primaryLanguage
+      ? LANG_SIGNATURES.find((s) => s.id === analysis.primaryLanguage)?.name ||
+        analysis.primaryLanguage
       : 'General Programming';
-    const fw = analysis.frameworks.length > 0 ? analysis.frameworks.join(', ') : 'Vanilla / Standard Libraries';
-    
+    const fw =
+      analysis.frameworks.length > 0
+        ? analysis.frameworks.join(', ')
+        : 'Vanilla / Standard Libraries';
+
     let optimized = `[SYSTEM: SOFTWARE ENGINEERING SPECIFICATION]
 # Language & Architecture
 - **Primary Language:** ${lang}
@@ -759,15 +1385,22 @@ function detectLanguages(prompt: string): string[] {
 }
 
 function detectFrameworks(prompt: string): string[] {
-  return ALL_FRAMEWORKS
-    .filter(fw => fw.pattern.test(prompt))
-    .map(fw => fw.name);
+  return ALL_FRAMEWORKS.filter((fw) => fw.pattern.test(prompt)).map((fw) => fw.name);
 }
 
 function classifyIntent(prompt: string): PromptIntent {
   const scores: Record<PromptIntent, number> = {
-    generate: 0, refactor: 0, debug: 0, explain: 0, convert: 0,
-    optimize: 0, review: 0, integrate: 0, test: 0, deploy: 0, general: 0
+    generate: 0,
+    refactor: 0,
+    debug: 0,
+    explain: 0,
+    convert: 0,
+    optimize: 0,
+    review: 0,
+    integrate: 0,
+    test: 0,
+    deploy: 0,
+    general: 0,
   };
 
   for (const { intent, patterns, weight } of INTENT_PATTERNS) {
@@ -788,7 +1421,11 @@ function classifyIntent(prompt: string): PromptIntent {
   return winner || 'general';
 }
 
-function scoreComplexity(prompt: string, languages: string[], frameworks: string[]): ComplexityLevel {
+function scoreComplexity(
+  prompt: string,
+  languages: string[],
+  frameworks: string[]
+): ComplexityLevel {
   let score = 0;
 
   const wordCount = prompt.split(/\s+/).length;
@@ -801,7 +1438,8 @@ function scoreComplexity(prompt: string, languages: string[], frameworks: string
   score += Math.min(languages.length, 3);
   score += Math.min(frameworks.length, 4);
 
-  const archKeywords = /\b(microservice|distributed|scalab|architecture|system\s+design|event[-\s]driven|cqrs|saga|monorepo|multi[-\s]tenant|load\s*balanc|cache\s*layer|message\s*queue|real[-\s]time|websocket|stream|pipeline|orchestrat|infrastructure)\b/i;
+  const archKeywords =
+    /\b(microservice|distributed|scalab|architecture|system\s+design|event[-\s]driven|cqrs|saga|monorepo|multi[-\s]tenant|load\s*balanc|cache\s*layer|message\s*queue|real[-\s]time|websocket|stream|pipeline|orchestrat|infrastructure)\b/i;
   if (archKeywords.test(prompt)) score += 3;
 
   const fileCount = (prompt.match(/\.\w{1,5}\b/g) || []).length;
@@ -824,29 +1462,47 @@ function checkCodeRelated(
   const trimmed = prompt.trim();
 
   // Greetings and identity queries are conversational — NOT code-related
-  const GREETINGS = /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)(?:\s+(?:nyx|assistant|there|friend|everyone|all))?[.,!?\s]*$/i;
-  const IDENTITY = /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx|what\s+can\s+you\s+do|what\s+are\s+you|help\s+me)\b/i;
-  const CONVERSATIONAL = /^(how\s+are\s+you|how's\s+it\s+going|what's\s+up|tell\s+me\s+a\s+joke|what\s+do\s+you\s+think|how\s+do\s+you\s+feel|do\s+you\s+like|what's\s+your\s+favorite|can\s+you\s+help|thanks?\s+for|i\s+appreciate|what\s+time\s+is\s+it|good\s+job|well\s+done)/i;
-  if (GREETINGS.test(trimmed) || IDENTITY.test(trimmed) || CONVERSATIONAL.test(trimmed)) return false;
+  const GREETINGS =
+    /^(hi|hello|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|howdy|yo|sup|whats\s+up|what's\s+up|how\s+are\s+you|how's\s+it\s+going|what's\s+good|thanks?|thank\s+you|okay|ok|cool|nice|great|awesome|got\s+it|sure|yes|no|yep|nope|bye|goodbye|see\s+you|good\s+night|good\s+day)(?:\s+(?:nyx|assistant|there|friend|everyone|all))?[.,!?\s]*$/i;
+  const IDENTITY =
+    /\b(who\s+are\s+you|your\s+identity|what\s+is\s+your\s+name|when\s+were\s+you\s+built|tell\s+me\s+about\s+yourself|who\s+built\s+you|are\s+you\s+nyx|who\s+is\s+nyx|what\s+can\s+you\s+do|what\s+are\s+you|help\s+me)\b/i;
+  const CONVERSATIONAL =
+    /^(how\s+are\s+you|how's\s+it\s+going|what's\s+up|tell\s+me\s+a\s+joke|what\s+do\s+you\s+think|how\s+do\s+you\s+feel|do\s+you\s+like|what's\s+your\s+favorite|can\s+you\s+help|thanks?\s+for|i\s+appreciate|what\s+time\s+is\s+it|good\s+job|well\s+done)/i;
+  if (GREETINGS.test(trimmed) || IDENTITY.test(trimmed) || CONVERSATIONAL.test(trimmed))
+    return false;
 
   // Explicit non-code topics take priority
-  if (NON_CODE_PATTERNS.some(p => p.test(prompt))) return false;
+  if (NON_CODE_PATTERNS.some((p) => p.test(prompt))) return false;
 
   if (languages.length > 0 || frameworks.length > 0) return true;
   if (MENTIONS_CODE_TECH.test(prompt)) return true;
 
-  if (['generate', 'refactor', 'debug', 'convert', 'optimize', 'review', 'integrate', 'test', 'deploy', 'explain', 'general'].includes(intent)) {
-    if (CODE_RELATED_PATTERNS.some(p => p.test(prompt))) return true;
+  if (
+    [
+      'generate',
+      'refactor',
+      'debug',
+      'convert',
+      'optimize',
+      'review',
+      'integrate',
+      'test',
+      'deploy',
+      'explain',
+      'general',
+    ].includes(intent)
+  ) {
+    if (CODE_RELATED_PATTERNS.some((p) => p.test(prompt))) return true;
   }
 
-  const codeMatches = CODE_RELATED_PATTERNS.filter(p => p.test(prompt)).length;
+  const codeMatches = CODE_RELATED_PATTERNS.filter((p) => p.test(prompt)).length;
   return codeMatches >= 2;
 }
 
 function extractKeywords(lower: string): string[] {
   const keywords: string[] = [];
   const kwPatterns = [
-    /\b(api|sdk|database|server|client|frontend|backend|fullstack|auth|oauth|jwt|cors|webpack|vite|docker|kubernetes|terraform|ci\/cd|graphql|rest|grpc|websocket|cache|queue|stream|pipeline)\b/gi
+    /\b(api|sdk|database|server|client|frontend|backend|fullstack|auth|oauth|jwt|cors|webpack|vite|docker|kubernetes|terraform|ci\/cd|graphql|rest|grpc|websocket|cache|queue|stream|pipeline)\b/gi,
   ];
   for (const p of kwPatterns) {
     let m;
@@ -870,7 +1526,7 @@ function generateSummary(
   }
 
   const langStr = primaryLanguage
-    ? LANG_SIGNATURES.find(s => s.id === primaryLanguage)?.name || primaryLanguage
+    ? LANG_SIGNATURES.find((s) => s.id === primaryLanguage)?.name || primaryLanguage
     : 'general';
   const fwStr = frameworks.length > 0 ? ` using ${frameworks.slice(0, 3).join(', ')}` : '';
   const intentStr = intent === 'general' ? 'coding task' : intent;
@@ -894,31 +1550,37 @@ Please describe your coding task, and I'll deliver production-ready results!`;
 
 export function isMissingDebugDetails(prompt: string, intent: string): boolean {
   const lower = prompt.toLowerCase();
-  
-  const hasErrorKeywords = /\b(error|bug|crash|exception|compile\s+error|not\s+compiling|fails?\s+to\s+compile|getting\s+an?\s+error|got\s+an?\s+error|cannot\s+compile|wont\s+compile|won't\s+compile|how\s+to\s+fix|what\s+can\s+be\s+the\s+problem|why\s+is\s+it\s+failing)\b/i.test(lower);
-  
+
+  const hasErrorKeywords =
+    /\b(error|bug|crash|exception|compile\s+error|not\s+compiling|fails?\s+to\s+compile|getting\s+an?\s+error|got\s+an?\s+error|cannot\s+compile|wont\s+compile|won't\s+compile|how\s+to\s+fix|what\s+can\s+be\s+the\s+problem|why\s+is\s+it\s+failing)\b/i.test(
+      lower
+    );
+
   if (!hasErrorKeywords && intent !== 'debug') return false;
-  
-  const hasCodeBlock = prompt.includes('```') || prompt.includes('    ') || (prompt.match(/[{}();]/g) || []).length > 6;
+
+  const hasCodeBlock =
+    prompt.includes('```') ||
+    prompt.includes('    ') ||
+    (prompt.match(/[{}();]/g) || []).length > 6;
   if (hasCodeBlock) return false;
-  
-  const isVagueErrorQuery = 
-    /error\s+message/i.test(lower) || 
-    /getting\s+an?\s+error/i.test(lower) || 
-    /fails?\s+to\s+compile/i.test(lower) || 
-    /won't\s+compile/i.test(lower) || 
-    /not\s+compiling/i.test(lower) || 
+
+  const isVagueErrorQuery =
+    /error\s+message/i.test(lower) ||
+    /getting\s+an?\s+error/i.test(lower) ||
+    /fails?\s+to\s+compile/i.test(lower) ||
+    /won't\s+compile/i.test(lower) ||
+    /not\s+compiling/i.test(lower) ||
     /code\s+not\s+working/i.test(lower) ||
     /problem\s+compiling/i.test(lower) ||
     /error\s+when\s+i\s+try\s+to\s+compile/i.test(lower) ||
     /cannot\s+compile/i.test(lower) ||
     /what\s+can\s+be\s+the\s+problem/i.test(lower);
-    
+
   const wordCount = prompt.split(/\s+/).length;
   if (wordCount < 45 && isVagueErrorQuery) {
     return true;
   }
-  
+
   return false;
 }
 

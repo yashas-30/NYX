@@ -11,7 +11,7 @@ function build() {
   console.log('🚀 Starting optimized server build...');
 
   // 1. Run esbuild to bundle server.ts
-  const esbuildCmd = 'npx esbuild server.ts --bundle --minify --platform=node --target=node22 --format=cjs --outfile=dist-server/server.cjs --external:better-sqlite3 --external:onnxruntime-node --external:sharp --external:pino --external:pino-pretty --external:thread-stream';
+  const esbuildCmd = 'npx esbuild server.ts --bundle --minify --platform=node --target=node22 --format=esm --outfile=dist-server/server.mjs --external:better-sqlite3 --external:onnxruntime-node --external:sharp --external:pino --external:pino-pretty --external:thread-stream';
   console.log(`📦 Running esbuild: ${esbuildCmd}`);
   execSync(esbuildCmd, { cwd: rootDir, stdio: 'inherit' });
 
@@ -41,7 +41,7 @@ function build() {
     name: 'nyx-server',
     version: rootPackage.version || '3.0.0',
     private: true,
-    type: 'commonjs',
+    type: 'module',
     dependencies: {
       'better-sqlite3': getVer('better-sqlite3', '^12.10.0'),
       'onnxruntime-node': '1.14.0', // Explicit version for local GGUF embedding/transformers compatibility

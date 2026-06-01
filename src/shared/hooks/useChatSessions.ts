@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ChatMessage } from '@src/infrastructure/types';
-import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 export interface ChatSession {
@@ -27,9 +26,6 @@ function deriveTitleFromMessages(messages: ChatMessage[]): string {
 }
 
 export function useChatSessions(agentType?: 'chat' | 'coder') {
-  const privacyMode = useNyxStore((state) => state.privacyMode);
-
-  const [privacySessions, setPrivacySessions] = useState<ChatSession[]>([]);
   const [regularSessions, setRegularSessions] = useState<ChatSession[]>([]);
   const [activeSid, setActiveSid] = useState<string | null>(null);
 
@@ -50,8 +46,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
   );
 
   // Computed sessions list
-  const allSessions = privacyMode ? privacySessions : regularSessions;
-  const sessions = allSessions.filter((s) => matchesAgentType(s.id));
+  const sessions = regularSessions.filter((s) => matchesAgentType(s.id));
 
   // Load sessions from API or fallback to localStorage on mount
   useEffect(() => {
@@ -75,7 +70,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
               }
               return merged.sort((a, b) => b.updatedAt - a.updatedAt);
             });
-            if (serverSessions.length > 0 && !privacyMode) {
+            if (serverSessions.length > 0) {
               // Only auto-switch if we don't already have an active session for this agent
               setActiveSid((prevSid) => {
                 if (prevSid) return prevSid; // Keep existing selection
@@ -107,7 +102,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
               }
               return merged.sort((a, b) => b.updatedAt - a.updatedAt);
             });
-            if (parsed.length > 0 && !privacyMode) {
+            if (parsed.length > 0) {
               const matching = parsed.find((s) => matchesAgentType(s.id));
               if (matching) {
                 setActiveSid((prevSid) => prevSid || matching.id);
@@ -125,7 +120,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
     return () => {
       activeToken = false;
     };
-  }, [privacyMode, matchesAgentType]);
+  }, [agentType, matchesAgentType]);
 
   // Persist sessions on every change (regular sessions only!)
   useEffect(() => {
@@ -137,66 +132,18 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
     }
   }, [regularSessions]);
 
-  // Manage initial session creation when switching modes
+  // Manage initial session selection when switching modes
   useEffect(() => {
-    if (privacyMode) {
-      // If we already have a valid active session in privacy mode, do nothing
-      const hasMatchingActiveSid = activeSid && matchesAgentType(activeSid) && privacySessions.some((s) => s.id === activeSid);
-      if (hasMatchingActiveSid) {
-        return;
-      }
-      const matchingPrivacy = privacySessions.find((s) => matchesAgentType(s.id));
-      if (matchingPrivacy) {
-        setActiveSid(matchingPrivacy.id);
-      } else {
-        const id = generateId(agentType);
-        const now = Date.now();
-        const session: ChatSession = {
-          id,
-          title: 'Private Chat',
-          messages: [],
-          createdAt: now,
-          updatedAt: now,
-        };
-        setPrivacySessions((prev) => [session, ...prev]);
-        setActiveSid(id);
-      }
-    } else {
-      // If we already have a valid active session in regular mode, do nothing
-      const hasMatchingActiveSid = activeSid && matchesAgentType(activeSid) && regularSessions.some((s) => s.id === activeSid);
-      if (hasMatchingActiveSid) {
-        return;
-      }
-      const matchingRegular = regularSessions.find((s) => matchesAgentType(s.id));
-      if (matchingRegular) {
-        setActiveSid(matchingRegular.id);
-      } else {
-        const id = generateId(agentType);
-        const now = Date.now();
-        const session: ChatSession = {
-          id,
-          title: 'New Chat',
-          messages: [],
-          createdAt: now,
-          updatedAt: now,
-        };
-        setRegularSessions((prev) => [session, ...prev]);
-        setActiveSid(id);
-      }
+    // If we already have a valid active session in regular mode, do nothing
+    const hasMatchingActiveSid = activeSid && matchesAgentType(activeSid);
+    if (hasMatchingActiveSid) {
+      return;
     }
-  }, [privacyMode, agentType, matchesAgentType, privacySessions, regularSessions, activeSid]);
-
-  // Listen for inactivity self-destruct trigger
-  useEffect(() => {
-    const handleWipe = () => {
-      setPrivacySessions([]);
-      setActiveSid(null);
-    };
-    window.addEventListener('nyx:privacy-inactivity-wipe', handleWipe);
-    return () => {
-      window.removeEventListener('nyx:privacy-inactivity-wipe', handleWipe);
-    };
-  }, []);
+    const matchingRegular = regularSessions.find((s) => matchesAgentType(s.id));
+    if (matchingRegular) {
+      setActiveSid(matchingRegular.id);
+    }
+  }, [agentType, matchesAgentType, regularSessions, activeSid]);
 
   const createSession = useCallback(
     (initialMessages: ChatMessage[] = []): string => {
@@ -204,17 +151,11 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
       const now = Date.now();
       const session: ChatSession = {
         id,
-        title: privacyMode ? 'Private Chat' : deriveTitleFromMessages(initialMessages),
+        title: deriveTitleFromMessages(initialMessages),
         messages: initialMessages,
         createdAt: now,
         updatedAt: now,
       };
-
-      if (privacyMode) {
-        setPrivacySessions((prev) => [session, ...prev]);
-        setActiveSid(id);
-        return id;
-      }
 
       setRegularSessions((prev) => [session, ...prev]);
       setActiveSid(id);
@@ -229,29 +170,12 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
 
       return id;
     },
-    [privacyMode, agentType]
+    [agentType]
   );
 
   const updateSession = useCallback(
     (sid: string, messages: ChatMessage[]) => {
       const now = Date.now();
-
-      if (privacyMode) {
-        setPrivacySessions((prev) =>
-          prev.map((s) => {
-            if (s.id === sid) {
-              return {
-                ...s,
-                messages,
-                title: 'Private Chat',
-                updatedAt: now,
-              };
-            }
-            return s;
-          })
-        );
-        return;
-      }
 
       setRegularSessions((prev) =>
         prev.map((s) => {
@@ -279,17 +203,11 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
         })
       );
     },
-    [privacyMode]
+    [agentType]
   );
 
   const deleteSession = useCallback(
     (sid: string) => {
-      if (privacyMode) {
-        setPrivacySessions((prev) => prev.filter((s) => s.id !== sid));
-        setActiveSid((prev) => (prev === sid ? null : prev));
-        return;
-      }
-
       setRegularSessions((prev) => prev.filter((s) => s.id !== sid));
       setActiveSid((prev) => (prev === sid ? null : prev));
 
@@ -301,7 +219,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
         method: 'DELETE',
       }).catch((err) => console.warn('[useChatSessions] Failed to sync session deletion:', err));
     },
-    [privacyMode]
+    [agentType]
   );
 
   const switchSession = useCallback((sid: string | null) => {

@@ -237,6 +237,16 @@ def run_server():
     httpd = ThreadingHTTPServer(server_address, ScraplingHandler)
     print(f"\n[Scrapling Server] Local web scraping proxy running on http://127.0.0.1:{port}")
     
+    import threading
+    def monitor_parent():
+        try:
+            sys.stdin.read()
+        except Exception:
+            pass
+        print("[Scrapling Server] Parent process died, exiting...")
+        os._exit(0)
+    threading.Thread(target=monitor_parent, daemon=True).start()
+
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

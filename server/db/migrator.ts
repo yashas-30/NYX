@@ -10,7 +10,7 @@ const currentDirname = (() => {
     return __dirname;
   }
   try {
-    return path.dirname(fileURLToPath(new Function('return import.meta.url')()));
+    return path.dirname(fileURLToPath(import.meta.url));
   } catch {
     return '';
   }
@@ -21,7 +21,7 @@ export function runMigrations() {
     logger.info('[DB] Running database migrations...');
     // Resolve path to standard packaging migrations location
     const migrationsFolder = path.join(currentDirname, 'migrations');
-    
+
     if (!fs.existsSync(migrationsFolder)) {
       const fallbackFolder = path.resolve(currentDirname, '..', 'server', 'db', 'migrations');
       if (fs.existsSync(fallbackFolder)) {
@@ -29,7 +29,9 @@ export function runMigrations() {
         logger.info('[DB] Migrations completed using workspace fallback.');
         return;
       }
-      throw new Error(`Migration directory not found at packaged path (${migrationsFolder}) or fallback (${fallbackFolder})`);
+      throw new Error(
+        `Migration directory not found at packaged path (${migrationsFolder}) or fallback (${fallbackFolder})`
+      );
     }
 
     migrate(db, { migrationsFolder });

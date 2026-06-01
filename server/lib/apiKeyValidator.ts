@@ -1,5 +1,5 @@
 const KEY_PATTERNS: Record<string, RegExp> = {
-  gemini:     /^AIzaSy[a-zA-Z0-9\-_]{33}$/,
+  gemini: /^AIzaSy[a-zA-Z0-9\-_]{33}$/,
 };
 
 export function validateApiKey(provider: string, key: string): boolean {

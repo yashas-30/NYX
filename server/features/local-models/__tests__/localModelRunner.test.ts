@@ -12,10 +12,10 @@ vi.mock('../localModelManager.ts', () => ({
         fileName: 'nyx-gemma-4-e2b-it.gguf',
         status: 'completed',
         size: '1.5',
-        filePath: '/mock/models/gemma.gguf'
-      }
-    ]
-  }
+        filePath: '/mock/models/gemma.gguf',
+      },
+    ],
+  },
 }));
 
 describe('LocalModelRunner Layer Math Optimizer', () => {
@@ -38,7 +38,9 @@ describe('LocalModelRunner Layer Math Optimizer', () => {
   it('calculates partial offloading when usable VRAM is lower than model size', async () => {
     // Usable VRAM is 1.5 GB. Usable VRAM with baseline overhead subtracted (750MB) is ~800MB.
     // 800MB usable VRAM is less than Gemma size (~1.5GB).
-    const mockGPUs = [{ vendor: 'NVIDIA', model: 'GeForce GTX 1650', vramBytes: 1500 * 1024 * 1024, index: 0 }];
+    const mockGPUs = [
+      { vendor: 'NVIDIA', model: 'GeForce GTX 1650', vramBytes: 1500 * 1024 * 1024, index: 0 },
+    ];
     vi.spyOn(LocalModelRunner as any, 'detectGPUs').mockResolvedValue(mockGPUs);
     vi.spyOn(LocalModelRunner as any, 'getFreeVram').mockResolvedValue(1500 * 1024 * 1024);
 
@@ -51,7 +53,9 @@ describe('LocalModelRunner Layer Math Optimizer', () => {
 
   it('offloads 100% of layers to GPU when VRAM is abundant', async () => {
     // 16 GB VRAM detected
-    const mockGPUs = [{ vendor: 'NVIDIA', model: 'GeForce RTX 4080', vramBytes: 16 * 1024 * 1024 * 1024, index: 0 }];
+    const mockGPUs = [
+      { vendor: 'NVIDIA', model: 'GeForce RTX 4080', vramBytes: 16 * 1024 * 1024 * 1024, index: 0 },
+    ];
     vi.spyOn(LocalModelRunner as any, 'detectGPUs').mockResolvedValue(mockGPUs);
     vi.spyOn(LocalModelRunner as any, 'getFreeVram').mockResolvedValue(16 * 1024 * 1024 * 1024);
 

@@ -24,15 +24,12 @@ const BINARY_PATH = path.join(BIN_DIR, BIN_NAME);
 export function findLlamaServerPath(): string {
   if (fs.existsSync(BINARY_PATH)) return BINARY_PATH;
 
-  const fallbackPaths = [
-    path.join(BASE_DIR, BIN_NAME),
-    path.join(BASE_DIR, '..', BIN_NAME),
-  ];
+  const fallbackPaths = [path.join(BASE_DIR, BIN_NAME), path.join(BASE_DIR, '..', BIN_NAME)];
 
   for (const p of fallbackPaths) {
     if (fs.existsSync(p)) return p;
   }
-  
+
   return BINARY_PATH; // Default to downloading to BIN_DIR
 }
 
@@ -860,12 +857,16 @@ export const LocalModelRunner = {
               `[Binary Downloader] curl download failed or not available, falling back to Node https:`,
               err || stderr
             );
-            this.downloadBinaryZipNode(url, destPath).then(resolve).catch((err: any) => reject(err));
+            this.downloadBinaryZipNode(url, destPath)
+              .then(resolve)
+              .catch((err: any) => reject(err));
           }
         });
         return;
       }
-      this.downloadBinaryZipNode(url, destPath).then(resolve).catch((err: any) => reject(err));
+      this.downloadBinaryZipNode(url, destPath)
+        .then(resolve)
+        .catch((err: any) => reject(err));
     });
   },
 
@@ -1068,7 +1069,10 @@ export const LocalModelRunner = {
           JSON.stringify(optimizationProfile, null, 2)
         );
       } catch (error: any) {
-        logger.error('[GPU Optimizer] Failed to auto-generate optimization profile:', error.message);
+        logger.error(
+          '[GPU Optimizer] Failed to auto-generate optimization profile:',
+          error.message
+        );
       }
     }
 

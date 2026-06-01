@@ -7,7 +7,6 @@ import * as si from 'systeminformation';
 import logger from '../../lib/logger.ts';
 // No download queue needed — downloads are tracked per-modelId in activeDownloads map
 
-
 export interface ModelPreset {
   id: string;
   name: string;
@@ -25,7 +24,6 @@ export interface ModelPreset {
 }
 
 export const MODEL_PRESETS: ModelPreset[] = [
-
   // ── GOOGLE ──────────────────────────────────────────────────────────────
   {
     id: 'nyx-gemma-4-e2b-it',
@@ -37,10 +35,11 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '1.6 GB',
     url: 'https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf',
     fileName: 'google_gemma-4-E2B-it-Q4_K_M.gguf',
-    description: 'Ultra-efficient Google Gemma 4 edge model — the NYX native agent brain. Fast, smart, runs entirely on-device.',
+    description:
+      'Ultra-efficient Google Gemma 4 edge model — the NYX native agent brain. Fast, smart, runs entirely on-device.',
     ramRequired: '4 GB RAM',
     vramRequired: '2 GB VRAM',
-    featured: true
+    featured: true,
   },
   {
     id: 'gemma-2-2b-it',
@@ -52,9 +51,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '1.7 GB',
     url: 'https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf',
     fileName: 'gemma-2-2b-it-Q4_K_M.gguf',
-    description: 'Google\'s Gemma 2 2B instruct model. Power-packed reasoning and instruction following at edge scale.',
+    description:
+      "Google's Gemma 2 2B instruct model. Power-packed reasoning and instruction following at edge scale.",
     ramRequired: '4 GB RAM',
-    vramRequired: '2 GB VRAM'
+    vramRequired: '2 GB VRAM',
   },
   {
     id: 'gemma-2-9b-it',
@@ -66,9 +66,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '5.7 GB',
     url: 'https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf',
     fileName: 'gemma-2-9b-it-Q4_K_M.gguf',
-    description: 'Google\'s highly popular Gemma 2 9B model. Extremely strong performance matching larger models.',
+    description:
+      "Google's highly popular Gemma 2 9B model. Extremely strong performance matching larger models.",
     ramRequired: '12 GB RAM',
-    vramRequired: '8 GB VRAM'
+    vramRequired: '8 GB VRAM',
   },
   {
     id: 'gemma-3-4b-it',
@@ -80,9 +81,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '2.5 GB',
     url: 'https://huggingface.co/bartowski/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf',
     fileName: 'gemma-3-4b-it-Q4_K_M.gguf',
-    description: 'Google\'s Gemma 3 4B with 128K context window. Excellent general assistant capabilities in a compact footprint.',
+    description:
+      "Google's Gemma 3 4B with 128K context window. Excellent general assistant capabilities in a compact footprint.",
     ramRequired: '6 GB RAM',
-    vramRequired: '4 GB VRAM'
+    vramRequired: '4 GB VRAM',
   },
   {
     id: 'gemma-3-12b-it',
@@ -94,9 +96,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '7.3 GB',
     url: 'https://huggingface.co/bartowski/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf',
     fileName: 'gemma-3-12b-it-Q4_K_M.gguf',
-    description: 'Google\'s mid-size Gemma 3 — powerful reasoning and coding with a massive 128K context window.',
+    description:
+      "Google's mid-size Gemma 3 — powerful reasoning and coding with a massive 128K context window.",
     ramRequired: '12 GB RAM',
-    vramRequired: '8 GB VRAM'
+    vramRequired: '8 GB VRAM',
   },
   {
     id: 'gemma-3-27b-it',
@@ -108,9 +111,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '18.2 GB',
     url: 'https://huggingface.co/bartowski/gemma-3-27b-it-GGUF/resolve/main/gemma-3-27b-it-Q4_K_M.gguf',
     fileName: 'gemma-3-27b-it-Q4_K_M.gguf',
-    description: 'Google\'s largest Gemma 3 model — flagship performance for local systems with larger RAM sizes.',
+    description:
+      "Google's largest Gemma 3 model — flagship performance for local systems with larger RAM sizes.",
     ramRequired: '32 GB RAM',
-    vramRequired: '16 GB VRAM'
+    vramRequired: '16 GB VRAM',
   },
 
   // ── META (LLAMA) ─────────────────────────────────────────────────────────
@@ -124,9 +128,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '0.8 GB',
     url: 'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
     fileName: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf',
-    description: 'Blazing fast 1B Meta model — perfect for edge devices and rapid completion tasks with minimal RAM footprint.',
+    description:
+      'Blazing fast 1B Meta model — perfect for edge devices and rapid completion tasks with minimal RAM footprint.',
     ramRequired: '2 GB RAM',
-    vramRequired: '1 GB VRAM'
+    vramRequired: '1 GB VRAM',
   },
   {
     id: 'llama-3.2-3b-native',
@@ -138,9 +143,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '2.0 GB',
     url: 'https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf',
     fileName: 'Llama-3.2-3B-Instruct-Q4_K_M.gguf',
-    description: 'Meta\'s capable 3B general instruction model — great all-rounder for conversations and reasoning at any scale.',
+    description:
+      "Meta's capable 3B general instruction model — great all-rounder for conversations and reasoning at any scale.",
     ramRequired: '4 GB RAM',
-    vramRequired: '2 GB VRAM'
+    vramRequired: '2 GB VRAM',
   },
   {
     id: 'llama-3-8b-instruct',
@@ -152,9 +158,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '4.9 GB',
     url: 'https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf',
     fileName: 'Meta-Llama-3-8B-Instruct-Q4_K_M.gguf',
-    description: 'The original Llama 3 8B instruct model. Fast, robust, and highly capable general assistant.',
+    description:
+      'The original Llama 3 8B instruct model. Fast, robust, and highly capable general assistant.',
     ramRequired: '8 GB RAM',
-    vramRequired: '6 GB VRAM'
+    vramRequired: '6 GB VRAM',
   },
   {
     id: 'llama-3.1-8b-native',
@@ -166,10 +173,11 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '4.9 GB',
     url: 'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
     fileName: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
-    description: 'The iconic Llama 3.1 8B — Meta\'s workhorse model with outstanding instruction following and 128K context.',
+    description:
+      "The iconic Llama 3.1 8B — Meta's workhorse model with outstanding instruction following and 128K context.",
     ramRequired: '8 GB RAM',
     vramRequired: '6 GB VRAM',
-    featured: true
+    featured: true,
   },
   {
     id: 'llama-3.3-70b-native',
@@ -181,9 +189,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '42.5 GB',
     url: 'https://huggingface.co/bartowski/Llama-3.3-70B-Instruct-GGUF/resolve/main/Llama-3.3-70B-Instruct-Q4_K_M.gguf',
     fileName: 'Llama-3.3-70B-Instruct-Q4_K_M.gguf',
-    description: 'Meta\'s flagship 70B — frontier-class intelligence rivaling GPT-4. Requires high-end hardware.',
+    description:
+      "Meta's flagship 70B — frontier-class intelligence rivaling GPT-4. Requires high-end hardware.",
     ramRequired: '48 GB RAM',
-    vramRequired: '24 GB VRAM'
+    vramRequired: '24 GB VRAM',
   },
   {
     id: 'codellama-7b-instruct',
@@ -195,9 +204,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '4.1 GB',
     url: 'https://huggingface.co/TheBloke/CodeLlama-7B-Instruct-GGUF/resolve/main/codellama-7b-instruct.Q4_K_M.gguf',
     fileName: 'codellama-7b-instruct.Q4_K_M.gguf',
-    description: 'Meta\'s specialized Code Llama — purpose-built for code generation, completion, and debugging tasks.',
+    description:
+      "Meta's specialized Code Llama — purpose-built for code generation, completion, and debugging tasks.",
     ramRequired: '6 GB RAM',
-    vramRequired: '4 GB VRAM'
+    vramRequired: '4 GB VRAM',
   },
   {
     id: 'codellama-13b-instruct',
@@ -209,9 +219,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '8.3 GB',
     url: 'https://huggingface.co/TheBloke/CodeLlama-13B-Instruct-GGUF/resolve/main/codellama-13b-instruct.Q4_K_M.gguf',
     fileName: 'codellama-13b-instruct.Q4_K_M.gguf',
-    description: 'Meta\'s mid-size Code Llama — ideal balance of code writing capability and memory footprint.',
+    description:
+      "Meta's mid-size Code Llama — ideal balance of code writing capability and memory footprint.",
     ramRequired: '16 GB RAM',
-    vramRequired: '8 GB VRAM'
+    vramRequired: '8 GB VRAM',
   },
 
   // ── MICROSOFT (PHI) ──────────────────────────────────────────────────────
@@ -225,9 +236,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '2.4 GB',
     url: 'https://huggingface.co/bartowski/Phi-3.1-mini-128k-instruct-GGUF/resolve/main/Phi-3.1-mini-128k-instruct-Q4_K_M.gguf',
     fileName: 'Phi-3.1-mini-128k-instruct-Q4_K_M.gguf',
-    description: 'Microsoft\'s Phi-3.1 Mini 128K context model. Highly optimized small language model with outstanding logic.',
+    description:
+      "Microsoft's Phi-3.1 Mini 128K context model. Highly optimized small language model with outstanding logic.",
     ramRequired: '6 GB RAM',
-    vramRequired: '4 GB VRAM'
+    vramRequired: '4 GB VRAM',
   },
   {
     id: 'phi-4-mini-instruct',
@@ -239,10 +251,11 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '2.5 GB',
     url: 'https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF/resolve/main/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf',
     fileName: 'microsoft_Phi-4-mini-instruct-Q4_K_M.gguf',
-    description: 'Microsoft\'s Phi-4 Mini — punches well above its weight with exceptional math and coding capabilities.',
+    description:
+      "Microsoft's Phi-4 Mini — punches well above its weight with exceptional math and coding capabilities.",
     ramRequired: '4 GB RAM',
     vramRequired: '3 GB VRAM',
-    featured: true
+    featured: true,
   },
   {
     id: 'phi-4-instruct',
@@ -254,9 +267,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '8.4 GB',
     url: 'https://huggingface.co/bartowski/phi-4-GGUF/resolve/main/phi-4-Q4_K_M.gguf',
     fileName: 'phi-4-Q4_K_M.gguf',
-    description: 'Microsoft\'s Phi-4 full model — state-of-the-art STEM reasoning and coding in the 14B class.',
+    description:
+      "Microsoft's Phi-4 full model — state-of-the-art STEM reasoning and coding in the 14B class.",
     ramRequired: '12 GB RAM',
-    vramRequired: '8 GB VRAM'
+    vramRequired: '8 GB VRAM',
   },
 
   // ── ALIBABA (QWEN) ───────────────────────────────────────────────────────
@@ -270,9 +284,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '1.2 GB',
     url: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf',
     fileName: 'qwen2.5-1.5b-instruct-q4_k_m.gguf',
-    description: 'Lightweight Qwen 2.5 model, excellent for low-latency tasks and resource-constrained systems.',
+    description:
+      'Lightweight Qwen 2.5 model, excellent for low-latency tasks and resource-constrained systems.',
     ramRequired: '2 GB RAM',
-    vramRequired: '1 GB VRAM'
+    vramRequired: '1 GB VRAM',
   },
   {
     id: 'qwen2.5-coder-1.5b-native',
@@ -284,9 +299,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '1.2 GB',
     url: 'https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf',
     fileName: 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf',
-    description: 'Fast, lightweight Qwen model purpose-built for coding. Runs on virtually any device.',
+    description:
+      'Fast, lightweight Qwen model purpose-built for coding. Runs on virtually any device.',
     ramRequired: '2 GB RAM',
-    vramRequired: '1 GB VRAM'
+    vramRequired: '1 GB VRAM',
   },
   {
     id: 'qwen2.5-coder-3b-native',
@@ -298,10 +314,11 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '2.2 GB',
     url: 'https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/qwen2.5-coder-3b-instruct-q4_k_m.gguf',
     fileName: 'qwen2.5-coder-3b-instruct-q4_k_m.gguf',
-    description: 'The best 3B code specialist — outperforms models twice its size on competitive coding benchmarks.',
+    description:
+      'The best 3B code specialist — outperforms models twice its size on competitive coding benchmarks.',
     ramRequired: '4 GB RAM',
     vramRequired: '2 GB VRAM',
-    featured: true
+    featured: true,
   },
   {
     id: 'qwen2.5-coder-7b-native',
@@ -313,9 +330,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '4.7 GB',
     url: 'https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf',
     fileName: 'qwen2.5-coder-7b-instruct-q4_k_m.gguf',
-    description: 'Qwen\'s flagship 7B code model — one of the strongest open-source code models available.',
+    description:
+      "Qwen's flagship 7B code model — one of the strongest open-source code models available.",
     ramRequired: '8 GB RAM',
-    vramRequired: '6 GB VRAM'
+    vramRequired: '6 GB VRAM',
   },
   {
     id: 'qwen2.5-coder-14b-native',
@@ -329,7 +347,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     fileName: 'qwen2.5-coder-14b-instruct-q4_k_m.gguf',
     description: 'Powerful 14B code model with immense codebase synthesis capabilities.',
     ramRequired: '16 GB RAM',
-    vramRequired: '10 GB VRAM'
+    vramRequired: '10 GB VRAM',
   },
   {
     id: 'qwen2.5-coder-32b-instruct',
@@ -341,9 +359,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '20.3 GB',
     url: 'https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct-GGUF/resolve/main/qwen2.5-coder-32b-instruct-q4_k_m.gguf',
     fileName: 'qwen2.5-coder-32b-instruct-q4_k_m.gguf',
-    description: 'The flagship open-source coding model from Qwen. Extremely strong code generation and repository understanding.',
+    description:
+      'The flagship open-source coding model from Qwen. Extremely strong code generation and repository understanding.',
     ramRequired: '32 GB RAM',
-    vramRequired: '24 GB VRAM'
+    vramRequired: '24 GB VRAM',
   },
   {
     id: 'qwen2.5-7b-native',
@@ -355,9 +374,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '4.7 GB',
     url: 'https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf',
     fileName: 'qwen2.5-7b-instruct-q4_k_m.gguf',
-    description: 'Versatile Qwen 2.5 general model — excellent at multilingual tasks, analysis, and long-context comprehension.',
+    description:
+      'Versatile Qwen 2.5 general model — excellent at multilingual tasks, analysis, and long-context comprehension.',
     ramRequired: '8 GB RAM',
-    vramRequired: '6 GB VRAM'
+    vramRequired: '6 GB VRAM',
   },
   {
     id: 'qwen3-8b-native',
@@ -369,9 +389,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '5.2 GB',
     url: 'https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q4_k_m.gguf',
     fileName: 'qwen3-8b-q4_k_m.gguf',
-    description: 'Qwen 3 8B — Alibaba\'s latest generation model with enhanced reasoning and instruction following.',
+    description:
+      "Qwen 3 8B — Alibaba's latest generation model with enhanced reasoning and instruction following.",
     ramRequired: '8 GB RAM',
-    vramRequired: '6 GB VRAM'
+    vramRequired: '6 GB VRAM',
   },
 
   // ── DEEPSEEK ─────────────────────────────────────────────────────────────
@@ -385,10 +406,11 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '1.1 GB',
     url: 'https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf',
     fileName: 'DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf',
-    description: 'DeepSeek R1\'s chain-of-thought reasoning distilled into a tiny 1.5B model. Remarkable reasoning at tiny scale.',
+    description:
+      "DeepSeek R1's chain-of-thought reasoning distilled into a tiny 1.5B model. Remarkable reasoning at tiny scale.",
     ramRequired: '2 GB RAM',
     vramRequired: '1 GB VRAM',
-    featured: true
+    featured: true,
   },
   {
     id: 'deepseek-r1-distill-qwen-7b',
@@ -400,9 +422,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '4.7 GB',
     url: 'https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf',
     fileName: 'DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf',
-    description: 'DeepSeek R1 reasoning distilled into 7B — solves complex math, logic and code with visible chain-of-thought.',
+    description:
+      'DeepSeek R1 reasoning distilled into 7B — solves complex math, logic and code with visible chain-of-thought.',
     ramRequired: '8 GB RAM',
-    vramRequired: '6 GB VRAM'
+    vramRequired: '6 GB VRAM',
   },
   {
     id: 'deepseek-r1-distill-qwen-14b',
@@ -414,9 +437,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '9.0 GB',
     url: 'https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf',
     fileName: 'DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf',
-    description: 'DeepSeek R1 reasoning model distilled into Qwen 14B. Outstanding reasoning and STEM logic for high-end devices.',
+    description:
+      'DeepSeek R1 reasoning model distilled into Qwen 14B. Outstanding reasoning and STEM logic for high-end devices.',
     ramRequired: '16 GB RAM',
-    vramRequired: '10 GB VRAM'
+    vramRequired: '10 GB VRAM',
   },
   {
     id: 'deepseek-r1-distill-llama-8b',
@@ -428,9 +452,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '4.9 GB',
     url: 'https://huggingface.co/bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF/resolve/main/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf',
     fileName: 'DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf',
-    description: 'DeepSeek\'s R1 reasoning transferred into Llama architecture — the best open reasoning model for 8 GB machines.',
+    description:
+      "DeepSeek's R1 reasoning transferred into Llama architecture — the best open reasoning model for 8 GB machines.",
     ramRequired: '8 GB RAM',
-    vramRequired: '6 GB VRAM'
+    vramRequired: '6 GB VRAM',
   },
   {
     id: 'deepseek-r1-distill-qwen-32b',
@@ -444,7 +469,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     fileName: 'DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf',
     description: 'Flagship distilled reasoning model in the 32B class. Top reasoning depth.',
     ramRequired: '32 GB RAM',
-    vramRequired: '24 GB VRAM'
+    vramRequired: '24 GB VRAM',
   },
   {
     id: 'deepseek-r1-distill-llama-70b',
@@ -456,9 +481,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '42.5 GB',
     url: 'https://huggingface.co/bartowski/DeepSeek-R1-Distill-Llama-70B-GGUF/resolve/main/DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf',
     fileName: 'DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf',
-    description: 'DeepSeek R1 reasoning distilled into Meta\'s Llama 70B. Superb reasoning, logic, and coding performance.',
+    description:
+      "DeepSeek R1 reasoning distilled into Meta's Llama 70B. Superb reasoning, logic, and coding performance.",
     ramRequired: '48 GB RAM',
-    vramRequired: '24 GB VRAM'
+    vramRequired: '24 GB VRAM',
   },
 
   // ── MISTRAL ──────────────────────────────────────────────────────────────
@@ -472,10 +498,11 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '4.4 GB',
     url: 'https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
     fileName: 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
-    description: 'The gold-standard 7B open model. Mistral 7B set the benchmark for what small models could do.',
+    description:
+      'The gold-standard 7B open model. Mistral 7B set the benchmark for what small models could do.',
     ramRequired: '6 GB RAM',
     vramRequired: '4 GB VRAM',
-    featured: true
+    featured: true,
   },
   {
     id: 'mixtral-8x7b-instruct',
@@ -487,9 +514,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '19.4 GB',
     url: 'https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF/resolve/main/mixtral-8x7b-instruct-v0.1.Q2_K.gguf',
     fileName: 'mixtral-8x7b-instruct-v0.1.Q2_K.gguf',
-    description: 'The classic Mixture of Experts from Mistral. High quality, light footprint quantization.',
+    description:
+      'The classic Mixture of Experts from Mistral. High quality, light footprint quantization.',
     ramRequired: '24 GB RAM',
-    vramRequired: '16 GB VRAM'
+    vramRequired: '16 GB VRAM',
   },
   {
     id: 'codestral-22b',
@@ -501,9 +529,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '13.5 GB',
     url: 'https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf',
     fileName: 'Codestral-22B-v0.1-Q4_K_M.gguf',
-    description: 'Mistral\'s specialized code intelligence model. Superior multi-lingual coding reasoning.',
+    description:
+      "Mistral's specialized code intelligence model. Superior multi-lingual coding reasoning.",
     ramRequired: '24 GB RAM',
-    vramRequired: '16 GB VRAM'
+    vramRequired: '16 GB VRAM',
   },
   {
     id: 'mixtral-8x22b-instruct',
@@ -515,9 +544,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '48.3 GB',
     url: 'https://huggingface.co/bartowski/Mixtral-8x22B-Instruct-v0.1-GGUF/resolve/main/Mixtral-8x22B-Instruct-v0.1-Q2_K.gguf',
     fileName: 'Mixtral-8x22B-Instruct-v0.1-Q2_K.gguf',
-    description: 'Mistral\'s flagship MoE model. Massive capacity for multi-lingual and coding workflows.',
+    description:
+      "Mistral's flagship MoE model. Massive capacity for multi-lingual and coding workflows.",
     ramRequired: '64 GB RAM',
-    vramRequired: '48 GB VRAM'
+    vramRequired: '48 GB VRAM',
   },
 
   // ── COHERE ───────────────────────────────────────────────────────────────
@@ -531,9 +561,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '20.5 GB',
     url: 'https://huggingface.co/pmccargo/c4ai-command-r-v01-GGUF/resolve/main/c4ai-command-r-v01-q4_k_m.gguf',
     fileName: 'c4ai-command-r-v01-q4_k_m.gguf',
-    description: 'Cohere\'s highly acclaimed 35B model designed specifically for complex RAG tasks and multilingual agentic reasoning.',
+    description:
+      "Cohere's highly acclaimed 35B model designed specifically for complex RAG tasks and multilingual agentic reasoning.",
     ramRequired: '32 GB RAM',
-    vramRequired: '24 GB VRAM'
+    vramRequired: '24 GB VRAM',
   },
   {
     id: 'command-r-plus-104b',
@@ -545,9 +576,10 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '38.2 GB',
     url: 'https://huggingface.co/pmccargo/c4ai-command-r-plus-GGUF/resolve/main/c4ai-command-r-plus-q2_k.gguf',
     fileName: 'c4ai-command-r-plus-q2_k.gguf',
-    description: 'Cohere\'s state-of-the-art 104B parameter model for complex, high-throughput RAG and tool workflows.',
+    description:
+      "Cohere's state-of-the-art 104B parameter model for complex, high-throughput RAG and tool workflows.",
     ramRequired: '48 GB RAM',
-    vramRequired: '32 GB VRAM'
+    vramRequired: '32 GB VRAM',
   },
 
   // ── OPENCHAT / COMMUNITY ─────────────────────────────────────────────────
@@ -561,10 +593,11 @@ export const MODEL_PRESETS: ModelPreset[] = [
     size: '4.4 GB',
     url: 'https://huggingface.co/TheBloke/openchat_3.5-GGUF/resolve/main/openchat_3.5.Q4_K_M.gguf',
     fileName: 'openchat_3.5.Q4_K_M.gguf',
-    description: 'OpenChat 3.5 — breakthrough fine-tune that outperformed ChatGPT-3.5 on many benchmarks when released.',
+    description:
+      'OpenChat 3.5 — breakthrough fine-tune that outperformed ChatGPT-3.5 on many benchmarks when released.',
     ramRequired: '6 GB RAM',
-    vramRequired: '4 GB VRAM'
-  }
+    vramRequired: '4 GB VRAM',
+  },
 ];
 
 export interface DownloadProgress {
@@ -639,25 +672,26 @@ export const LocalModelManager = {
     try {
       if (fs.existsSync(MODELS_DIR)) {
         const files = fs.readdirSync(MODELS_DIR);
-        const presetFileNames = new Set(MODEL_PRESETS.map(p => p.fileName.toLowerCase()));
-        
+        const presetFileNames = new Set(MODEL_PRESETS.map((p) => p.fileName.toLowerCase()));
+
         for (const file of files) {
           if (file.toLowerCase().endsWith('.gguf') && !presetFileNames.has(file.toLowerCase())) {
             const stats = fs.statSync(path.join(MODELS_DIR, file));
             const sizeInGb = stats.size / (1024 * 1024 * 1024);
-            const sizeStr = sizeInGb >= 1 
-              ? `${sizeInGb.toFixed(1)} GB` 
-              : `${(stats.size / (1024 * 1024)).toFixed(0)} MB`;
-            
+            const sizeStr =
+              sizeInGb >= 1
+                ? `${sizeInGb.toFixed(1)} GB`
+                : `${(stats.size / (1024 * 1024)).toFixed(0)} MB`;
+
             const qMatch = file.match(/(Q[0-9]+_[A-Z0-9_]+|IQ[0-9]+_[A-Z0-9_]+)/i);
             const quant = qMatch ? qMatch[1].toUpperCase() : 'Custom';
-            
+
             let cleanName = file.replace(/\.gguf$/i, '').replace(/[-_]/g, ' ');
-            cleanName = cleanName.replace(/\b\w/g, c => c.toUpperCase());
+            cleanName = cleanName.replace(/\b\w/g, (c) => c.toUpperCase());
 
             const id = `custom-${file.toLowerCase().replace(/[^a-z0-9.-]/g, '-')}`;
 
-            if (!scannedPresets.some(p => p.id === id)) {
+            if (!scannedPresets.some((p) => p.id === id)) {
               scannedPresets.push({
                 id,
                 name: cleanName,
@@ -670,7 +704,7 @@ export const LocalModelManager = {
                 vramRequired: `${Math.ceil(Math.max(2, sizeInGb * 1.1))} GB VRAM`,
                 paramCount: 'Custom',
                 quantization: quant,
-                contextLength: '8K'
+                contextLength: '8K',
               });
             }
           }
@@ -680,7 +714,7 @@ export const LocalModelManager = {
       logger.error({ err }, 'Error scanning local model directory');
     }
 
-    return scannedPresets.map(preset => {
+    return scannedPresets.map((preset) => {
       const filePath = path.join(MODELS_DIR, preset.fileName);
       let exists = false;
       let fileSizeBytes = 0;
@@ -690,8 +724,12 @@ export const LocalModelManager = {
       if (exists) {
         try {
           fileSizeBytes = fs.statSync(filePath).size;
-          if (fileSizeBytes < 10 * 1024 * 1024) { // Under 10MB is definitely corrupt for these models
-            logger.warn({ modelName: preset.name, fileSizeBytes }, 'Model is corrupt. Deleting and recovering...');
+          if (fileSizeBytes < 10 * 1024 * 1024) {
+            // Under 10MB is definitely corrupt for these models
+            logger.warn(
+              { modelName: preset.name, fileSizeBytes },
+              'Model is corrupt. Deleting and recovering...'
+            );
             fs.unlinkSync(filePath);
             exists = false;
             fileSizeBytes = 0;
@@ -749,8 +787,8 @@ export const LocalModelManager = {
           bytesDownloaded: exists ? fileSizeBytes : 0,
           totalBytes: exists ? fileSizeBytes : 0,
           progressPercentage: exists ? 100 : 0,
-          speedMbps: 0
-        }
+          speedMbps: 0,
+        },
       };
     });
   },
@@ -760,9 +798,17 @@ export const LocalModelManager = {
     if (active) return active;
 
     const list = this.listModels();
-    const preset = list.find(p => p.id === modelId);
+    const preset = list.find((p) => p.id === modelId);
     if (!preset) {
-      return { modelId, status: 'failed', bytesDownloaded: 0, totalBytes: 0, progressPercentage: 0, speedMbps: 0, error: 'Model preset or custom download not found' };
+      return {
+        modelId,
+        status: 'failed',
+        bytesDownloaded: 0,
+        totalBytes: 0,
+        progressPercentage: 0,
+        speedMbps: 0,
+        error: 'Model preset or custom download not found',
+      };
     }
 
     const filePath = path.join(MODELS_DIR, preset.fileName);
@@ -774,12 +820,12 @@ export const LocalModelManager = {
       bytesDownloaded: exists ? preset.fileSizeBytes : 0,
       totalBytes: exists ? preset.fileSizeBytes : 0,
       progressPercentage: exists ? 100 : 0,
-      speedMbps: 0
+      speedMbps: 0,
     };
   },
 
   startDownload(modelId: string) {
-    let preset = this.listModels().find(p => p.id === modelId);
+    let preset = this.listModels().find((p) => p.id === modelId);
     if (!preset) {
       // Check if it is a valid HTTP/HTTPS URL
       if (modelId.startsWith('http://') || modelId.startsWith('https://')) {
@@ -793,11 +839,14 @@ export const LocalModelManager = {
           fileName = 'custom-model.gguf';
         }
         const customId = `custom-${fileName.toLowerCase().replace(/[^a-z0-9.-]/g, '-')}`;
-        
+
         // Construct the preset dynamically
         const newPreset: ModelPreset = {
           id: customId,
-          name: fileName.replace(/\.gguf$/i, '').replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          name: fileName
+            .replace(/\.gguf$/i, '')
+            .replace(/[-_]/g, ' ')
+            .replace(/\b\w/g, (c) => c.toUpperCase()),
           provider: 'community',
           size: 'Unknown',
           url: urlStr,
@@ -807,7 +856,7 @@ export const LocalModelManager = {
           vramRequired: '4 GB VRAM',
           paramCount: 'Custom',
           quantization: 'Custom',
-          contextLength: '8K'
+          contextLength: '8K',
         };
         // Add to active presets array
         MODEL_PRESETS.push(newPreset);
@@ -820,7 +869,7 @@ export const LocalModelManager = {
 
     const activePreset = preset!;
     const filePath = path.join(MODELS_DIR, activePreset.fileName);
-    
+
     if (fs.existsSync(filePath)) {
       return { status: 'completed', message: 'Model already downloaded.' };
     }
@@ -833,7 +882,9 @@ export const LocalModelManager = {
     const partPath = path.join(MODELS_DIR, activePreset.fileName) + '.part';
     let resumedBytes = 0;
     if (fs.existsSync(partPath)) {
-      try { resumedBytes = fs.statSync(partPath).size; } catch {}
+      try {
+        resumedBytes = fs.statSync(partPath).size;
+      } catch {}
     }
 
     const progress: DownloadProgress = {
@@ -842,39 +893,46 @@ export const LocalModelManager = {
       bytesDownloaded: resumedBytes,
       totalBytes: 0,
       progressPercentage: 0,
-      speedMbps: 0
+      speedMbps: 0,
     };
 
     activeDownloads.set(modelId, progress);
     downloadStates[modelId] = 'downloading';
     saveStates();
 
-    this.downloadFile(activePreset.url, filePath, progress).then(() => {
-      // If the promise resolved due to a deliberate pause or cancel, don't mark as completed
-      if (progress.status === 'paused' || progress.status === 'failed') {
-        return;
-      }
-      progress.status = 'completed';
-      progress.progressPercentage = 100;
-      activeDownloads.delete(modelId);
-      downloadStates[modelId] = 'completed';
-      saveStates();
-      logger.info({ modelName: activePreset.name, filePath }, 'Successfully downloaded local model');
-    }).catch((err) => {
-      // Don't clobber a deliberate cancel/pause state
-      if (progress.status === 'paused' || progress.status === 'failed') {
-        return;
-      }
-      progress.status = 'failed';
-      progress.error = err.message || 'Download failed';
-      activeDownloads.delete(modelId);
-      downloadStates[modelId] = 'failed';
-      saveStates();
-      logger.error({ err, modelName: preset!.name }, 'Failed to download local model');
-      if (fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch {}
-      }
-    });
+    this.downloadFile(activePreset.url, filePath, progress)
+      .then(() => {
+        // If the promise resolved due to a deliberate pause or cancel, don't mark as completed
+        if (progress.status === 'paused' || progress.status === 'failed') {
+          return;
+        }
+        progress.status = 'completed';
+        progress.progressPercentage = 100;
+        activeDownloads.delete(modelId);
+        downloadStates[modelId] = 'completed';
+        saveStates();
+        logger.info(
+          { modelName: activePreset.name, filePath },
+          'Successfully downloaded local model'
+        );
+      })
+      .catch((err) => {
+        // Don't clobber a deliberate cancel/pause state
+        if (progress.status === 'paused' || progress.status === 'failed') {
+          return;
+        }
+        progress.status = 'failed';
+        progress.error = err.message || 'Download failed';
+        activeDownloads.delete(modelId);
+        downloadStates[modelId] = 'failed';
+        saveStates();
+        logger.error({ err, modelName: preset!.name }, 'Failed to download local model');
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch {}
+        }
+      });
 
     return { status: 'downloading', message: 'Download started.', modelId };
   },
@@ -899,7 +957,10 @@ export const LocalModelManager = {
     }
 
     logger.info({ modelId }, 'Download paused by user');
-    return { status: 'paused', message: 'Download paused. Resume to continue from where it stopped.' };
+    return {
+      status: 'paused',
+      message: 'Download paused. Resume to continue from where it stopped.',
+    };
   },
 
   resumeDownload(modelId: string): { status: string; message: string; modelId?: string } {
@@ -940,11 +1001,13 @@ export const LocalModelManager = {
     saveStates();
 
     // Delete the partial file
-    const preset = MODEL_PRESETS.find(p => p.id === modelId);
+    const preset = MODEL_PRESETS.find((p) => p.id === modelId);
     if (preset) {
       const partPath = path.join(MODELS_DIR, preset.fileName) + '.part';
       if (fs.existsSync(partPath)) {
-        try { fs.unlinkSync(partPath); } catch {}
+        try {
+          fs.unlinkSync(partPath);
+        } catch {}
       }
     }
 
@@ -957,7 +1020,7 @@ export const LocalModelManager = {
    * Returns true on success, throws on error.
    */
   deleteModel(modelId: string): { deleted: boolean; message: string } {
-    const preset = this.listModels().find(p => p.id === modelId);
+    const preset = this.listModels().find((p) => p.id === modelId);
     if (!preset) {
       throw new Error(`Model '${modelId}' not found.`);
     }
@@ -980,13 +1043,20 @@ export const LocalModelManager = {
     }
 
     if (fs.existsSync(partPath)) {
-      try { fs.unlinkSync(partPath); } catch {}
+      try {
+        fs.unlinkSync(partPath);
+      } catch {}
     }
 
     downloadStates[modelId] = 'idle';
     saveStates();
 
-    return { deleted, message: deleted ? `${preset.name} deleted from disk.` : 'No file found on disk, state reset.' };
+    return {
+      deleted,
+      message: deleted
+        ? `${preset.name} deleted from disk.`
+        : 'No file found on disk, state reset.',
+    };
   },
 
   downloadFile(url: string, destPath: string, progress: DownloadProgress): Promise<void> {
@@ -1012,7 +1082,8 @@ export const LocalModelManager = {
       const done = (err?: Error) => {
         if (settled) return;
         settled = true;
-        if (err) reject(err); else resolve();
+        if (err) reject(err);
+        else resolve();
       };
 
       const makeRequest = (currentUrl: string) => {
@@ -1024,9 +1095,10 @@ export const LocalModelManager = {
 
         const urlObj = new URL(currentUrl);
         const headers: Record<string, string> = {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': '*/*',
-          'Connection': 'keep-alive'
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: '*/*',
+          Connection: 'keep-alive',
         };
 
         if (existingBytes > 0) {
@@ -1035,7 +1107,12 @@ export const LocalModelManager = {
 
         const req = https.get(urlObj, { headers }, (res: IncomingMessage) => {
           // Handle redirects — consume response and follow
-          if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+          if (
+            res.statusCode === 301 ||
+            res.statusCode === 302 ||
+            res.statusCode === 307 ||
+            res.statusCode === 308
+          ) {
             res.resume(); // drain and discard redirect body so socket is freed
             let redirectUrl = res.headers.location;
             if (redirectUrl) {
@@ -1090,7 +1167,9 @@ export const LocalModelManager = {
             const elapsed = now - lastTime;
             if (elapsed >= 500) {
               const bytesDiff = receivedBytes - lastBytes;
-              progress.speedMbps = parseFloat(((bytesDiff / elapsed) * 1000 / (1024 * 1024)).toFixed(2));
+              progress.speedMbps = parseFloat(
+                (((bytesDiff / elapsed) * 1000) / (1024 * 1024)).toFixed(2)
+              );
               lastTime = now;
               lastBytes = receivedBytes;
             }
@@ -1135,7 +1214,10 @@ export const LocalModelManager = {
         req.setTimeout(600000, () => {
           req.destroy();
           if (fileStream) fileStream.destroy();
-          if (progress.status === 'paused' || progress.status === 'failed') { done(); return; }
+          if (progress.status === 'paused' || progress.status === 'failed') {
+            done();
+            return;
+          }
           done(new Error('Download timeout reached. Connection lost.'));
         });
       };
@@ -1178,7 +1260,7 @@ export const LocalModelManager = {
     const platform = os.platform();
     const logicalCores = os.cpus().length;
     const cpuModel = os.cpus()[0]?.model || 'Unknown';
-    
+
     let gpusList: any[] = [];
     let maxVramBytes = 0;
     let hasDiscreteGPU = false;
@@ -1191,11 +1273,17 @@ export const LocalModelManager = {
           if (typeof vramMB !== 'number' || isNaN(vramMB) || vramMB < 0) {
             vramMB = 0;
           }
-          
+
           const modelLower = (g.model || '').toLowerCase();
           const vendorLower = (g.vendor || '').toLowerCase();
-          const isDiscrete = modelLower.includes('geforce') || modelLower.includes('rtx') || modelLower.includes('gtx') || modelLower.includes('radeon') || vendorLower.includes('nvidia') || vendorLower.includes('amd');
-          
+          const isDiscrete =
+            modelLower.includes('geforce') ||
+            modelLower.includes('rtx') ||
+            modelLower.includes('gtx') ||
+            modelLower.includes('radeon') ||
+            vendorLower.includes('nvidia') ||
+            vendorLower.includes('amd');
+
           if (vramMB === 0 && isDiscrete) {
             vramMB = 4096; // Fallback
           }
@@ -1212,7 +1300,7 @@ export const LocalModelManager = {
             vendor: g.vendor || 'Unknown',
             model: g.model || 'Unknown',
             vramBytes,
-            isDiscrete
+            isDiscrete,
           };
         });
       }
@@ -1226,14 +1314,18 @@ export const LocalModelManager = {
         const freeNvidiaBytes = await new Promise<number>((resolve) => {
           const commands = [
             'nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits',
-            '"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" --query-gpu=memory.free --format=csv,noheader,nounits'
+            '"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" --query-gpu=memory.free --format=csv,noheader,nounits',
           ];
           const tryExec = (idx: number) => {
-            if (idx >= commands.length) { resolve(0); return; }
+            if (idx >= commands.length) {
+              resolve(0);
+              return;
+            }
             const { exec } = require('child_process');
             exec(commands[idx], (error: any, stdout: string) => {
-              if (error) { tryExec(idx + 1); }
-              else {
+              if (error) {
+                tryExec(idx + 1);
+              } else {
                 const mem = parseInt(stdout.trim(), 10);
                 resolve(isNaN(mem) ? 0 : mem * 1024 * 1024);
               }
@@ -1242,14 +1334,14 @@ export const LocalModelManager = {
           tryExec(0);
         });
         if (freeNvidiaBytes > 0) {
-          const vramBytes = freeNvidiaBytes + (750 * 1024 * 1024);
+          const vramBytes = freeNvidiaBytes + 750 * 1024 * 1024;
           maxVramBytes = vramBytes;
           hasDiscreteGPU = true;
           gpusList.push({
             vendor: 'NVIDIA',
             model: 'GeForce Dedicated GPU',
             vramBytes,
-            isDiscrete: true
+            isDiscrete: true,
           });
         }
       } catch {}
@@ -1275,15 +1367,25 @@ export const LocalModelManager = {
       if (sizeMatch) {
         const val = parseFloat(sizeMatch[1]);
         const unit = sizeMatch[2].toUpperCase();
-        fileSize = val * 1024 * 1024 * 1024 * (unit === 'MB' ? 1/1024 : 1);
+        fileSize = val * 1024 * 1024 * 1024 * (unit === 'MB' ? 1 / 1024 : 1);
       }
 
       let totalLayers = 32;
       const filenameLower = preset.fileName.toLowerCase();
       if (filenameLower.includes('70b') || filenameLower.includes('80l')) totalLayers = 80;
       else if (filenameLower.includes('32b') || filenameLower.includes('35b')) totalLayers = 64;
-      else if (filenameLower.includes('14b') || filenameLower.includes('13b') || filenameLower.includes('12b')) totalLayers = 40;
-      else if (filenameLower.includes('8b') || filenameLower.includes('9b') || filenameLower.includes('7b')) totalLayers = 32;
+      else if (
+        filenameLower.includes('14b') ||
+        filenameLower.includes('13b') ||
+        filenameLower.includes('12b')
+      )
+        totalLayers = 40;
+      else if (
+        filenameLower.includes('8b') ||
+        filenameLower.includes('9b') ||
+        filenameLower.includes('7b')
+      )
+        totalLayers = 32;
       else if (filenameLower.includes('3b') || filenameLower.includes('4b')) totalLayers = 28;
       else if (filenameLower.includes('1.5b') || filenameLower.includes('2b')) totalLayers = 24;
 
@@ -1291,11 +1393,11 @@ export const LocalModelManager = {
       const ramReq = ramReqMatch ? parseInt(ramReqMatch[1], 10) : 4;
       const meetsRam = totalRamGB >= ramReq;
 
-      const usableVram = Math.max(0, maxVramBytes - (750 * 1024 * 1024)); // Usable GPU VRAM (excluding 750MB system/display overhead)
+      const usableVram = Math.max(0, maxVramBytes - 750 * 1024 * 1024); // Usable GPU VRAM (excluding 750MB system/display overhead)
       const kvCachePerLayer = 14 * 1024 * 1024; // ~14MB per layer at Q8_0 quant context 2048
       const computeBuffer = 4 * 1024 * 1024; // 4MB compute overhead
-      
-      const layerSize = (fileSize + (totalLayers * kvCachePerLayer) + computeBuffer) / totalLayers;
+
+      const layerSize = (fileSize + totalLayers * kvCachePerLayer + computeBuffer) / totalLayers;
 
       let gpuLayers = 0;
       if (hasDiscreteGPU && usableVram > 0) {
@@ -1308,18 +1410,20 @@ export const LocalModelManager = {
       // Estimate loaded RAM/VRAM usage in GB (rounded to 1 decimal)
       let estimatedVramUsageGB = 0;
       if (gpuLayers > 0) {
-        const bytes = (gpuLayers / totalLayers) * fileSize + (gpuLayers * kvCachePerLayer) + computeBuffer;
+        const bytes =
+          (gpuLayers / totalLayers) * fileSize + gpuLayers * kvCachePerLayer + computeBuffer;
         estimatedVramUsageGB = Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10;
       }
 
-      const ramBytes = (cpuLayers / totalLayers) * fileSize + (cpuLayers * kvCachePerLayer) + (500 * 1024 * 1024); // Add 500MB baseline system load
+      const ramBytes =
+        (cpuLayers / totalLayers) * fileSize + cpuLayers * kvCachePerLayer + 500 * 1024 * 1024; // Add 500MB baseline system load
       const estimatedRamUsageGB = Math.round((ramBytes / (1024 * 1024 * 1024)) * 10) / 10;
 
       const recommendedThreads = Math.max(1, Math.floor(logicalCores * 0.75));
 
       let speedClass: 'fast' | 'moderate' | 'slow' = 'moderate';
       let reason = '';
-      
+
       if (gpuLayers === totalLayers) {
         speedClass = 'fast';
         reason = `100% of model layers offloaded to your discrete GPU VRAM (${estimatedVramUsageGB} GB).`;
@@ -1327,9 +1431,9 @@ export const LocalModelManager = {
         speedClass = 'moderate';
         reason = `Hybrid execution: ${gpuLayers}/${totalLayers} layers run in GPU VRAM, remaining ${cpuLayers} layers in CPU RAM.`;
       } else {
-        const isSmall = (fileSize / (1024*1024*1024)) < 3.0;
+        const isSmall = fileSize / (1024 * 1024 * 1024) < 3.0;
         speedClass = isSmall ? 'moderate' : 'slow';
-        reason = isSmall 
+        reason = isSmall
           ? `CPU-only execution. The model is lightweight, so speed will be moderate on your ${logicalCores}-core CPU.`
           : `CPU-only execution. The model size (${preset.size}) is heavy and will generate slowly without a dedicated GPU.`;
       }
@@ -1350,7 +1454,7 @@ export const LocalModelManager = {
         estimatedVramUsageGB,
         recommendedThreads,
         speedClass,
-        reason
+        reason,
       };
     });
 
@@ -1373,7 +1477,8 @@ export const LocalModelManager = {
     }
 
     if (!allCompatibleModelIds.includes(recommendedModelId)) {
-      recommendedModelId = allCompatibleModelIds.length > 0 ? allCompatibleModelIds[0] : 'llama-3.2-1b-native';
+      recommendedModelId =
+        allCompatibleModelIds.length > 0 ? allCompatibleModelIds[0] : 'llama-3.2-1b-native';
     }
 
     return {
@@ -1386,11 +1491,11 @@ export const LocalModelManager = {
         maxVramBytes,
         maxVramGB,
         hasDiscreteGPU,
-        platform
+        platform,
       },
       recommendedModelId,
       allCompatibleModelIds,
-      presetsCompatibility
+      presetsCompatibility,
     };
-  }
+  },
 };

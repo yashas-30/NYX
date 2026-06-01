@@ -11,7 +11,7 @@ import {
   CircleDotDashed,
   CircleX,
   Terminal,
-  Activity
+  Activity,
 } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import { SubagentTask } from '@src/infrastructure/types';
@@ -38,7 +38,7 @@ interface Task {
 }
 
 const mapSubagentTasksToTasks = (subagentTasks: SubagentTask[]): Task[] => {
-  return subagentTasks.map(task => {
+  return subagentTasks.map((task) => {
     let priority: 'high' | 'medium' | 'low' = 'medium';
     if (task.complexity === 'complex' || task.complexity === 'enterprise') {
       priority = 'high';
@@ -64,9 +64,14 @@ const mapSubagentTasksToTasks = (subagentTasks: SubagentTask[]): Task[] => {
         id: `${task.id}.1`,
         title: 'Scan codebase symbol indexes',
         description: 'Locate file paths, parse AST imports, and scan keyword definitions.',
-        status: taskStatus === 'completed' ? 'completed' : (taskStatus === 'running' ? 'in-progress' : 'pending'),
+        status:
+          taskStatus === 'completed'
+            ? 'completed'
+            : taskStatus === 'running'
+              ? 'in-progress'
+              : 'pending',
         priority: 'high',
-        tools: ['grep_search', 'list_dir', 'view_file']
+        tools: ['grep_search', 'list_dir', 'view_file'],
       });
       subtasks.push({
         id: `${task.id}.2`,
@@ -74,33 +79,48 @@ const mapSubagentTasksToTasks = (subagentTasks: SubagentTask[]): Task[] => {
         description: 'Read documentation endpoints for standard libraries and APIs.',
         status: taskStatus === 'completed' ? 'completed' : 'pending',
         priority: 'medium',
-        tools: ['search_web', 'read_url_content']
+        tools: ['search_web', 'read_url_content'],
       });
     } else if (task.type === 'coder') {
       subtasks.push({
         id: `${task.id}.1`,
         title: 'Analyze replacement bounds',
         description: 'Find matching lines and prepare replacement diff chunks.',
-        status: taskStatus === 'completed' ? 'completed' : (taskStatus === 'running' ? 'in-progress' : 'pending'),
+        status:
+          taskStatus === 'completed'
+            ? 'completed'
+            : taskStatus === 'running'
+              ? 'in-progress'
+              : 'pending',
         priority: 'high',
-        tools: ['view_file']
+        tools: ['view_file'],
       });
       subtasks.push({
         id: `${task.id}.2`,
         title: 'Write code modifications',
         description: 'Apply multi-replace chunks to target files in workspace.',
-        status: taskStatus === 'completed' ? 'completed' : (taskStatus === 'running' ? 'in-progress' : 'pending'),
+        status:
+          taskStatus === 'completed'
+            ? 'completed'
+            : taskStatus === 'running'
+              ? 'in-progress'
+              : 'pending',
         priority: 'high',
-        tools: ['replace_file_content', 'write_to_file']
+        tools: ['replace_file_content', 'write_to_file'],
       });
     } else if (task.type === 'reviewer' || task.type === 'tester') {
       subtasks.push({
         id: `${task.id}.1`,
         title: 'Trigger static compile check',
         description: 'Run TypeScript noEmit checks on the workspace code.',
-        status: taskStatus === 'completed' ? 'completed' : (taskStatus === 'running' ? 'in-progress' : 'pending'),
+        status:
+          taskStatus === 'completed'
+            ? 'completed'
+            : taskStatus === 'running'
+              ? 'in-progress'
+              : 'pending',
         priority: 'high',
-        tools: ['run_command']
+        tools: ['run_command'],
       });
       subtasks.push({
         id: `${task.id}.2`,
@@ -108,16 +128,21 @@ const mapSubagentTasksToTasks = (subagentTasks: SubagentTask[]): Task[] => {
         description: 'Bundle client resources and verify server entrypoints compile cleanly.',
         status: taskStatus === 'completed' ? 'completed' : 'pending',
         priority: 'medium',
-        tools: ['run_command']
+        tools: ['run_command'],
       });
     } else {
       subtasks.push({
         id: `${task.id}.1`,
         title: 'Process instruction loop',
         description: task.description,
-        status: taskStatus === 'completed' ? 'completed' : (taskStatus === 'running' ? 'in-progress' : 'pending'),
+        status:
+          taskStatus === 'completed'
+            ? 'completed'
+            : taskStatus === 'running'
+              ? 'in-progress'
+              : 'pending',
         priority: 'medium',
-        tools: task.assignedModel ? [task.assignedModel.provider] : []
+        tools: task.assignedModel ? [task.assignedModel.provider] : [],
       });
     }
 
@@ -129,7 +154,7 @@ const mapSubagentTasksToTasks = (subagentTasks: SubagentTask[]): Task[] => {
       priority,
       level: 0,
       dependencies: task.dependencies,
-      subtasks
+      subtasks,
     };
   });
 };
@@ -169,7 +194,7 @@ export const AgentPlanner: React.FC<{
               description: 'Retrieve file hierarchy and recent repository commit hashes.',
               status: 'completed',
               priority: 'high',
-              tools: ['workspace-intel']
+              tools: ['workspace-intel'],
             },
             {
               id: 'decomp.2',
@@ -177,9 +202,9 @@ export const AgentPlanner: React.FC<{
               description: 'Map execution stages to specialist models.',
               status: 'in-progress',
               priority: 'medium',
-              tools: ['hybrid-router']
-            }
-          ]
+              tools: ['hybrid-router'],
+            },
+          ],
         },
         {
           id: 'swarm',
@@ -189,8 +214,8 @@ export const AgentPlanner: React.FC<{
           priority: 'high',
           level: 0,
           dependencies: ['decomp'],
-          subtasks: []
-        }
+          subtasks: [],
+        },
       ]);
     }
   }, [subagentTasks, isLoading]);
@@ -198,9 +223,11 @@ export const AgentPlanner: React.FC<{
   // Auto-expand active (in-progress) tasks
   useEffect(() => {
     if (tasks.length > 0) {
-      const activeTask = tasks.find(t => t.status === 'in-progress');
+      const activeTask = tasks.find((t) => t.status === 'in-progress');
       if (activeTask) {
-        setExpandedTasks(prev => prev.includes(activeTask.id) ? prev : [...prev, activeTask.id]);
+        setExpandedTasks((prev) =>
+          prev.includes(activeTask.id) ? prev : [...prev, activeTask.id]
+        );
       } else if (expandedTasks.length === 0) {
         setExpandedTasks([tasks[0].id]);
       }
@@ -208,37 +235,41 @@ export const AgentPlanner: React.FC<{
   }, [tasks]);
 
   const toggleTaskExpansion = (taskId: string) => {
-    setExpandedTasks(prev =>
-      prev.includes(taskId)
-        ? prev.filter(id => id !== taskId)
-        : [...prev, taskId]
+    setExpandedTasks((prev) =>
+      prev.includes(taskId) ? prev.filter((id) => id !== taskId) : [...prev, taskId]
     );
   };
 
   const toggleSubtaskExpansion = (taskId: string, subtaskId: string) => {
     const key = `${taskId}-${subtaskId}`;
-    setExpandedSubtasks(prev => ({
+    setExpandedSubtasks((prev) => ({
       ...prev,
-      [key]: !prev[key]
+      [key]: !prev[key],
     }));
   };
 
   // Interactive toggle functions (allows manual override overrides)
   const toggleTaskStatus = (taskId: string) => {
-    setTasks(prev =>
-      prev.map(task => {
+    setTasks((prev) =>
+      prev.map((task) => {
         if (task.id === taskId) {
-          const statuses: Task['status'][] = ['completed', 'in-progress', 'pending', 'need-help', 'failed'];
+          const statuses: Task['status'][] = [
+            'completed',
+            'in-progress',
+            'pending',
+            'need-help',
+            'failed',
+          ];
           const currentIndex = Math.floor(Math.random() * statuses.length);
           const newStatus = statuses[currentIndex];
-          const updatedSubtasks = task.subtasks.map(subtask => ({
+          const updatedSubtasks = task.subtasks.map((subtask) => ({
             ...subtask,
-            status: newStatus === 'completed' ? 'completed' as const : subtask.status
+            status: newStatus === 'completed' ? ('completed' as const) : subtask.status,
           }));
           return {
             ...task,
             status: newStatus,
-            subtasks: updatedSubtasks
+            subtasks: updatedSubtasks,
           };
         }
         return task;
@@ -247,21 +278,22 @@ export const AgentPlanner: React.FC<{
   };
 
   const toggleSubtaskStatus = (taskId: string, subtaskId: string) => {
-    setTasks(prev =>
-      prev.map(task => {
+    setTasks((prev) =>
+      prev.map((task) => {
         if (task.id === taskId) {
-          const updatedSubtasks = task.subtasks.map(subtask => {
+          const updatedSubtasks = task.subtasks.map((subtask) => {
             if (subtask.id === subtaskId) {
-              const newStatus = subtask.status === 'completed' ? 'pending' as const : 'completed' as const;
+              const newStatus =
+                subtask.status === 'completed' ? ('pending' as const) : ('completed' as const);
               return { ...subtask, status: newStatus };
             }
             return subtask;
           });
-          const allDone = updatedSubtasks.every(s => s.status === 'completed');
+          const allDone = updatedSubtasks.every((s) => s.status === 'completed');
           return {
             ...task,
             subtasks: updatedSubtasks,
-            status: allDone ? ('completed' as const) : task.status
+            status: allDone ? ('completed' as const) : task.status,
           };
         }
         return task;
@@ -271,103 +303,103 @@ export const AgentPlanner: React.FC<{
 
   // Motion variants with reduced motion support
   const taskVariants: any = {
-    hidden: { 
-      opacity: 0, 
-      y: prefersReducedMotion ? 0 : -5 
+    hidden: {
+      opacity: 0,
+      y: prefersReducedMotion ? 0 : -5,
     },
-    visible: { 
-      opacity: 1, 
+    visible: {
+      opacity: 1,
       y: 0,
-      transition: { 
-        type: prefersReducedMotion ? "tween" : "spring", 
-        stiffness: 500, 
+      transition: {
+        type: prefersReducedMotion ? 'tween' : 'spring',
+        stiffness: 500,
         damping: 30,
-        duration: prefersReducedMotion ? 0.2 : undefined
-      }
+        duration: prefersReducedMotion ? 0.2 : undefined,
+      },
     },
     exit: {
       opacity: 0,
       y: prefersReducedMotion ? 0 : -5,
-      transition: { duration: 0.15 }
-    }
+      transition: { duration: 0.15 },
+    },
   };
 
   const subtaskListVariants: any = {
-    hidden: { 
-      opacity: 0, 
+    hidden: {
+      opacity: 0,
       height: 0,
-      overflow: "hidden" 
+      overflow: 'hidden',
     },
-    visible: { 
-      height: "auto", 
+    visible: {
+      height: 'auto',
       opacity: 1,
-      overflow: "visible",
-      transition: { 
-        duration: 0.25, 
+      overflow: 'visible',
+      transition: {
+        duration: 0.25,
         staggerChildren: prefersReducedMotion ? 0 : 0.05,
-        when: "beforeChildren",
-        ease: [0.2, 0.65, 0.3, 0.9]
-      }
+        when: 'beforeChildren',
+        ease: [0.2, 0.65, 0.3, 0.9],
+      },
     },
     exit: {
       height: 0,
       opacity: 0,
-      overflow: "hidden",
-      transition: { 
+      overflow: 'hidden',
+      transition: {
         duration: 0.2,
-        ease: [0.2, 0.65, 0.3, 0.9]
-      }
-    }
+        ease: [0.2, 0.65, 0.3, 0.9],
+      },
+    },
   };
 
   const subtaskVariants: any = {
-    hidden: { 
-      opacity: 0, 
-      x: prefersReducedMotion ? 0 : -10 
+    hidden: {
+      opacity: 0,
+      x: prefersReducedMotion ? 0 : -10,
     },
-    visible: { 
-      opacity: 1, 
+    visible: {
+      opacity: 1,
       x: 0,
-      transition: { 
-        type: prefersReducedMotion ? "tween" : "spring", 
-        stiffness: 500, 
+      transition: {
+        type: prefersReducedMotion ? 'tween' : 'spring',
+        stiffness: 500,
         damping: 25,
-        duration: prefersReducedMotion ? 0.2 : undefined
-      }
+        duration: prefersReducedMotion ? 0.2 : undefined,
+      },
     },
     exit: {
       opacity: 0,
       x: prefersReducedMotion ? 0 : -10,
-      transition: { duration: 0.15 }
-    }
+      transition: { duration: 0.15 },
+    },
   };
 
   const subtaskDetailsVariants: any = {
-    hidden: { 
-      opacity: 0, 
+    hidden: {
+      opacity: 0,
       height: 0,
-      overflow: "hidden"
+      overflow: 'hidden',
     },
-    visible: { 
-      opacity: 1, 
-      height: "auto",
-      overflow: "visible",
-      transition: { 
+    visible: {
+      opacity: 1,
+      height: 'auto',
+      overflow: 'visible',
+      transition: {
         duration: 0.25,
-        ease: [0.2, 0.65, 0.3, 0.9]
-      }
-    }
+        ease: [0.2, 0.65, 0.3, 0.9],
+      },
+    },
   };
 
   const statusBadgeVariants: any = {
     initial: { scale: 1 },
-    animate: { 
+    animate: {
       scale: prefersReducedMotion ? 1 : [1, 1.08, 1],
-      transition: { 
+      transition: {
         duration: 0.35,
-        ease: [0.34, 1.56, 0.64, 1]
-      }
-    }
+        ease: [0.34, 1.56, 0.64, 1],
+      },
+    },
   };
 
   if (tasks.length === 0) {
@@ -382,7 +414,7 @@ export const AgentPlanner: React.FC<{
         animate={{
           opacity: 1,
           y: 0,
-          transition: { duration: 0.3, ease: [0.2, 0.65, 0.3, 0.9] }
+          transition: { duration: 0.3, ease: [0.2, 0.65, 0.3, 0.9] },
         }}
       >
         <LayoutGroup id="agent-planner-group">
@@ -390,7 +422,9 @@ export const AgentPlanner: React.FC<{
           <div className="flex items-center justify-between px-4.5 py-3 border-b border-border bg-card/50">
             <div className="flex items-center gap-2">
               <Activity size={12} className="text-primary" />
-              <span className="text-[9px] font-black uppercase tracking-[0.25em] text-primary">Nyx Swarm Planner</span>
+              <span className="text-[9px] font-black uppercase tracking-[0.25em] text-primary">
+                Nyx Swarm Planner
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <NyxLoader size={18} className="opacity-80" />
@@ -406,7 +440,7 @@ export const AgentPlanner: React.FC<{
                 return (
                   <motion.li
                     key={task.id}
-                    className={` ${index !== 0 ? "mt-1 pt-2 border-t border-border/40" : ""} `}
+                    className={` ${index !== 0 ? 'mt-1 pt-2 border-t border-border/40' : ''} `}
                     initial="hidden"
                     animate="visible"
                     variants={taskVariants}
@@ -415,9 +449,9 @@ export const AgentPlanner: React.FC<{
                     <motion.div
                       className="group flex items-center px-3 py-1.5 rounded-md cursor-pointer"
                       onClick={() => toggleTaskExpansion(task.id)}
-                      whileHover={{ 
-                        backgroundColor: "rgba(255,255,255,0.02)",
-                        transition: { duration: 0.2 }
+                      whileHover={{
+                        backgroundColor: 'rgba(255,255,255,0.02)',
+                        transition: { duration: 0.2 },
                       }}
                     >
                       <motion.div
@@ -437,7 +471,7 @@ export const AgentPlanner: React.FC<{
                             exit={{ opacity: 0, scale: 0.8, rotate: 10 }}
                             transition={{
                               duration: 0.2,
-                              ease: [0.2, 0.65, 0.3, 0.9]
+                              ease: [0.2, 0.65, 0.3, 0.9],
                             }}
                           >
                             {task.status === 'completed' ? (
@@ -476,12 +510,12 @@ export const AgentPlanner: React.FC<{
                                     animate={{ opacity: 1, scale: 1 }}
                                     transition={{
                                       duration: 0.2,
-                                      delay: idx * 0.05
+                                      delay: idx * 0.05,
                                     }}
-                                    whileHover={{ 
-                                      y: -1, 
-                                      backgroundColor: "rgba(255,255,255,0.05)",
-                                      transition: { duration: 0.2 } 
+                                    whileHover={{
+                                      y: -1,
+                                      backgroundColor: 'rgba(255,255,255,0.05)',
+                                      transition: { duration: 0.2 },
                                     }}
                                   >
                                     Dep: {dep}
@@ -566,7 +600,7 @@ export const AgentPlanner: React.FC<{
                                           exit={{ opacity: 0, scale: 0.8, rotate: 10 }}
                                           transition={{
                                             duration: 0.2,
-                                            ease: [0.2, 0.65, 0.3, 0.9]
+                                            ease: [0.2, 0.65, 0.3, 0.9],
                                           }}
                                         >
                                           {subtask.status === 'completed' ? (
@@ -601,7 +635,9 @@ export const AgentPlanner: React.FC<{
                                         variants={subtaskDetailsVariants}
                                         layout
                                       >
-                                        <p className="leading-relaxed font-medium">{subtask.description}</p>
+                                        <p className="leading-relaxed font-medium">
+                                          {subtask.description}
+                                        </p>
                                         {subtask.tools && subtask.tools.length > 0 && (
                                           <div className="flex flex-wrap items-center gap-1.5 mt-0.5 mb-1">
                                             <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground flex items-center gap-1">
@@ -613,18 +649,18 @@ export const AgentPlanner: React.FC<{
                                                   key={idx}
                                                   className="bg-primary/5 text-primary border border-primary/10 px-1.5 py-0.5 rounded text-[9px] font-mono leading-none tracking-tight uppercase"
                                                   initial={{ opacity: 0, y: -5 }}
-                                                  animate={{ 
-                                                    opacity: 1, 
+                                                  animate={{
+                                                    opacity: 1,
                                                     y: 0,
                                                     transition: {
                                                       duration: 0.2,
-                                                      delay: idx * 0.05
-                                                    }
+                                                      delay: idx * 0.05,
+                                                    },
                                                   }}
-                                                  whileHover={{ 
-                                                    y: -1, 
-                                                    backgroundColor: "rgba(255,255,255,0.05)",
-                                                    transition: { duration: 0.2 } 
+                                                  whileHover={{
+                                                    y: -1,
+                                                    backgroundColor: 'rgba(255,255,255,0.05)',
+                                                    transition: { duration: 0.2 },
                                                   }}
                                                 >
                                                   {tool}

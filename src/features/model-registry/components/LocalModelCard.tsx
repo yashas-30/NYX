@@ -1,6 +1,14 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Download, Loader2, Play, Square, Terminal as TerminalIcon, Trash2, AlertCircle } from 'lucide-react';
+import {
+  Download,
+  Loader2,
+  Play,
+  Square,
+  Terminal as TerminalIcon,
+  Trash2,
+  AlertCircle,
+} from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { LocalModelPreset } from '@src/types';
 
@@ -38,7 +46,12 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
   const isPaused = m.status === 'paused';
   const isCompleted = m.status === 'completed';
   const isIdle = m.status === 'idle' || m.status === 'failed';
-  const progress = m.progress || { progressPercentage: 0, speedMbps: 0, bytesDownloaded: 0, totalBytes: 0 };
+  const progress = m.progress || {
+    progressPercentage: 0,
+    speedMbps: 0,
+    bytesDownloaded: 0,
+    totalBytes: 0,
+  };
   const isCurrentAction = actionInProgress === m.id;
 
   // Retrieve compatibility projection details from state
@@ -51,11 +64,12 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       className={`
         group relative p-4 rounded-2xl border border-solid flex flex-col justify-between gap-3 overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300
-        ${isResident
-          ? 'bg-card border-[#FF3366]/45 shadow-[0_0_20px_rgba(34,211,238,0.08)]'
-          : !meetsRam
-            ? 'bg-card border-red-500/10 opacity-70 hover:opacity-100 hover:border-red-500/25 transition-all'
-            : 'bg-card border border-white/[0.04] hover:border-[#FF3366]/30 hover:bg-[#4A5059]'
+        ${
+          isResident
+            ? 'bg-card border-[#FF3366]/45 shadow-[0_0_20px_rgba(34,211,238,0.08)]'
+            : !meetsRam
+              ? 'bg-card border-red-500/10 opacity-70 hover:opacity-100 hover:border-red-500/25 transition-all'
+              : 'bg-card border border-white/[0.04] hover:border-[#FF3366]/30 hover:bg-[#4A5059]'
         }
       `}
     >
@@ -67,13 +81,24 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
           </span>
           <div className="flex items-center gap-1.5">
             {compat && (
-              <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0 ${
-                !meetsRam ? 'bg-red-500/10 text-red-400 border-red-500/20' :
-                compat.speedClass === 'fast' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                compat.speedClass === 'moderate' ? 'bg-amber-500/10 text-[#FF3366] border-amber-500/20' :
-                'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
-              }`}>
-                {!meetsRam ? 'Low Memory' : compat.speedClass === 'fast' ? 'GPU Offload' : compat.speedClass === 'moderate' ? 'Hybrid Speed' : 'CPU Speed'}
+              <span
+                className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0 ${
+                  !meetsRam
+                    ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                    : compat.speedClass === 'fast'
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : compat.speedClass === 'moderate'
+                        ? 'bg-amber-500/10 text-[#FF3366] border-amber-500/20'
+                        : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
+                }`}
+              >
+                {!meetsRam
+                  ? 'Low Memory'
+                  : compat.speedClass === 'fast'
+                    ? 'GPU Offload'
+                    : compat.speedClass === 'moderate'
+                      ? 'Hybrid Speed'
+                      : 'CPU Speed'}
               </span>
             )}
             {isResident && (
@@ -110,38 +135,56 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
         {/* Technical attributes */}
         <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-border/30">
           <div className="flex flex-col">
-            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">GGUF File Size</span>
-            <span className="text-[10px] font-mono font-extrabold text-foreground/80">{m.size}</span>
+            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">
+              GGUF File Size
+            </span>
+            <span className="text-[10px] font-mono font-extrabold text-foreground/80">
+              {m.size}
+            </span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">RAM / VRAM Required</span>
-            <span className="text-[10px] font-mono font-extrabold text-[#FF3366]/90">{m.vramRequired ? `${m.vramRequired} + ` : ''}{m.ramRequired}</span>
+            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">
+              RAM / VRAM Required
+            </span>
+            <span className="text-[10px] font-mono font-extrabold text-[#FF3366]/90">
+              {m.vramRequired ? `${m.vramRequired} + ` : ''}
+              {m.ramRequired}
+            </span>
           </div>
         </div>
 
         {/* Hardware Offload projection for downloaded library models */}
         {compat && (
-          <div className={`mt-2.5 p-2 rounded-xl border text-[9px] ${
-            !meetsRam 
-              ? 'bg-red-500/5 border-red-500/10 text-red-400' 
-              : compat.speedClass === 'fast'
-                ? 'bg-emerald-500/5 border-emerald-500/10 text-zinc-300'
-                : compat.speedClass === 'moderate'
-                  ? 'bg-[#FF3366]/5 border-[#FF3366]/10 text-zinc-300'
-                  : 'bg-zinc-500/5 border-white/[0.03] text-zinc-400'
-          }`}>
+          <div
+            className={`mt-2.5 p-2 rounded-xl border text-[9px] ${
+              !meetsRam
+                ? 'bg-red-500/5 border-red-500/10 text-red-400'
+                : compat.speedClass === 'fast'
+                  ? 'bg-emerald-500/5 border-emerald-500/10 text-zinc-300'
+                  : compat.speedClass === 'moderate'
+                    ? 'bg-[#FF3366]/5 border-[#FF3366]/10 text-zinc-300'
+                    : 'bg-zinc-500/5 border-white/[0.03] text-zinc-400'
+            }`}
+          >
             <div className="flex items-center justify-between font-bold uppercase tracking-wider pb-1 mb-1 border-b border-white/[0.04] text-[8px]">
               <span>Hardware projection</span>
-              <span className={
-                !meetsRam ? 'text-red-400' :
-                compat.speedClass === 'fast' ? 'text-emerald-400' :
-                compat.speedClass === 'moderate' ? 'text-[#FF3366]' : 'text-zinc-500'
-              }>
+              <span
+                className={
+                  !meetsRam
+                    ? 'text-red-400'
+                    : compat.speedClass === 'fast'
+                      ? 'text-emerald-400'
+                      : compat.speedClass === 'moderate'
+                        ? 'text-[#FF3366]'
+                        : 'text-zinc-500'
+                }
+              >
                 {compat.speedClass.toUpperCase()}
               </span>
             </div>
             <p className="leading-relaxed font-semibold text-foreground/85">
-              {compat.gpuLayers}/{compat.totalLayers} layers in VRAM ({compat.offloadRatio}%) • RAM: {compat.estimatedRamUsageGB}GB • VRAM: {compat.estimatedVramUsageGB}GB
+              {compat.gpuLayers}/{compat.totalLayers} layers in VRAM ({compat.offloadRatio}%) • RAM:{' '}
+              {compat.estimatedRamUsageGB}GB • VRAM: {compat.estimatedVramUsageGB}GB
             </p>
           </div>
         )}
@@ -165,7 +208,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               />
             </div>
             <div className="text-[10px] font-medium text-muted-foreground/80 text-right">
-              {progress.totalBytes > 0 
+              {progress.totalBytes > 0
                 ? `${(progress.bytesDownloaded / (1024 * 1024)).toFixed(0)} MB / ${(progress.totalBytes / (1024 * 1024)).toFixed(0)} MB`
                 : 'Negotiating HTTP download streams...'}
             </div>
@@ -176,7 +219,10 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 onClick={() => handlePause(m.id)}
                 className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer"
               >
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor"><rect x="1" y="1" width="3" height="8" rx="1"/><rect x="6" y="1" width="3" height="8" rx="1"/></svg>
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor">
+                  <rect x="1" y="1" width="3" height="8" rx="1" />
+                  <rect x="6" y="1" width="3" height="8" rx="1" />
+                </svg>
                 Pause
               </motion.button>
               <motion.button
@@ -184,7 +230,17 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 onClick={() => handleCancel(m.id)}
                 className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-red-500/8 hover:bg-red-500/18 text-red-400/70 hover:text-red-400 border border-red-500/15 hover:border-red-500/30 transition-all cursor-pointer"
               >
-                <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="1" y1="1" x2="8" y2="8"/><line x1="8" y1="1" x2="1" y2="8"/></svg>
+                <svg
+                  width="9"
+                  height="9"
+                  viewBox="0 0 9 9"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <line x1="1" y1="1" x2="8" y2="8" />
+                  <line x1="8" y1="1" x2="1" y2="8" />
+                </svg>
                 Cancel
               </motion.button>
             </div>
@@ -195,7 +251,11 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground">
               <span>{progress.progressPercentage}% — Paused</span>
-              <span className="text-amber-400 font-bold">{progress.totalBytes > 0 ? `${(progress.bytesDownloaded / (1024 * 1024)).toFixed(0)} MB saved` : ''}</span>
+              <span className="text-amber-400 font-bold">
+                {progress.totalBytes > 0
+                  ? `${(progress.bytesDownloaded / (1024 * 1024)).toFixed(0)} MB saved`
+                  : ''}
+              </span>
             </div>
             <div className="w-full h-1 rounded-full bg-black/20 dark:bg-white/5 overflow-hidden">
               <div
@@ -210,7 +270,9 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 onClick={() => handleResume(m.id)}
                 className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-[#FF3366]/10 hover:bg-[#FF3366]/20 text-[#FF3366] border border-[#FF3366]/20 hover:border-[#FF3366]/40 transition-all cursor-pointer"
               >
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,1 9,5 2,9"/></svg>
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor">
+                  <polygon points="2,1 9,5 2,9" />
+                </svg>
                 Resume
               </motion.button>
               <motion.button
@@ -218,7 +280,17 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 onClick={() => handleCancel(m.id)}
                 className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-red-500/8 hover:bg-red-500/18 text-red-400/70 hover:text-red-400 border border-red-500/15 hover:border-red-500/30 transition-all cursor-pointer"
               >
-                <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="1" y1="1" x2="8" y2="8"/><line x1="8" y1="1" x2="1" y2="8"/></svg>
+                <svg
+                  width="9"
+                  height="9"
+                  viewBox="0 0 9 9"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <line x1="1" y1="1" x2="8" y2="8" />
+                  <line x1="8" y1="1" x2="1" y2="8" />
+                </svg>
                 Cancel
               </motion.button>
             </div>

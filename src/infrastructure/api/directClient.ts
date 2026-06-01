@@ -5,6 +5,7 @@
  */
 
 import { AISettings } from './inferenceClient';
+import { parseSSEStream } from './streamParser';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -82,10 +83,14 @@ function mergeSignals(a?: AbortSignal | null, b?: AbortSignal | null): AbortSign
 async function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer);
-      reject(new Error('Aborted'));
-    }, { once: true });
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(new Error('Aborted'));
+      },
+      { once: true }
+    );
   });
 }
 
@@ -179,47 +184,7 @@ function resolveRealGeminiModel(model: string): string {
 // SSE Stream parser
 // ---------------------------------------------------------------------------
 
-async function* parseSSEStream(response: Response): AsyncGenerator<StreamChunk> {
-  if (!response.body) return;
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(':')) continue;
-
-        const dataStr = trimmed.startsWith('data: ') ? trimmed.slice(6).trim() : trimmed;
-
-        try {
-          const parsed = JSON.parse(dataStr);
-          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (text) {
-            yield { type: 'text', content: text };
-          }
-          const finishReason = parsed.candidates?.[0]?.finishReason;
-          if (finishReason) {
-            yield { type: 'finish', metadata: { finish_reason: finishReason } };
-          }
-        } catch {
-          // Ignore parse errors in stream
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
+// Removed local parseSSEStream generator in favor of streamParser.ts
 
 // ---------------------------------------------------------------------------
 // Main Gemini fetch function
@@ -230,7 +195,10 @@ export async function directFetch(
   prompt: string,
   options: DirectClientOptions
 ): Promise<DirectClientResult> {
-  const activeKey = options.apiKey || (typeof process !== 'undefined' ? (process.env as any).GEMINI_API_KEY : null) || '';
+  const activeKey =
+    options.apiKey ||
+    (typeof process !== 'undefined' ? (process.env as any).GEMINI_API_KEY : null) ||
+    '';
   if (!activeKey) {
     throw new Error(
       'AUTHENTICATION FAILED: Gemini API key is required. Please check your settings.'
@@ -263,7 +231,10 @@ export async function directFetch(
   const requestBody: any = { contents };
 
   if (options.systemInstruction) {
-    requestBody.systemInstruction = { role: 'system', parts: [{ text: options.systemInstruction }] };
+    requestBody.systemInstruction = {
+      role: 'system',
+      parts: [{ text: options.systemInstruction }],
+    };
   }
 
   if (options.settings) {
@@ -292,24 +263,34 @@ export async function directFetch(
     if (!response.body) throw new Error('No response body for stream');
 
     let fullText = '';
-    for await (const chunk of parseSSEStream(response)) {
-      if (options.signal?.aborted) break;
 
-      if (chunk.type === 'text' && chunk.content) {
-        fullText += chunk.content;
-        options.onStream?.({ ...chunk, content: fullText });
-      } else if (chunk.type === 'finish') {
-        options.onStream?.(chunk);
-      }
-    }
+    const parsed = await parseSSEStream(response, {
+      signal: options.signal,
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+      onChunk: (delta, accumulated) => {
+        fullText = accumulated;
+        options.onStream?.({ type: 'text', content: accumulated });
+      },
+      onReasoning: (delta, accumulated) => {
+        options.onStream?.({ type: 'reasoning', content: accumulated });
+      },
+      onToolCall: (delta, accumulated) => {
+        options.onStream?.({ type: 'tool_call', content: JSON.stringify(accumulated) }); // Simplified mapping
+      },
+      onFinish: (reason) => {
+        options.onStream?.({ type: 'finish', metadata: { finish_reason: reason } });
+      },
+    });
 
     const latency = Math.round(performance.now() - startTime);
     const tokens = Math.ceil(fullText.length / 4);
 
     return {
       text: fullText,
+      reasoning: parsed.reasoning,
+      toolCalls: parsed.toolCalls as any,
       metrics: { latency, tokens, tps: latency > 0 ? Math.round(tokens / (latency / 1000)) : 0 },
-      finishReason: 'stop',
+      finishReason: parsed.finishReason || 'stop',
     };
   }
 
@@ -387,5 +368,3 @@ export async function directFetchGeminiStream(
     onStream,
   });
 }
-
-

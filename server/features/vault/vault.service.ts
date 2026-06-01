@@ -145,7 +145,10 @@ export function getVaultStatus(): Record<string, boolean> {
   const keys = loadKeys();
   return {
     gemini: !!(keys.gemini && keys.gemini.trim().length > 0),
-    scrapling: !!((keys.scrapling && keys.scrapling.trim().length > 0) || (keys.scrapling_url && keys.scrapling_url.trim().length > 0)),
+    scrapling: !!(
+      (keys.scrapling && keys.scrapling.trim().length > 0) ||
+      (keys.scrapling_url && keys.scrapling_url.trim().length > 0)
+    ),
   };
 }
 
@@ -167,7 +170,7 @@ export function backupVault(): string {
   }
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupPath = path.join(backupDir, `vault-${timestamp}.enc`);
-  
+
   if (fs.existsSync(VAULT_FILE)) {
     fs.copyFileSync(VAULT_FILE, backupPath);
   } else {
@@ -177,10 +180,11 @@ export function backupVault(): string {
 
   // Keep up to 10 backups
   try {
-    const backups = fs.readdirSync(backupDir)
-      .filter(f => f.startsWith('vault-') && f.endsWith('.enc'))
+    const backups = fs
+      .readdirSync(backupDir)
+      .filter((f) => f.startsWith('vault-') && f.endsWith('.enc'))
       .sort();
-    
+
     // Sort ascends, so oldest are at the beginning
     if (backups.length > 10) {
       const toRemoveCount = backups.length - 10;

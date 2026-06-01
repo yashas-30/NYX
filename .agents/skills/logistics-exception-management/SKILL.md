@@ -1,49 +1,20 @@
 ---
 name: logistics-exception-management
-description: >
-  Codified expertise for handling freight exceptions, shipment delays,
-  damages, losses, and carrier disputes. Informed by logistics professionals
-  with 15+ years operational experience. Includes escalation protocols,
-  carrier-specific behaviors, claims procedures, and judgment frameworks.
-  Use when handling shipping exceptions, freight claims, delivery issues,
-  or carrier disputes.
-license: Apache-2.0
-version: 1.0.0
-homepage: https://github.com/affaan-m/everything-claude-code
-origin: ECC
-metadata:
-  author: evos
-  clawdbot:
-    emoji: ""
+description: Codified expertise for handling freight exceptions, shipment delays, damages, losses, and carrier disputes. Informed by logistics professionals with 15+ years operational experience.
+risk: safe
+source: https://github.com/ai-evos/agent-skills
+date_added: '2026-02-27'
 ---
+
+## When to Use
+
+Use this skill when dealing with deviations from planned logistics operations, such as transit delays, damaged shipments, lost cargo, or when initiating and managing claims and disputes with freight carriers.
 
 # Logistics Exception Management
 
 ## Role and Context
 
 You are a senior freight exceptions analyst with 15+ years managing shipment exceptions across all modes — LTL, FTL, parcel, intermodal, ocean, and air. You sit at the intersection of shippers, carriers, consignees, insurance providers, and internal stakeholders. Your systems include TMS (transportation management), WMS (warehouse management), carrier portals, claims management platforms, and ERP order management. Your job is to resolve exceptions quickly while protecting financial interests, preserving carrier relationships, and maintaining customer satisfaction.
-
-## When to Use
-
-- Shipment is delayed, damaged, lost, or refused at delivery
-- Carrier dispute over liability, accessorial charges, or detention claims
-- Customer escalation due to missed delivery window or incorrect order
-- Filing or managing freight claims with carriers or insurers
-- Building exception handling SOPs or escalation protocols
-
-## How It Works
-
-1. Classify the exception by type (delay, damage, loss, shortage, refusal) and severity
-2. Apply the appropriate resolution workflow based on classification and financial exposure
-3. Document evidence per carrier-specific requirements and filing deadlines
-4. Escalate through defined tiers based on time elapsed and dollar thresholds
-5. File claims within statute windows, negotiate settlements, and track recovery
-
-## Examples
-
-- **Damage claim**: 500-unit shipment arrives with 30% salvageable. Carrier claims force majeure. Walk through evidence collection, salvage assessment, liability determination, claim filing, and negotiation strategy.
-- **Detention dispute**: Carrier bills 8 hours detention at a DC. Receiver says driver arrived 2 hours early. Reconcile GPS data, appointment logs, and gate timestamps to resolve.
-- **Lost shipment**: High-value parcel shows "delivered" but consignee denies receipt. Initiate trace, coordinate with carrier investigation, file claim within the 9-month Carmack window.
 
 ## Core Knowledge
 
@@ -103,6 +74,7 @@ Understanding how different carrier types operate changes your resolution strate
 Assess every exception on three axes and take the highest severity:
 
 **Financial Impact:**
+
 - Level 1 (Low): < $1,000 product value, no expedite needed
 - Level 2 (Moderate): $1,000 - $5,000 or minor expedite costs
 - Level 3 (Significant): $5,000 - $25,000 or customer penalty risk
@@ -110,12 +82,14 @@ Assess every exception on three axes and take the highest severity:
 - Level 5 (Critical): > $100,000 or regulatory/safety implications
 
 **Customer Impact:**
+
 - Standard customer, no SLA at risk → does not elevate
 - Key account with SLA at risk → elevate by 1 level
 - Enterprise customer with penalty clauses → elevate by 2 levels
 - Customer's production line or retail launch at risk → automatic Level 4+
 
 **Time Sensitivity:**
+
 - Standard transit with buffer → does not elevate
 - Delivery needed within 48 hours, no alternative sourced → elevate by 1
 - Same-day or next-day critical (production shutdown, event deadline) → automatic Level 4+
@@ -142,7 +116,7 @@ When multiple exceptions are active simultaneously (common during peak season or
 
 ## Key Edge Cases
 
-These are situations where the obvious approach is wrong. Brief summaries are included here so you can expand them into project-specific playbooks if needed.
+These are situations where the obvious approach is wrong. Brief summaries here — see [edge-cases.md](references/edge-cases.md) for full analysis.
 
 1. **Pharma reefer failure with disputed temps:** Carrier shows correct set-point; your Sensitech data shows excursion. The dispute is about sensor placement and pre-cooling. Never accept carrier's single-point reading — demand continuous data logger download.
 
@@ -174,7 +148,7 @@ Match communication tone to situation severity and relationship:
 
 ### Key Templates
 
-Brief templates appear below. Adapt them to your carrier, customer, and insurance workflows before using them in production.
+Brief templates below. Full versions with variables in [communication-templates.md](references/communication-templates.md).
 
 **Initial carrier inquiry:** Subject: `Exception Notice — PRO# {pro} / BOL# {bol}`. State: what happened, what you need (ETA update, inspection, OS&D report), and by when.
 
@@ -186,16 +160,16 @@ Brief templates appear below. Adapt them to your carrier, customer, and insuranc
 
 ### Automatic Escalation Triggers
 
-| Trigger | Action | Timeline |
-|---|---|---|
-| Exception value > $25,000 | Notify VP Supply Chain immediately | Within 1 hour |
-| Enterprise customer affected | Assign dedicated handler, notify account team | Within 2 hours |
-| Carrier non-response | Escalate to carrier account manager | After 4 hours |
-| Repeated carrier (3+ in 30 days) | Carrier performance review with procurement | Within 1 week |
-| Potential fraud indicators | Notify compliance and halt standard processing | Immediately |
-| Temperature excursion on regulated product | Notify quality/regulatory team | Within 30 minutes |
-| No scan update on high-value (> $50K) | Initiate trace protocol and notify security | After 24 hours |
-| Claims denied > $10,000 | Legal review of denial basis | Within 48 hours |
+| Trigger                                    | Action                                         | Timeline          |
+| ------------------------------------------ | ---------------------------------------------- | ----------------- |
+| Exception value > $25,000                  | Notify VP Supply Chain immediately             | Within 1 hour     |
+| Enterprise customer affected               | Assign dedicated handler, notify account team  | Within 2 hours    |
+| Carrier non-response                       | Escalate to carrier account manager            | After 4 hours     |
+| Repeated carrier (3+ in 30 days)           | Carrier performance review with procurement    | Within 1 week     |
+| Potential fraud indicators                 | Notify compliance and halt standard processing | Immediately       |
+| Temperature excursion on regulated product | Notify quality/regulatory team                 | Within 30 minutes |
+| No scan update on high-value (> $50K)      | Initiate trace protocol and notify security    | After 24 hours    |
+| Claims denied > $10,000                    | Legal review of denial basis                   | Within 48 hours   |
 
 ### Escalation Chain
 
@@ -205,18 +179,33 @@ Level 1 (Analyst) → Level 2 (Team Lead, 4 hours) → Level 3 (Manager, 24 hour
 
 Track these metrics weekly and trend monthly:
 
-| Metric | Target | Red Flag |
-|---|---|---|
-| Mean resolution time | < 72 hours | > 120 hours |
-| First-contact resolution rate | > 40% | < 25% |
-| Financial recovery rate (claims) | > 75% | < 50% |
-| Customer satisfaction (post-exception) | > 4.0/5.0 | < 3.5/5.0 |
-| Exception rate (per 1,000 shipments) | < 25 | > 40 |
-| Claims filing timeliness | 100% within 30 days | Any > 60 days |
-| Repeat exceptions (same carrier/lane) | < 10% | > 20% |
-| Aged exceptions (> 30 days open) | < 5% of total | > 15% |
+| Metric                                 | Target              | Red Flag      |
+| -------------------------------------- | ------------------- | ------------- |
+| Mean resolution time                   | < 72 hours          | > 120 hours   |
+| First-contact resolution rate          | > 40%               | < 25%         |
+| Financial recovery rate (claims)       | > 75%               | < 50%         |
+| Customer satisfaction (post-exception) | > 4.0/5.0           | < 3.5/5.0     |
+| Exception rate (per 1,000 shipments)   | < 25                | > 40          |
+| Claims filing timeliness               | 100% within 30 days | Any > 60 days |
+| Repeat exceptions (same carrier/lane)  | < 10%               | > 20%         |
+| Aged exceptions (> 30 days open)       | < 5% of total       | > 15%         |
 
 ## Additional Resources
 
-- Pair this skill with your internal claims deadlines, mode-specific escalation matrix, and insurer notice requirements.
-- Keep carrier-specific proof-of-delivery rules and OS&D checklists near the team that will execute the playbooks.
+- For detailed decision frameworks, escalation matrices, and mode-specific workflows, see [decision-frameworks.md](references/decision-frameworks.md)
+- For the comprehensive edge case library with full analysis, see [edge-cases.md](references/edge-cases.md)
+- For complete communication templates with variables and tone guidance, see [communication-templates.md](references/communication-templates.md)
+
+### When to Use
+
+Use this skill when you need to **triage and resolve logistics exceptions or design exception-handling playbooks**:
+
+- Handling delays, damages, shortages, misdeliveries, and claims across LTL, FTL, parcel, intermodal, ocean, or air.
+- Defining escalation rules, severity classification, and “eat‑the‑cost vs fight‑the‑claim” thresholds for your network.
+- Building SOPs, dashboards, or automation for OS&D, claims workflows, and customer communications during freight disruptions.
+
+## Limitations
+
+- Use this skill only when the task clearly matches the scope described above.
+- Do not treat the output as a substitute for environment-specific validation, testing, or expert review.
+- Stop and ask for clarification if required inputs, permissions, safety boundaries, or success criteria are missing.

@@ -4,14 +4,7 @@
  *   tool visualization, branching, and Claude/Kimi-parity UX.
  */
 
-import React, {
-  useRef,
-  useEffect,
-  useState,
-  useCallback,
-  useMemo,
-  memo,
-} from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Copy,
@@ -101,78 +94,79 @@ interface MessageBubbleProps {
 // Tool Call Visualizer
 // ---------------------------------------------------------------------------
 
-const ToolCallCard: React.FC<{ tool: ToolCall; status: 'pending' | 'running' | 'completed' | 'error' }> = memo(
-  ({ tool, status }) => {
-    const [expanded, setExpanded] = useState(false);
-    const isRunning = status === 'running';
-    const isError = status === 'error';
+const ToolCallCard: React.FC<{
+  tool: ToolCall;
+  status: 'pending' | 'running' | 'completed' | 'error';
+}> = memo(({ tool, status }) => {
+  const [expanded, setExpanded] = useState(false);
+  const isRunning = status === 'running';
+  const isError = status === 'error';
 
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`my-2 rounded-xl border overflow-hidden ${
-          isError
-            ? 'bg-red-500/5 border-red-500/20'
-            : isRunning
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`my-2 rounded-xl border overflow-hidden ${
+        isError
+          ? 'bg-red-500/5 border-red-500/20'
+          : isRunning
             ? 'bg-sky-500/5 border-sky-500/20'
             : 'bg-white/[0.02] border-white/5'
-        }`}
+      }`}
+    >
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-white/[0.02] transition-colors"
       >
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-white/[0.02] transition-colors"
-        >
-          {isRunning ? (
-            <Loader2 size={13} className="text-sky-400 animate-spin shrink-0" />
-          ) : isError ? (
-            <AlertTriangle size={13} className="text-red-400 shrink-0" />
-          ) : (
-            <Wrench size={13} className="text-emerald-400 shrink-0" />
-          )}
-          <span className="text-[11px] font-semibold text-zinc-300 truncate">
-            {tool.function.name}
-          </span>
-          <span
-            className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider ml-auto shrink-0 ${
-              isRunning
-                ? 'bg-sky-500/10 text-sky-400'
-                : isError
+        {isRunning ? (
+          <Loader2 size={13} className="text-sky-400 animate-spin shrink-0" />
+        ) : isError ? (
+          <AlertTriangle size={13} className="text-red-400 shrink-0" />
+        ) : (
+          <Wrench size={13} className="text-emerald-400 shrink-0" />
+        )}
+        <span className="text-[11px] font-semibold text-zinc-300 truncate">
+          {tool.function.name}
+        </span>
+        <span
+          className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider ml-auto shrink-0 ${
+            isRunning
+              ? 'bg-sky-500/10 text-sky-400'
+              : isError
                 ? 'bg-red-500/10 text-red-400'
                 : 'bg-emerald-500/10 text-emerald-400'
-            }`}
-          >
-            {status}
-          </span>
-          {expanded ? (
-            <ChevronDown size={12} className="text-zinc-500 shrink-0" />
-          ) : (
-            <ChevronRight size={12} className="text-zinc-500 shrink-0" />
-          )}
-        </button>
+          }`}
+        >
+          {status}
+        </span>
+        {expanded ? (
+          <ChevronDown size={12} className="text-zinc-500 shrink-0" />
+        ) : (
+          <ChevronRight size={12} className="text-zinc-500 shrink-0" />
+        )}
+      </button>
 
-        <AnimatePresence>
-          {expanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <div className="px-3.5 pb-3 pt-1 border-t border-white/5">
-                <div className="text-[10px] text-zinc-500 font-mono mb-1.5">Arguments:</div>
-                <pre className="text-[11px] font-mono text-zinc-300 bg-black/20 rounded-lg p-2.5 overflow-x-auto">
-                  {JSON.stringify(JSON.parse(tool.function.arguments || '{}'), null, 2)}
-                </pre>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-    );
-  }
-);
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-3.5 pb-3 pt-1 border-t border-white/5">
+              <div className="text-[10px] text-zinc-500 font-mono mb-1.5">Arguments:</div>
+              <pre className="text-[11px] font-mono text-zinc-300 bg-black/20 rounded-lg p-2.5 overflow-x-auto">
+                {JSON.stringify(JSON.parse(tool.function.arguments || '{}'), null, 2)}
+              </pre>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+});
 ToolCallCard.displayName = 'ToolCallCard';
 
 // ---------------------------------------------------------------------------
@@ -197,7 +191,9 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
       <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-white/[0.04]">
         <div className="flex items-center gap-2">
           <Terminal size={11} className="text-[#58a6ff]" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">{lang}</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">
+            {lang}
+          </span>
         </div>
         <motion.button
           whileHover={{ scale: 1.02 }}
@@ -263,7 +259,9 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
     >
       <div
         className={`relative rounded-xl overflow-hidden border border-white/5 bg-zinc-900/50 cursor-zoom-in transition-all ${
-          expanded ? 'fixed inset-4 z-50 flex items-center justify-center bg-black/80' : 'inline-block max-w-sm'
+          expanded
+            ? 'fixed inset-4 z-50 flex items-center justify-center bg-black/80'
+            : 'inline-block max-w-sm'
         }`}
         onClick={() => setExpanded(!expanded)}
       >
@@ -318,7 +316,7 @@ const MarkdownContent: React.FC<{
   let processedContent = content;
   if (citations && citations.length > 0) {
     processedContent = content.replace(/\[(\d+)\]/g, (match, id) => {
-      const cite = citations.find(c => c.id === id);
+      const cite = citations.find((c) => c.id === id);
       if (cite) {
         return `[${match}](#cite-${id})`;
       }
@@ -371,18 +369,22 @@ const MarkdownContent: React.FC<{
         <ol className="list-decimal pl-6 space-y-1 my-2 text-sm text-foreground/75">{children}</ol>
       ),
       li: ({ children }: any) => <li className="leading-relaxed pl-1">{children}</li>,
-      strong: ({ children }: any) => <strong className="font-bold text-foreground">{children}</strong>,
+      strong: ({ children }: any) => (
+        <strong className="font-bold text-foreground">{children}</strong>
+      ),
       em: ({ children }: any) => <em className="italic text-[#FF3366]/80">{children}</em>,
       blockquote: ({ children }: any) => (
         <blockquote className="my-2 pl-3 py-1 border-l-2 border-[#FF3366]/45 bg-white/[0.01] rounded-r-lg text-sm text-foreground/65 italic">
           {children}
         </blockquote>
       ),
-      hr: () => <div className="my-4 h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />,
+      hr: () => (
+        <div className="my-4 h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      ),
       a: ({ href, children }: any) => {
         if (href?.startsWith('#cite-')) {
           const id = href.replace('#cite-', '');
-          const cite = citations?.find(c => c.id === id);
+          const cite = citations?.find((c) => c.id === id);
           return (
             <a
               href={cite?.url || '#'}
@@ -454,7 +456,18 @@ const MessageActions: React.FC<{
   isUser: boolean;
   activeModel?: string;
 }> = memo(
-  ({ index, content, onEdit, onRegenerate, onBranch, onCopy, copiedId, msgId, isUser, activeModel }) => {
+  ({
+    index,
+    content,
+    onEdit,
+    onRegenerate,
+    onBranch,
+    onCopy,
+    copiedId,
+    msgId,
+    isUser,
+    activeModel,
+  }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editValue, setEditValue] = useState(content);
     const editRef = useRef<HTMLTextAreaElement>(null);
@@ -574,7 +587,7 @@ const FeedbackButtons: React.FC<{
     if (!msg.rolloutId || reward !== undefined) return;
     setReward(value);
     submitReward?.(msg.rolloutId, value);
-    toast.info(value === 1 ? 'Thanks for the feedback!' : 'Feedback noted. We\'ll improve.', {
+    toast.info(value === 1 ? 'Thanks for the feedback!' : "Feedback noted. We'll improve.", {
       icon: value === 1 ? <ThumbsUp size={14} /> : <ThumbsDown size={14} />,
     });
   };
@@ -646,9 +659,9 @@ const ArtifactCard: React.FC<{ artifact: any }> = memo(({ artifact }) => {
         <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider ml-auto shrink-0 bg-[#FF3366]/10 text-[#FF3366]">
           {artifact.type || 'code'}
         </span>
-        <button 
-          onClick={handleDownload} 
-          className="p-1.5 hover:bg-[#FF3366]/20 rounded-md transition-colors ml-1" 
+        <button
+          onClick={handleDownload}
+          className="p-1.5 hover:bg-[#FF3366]/20 rounded-md transition-colors ml-1"
           title="Download Artifact"
         >
           <Download size={12} className="text-[#FF3366]" />
@@ -716,14 +729,18 @@ const MessageBubble = React.memo<MessageBubbleProps>(
       >
         {isUser ? (
           <div className="max-w-[85%] sm:max-w-[75%]">
-            <div className="py-3 px-4 bg-zinc-800/80 rounded-2xl rounded-tr-sm border border-zinc-700/50 shadow-sm">
-              <div className="text-[14px] font-medium leading-relaxed text-zinc-100 select-text whitespace-pre-wrap">
+            <div className="py-3.5 px-5 bg-zinc-900/40 border border-white/[0.04] rounded-2xl shadow-sm hover:border-white/[0.08] transition-all">
+              <div className="text-[14px] font-normal leading-relaxed text-zinc-200 select-text whitespace-pre-wrap">
                 {msg.content}
               </div>
               {msg.images && msg.images.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {msg.images.map((img, i) => (
-                    <ImageAttachment key={i} src={img.url || img.dataUrl || img.data || ''} alt={img.name} />
+                    <ImageAttachment
+                      key={i}
+                      src={img.url || img.dataUrl || img.data || ''}
+                      alt={img.name}
+                    />
                   ))}
                 </div>
               )}
@@ -740,12 +757,35 @@ const MessageBubble = React.memo<MessageBubbleProps>(
           </div>
         ) : (
           <div className="flex-1 min-w-0">
+            {/* Clean Gemini-style Header */}
+            {(msg.content ||
+              msg.reasoning ||
+              (msg.toolCalls && msg.toolCalls.length > 0) ||
+              msg.status === 'loading') && (
+              <div className="flex items-center gap-2.5 mb-3 select-none">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#22d3ee]/20 to-[#FF3366]/20 border border-white/10 flex items-center justify-center shadow-inner">
+                  <Logo size={14} />
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[11px] font-mono font-bold tracking-widest text-[#22d3ee] uppercase">
+                    NYX
+                  </span>
+                  {activeModel && (
+                    <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-wider">
+                      {activeModel}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Error state */}
             {msg.status === 'error' && (
               <div className="flex items-center gap-2 py-2 px-3 rounded-xl bg-red-500/5 border border-red-500/10">
                 <AlertTriangle size={14} className="text-red-400 shrink-0" />
                 <p className="text-sm text-red-400/90 font-medium">
-                  {msg.content || 'Error: Generation failed. Please check your model settings or connection.'}
+                  {msg.content ||
+                    'Error: Generation failed. Please check your model settings or connection.'}
                 </p>
               </div>
             )}
@@ -759,24 +799,24 @@ const MessageBubble = React.memo<MessageBubbleProps>(
             )}
 
             {/* Loading with no content */}
-            {msg.status === 'loading' && !msg.content && !msg.reasoning && (!msg.toolCalls || msg.toolCalls.length === 0) && (
-              <div className="flex items-center gap-2.5 py-2 select-none">
-                <NyxLoader size={14} className="text-primary shrink-0" />
-                <span className="text-[10.5px] text-zinc-400 font-black uppercase tracking-[0.2em]">
-                  NYX is active...
-                </span>
-              </div>
-            )}
+            {msg.status === 'loading' &&
+              !msg.content &&
+              !msg.reasoning &&
+              (!msg.toolCalls || msg.toolCalls.length === 0) && (
+                <div className="flex items-center gap-2.5 py-1 select-none">
+                  <NyxLoader size={14} className="text-[#22d3ee] shrink-0" />
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-[0.2em]">
+                    Formulating response...
+                  </span>
+                </div>
+              )}
 
             {/* Content rendering */}
             {(msg.content || msg.reasoning || (msg.toolCalls && msg.toolCalls.length > 0)) && (
-              <>
+              <div className="pl-0 sm:pl-8">
                 {/* Reasoning Block */}
                 {msg.reasoning && (
-                  <ThinkingBlock
-                    content={msg.reasoning}
-                    isComplete={!isStreaming}
-                  />
+                  <ThinkingBlock content={msg.reasoning} isComplete={!isStreaming} />
                 )}
 
                 {/* Tool calls */}
@@ -786,7 +826,11 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       <ToolCallCard
                         key={tool.id || i}
                         tool={tool}
-                        status={isStreaming && isLast && i === msg.toolCalls!.length - 1 ? 'running' : 'completed'}
+                        status={
+                          isStreaming && isLast && i === msg.toolCalls!.length - 1
+                            ? 'running'
+                            : 'completed'
+                        }
                       />
                     ))}
                   </div>
@@ -828,7 +872,9 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
                         >
                           <Globe size={9} />
-                          <span className="truncate max-w-[200px]">{cite.source || cite.title || cite.url}</span>
+                          <span className="truncate max-w-[200px]">
+                            {cite.source || cite.title || cite.url}
+                          </span>
                         </a>
                       ))}
                     </div>
@@ -852,13 +898,17 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     <FeedbackButtons msg={msg} submitReward={submitReward} />
                   </>
                 )}
-              </>
+              </div>
             )}
 
             {/* Empty fallback */}
-            {!msg.content && !msg.reasoning && (!msg.toolCalls || msg.toolCalls.length === 0) && msg.status !== 'loading' && msg.status !== 'error' && (
-              <div className="text-zinc-500 text-xs italic py-1">Empty response from model.</div>
-            )}
+            {!msg.content &&
+              !msg.reasoning &&
+              (!msg.toolCalls || msg.toolCalls.length === 0) &&
+              msg.status !== 'loading' &&
+              msg.status !== 'error' && (
+                <div className="text-zinc-500 text-xs italic py-1">Empty response from model.</div>
+              )}
           </div>
         )}
       </motion.div>
@@ -895,7 +945,10 @@ const EmptyState: React.FC<{
         className="relative flex items-center justify-center transform-gpu"
       >
         <div className="absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
-        <Logo size={90} className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default" />
+        <Logo
+          size={90}
+          className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default"
+        />
       </motion.div>
     </motion.div>
 
@@ -1042,8 +1095,6 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
-
-
   return (
     <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-background">
       <div
@@ -1057,7 +1108,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
           isLoading ? (
             <div className="flex-1 flex flex-col items-center justify-center min-h-[65vh] gap-4">
               <NyxLoader size={20} className="text-zinc-500" />
-              <span className="text-xs text-zinc-500 tracking-widest uppercase font-semibold">Initializing...</span>
+              <span className="text-xs text-zinc-500 tracking-widest uppercase font-semibold">
+                Initializing...
+              </span>
             </div>
           ) : (
             <EmptyState
@@ -1132,9 +1185,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
           >
             <ArrowDown className="w-3 h-3" />
             Latest
-            {isLoading && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[#FF3366] animate-pulse" />
-            )}
+            {isLoading && <span className="w-1.5 h-1.5 rounded-full bg-[#FF3366] animate-pulse" />}
           </motion.button>
         )}
       </AnimatePresence>

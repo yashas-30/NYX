@@ -2,7 +2,7 @@
 name: evm-token-decimals
 description: Prevent silent decimal mismatch bugs across EVM chains. Covers runtime decimal lookup, chain-aware caching, bridged-token precision drift, and safe normalization for bots, dashboards, and DeFi tools.
 origin: ECC direct-port adaptation
-version: "1.0.0"
+version: '1.0.0'
 ---
 
 # EVM Token Decimals
@@ -107,10 +107,7 @@ const ERC20_ABI = [
 
 async function getBalance(provider: any, tokenAddress: string, wallet: string): Promise<string> {
   const token = new Contract(tokenAddress, ERC20_ABI, provider);
-  const [decimals, raw] = await Promise.all([
-    token.decimals(),
-    token.balanceOf(wallet),
-  ]);
+  const [decimals, raw] = await Promise.all([token.decimals(), token.balanceOf(wallet)]);
   return formatUnits(raw, decimals);
 }
 ```

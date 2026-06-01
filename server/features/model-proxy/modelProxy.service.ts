@@ -8,19 +8,21 @@ export class ModelProxyService {
   }
 
   private getBaseUrl(): string {
-    return process.env.ANTIGRAVITY_URL || `http://127.0.0.1:${process.env.ANTIGRAVITY_PORT || '3003'}`;
+    return (
+      process.env.ANTIGRAVITY_URL || `http://127.0.0.1:${process.env.ANTIGRAVITY_PORT || '3003'}`
+    );
   }
 
   async listModels(provider: string, apiKey?: string): Promise<string[]> {
     if (provider !== 'gemini') {
       return [];
     }
-    
+
     try {
       const res = await fetch(`${this.getBaseUrl()}/list`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, apiKey })
+        body: JSON.stringify({ provider, apiKey }),
       });
       if (!res.ok) throw new Error('Antigravity service error');
       const data = await res.json();
@@ -29,7 +31,9 @@ export class ModelProxyService {
       if (provider === 'gemini') {
         return ['google/codegemma-2b'];
       }
-      logger.warn(`[ModelProxyService] Antigravity service unavailable for listModels (${provider}).`);
+      logger.warn(
+        `[ModelProxyService] Antigravity service unavailable for listModels (${provider}).`
+      );
       return [];
     }
   }
@@ -43,13 +47,15 @@ export class ModelProxyService {
       const res = await fetch(`${this.getBaseUrl()}/quota`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, apiKey })
+        body: JSON.stringify({ provider, apiKey }),
       });
       if (res.ok) {
         return await res.json();
       }
     } catch (err: any) {
-      logger.warn(`[ModelProxyService] Antigravity service unavailable for getQuota (${provider}).`);
+      logger.warn(
+        `[ModelProxyService] Antigravity service unavailable for getQuota (${provider}).`
+      );
     }
     if (provider === 'gemini') {
       return { status: 'ok', local: true };

@@ -6,8 +6,10 @@ const service = new SystemService();
 
 metricsRouter.get('/metrics', (req, res) => {
   try {
-    const { cacheStats, hitRate, uptime, memory, modelsState, activeModel, activeContextSize } = service.getMetrics();
-    const isPrometheus = req.headers.accept?.includes('text/plain') || req.query.format === 'prometheus';
+    const { cacheStats, hitRate, uptime, memory, modelsState, activeModel, activeContextSize } =
+      service.getMetrics();
+    const isPrometheus =
+      req.headers.accept?.includes('text/plain') || req.query.format === 'prometheus';
 
     if (isPrometheus) {
       let metrics = `# HELP nyx_cache_hits_total Total number of cache hits.\n`;

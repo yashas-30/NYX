@@ -10,46 +10,46 @@
 // ============================================================================
 
 /** Complexity assessment for task routing and model selection */
-export type ComplexityLevel = 
-  | 'trivial'      // < 5 min, single file, no dependencies
-  | 'simple'       // < 30 min, few files, known patterns
-  | 'moderate'     // < 2 hrs, multiple files, some investigation
-  | 'complex'      // < 1 day, cross-module, architectural decisions
+export type ComplexityLevel =
+  | 'trivial' // < 5 min, single file, no dependencies
+  | 'simple' // < 30 min, few files, known patterns
+  | 'moderate' // < 2 hrs, multiple files, some investigation
+  | 'complex' // < 1 day, cross-module, architectural decisions
   | 'very_complex' // 1-3 days, system-wide, performance critical
-  | 'enterprise';  // > 3 days, multi-service, compliance/security
+  | 'enterprise'; // > 3 days, multi-service, compliance/security
 
 /** User intent classification for routing and prompt engineering */
-export type IntentType = 
-  | 'chat'           // General conversation
-  | 'code_generation'// Write new code
-  | 'debugging'      // Find and fix bugs
-  | 'explanation'    // Explain code/concepts
-  | 'refactoring'    // Restructure existing code
-  | 'testing'        // Write/run tests
-  | 'documentation'  // Write docs/README
-  | 'review'         // Code review/audit
-  | 'architecture'   // Design patterns/system design
-  | 'deployment'     // CI/CD, Docker, infra
-  | 'general_chat';  // Non-technical chat
+export type IntentType =
+  | 'chat' // General conversation
+  | 'code_generation' // Write new code
+  | 'debugging' // Find and fix bugs
+  | 'explanation' // Explain code/concepts
+  | 'refactoring' // Restructure existing code
+  | 'testing' // Write/run tests
+  | 'documentation' // Write docs/README
+  | 'review' // Code review/audit
+  | 'architecture' // Design patterns/system design
+  | 'deployment' // CI/CD, Docker, infra
+  | 'general_chat'; // Non-technical chat
 
 /** Model capability flags for feature gating */
-export type CapabilityKey = 
-  | 'chat'       // Conversational ability
-  | 'coding'     // Code generation/understanding
-  | 'reasoning'  // Step-by-step reasoning (o1-style)
-  | 'vision'     // Image understanding
-  | 'tools'      // Tool use/function calling
-  | 'memory'     // Long-term memory/persistence
-  | 'planning'   // Multi-step planning (Kimi-planner)
-  | 'search';    // Web/codebase search
+export type CapabilityKey =
+  | 'chat' // Conversational ability
+  | 'coding' // Code generation/understanding
+  | 'reasoning' // Step-by-step reasoning (o1-style)
+  | 'vision' // Image understanding
+  | 'tools' // Tool use/function calling
+  | 'memory' // Long-term memory/persistence
+  | 'planning' // Multi-step planning (Kimi-planner)
+  | 'search'; // Web/codebase search
 
 /** Safety/content moderation levels */
-export type SafetyLevel = 
-  | 'none'      // No filtering
-  | 'low'       // Basic profanity filter
-  | 'medium'    // Standard safety (default)
-  | 'high'      // Strict, no code execution
-  | 'maximum';  // Paranoid, manual review required
+export type SafetyLevel =
+  | 'none' // No filtering
+  | 'low' // Basic profanity filter
+  | 'medium' // Standard safety (default)
+  | 'high' // Strict, no code execution
+  | 'maximum'; // Paranoid, manual review required
 
 // ============================================================================
 // MESSAGE SYSTEM (Claude-style Content Blocks + Kimi Streaming)
@@ -59,12 +59,12 @@ export type SafetyLevel =
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
 /** Base content block — discriminated union for type-safe streaming */
-export type ContentBlock = 
-  | TextBlock 
-  | ThinkingBlock 
-  | ToolUseBlock 
-  | ToolResultBlock 
-  | ImageBlock 
+export type ContentBlock =
+  | TextBlock
+  | ThinkingBlock
+  | ToolUseBlock
+  | ToolResultBlock
+  | ImageBlock
   | DocumentBlock
   | ErrorBlock;
 
@@ -91,8 +91,8 @@ export interface ThinkingBlock {
 /** Tool invocation requested by model */
 export interface ToolUseBlock {
   type: 'tool_use';
-  id: string;           // Unique call ID: "call_abc123"
-  name: string;         // Tool name from registry
+  id: string; // Unique call ID: "call_abc123"
+  name: string; // Tool name from registry
   input: Record<string, any>; // Parsed arguments
   /** Raw JSON for debugging/validation */
   rawInput?: string;
@@ -101,7 +101,7 @@ export interface ToolUseBlock {
 /** Result of tool execution returned to model */
 export interface ToolResultBlock {
   type: 'tool_result';
-  tool_use_id: string;  // Matches ToolUseBlock.id
+  tool_use_id: string; // Matches ToolUseBlock.id
   content: string | Array<TextBlock | ImageBlock>;
   /** Whether tool execution succeeded */
   is_error: boolean;
@@ -145,12 +145,16 @@ export interface ErrorBlock {
 // CONTENT BLOCK SOURCES
 // ============================================================================
 
-export type ImageSource = 
-  | { type: 'base64'; media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; data: string }
+export type ImageSource =
+  | {
+      type: 'base64';
+      media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+      data: string;
+    }
   | { type: 'url'; url: string }
   | { type: 'file'; file_path: string; workspace_relative: boolean };
 
-export type DocumentSource = 
+export type DocumentSource =
   | { type: 'base64'; media_type: 'application/pdf' | 'text/plain' | 'text/markdown'; data: string }
   | { type: 'url'; url: string }
   | { type: 'file'; file_path: string };
@@ -237,14 +241,14 @@ export interface ToolMessage extends Message {
 // ============================================================================
 
 /** Streaming event types */
-export type AgentStreamEvent = 
-  | MessageStartEvent 
-  | ContentBlockStartEvent 
-  | ContentBlockDeltaEvent 
-  | ContentBlockStopEvent 
-  | MessageDeltaEvent 
-  | MessageStopEvent 
-  | PingEvent 
+export type AgentStreamEvent =
+  | MessageStartEvent
+  | ContentBlockStartEvent
+  | ContentBlockDeltaEvent
+  | ContentBlockStopEvent
+  | MessageDeltaEvent
+  | MessageStopEvent
+  | PingEvent
   | ErrorEvent;
 
 export interface MessageStartEvent {
@@ -380,14 +384,14 @@ export interface TokenUsage {
 // STOP REASONS
 // ============================================================================
 
-export type StopReason = 
-  | 'end_turn'        // Natural completion
-  | 'max_tokens'      // Hit token limit
-  | 'stop_sequence'   // Hit custom stop sequence
-  | 'tool_use'        // Paused for tool execution
-  | 'content_filter'  // Triggered safety filter
-  | 'interrupted'     // User cancelled
-  | 'error';          // Error occurred
+export type StopReason =
+  | 'end_turn' // Natural completion
+  | 'max_tokens' // Hit token limit
+  | 'stop_sequence' // Hit custom stop sequence
+  | 'tool_use' // Paused for tool execution
+  | 'content_filter' // Triggered safety filter
+  | 'interrupted' // User cancelled
+  | 'error'; // Error occurred
 
 // ============================================================================
 // SESSION & PLANNING (Kimi-planner + Claude checkpoints)
@@ -615,7 +619,7 @@ export interface AgentRequest {
 // ============================================================================
 
 /** Agent lifecycle events */
-export type AgentEvent = 
+export type AgentEvent =
   | { type: 'session_started'; session: Session }
   | { type: 'message_received'; message: Message }
   | { type: 'thinking_started'; budget_tokens: number }

@@ -13,10 +13,10 @@ app = FastAPI()
 # Check for google-generativeai availability safely
 HAS_GENAI = False
 try:
-    import google.generativeai as genai
+    from google import genai
     HAS_GENAI = True
 except ImportError:
-    print("[Antigravity SDK] warning: google-generativeai package not found. AI preprocessing falls back to standard instructions.")
+    print("[Antigravity SDK] warning: google-genai package not found. AI preprocessing falls back to standard instructions.")
 
 @app.get("/health")
 def health():
@@ -44,9 +44,7 @@ async def preprocess(request: Request):
             key = api_key or os.environ.get("GEMINI_API_KEY", "")
             if key:
                 try:
-                    genai.configure(api_key=key)
-                    # Use gemini-1.5-flash for fast prompt preprocessing
-                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    client = genai.Client(api_key=key)
                     
                     instruction = (
                         "You are a prompt optimization expert. Your task is to rewrite the user's prompt "
@@ -57,7 +55,10 @@ async def preprocess(request: Request):
                     )
                     
                     # Call async generator
-                    response = await model.generate_content_async(instruction)
+                    response = await client.aio.models.generate_content(
+                        model="gemini-1.5-flash",
+                        contents=instruction
+                    )
                     if response.text:
                         optimized_prompt = response.text.strip()
                 except Exception as e:
@@ -78,22 +79,20 @@ async def generate_with_sdk(prompt: str, model: str, api_key: str):
     
     try:
         if not HAS_GENAI:
-            raise Exception("google-generativeai package not installed")
+            raise Exception("google-genai package not installed")
 
-        genai.configure(api_key=api_key or os.environ.get("GEMINI_API_KEY", ""))
+        client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY", ""))
         
         # Route to requested model (no longer hardcoding gemini-1.5-pro-latest unless empty/unspecified)
         actual_model = model if model and model != "unknown" else "gemini-1.5-pro"
         print(f"[Antigravity] Routing for model: {actual_model}")
         
-        gemini = genai.GenerativeModel(actual_model)
-        
         # Send prefix
         yield f"data: {{ \"chunk\": \"[Antigravity SDK Routed to: {actual_model}]\\n\" }}\n\n"
         
-        response = await gemini.generate_content_async(
-            prompt,
-            stream=True
+        response = await client.aio.models.generate_content_stream(
+            model=actual_model,
+            contents=prompt
         )
         
         # Directly yield chunks without arbitrary 10ms delays
@@ -122,5 +121,16 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=3003)
     args = parser.parse_args()
     
+    import sys
+    import threading
+    def monitor_parent():
+        try:
+            sys.stdin.read()
+        except Exception:
+            pass
+        print("[Antigravity Service] Parent process died, exiting...")
+        os._exit(0)
+    threading.Thread(target=monitor_parent, daemon=True).start()
+
     print("[Antigravity Service] READY")
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")

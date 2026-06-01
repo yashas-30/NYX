@@ -1,6 +1,14 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { loadKeys, saveKeys, createSessionToken, getVaultStatus, backupVault, exportVault, importVault } from './vault.service.ts';
+import {
+  loadKeys,
+  saveKeys,
+  createSessionToken,
+  getVaultStatus,
+  backupVault,
+  exportVault,
+  importVault,
+} from './vault.service.ts';
 import { validate } from '../../middleware/validate.ts';
 import { vaultStoreSchema } from './vault.schema.ts';
 
@@ -11,13 +19,13 @@ const tokenLimiter = rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many token requests, please try again later.' }
+  message: { error: 'Too many token requests, please try again later.' },
 });
 
 const vaultLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
-  message: { error: 'Too many vault operations, please try again later.' }
+  message: { error: 'Too many vault operations, please try again later.' },
 });
 
 vaultRouter.post('/store', validate(vaultStoreSchema), vaultLimiter, (req, res) => {
@@ -41,6 +49,15 @@ const handleGetToken = (req: any, res: any) => {
 vaultRouter.get('/token', tokenLimiter, handleGetToken);
 vaultRouter.get('/status', (req, res) => {
   res.json(getVaultStatus());
+});
+
+vaultRouter.get('/keys', vaultLimiter, (req, res) => {
+  try {
+    const keys = loadKeys();
+    res.json({ keys });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 vaultRouter.post('/backup', vaultLimiter, (req, res) => {
@@ -84,15 +101,19 @@ vaultRouter.post('/validate', vaultLimiter, async (req, res) => {
 
   try {
     if (provider === 'gemini') {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`
+      );
       if (response.ok) {
         return res.json({ valid: true });
       } else {
         const errData = await response.json().catch(() => ({}));
-        return res.status(400).json({ valid: false, error: errData.error?.message || 'Invalid API Key' });
+        return res
+          .status(400)
+          .json({ valid: false, error: errData.error?.message || 'Invalid API Key' });
       }
-    } 
-    
+    }
+
     if (provider === 'scrapling') {
       const scraplingPort = process.env.SCRAPLING_PORT || '3002';
       const url = (req.body.scraplingUrl || `http://localhost:${scraplingPort}`).trim();
@@ -100,34 +121,41 @@ vaultRouter.post('/validate', vaultLimiter, async (req, res) => {
       if (key) {
         headers['Authorization'] = `Bearer ${key}`;
       }
-      
+
       try {
         const response = await fetch(`${url}/v1/search`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ query: 'test', limit: 1 }),
-          signal: AbortSignal.timeout(5000)
+          signal: AbortSignal.timeout(5000),
         });
-        
+
         if (response.ok || response.status === 400) {
           return res.json({ valid: true });
         }
-        
+
         // Try fallback to health check
         const healthResponse = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
         if (healthResponse.ok) {
           return res.json({ valid: true });
         }
-        return res.status(400).json({ valid: false, error: `Scrapling service returned status ${response.status}` });
+        return res
+          .status(400)
+          .json({ valid: false, error: `Scrapling service returned status ${response.status}` });
       } catch (error: any) {
         // Double check health fallback
         try {
-          const healthResponse = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
+          const healthResponse = await fetch(`${url}/health`, {
+            signal: AbortSignal.timeout(3000),
+          });
           if (healthResponse.ok) {
             return res.json({ valid: true });
           }
         } catch {}
-        return res.status(400).json({ valid: false, error: `Scrapling service unreachable at ${url}: ${error.message}` });
+        return res.status(400).json({
+          valid: false,
+          error: `Scrapling service unreachable at ${url}: ${error.message}`,
+        });
       }
     }
 

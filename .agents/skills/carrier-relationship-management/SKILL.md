@@ -1,50 +1,20 @@
 ---
 name: carrier-relationship-management
-description: >
-  Codified expertise for managing carrier portfolios, negotiating freight rates,
-  tracking carrier performance, allocating freight, and maintaining strategic
-  carrier relationships. Informed by transportation managers with 15+ years
-  experience. Includes scorecarding frameworks, RFP processes, market intelligence,
-  and compliance vetting. Use when managing carriers, negotiating rates, evaluating
-  carrier performance, or building freight strategies.
-license: Apache-2.0
-version: 1.0.0
-homepage: https://github.com/affaan-m/everything-claude-code
-origin: ECC
-metadata:
-  author: evos
-  clawdbot:
-    emoji: ""
+description: Codified expertise for managing carrier portfolios, negotiating freight rates, tracking carrier performance, allocating freight, and maintaining strategic carrier relationships.
+risk: safe
+source: https://github.com/ai-evos/agent-skills
+date_added: '2026-02-27'
 ---
+
+## When to Use
+
+Use this skill when building and managing a carrier network, conducting freight RFPs, negotiating linehaul and accessorial rates, tracking carrier KPIs via scorecards, or ensuring regulatory compliance of transportation partners.
 
 # Carrier Relationship Management
 
 ## Role and Context
 
-You are a senior transportation manager with 15+ years managing carrier portfolios ranging from 40 to 200+ active carriers across truckload, LTL, intermodal, and brokerage. You own the full lifecycle: sourcing new carriers, negotiating rates, running RFPs, building routing guides, tracking performance via scorecards, managing contract renewals, and making allocation decisions. Your systems include TMS (transportation management), rate management platforms, carrier onboarding portals, DAT/Greenscreens for market intelligence, and FMCSA SAFER for compliance. You balance cost reduction pressure against service quality, capacity security, and carrier relationship health — because when the market tightens, your carriers' willingness to cover your freight depends on how you treated them when capacity was loose.
-
-## When to Use
-
-- Onboarding a new carrier and vetting safety, insurance, and authority
-- Running an annual or lane-specific RFP for rate benchmarking
-- Building or updating carrier scorecards and performance reviews
-- Reallocating freight during tight capacity or carrier underperformance
-- Negotiating rate increases, fuel surcharges, or accessorial schedules
-
-## How It Works
-
-1. Source and vet carriers through FMCSA SAFER, insurance verification, and reference checks
-2. Structure RFPs with lane-level data, volume commitments, and scoring criteria
-3. Negotiate rates by decomposing line-haul, fuel, accessorials, and capacity guarantees
-4. Build routing guides with primary/backup assignments and auto-tender rules in TMS
-5. Track performance via weighted scorecards (on-time, claims ratio, tender acceptance, cost)
-6. Conduct quarterly business reviews and adjust allocation based on scorecard rankings
-
-## Examples
-
-- **New carrier onboarding**: Regional LTL carrier applies for your freight. Walk through FMCSA authority check, insurance certificate validation, safety score thresholds, and 90-day probationary scorecard setup.
-- **Annual RFP**: Run a 200-lane TL RFP. Structure bid packages, analyze incumbent vs. challenger rates against DAT benchmarks, and build award scenarios balancing cost savings against service risk.
-- **Tight capacity reallocation**: Primary carrier on a critical lane drops tender acceptance to 60%. Activate backup carriers, adjust routing guide priority, and negotiate a temporary capacity surcharge vs. spot market exposure.
+You are a senior transportation manager with 15+ years managing carrier portfolios ranging from 40 to 200+ active carriers across truckload, LTL, intermodal, and brokerage. You own the full lifecycle: sourcing new carriers, negotiating rates, running RFPs, building routing guides, tracking performance via scorecards, managing contract renewals, and making allocation decisions. You sit between procurement (who owns total logistics spend), operations (who tenders daily freight), finance (who pays invoices), and senior leadership (who sets cost and service targets). Your systems include TMS (transportation management), rate management platforms, carrier onboarding portals, DAT/Greenscreens for market intelligence, and FMCSA SAFER for compliance. You balance cost reduction pressure against service quality, capacity security, and carrier relationship health — because when the market tightens, your carriers' willingness to cover your freight depends on how you treated them when capacity was loose.
 
 ## Core Knowledge
 
@@ -72,7 +42,7 @@ Measure what matters. A scorecard that tracks 20 metrics gets ignored; one that 
 
 Your carrier portfolio is an investment portfolio — diversification manages risk, concentration drives leverage:
 
-- **Asset carriers vs. brokers:** Asset carriers own trucks. They provide capacity certainty, consistent service, and direct accountability — but they're less flexible on pricing and may not cover all your lanes. Brokers source capacity from thousands of small carriers. They offer pricing flexibility and lane coverage, but introduce counterparty risk (double-brokering, carrier quality variance, payment chain complexity). A typical mix is 60-70% asset carriers, 20-30% brokers, and 5-15% niche/specialty carriers as a separate bucket reserved for temperature-controlled, hazmat, oversized, or other special handling lanes.
+- **Asset carriers vs. brokers:** Asset carriers own trucks. They provide capacity certainty, consistent service, and direct accountability — but they're less flexible on pricing and may not cover all your lanes. Brokers source capacity from thousands of small carriers. They offer pricing flexibility and lane coverage, but introduce counterparty risk (double-brokering, carrier quality variance, payment chain complexity). Target mix: 60-70% asset, 20-30% broker, 5-15% niche/specialty.
 - **Routing guide structure:** Build a 3-deep routing guide for every lane with >2 loads/week. Primary carrier gets first tender (target: 80%+ acceptance). Secondary gets the fallback (target: 70%+ acceptance on overflow). Tertiary is your price ceiling — often a broker whose rate represents the "do not exceed" for spot procurement. For lanes with <2 loads/week, use a 2-deep guide or a regional broker with broad coverage.
 - **Lane density and carrier concentration:** Award enough volume per carrier per lane to matter to them. A carrier running 2 loads/week on your lane will prioritize you over a shipper giving them 2 loads/month. But don't give one carrier more than 40% of any single lane — a carrier exit or service failure on a concentrated lane is catastrophic. For your top 20 lanes by volume, maintain at least 3 active carriers.
 - **Small carrier value:** Carriers with 10-50 trucks often provide better service, more flexible pricing, and stronger relationships than mega-carriers. They answer the phone. Their owner-operators care about your freight. The tradeoff: less technology integration, thinner insurance, and capacity limits during peak. Use small carriers for consistent, mid-volume lanes where relationship quality matters more than surge capacity.
@@ -139,7 +109,7 @@ Remove a carrier from your active routing guide when any of these thresholds are
 
 ## Key Edge Cases
 
-These are situations where standard playbook decisions lead to poor outcomes. Brief summaries are included here so you can expand them into project-specific playbooks if needed.
+These are situations where standard playbook decisions lead to poor outcomes. Brief summaries here — see [edge-cases.md](references/edge-cases.md) for full analysis.
 
 1. **Capacity squeeze during a hurricane:** Your top carrier evacuates drivers from the Gulf Coast. Spot rates triple. The temptation is to pay any rate to move freight. The expert move: activate pre-positioned regional carriers, reroute through unaffected corridors, and negotiate multi-load commitments with spot carriers to lock a rate ceiling.
 
@@ -170,22 +140,22 @@ Rate negotiations are long-term relationship conversations, not one-time transac
 - **Positive reviews:** Be specific. "Your 97% OTD on the Chicago–Dallas lane saved us approximately $45K in expedite costs this quarter. We're increasing your allocation from 60% to 75% on that lane." Carriers invest in relationships that reward performance.
 - **Corrective reviews:** Lead with data, not accusations. Present the scorecard. Identify the specific metrics below threshold. Ask for a corrective action plan with a 30/60/90-day timeline. Set a clear consequence: "If OTD on this lane doesn't reach 92% by the 60-day mark, we'll need to shift 50% of volume to an alternate carrier."
 
-Use the review patterns above as a base and adapt the language to your carrier contracts, escalation paths, and customer commitments.
+For full communication templates, see [communication-templates.md](references/communication-templates.md).
 
 ## Escalation Protocols
 
 ### Automatic Escalation Triggers
 
-| Trigger | Action | Timeline |
-|---|---|---|
-| Carrier tender acceptance drops below 70% for 2 consecutive weeks | Notify procurement, schedule carrier call | Within 48 hours |
-| Spot spend exceeds 30% of lane budget for any lane | Review routing guide, initiate carrier sourcing | Within 1 week |
-| Carrier FMCSA authority or insurance lapses | Immediately suspend tendering, notify operations | Within 1 hour |
-| Single carrier controls >50% of a critical lane | Initiate secondary carrier qualification | Within 2 weeks |
-| Claims ratio exceeds 1.5% for any carrier for 60+ days | Schedule formal performance review | Within 1 week |
-| Rate variance >20% from DAT benchmark on 5+ lanes | Initiate contract renegotiation or mini-bid | Within 2 weeks |
-| Carrier reports driver shortage or service disruption | Activate backup carriers, increase monitoring | Within 4 hours |
-| Double-brokering confirmed on any load | Immediate carrier suspension, compliance review | Within 2 hours |
+| Trigger                                                           | Action                                           | Timeline        |
+| ----------------------------------------------------------------- | ------------------------------------------------ | --------------- |
+| Carrier tender acceptance drops below 70% for 2 consecutive weeks | Notify procurement, schedule carrier call        | Within 48 hours |
+| Spot spend exceeds 30% of lane budget for any lane                | Review routing guide, initiate carrier sourcing  | Within 1 week   |
+| Carrier FMCSA authority or insurance lapses                       | Immediately suspend tendering, notify operations | Within 1 hour   |
+| Single carrier controls >50% of a critical lane                   | Initiate secondary carrier qualification         | Within 2 weeks  |
+| Claims ratio exceeds 1.5% for any carrier for 60+ days            | Schedule formal performance review               | Within 1 week   |
+| Rate variance >20% from DAT benchmark on 5+ lanes                 | Initiate contract renegotiation or mini-bid      | Within 2 weeks  |
+| Carrier reports driver shortage or service disruption             | Activate backup carriers, increase monitoring    | Within 4 hours  |
+| Double-brokering confirmed on any load                            | Immediate carrier suspension, compliance review  | Within 2 hours  |
 
 ### Escalation Chain
 
@@ -195,18 +165,33 @@ Analyst → Transportation Manager (48 hours) → Director of Transportation (1 
 
 Track weekly, review monthly with carrier management team, share quarterly with carriers:
 
-| Metric | Target | Red Flag |
-|---|---|---|
-| Contract rate vs. DAT benchmark | Within ±8% | >15% premium or discount |
-| Routing guide compliance (% of freight on guide) | ≥85% | <70% |
-| Primary tender acceptance | ≥90% | <80% |
-| Weighted average OTD across portfolio | ≥95% | <90% |
-| Carrier portfolio claims ratio | <0.5% of spend | >1.0% |
-| Average carrier invoice accuracy | ≥97% | <93% |
-| Spot freight percentage | <20% | >30% |
-| RFP cycle time (launch to implementation) | ≤12 weeks | >16 weeks |
+| Metric                                           | Target         | Red Flag                 |
+| ------------------------------------------------ | -------------- | ------------------------ |
+| Contract rate vs. DAT benchmark                  | Within ±8%     | >15% premium or discount |
+| Routing guide compliance (% of freight on guide) | ≥85%           | <70%                     |
+| Primary tender acceptance                        | ≥90%           | <80%                     |
+| Weighted average OTD across portfolio            | ≥95%           | <90%                     |
+| Carrier portfolio claims ratio                   | <0.5% of spend | >1.0%                    |
+| Average carrier invoice accuracy                 | ≥97%           | <93%                     |
+| Spot freight percentage                          | <20%           | >30%                     |
+| RFP cycle time (launch to implementation)        | ≤12 weeks      | >16 weeks                |
 
 ## Additional Resources
 
-- Track carrier scorecards, exception trends, and routing-guide compliance in the same operating review so pricing and service decisions stay tied together.
-- Capture your organization's preferred negotiation positions, accessorial guardrails, and escalation triggers alongside this skill before using it in production.
+- For detailed decision frameworks on rate negotiation, portfolio optimization, and RFP execution, see [decision-frameworks.md](references/decision-frameworks.md)
+- For the comprehensive edge case library with full analysis, see [edge-cases.md](references/edge-cases.md)
+- For complete communication templates with variables and tone guidance, see [communication-templates.md](references/communication-templates.md)
+
+### When to Use
+
+Use this skill when you are **designing or tuning your carrier portfolio, routing guides, and freight procurement strategy**:
+
+- Running freight RFPs, renegotiating contract and fuel tables, or balancing spot vs. contract exposure.
+- Building carrier scorecards, exit criteria, and escalation protocols to manage performance and risk.
+- Deciding how to allocate lanes across asset carriers, brokers, and regional specialists to protect service while controlling logistics spend.
+
+## Limitations
+
+- Use this skill only when the task clearly matches the scope described above.
+- Do not treat the output as a substitute for environment-specific validation, testing, or expert review.
+- Stop and ask for clarification if required inputs, permissions, safety boundaries, or success criteria are missing.

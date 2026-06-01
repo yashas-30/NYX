@@ -4,7 +4,7 @@
   "version": "3.0.0",
   "identifier": "com.nyx.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev:web",
+    "beforeDevCommand": "npm run build:server && npm run dev:web",
     "beforeBuildCommand": "npm run build:web && npm run build:server",
     "frontendDist": "../dist",
     "devUrl": "http://localhost:3000"

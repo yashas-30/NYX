@@ -6,9 +6,20 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Zap, X, ThumbsUp, ThumbsDown, Trash2, ShieldAlert,
-  Clock, GitCommit, FileText, Cpu, Check, AlertCircle, RefreshCw
+import {
+  Zap,
+  X,
+  ThumbsUp,
+  ThumbsDown,
+  Trash2,
+  ShieldAlert,
+  Clock,
+  GitCommit,
+  FileText,
+  Cpu,
+  Check,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { LightningRollout } from '../hooks/useAgentLightning';
 
@@ -45,12 +56,12 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
     clearHistory,
   } = lightningState;
 
-  const activeRollouts = rollouts.filter(r => r.agentType === agentType);
+  const activeRollouts = rollouts.filter((r) => r.agentType === agentType);
   const activeDirectives = apoDirectives[agentType];
 
   // Prepare simple reward history data for SVG chart
-  const ratedRollouts = [...activeRollouts].reverse().filter(r => r.reward !== null);
-  
+  const ratedRollouts = [...activeRollouts].reverse().filter((r) => r.reward !== null);
+
   // Build running average data points to show learning curves
   const chartPoints = React.useMemo(() => {
     if (ratedRollouts.length === 0) {
@@ -63,7 +74,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
         { x: 100, y: 91 },
       ];
     }
-    
+
     let sum = 0;
     return ratedRollouts.map((r, i) => {
       sum += r.reward ?? 0;
@@ -112,7 +123,9 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                   <h3 className="text-sm font-bold tracking-tight uppercase flex items-center gap-1.5 text-white">
                     Agent Lightning
                   </h3>
-                  <p className="text-[10px] text-zinc-400">Microsoft RL & APO Optimization Engine</p>
+                  <p className="text-[10px] text-zinc-400">
+                    Microsoft RL & APO Optimization Engine
+                  </p>
                 </div>
               </div>
               <button
@@ -125,14 +138,18 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
 
             {/* Scrollable Panel Area */}
             <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin scrollbar-thumb-white/5">
-              
               {/* Lightning Feature Toggle */}
               <div className="flex items-center justify-between p-3.5 rounded-xl bg-cyan-500/[0.02] border border-cyan-500/10">
                 <div className="flex items-start gap-3">
-                  <Zap size={16} className={`mt-0.5 ${lightningEnabled ? 'text-cyan-400 fill-cyan-400/20' : 'text-zinc-500'}`} />
+                  <Zap
+                    size={16}
+                    className={`mt-0.5 ${lightningEnabled ? 'text-cyan-400 fill-cyan-400/20' : 'text-zinc-500'}`}
+                  />
                   <div>
                     <h4 className="text-xs font-bold text-zinc-200">Lightning Optimization Loop</h4>
-                    <p className="text-[9.5px] text-zinc-400 mt-0.5">Adapt prompts dynamically using reinforcement learning feedback</p>
+                    <p className="text-[9.5px] text-zinc-400 mt-0.5">
+                      Adapt prompts dynamically using reinforcement learning feedback
+                    </p>
                   </div>
                 </div>
                 <button
@@ -153,18 +170,28 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
               {/* Learning / Optimization metrics */}
               <div className="grid grid-cols-3 gap-2.5">
                 <div className="p-3 bg-white/[0.02] border border-white/[0.04] rounded-xl text-center">
-                  <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Rollouts</div>
+                  <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">
+                    Rollouts
+                  </div>
                   <div className="text-lg font-black text-white mt-1">{activeRollouts.length}</div>
                   <div className="text-[8px] text-zinc-500 mt-0.5">spans traced</div>
                 </div>
                 <div className="p-3 bg-white/[0.02] border border-white/[0.04] rounded-xl text-center">
-                  <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">APO Rules</div>
-                  <div className="text-lg font-black text-white mt-1">{activeDirectives.length}</div>
+                  <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">
+                    APO Rules
+                  </div>
+                  <div className="text-lg font-black text-white mt-1">
+                    {activeDirectives.length}
+                  </div>
                   <div className="text-[8px] text-zinc-500 mt-0.5">prompt weights</div>
                 </div>
                 <div className="p-3 bg-white/[0.02] border border-white/[0.04] rounded-xl text-center">
-                  <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Avg Reward</div>
-                  <div className={`text-lg font-black mt-1 ${averageReward > 0.8 ? 'text-emerald-400' : 'text-cyan-400'}`}>
+                  <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">
+                    Avg Reward
+                  </div>
+                  <div
+                    className={`text-lg font-black mt-1 ${averageReward > 0.8 ? 'text-emerald-400' : 'text-cyan-400'}`}
+                  >
                     {(averageReward * 100).toFixed(0)}%
                   </div>
                   <div className="text-[8px] text-zinc-500 mt-0.5">alignment score</div>
@@ -194,10 +221,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                             <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
                           </linearGradient>
                         </defs>
-                        <path
-                          d={`${linePath} L 100 100 L 0 100 Z`}
-                          fill="url(#chartGrad)"
-                        />
+                        <path d={`${linePath} L 100 100 L 0 100 Z`} fill="url(#chartGrad)" />
                         <motion.path
                           initial={{ pathLength: 0 }}
                           animate={{ pathLength: 1 }}
@@ -210,16 +234,19 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                       </>
                     )}
                   </svg>
-                  
+
                   {/* Grid Lines Overlay */}
                   <div className="absolute inset-0 flex flex-col justify-between pointer-events-none p-2 text-[8px] font-mono text-zinc-600">
-                    <div className="border-b border-white/[0.02] w-full text-right">1.0 (Optimal)</div>
+                    <div className="border-b border-white/[0.02] w-full text-right">
+                      1.0 (Optimal)
+                    </div>
                     <div className="border-b border-white/[0.02] w-full text-right">0.5</div>
                     <div className="w-full text-right">0.0 (Unstable)</div>
                   </div>
                 </div>
                 <p className="text-[8.5px] text-zinc-500 leading-normal text-center">
-                  Reward feedback dynamically reinforces correct outputs, triggering targeted Automatic Prompt Optimization (APO).
+                  Reward feedback dynamically reinforces correct outputs, triggering targeted
+                  Automatic Prompt Optimization (APO).
                 </p>
               </div>
 
@@ -241,7 +268,8 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                   {activeDirectives.length === 0 ? (
                     <div className="p-4 rounded-xl border border-dashed border-white/5 text-center text-zinc-500 text-xs">
                       <AlertCircle size={14} className="mx-auto text-zinc-600 mb-1.5" />
-                      No prompt rules generated yet. Provide thumbs up/down rewards to trigger automatic continuous optimization!
+                      No prompt rules generated yet. Provide thumbs up/down rewards to trigger
+                      automatic continuous optimization!
                     </div>
                   ) : (
                     activeDirectives.map((rule, idx) => (
@@ -302,11 +330,15 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
 
                         <div className="space-y-1">
                           <div className="text-[10px] text-zinc-400 font-semibold truncate">
-                            <span className="text-[9px] uppercase tracking-wider font-bold text-cyan-500 mr-1.5">Task:</span>
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-cyan-500 mr-1.5">
+                              Task:
+                            </span>
                             {rollout.task}
                           </div>
                           <div className="text-[9.5px] text-zinc-500 leading-normal truncate">
-                            <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-400 mr-1.5">Action:</span>
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-zinc-400 mr-1.5">
+                              Action:
+                            </span>
                             {rollout.response}
                           </div>
                         </div>
@@ -314,7 +346,10 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                         {/* Rollout Spans List */}
                         <div className="pt-1.5 border-t border-white/[0.03] flex items-center gap-3">
                           {rollout.spans.map((span, sidx) => (
-                            <div key={sidx} className="flex items-center gap-1 text-[8.5px] text-zinc-400 font-medium">
+                            <div
+                              key={sidx}
+                              className="flex items-center gap-1 text-[8.5px] text-zinc-400 font-medium"
+                            >
                               <Cpu size={10} className="text-cyan-500/70" />
                               <span>{span.name}</span>
                               <span className="text-zinc-600 font-mono">({span.durationMs}ms)</span>
@@ -337,7 +372,10 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                               }`}
                               title="Assign +1.0 Reward (Thumbs Up)"
                             >
-                              <ThumbsUp size={11} fill={rollout.reward === 1.0 ? 'currentColor' : 'none'} />
+                              <ThumbsUp
+                                size={11}
+                                fill={rollout.reward === 1.0 ? 'currentColor' : 'none'}
+                              />
                             </button>
                             <button
                               onClick={() => submitReward(rollout.id, 0.0)}
@@ -348,7 +386,10 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                               }`}
                               title="Assign 0.0 Reward (Thumbs Down)"
                             >
-                              <ThumbsDown size={11} fill={rollout.reward === 0.0 ? 'currentColor' : 'none'} />
+                              <ThumbsDown
+                                size={11}
+                                fill={rollout.reward === 0.0 ? 'currentColor' : 'none'}
+                              />
                             </button>
                           </div>
                         </div>

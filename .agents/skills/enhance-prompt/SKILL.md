@@ -2,8 +2,10 @@
 name: enhance-prompt
 description: Transforms vague UI ideas into polished, Stitch-optimized prompts. Enhances specificity, adds UI/UX keywords, injects design system context, and structures output for better generation results.
 allowed-tools:
-  - "Read"
-  - "Write"
+  - 'Read'
+  - 'Write'
+risk: unknown
+source: community
 ---
 
 # Enhance Prompt for Stitch
@@ -21,6 +23,7 @@ This guide contains up-to-date recommendations that may supersede or complement 
 ## When to Use This Skill
 
 Activate when a user wants to:
+
 - Polish a UI prompt before sending to Stitch
 - Improve a prompt that produced poor results
 - Add design system consistency to a simple idea
@@ -34,31 +37,33 @@ Follow these steps to enhance any prompt:
 
 Evaluate what's missing from the user's prompt:
 
-| Element | Check for | If missing... |
-|---------|-----------|---------------|
-| **Platform** | "web", "mobile", "desktop" | Add based on context or ask |
-| **Page type** | "landing page", "dashboard", "form" | Infer from description |
-| **Structure** | Numbered sections/components | Create logical page structure |
-| **Visual style** | Adjectives, mood, vibe | Add appropriate descriptors |
-| **Colors** | Specific values or roles | Add design system or suggest |
-| **Components** | UI-specific terms | Translate to proper keywords |
+| Element          | Check for                           | If missing...                 |
+| ---------------- | ----------------------------------- | ----------------------------- |
+| **Platform**     | "web", "mobile", "desktop"          | Add based on context or ask   |
+| **Page type**    | "landing page", "dashboard", "form" | Infer from description        |
+| **Structure**    | Numbered sections/components        | Create logical page structure |
+| **Visual style** | Adjectives, mood, vibe              | Add appropriate descriptors   |
+| **Colors**       | Specific values or roles            | Add design system or suggest  |
+| **Components**   | UI-specific terms                   | Translate to proper keywords  |
 
 ### Step 2: Check for DESIGN.md
 
 Look for a `DESIGN.md` file in the current project:
 
 **If DESIGN.md exists:**
+
 1. Read the file to extract the design system block
 2. Include the color palette, typography, and component styles
 3. Format as a "DESIGN SYSTEM (REQUIRED)" section in the output
 
 **If DESIGN.md does not exist:**
+
 1. Add this note at the end of the enhanced prompt:
 
 ```
 ---
-💡 **Tip:** For consistent designs across multiple screens, create a DESIGN.md 
-file using the `design-md` skill. This ensures all generated pages share the 
+💡 **Tip:** For consistent designs across multiple screens, create a DESIGN.md
+file using the `design-md` skill. This ensures all generated pages share the
 same visual language.
 ```
 
@@ -70,24 +75,24 @@ Transform the input using these techniques:
 
 Replace vague terms with specific component names:
 
-| Vague | Enhanced |
-|-------|----------|
-| "menu at the top" | "navigation bar with logo and menu items" |
-| "button" | "primary call-to-action button" |
-| "list of items" | "card grid layout" or "vertical list with thumbnails" |
-| "form" | "form with labeled input fields and submit button" |
-| "picture area" | "hero section with full-width image" |
+| Vague             | Enhanced                                              |
+| ----------------- | ----------------------------------------------------- |
+| "menu at the top" | "navigation bar with logo and menu items"             |
+| "button"          | "primary call-to-action button"                       |
+| "list of items"   | "card grid layout" or "vertical list with thumbnails" |
+| "form"            | "form with labeled input fields and submit button"    |
+| "picture area"    | "hero section with full-width image"                  |
 
 #### B. Amplify the Vibe
 
 Add descriptive adjectives to set the mood:
 
-| Basic | Enhanced |
-|-------|----------|
-| "modern" | "clean, minimal, with generous whitespace" |
-| "professional" | "sophisticated, trustworthy, with subtle shadows" |
-| "fun" | "vibrant, playful, with rounded corners and bold colors" |
-| "dark mode" | "dark theme with high-contrast accents on deep backgrounds" |
+| Basic          | Enhanced                                                    |
+| -------------- | ----------------------------------------------------------- |
+| "modern"       | "clean, minimal, with generous whitespace"                  |
+| "professional" | "sophisticated, trustworthy, with subtle shadows"           |
+| "fun"          | "vibrant, playful, with rounded corners and bold colors"    |
+| "dark mode"    | "dark theme with high-contrast accents on deep backgrounds" |
 
 #### C. Structure the Page
 
@@ -95,6 +100,7 @@ Organize content into numbered sections:
 
 ```markdown
 **Page Structure:**
+
 1. **Header:** Navigation with logo and menu items
 2. **Hero Section:** Headline, subtext, and primary CTA
 3. **Content Area:** [Describe the main content]
@@ -104,11 +110,13 @@ Organize content into numbered sections:
 #### D. Format Colors Properly
 
 When colors are mentioned, format them as:
+
 ```
 Descriptive Name (#hexcode) for functional role
 ```
 
 Examples:
+
 - "Deep Ocean Blue (#1a365d) for primary buttons and links"
 - "Warm Cream (#faf5f0) for page background"
 - "Soft Gray (#6b7280) for secondary text"
@@ -121,6 +129,7 @@ Structure the enhanced prompt in this order:
 [One-line description of the page purpose and vibe]
 
 **DESIGN SYSTEM (REQUIRED):**
+
 - Platform: [Web/Mobile], [Desktop/Mobile]-first
 - Theme: [Light/Dark], [style descriptors]
 - Background: [Color description] (#hex)
@@ -129,9 +138,10 @@ Structure the enhanced prompt in this order:
 - [Additional design tokens...]
 
 **Page Structure:**
+
 1. **[Section]:** [Description]
 2. **[Section]:** [Description]
-...
+   ...
 ```
 
 ## Output Options
@@ -139,6 +149,7 @@ Structure the enhanced prompt in this order:
 **Default:** Return the enhanced prompt as text for the user to copy.
 
 **Optional file output:** If the user requests, write to a file:
+
 - `next-prompt.md` — for use with the `stitch-loop` skill
 - Custom filename specified by user
 
@@ -147,13 +158,16 @@ Structure the enhanced prompt in this order:
 ### Example 1: Vague Input → Structured Prompt
 
 **User input:**
+
 > "make me a login page"
 
 **Enhanced output:**
+
 ```markdown
 A clean, trustworthy login page with a centered form and subtle branding.
 
 **DESIGN SYSTEM (REQUIRED):**
+
 - Platform: Web, Desktop-first
 - Theme: Light, minimal, professional
 - Background: Clean White (#ffffff)
@@ -165,26 +179,31 @@ A clean, trustworthy login page with a centered form and subtle branding.
 - Cards: Gently rounded (12px), soft shadow for elevation
 
 **Page Structure:**
+
 1. **Header:** Minimal logo, centered
 2. **Login Card:** Centered form with email, password fields, "Forgot password?" link
 3. **Submit Button:** Primary blue "Sign In" button
 4. **Footer:** "Don't have an account? Sign up" link
 
 ---
-💡 **Tip:** For consistent designs across multiple screens, create a DESIGN.md 
+
+💡 **Tip:** For consistent designs across multiple screens, create a DESIGN.md
 file using the `design-md` skill.
 ```
 
 ### Example 2: Feature Request → Targeted Edit
 
 **User input:**
+
 > "add a search bar"
 
 **Enhanced output:**
+
 ```markdown
 Add a search bar to the header navigation.
 
 **Specific changes:**
+
 - Location: Header, right side before user avatar
 - Style: Pill-shaped input with subtle gray background (#f3f4f6)
 - Icon: Magnifying glass icon on the left, inside the input
@@ -202,3 +221,9 @@ Add a search bar to the header navigation.
 3. **Keep it structured** — Numbered sections help Stitch understand hierarchy
 4. **Include the design system** — Consistency is key for multi-page projects
 5. **One change at a time for edits** — Don't bundle unrelated changes
+
+## Limitations
+
+- Use this skill only when the task clearly matches the scope described above.
+- Do not treat the output as a substitute for environment-specific validation, testing, or expert review.
+- Stop and ask for clarification if required inputs, permissions, safety boundaries, or success criteria are missing.

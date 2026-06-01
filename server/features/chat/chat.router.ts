@@ -23,7 +23,10 @@ chatRouter.post('/upload-image', async (req, res) => {
 
       base64Data = processedBuffer.toString('base64');
     } catch (sharpErr: any) {
-      logger.warn({ err: sharpErr.message || sharpErr }, 'Sharp image processing unavailable, using original image');
+      logger.warn(
+        { err: sharpErr.message || sharpErr },
+        'Sharp image processing unavailable, using original image'
+      );
     }
 
     res.json({

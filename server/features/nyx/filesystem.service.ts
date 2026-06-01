@@ -25,7 +25,22 @@ export class FilesystemService {
     }
 
     // Extension whitelist
-    const ALLOWED_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.json', '.css', '.html', '.py', '.md', '.yml', '.yaml', '.sh', '.txt', '.env']);
+    const ALLOWED_EXTENSIONS = new Set([
+      '.ts',
+      '.tsx',
+      '.js',
+      '.jsx',
+      '.json',
+      '.css',
+      '.html',
+      '.py',
+      '.md',
+      '.yml',
+      '.yaml',
+      '.sh',
+      '.txt',
+      '.env',
+    ]);
     const ext = path.extname(fullPath).toLowerCase();
     if (ext && !ALLOWED_EXTENSIONS.has(ext)) {
       throw new Error(`File extension '${ext}' is not allowed.`);
@@ -34,11 +49,11 @@ export class FilesystemService {
     // Overwrite check
     if (fs.existsSync(fullPath)) {
       if (overwrite !== true) {
-        return { 
+        return {
           conflict: true,
-          error: 'File already exists.', 
-          requiresConfirmation: true, 
-          path: filePath 
+          error: 'File already exists.',
+          requiresConfirmation: true,
+          path: filePath,
         };
       }
 
@@ -52,18 +67,21 @@ export class FilesystemService {
       const base = path.basename(filePath, extName);
       const backupFileName = `${base}-${timestamp}${extName}`;
       const backupPath = path.join(backupsDir, backupFileName);
-      
+
       try {
         await fs.promises.copyFile(fullPath, backupPath);
         logger.info(`[Backup System] Created backup of ${filePath} at: ${backupPath}`);
       } catch (backupErr: any) {
-        logger.warn(`[Backup System] Failed to create backup, proceeding anyway:`, backupErr.message);
+        logger.warn(
+          `[Backup System] Failed to create backup, proceeding anyway:`,
+          backupErr.message
+        );
       }
     }
 
     // Ensure target folder exists
     await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
-    
+
     // Write file
     await fs.promises.writeFile(fullPath, content, 'utf8');
     logger.info(`[File System] Successfully wrote file to: ${fullPath}`);
@@ -115,20 +133,20 @@ export class FilesystemService {
       throw new Error('Directory not found.');
     }
 
-    const files = fs.readdirSync(targetDir).map(name => {
+    const files = fs.readdirSync(targetDir).map((name) => {
       const fullPath = path.join(targetDir, name);
       try {
         const stats = fs.statSync(fullPath);
         return {
           name,
           isDir: stats.isDirectory(),
-          size: stats.size
+          size: stats.size,
         };
       } catch {
         return {
           name,
           isDir: false,
-          size: 0
+          size: 0,
         };
       }
     });

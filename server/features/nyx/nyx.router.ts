@@ -285,7 +285,7 @@ nyxRouter.post('/memory-index', async (req, res) => {
     const codeMemories = MemoryService.getMemories('code');
     const chatMemories = MemoryService.getMemories('chat');
     const allMemories = [...codeMemories, ...chatMemories];
-    const mapped = allMemories.map(m => {
+    const mapped = allMemories.map((m) => {
       let type: 'user' | 'feedback' | 'project' | 'reference' = 'project';
       if (m.category === 'user_preference') type = 'user';
       else if (m.category === 'project_fact') type = 'project';
@@ -297,7 +297,7 @@ nyxRouter.post('/memory-index', async (req, res) => {
         content: m.content,
         timestamp: new Date(m.timestamp).toISOString(),
         tags: [m.category, m.agentType || 'code'].filter(Boolean) as string[],
-        sourceFile: undefined
+        sourceFile: undefined,
       };
     });
     res.json({ entries: mapped });
@@ -306,8 +306,8 @@ nyxRouter.post('/memory-index', async (req, res) => {
   }
 });
 
-// POST /api/nyx/semantic-index
-nyxRouter.post('/semantic-index', async (req, res) => {
+// POST /api/nyx/keyword-index
+nyxRouter.post('/keyword-index', async (req, res) => {
   try {
     const { rootPath } = req.body as { rootPath?: string };
     if (!rootPath) {
@@ -318,9 +318,20 @@ nyxRouter.post('/semantic-index', async (req, res) => {
 
     const snippets: any[] = [];
     const EXCLUDE_DIRS = new Set([
-      'node_modules', '.git', '.nyx-cache', '.stitch', '.agents',
-      '.antigravitycli', '.claude', '.vscode', 'dist', 'dist-server',
-      'dist-desktop', 'public', 'graphify-out', 'scratch'
+      'node_modules',
+      '.git',
+      '.nyx-cache',
+      '.stitch',
+      '.agents',
+      '.antigravitycli',
+      '.claude',
+      '.vscode',
+      'dist',
+      'dist-server',
+      'dist-desktop',
+      'public',
+      'graphify-out',
+      'scratch',
     ]);
     const ALLOWED_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs']);
 
@@ -374,7 +385,13 @@ nyxRouter.post('/semantic-index', async (req, res) => {
       } catch {}
     }
 
-    function createSnippet(relPath: string, name: string, type: string, lineNum: number, lines: string[]) {
+    function createSnippet(
+      relPath: string,
+      name: string,
+      type: string,
+      lineNum: number,
+      lines: string[]
+    ) {
       const startLine = Math.max(1, lineNum - 1);
       const endLine = Math.min(lines.length, lineNum + 8);
       const snippetContent = lines.slice(startLine - 1, endLine).join('\n');
@@ -388,8 +405,8 @@ nyxRouter.post('/semantic-index', async (req, res) => {
           type,
           name,
           signature: lines[lineNum - 1].trim(),
-          dependencies: []
-        }
+          dependencies: [],
+        },
       };
     }
 

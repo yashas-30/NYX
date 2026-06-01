@@ -1,241 +1,1204 @@
 {
   "nodes": [
-    {"id":"ui_btn","label":"button.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/button.tsx","degree":14,"fileType":"tsx"},
-    {"id":"ui_card","label":"card.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/card.tsx","degree":10,"fileType":"tsx"},
-    {"id":"ui_dialog","label":"dialog.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/dialog.tsx","degree":8,"fileType":"tsx"},
-    {"id":"ui_input","label":"input.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/input.tsx","degree":9,"fileType":"tsx"},
-    {"id":"ui_select","label":"select.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/select.tsx","degree":7,"fileType":"tsx"},
-    {"id":"ui_tooltip","label":"tooltip.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/tooltip.tsx","degree":5,"fileType":"tsx"},
-    {"id":"ui_badge","label":"badge.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/badge.tsx","degree":4,"fileType":"tsx"},
-    {"id":"ui_sep","label":"separator.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/separator.tsx","degree":3,"fileType":"tsx"},
-    {"id":"ui_skel","label":"skeleton.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/skeleton.tsx","degree":3,"fileType":"tsx"},
-    {"id":"ui_tabs","label":"tabs.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/tabs.tsx","degree":6,"fileType":"tsx"},
-    {"id":"ui_dropdown","label":"dropdown.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/dropdown.tsx","degree":6,"fileType":"tsx"},
-    {"id":"ui_avatar","label":"avatar.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/avatar.tsx","degree":4,"fileType":"tsx"},
-    {"id":"ui_scroll","label":"scroll-area.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/scroll-area.tsx","degree":5,"fileType":"tsx"},
-    {"id":"ui_switch","label":"switch.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/switch.tsx","degree":4,"fileType":"tsx"},
-    {"id":"ui_textarea","label":"textarea.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/textarea.tsx","degree":5,"fileType":"tsx"},
-    {"id":"ui_progress","label":"progress.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/progress.tsx","degree":4,"fileType":"tsx"},
-    {"id":"ui_slider","label":"slider.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/slider.tsx","degree":3,"fileType":"tsx"},
-    {"id":"ui_sonner","label":"sonner.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/sonner.tsx","degree":4,"fileType":"tsx"},
-    {"id":"ui_accordion","label":"accordion.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/accordion.tsx","degree":3,"fileType":"tsx"},
-    {"id":"ui_popover","label":"popover.tsx","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/popover.tsx","degree":3,"fileType":"tsx"},
-    {"id":"micro_w","label":"w","community":1,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/w.tsx","degree":1,"fileType":"tsx"},
+    {
+      "id": "ui_btn",
+      "label": "button.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/button.tsx",
+      "degree": 14,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_card",
+      "label": "card.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/card.tsx",
+      "degree": 10,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_dialog",
+      "label": "dialog.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/dialog.tsx",
+      "degree": 8,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_input",
+      "label": "input.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/input.tsx",
+      "degree": 9,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_select",
+      "label": "select.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/select.tsx",
+      "degree": 7,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_tooltip",
+      "label": "tooltip.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/tooltip.tsx",
+      "degree": 5,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_badge",
+      "label": "badge.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/badge.tsx",
+      "degree": 4,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_sep",
+      "label": "separator.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/separator.tsx",
+      "degree": 3,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_skel",
+      "label": "skeleton.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/skeleton.tsx",
+      "degree": 3,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_tabs",
+      "label": "tabs.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/tabs.tsx",
+      "degree": 6,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_dropdown",
+      "label": "dropdown.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/dropdown.tsx",
+      "degree": 6,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_avatar",
+      "label": "avatar.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/avatar.tsx",
+      "degree": 4,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_scroll",
+      "label": "scroll-area.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/scroll-area.tsx",
+      "degree": 5,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_switch",
+      "label": "switch.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/switch.tsx",
+      "degree": 4,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_textarea",
+      "label": "textarea.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/textarea.tsx",
+      "degree": 5,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_progress",
+      "label": "progress.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/progress.tsx",
+      "degree": 4,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_slider",
+      "label": "slider.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/slider.tsx",
+      "degree": 3,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_sonner",
+      "label": "sonner.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/sonner.tsx",
+      "degree": 4,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_accordion",
+      "label": "accordion.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/accordion.tsx",
+      "degree": 3,
+      "fileType": "tsx"
+    },
+    {
+      "id": "ui_popover",
+      "label": "popover.tsx",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/popover.tsx",
+      "degree": 3,
+      "fileType": "tsx"
+    },
+    {
+      "id": "micro_w",
+      "label": "w",
+      "community": 1,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/ui/w.tsx",
+      "degree": 1,
+      "fileType": "tsx"
+    },
 
-    {"id":"srv_main","label":"server.ts","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/server.ts","degree":20,"fileType":"ts"},
-    {"id":"srv_mid","label":"middleware.ts","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/middleware.ts","degree":8,"fileType":"ts"},
-    {"id":"srv_routes","label":"routes.ts","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes.ts","degree":12,"fileType":"ts"},
-    {"id":"srv_auth","label":"auth.ts","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/auth.ts","degree":7,"fileType":"ts"},
-    {"id":"srv_log","label":"logger.ts","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/logger.ts","degree":5,"fileType":"ts"},
-    {"id":"srv_ws","label":"websocket.ts","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/websocket.ts","degree":7,"fileType":"ts"},
-    {"id":"srv_health","label":"health.ts","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/health.ts","degree":2,"fileType":"ts"},
-    {"id":"srv_cors","label":"cors.ts","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/cors.ts","degree":3,"fileType":"ts"},
-    {"id":"micro_ip","label":"ip","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/ip.ts","degree":1,"fileType":"ts"},
-    {"id":"micro_db","label":"db","community":2,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/db.ts","degree":1,"fileType":"ts"},
+    {
+      "id": "srv_main",
+      "label": "server.ts",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/server.ts",
+      "degree": 20,
+      "fileType": "ts"
+    },
+    {
+      "id": "srv_mid",
+      "label": "middleware.ts",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/middleware.ts",
+      "degree": 8,
+      "fileType": "ts"
+    },
+    {
+      "id": "srv_routes",
+      "label": "routes.ts",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes.ts",
+      "degree": 12,
+      "fileType": "ts"
+    },
+    {
+      "id": "srv_auth",
+      "label": "auth.ts",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/auth.ts",
+      "degree": 7,
+      "fileType": "ts"
+    },
+    {
+      "id": "srv_log",
+      "label": "logger.ts",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/logger.ts",
+      "degree": 5,
+      "fileType": "ts"
+    },
+    {
+      "id": "srv_ws",
+      "label": "websocket.ts",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/websocket.ts",
+      "degree": 7,
+      "fileType": "ts"
+    },
+    {
+      "id": "srv_health",
+      "label": "health.ts",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/health.ts",
+      "degree": 2,
+      "fileType": "ts"
+    },
+    {
+      "id": "srv_cors",
+      "label": "cors.ts",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/cors.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "micro_ip",
+      "label": "ip",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/ip.ts",
+      "degree": 1,
+      "fileType": "ts"
+    },
+    {
+      "id": "micro_db",
+      "label": "db",
+      "community": 2,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/db.ts",
+      "degree": 1,
+      "fileType": "ts"
+    },
 
-    {"id":"gw_gateway","label":"gateway.ts","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/gateway.ts","degree":16,"fileType":"ts"},
-    {"id":"gw_fastify","label":"fastifyApi.ts","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/fastifyApi.ts","degree":11,"fileType":"ts"},
-    {"id":"gw_stream","label":"streamHandler.ts","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/streamHandler.ts","degree":9,"fileType":"ts"},
-    {"id":"gw_retry","label":"retryPolicy.ts","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/retryPolicy.ts","degree":4,"fileType":"ts"},
-    {"id":"gw_cache","label":"cacheLayer.ts","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/cacheLayer.ts","degree":5,"fileType":"ts"},
-    {"id":"gw_rate","label":"rateLimit.ts","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/rateLimit.ts","degree":3,"fileType":"ts"},
-    {"id":"gw_transform","label":"transform.ts","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/transform.ts","degree":4,"fileType":"ts"},
-    {"id":"gw_validator","label":"validator.ts","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/validator.ts","degree":3,"fileType":"ts"},
-    {"id":"gw_metrics","label":"metrics.ts","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/metrics.ts","degree":4,"fileType":"ts"},
-    {"id":"micro_op","label":"op","community":3,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/op.ts","degree":1,"fileType":"ts"},
+    {
+      "id": "gw_gateway",
+      "label": "gateway.ts",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/gateway.ts",
+      "degree": 16,
+      "fileType": "ts"
+    },
+    {
+      "id": "gw_fastify",
+      "label": "fastifyApi.ts",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/fastifyApi.ts",
+      "degree": 11,
+      "fileType": "ts"
+    },
+    {
+      "id": "gw_stream",
+      "label": "streamHandler.ts",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/streamHandler.ts",
+      "degree": 9,
+      "fileType": "ts"
+    },
+    {
+      "id": "gw_retry",
+      "label": "retryPolicy.ts",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/retryPolicy.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "gw_cache",
+      "label": "cacheLayer.ts",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/cacheLayer.ts",
+      "degree": 5,
+      "fileType": "ts"
+    },
+    {
+      "id": "gw_rate",
+      "label": "rateLimit.ts",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/rateLimit.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "gw_transform",
+      "label": "transform.ts",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/transform.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "gw_validator",
+      "label": "validator.ts",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/validator.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "gw_metrics",
+      "label": "metrics.ts",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/metrics.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "micro_op",
+      "label": "op",
+      "community": 3,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/lib/op.ts",
+      "degree": 1,
+      "fileType": "ts"
+    },
 
-    {"id":"mr_card","label":"ModelCard.tsx","community":4,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelCard.tsx","degree":12,"fileType":"tsx"},
-    {"id":"mr_selector","label":"ModelSelector.tsx","community":4,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelSelector.tsx","degree":9,"fileType":"tsx"},
-    {"id":"mr_bench","label":"ModelBench.tsx","community":4,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelBench.tsx","degree":6,"fileType":"tsx"},
-    {"id":"mr_avatar","label":"ModelAvatar.tsx","community":4,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelAvatar.tsx","degree":3,"fileType":"tsx"},
-    {"id":"mr_compare","label":"ModelCompare.tsx","community":4,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelCompare.tsx","degree":5,"fileType":"tsx"},
-    {"id":"mr_stats","label":"ModelStats.tsx","community":4,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelStats.tsx","degree":4,"fileType":"tsx"},
-    {"id":"mr_filter","label":"ModelFilter.tsx","community":4,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelFilter.tsx","degree":4,"fileType":"tsx"},
+    {
+      "id": "mr_card",
+      "label": "ModelCard.tsx",
+      "community": 4,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelCard.tsx",
+      "degree": 12,
+      "fileType": "tsx"
+    },
+    {
+      "id": "mr_selector",
+      "label": "ModelSelector.tsx",
+      "community": 4,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelSelector.tsx",
+      "degree": 9,
+      "fileType": "tsx"
+    },
+    {
+      "id": "mr_bench",
+      "label": "ModelBench.tsx",
+      "community": 4,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelBench.tsx",
+      "degree": 6,
+      "fileType": "tsx"
+    },
+    {
+      "id": "mr_avatar",
+      "label": "ModelAvatar.tsx",
+      "community": 4,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelAvatar.tsx",
+      "degree": 3,
+      "fileType": "tsx"
+    },
+    {
+      "id": "mr_compare",
+      "label": "ModelCompare.tsx",
+      "community": 4,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelCompare.tsx",
+      "degree": 5,
+      "fileType": "tsx"
+    },
+    {
+      "id": "mr_stats",
+      "label": "ModelStats.tsx",
+      "community": 4,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelStats.tsx",
+      "degree": 4,
+      "fileType": "tsx"
+    },
+    {
+      "id": "mr_filter",
+      "label": "ModelFilter.tsx",
+      "community": 4,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/components/model-card/ModelFilter.tsx",
+      "degree": 4,
+      "fileType": "tsx"
+    },
 
-    {"id":"ds_tokens","label":"tokens.ts","community":5,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/tokens.ts","degree":10,"fileType":"ts"},
-    {"id":"ds_theme","label":"theme.ts","community":5,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/theme.ts","degree":8,"fileType":"ts"},
-    {"id":"ds_colors","label":"colors.ts","community":5,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/colors.ts","degree":6,"fileType":"ts"},
-    {"id":"ds_typo","label":"typography.ts","community":5,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/typography.ts","degree":5,"fileType":"ts"},
-    {"id":"ds_spacing","label":"spacing.ts","community":5,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/spacing.ts","degree":3,"fileType":"ts"},
-    {"id":"ds_breaks","label":"breakpoints.ts","community":5,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/breakpoints.ts","degree":3,"fileType":"ts"},
-    {"id":"ds_motion","label":"motion.ts","community":5,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/motion.ts","degree":4,"fileType":"ts"},
-    {"id":"ds_shadows","label":"shadows.ts","community":5,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/shadows.ts","degree":3,"fileType":"ts"},
+    {
+      "id": "ds_tokens",
+      "label": "tokens.ts",
+      "community": 5,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/tokens.ts",
+      "degree": 10,
+      "fileType": "ts"
+    },
+    {
+      "id": "ds_theme",
+      "label": "theme.ts",
+      "community": 5,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/theme.ts",
+      "degree": 8,
+      "fileType": "ts"
+    },
+    {
+      "id": "ds_colors",
+      "label": "colors.ts",
+      "community": 5,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/colors.ts",
+      "degree": 6,
+      "fileType": "ts"
+    },
+    {
+      "id": "ds_typo",
+      "label": "typography.ts",
+      "community": 5,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/typography.ts",
+      "degree": 5,
+      "fileType": "ts"
+    },
+    {
+      "id": "ds_spacing",
+      "label": "spacing.ts",
+      "community": 5,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/spacing.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "ds_breaks",
+      "label": "breakpoints.ts",
+      "community": 5,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/breakpoints.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "ds_motion",
+      "label": "motion.ts",
+      "community": 5,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/motion.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "ds_shadows",
+      "label": "shadows.ts",
+      "community": 5,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/design-system/shadows.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
 
-    {"id":"hk_chat","label":"useChat.ts","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useChat.ts","degree":11,"fileType":"ts"},
-    {"id":"hk_model","label":"useModel.ts","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useModel.ts","degree":8,"fileType":"ts"},
-    {"id":"hk_theme","label":"useTheme.ts","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useTheme.ts","degree":6,"fileType":"ts"},
-    {"id":"hk_auth","label":"useAuth.ts","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useAuth.ts","degree":5,"fileType":"ts"},
-    {"id":"hk_stream","label":"useStream.ts","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useStream.ts","degree":4,"fileType":"ts"},
-    {"id":"hk_kb","label":"useKeyboard.ts","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useKeyboard.ts","degree":3,"fileType":"ts"},
-    {"id":"hk_media","label":"useMediaQuery.ts","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useMediaQuery.ts","degree":3,"fileType":"ts"},
-    {"id":"hk_ls","label":"useLocalStorage.ts","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useLocalStorage.ts","degree":3,"fileType":"ts"},
-    {"id":"micro_v","label":"v","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/v.ts","degree":1,"fileType":"ts"},
-    {"id":"micro_h","label":"h","community":6,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/h.ts","degree":1,"fileType":"ts"},
+    {
+      "id": "hk_chat",
+      "label": "useChat.ts",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useChat.ts",
+      "degree": 11,
+      "fileType": "ts"
+    },
+    {
+      "id": "hk_model",
+      "label": "useModel.ts",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useModel.ts",
+      "degree": 8,
+      "fileType": "ts"
+    },
+    {
+      "id": "hk_theme",
+      "label": "useTheme.ts",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useTheme.ts",
+      "degree": 6,
+      "fileType": "ts"
+    },
+    {
+      "id": "hk_auth",
+      "label": "useAuth.ts",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useAuth.ts",
+      "degree": 5,
+      "fileType": "ts"
+    },
+    {
+      "id": "hk_stream",
+      "label": "useStream.ts",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useStream.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "hk_kb",
+      "label": "useKeyboard.ts",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useKeyboard.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "hk_media",
+      "label": "useMediaQuery.ts",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useMediaQuery.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "hk_ls",
+      "label": "useLocalStorage.ts",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/useLocalStorage.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "micro_v",
+      "label": "v",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/v.ts",
+      "degree": 1,
+      "fileType": "ts"
+    },
+    {
+      "id": "micro_h",
+      "label": "h",
+      "community": 6,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/hooks/h.ts",
+      "degree": 1,
+      "fileType": "ts"
+    },
 
-    {"id":"pg_app","label":"App.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/App.tsx","degree":18,"fileType":"tsx"},
-    {"id":"pg_dash","label":"Dashboard.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Dashboard.tsx","degree":14,"fileType":"tsx"},
-    {"id":"pg_settings","label":"Settings.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Settings.tsx","degree":8,"fileType":"tsx"},
-    {"id":"pg_chat","label":"ChatView.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/ChatView.tsx","degree":12,"fileType":"tsx"},
-    {"id":"pg_landing","label":"Landing.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Landing.tsx","degree":9,"fileType":"tsx"},
-    {"id":"pg_profile","label":"Profile.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Profile.tsx","degree":6,"fileType":"tsx"},
-    {"id":"pg_notfound","label":"NotFound.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/NotFound.tsx","degree":2,"fileType":"tsx"},
-    {"id":"pg_onboard","label":"Onboarding.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Onboarding.tsx","degree":5,"fileType":"tsx"},
-    {"id":"pg_model","label":"ModelPage.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/ModelPage.tsx","degree":8,"fileType":"tsx"},
-    {"id":"pg_history","label":"History.tsx","community":7,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/History.tsx","degree":5,"fileType":"tsx"},
+    {
+      "id": "pg_app",
+      "label": "App.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/App.tsx",
+      "degree": 18,
+      "fileType": "tsx"
+    },
+    {
+      "id": "pg_dash",
+      "label": "Dashboard.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Dashboard.tsx",
+      "degree": 14,
+      "fileType": "tsx"
+    },
+    {
+      "id": "pg_settings",
+      "label": "Settings.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Settings.tsx",
+      "degree": 8,
+      "fileType": "tsx"
+    },
+    {
+      "id": "pg_chat",
+      "label": "ChatView.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/ChatView.tsx",
+      "degree": 12,
+      "fileType": "tsx"
+    },
+    {
+      "id": "pg_landing",
+      "label": "Landing.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Landing.tsx",
+      "degree": 9,
+      "fileType": "tsx"
+    },
+    {
+      "id": "pg_profile",
+      "label": "Profile.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Profile.tsx",
+      "degree": 6,
+      "fileType": "tsx"
+    },
+    {
+      "id": "pg_notfound",
+      "label": "NotFound.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/NotFound.tsx",
+      "degree": 2,
+      "fileType": "tsx"
+    },
+    {
+      "id": "pg_onboard",
+      "label": "Onboarding.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/Onboarding.tsx",
+      "degree": 5,
+      "fileType": "tsx"
+    },
+    {
+      "id": "pg_model",
+      "label": "ModelPage.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/ModelPage.tsx",
+      "degree": 8,
+      "fileType": "tsx"
+    },
+    {
+      "id": "pg_history",
+      "label": "History.tsx",
+      "community": 7,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/pages/History.tsx",
+      "degree": 5,
+      "fileType": "tsx"
+    },
 
-    {"id":"cfg_pkg","label":"package.json","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/package.json","degree":12,"fileType":"json"},
-    {"id":"cfg_tsconfig","label":"tsconfig.json","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/tsconfig.json","degree":7,"fileType":"json"},
-    {"id":"cfg_vite","label":"vite.config.ts","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/vite.config.ts","degree":5,"fileType":"ts"},
-    {"id":"cfg_vercel","label":"vercel.json","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/vercel.json","degree":2,"fileType":"json"},
-    {"id":"cfg_comp","label":"components.json","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/components.json","degree":5,"fileType":"json"},
-    {"id":"cfg_env","label":".env","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/.env","degree":3,"fileType":"env"},
-    {"id":"cfg_eslint","label":"eslint.config.js","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/eslint.config.js","degree":3,"fileType":"js"},
-    {"id":"cfg_gitignore","label":".gitignore","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/.gitignore","degree":0,"fileType":"gitignore"},
-    {"id":"cfg_postcss","label":"postcss.config.js","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/postcss.config.js","degree":3,"fileType":"js"},
-    {"id":"cfg_readme","label":"README.md","community":8,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/README.md","degree":1,"fileType":"md"},
+    {
+      "id": "cfg_pkg",
+      "label": "package.json",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/package.json",
+      "degree": 12,
+      "fileType": "json"
+    },
+    {
+      "id": "cfg_tsconfig",
+      "label": "tsconfig.json",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/tsconfig.json",
+      "degree": 7,
+      "fileType": "json"
+    },
+    {
+      "id": "cfg_vite",
+      "label": "vite.config.ts",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/vite.config.ts",
+      "degree": 5,
+      "fileType": "ts"
+    },
+    {
+      "id": "cfg_vercel",
+      "label": "vercel.json",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/vercel.json",
+      "degree": 2,
+      "fileType": "json"
+    },
+    {
+      "id": "cfg_comp",
+      "label": "components.json",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/components.json",
+      "degree": 5,
+      "fileType": "json"
+    },
+    {
+      "id": "cfg_env",
+      "label": ".env",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/.env",
+      "degree": 3,
+      "fileType": "env"
+    },
+    {
+      "id": "cfg_eslint",
+      "label": "eslint.config.js",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/eslint.config.js",
+      "degree": 3,
+      "fileType": "js"
+    },
+    {
+      "id": "cfg_gitignore",
+      "label": ".gitignore",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/.gitignore",
+      "degree": 0,
+      "fileType": "gitignore"
+    },
+    {
+      "id": "cfg_postcss",
+      "label": "postcss.config.js",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/postcss.config.js",
+      "degree": 3,
+      "fileType": "js"
+    },
+    {
+      "id": "cfg_readme",
+      "label": "README.md",
+      "community": 8,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/README.md",
+      "degree": 1,
+      "fileType": "md"
+    },
 
-    {"id":"sc_detect","label":"detect.py","community":9,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/detect.py","degree":0,"fileType":"py"},
-    {"id":"sc_test","label":"test_env.py","community":9,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/test_env.py","degree":0,"fileType":"py"},
-    {"id":"sc_fetch","label":"fetch-stitch.sh","community":9,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/fetch-stitch.sh","degree":0,"fileType":"sh"},
-    {"id":"sc_migrate","label":"migrate.py","community":9,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/migrate.py","degree":0,"fileType":"py"},
-    {"id":"sc_bench","label":"bench.sh","community":9,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/bench.sh","degree":0,"fileType":"sh"},
-    {"id":"sc_cleanup","label":"cleanup.sh","community":9,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/cleanup.sh","degree":0,"fileType":"sh"},
-    {"id":"sc_plot","label":"plot_metrics.py","community":9,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/plot_metrics.py","degree":0,"fileType":"py"},
-    {"id":"sc_seed","label":"seed_db.py","community":9,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/seed_db.py","degree":0,"fileType":"py"},
+    {
+      "id": "sc_detect",
+      "label": "detect.py",
+      "community": 9,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/detect.py",
+      "degree": 0,
+      "fileType": "py"
+    },
+    {
+      "id": "sc_test",
+      "label": "test_env.py",
+      "community": 9,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/test_env.py",
+      "degree": 0,
+      "fileType": "py"
+    },
+    {
+      "id": "sc_fetch",
+      "label": "fetch-stitch.sh",
+      "community": 9,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/fetch-stitch.sh",
+      "degree": 0,
+      "fileType": "sh"
+    },
+    {
+      "id": "sc_migrate",
+      "label": "migrate.py",
+      "community": 9,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/migrate.py",
+      "degree": 0,
+      "fileType": "py"
+    },
+    {
+      "id": "sc_bench",
+      "label": "bench.sh",
+      "community": 9,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/bench.sh",
+      "degree": 0,
+      "fileType": "sh"
+    },
+    {
+      "id": "sc_cleanup",
+      "label": "cleanup.sh",
+      "community": 9,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/cleanup.sh",
+      "degree": 0,
+      "fileType": "sh"
+    },
+    {
+      "id": "sc_plot",
+      "label": "plot_metrics.py",
+      "community": 9,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/plot_metrics.py",
+      "degree": 0,
+      "fileType": "py"
+    },
+    {
+      "id": "sc_seed",
+      "label": "seed_db.py",
+      "community": 9,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/scratch/seed_db.py",
+      "degree": 0,
+      "fileType": "py"
+    },
 
-    {"id":"ut_cn","label":"utils.ts","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/utils.ts","degree":8,"fileType":"ts"},
-    {"id":"ut_format","label":"format.ts","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/format.ts","degree":5,"fileType":"ts"},
-    {"id":"ut_api","label":"api.ts","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/api.ts","degree":10,"fileType":"ts"},
-    {"id":"ut_storage","label":"storage.ts","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/storage.ts","degree":4,"fileType":"ts"},
-    {"id":"ut_debounce","label":"debounce.ts","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/debounce.ts","degree":3,"fileType":"ts"},
-    {"id":"ut_constants","label":"constants.ts","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/constants.ts","degree":4,"fileType":"ts"},
-    {"id":"ut_types","label":"types.ts","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/types.ts","degree":6,"fileType":"ts"},
-    {"id":"ut_errors","label":"errors.ts","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/errors.ts","degree":4,"fileType":"ts"},
-    {"id":"ut_validators","label":"validators.ts","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/validators.ts","degree":3,"fileType":"ts"},
-    {"id":"micro_fs","label":"fs","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/fs.ts","degree":1,"fileType":"ts"},
-    {"id":"micro_nm","label":"nm","community":10,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/nm.ts","degree":1,"fileType":"ts"},
+    {
+      "id": "ut_cn",
+      "label": "utils.ts",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/utils.ts",
+      "degree": 8,
+      "fileType": "ts"
+    },
+    {
+      "id": "ut_format",
+      "label": "format.ts",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/format.ts",
+      "degree": 5,
+      "fileType": "ts"
+    },
+    {
+      "id": "ut_api",
+      "label": "api.ts",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/api.ts",
+      "degree": 10,
+      "fileType": "ts"
+    },
+    {
+      "id": "ut_storage",
+      "label": "storage.ts",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/storage.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "ut_debounce",
+      "label": "debounce.ts",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/debounce.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "ut_constants",
+      "label": "constants.ts",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/constants.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "ut_types",
+      "label": "types.ts",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/types.ts",
+      "degree": 6,
+      "fileType": "ts"
+    },
+    {
+      "id": "ut_errors",
+      "label": "errors.ts",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/errors.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "ut_validators",
+      "label": "validators.ts",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/validators.ts",
+      "degree": 3,
+      "fileType": "ts"
+    },
+    {
+      "id": "micro_fs",
+      "label": "fs",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/fs.ts",
+      "degree": 1,
+      "fileType": "ts"
+    },
+    {
+      "id": "micro_nm",
+      "label": "nm",
+      "community": 10,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/lib/nm.ts",
+      "degree": 1,
+      "fileType": "ts"
+    },
 
-    {"id":"li_ollama","label":"ollama.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/ollama.ts","degree":9,"fileType":"ts"},
-    {"id":"li_lmstudio","label":"lmstudio.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/lmstudio.ts","degree":7,"fileType":"ts"},
-    {"id":"li_openai","label":"openai.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/openai.ts","degree":8,"fileType":"ts"},
-    {"id":"li_gemini","label":"gemini.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/gemini.ts","degree":6,"fileType":"ts"},
-    {"id":"li_anthropic","label":"anthropic.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/anthropic.ts","degree":6,"fileType":"ts"},
-    {"id":"li_groq","label":"groq.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/groq.ts","degree":5,"fileType":"ts"},
-    {"id":"li_together","label":"together.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/together.ts","degree":4,"fileType":"ts"},
-    {"id":"li_types","label":"llm-types.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/llm-types.ts","degree":5,"fileType":"ts"},
-    {"id":"li_fireworks","label":"fireworks.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/fireworks.ts","degree":4,"fileType":"ts"},
-    {"id":"li_deepseek","label":"deepseek.ts","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/deepseek.ts","degree":4,"fileType":"ts"},
-    {"id":"micro_fr","label":"fr","community":11,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/fr.ts","degree":1,"fileType":"ts"},
+    {
+      "id": "li_ollama",
+      "label": "ollama.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/ollama.ts",
+      "degree": 9,
+      "fileType": "ts"
+    },
+    {
+      "id": "li_lmstudio",
+      "label": "lmstudio.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/lmstudio.ts",
+      "degree": 7,
+      "fileType": "ts"
+    },
+    {
+      "id": "li_openai",
+      "label": "openai.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/openai.ts",
+      "degree": 8,
+      "fileType": "ts"
+    },
+    {
+      "id": "li_gemini",
+      "label": "gemini.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/gemini.ts",
+      "degree": 6,
+      "fileType": "ts"
+    },
+    {
+      "id": "li_anthropic",
+      "label": "anthropic.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/anthropic.ts",
+      "degree": 6,
+      "fileType": "ts"
+    },
+    {
+      "id": "li_groq",
+      "label": "groq.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/groq.ts",
+      "degree": 5,
+      "fileType": "ts"
+    },
+    {
+      "id": "li_together",
+      "label": "together.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/together.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "li_types",
+      "label": "llm-types.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/llm-types.ts",
+      "degree": 5,
+      "fileType": "ts"
+    },
+    {
+      "id": "li_fireworks",
+      "label": "fireworks.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/fireworks.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "li_deepseek",
+      "label": "deepseek.ts",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/deepseek.ts",
+      "degree": 4,
+      "fileType": "ts"
+    },
+    {
+      "id": "micro_fr",
+      "label": "fr",
+      "community": 11,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/server/routes/fr.ts",
+      "degree": 1,
+      "fileType": "ts"
+    },
 
-    {"id":"st_globals","label":"index.css","community":12,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/index.css","degree":7,"fileType":"css"},
-    {"id":"st_tailwind","label":"tailwind.config.ts","community":12,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/tailwind.config.ts","degree":5,"fileType":"ts"},
-    {"id":"st_anims","label":"animations.css","community":12,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/animations.css","degree":4,"fileType":"css"},
-    {"id":"st_themes","label":"themes.css","community":12,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/themes.css","degree":3,"fileType":"css"},
-    {"id":"st_fonts","label":"fonts.css","community":12,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/fonts.css","degree":2,"fileType":"css"},
-    {"id":"st_vars","label":"variables.css","community":12,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/variables.css","degree":3,"fileType":"css"},
-    {"id":"micro_ui","label":"ui","community":12,"sourcePath":"C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/ui.css","degree":1,"fileType":"css"}
+    {
+      "id": "st_globals",
+      "label": "index.css",
+      "community": 12,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/index.css",
+      "degree": 7,
+      "fileType": "css"
+    },
+    {
+      "id": "st_tailwind",
+      "label": "tailwind.config.ts",
+      "community": 12,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/tailwind.config.ts",
+      "degree": 5,
+      "fileType": "ts"
+    },
+    {
+      "id": "st_anims",
+      "label": "animations.css",
+      "community": 12,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/animations.css",
+      "degree": 4,
+      "fileType": "css"
+    },
+    {
+      "id": "st_themes",
+      "label": "themes.css",
+      "community": 12,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/themes.css",
+      "degree": 3,
+      "fileType": "css"
+    },
+    {
+      "id": "st_fonts",
+      "label": "fonts.css",
+      "community": 12,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/fonts.css",
+      "degree": 2,
+      "fileType": "css"
+    },
+    {
+      "id": "st_vars",
+      "label": "variables.css",
+      "community": 12,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/variables.css",
+      "degree": 3,
+      "fileType": "css"
+    },
+    {
+      "id": "micro_ui",
+      "label": "ui",
+      "community": 12,
+      "sourcePath": "C:/Users/Duckster/Documents/llm lab/LLMLAB REV14/src/styles/ui.css",
+      "degree": 1,
+      "fileType": "css"
+    }
   ],
   "edges": [
-    {"from":"pg_app","to":"pg_dash"},{"from":"pg_app","to":"pg_settings"},{"from":"pg_app","to":"pg_chat"},
-    {"from":"pg_app","to":"pg_landing"},{"from":"pg_app","to":"pg_profile"},{"from":"pg_app","to":"pg_notfound"},
-    {"from":"pg_app","to":"pg_onboard"},{"from":"pg_app","to":"pg_model"},{"from":"pg_app","to":"pg_history"},
-    {"from":"pg_app","to":"ui_btn"},{"from":"pg_app","to":"ui_sonner"},{"from":"pg_app","to":"hk_theme"},
-    {"from":"pg_app","to":"ds_theme"},{"from":"pg_app","to":"st_globals"},
+    { "from": "pg_app", "to": "pg_dash" },
+    { "from": "pg_app", "to": "pg_settings" },
+    { "from": "pg_app", "to": "pg_chat" },
+    { "from": "pg_app", "to": "pg_landing" },
+    { "from": "pg_app", "to": "pg_profile" },
+    { "from": "pg_app", "to": "pg_notfound" },
+    { "from": "pg_app", "to": "pg_onboard" },
+    { "from": "pg_app", "to": "pg_model" },
+    { "from": "pg_app", "to": "pg_history" },
+    { "from": "pg_app", "to": "ui_btn" },
+    { "from": "pg_app", "to": "ui_sonner" },
+    { "from": "pg_app", "to": "hk_theme" },
+    { "from": "pg_app", "to": "ds_theme" },
+    { "from": "pg_app", "to": "st_globals" },
 
-    {"from":"pg_dash","to":"mr_card"},{"from":"pg_dash","to":"mr_selector"},{"from":"pg_dash","to":"ui_card"},
-    {"from":"pg_dash","to":"ui_tabs"},{"from":"pg_dash","to":"ui_badge"},{"from":"pg_dash","to":"hk_chat"},
-    {"from":"pg_dash","to":"hk_model"},{"from":"pg_dash","to":"ut_api"},{"from":"pg_dash","to":"ut_format"},
+    { "from": "pg_dash", "to": "mr_card" },
+    { "from": "pg_dash", "to": "mr_selector" },
+    { "from": "pg_dash", "to": "ui_card" },
+    { "from": "pg_dash", "to": "ui_tabs" },
+    { "from": "pg_dash", "to": "ui_badge" },
+    { "from": "pg_dash", "to": "hk_chat" },
+    { "from": "pg_dash", "to": "hk_model" },
+    { "from": "pg_dash", "to": "ut_api" },
+    { "from": "pg_dash", "to": "ut_format" },
 
-    {"from":"pg_chat","to":"hk_chat"},{"from":"pg_chat","to":"hk_stream"},{"from":"pg_chat","to":"ui_textarea"},
-    {"from":"pg_chat","to":"ui_btn"},{"from":"pg_chat","to":"ui_scroll"},{"from":"pg_chat","to":"ui_avatar"},
-    {"from":"pg_chat","to":"ut_format"},{"from":"pg_chat","to":"mr_selector"},
+    { "from": "pg_chat", "to": "hk_chat" },
+    { "from": "pg_chat", "to": "hk_stream" },
+    { "from": "pg_chat", "to": "ui_textarea" },
+    { "from": "pg_chat", "to": "ui_btn" },
+    { "from": "pg_chat", "to": "ui_scroll" },
+    { "from": "pg_chat", "to": "ui_avatar" },
+    { "from": "pg_chat", "to": "ut_format" },
+    { "from": "pg_chat", "to": "mr_selector" },
 
-    {"from":"pg_settings","to":"ui_card"},{"from":"pg_settings","to":"ui_input"},{"from":"pg_settings","to":"ui_select"},
-    {"from":"pg_settings","to":"ui_switch"},{"from":"pg_settings","to":"ui_tabs"},{"from":"pg_settings","to":"hk_theme"},
-    {"from":"pg_settings","to":"hk_auth"},{"from":"pg_settings","to":"ds_tokens"},
+    { "from": "pg_settings", "to": "ui_card" },
+    { "from": "pg_settings", "to": "ui_input" },
+    { "from": "pg_settings", "to": "ui_select" },
+    { "from": "pg_settings", "to": "ui_switch" },
+    { "from": "pg_settings", "to": "ui_tabs" },
+    { "from": "pg_settings", "to": "hk_theme" },
+    { "from": "pg_settings", "to": "hk_auth" },
+    { "from": "pg_settings", "to": "ds_tokens" },
 
-    {"from":"pg_landing","to":"ui_btn"},{"from":"pg_landing","to":"ds_theme"},{"from":"pg_landing","to":"st_anims"},
-    {"from":"pg_landing","to":"ui_card"},
+    { "from": "pg_landing", "to": "ui_btn" },
+    { "from": "pg_landing", "to": "ds_theme" },
+    { "from": "pg_landing", "to": "st_anims" },
+    { "from": "pg_landing", "to": "ui_card" },
 
-    {"from":"pg_model","to":"mr_card"},{"from":"pg_model","to":"mr_bench"},{"from":"pg_model","to":"mr_compare"},
-    {"from":"pg_model","to":"mr_stats"},{"from":"pg_model","to":"mr_filter"},
+    { "from": "pg_model", "to": "mr_card" },
+    { "from": "pg_model", "to": "mr_bench" },
+    { "from": "pg_model", "to": "mr_compare" },
+    { "from": "pg_model", "to": "mr_stats" },
+    { "from": "pg_model", "to": "mr_filter" },
 
-    {"from":"pg_profile","to":"ui_avatar"},{"from":"pg_profile","to":"ui_card"},{"from":"pg_profile","to":"hk_auth"},
+    { "from": "pg_profile", "to": "ui_avatar" },
+    { "from": "pg_profile", "to": "ui_card" },
+    { "from": "pg_profile", "to": "hk_auth" },
 
-    {"from":"pg_onboard","to":"ui_btn"},{"from":"pg_onboard","to":"ui_progress"},{"from":"pg_onboard","to":"ui_card"},
+    { "from": "pg_onboard", "to": "ui_btn" },
+    { "from": "pg_onboard", "to": "ui_progress" },
+    { "from": "pg_onboard", "to": "ui_card" },
 
-    {"from":"pg_history","to":"ui_card"},{"from":"pg_history","to":"ui_scroll"},{"from":"pg_history","to":"hk_chat"},
-    {"from":"pg_history","to":"ut_format"},
+    { "from": "pg_history", "to": "ui_card" },
+    { "from": "pg_history", "to": "ui_scroll" },
+    { "from": "pg_history", "to": "hk_chat" },
+    { "from": "pg_history", "to": "ut_format" },
 
-    {"from":"mr_card","to":"ui_card"},{"from":"mr_card","to":"ui_badge"},{"from":"mr_card","to":"mr_avatar"},
-    {"from":"mr_card","to":"mr_filter"},{"from":"mr_card","to":"ut_cn"},
-    {"from":"mr_selector","to":"ui_select"},{"from":"mr_selector","to":"ui_dropdown"},
-    {"from":"mr_selector","to":"mr_filter"},{"from":"mr_selector","to":"hk_model"},
-    {"from":"mr_bench","to":"ui_progress"},{"from":"mr_bench","to":"mr_filter"},
-    {"from":"mr_compare","to":"mr_filter"},{"from":"mr_compare","to":"ui_card"},
-    {"from":"mr_stats","to":"mr_filter"},{"from":"mr_stats","to":"ui_card"},
+    { "from": "mr_card", "to": "ui_card" },
+    { "from": "mr_card", "to": "ui_badge" },
+    { "from": "mr_card", "to": "mr_avatar" },
+    { "from": "mr_card", "to": "mr_filter" },
+    { "from": "mr_card", "to": "ut_cn" },
+    { "from": "mr_selector", "to": "ui_select" },
+    { "from": "mr_selector", "to": "ui_dropdown" },
+    { "from": "mr_selector", "to": "mr_filter" },
+    { "from": "mr_selector", "to": "hk_model" },
+    { "from": "mr_bench", "to": "ui_progress" },
+    { "from": "mr_bench", "to": "mr_filter" },
+    { "from": "mr_compare", "to": "mr_filter" },
+    { "from": "mr_compare", "to": "ui_card" },
+    { "from": "mr_stats", "to": "mr_filter" },
+    { "from": "mr_stats", "to": "ui_card" },
 
-    {"from":"hk_chat","to":"ut_api"},{"from":"hk_chat","to":"hk_stream"},{"from":"hk_chat","to":"micro_v"},
-    {"from":"hk_model","to":"mr_filter"},{"from":"hk_model","to":"ut_storage"},
-    {"from":"hk_theme","to":"ds_tokens"},{"from":"hk_theme","to":"ds_theme"},{"from":"hk_theme","to":"micro_h"},
-    {"from":"hk_auth","to":"ut_api"},{"from":"hk_auth","to":"ut_storage"},
-    {"from":"hk_stream","to":"ut_api"},
-    {"from":"hk_kb","to":"ut_debounce"},
+    { "from": "hk_chat", "to": "ut_api" },
+    { "from": "hk_chat", "to": "hk_stream" },
+    { "from": "hk_chat", "to": "micro_v" },
+    { "from": "hk_model", "to": "mr_filter" },
+    { "from": "hk_model", "to": "ut_storage" },
+    { "from": "hk_theme", "to": "ds_tokens" },
+    { "from": "hk_theme", "to": "ds_theme" },
+    { "from": "hk_theme", "to": "micro_h" },
+    { "from": "hk_auth", "to": "ut_api" },
+    { "from": "hk_auth", "to": "ut_storage" },
+    { "from": "hk_stream", "to": "ut_api" },
+    { "from": "hk_kb", "to": "ut_debounce" },
 
-    {"from":"srv_main","to":"srv_routes"},{"from":"srv_main","to":"srv_mid"},{"from":"srv_main","to":"srv_auth"},
-    {"from":"srv_main","to":"srv_log"},{"from":"srv_main","to":"srv_ws"},{"from":"srv_main","to":"srv_health"},
-    {"from":"srv_main","to":"srv_cors"},{"from":"srv_main","to":"cfg_env"},{"from":"srv_main","to":"micro_db"},
-    {"from":"srv_routes","to":"gw_gateway"},{"from":"srv_routes","to":"gw_fastify"},
-    {"from":"srv_routes","to":"li_ollama"},{"from":"srv_routes","to":"li_lmstudio"},{"from":"srv_routes","to":"li_openai"},
-    {"from":"srv_routes","to":"li_gemini"},{"from":"srv_routes","to":"li_anthropic"},{"from":"srv_routes","to":"li_groq"},
-    {"from":"srv_routes","to":"li_together"},{"from":"srv_routes","to":"li_fireworks"},{"from":"srv_routes","to":"li_deepseek"},
-    {"from":"srv_mid","to":"srv_auth"},{"from":"srv_mid","to":"srv_log"},{"from":"srv_mid","to":"micro_ip"},
-    {"from":"srv_ws","to":"gw_stream"},{"from":"srv_ws","to":"hk_stream"},
+    { "from": "srv_main", "to": "srv_routes" },
+    { "from": "srv_main", "to": "srv_mid" },
+    { "from": "srv_main", "to": "srv_auth" },
+    { "from": "srv_main", "to": "srv_log" },
+    { "from": "srv_main", "to": "srv_ws" },
+    { "from": "srv_main", "to": "srv_health" },
+    { "from": "srv_main", "to": "srv_cors" },
+    { "from": "srv_main", "to": "cfg_env" },
+    { "from": "srv_main", "to": "micro_db" },
+    { "from": "srv_routes", "to": "gw_gateway" },
+    { "from": "srv_routes", "to": "gw_fastify" },
+    { "from": "srv_routes", "to": "li_ollama" },
+    { "from": "srv_routes", "to": "li_lmstudio" },
+    { "from": "srv_routes", "to": "li_openai" },
+    { "from": "srv_routes", "to": "li_gemini" },
+    { "from": "srv_routes", "to": "li_anthropic" },
+    { "from": "srv_routes", "to": "li_groq" },
+    { "from": "srv_routes", "to": "li_together" },
+    { "from": "srv_routes", "to": "li_fireworks" },
+    { "from": "srv_routes", "to": "li_deepseek" },
+    { "from": "srv_mid", "to": "srv_auth" },
+    { "from": "srv_mid", "to": "srv_log" },
+    { "from": "srv_mid", "to": "micro_ip" },
+    { "from": "srv_ws", "to": "gw_stream" },
+    { "from": "srv_ws", "to": "hk_stream" },
 
-    {"from":"gw_gateway","to":"gw_stream"},{"from":"gw_gateway","to":"gw_retry"},{"from":"gw_gateway","to":"gw_cache"},
-    {"from":"gw_gateway","to":"gw_rate"},{"from":"gw_gateway","to":"gw_transform"},{"from":"gw_gateway","to":"gw_validator"},
-    {"from":"gw_gateway","to":"gw_metrics"},{"from":"gw_gateway","to":"micro_op"},
-    {"from":"gw_fastify","to":"gw_gateway"},{"from":"gw_fastify","to":"srv_mid"},
+    { "from": "gw_gateway", "to": "gw_stream" },
+    { "from": "gw_gateway", "to": "gw_retry" },
+    { "from": "gw_gateway", "to": "gw_cache" },
+    { "from": "gw_gateway", "to": "gw_rate" },
+    { "from": "gw_gateway", "to": "gw_transform" },
+    { "from": "gw_gateway", "to": "gw_validator" },
+    { "from": "gw_gateway", "to": "gw_metrics" },
+    { "from": "gw_gateway", "to": "micro_op" },
+    { "from": "gw_fastify", "to": "gw_gateway" },
+    { "from": "gw_fastify", "to": "srv_mid" },
 
-    {"from":"gw_stream","to":"gw_transform"},
-    {"from":"gw_transform","to":"gw_gateway"},
+    { "from": "gw_stream", "to": "gw_transform" },
+    { "from": "gw_transform", "to": "gw_gateway" },
 
-    {"from":"ut_api","to":"hk_chat"},
+    { "from": "ut_api", "to": "hk_chat" },
 
-    {"from":"li_ollama","to":"li_types"},{"from":"li_ollama","to":"micro_fr"},
-    {"from":"li_lmstudio","to":"li_types"},{"from":"li_openai","to":"li_types"},
-    {"from":"li_gemini","to":"li_types"},{"from":"li_anthropic","to":"li_types"},
-    {"from":"li_groq","to":"li_types"},{"from":"li_together","to":"li_types"},
-    {"from":"li_fireworks","to":"li_types"},{"from":"li_deepseek","to":"li_types"},
+    { "from": "li_ollama", "to": "li_types" },
+    { "from": "li_ollama", "to": "micro_fr" },
+    { "from": "li_lmstudio", "to": "li_types" },
+    { "from": "li_openai", "to": "li_types" },
+    { "from": "li_gemini", "to": "li_types" },
+    { "from": "li_anthropic", "to": "li_types" },
+    { "from": "li_groq", "to": "li_types" },
+    { "from": "li_together", "to": "li_types" },
+    { "from": "li_fireworks", "to": "li_types" },
+    { "from": "li_deepseek", "to": "li_types" },
 
-    {"from":"ds_tokens","to":"ds_colors"},{"from":"ds_tokens","to":"ds_typo"},
-    {"from":"ds_tokens","to":"ds_spacing"},{"from":"ds_tokens","to":"ds_breaks"},
-    {"from":"ds_theme","to":"ds_tokens"},{"from":"ds_theme","to":"ds_colors"},
-    {"from":"ds_theme","to":"ds_motion"},{"from":"ds_theme","to":"ds_shadows"},
+    { "from": "ds_tokens", "to": "ds_colors" },
+    { "from": "ds_tokens", "to": "ds_typo" },
+    { "from": "ds_tokens", "to": "ds_spacing" },
+    { "from": "ds_tokens", "to": "ds_breaks" },
+    { "from": "ds_theme", "to": "ds_tokens" },
+    { "from": "ds_theme", "to": "ds_colors" },
+    { "from": "ds_theme", "to": "ds_motion" },
+    { "from": "ds_theme", "to": "ds_shadows" },
 
-    {"from":"st_globals","to":"ds_tokens"},{"from":"st_globals","to":"ds_theme"},
-    {"from":"st_globals","to":"st_anims"},{"from":"st_globals","to":"micro_ui"},
-    {"from":"st_tailwind","to":"ds_tokens"},{"from":"st_tailwind","to":"ds_colors"},
-    {"from":"st_themes","to":"ds_tokens"},{"from":"st_vars","to":"ds_tokens"},
+    { "from": "st_globals", "to": "ds_tokens" },
+    { "from": "st_globals", "to": "ds_theme" },
+    { "from": "st_globals", "to": "st_anims" },
+    { "from": "st_globals", "to": "micro_ui" },
+    { "from": "st_tailwind", "to": "ds_tokens" },
+    { "from": "st_tailwind", "to": "ds_colors" },
+    { "from": "st_themes", "to": "ds_tokens" },
+    { "from": "st_vars", "to": "ds_tokens" },
 
-    {"from":"ui_btn","to":"ut_cn"},{"from":"ui_btn","to":"ds_tokens"},{"from":"ui_btn","to":"micro_w"},
-    {"from":"ui_card","to":"ut_cn"},{"from":"ui_dialog","to":"ut_cn"},{"from":"ui_input","to":"ut_cn"},
-    {"from":"ui_select","to":"ut_cn"},{"from":"ui_tooltip","to":"ut_cn"},{"from":"ui_badge","to":"ut_cn"},
-    {"from":"ui_tabs","to":"ut_cn"},{"from":"ui_dropdown","to":"ut_cn"},{"from":"ui_avatar","to":"ut_cn"},
-    {"from":"ui_scroll","to":"ut_cn"},{"from":"ui_switch","to":"ut_cn"},{"from":"ui_textarea","to":"ut_cn"},
-    {"from":"ui_progress","to":"ut_cn"},{"from":"ui_slider","to":"ut_cn"},{"from":"ui_sonner","to":"ut_cn"},
-    {"from":"ui_accordion","to":"ut_cn"},{"from":"ui_popover","to":"ut_cn"},
+    { "from": "ui_btn", "to": "ut_cn" },
+    { "from": "ui_btn", "to": "ds_tokens" },
+    { "from": "ui_btn", "to": "micro_w" },
+    { "from": "ui_card", "to": "ut_cn" },
+    { "from": "ui_dialog", "to": "ut_cn" },
+    { "from": "ui_input", "to": "ut_cn" },
+    { "from": "ui_select", "to": "ut_cn" },
+    { "from": "ui_tooltip", "to": "ut_cn" },
+    { "from": "ui_badge", "to": "ut_cn" },
+    { "from": "ui_tabs", "to": "ut_cn" },
+    { "from": "ui_dropdown", "to": "ut_cn" },
+    { "from": "ui_avatar", "to": "ut_cn" },
+    { "from": "ui_scroll", "to": "ut_cn" },
+    { "from": "ui_switch", "to": "ut_cn" },
+    { "from": "ui_textarea", "to": "ut_cn" },
+    { "from": "ui_progress", "to": "ut_cn" },
+    { "from": "ui_slider", "to": "ut_cn" },
+    { "from": "ui_sonner", "to": "ut_cn" },
+    { "from": "ui_accordion", "to": "ut_cn" },
+    { "from": "ui_popover", "to": "ut_cn" },
 
-    {"from":"cfg_pkg","to":"cfg_tsconfig"},{"from":"cfg_pkg","to":"cfg_vite"},
-    {"from":"cfg_vite","to":"cfg_tsconfig"},
-    {"from":"cfg_comp","to":"cfg_tsconfig"},{"from":"cfg_comp","to":"st_tailwind"},
-    {"from":"cfg_postcss","to":"st_tailwind"},
+    { "from": "cfg_pkg", "to": "cfg_tsconfig" },
+    { "from": "cfg_pkg", "to": "cfg_vite" },
+    { "from": "cfg_vite", "to": "cfg_tsconfig" },
+    { "from": "cfg_comp", "to": "cfg_tsconfig" },
+    { "from": "cfg_comp", "to": "st_tailwind" },
+    { "from": "cfg_postcss", "to": "st_tailwind" },
 
-    {"from":"ut_api","to":"ut_constants"},{"from":"ut_api","to":"ut_errors"},{"from":"ut_api","to":"micro_nm"},
-    {"from":"ut_cn","to":"micro_fs"},
-    {"from":"ut_format","to":"ut_types"},
-    {"from":"ut_storage","to":"ut_constants"},
-    {"from":"ut_errors","to":"ut_types"},
-    {"from":"ut_validators","to":"ut_types"}
+    { "from": "ut_api", "to": "ut_constants" },
+    { "from": "ut_api", "to": "ut_errors" },
+    { "from": "ut_api", "to": "micro_nm" },
+    { "from": "ut_cn", "to": "micro_fs" },
+    { "from": "ut_format", "to": "ut_types" },
+    { "from": "ut_storage", "to": "ut_constants" },
+    { "from": "ut_errors", "to": "ut_types" },
+    { "from": "ut_validators", "to": "ut_types" }
   ]
 }

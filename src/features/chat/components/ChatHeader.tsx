@@ -85,8 +85,6 @@ export interface ChatHeaderProps {
 const CONTEXT_WARNING_THRESHOLD = 0.8;
 const CONTEXT_CRITICAL_THRESHOLD = 0.95;
 
-
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -126,7 +124,10 @@ const ContextBar: React.FC<{ used: number; limit: number }> = ({ used, limit }) 
   const isCritical = ratio > CONTEXT_CRITICAL_THRESHOLD;
 
   return (
-    <div className="flex items-center gap-2 group cursor-help" title={`${formatTokens(used)} / ${formatTokens(limit)} tokens`}>
+    <div
+      className="flex items-center gap-2 group cursor-help"
+      title={`${formatTokens(used)} / ${formatTokens(limit)} tokens`}
+    >
       <div className="w-16 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
         <motion.div
           className={`h-full rounded-full ${isCritical ? 'bg-red-500' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'}`}
@@ -135,7 +136,9 @@ const ContextBar: React.FC<{ used: number; limit: number }> = ({ used, limit }) 
           transition={{ duration: 0.5, ease: 'easeOut' }}
         />
       </div>
-      <span className={`text-[10px] font-mono ${isCritical ? 'text-red-400' : isWarning ? 'text-amber-400' : 'text-zinc-600'} group-hover:text-zinc-400 transition-colors`}>
+      <span
+        className={`text-[10px] font-mono ${isCritical ? 'text-red-400' : isWarning ? 'text-amber-400' : 'text-zinc-600'} group-hover:text-zinc-400 transition-colors`}
+      >
         {Math.round(ratio * 100)}%
       </span>
     </div>
@@ -153,23 +156,29 @@ const ConnectionDot: React.FC<{ status: ChatHeaderProps['connectionStatus'] }> =
   return (
     <div className="flex items-center gap-1.5" title={labels[status || 'online']}>
       <span className={`w-1.5 h-1.5 rounded-full ${colors[status || 'online']}`} />
-      <span className="text-[10px] text-zinc-600 hidden lg:inline">{labels[status || 'online']}</span>
+      <span className="text-[10px] text-zinc-600 hidden lg:inline">
+        {labels[status || 'online']}
+      </span>
     </div>
   );
 };
 
-
-
-const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?: boolean }> = ({ onAttach, disabled }) => {
+const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?: boolean }> = ({
+  onAttach,
+  disabled,
+}) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length) onAttach(files);
-  }, [onAttach]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length) onAttach(files);
+    },
+    [onAttach]
+  );
 
   return (
     <>
@@ -188,12 +197,17 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
         whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
         whileTap={{ scale: 0.94 }}
         onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         disabled={disabled}
         className={`p-2 rounded-xl border transition-all cursor-pointer relative ${
-          dragOver ? 'bg-sky-500/10 border-sky-500/30 text-sky-400' : 'text-zinc-500 hover:text-white border-transparent hover:border-white/5'
+          dragOver
+            ? 'bg-sky-500/10 border-sky-500/30 text-sky-400'
+            : 'text-zinc-500 hover:text-white border-transparent hover:border-white/5'
         } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
         title="Attach files (or drag & drop)"
       >
@@ -212,7 +226,10 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
   );
 };
 
-const ShareMenu: React.FC<{ onExport: ChatHeaderProps['onExportChat']; title: string }> = ({ onExport, title }) => {
+const ShareMenu: React.FC<{ onExport: ChatHeaderProps['onExportChat']; title: string }> = ({
+  onExport,
+  title,
+}) => {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -257,26 +274,37 @@ const ShareMenu: React.FC<{ onExport: ChatHeaderProps['onExportChat']; title: st
             className="absolute top-full right-0 mt-1 w-56 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50"
           >
             <div className="px-3 py-2 border-b border-white/5">
-              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Share</span>
+              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                Share
+              </span>
             </div>
-            
+
             <button
               onClick={handleCopyLink}
               className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/[0.04] transition-colors text-left"
             >
-              {copied ? <Check size={13} className="text-emerald-400" /> : <Share2 size={13} className="text-zinc-500" />}
+              {copied ? (
+                <Check size={13} className="text-emerald-400" />
+              ) : (
+                <Share2 size={13} className="text-zinc-500" />
+              )}
               <span className="text-[12px] text-zinc-300">{copied ? 'Copied!' : 'Copy link'}</span>
             </button>
 
             {onExport && (
               <>
                 <div className="px-3 py-1.5 border-t border-white/5">
-                  <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Export</span>
+                  <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                    Export
+                  </span>
                 </div>
                 {(['markdown', 'json', 'txt'] as const).map((fmt) => (
                   <button
                     key={fmt}
-                    onClick={() => { onExport(fmt); setOpen(false); }}
+                    onClick={() => {
+                      onExport(fmt);
+                      setOpen(false);
+                    }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/[0.04] transition-colors text-left"
                   >
                     <FileText size={13} className="text-zinc-500" />
@@ -405,18 +433,18 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               }}
               disabled={isLoading}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all select-none ${
-                showModelSelector ? 'bg-white/[0.04] border-white/10' : 'bg-transparent border-transparent hover:border-white/5 text-zinc-400 hover:text-white'
+                showModelSelector
+                  ? 'bg-white/[0.04] border-white/10'
+                  : 'bg-transparent border-transparent hover:border-white/5 text-zinc-400 hover:text-white'
               } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             >
-              {currentModel ? (
-                getCustomModelIcon(currentModel)
-              ) : (
-                <Bot className="w-3.5 h-3.5" />
-              )}
+              {currentModel ? getCustomModelIcon(currentModel) : <Bot className="w-3.5 h-3.5" />}
               <span className="truncate max-w-[150px] text-[11px] font-semibold text-zinc-300">
                 {currentModel?.name || 'Select model'}
               </span>
-              <ChevronDown className={`w-3.5 h-3.5 opacity-60 shrink-0 transition-transform ${showModelSelector ? 'rotate-180' : ''}`} />
+              <ChevronDown
+                className={`w-3.5 h-3.5 opacity-60 shrink-0 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
+              />
             </motion.button>
 
             <AnimatePresence>
@@ -470,7 +498,10 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   onChange={(e) => setEditTitle(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleTitleSubmit();
-                    if (e.key === 'Escape') { setIsEditingTitle(false); setEditTitle(sessionTitle); }
+                    if (e.key === 'Escape') {
+                      setIsEditingTitle(false);
+                      setEditTitle(sessionTitle);
+                    }
                   }}
                   onBlur={handleTitleSubmit}
                   className="text-[13px] font-semibold text-foreground/85 bg-white/[0.04] border border-white/10 rounded-lg px-2.5 py-1 outline-none focus:border-white/20 w-48 sm:w-64"
@@ -480,7 +511,10 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             ) : (
               <motion.button
                 whileHover={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
-                onClick={() => { setEditTitle(sessionTitle); setIsEditingTitle(true); }}
+                onClick={() => {
+                  setEditTitle(sessionTitle);
+                  setIsEditingTitle(true);
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer select-none transition-all"
                 title="Click to rename"
               >
@@ -496,7 +530,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               <ContextBar used={metrics.contextTokens} limit={metrics.contextLimit} />
             )}
           </div>
-
         </div>
 
         {/* Right zone: Actions */}
@@ -576,7 +609,11 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   }`}
                   title={privacyMode ? 'Privacy Mode On' : 'Privacy Mode Off'}
                 >
-                  {privacyMode ? <Lock size={13} strokeWidth={2.2} /> : <Unlock size={13} strokeWidth={1.8} />}
+                  {privacyMode ? (
+                    <Lock size={13} strokeWidth={2.2} />
+                  ) : (
+                    <Unlock size={13} strokeWidth={1.8} />
+                  )}
                 </motion.button>
 
                 {/* Share & Export */}
@@ -607,7 +644,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   >
                     <MoreHorizontal size={13} />
                   </motion.button>
-                  
+
                   <AnimatePresence>
                     {showShortcuts && (
                       <motion.div
@@ -616,14 +653,20 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                         exit={{ opacity: 0, scale: 0.95 }}
                         className="absolute top-full right-0 mt-1 w-48 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 p-2"
                       >
-                        <div className="text-[10px] text-zinc-500 px-2 py-1 uppercase tracking-wider">Shortcuts</div>
+                        <div className="text-[10px] text-zinc-500 px-2 py-1 uppercase tracking-wider">
+                          Shortcuts
+                        </div>
                         <div className="flex items-center justify-between px-2 py-1">
                           <span className="text-[11px] text-zinc-400">New chat</span>
-                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-zinc-500 font-mono">⌘K</kbd>
+                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-zinc-500 font-mono">
+                            ⌘K
+                          </kbd>
                         </div>
                         <div className="flex items-center justify-between px-2 py-1">
                           <span className="text-[11px] text-zinc-400">Stop gen</span>
-                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-zinc-500 font-mono">Esc</kbd>
+                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-zinc-500 font-mono">
+                            Esc
+                          </kbd>
                         </div>
                       </motion.div>
                     )}

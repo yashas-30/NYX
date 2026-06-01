@@ -42,8 +42,9 @@ export class ContextManager {
         optimizedHistory.unshift({
           id: 'sys-truncation',
           role: 'system',
-          content: '[System: Earlier conversation context has been truncated to optimize token limits]',
-          timestamp: Date.now()
+          content:
+            '[System: Earlier conversation context has been truncated to optimize token limits]',
+          timestamp: Date.now(),
         });
         break;
       }

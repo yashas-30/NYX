@@ -13,12 +13,37 @@ interface StatusBadgeProps {
 }
 
 const CONFIGS: Record<Status, { label: string; dot: string; badge: string }> = {
-  idle:    { label: '', dot: 'bg-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.4)] animate-pulse',  badge: 'bg-primary/5 border-primary/10 text-primary' },
-  loading: { label: '', dot: 'bg-primary animate-pulse', badge: 'bg-primary/10 border-primary/20 text-primary shadow-[0_0_10px_rgba(var(--primary-rgb),0.1)]' },
-  success: { label: '', dot: 'bg-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.4)]',  badge: 'bg-primary/5 border-primary/10 text-primary' },
-  error:   { label: '', dot: 'bg-destructive',           badge: 'bg-destructive/10 border-destructive/20 text-destructive' },
-  offline: { label: '', dot: 'bg-muted-foreground/30',  badge: 'bg-muted/10 border-border text-muted-foreground/40' },
-  no_key:  { label: '', dot: 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]', badge: 'bg-amber-500/10 border-amber-500/20 text-amber-500' },
+  idle: {
+    label: '',
+    dot: 'bg-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.4)] animate-pulse',
+    badge: 'bg-primary/5 border-primary/10 text-primary',
+  },
+  loading: {
+    label: '',
+    dot: 'bg-primary animate-pulse',
+    badge:
+      'bg-primary/10 border-primary/20 text-primary shadow-[0_0_10px_rgba(var(--primary-rgb),0.1)]',
+  },
+  success: {
+    label: '',
+    dot: 'bg-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.4)]',
+    badge: 'bg-primary/5 border-primary/10 text-primary',
+  },
+  error: {
+    label: '',
+    dot: 'bg-destructive',
+    badge: 'bg-destructive/10 border-destructive/20 text-destructive',
+  },
+  offline: {
+    label: '',
+    dot: 'bg-muted-foreground/30',
+    badge: 'bg-muted/10 border-border text-muted-foreground/40',
+  },
+  no_key: {
+    label: '',
+    dot: 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]',
+    badge: 'bg-amber-500/10 border-amber-500/20 text-amber-500',
+  },
 };
 
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, labelOverride }) => {

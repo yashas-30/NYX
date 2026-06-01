@@ -14,9 +14,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import {
-  AVAILABLE_MODELS,
-} from '@shared/config/models';
+import { AVAILABLE_MODELS } from '@shared/config/models';
 import { ModelOption } from '@src/types';
 import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
 import { AIService } from '@src/core/services/ai.service';

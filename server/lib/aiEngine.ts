@@ -37,6 +37,7 @@ export interface UnifiedRequest {
   apiKey?: string;
   baseUrl?: string;
   signal?: AbortSignal;
+  customGatewayUrls?: Record<string, string>;
 }
 
 export class UnifiedEngine {
@@ -49,7 +50,7 @@ export class UnifiedEngine {
     writeChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
-    const { provider, model, messages, settings, apiKey } = req;
+    const { provider, model, messages, settings, apiKey, customGatewayUrls } = req;
 
     // 1. Auth validation
     const authResult = Gateway.validateAuth(provider, model, apiKey);
@@ -64,51 +65,65 @@ export class UnifiedEngine {
     if (settings?.antigravity) {
       const userMessages = messages.filter((m) => m.role === 'user');
       if (userMessages.length > 0) {
-      const lastUserMessage = userMessages[userMessages.length - 1];
-      const originalPrompt = lastUserMessage.content;
-      
-      try {
-        const port = process.env.ANTIGRAVITY_PORT || '3003';
-        const activeGeminiKey = Gateway.getActiveKey('gemini', provider === 'gemini' ? apiKey : undefined);
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+        const lastUserMessage = userMessages[userMessages.length - 1];
+        const originalPrompt = lastUserMessage.content;
 
-        const preprocessRes = await fetch(`http://127.0.0.1:${port}/preprocess`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: originalPrompt,
-            apiKey: activeGeminiKey,
-          }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
+        try {
+          const port = process.env.ANTIGRAVITY_PORT || '3003';
+          const activeGeminiKey = Gateway.getActiveKey(
+            'gemini',
+            provider === 'gemini' ? apiKey : undefined
+          );
 
-        if (preprocessRes.ok) {
-          const data = await preprocessRes.json();
-          if (data && typeof data.prompt === 'string') {
-            const lastUserIdx = messages.lastIndexOf(lastUserMessage);
-            if (lastUserIdx >= 0) {
-              processedMessages = [...messages];
-              processedMessages[lastUserIdx] = {
-                ...processedMessages[lastUserIdx],
-                content: data.prompt,
-              };
-              console.log('[Antigravity Middleware] Optimized prompt successfully.');
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+          const preprocessRes = await fetch(`http://127.0.0.1:${port}/preprocess`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: originalPrompt,
+              apiKey: activeGeminiKey,
+            }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+
+          if (preprocessRes.ok) {
+            const data = await preprocessRes.json();
+            if (data && typeof data.prompt === 'string') {
+              const lastUserIdx = messages.lastIndexOf(lastUserMessage);
+              if (lastUserIdx >= 0) {
+                processedMessages = [...messages];
+                processedMessages[lastUserIdx] = {
+                  ...processedMessages[lastUserIdx],
+                  content: data.prompt,
+                };
+                console.log('[Antigravity Middleware] Optimized prompt successfully.');
+              }
             }
           }
+        } catch (err: any) {
+          console.warn(
+            '[Antigravity Middleware] Prompt preprocessing failed (non-fatal):',
+            err.message
+          );
         }
-      } catch (err: any) {
-        console.warn('[Antigravity Middleware] Prompt preprocessing failed (non-fatal):', err.message);
       }
-    }
     }
 
     // 2. Route to provider-specific handler
     switch (provider) {
       case 'gemini':
-        return this.streamGemini(model, processedMessages, activeKey, settings, writeChunk, onDone);
+        return this.streamGemini(
+          model,
+          processedMessages,
+          activeKey,
+          settings,
+          customGatewayUrls,
+          writeChunk,
+          onDone
+        );
 
       case 'nyx-native':
         return this.streamNyxNative(model, processedMessages, settings, writeChunk, onDone);
@@ -147,13 +162,15 @@ export class UnifiedEngine {
     messages: ChatMessage[],
     apiKey: string,
     settings: AISettings | undefined,
+    customGatewayUrls: Record<string, string> | undefined,
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
     const realModel = this.resolveRealGeminiModel(model);
     const { url } = Gateway.buildUrl(
       'gemini',
-      `/models/${realModel}:streamGenerateContent?alt=sse&key=${apiKey}`
+      `/models/${realModel}:streamGenerateContent?alt=sse&key=${apiKey}`,
+      customGatewayUrls
     );
     const { contents, systemInstruction } = Gateway.formatMessages(messages, 'gemini');
 

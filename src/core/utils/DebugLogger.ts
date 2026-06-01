@@ -67,21 +67,29 @@ class DebugLoggerService {
 
     console.log = (...args: any[]) => {
       originalLog.apply(console, args);
-      this.send({ type: 'LOG', message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') });
+      this.send({
+        type: 'LOG',
+        message: args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '),
+      });
     };
 
     console.warn = (...args: any[]) => {
       originalWarn.apply(console, args);
-      this.send({ type: 'WARN', message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') });
+      this.send({
+        type: 'WARN',
+        message: args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '),
+      });
     };
 
     console.error = (...args: any[]) => {
       originalError.apply(console, args);
-      const errorStr = args.map(a => {
-        if (a instanceof Error) return a.stack || a.message;
-        if (typeof a === 'object') return JSON.stringify(a);
-        return String(a);
-      }).join(' ');
+      const errorStr = args
+        .map((a) => {
+          if (a instanceof Error) return a.stack || a.message;
+          if (typeof a === 'object') return JSON.stringify(a);
+          return String(a);
+        })
+        .join(' ');
       this.send({ type: 'ERROR', message: errorStr });
     };
   }
@@ -92,7 +100,7 @@ class DebugLoggerService {
       const startTime = performance.now();
       const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
       const method = (args[1]?.method || 'GET').toUpperCase();
-      
+
       try {
         const response = await originalFetch(...args);
         const endTime = performance.now();
@@ -101,7 +109,7 @@ class DebugLoggerService {
           method,
           url,
           status: response.status,
-          latency: Math.round(endTime - startTime)
+          latency: Math.round(endTime - startTime),
         });
         return response;
       } catch (error: any) {
@@ -111,7 +119,7 @@ class DebugLoggerService {
           method,
           url,
           error: error.message,
-          latency: Math.round(endTime - startTime)
+          latency: Math.round(endTime - startTime),
         });
         throw error;
       }
@@ -120,51 +128,68 @@ class DebugLoggerService {
 
   private interceptInteractions() {
     // Intercept Clicks
-    document.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      
-      // Bubble up to find a meaningful target (button, a, label)
-      const meaningfulTarget = target.closest('button, a, [role="button"], [role="menuitem"], [role="tab"], label') as HTMLElement | null;
-      const element = meaningfulTarget || target;
-      
-      // Skip if clicking on random empty divs unless they have specific classes
-      if (!meaningfulTarget && element.tagName === 'DIV' && !element.className) return;
+    document.addEventListener(
+      'click',
+      (e) => {
+        const target = e.target as HTMLElement;
 
-      const startTime = performance.now();
-      
-      // Extract identifying text or aria-label
-      let identifier = element.getAttribute('aria-label') || element.getAttribute('title') || element.innerText?.trim();
-      if (!identifier && element.tagName === 'INPUT') identifier = (element as HTMLInputElement).placeholder || (element as HTMLInputElement).name;
-      if (!identifier) identifier = element.id || element.className;
-      
-      if (identifier) {
-        // Truncate if too long
-        if (identifier.length > 50) identifier = identifier.substring(0, 50) + '...';
-        
-        // We log the click immediately. 
-        // Latency here represents the synchronous blocking time of the event handlers.
-        // We defer measuring it using setTimeout 0.
-        setTimeout(() => {
-          const latency = Math.round(performance.now() - startTime);
-          this.send({
-            type: 'INTERACTION',
-            action: 'Click',
-            target: `<${element.tagName.toLowerCase()}> "${identifier.replace(/\n/g, ' ')}"`,
-            latency
-          });
-        }, 0);
-      }
-    }, { capture: true, passive: true });
+        // Bubble up to find a meaningful target (button, a, label)
+        const meaningfulTarget = target.closest(
+          'button, a, [role="button"], [role="menuitem"], [role="tab"], label'
+        ) as HTMLElement | null;
+        const element = meaningfulTarget || target;
+
+        // Skip if clicking on random empty divs unless they have specific classes
+        if (!meaningfulTarget && element.tagName === 'DIV' && !element.className) return;
+
+        const startTime = performance.now();
+
+        // Extract identifying text or aria-label
+        let identifier =
+          element.getAttribute('aria-label') ||
+          element.getAttribute('title') ||
+          element.innerText?.trim();
+        if (!identifier && element.tagName === 'INPUT')
+          identifier =
+            (element as HTMLInputElement).placeholder || (element as HTMLInputElement).name;
+        if (!identifier)
+          identifier =
+            element.id || (typeof element.className === 'string' ? element.className : '');
+
+        if (identifier) {
+          // Truncate if too long
+          if (identifier.length > 50) identifier = identifier.substring(0, 50) + '...';
+
+          // We log the click immediately.
+          // Latency here represents the synchronous blocking time of the event handlers.
+          // We defer measuring it using setTimeout 0.
+          setTimeout(() => {
+            const latency = Math.round(performance.now() - startTime);
+            this.send({
+              type: 'INTERACTION',
+              action: 'Click',
+              target: `<${element.tagName.toLowerCase()}> "${identifier.replace(/\n/g, ' ')}"`,
+              latency,
+            });
+          }, 0);
+        }
+      },
+      { capture: true, passive: true }
+    );
 
     // Track Form Submissions
-    document.addEventListener('submit', (e) => {
-      const target = e.target as HTMLFormElement;
-      this.send({
-        type: 'INTERACTION',
-        action: 'Submit',
-        target: `<form> ${target.id || target.className || 'unnamed'}`,
-      });
-    }, { capture: true });
+    document.addEventListener(
+      'submit',
+      (e) => {
+        const target = e.target as HTMLFormElement;
+        this.send({
+          type: 'INTERACTION',
+          action: 'Submit',
+          target: `<form> ${target.id || target.className || 'unnamed'}`,
+        });
+      },
+      { capture: true }
+    );
   }
 }
 

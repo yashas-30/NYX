@@ -39,7 +39,7 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
           const res = await fetchWithAuth('/api/workspace', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: val })
+            body: JSON.stringify({ path: val }),
           });
           if (res.ok) {
             const data = await res.json();
@@ -60,10 +60,12 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
   return (
     <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
       <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity" />
-      
+
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">WORKSPACE CONFIGURATOR</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">
+            WORKSPACE CONFIGURATOR
+          </p>
           <h3 className="text-xs font-bold text-foreground mt-0.5">Codebase Scanning Scope</h3>
         </div>
         <span className="text-[10px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-2 py-0.5 rounded-full border border-[#FF3366]/20">
@@ -90,7 +92,7 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
             <Globe size={12} />
             Select Directory
           </motion.button>
-          
+
           <input
             type="text"
             placeholder="Or paste absolute directory path..."
@@ -98,9 +100,10 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
             className="flex-[2] bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#FF3366]/50 shadow-inner"
           />
         </div>
-        
+
         <p className="text-[10px] text-muted-foreground/80 leading-relaxed mt-1">
-          Specifies the root directory for RAG codebase search indexing and terminal execution. Clicking "Select Directory" opens the native OS folder picker.
+          Specifies the root directory for RAG codebase search indexing and terminal execution.
+          Clicking "Select Directory" opens the native OS folder picker.
         </p>
       </div>
     </div>

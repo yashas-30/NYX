@@ -5,12 +5,7 @@
  *   attachment sync, and coordinates chat sessions with edit/regenerate/branch capabilities.
  */
 
-import React, {
-  useState,
-  useMemo,
-  useCallback,
-  useEffect,
-} from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ModelDefinition, ChatMessage, ToolCall } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -128,7 +123,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   lightningEnabled = true,
   lightningDirectives = [],
+  ...rest
 }) => {
+  const streaming = (rest as any).streaming;
   // --- Local input and attachment states ---
   const [prompt, setPrompt] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -159,14 +156,17 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   }, [history]);
 
   // --- Metrics enriched for the Header ---
-  const metrics = useMemo(() => ({
-    latency: parentMetrics?.latency || 0,
-    tokens: parentMetrics?.tokens || 0,
-    tps: parentMetrics?.tps || 0,
-    totalMessages: history.length,
-    contextTokens,
-    contextLimit: getModelContextWindow(currentModel),
-  }), [parentMetrics, history.length, contextTokens, currentModel]);
+  const metrics = useMemo(
+    () => ({
+      latency: parentMetrics?.latency || 0,
+      tokens: parentMetrics?.tokens || 0,
+      tps: parentMetrics?.tps || 0,
+      totalMessages: history.length,
+      contextTokens,
+      contextLimit: getModelContextWindow(currentModel),
+    }),
+    [parentMetrics, history.length, contextTokens, currentModel]
+  );
 
   // --- Submit handler ---
   const handleSubmit = useCallback(
@@ -185,64 +185,78 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   // --- Copy handler ---
   const copyToClipboard = useCallback((text: string, id: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2000);
-      toast.success('Message copied to clipboard');
-    }).catch(() => {
-      toast.error('Failed to copy');
-    });
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2000);
+        toast.success('Message copied to clipboard');
+      })
+      .catch(() => {
+        toast.error('Failed to copy');
+      });
   }, []);
 
   // --- Message actions (integrated directly with the store via chatSessions) ---
-  const handleEditMessage = useCallback((index: number, newContent: string) => {
-    if (!chatSessions?.activeSid) return;
-    
-    // Get history up to this point and update the user prompt
-    const updatedHistory = history.slice(0, index + 1);
-    updatedHistory[index] = {
-      ...updatedHistory[index],
-      content: newContent,
-      status: undefined,
-      reasoning: undefined,
-      toolCalls: undefined,
-      citations: undefined,
-    };
-    
-    chatSessions.updateSession(chatSessions.activeSid, updatedHistory);
-    parentRunChat(newContent);
-  }, [history, chatSessions, parentRunChat]);
+  const handleEditMessage = useCallback(
+    (index: number, newContent: string) => {
+      if (!chatSessions?.activeSid) return;
 
-  const handleRegenerate = useCallback((index: number) => {
-    if (!chatSessions?.activeSid) return;
-    
-    // Truncate history to discard the assistant response
-    const truncatedHistory = history.slice(0, index);
-    chatSessions.updateSession(chatSessions.activeSid, truncatedHistory);
-    
-    const lastUserMsg = [...truncatedHistory].reverse().find((m) => m.role === 'user');
-    if (lastUserMsg) {
-      const mappedImages = lastUserMsg.images?.map((img) => ({
-        name: img.name,
-        mimeType: img.mimeType || 'image/jpeg',
-        data: img.data || img.dataUrl || img.url || '',
-      })).filter((img) => !!img.data);
-      parentRunChat(lastUserMsg.content, mappedImages);
-    }
-  }, [history, chatSessions, parentRunChat]);
+      // Get history up to this point and update the user prompt
+      const updatedHistory = history.slice(0, index + 1);
+      updatedHistory[index] = {
+        ...updatedHistory[index],
+        content: newContent,
+        status: undefined,
+        reasoning: undefined,
+        toolCalls: undefined,
+        citations: undefined,
+      };
 
-  const handleBranch = useCallback((index: number) => {
-    if (!chatSessions) return;
-    
-    const branchedHistory = history.slice(0, index + 1).map((msg) => ({ ...msg }));
-    const newSid = chatSessions.createSession(branchedHistory);
-    if (newSid) {
-      chatSessions.switchSession(newSid);
-      toast.success('Branched conversation from this point');
-    } else {
-      toast.error('Failed to branch conversation');
-    }
-  }, [history, chatSessions]);
+      chatSessions.updateSession(chatSessions.activeSid, updatedHistory);
+      parentRunChat(newContent);
+    },
+    [history, chatSessions, parentRunChat]
+  );
+
+  const handleRegenerate = useCallback(
+    (index: number) => {
+      if (!chatSessions?.activeSid) return;
+
+      // Truncate history to discard the assistant response
+      const truncatedHistory = history.slice(0, index);
+      chatSessions.updateSession(chatSessions.activeSid, truncatedHistory);
+
+      const lastUserMsg = [...truncatedHistory].reverse().find((m) => m.role === 'user');
+      if (lastUserMsg) {
+        const mappedImages = lastUserMsg.images
+          ?.map((img) => ({
+            name: img.name,
+            mimeType: img.mimeType || 'image/jpeg',
+            data: img.data || img.dataUrl || img.url || '',
+          }))
+          .filter((img) => !!img.data);
+        parentRunChat(lastUserMsg.content, mappedImages);
+      }
+    },
+    [history, chatSessions, parentRunChat]
+  );
+
+  const handleBranch = useCallback(
+    (index: number) => {
+      if (!chatSessions) return;
+
+      const branchedHistory = history.slice(0, index + 1).map((msg) => ({ ...msg }));
+      const newSid = chatSessions.createSession(branchedHistory);
+      if (newSid) {
+        chatSessions.switchSession(newSid);
+        toast.success('Branched conversation from this point');
+      } else {
+        toast.error('Failed to branch conversation');
+      }
+    },
+    [history, chatSessions]
+  );
 
   // --- Image attachment handlers ---
   const handleAttachFiles = useCallback((files: File[]) => {
@@ -271,55 +285,56 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   }, []);
 
   // --- Export chat ---
-  const handleExport = useCallback((format: 'markdown' | 'json' | 'txt') => {
-    let content: string;
-    let mimeType: string;
-    let extension: string;
+  const handleExport = useCallback(
+    (format: 'markdown' | 'json' | 'txt') => {
+      let content: string;
+      let mimeType: string;
+      let extension: string;
 
-    switch (format) {
-      case 'markdown': {
-        const md = history
-          .map((m) => {
-            const role = m.role === 'user' ? 'User' : 'Assistant';
-            return `## ${role}\n\n${m.content}\n`;
-          })
-          .join('\n---\n\n');
-        content = `# Chat Export\n\n${md}`;
-        mimeType = 'text/markdown';
-        extension = 'md';
-        break;
+      switch (format) {
+        case 'markdown': {
+          const md = history
+            .map((m) => {
+              const role = m.role === 'user' ? 'User' : 'Assistant';
+              return `## ${role}\n\n${m.content}\n`;
+            })
+            .join('\n---\n\n');
+          content = `# Chat Export\n\n${md}`;
+          mimeType = 'text/markdown';
+          extension = 'md';
+          break;
+        }
+        case 'json':
+          content = JSON.stringify(
+            {
+              model: currentModelId,
+              exportedAt: new Date().toISOString(),
+              messages: history,
+            },
+            null,
+            2
+          );
+          mimeType = 'application/json';
+          extension = 'json';
+          break;
+        case 'txt':
+          content = history.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+          mimeType = 'text/plain';
+          extension = 'txt';
+          break;
       }
-      case 'json':
-        content = JSON.stringify(
-          {
-            model: currentModelId,
-            exportedAt: new Date().toISOString(),
-            messages: history,
-          },
-          null,
-          2
-        );
-        mimeType = 'application/json';
-        extension = 'json';
-        break;
-      case 'txt':
-        content = history
-          .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-          .join('\n\n');
-        mimeType = 'text/plain';
-        extension = 'txt';
-        break;
-    }
 
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `nyx-chat-${Date.now()}.${extension}`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`Exported chat as ${format.toUpperCase()}`);
-  }, [history, currentModelId]);
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nyx-chat-${Date.now()}.${extension}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported chat as ${format.toUpperCase()}`);
+    },
+    [history, currentModelId]
+  );
 
   // --- Model selection switch with warnings ---
   const handleModelChange = useCallback(
@@ -361,11 +376,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       className="h-full w-full flex min-h-0 overflow-hidden bg-background relative"
     >
       {/* Global sidebar is managed by CoderDashboard */}
-      
-      <ChatSettings 
-        isOpen={settingsOpen} 
-        onClose={() => setSettingsOpen(false)} 
-      />
+
+      <ChatSettings isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         {/* CHAT HEADER */}
@@ -412,6 +424,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onRegenerate={handleRegenerate}
           onBranchFromMessage={handleBranch}
           activeModel={currentModel?.name}
+          streamingContent={streaming?.content}
+          streamingReasoning={streaming?.reasoning}
+          streamingToolCalls={streaming?.toolCalls}
         />
 
         {/* CHAT PROMPT INPUT */}
@@ -425,7 +440,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           currentModel={currentModel}
           onClearHistory={parentClearHistory}
           onModelSelect={handleModelChange}
-
           onModelSettingsChange={setModelSettings}
           modelSettings={modelSettings}
           suggestedPrompts={suggestedPrompts}

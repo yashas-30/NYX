@@ -47,7 +47,7 @@ export class UnifiedEngine {
     onChunk: (chunk: StreamChunk) => void,
     onComplete: () => void
   ) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

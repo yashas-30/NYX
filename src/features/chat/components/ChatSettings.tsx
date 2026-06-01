@@ -16,7 +16,10 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
           <Settings2 className="w-5 h-5 text-[#FF3366]" />
           <span className="font-medium">Model Settings</span>
         </div>
-        <button onClick={onClose} className="p-1 text-[#4A5059] hover:text-[#F8FAFC] transition-colors rounded">
+        <button
+          onClick={onClose}
+          className="p-1 text-[#4A5059] hover:text-[#F8FAFC] transition-colors rounded"
+        >
           <X className="w-5 h-5" />
         </button>
       </div>
@@ -31,14 +34,17 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
             </label>
             <span className="text-[12px] font-mono text-[#FF3366]">0.7</span>
           </div>
-          <input 
-            type="range" 
-            min="0" max="1" step="0.1" 
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
             defaultValue="0.7"
             className="w-full accent-[#FF3366] h-1 bg-[#18181B] rounded-lg appearance-none cursor-pointer"
           />
           <p className="text-[11px] text-[#4A5059] leading-relaxed">
-            Controls randomness: Lower values are more deterministic, higher values are more creative.
+            Controls randomness: Lower values are more deterministic, higher values are more
+            creative.
           </p>
         </div>
 
@@ -65,21 +71,33 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
             <Zap className="w-4 h-4 text-[#4A5059]" />
             Agent Capabilities
           </h4>
-          
+
           <label className="flex items-center justify-between cursor-pointer group">
-            <span className="text-[13px] text-[#bbc9cd] group-hover:text-[#F8FAFC] transition-colors">Subagent Swarm</span>
-            <input type="checkbox" className="accent-[#FF3366] w-4 h-4 bg-[#18181B] border-[rgba(255,255,255,0.06)]" defaultChecked />
+            <span className="text-[13px] text-[#bbc9cd] group-hover:text-[#F8FAFC] transition-colors">
+              Subagent Swarm
+            </span>
+            <input
+              type="checkbox"
+              className="accent-[#FF3366] w-4 h-4 bg-[#18181B] border-[rgba(255,255,255,0.06)]"
+              defaultChecked
+            />
           </label>
-          
+
           <label className="flex items-center justify-between cursor-pointer group">
-            <span className="text-[13px] text-[#bbc9cd] group-hover:text-[#F8FAFC] transition-colors">Artifact Generation</span>
-            <input type="checkbox" className="accent-[#FF3366] w-4 h-4 bg-[#18181B] border-[rgba(255,255,255,0.06)]" defaultChecked />
+            <span className="text-[13px] text-[#bbc9cd] group-hover:text-[#F8FAFC] transition-colors">
+              Artifact Generation
+            </span>
+            <input
+              type="checkbox"
+              className="accent-[#FF3366] w-4 h-4 bg-[#18181B] border-[rgba(255,255,255,0.06)]"
+              defaultChecked
+            />
           </label>
         </div>
       </div>
-      
+
       <div className="p-4 border-t border-[rgba(255,255,255,0.06)] bg-[#0e1416]">
-        <button 
+        <button
           onClick={onClose}
           className="w-full bg-[#18181B] hover:bg-[rgba(255,255,255,0.06)] text-[#F8FAFC] border border-[rgba(255,255,255,0.06)] py-2 rounded text-[13px] font-medium transition-colors"
         >

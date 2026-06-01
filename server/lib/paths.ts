@@ -14,9 +14,7 @@ function findProjectRoot(): string {
     return path.resolve(process.env.NYX_WORKSPACE_ROOT);
   }
   let dir =
-    typeof __dirname !== 'undefined'
-      ? __dirname
-      : path.dirname(fileURLToPath(new Function('return import.meta.url')()));
+    typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 5; i++) {
     if (fs.existsSync(path.join(dir, 'package.json'))) {
       return dir;
@@ -29,7 +27,9 @@ function findProjectRoot(): string {
 }
 
 // Base user data directory for NYX application state
-export const APP_STATE_DIR = isProd ? path.join(os.homedir(), '.nyx') : path.join(findProjectRoot(), '.nyx-state');
+export const APP_STATE_DIR = isProd
+  ? path.join(os.homedir(), '.nyx')
+  : path.join(findProjectRoot(), '.nyx-state');
 
 // Specific sub-folders for keys, logs, models, and cache
 export const VAULT_DIR = path.join(APP_STATE_DIR, '.nyx-keys');

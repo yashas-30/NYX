@@ -78,21 +78,21 @@ interface ChatLogicReturn {
   submitReward?: (rolloutId: string, reward: number) => void;
   lightningEnabled: boolean;
   lightningDirectives: string[];
-  
+
   // Streaming exports
   streaming: StreamingState;
-  
+
   // Message actions
   editMessage: (index: number, newContent: string) => void;
   regenerateMessage: (index: number) => void;
   branchFromMessage: (index: number) => string | null;
   deleteMessage: (index: number) => void;
-  
+
   // Session features
   sessionTitle: string;
   setSessionTitle: (title: string) => void;
   exportSession: (format: 'markdown' | 'json' | 'txt') => string;
-  
+
   // Budget/features
   tokenBudget: number;
   tokensUsed: number;
@@ -201,7 +201,7 @@ export const useChatLogic = ({
   // --- Model state ---
   const [localModels, setLocalModels] = useState<Record<'nyx', string>>({ nyx: '' });
   const models = propModels ?? localModels;
-  
+
   const setModel = useCallback(
     (mid: string) => {
       if (propSetModel) {
@@ -216,7 +216,7 @@ export const useChatLogic = ({
   // --- History with reducer for atomic updates ---
   const [history, dispatch] = useReducer(historyReducer, []);
   const historyRef = useRef<ChatMessage[]>([]);
-  
+
   // Keep ref in sync for synchronous reads
   useEffect(() => {
     historyRef.current = history;
@@ -226,14 +226,18 @@ export const useChatLogic = ({
   const activeSidRef = useRef<string | null>(null);
   const newlyCreatedSidRef = useRef<string | null>(null);
   const isCreatingSessionRef = useRef(false);
+  const streamJustEndedRef = useRef(false);
   const [sessionTitle, setSessionTitleState] = useState('New chat');
 
-  const setSessionTitle = useCallback((title: string) => {
-    setSessionTitleState(title);
-    if (activeSidRef.current) {
-      chatSessions.updateSession?.(activeSidRef.current, historyRef.current);
-    }
-  }, [chatSessions]);
+  const setSessionTitle = useCallback(
+    (title: string) => {
+      setSessionTitleState(title);
+      if (activeSidRef.current) {
+        chatSessions.updateSession?.(activeSidRef.current, historyRef.current);
+      }
+    },
+    [chatSessions]
+  );
 
   // --- Message history hook ---
   const {
@@ -248,8 +252,8 @@ export const useChatLogic = ({
   // --- Token budget tracking ---
   const [tokensUsed, setTokensUsed] = useState(0);
 
-  // --- Web search ---
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  // --- Web search (disabled by default to prevent Scrapling timeout) ---
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
 
   // --- Abort controller for current generation ---
   const abortCtrlRef = useRef<AbortController | null>(null);
@@ -266,11 +270,11 @@ export const useChatLogic = ({
   const persistHistory = useCallback(
     (messages: ChatMessage[], options?: { newSession?: boolean; title?: string }) => {
       const sid = activeSidRef.current;
-      
+
       if (!sid || options?.newSession) {
         if (isCreatingSessionRef.current) return;
         isCreatingSessionRef.current = true;
-        
+
         const title = options?.title || generateTitle(messages);
         try {
           const newSid = chatSessions.createSession?.(messages, title);
@@ -312,8 +316,9 @@ export const useChatLogic = ({
   const streaming: StreamingState = useMemo(() => {
     const lastMsg = history[history.length - 1];
     const isAssistant = lastMsg?.role === 'assistant';
-    const isStreaming = isAssistant && (lastMsg.status === 'loading' || lastMsg.status === undefined);
-    
+    const isStreaming =
+      isAssistant && (lastMsg.status === 'loading' || lastMsg.status === undefined);
+
     if (isStreaming) {
       const isToolCalling = lastMsg.toolCalls && lastMsg.toolCalls.length > 0;
       return {
@@ -323,7 +328,7 @@ export const useChatLogic = ({
         status: isToolCalling ? 'tool_calling' : 'streaming',
       };
     }
-    
+
     return {
       content: '',
       reasoning: '',
@@ -360,34 +365,71 @@ export const useChatLogic = ({
     lightningDirectives,
     logRollout,
   });
-  
+
   const isLoading = chatPipeline.isLoading;
   const isSearching = chatPipeline.isSearching;
   const pipelineRunChat = chatPipeline.runChat;
   const pipelineStopChat = chatPipeline.stopChat;
+
+  // -------------------------------------------------------------------------
+  // Stop generation (moved before useEffect that references it)
+  // -------------------------------------------------------------------------
+
+  const stopChat = useCallback(() => {
+    abortCtrlRef.current?.abort();
+    pipelineStopChat();
+    cancelRequest('chat-stream');
+  }, [pipelineStopChat]);
 
   useEffect(() => {
     if (activeSid !== lastActiveSidRef.current) {
       const isOurNewSession = activeSid && activeSid === newlyCreatedSidRef.current;
       lastActiveSidRef.current = activeSid || null;
       activeSidRef.current = activeSid || null;
-      
-      if (isOurNewSession) {
-        newlyCreatedSidRef.current = null;
-      } else {
+
+      if (!isOurNewSession) {
+        if (isLoading) {
+          stopChat();
+        }
         const msgs = activeSessionMessages || [];
         dispatch({ type: 'SET', messages: msgs });
         clearMetrics();
         setSessionTitleState(chatSessions?.activeSession?.title || generateTitle(msgs));
       }
-    } else if (!isLoading && activeSessionMessages && activeSessionMessages.length >= historyRef.current.length && !areMessagesEqual(activeSessionMessages, historyRef.current)) {
+    } else if (
+      !isLoading &&
+      !streamJustEndedRef.current &&
+      activeSessionMessages &&
+      activeSessionMessages.length >= historyRef.current.length &&
+      !areMessagesEqual(activeSessionMessages, historyRef.current)
+    ) {
       dispatch({ type: 'SET', messages: activeSessionMessages });
     }
-  }, [activeSid, activeSessionMessages, clearMetrics, chatSessions?.activeSession?.title, isLoading]);
+  }, [
+    activeSid,
+    activeSessionMessages,
+    clearMetrics,
+    chatSessions?.activeSession?.title,
+    isLoading,
+    stopChat,
+  ]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      newlyCreatedSidRef.current = null;
+      streamJustEndedRef.current = true;
+      const timer = setTimeout(() => {
+        streamJustEndedRef.current = false;
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
 
   // Store ref for message actions to call
   const runChatRef = useRef(pipelineRunChat);
-  useEffect(() => { runChatRef.current = pipelineRunChat; }, [pipelineRunChat]);
+  useEffect(() => {
+    runChatRef.current = pipelineRunChat;
+  }, [pipelineRunChat]);
 
   // -------------------------------------------------------------------------
   // Public runChat wrapper with budget check
@@ -402,7 +444,7 @@ export const useChatLogic = ({
       }
       lastRunRef.current = now;
 
-      if ((!prompt.trim() && (!images || images.length === 0))) return;
+      if (!prompt.trim() && (!images || images.length === 0)) return;
 
       if (prompt.length > 50000) {
         toast.error('Message exceeds maximum length of 50,000 characters.');
@@ -410,7 +452,9 @@ export const useChatLogic = ({
       }
 
       if (historyRef.current.length >= 1000) {
-        toast.warning('Maximum message limit (1000) reached. Consider starting a new conversation.');
+        toast.warning(
+          'Maximum message limit (1000) reached. Consider starting a new conversation.'
+        );
         return;
       }
 
@@ -419,7 +463,9 @@ export const useChatLogic = ({
       const projectedTotal = contextTokens + estimatedInput + 4096; // Assume 4k output
 
       if (projectedTotal > maxContextTokens) {
-        toast.error(`Context limit exceeded. Current: ${contextTokens}, Projected: ${projectedTotal}`);
+        toast.error(
+          `Context limit exceeded. Current: ${contextTokens}, Projected: ${projectedTotal}`
+        );
         return;
       }
 
@@ -432,7 +478,7 @@ export const useChatLogic = ({
 
       try {
         await pipelineRunChat(prompt, images);
-        
+
         // Update token usage
         setTokensUsed((prev) => prev + estimatedInput);
       } catch (error: any) {
@@ -450,95 +496,110 @@ export const useChatLogic = ({
   // Message actions (Claude/Kimi parity)
   // -------------------------------------------------------------------------
 
-  const editMessage = useCallback((index: number, newContent: string) => {
-    const messages = historyRef.current;
-    if (index < 0 || index >= messages.length || messages[index].role !== 'user') return;
+  const editMessage = useCallback(
+    (index: number, newContent: string) => {
+      const messages = historyRef.current;
+      if (index < 0 || index >= messages.length || messages[index].role !== 'user') return;
 
-    // Truncate after this message and update content
-    const truncated = messages.slice(0, index + 1);
-    truncated[index] = { ...truncated[index], content: newContent };
-    
-    dispatch({ type: 'SET', messages: truncated });
-    historyRef.current = truncated;
-    persistHistory(truncated);
+      // Truncate after this message and update content
+      const truncated = messages.slice(0, index + 1);
+      truncated[index] = { ...truncated[index], content: newContent };
 
-    const mappedImages = truncated[index].images?.map((img) => ({
-      name: img.name,
-      mimeType: img.mimeType || 'image/jpeg',
-      data: img.data || img.dataUrl || img.url || '',
-    })).filter((img) => !!img.data);
+      dispatch({ type: 'SET', messages: truncated });
+      historyRef.current = truncated;
+      persistHistory(truncated);
 
-    // Auto-regenerate assistant response
-    runChatRef.current?.(newContent, mappedImages);
-  }, [persistHistory]);
+      const mappedImages = truncated[index].images
+        ?.map((img) => ({
+          name: img.name,
+          mimeType: img.mimeType || 'image/jpeg',
+          data: img.data || img.dataUrl || img.url || '',
+        }))
+        .filter((img) => !!img.data);
 
-  const regenerateMessage = useCallback((index: number) => {
-    const messages = historyRef.current;
-    if (index < 0 || index >= messages.length || messages[index].role !== 'assistant') return;
+      // Auto-regenerate assistant response
+      runChatRef.current?.(newContent, mappedImages);
+    },
+    [persistHistory]
+  );
 
-    // Find preceding user message
-    let userIndex = index - 1;
-    while (userIndex >= 0 && messages[userIndex].role !== 'user') userIndex--;
-    if (userIndex < 0) return;
+  const regenerateMessage = useCallback(
+    (index: number) => {
+      const messages = historyRef.current;
+      if (index < 0 || index >= messages.length || messages[index].role !== 'assistant') return;
 
-    const truncated = messages.slice(0, userIndex + 1);
-    dispatch({ type: 'SET', messages: truncated });
-    historyRef.current = truncated;
-    persistHistory(truncated);
+      // Find preceding user message
+      let userIndex = index - 1;
+      while (userIndex >= 0 && messages[userIndex].role !== 'user') userIndex--;
+      if (userIndex < 0) return;
 
-    const userMsg = truncated[userIndex];
-    const mappedImages = userMsg.images?.map((img) => ({
-      name: img.name,
-      mimeType: img.mimeType || 'image/jpeg',
-      data: img.data || img.dataUrl || img.url || '',
-    })).filter((img) => !!img.data);
+      const truncated = messages.slice(0, userIndex + 1);
+      dispatch({ type: 'SET', messages: truncated });
+      historyRef.current = truncated;
+      persistHistory(truncated);
 
-    runChatRef.current?.(userMsg.content, mappedImages);
-  }, [persistHistory]);
+      const userMsg = truncated[userIndex];
+      const mappedImages = userMsg.images
+        ?.map((img) => ({
+          name: img.name,
+          mimeType: img.mimeType || 'image/jpeg',
+          data: img.data || img.dataUrl || img.url || '',
+        }))
+        .filter((img) => !!img.data);
 
-  const branchFromMessage = useCallback((index: number): string | null => {
-    const branchedHistory = historyRef.current.slice(0, index + 1).map((msg) => ({ ...msg }));
-    const newSid = chatSessions.createSession?.(branchedHistory);
-    if (newSid) {
-      chatSessions.switchSession?.(newSid);
-      toast.success('Branched conversation from this message');
-      return newSid;
-    }
-    return null;
-  }, [chatSessions]);
+      runChatRef.current?.(userMsg.content, mappedImages);
+    },
+    [persistHistory]
+  );
 
-  const deleteMessage = useCallback((index: number) => {
-    const messages = historyRef.current.filter((_, i) => i !== index);
-    dispatch({ type: 'SET', messages });
-    historyRef.current = messages;
-    persistHistory(messages);
-  }, [persistHistory]);
+  const branchFromMessage = useCallback(
+    (index: number): string | null => {
+      const branchedHistory = historyRef.current.slice(0, index + 1).map((msg) => ({ ...msg }));
+      const newSid = chatSessions.createSession?.(branchedHistory);
+      if (newSid) {
+        chatSessions.switchSession?.(newSid);
+        toast.success('Branched conversation from this message');
+        return newSid;
+      }
+      return null;
+    },
+    [chatSessions]
+  );
+
+  const deleteMessage = useCallback(
+    (index: number) => {
+      const messages = historyRef.current.filter((_, i) => i !== index);
+      dispatch({ type: 'SET', messages });
+      historyRef.current = messages;
+      persistHistory(messages);
+    },
+    [persistHistory]
+  );
 
   // -------------------------------------------------------------------------
   // Export session
   // -------------------------------------------------------------------------
 
-  const exportSession = useCallback((format: 'markdown' | 'json' | 'txt'): string => {
-    const messages = historyRef.current;
-    switch (format) {
-      case 'markdown':
-        return messages.map((m) => `## ${m.role === 'user' ? 'User' : 'Assistant'}\n\n${m.content}`).join('\n\n---\n\n');
-      case 'json':
-        return JSON.stringify({ title: sessionTitle, messages, exportedAt: new Date().toISOString() }, null, 2);
-      case 'txt':
-        return messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
-    }
-  }, [sessionTitle]);
-
-  // -------------------------------------------------------------------------
-  // Stop generation
-  // -------------------------------------------------------------------------
-
-  const stopChat = useCallback(() => {
-    abortCtrlRef.current?.abort();
-    pipelineStopChat();
-    cancelRequest('chat-stream');
-  }, [pipelineStopChat]);
+  const exportSession = useCallback(
+    (format: 'markdown' | 'json' | 'txt'): string => {
+      const messages = historyRef.current;
+      switch (format) {
+        case 'markdown':
+          return messages
+            .map((m) => `## ${m.role === 'user' ? 'User' : 'Assistant'}\n\n${m.content}`)
+            .join('\n\n---\n\n');
+        case 'json':
+          return JSON.stringify(
+            { title: sessionTitle, messages, exportedAt: new Date().toISOString() },
+            null,
+            2
+          );
+        case 'txt':
+          return messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+      }
+    },
+    [sessionTitle]
+  );
 
   // -------------------------------------------------------------------------
   // Cleanup
@@ -555,21 +616,22 @@ export const useChatLogic = ({
   // Derived metrics
   // -------------------------------------------------------------------------
 
-  const metrics: ConversationMetrics = useMemo(() => ({
-    latency: baseMetrics?.latency || 0,
-    tokens: baseMetrics?.tokens || 0,
-    tps: baseMetrics?.tps || 0,
-    totalMessages: history.length,
-    contextTokens: estimateContextTokens(history),
-    contextLimit: maxContextTokens,
-    remainingBudget: tokenBudget === Infinity ? Infinity : Math.max(0, tokenBudget - tokensUsed),
-  }), [baseMetrics, history, maxContextTokens, tokenBudget, tokensUsed]);
+  const metrics: ConversationMetrics = useMemo(
+    () => ({
+      latency: baseMetrics?.latency || 0,
+      tokens: baseMetrics?.tokens || 0,
+      tps: baseMetrics?.tps || 0,
+      totalMessages: history.length,
+      contextTokens: estimateContextTokens(history),
+      contextLimit: maxContextTokens,
+      remainingBudget: tokenBudget === Infinity ? Infinity : Math.max(0, tokenBudget - tokensUsed),
+    }),
+    [baseMetrics, history, maxContextTokens, tokenBudget, tokensUsed]
+  );
 
   // -------------------------------------------------------------------------
   // Return
   // -------------------------------------------------------------------------
-
-
 
   return {
     activeAgent: 'nyx',
@@ -585,21 +647,21 @@ export const useChatLogic = ({
     submitReward,
     lightningEnabled,
     lightningDirectives,
-    
+
     // Streaming
     streaming,
-    
+
     // Message actions
     editMessage,
     regenerateMessage,
     branchFromMessage,
     deleteMessage,
-    
+
     // Session
     sessionTitle,
     setSessionTitle,
     exportSession,
-    
+
     // Budget
     tokenBudget,
     tokensUsed,

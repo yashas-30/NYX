@@ -14,12 +14,14 @@ test.describe('Provider Routing E2E', () => {
       const response = new Response(
         new ReadableStream({
           start(controller) {
-            controller.enqueue(new TextEncoder().encode('data: {"type": "text", "content": "Hello from Gemini"}\n\n'));
+            controller.enqueue(
+              new TextEncoder().encode('data: {"type": "text", "content": "Hello from Gemini"}\n\n')
+            );
             controller.close();
-          }
+          },
         }),
         {
-          headers: { 'Content-Type': 'text/event-stream' }
+          headers: { 'Content-Type': 'text/event-stream' },
         }
       );
       await route.fulfill({ response });
@@ -29,14 +31,14 @@ test.describe('Provider Routing E2E', () => {
     await page.route('**/api/models/*', async (route) => {
       await route.fulfill({
         status: 200,
-        json: { models: ['gemini-2.5-pro'] }
+        json: { models: ['gemini-2.5-pro'] },
       });
     });
 
     // We can't fully trigger the UI flow without knowing the exact UI elements,
     // but we can ensure the mocked route is hit if we could trigger a message.
     // For now, this test structure provides the scaffolding for provider routing tests.
-    
+
     // In a real test we'd select the model, type a message, and send it.
     // E.g.:
     // await page.click('button:has-text("Select model")');
@@ -53,12 +55,14 @@ test.describe('Provider Routing E2E', () => {
       const response = new Response(
         new ReadableStream({
           start(controller) {
-            controller.enqueue(new TextEncoder().encode('data: {"type": "text", "content": "Hello from OpenAI"}\n\n'));
+            controller.enqueue(
+              new TextEncoder().encode('data: {"type": "text", "content": "Hello from OpenAI"}\n\n')
+            );
             controller.close();
-          }
+          },
         }),
         {
-          headers: { 'Content-Type': 'text/event-stream' }
+          headers: { 'Content-Type': 'text/event-stream' },
         }
       );
       await route.fulfill({ response });
@@ -68,7 +72,7 @@ test.describe('Provider Routing E2E', () => {
     await page.route('**/api/models/list', async (route) => {
       await route.fulfill({
         status: 200,
-        json: { models: ['gpt-4o'] }
+        json: { models: ['gpt-4o'] },
       });
     });
 

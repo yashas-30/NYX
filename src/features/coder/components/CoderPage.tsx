@@ -5,7 +5,19 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Folder, Monitor, ChevronDown, PanelLeftOpen, Plus, FileText, UploadCloud, ArrowRight, FolderPlus, HelpCircle } from 'lucide-react';
+import {
+  Search,
+  Folder,
+  Monitor,
+  ChevronDown,
+  PanelLeftOpen,
+  Plus,
+  FileText,
+  UploadCloud,
+  ArrowRight,
+  FolderPlus,
+  HelpCircle,
+} from 'lucide-react';
 import { ModelDefinition, Provider } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
@@ -96,20 +108,22 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   lightningEnabled = true,
   lightningDirectives = [],
 }) => {
-
-  const workspacePath = useNyxStore(s => s.workspacePath);
-  const selectWorkspace = useNyxStore(s => s.selectWorkspace);
-  const createWorkspace = useNyxStore(s => s.createWorkspace);
+  const workspacePath = useNyxStore((s) => s.workspacePath);
+  const selectWorkspace = useNyxStore((s) => s.selectWorkspace);
+  const createWorkspace = useNyxStore((s) => s.createWorkspace);
   const [prompt, setPrompt] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [scraplingStatus, setScraplingStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [scraplingStatus, setScraplingStatus] = useState<'checking' | 'online' | 'offline'>(
+    'checking'
+  );
 
   // Real-time local Scrapling connectivity check
   useEffect(() => {
     let active = true;
     const checkScrapling = async () => {
       try {
-        const res = await fetch('http://localhost:3012/health');
+        const scraplingUrl = gatewayUrls?.scrapling || 'http://127.0.0.1:3012';
+        const res = await fetch(`${scraplingUrl}/health`);
         if (!active) return;
         if (res.ok) {
           setScraplingStatus('online');
@@ -127,7 +141,19 @@ export const CoderPage: React.FC<CoderPageProps> = ({
       active = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [gatewayUrls]);
+
+  // Auto-launch VS Code when Coder page is opened with a workspace
+  useEffect(() => {
+    if (workspacePath) {
+      const formattedPath = workspacePath.replace(/\\/g, '/');
+      const timer = setTimeout(() => {
+        window.location.href = `vscode://file/${formattedPath}`;
+        toast.success('Launching VS Code interface...');
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [workspacePath]);
 
   // Project Creation State
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -136,10 +162,10 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   const currentModelId = models['nyx'];
-  
+
   const mergedModels = useMemo(() => {
     const seenIds = new Set();
-    return allModels.filter(m => {
+    return allModels.filter((m) => {
       if (seenIds.has(m.id)) return false;
       seenIds.add(m.id);
       return true;
@@ -148,7 +174,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
 
   const currentModel = useMemo(() => {
     if (!currentModelId) return null;
-    return mergedModels.find(m => m.id === currentModelId) || null;
+    return mergedModels.find((m) => m.id === currentModelId) || null;
   }, [currentModelId, mergedModels]);
 
   const badgeStatus = useMemo(() => {
@@ -162,15 +188,18 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     return 'success';
   }, [isLoading, currentModel, providerStatuses]);
 
-  const handleSubmit = useCallback((finalPrompt: string) => {
-    if (!finalPrompt.trim() || isLoading) return;
-    if (!currentModelId) {
-      toast.error('Please select a model first');
-      return;
-    }
-    runCoder(finalPrompt);
-    setPrompt('');
-  }, [isLoading, currentModelId, runCoder]);
+  const handleSubmit = useCallback(
+    (finalPrompt: string) => {
+      if (!finalPrompt.trim() || isLoading) return;
+      if (!currentModelId) {
+        toast.error('Please select a model first');
+        return;
+      }
+      runCoder(finalPrompt);
+      setPrompt('');
+    },
+    [isLoading, currentModelId, runCoder]
+  );
 
   const copyToClipboard = useCallback((text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -195,33 +224,36 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     }
   }, []);
 
-  const handleCreateProjectSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!parentPath.trim()) {
-      toast.error('Parent directory path is required');
-      return;
-    }
-    if (!newProjectName.trim()) {
-      toast.error('Project name is required');
-      return;
-    }
-    
-    setIsCreatingProject(true);
-    try {
-      const result = await createWorkspace(parentPath.trim(), newProjectName.trim());
-      if (result.success) {
-        toast.success(`Project "${newProjectName}" created and opened successfully!`);
-        setShowCreateForm(false);
-        setNewProjectName('');
-      } else {
-        toast.error(`Failed to create project: ${result.error}`);
+  const handleCreateProjectSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!parentPath.trim()) {
+        toast.error('Parent directory path is required');
+        return;
       }
-    } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
-    } finally {
-      setIsCreatingProject(false);
-    }
-  }, [parentPath, newProjectName, createWorkspace]);
+      if (!newProjectName.trim()) {
+        toast.error('Project name is required');
+        return;
+      }
+
+      setIsCreatingProject(true);
+      try {
+        const result = await createWorkspace(parentPath.trim(), newProjectName.trim());
+        if (result.success) {
+          toast.success(`Project "${newProjectName}" created and opened successfully!`);
+          setShowCreateForm(false);
+          setNewProjectName('');
+        } else {
+          toast.error(`Failed to create project: ${result.error}`);
+        }
+      } catch (error: any) {
+        toast.error(`Error: ${error.message}`);
+      } finally {
+        setIsCreatingProject(false);
+      }
+    },
+    [parentPath, newProjectName, createWorkspace]
+  );
 
   return (
     <motion.div
@@ -233,7 +265,6 @@ export const CoderPage: React.FC<CoderPageProps> = ({
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative bg-background">
-
         <CoderHeader
           activeMode={activeMode}
           onModeChange={setActiveMode}
@@ -262,7 +293,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     Welcome to NYX Coder
                   </h1>
                   <p className="text-sm text-zinc-400 max-w-lg mx-auto">
-                    NYX Coder is a dedicated agent for software engineering. Mount an existing directory, or initialize a new project workspace to begin.
+                    NYX Coder is a dedicated agent for software engineering. Mount an existing
+                    directory, or initialize a new project workspace to begin.
                   </p>
                 </div>
 
@@ -279,7 +311,10 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                       </div>
                       <div>
                         <h3 className="text-sm font-bold text-zinc-200">Open Existing Codebase</h3>
-                        <p className="text-xs text-zinc-500 mt-1">Select an existing folder on your computer to let NYX index, query, and refactor your codebase.</p>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          Select an existing folder on your computer to let NYX index, query, and
+                          refactor your codebase.
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-cyan-400 group-hover:gap-2 transition-all mt-4">
@@ -291,7 +326,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                   {/* Card 2: Create New Project */}
                   <motion.div
                     whileHover={{ scale: 1.01, borderColor: 'rgba(16,185,129,0.2)' }}
-                    onClick={() => setShowCreateForm(p => !p)}
+                    onClick={() => setShowCreateForm((p) => !p)}
                     className="p-6 rounded-2xl border border-white/[0.04] bg-card hover:bg-white/[0.01] transition-all cursor-pointer group flex flex-col justify-between min-h-48 select-none"
                   >
                     <div className="space-y-3">
@@ -300,10 +335,13 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                       </div>
                       <div>
                         <h3 className="text-sm font-bold text-zinc-200">Create New Project</h3>
-                        <p className="text-xs text-zinc-500 mt-1">Initialize a clean directory with a default README template and set it as your active workspace.</p>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          Initialize a clean directory with a default README template and set it as
+                          your active workspace.
+                        </p>
                       </div>
                     </div>
-                    
+
                     {!showCreateForm && (
                       <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400 group-hover:gap-2 transition-all mt-4">
                         <span>Configure Project</span>
@@ -317,17 +355,19 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: 'auto' }}
                           exit={{ opacity: 0, height: 0 }}
-                          onClick={e => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
                           onSubmit={handleCreateProjectSubmit}
                           className="space-y-3 mt-4 text-left w-full"
                         >
                           <div className="space-y-1">
-                            <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Parent Directory</label>
+                            <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                              Parent Directory
+                            </label>
                             <div className="flex gap-2">
                               <input
                                 type="text"
                                 value={parentPath}
-                                onChange={e => setParentPath(e.target.value)}
+                                onChange={(e) => setParentPath(e.target.value)}
                                 placeholder="C:\Users\Username\Projects"
                                 className="flex-1 bg-background text-zinc-300 text-xs px-3 py-2 rounded-lg border border-white/5 focus:outline-none focus:border-cyan-500/50"
                               />
@@ -342,11 +382,13 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                           </div>
 
                           <div className="space-y-1">
-                            <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">Project Name</label>
+                            <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                              Project Name
+                            </label>
                             <input
                               type="text"
                               value={newProjectName}
-                              onChange={e => setNewProjectName(e.target.value)}
+                              onChange={(e) => setNewProjectName(e.target.value)}
                               placeholder="my-cool-app"
                               className="w-full bg-background text-zinc-300 text-xs px-3 py-2 rounded-lg border border-white/5 focus:outline-none focus:border-emerald-500/50"
                             />
@@ -367,8 +409,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
               </div>
             ) : (
               <div className="w-full max-w-2xl flex flex-col gap-3.5 mb-12 animate-fade-in">
-                {/* Project Selector (Folder Pill) */}
-                <div className="flex justify-start pl-1">
+                {/* Project Selector & VS Code Launcher */}
+                <div className="flex justify-start pl-1 gap-2">
                   <div
                     onClick={selectWorkspace}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-zinc-400 border border-white/[0.04] bg-card hover:bg-white/[0.03] transition-all cursor-pointer select-none"
@@ -376,6 +418,18 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     <Folder size={12} className="text-[#FF3366] fill-cyan-500/10" />
                     <span>{workspacePath.split(/[/\\]/).pop() || 'NYX'}</span>
                     <ChevronDown size={10} className="text-zinc-500 opacity-60" />
+                  </div>
+
+                  <div
+                    onClick={() => {
+                      const formattedPath = workspacePath.replace(/\\/g, '/');
+                      window.location.href = `vscode://file/${formattedPath}`;
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-cyan-400 border border-cyan-500/20 bg-cyan-500/10 hover:bg-cyan-500/20 transition-all cursor-pointer select-none"
+                    title="Launch Antigravity VS Code Environment"
+                  >
+                    <Monitor size={12} />
+                    <span>Open in VS Code</span>
                   </div>
                 </div>
 
@@ -464,7 +518,9 @@ export const CoderPage: React.FC<CoderPageProps> = ({
         )}
       </div>
 
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { 
@@ -472,7 +528,9 @@ export const CoderPage: React.FC<CoderPageProps> = ({
           border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(var(--primary), 0.2); }
-      `}} />
+      `,
+        }}
+      />
     </motion.div>
   );
 };

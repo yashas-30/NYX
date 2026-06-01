@@ -1,9 +1,13 @@
 /**
  * @file src/infrastructure/services/workspaceIntelligence.ts
  * @description Advanced Workspace Intelligence for NYX.
- *              Multi-layered context assembly with semantic search,
+ *              Multi-layered context assembly with keyword search,
  *              file-based memory, context compaction, and session recovery.
  *              Modeled after Claude Code's context hierarchy and Kimi's Workspace DNA.
+ *
+ * NOTE: This is a Custom Standalone Workspace Service for the Vite web application.
+ * It is NOT the official Antigravity SDK integration (which runs strictly inside
+ * the VS Code Extension Host environment).
  */
 
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
@@ -27,7 +31,7 @@ export interface WorkspaceProfile {
   // New fields for advanced context
   claudeMdHierarchy: ClaudeMdFile[];
   memoryIndex: MemoryEntry[];
-  semanticIndex: SemanticSnippet[];
+  keywordIndex: KeywordSnippet[];
   sessionState: SessionState | null;
 }
 
@@ -48,13 +52,12 @@ export interface MemoryEntry {
   sourceFile?: string;
 }
 
-export interface SemanticSnippet {
+export interface KeywordSnippet {
   id: string;
   filePath: string;
   content: string;
   startLine: number;
   endLine: number;
-  embedding?: number[];
   metadata: {
     type: 'function' | 'class' | 'interface' | 'type' | 'constant' | 'comment';
     name: string;
@@ -74,20 +77,20 @@ export interface SessionState {
 }
 
 export interface ContextAssembly {
-  systemContext: string;    // Injected as system prompt
-  userContext: string;      // Injected as user-context message
-  toolContext: string;      // Conditionally loaded tool schemas
-  memoryContext: string;    // Retrieved relevant memories
-  workingContext: string;   // Current file + recent edits
-  totalTokens: number;      // Estimated token count
+  systemContext: string; // Injected as system prompt
+  userContext: string; // Injected as user-context message
+  toolContext: string; // Conditionally loaded tool schemas
+  memoryContext: string; // Retrieved relevant memories
+  workingContext: string; // Current file + recent edits
+  totalTokens: number; // Estimated token count
 }
 
 export interface ContextConfig {
   taskDescription?: string; // For relevance scoring
-  currentFile?: string;     // Working file for targeted context
+  currentFile?: string; // Working file for targeted context
   includeHistory?: boolean; // Include session history
-  maxTokens?: number;       // Context budget (default 200K)
-  toolFilter?: string[];    // Only include these tools
+  maxTokens?: number; // Context budget (default 200K)
+  toolFilter?: string[]; // Only include these tools
   compactIfNeeded?: boolean; // Auto-compact if over budget
 }
 
@@ -125,29 +128,31 @@ class TokenEstimator {
 // LOCAL STORAGE MANAGER
 // ============================================================================
 
+import { set as idbSet, get as idbGet, del as idbDel } from 'idb-keyval';
+
 class PersistentStore {
   private static readonly PREFIX = 'nyx-wi-';
 
-  static get<T>(key: string, defaultValue: T): T {
+  static async get<T>(key: string, defaultValue: T): Promise<T> {
     try {
-      const raw = localStorage.getItem(this.PREFIX + key);
-      return raw ? JSON.parse(raw) : defaultValue;
+      const val = await idbGet<T>(this.PREFIX + key);
+      return val !== undefined ? val : defaultValue;
     } catch {
       return defaultValue;
     }
   }
 
-  static set<T>(key: string, value: T): void {
+  static async set<T>(key: string, value: T): Promise<void> {
     try {
-      localStorage.setItem(this.PREFIX + key, JSON.stringify(value));
-    } catch {
-      // Storage full or disabled
+      await idbSet(this.PREFIX + key, value);
+    } catch (e) {
+      console.warn('[PersistentStore] Failed to save', key, e);
     }
   }
 
-  static remove(key: string): void {
+  static async remove(key: string): Promise<void> {
     try {
-      localStorage.removeItem(this.PREFIX + key);
+      await idbDel(this.PREFIX + key);
     } catch {}
   }
 }
@@ -162,13 +167,16 @@ class OpenFileTracker {
 
   constructor(maxFiles = MAX_OPEN_FILES) {
     this.maxFiles = maxFiles;
-    this.loadFromStore();
+  }
+
+  async init(): Promise<void> {
+    await this.loadFromStore();
   }
 
   track(filePath: string): void {
     if (!filePath) return;
-    this.files = [filePath, ...this.files.filter(f => f !== filePath)].slice(0, this.maxFiles);
-    this.saveToStore();
+    this.files = [filePath, ...this.files.filter((f) => f !== filePath)].slice(0, this.maxFiles);
+    this.saveToStore().catch(console.warn);
   }
 
   getFiles(): string[] {
@@ -180,20 +188,20 @@ class OpenFileTracker {
   }
 
   getRecentExcept(current: string, count = 5): string[] {
-    return this.files.filter(f => f !== current).slice(0, count);
+    return this.files.filter((f) => f !== current).slice(0, count);
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
     this.files = [];
-    PersistentStore.remove('open-files');
+    await PersistentStore.remove('open-files');
   }
 
-  private loadFromStore(): void {
-    this.files = PersistentStore.get<string[]>('open-files', []);
+  private async loadFromStore(): Promise<void> {
+    this.files = await PersistentStore.get<string[]>('open-files', []);
   }
 
-  private saveToStore(): void {
-    PersistentStore.set('open-files', this.files);
+  private async saveToStore(): Promise<void> {
+    await PersistentStore.set('open-files', this.files);
   }
 }
 
@@ -225,10 +233,10 @@ class ClaudeMdManager {
           relevanceScore: this.computeRelevance(f, currentFile),
         }));
         this.lastScan = now;
-        PersistentStore.set('claude-md-hierarchy', this.hierarchy);
+        PersistentStore.set('claude-md-hierarchy', this.hierarchy).catch(console.warn);
       }
     } catch {
-      this.hierarchy = PersistentStore.get<ClaudeMdFile[]>('claude-md-hierarchy', []);
+      this.hierarchy = await PersistentStore.get<ClaudeMdFile[]>('claude-md-hierarchy', []);
     }
 
     return this.hierarchy;
@@ -238,7 +246,7 @@ class ClaudeMdManager {
     if (!currentFile) return 0.5;
     const fileDir = file.path.substring(0, file.path.lastIndexOf('/'));
     const currentDir = currentFile.substring(0, currentFile.lastIndexOf('/'));
-    
+
     if (file.level === 'global') return 0.9;
     if (file.level === 'user') return 0.8;
     if (currentDir.startsWith(fileDir)) {
@@ -284,8 +292,10 @@ class MemorySystem {
   private entries: MemoryEntry[] = [];
   private index: Map<string, Set<string>> = new Map();
 
-  constructor() {
-    this.loadFromStore();
+  constructor() {}
+
+  async init(): Promise<void> {
+    await this.loadFromStore();
   }
 
   async loadFromServer(): Promise<void> {
@@ -299,7 +309,7 @@ class MemorySystem {
         const data = await res.json();
         this.entries = data.entries;
         this.buildIndex();
-        this.saveToStore();
+        this.saveToStore().catch(console.warn);
       }
     } catch {
       // Use cached
@@ -314,19 +324,19 @@ class MemorySystem {
       const validIds = new Set<string>();
       for (const tag of tags) {
         const ids = this.index.get(tag) ?? new Set();
-        ids.forEach(id => validIds.add(id));
+        ids.forEach((id) => validIds.add(id));
       }
-      candidates = candidates.filter(e => validIds.has(e.id));
+      candidates = candidates.filter((e) => validIds.has(e.id));
     }
 
     return candidates
-      .map(e => ({
+      .map((e) => ({
         entry: e,
         score: this.computeScore(e, queryLower),
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map(r => r.entry);
+      .map((r) => r.entry);
   }
 
   add(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): MemoryEntry {
@@ -337,36 +347,63 @@ class MemorySystem {
     };
     this.entries.unshift(newEntry);
     this.indexEntry(newEntry);
-    this.saveToStore();
+    this.saveToStore().catch(console.warn);
     return newEntry;
   }
 
   forget(id: string): boolean {
-    const idx = this.entries.findIndex(e => e.id === id);
+    const idx = this.entries.findIndex((e) => e.id === id);
     if (idx === -1) return false;
     const entry = this.entries[idx];
     this.entries.splice(idx, 1);
     for (const tag of entry.tags) {
       this.index.get(tag)?.delete(id);
     }
-    this.saveToStore();
+    this.saveToStore().catch(console.warn);
     return true;
   }
 
   private computeScore(entry: MemoryEntry, query: string): number {
     let score = 0;
     const content = entry.content.toLowerCase();
-    const words = query.split(/\s+/);
-    
+    const words = query.split(/\s+/).filter((w) => w.length > 0);
+
+    // User feedback weighting
+    const typeWeights: Record<string, number> = {
+      feedback: 1.5,
+      user: 1.2,
+      project: 1.0,
+      reference: 0.8,
+    };
+    const baseWeight = typeWeights[entry.type] || 1.0;
+
     for (const word of words) {
-      if (content.includes(word)) score += 1;
-      if (entry.tags.some(t => t.toLowerCase().includes(word))) score += 2;
+      if (word.length < 3) continue; // Ignore very short stop-words
+
+      // Term Frequency (TF) approximation
+      const wordRegex = new RegExp(word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
+      const matches = (entry.content.match(wordRegex) || []).length;
+
+      if (matches > 0) {
+        // Pseudo-IDF: longer query words are typically more specific
+        const wordWeight = Math.min(3, word.length / 3);
+        score += matches * wordWeight;
+      }
+
+      // Tags are high signal
+      if (entry.tags.some((t) => t.toLowerCase() === word)) {
+        score += 5;
+      } else if (entry.tags.some((t) => t.toLowerCase().includes(word))) {
+        score += 2;
+      }
     }
-    
+
+    score *= baseWeight;
+
     const age = Date.now() - new Date(entry.timestamp).getTime();
     const daysOld = age / (24 * 60 * 60 * 1000);
-    score *= Math.max(0.5, 1 - daysOld * 0.05);
-    
+    score *= Math.max(0.4, 1 - daysOld * 0.05);
+
     return score;
   }
 
@@ -386,26 +423,26 @@ class MemorySystem {
     }
   }
 
-  private loadFromStore(): void {
-    this.entries = PersistentStore.get<MemoryEntry[]>('memory-entries', []);
+  private async loadFromStore(): Promise<void> {
+    this.entries = await PersistentStore.get<MemoryEntry[]>('memory-entries', []);
     this.buildIndex();
   }
 
-  private saveToStore(): void {
-    PersistentStore.set('memory-entries', this.entries);
+  private async saveToStore(): Promise<void> {
+    await PersistentStore.set('memory-entries', this.entries);
   }
 }
 
 // ============================================================================
-// SEMANTIC INDEX
+// KEYWORD INDEX
 // ============================================================================
 
-class SemanticIndex {
-  private snippets: SemanticSnippet[] = [];
+class KeywordIndex {
+  private snippets: KeywordSnippet[] = [];
 
   async refresh(rootPath: string): Promise<void> {
     try {
-      const res = await fetchWithAuth('/api/nyx/semantic-index', {
+      const res = await fetchWithAuth('/api/nyx/keyword-index', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rootPath }),
@@ -413,51 +450,51 @@ class SemanticIndex {
       if (res.ok) {
         const data = await res.json();
         this.snippets = data.snippets;
-        PersistentStore.set('semantic-index', this.snippets);
+        PersistentStore.set('keyword-index', this.snippets).catch(console.warn);
       }
     } catch {
-      this.snippets = PersistentStore.get<SemanticSnippet[]>('semantic-index', []);
+      this.snippets = await PersistentStore.get<KeywordSnippet[]>('keyword-index', []);
     }
   }
 
-  search(query: string, currentFile?: string, limit = 10): SemanticSnippet[] {
+  search(query: string, currentFile?: string, limit = 10): KeywordSnippet[] {
     const queryLower = query.toLowerCase();
-    
+
     return this.snippets
-      .map(s => ({
+      .map((s) => ({
         snippet: s,
         score: this.computeRelevance(s, queryLower, currentFile),
       }))
-      .filter(r => r.score > 0.1)
+      .filter((r) => r.score > 0.1)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map(r => r.snippet);
+      .map((r) => r.snippet);
   }
 
-  private computeRelevance(snippet: SemanticSnippet, query: string, currentFile?: string): number {
+  private computeRelevance(snippet: KeywordSnippet, query: string, currentFile?: string): number {
     let score = 0;
     const content = snippet.content.toLowerCase();
     const words = query.split(/\s+/);
-    
+
     for (const word of words) {
       if (content.includes(word)) score += 1;
       if (snippet.metadata.name.toLowerCase().includes(word)) score += 2;
     }
-    
+
     if (currentFile) {
       const snippetDir = snippet.filePath.substring(0, snippet.filePath.lastIndexOf('/'));
       const currentDir = currentFile.substring(0, currentFile.lastIndexOf('/'));
       if (snippetDir === currentDir) score *= 1.5;
       else if (currentDir.startsWith(snippetDir) || snippetDir.startsWith(currentDir)) score *= 1.2;
     }
-    
+
     if (snippet.metadata.type === 'function' || snippet.metadata.type === 'class') score *= 1.3;
-    
+
     return score;
   }
 
-  getSnippetsForFile(filePath: string): SemanticSnippet[] {
-    return this.snippets.filter(s => s.filePath === filePath);
+  getSnippetsForFile(filePath: string): KeywordSnippet[] {
+    return this.snippets.filter((s) => s.filePath === filePath);
   }
 }
 
@@ -468,7 +505,7 @@ class SemanticIndex {
 class ContextCompactor {
   compact(assembly: ContextAssembly, targetBudget: number): ContextAssembly {
     let currentTokens = TokenEstimator.estimateContext(assembly);
-    
+
     if (currentTokens <= targetBudget * COMPACT_THRESHOLD) {
       return assembly;
     }
@@ -504,8 +541,8 @@ class ContextCompactor {
   private truncateWorkingContext(assembly: ContextAssembly, maxTokens: number): ContextAssembly {
     const maxChars = maxTokens * SNIPPET_CHARS_PER_TOKEN;
     if (TokenEstimator.estimate(assembly.workingContext) > maxTokens) {
-      assembly.workingContext = assembly.workingContext.substring(0, maxChars) + 
-        '\n\n[... working context truncated ...]';
+      assembly.workingContext =
+        assembly.workingContext.substring(0, maxChars) + '\n\n[... working context truncated ...]';
     }
     return assembly;
   }
@@ -534,7 +571,8 @@ class ContextCompactor {
   private summarizeUserContext(assembly: ContextAssembly, maxTokens: number): ContextAssembly {
     const maxChars = maxTokens * SNIPPET_CHARS_PER_TOKEN;
     if (TokenEstimator.estimate(assembly.userContext) > maxTokens) {
-      assembly.userContext = assembly.userContext.substring(0, maxChars) + 
+      assembly.userContext =
+        assembly.userContext.substring(0, maxChars) +
         '\n\n[... older context summarized: project is a TypeScript/React codebase with standard patterns ...]';
     }
     return assembly;
@@ -563,13 +601,13 @@ class SessionStateManager {
       activePlan: null,
       contextPressure: 0,
     };
-    this.saveToStore();
+    this.saveToStore().catch(console.warn);
     return this.state;
   }
 
-  getState(): SessionState | null {
+  async getState(): Promise<SessionState | null> {
     if (!this.state) {
-      this.state = PersistentStore.get<SessionState | null>('session-state', null);
+      this.state = await PersistentStore.get<SessionState | null>('session-state', null);
     }
     return this.state;
   }
@@ -577,14 +615,14 @@ class SessionStateManager {
   incrementTurn(): void {
     if (this.state) {
       this.state.turnCount++;
-      this.saveToStore();
+      this.saveToStore().catch(console.warn);
     }
   }
 
   updateContextPressure(pressure: number): void {
     if (this.state) {
       this.state.contextPressure = pressure;
-      this.saveToStore();
+      this.saveToStore().catch(console.warn);
     }
   }
 
@@ -592,33 +630,33 @@ class SessionStateManager {
     if (this.state) {
       this.state.compactedSummary = summary;
       this.state.lastCompactedTurn = turn;
-      this.saveToStore();
+      this.saveToStore().catch(console.warn);
     }
   }
 
   setActivePlan(plan: string | null): void {
     if (this.state) {
       this.state.activePlan = plan;
-      this.saveToStore();
+      this.saveToStore().catch(console.warn);
     }
   }
 
   addPendingToolCall(callId: string): void {
     if (this.state) {
       this.state.pendingToolCalls.push(callId);
-      this.saveToStore();
+      this.saveToStore().catch(console.warn);
     }
   }
 
   removePendingToolCall(callId: string): void {
     if (this.state) {
-      this.state.pendingToolCalls = this.state.pendingToolCalls.filter(id => id !== callId);
-      this.saveToStore();
+      this.state.pendingToolCalls = this.state.pendingToolCalls.filter((id) => id !== callId);
+      this.saveToStore().catch(console.warn);
     }
   }
 
-  private saveToStore(): void {
-    PersistentStore.set('session-state', this.state);
+  private async saveToStore(): Promise<void> {
+    await PersistentStore.set('session-state', this.state);
   }
 }
 
@@ -628,26 +666,28 @@ class SessionStateManager {
 
 export class WorkspaceIntelligence {
   private static instance: WorkspaceIntelligence;
-  
+
   private openFileTracker: OpenFileTracker;
   private claudeMdManager: ClaudeMdManager;
   private memorySystem: MemorySystem;
-  private semanticIndex: SemanticIndex;
+  private keywordIndex: KeywordIndex;
   private contextCompactor: ContextCompactor;
   private sessionState: SessionStateManager;
-  
+
   private profileCache: WorkspaceProfile | null = null;
   private profileCacheTime = 0;
   private readonly profileCacheTtl = CACHE_TTL_MS;
-  
+
   private contextAssemblyCache: ContextAssembly | null = null;
   private contextAssemblyKey = '';
+
+  private initialized = false;
 
   private constructor() {
     this.openFileTracker = new OpenFileTracker();
     this.claudeMdManager = new ClaudeMdManager();
     this.memorySystem = new MemorySystem();
-    this.semanticIndex = new SemanticIndex();
+    this.keywordIndex = new KeywordIndex();
     this.contextCompactor = new ContextCompactor();
     this.sessionState = new SessionStateManager();
   }
@@ -659,6 +699,12 @@ export class WorkspaceIntelligence {
     return WorkspaceIntelligence.instance;
   }
 
+  async init(): Promise<void> {
+    if (this.initialized) return;
+    await Promise.all([this.openFileTracker.init(), this.memorySystem.init()]);
+    this.initialized = true;
+  }
+
   // ==========================================================================
   // PUBLIC API
   // ==========================================================================
@@ -666,6 +712,7 @@ export class WorkspaceIntelligence {
   static trackOpenFile(filePath: string): void {
     WorkspaceIntelligence.getInstance().openFileTracker.track(filePath);
     WorkspaceIntelligence.getInstance().clearProfileCache();
+    WorkspaceIntelligence.getInstance().contextAssemblyCache = null;
   }
 
   static getOpenFiles(): string[] {
@@ -680,8 +727,12 @@ export class WorkspaceIntelligence {
     return WorkspaceIntelligence.getInstance().assembleContextInternal(config);
   }
 
-  static async searchCodebase(query: string, currentFile?: string, limit = 10): Promise<SemanticSnippet[]> {
-    return WorkspaceIntelligence.getInstance().semanticIndex.search(query, currentFile, limit);
+  static async searchCodebase(
+    query: string,
+    currentFile?: string,
+    limit = 10
+  ): Promise<KeywordSnippet[]> {
+    return WorkspaceIntelligence.getInstance().keywordIndex.search(query, currentFile, limit);
   }
 
   static addMemory(
@@ -706,12 +757,12 @@ export class WorkspaceIntelligence {
     return WorkspaceIntelligence.getInstance().sessionState.init(sessionId);
   }
 
-  static getSessionState(): SessionState | null {
-    return WorkspaceIntelligence.getInstance().sessionState.getState();
+  static async getSessionState(): Promise<SessionState | null> {
+    return await WorkspaceIntelligence.getInstance().sessionState.getState();
   }
 
-  static clearCache(): void {
-    WorkspaceIntelligence.getInstance().clearAllCaches();
+  static async clearCache(): Promise<void> {
+    await WorkspaceIntelligence.getInstance().clearAllCaches();
   }
 
   // ==========================================================================
@@ -719,8 +770,9 @@ export class WorkspaceIntelligence {
   // ==========================================================================
 
   private async getProfileInternal(force = false): Promise<WorkspaceProfile> {
+    await this.init();
     const now = Date.now();
-    if (!force && this.profileCache && (now - this.profileCacheTime < this.profileCacheTtl)) {
+    if (!force && this.profileCache && now - this.profileCacheTime < this.profileCacheTtl) {
       return this.profileCache;
     }
 
@@ -744,32 +796,37 @@ export class WorkspaceIntelligence {
           openFiles: this.openFileTracker.getFiles(),
           claudeMdHierarchy: [],
           memoryIndex: [],
-          semanticIndex: [],
-          sessionState: this.sessionState.getState(),
+          keywordIndex: [],
+          sessionState: await this.sessionState.getState(),
         };
 
         await Promise.all([
-          this.claudeMdManager.scanHierarchy(profile.rootPath, this.openFileTracker.getMostRecent() ?? undefined)
-            .then(hierarchy => { profile.claudeMdHierarchy = hierarchy; }),
-          this.memorySystem.loadFromServer()
-            .then(() => { profile.memoryIndex = this.memorySystem.search('', undefined, 20); }),
-          this.semanticIndex.refresh(profile.rootPath)
-            .then(() => { profile.semanticIndex = this.semanticIndex.search('', undefined, 50); }),
+          this.claudeMdManager
+            .scanHierarchy(profile.rootPath, this.openFileTracker.getMostRecent() ?? undefined)
+            .then((hierarchy) => {
+              profile.claudeMdHierarchy = hierarchy;
+            }),
+          this.memorySystem.loadFromServer().then(() => {
+            profile.memoryIndex = this.memorySystem.search('', undefined, 20);
+          }),
+          this.keywordIndex.refresh(profile.rootPath).then(() => {
+            profile.keywordIndex = this.keywordIndex.search('', undefined, 50);
+          }),
         ]);
 
         this.profileCache = profile;
         this.profileCacheTime = now;
-        PersistentStore.set('workspace-profile', profile);
+        PersistentStore.set('workspace-profile', profile).catch(console.warn);
         return profile;
       }
       throw new Error(data.error || 'Unknown error');
     } catch (err: any) {
       console.warn('[WorkspaceIntelligence] Server fetch failed, loading from local cache:', err);
-      
-      const cached = PersistentStore.get<WorkspaceProfile | null>('workspace-profile', null);
+
+      const cached = await PersistentStore.get<WorkspaceProfile | null>('workspace-profile', null);
       if (cached) {
         cached.openFiles = this.openFileTracker.getFiles();
-        cached.sessionState = this.sessionState.getState();
+        cached.sessionState = await this.sessionState.getState();
         this.profileCache = cached;
         this.profileCacheTime = now;
         return cached;
@@ -780,6 +837,7 @@ export class WorkspaceIntelligence {
   }
 
   private async assembleContextInternal(config: ContextConfig = {}): Promise<ContextAssembly> {
+    await this.init();
     const cacheKey = JSON.stringify({
       task: config.taskDescription,
       file: config.currentFile,
@@ -805,18 +863,15 @@ export class WorkspaceIntelligence {
       this.buildConventionsContext(profile),
     ].join('\n\n');
 
-    const toolContext = config.toolFilter 
+    const toolContext = config.toolFilter
       ? `[Filtered tools: ${config.toolFilter.join(', ')}]`
       : '[All tools available]';
 
-    const memories = this.memorySystem.search(
-      config.taskDescription ?? '',
-      undefined,
-      10
-    );
-    const memoryContext = memories.length > 0
-      ? '## Relevant Memories\n\n' + memories.map(m => `- [${m.type}] ${m.content}`).join('\n')
-      : '';
+    const memories = this.memorySystem.search(config.taskDescription ?? '', undefined, 10);
+    const memoryContext =
+      memories.length > 0
+        ? '## Relevant Memories\n\n' + memories.map((m) => `- [${m.type}] ${m.content}`).join('\n')
+        : '';
 
     const workingContext = await this.buildWorkingContext(currentFile, config.taskDescription);
 
@@ -853,19 +908,27 @@ export class WorkspaceIntelligence {
       `## Test Framework: ${profile.testFramework ?? 'None detected'}`,
       `## TypeScript: ${profile.typescriptConfig ?? 'None detected'}`,
       `## Lint: ${profile.lintConfig ?? 'None detected'}`,
-      profile.recentGitCommits.length > 0 
-        ? `## Recent Commits:\n${profile.recentGitCommits.slice(0, 5).map(c => `- ${c}`).join('\n')}`
+      profile.recentGitCommits.length > 0
+        ? `## Recent Commits:\n${profile.recentGitCommits
+            .slice(0, 5)
+            .map((c) => `- ${c}`)
+            .join('\n')}`
         : '',
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   private buildDependenciesContext(profile: WorkspaceProfile): string {
     const deps = Object.entries(profile.keyDependencies);
     if (deps.length === 0) return '';
-    return '## Key Dependencies\n\n' + deps
-      .slice(0, 20)
-      .map(([name, version]) => `- ${name}: ${version}`)
-      .join('\n');
+    return (
+      '## Key Dependencies\n\n' +
+      deps
+        .slice(0, 20)
+        .map(([name, version]) => `- ${name}: ${version}`)
+        .join('\n')
+    );
   }
 
   private buildConventionsContext(profile: WorkspaceProfile): string {
@@ -882,32 +945,41 @@ export class WorkspaceIntelligence {
     return parts.length > 0 ? '## Conventions\n\n' + parts.join('\n') : '';
   }
 
-  private async buildWorkingContext(currentFile?: string, taskDescription?: string): Promise<string> {
+  private async buildWorkingContext(
+    currentFile?: string,
+    taskDescription?: string
+  ): Promise<string> {
     const parts: string[] = [];
-    
+
     if (currentFile) {
       parts.push(`## Currently Working On\n\n- ${currentFile}`);
-      
-      const snippets = this.semanticIndex.getSnippetsForFile(currentFile);
+
+      const snippets = this.keywordIndex.getSnippetsForFile(currentFile);
       if (snippets.length > 0) {
-        parts.push('### Relevant Definitions\n' + snippets
-          .slice(0, 5)
-          .map(s => `- ${s.metadata.type} ${s.metadata.name} (${s.startLine}-${s.endLine})`)
-          .join('\n'));
+        parts.push(
+          '### Relevant Definitions\n' +
+            snippets
+              .slice(0, 5)
+              .map((s) => `- ${s.metadata.type} ${s.metadata.name} (${s.startLine}-${s.endLine})`)
+              .join('\n')
+        );
       }
     }
 
     const recent = this.openFileTracker.getRecentExcept(currentFile ?? '');
     if (recent.length > 0) {
-      parts.push('## Recently Opened\n\n' + recent.map(f => `- ${f}`).join('\n'));
+      parts.push('## Recently Opened\n\n' + recent.map((f) => `- ${f}`).join('\n'));
     }
 
     if (taskDescription) {
-      const related = this.semanticIndex.search(taskDescription, currentFile, 5);
+      const related = this.keywordIndex.search(taskDescription, currentFile, 5);
       if (related.length > 0) {
-        parts.push('### Related Code\n' + related
-          .map(s => `- ${s.filePath}#L${s.startLine}-${s.endLine}: ${s.metadata.name}`)
-          .join('\n'));
+        parts.push(
+          '### Related Code\n' +
+            related
+              .map((s) => `- ${s.filePath}#L${s.startLine}-${s.endLine}: ${s.metadata.name}`)
+              .join('\n')
+        );
       }
     }
 
@@ -929,8 +1001,8 @@ export class WorkspaceIntelligence {
       openFiles: this.openFileTracker.getFiles(),
       claudeMdHierarchy: [],
       memoryIndex: [],
-      semanticIndex: [],
-      sessionState: this.sessionState.getState(),
+      keywordIndex: [],
+      sessionState: null,
     };
   }
 
@@ -941,14 +1013,14 @@ export class WorkspaceIntelligence {
     this.contextAssemblyKey = '';
   }
 
-  private clearAllCaches(): void {
+  private async clearAllCaches(): Promise<void> {
     this.clearProfileCache();
-    this.openFileTracker.clear();
-    PersistentStore.remove('workspace-profile');
-    PersistentStore.remove('claude-md-hierarchy');
-    PersistentStore.remove('semantic-index');
-    PersistentStore.remove('memory-entries');
-    PersistentStore.remove('session-state');
+    await this.openFileTracker.clear();
+    await PersistentStore.remove('workspace-profile');
+    await PersistentStore.remove('claude-md-hierarchy');
+    await PersistentStore.remove('keyword-index');
+    await PersistentStore.remove('memory-entries');
+    await PersistentStore.remove('session-state');
   }
 }
 

@@ -42,26 +42,10 @@ export interface ModelSelection {
   reason: string;
 }
 
-export type StreamEventType = 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'artifact' | 'citation' | 'complete' | 'error';
-
 export interface ToolResult {
-  content: string;
-  error?: string;
-  data?: any;
-}
-
-export interface StreamEvent {
-  type: StreamEventType;
+  output?: string;
   content?: string;
-  tool?: string;
-  input?: Record<string, unknown>;
-  result?: ToolResult;
-  artifactType?: string;
-  title?: string;
-  language?: string;
-  source?: string;
-  quote?: string;
-  relevance?: number;
+  error?: string;
 }
 
 export interface LocalTool {
@@ -110,4 +94,3 @@ export interface ModelDefinition {
   isLocal?: boolean;
   specs?: any;
 }
-

@@ -8,6 +8,7 @@ export interface GeminiStreamParams {
   history?: any[];
   apiKey?: string;
   images?: any[];
+  gatewayUrls?: Record<string, string>;
 }
 
 export class GeminiService {
@@ -16,7 +17,8 @@ export class GeminiService {
     onChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
-    const { model, prompt, settings, systemInstruction, history, apiKey, images } = params;
+    const { model, prompt, settings, systemInstruction, history, apiKey, images, gatewayUrls } =
+      params;
 
     const messages: any[] = [];
     if (systemInstruction) {
@@ -40,6 +42,7 @@ export class GeminiService {
         messages,
         settings,
         apiKey,
+        customGatewayUrls: gatewayUrls,
       },
       onChunk,
       onDone

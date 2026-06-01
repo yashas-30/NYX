@@ -33,7 +33,7 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         console.error('Failed to parse token usage', e);
       }
     }
-    
+
     const initial: Record<string, TokenUsage> = {};
     Object.keys(DEFAULT_QUOTAS).forEach((provider) => {
       const total = DEFAULT_QUOTAS[provider];
@@ -49,11 +49,11 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const updateUsage = useCallback((provider: string, tokens: number) => {
     // Defer update to avoid "Cannot update a component while rendering" warning
     setTimeout(() => {
-      setUsage(prev => {
-        const current = prev[provider] || { 
-          used: 0, 
-          total: DEFAULT_QUOTAS[provider] || 1000000, 
-          remaining: DEFAULT_QUOTAS[provider] || 1000000 
+      setUsage((prev) => {
+        const current = prev[provider] || {
+          used: 0,
+          total: DEFAULT_QUOTAS[provider] || 1000000,
+          remaining: DEFAULT_QUOTAS[provider] || 1000000,
         };
         const newUsed = current.used + tokens;
         return {
@@ -61,30 +61,30 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           [provider]: {
             ...current,
             used: newUsed,
-            remaining: Math.max(0, current.total - newUsed)
-          }
+            remaining: Math.max(0, current.total - newUsed),
+          },
         };
       });
     }, 0);
   }, []);
 
   const resetUsage = useCallback((provider: string) => {
-    setUsage(prev => {
+    setUsage((prev) => {
       const current = prev[provider];
       if (!current) return prev;
       return {
         ...prev,
-        [provider]: { ...current, used: 0, remaining: current.total }
+        [provider]: { ...current, used: 0, remaining: current.total },
       };
     });
   }, []);
 
   const setQuota = useCallback((provider: string, total: number) => {
-    setUsage(prev => {
+    setUsage((prev) => {
       const current = prev[provider] || { used: 0, total, remaining: total };
       return {
         ...prev,
-        [provider]: { ...current, total, remaining: Math.max(0, total - current.used) }
+        [provider]: { ...current, total, remaining: Math.max(0, total - current.used) },
       };
     });
   }, []);
@@ -92,17 +92,19 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const refreshProviderQuota = useCallback(async (provider: string, apiKey?: string) => {
     const { total, used, totalUSD, usedUSD } = await fetchQuota(provider, apiKey);
     if (total > 0) {
-      setUsage(prev => {
+      setUsage((prev) => {
         return {
           ...prev,
-          [provider]: { total, used, remaining: Math.max(0, total - used), totalUSD, usedUSD }
+          [provider]: { total, used, remaining: Math.max(0, total - used), totalUSD, usedUSD },
         };
       });
     }
   }, []);
 
   return (
-    <TokenUsageContext.Provider value={{ usage, updateUsage, resetUsage, setQuota, refreshProviderQuota }}>
+    <TokenUsageContext.Provider
+      value={{ usage, updateUsage, resetUsage, setQuota, refreshProviderQuota }}
+    >
       {children}
     </TokenUsageContext.Provider>
   );

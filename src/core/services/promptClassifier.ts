@@ -27,9 +27,9 @@ export type PromptIntent =
   | 'file_operation'
   | 'web_search'
   | 'codebase_query'
-  | 'clarification'        // "What do you mean by..."
-  | 'correction'           // "No, I meant..."
-  | 'continuation';        // "Continue" / "Go on"
+  | 'clarification' // "What do you mean by..."
+  | 'correction' // "No, I meant..."
+  | 'continuation'; // "Continue" / "Go on"
 
 export interface PromptAnalysis {
   intent: PromptIntent;
@@ -43,9 +43,9 @@ export interface PromptAnalysis {
   estimatedTokens: number;
   suggestedModel: 'fast' | 'balanced' | 'powerful';
   hardware?: HardwareAnalysis;
-  multiIntent?: PromptIntent[];      // Secondary detected intents
+  multiIntent?: PromptIntent[]; // Secondary detected intents
   urgency: 'low' | 'normal' | 'high'; // User frustration indicators
-  isFollowUp: boolean;               // Part of ongoing conversation
+  isFollowUp: boolean; // Part of ongoing conversation
 }
 
 export interface ConversationState {
@@ -55,7 +55,7 @@ export interface ConversationState {
   lastFrameworks: string[];
   pendingToolCalls: boolean;
   userFrustrationLevel: number; // 0-1, increases with repeated similar prompts
-  topicDrift: number;           // How much current prompt diverges from history
+  topicDrift: number; // How much current prompt diverges from history
 }
 
 export interface AgentRoute {
@@ -69,7 +69,13 @@ export interface AgentRoute {
   maxTokens: number;
 }
 
-type ToolCapability = 'web_search' | 'codebase_search' | 'terminal' | 'file_write' | 'file_read' | 'image_analysis';
+type ToolCapability =
+  | 'web_search'
+  | 'codebase_search'
+  | 'terminal'
+  | 'file_write'
+  | 'file_read'
+  | 'image_analysis';
 
 // ---------------------------------------------------------------------------
 // Semantic intent embeddings (simplified — replace with actual embeddings in prod)
@@ -78,10 +84,10 @@ type ToolCapability = 'web_search' | 'codebase_search' | 'terminal' | 'file_writ
 
 interface IntentEmbedding {
   intent: PromptIntent;
-  vectors: string[];      // Semantic descriptions / example utterances
-  keywords: string[];     // High-signal anchor words
+  vectors: string[]; // Semantic descriptions / example utterances
+  keywords: string[]; // High-signal anchor words
   antiKeywords: string[]; // Words that disqualify this intent
-  weight: number;         // Base priority (like your INTENT_PRIORITY)
+  weight: number; // Base priority (like your INTENT_PRIORITY)
 }
 
 const INTENT_EMBEDDINGS: IntentEmbedding[] = [
@@ -171,7 +177,18 @@ const INTENT_EMBEDDINGS: IntentEmbedding[] = [
       'why is this code producing an error',
       'debug troubleshoot diagnose failure',
     ],
-    keywords: ['fix', 'debug', 'error', 'bug', 'crash', 'broken', 'fails', 'not working', 'exception', 'stack trace'],
+    keywords: [
+      'fix',
+      'debug',
+      'error',
+      'bug',
+      'crash',
+      'broken',
+      'fails',
+      'not working',
+      'exception',
+      'stack trace',
+    ],
     antiKeywords: ['write', 'create', 'generate', 'new', 'from scratch'],
     weight: 9,
   },
@@ -195,7 +212,15 @@ const INTENT_EMBEDDINGS: IntentEmbedding[] = [
       'is this good code what do you think',
       'pull request code review feedback',
     ],
-    keywords: ['review', 'audit', 'evaluate', 'assess', 'feedback', 'what do you think', 'is this good'],
+    keywords: [
+      'review',
+      'audit',
+      'evaluate',
+      'assess',
+      'feedback',
+      'what do you think',
+      'is this good',
+    ],
     antiKeywords: ['write', 'create', 'generate'],
     weight: 7,
   },
@@ -207,7 +232,15 @@ const INTENT_EMBEDDINGS: IntentEmbedding[] = [
       'database schema api design microservices',
       'how should i structure this application',
     ],
-    keywords: ['design', 'architecture', 'structure', 'organize', 'system design', 'schema', 'microservice'],
+    keywords: [
+      'design',
+      'architecture',
+      'structure',
+      'organize',
+      'system design',
+      'schema',
+      'microservice',
+    ],
     antiKeywords: ['fix', 'debug', 'error'],
     weight: 6,
   },
@@ -231,7 +264,18 @@ const INTENT_EMBEDDINGS: IntentEmbedding[] = [
       'shell bash command line instruction',
       'how do i run this start the server',
     ],
-    keywords: ['run', 'execute', 'npm', 'yarn', 'docker', 'git', 'deploy', 'build', 'start', 'terminal'],
+    keywords: [
+      'run',
+      'execute',
+      'npm',
+      'yarn',
+      'docker',
+      'git',
+      'deploy',
+      'build',
+      'start',
+      'terminal',
+    ],
     antiKeywords: ['write code', 'create file', 'function'],
     weight: 4,
   },
@@ -254,7 +298,16 @@ const INTENT_EMBEDDINGS: IntentEmbedding[] = [
       'project repository workspace directory search',
       'what files contain this pattern',
     ],
-    keywords: ['find', 'where is', 'locate', 'show me', 'search', 'project', 'codebase', 'repository'],
+    keywords: [
+      'find',
+      'where is',
+      'locate',
+      'show me',
+      'search',
+      'project',
+      'codebase',
+      'repository',
+    ],
     antiKeywords: ['write', 'create', 'generate'],
     weight: 3,
   },
@@ -296,43 +349,208 @@ interface TechPattern {
 }
 
 const LANGUAGE_PATTERNS: TechPattern[] = [
-  { id: 'typescript', pattern: /\b(ts|typescript|\.ts\b|\.tsx\b|type\s+\w+\s*=|interface\s+\w+)/i, aliases: ['ts', 'tsx'], tokenMultiplier: 4 },
-  { id: 'javascript', pattern: /\b(js|javascript|\.js\b|\.jsx\b|es6|es202\d|const\s+\w+\s*=)/i, aliases: ['js', 'jsx'], tokenMultiplier: 3.5 },
-  { id: 'python', pattern: /\b(py|python|\.py\b|def\s+\w+\s*\(|import\s+\w+|pip\s+|django|flask|fastapi)/i, aliases: ['py'], tokenMultiplier: 3 },
-  { id: 'rust', pattern: /\b(rust|cargo|\.rs\b|fn\s+\w+\s*\(|impl\s+|use\s+\w+::)/i, aliases: ['rs'], tokenMultiplier: 4.5 },
-  { id: 'go', pattern: /\b(golang|\.go\b|func\s+\w+\s*\(|package\s+\w+|goroutine|channel\s+\w+)/i, aliases: ['golang'], tokenMultiplier: 4 },
-  { id: 'java', pattern: /\b(java|spring|\.java\b|public\s+(?:class|static|void)|import\s+java\.)/i, aliases: [], tokenMultiplier: 4 },
-  { id: 'cpp', pattern: /\b(c\+\+|cpp|\.cpp\b|\.hpp\b|std::|#include\s+<|cmake)/i, aliases: ['c++'], tokenMultiplier: 4 },
-  { id: 'c', pattern: /\b(\.c\b|\.h\b|gcc|clang|#define\s+|malloc\s*\(|printf\s*\()(?!\+\+)/i, aliases: [], tokenMultiplier: 3.5 },
-  { id: 'csharp', pattern: /\b(c#|csharp|\.cs\b|dotnet|\.net\s+core|async\s+Task|var\s+\w+\s*=)/i, aliases: ['c#', 'dotnet'], tokenMultiplier: 4 },
-  { id: 'ruby', pattern: /\b(ruby|rails|\.rb\b|gemfile|def\s+\w+\s*(\||\b)|require\s+['"])/i, aliases: ['rb'], tokenMultiplier: 3 },
-  { id: 'php', pattern: /\b(php|laravel|\.php\b|\$[a-zA-Z_]\w*\s*=|echo\s+|composer\s+)/i, aliases: [], tokenMultiplier: 3.5 },
-  { id: 'swift', pattern: /\b(swift|\.swift\b|@objc|var\s+\w+\s*:|func\s+\w+\s*\(|UIKit|SwiftUI)/i, aliases: [], tokenMultiplier: 4 },
-  { id: 'kotlin', pattern: /\b(kotlin|\.kt\b|@Composable|suspend\s+fun|val\s+\w+\s*:|androidx)/i, aliases: ['kt'], tokenMultiplier: 4 },
-  { id: 'sql', pattern: /\b(sql|postgres|mysql|sqlite|select\s+.*\s+from|insert\s+into|create\s+table)/i, aliases: [], tokenMultiplier: 3 },
-  { id: 'bash', pattern: /\b(bash|shell|sh|zsh|\.sh\b|#!\/bin\/bash|chmod|grep\s+|awk\s+|sed\s+)/i, aliases: ['shell'], tokenMultiplier: 2.5 },
-  { id: 'docker', pattern: /\b(docker|dockerfile|container|kubernetes|k8s|helm|FROM\s+\w+|RUN\s+)/i, aliases: ['k8s'], tokenMultiplier: 3 },
-  { id: 'html', pattern: /\b(html|\.html\b|<!DOCTYPE\s+|<div\s+|class=|id=)/i, aliases: [], tokenMultiplier: 3 },
-  { id: 'css', pattern: /\b(css|\.css\b|tailwind|@media\s+|@keyframes|\.[a-z-]+\s*\{)/i, aliases: [], tokenMultiplier: 3 },
-  { id: 'markdown', pattern: /\b(markdown|\.md\b|#+\s+\w+|```\w*|>\s+\w+)/i, aliases: ['md'], tokenMultiplier: 2 },
+  {
+    id: 'typescript',
+    pattern: /\b(ts|typescript|\.ts\b|\.tsx\b|type\s+\w+\s*=|interface\s+\w+)/i,
+    aliases: ['ts', 'tsx'],
+    tokenMultiplier: 4,
+  },
+  {
+    id: 'javascript',
+    pattern: /\b(js|javascript|\.js\b|\.jsx\b|es6|es202\d|const\s+\w+\s*=)/i,
+    aliases: ['js', 'jsx'],
+    tokenMultiplier: 3.5,
+  },
+  {
+    id: 'python',
+    pattern: /\b(py|python|\.py\b|def\s+\w+\s*\(|import\s+\w+|pip\s+|django|flask|fastapi)/i,
+    aliases: ['py'],
+    tokenMultiplier: 3,
+  },
+  {
+    id: 'rust',
+    pattern: /\b(rust|cargo|\.rs\b|fn\s+\w+\s*\(|impl\s+|use\s+\w+::)/i,
+    aliases: ['rs'],
+    tokenMultiplier: 4.5,
+  },
+  {
+    id: 'go',
+    pattern: /\b(golang|\.go\b|func\s+\w+\s*\(|package\s+\w+|goroutine|channel\s+\w+)/i,
+    aliases: ['golang'],
+    tokenMultiplier: 4,
+  },
+  {
+    id: 'java',
+    pattern: /\b(java|spring|\.java\b|public\s+(?:class|static|void)|import\s+java\.)/i,
+    aliases: [],
+    tokenMultiplier: 4,
+  },
+  {
+    id: 'cpp',
+    pattern: /\b(c\+\+|cpp|\.cpp\b|\.hpp\b|std::|#include\s+<|cmake)/i,
+    aliases: ['c++'],
+    tokenMultiplier: 4,
+  },
+  {
+    id: 'c',
+    pattern: /\b(\.c\b|\.h\b|gcc|clang|#define\s+|malloc\s*\(|printf\s*\()(?!\+\+)/i,
+    aliases: [],
+    tokenMultiplier: 3.5,
+  },
+  {
+    id: 'csharp',
+    pattern: /\b(c#|csharp|\.cs\b|dotnet|\.net\s+core|async\s+Task|var\s+\w+\s*=)/i,
+    aliases: ['c#', 'dotnet'],
+    tokenMultiplier: 4,
+  },
+  {
+    id: 'ruby',
+    pattern: /\b(ruby|rails|\.rb\b|gemfile|def\s+\w+\s*(\||\b)|require\s+['"])/i,
+    aliases: ['rb'],
+    tokenMultiplier: 3,
+  },
+  {
+    id: 'php',
+    pattern: /\b(php|laravel|\.php\b|\$[a-zA-Z_]\w*\s*=|echo\s+|composer\s+)/i,
+    aliases: [],
+    tokenMultiplier: 3.5,
+  },
+  {
+    id: 'swift',
+    pattern: /\b(swift|\.swift\b|@objc|var\s+\w+\s*:|func\s+\w+\s*\(|UIKit|SwiftUI)/i,
+    aliases: [],
+    tokenMultiplier: 4,
+  },
+  {
+    id: 'kotlin',
+    pattern: /\b(kotlin|\.kt\b|@Composable|suspend\s+fun|val\s+\w+\s*:|androidx)/i,
+    aliases: ['kt'],
+    tokenMultiplier: 4,
+  },
+  {
+    id: 'sql',
+    pattern: /\b(sql|postgres|mysql|sqlite|select\s+.*\s+from|insert\s+into|create\s+table)/i,
+    aliases: [],
+    tokenMultiplier: 3,
+  },
+  {
+    id: 'bash',
+    pattern: /\b(bash|shell|sh|zsh|\.sh\b|#!\/bin\/bash|chmod|grep\s+|awk\s+|sed\s+)/i,
+    aliases: ['shell'],
+    tokenMultiplier: 2.5,
+  },
+  {
+    id: 'docker',
+    pattern: /\b(docker|dockerfile|container|kubernetes|k8s|helm|FROM\s+\w+|RUN\s+)/i,
+    aliases: ['k8s'],
+    tokenMultiplier: 3,
+  },
+  {
+    id: 'html',
+    pattern: /\b(html|\.html\b|<!DOCTYPE\s+|<div\s+|class=|id=)/i,
+    aliases: [],
+    tokenMultiplier: 3,
+  },
+  {
+    id: 'css',
+    pattern: /\b(css|\.css\b|tailwind|@media\s+|@keyframes|\.[a-z-]+\s*\{)/i,
+    aliases: [],
+    tokenMultiplier: 3,
+  },
+  {
+    id: 'markdown',
+    pattern: /\b(markdown|\.md\b|#+\s+\w+|```\w*|>\s+\w+)/i,
+    aliases: ['md'],
+    tokenMultiplier: 2,
+  },
   { id: 'json', pattern: /\b(json|\.json\b|"[\w-]+"\s*:\s*)/i, aliases: [], tokenMultiplier: 2.5 },
-  { id: 'yaml', pattern: /\b(yaml|yml|\.yml\b|\.yaml\b|\w+:\s*\w+\n)/i, aliases: ['yml'], tokenMultiplier: 2.5 },
+  {
+    id: 'yaml',
+    pattern: /\b(yaml|yml|\.yml\b|\.yaml\b|\w+:\s*\w+\n)/i,
+    aliases: ['yml'],
+    tokenMultiplier: 2.5,
+  },
 ];
 
 const FRAMEWORK_PATTERNS: TechPattern[] = [
-  { id: 'react', pattern: /\b(react|jsx|tsx|usestate|useeffect|usecallback|memo|forwardref|next\.js|nextjs)/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'vue', pattern: /\b(vue|nuxt|\.vue\b|v-model|v-if|v-for|composition\s+api|pinia)/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'angular', pattern: /\b(angular|rxjs|@angular|ng-module|ng-component|ng-service)/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'svelte', pattern: /\b(svelte|sveltekit|\.svelte\b|\{#if|\{#each)/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'express', pattern: /\b(express|middleware|req\.|res\.|router\.|app\.(get|post|put|delete))/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'nextjs', pattern: /\b(next\.js|nextjs|app\s+router|pages\s+router|getserversideprops|getstaticprops)/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'tailwind', pattern: /\b(tailwind|tailwindcss|tw-|className=|bg-|text-|p-|m-)/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'prisma', pattern: /\b(prisma|schema\.prisma|@prisma|prisma\.|db\.[a-z]+\.)/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'drizzle', pattern: /\b(drizzle|drizzle-orm|db\.select|db\.insert|eq\(\))/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'trpc', pattern: /\b(trpc|router\.|procedure\.|query\(\)|mutation\(\))/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'zod', pattern: /\b(zod|z\.|zod\.|schema\.parse|safeParse)/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'shadcn', pattern: /\b(shadcn|shadcn-ui|@shadcn|npx\s+shadcn)/i, aliases: [], tokenMultiplier: 0 },
-  { id: 'astro', pattern: /\b(astro|\.astro\b|frontmatter|---\s*\n)/i, aliases: [], tokenMultiplier: 0 },
+  {
+    id: 'react',
+    pattern: /\b(react|jsx|tsx|usestate|useeffect|usecallback|memo|forwardref|next\.js|nextjs)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'vue',
+    pattern: /\b(vue|nuxt|\.vue\b|v-model|v-if|v-for|composition\s+api|pinia)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'angular',
+    pattern: /\b(angular|rxjs|@angular|ng-module|ng-component|ng-service)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'svelte',
+    pattern: /\b(svelte|sveltekit|\.svelte\b|\{#if|\{#each)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'express',
+    pattern: /\b(express|middleware|req\.|res\.|router\.|app\.(get|post|put|delete))/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'nextjs',
+    pattern: /\b(next\.js|nextjs|app\s+router|pages\s+router|getserversideprops|getstaticprops)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'tailwind',
+    pattern: /\b(tailwind|tailwindcss|tw-|className=|bg-|text-|p-|m-)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'prisma',
+    pattern: /\b(prisma|schema\.prisma|@prisma|prisma\.|db\.[a-z]+\.)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'drizzle',
+    pattern: /\b(drizzle|drizzle-orm|db\.select|db\.insert|eq\(\))/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'trpc',
+    pattern: /\b(trpc|router\.|procedure\.|query\(\)|mutation\(\))/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'zod',
+    pattern: /\b(zod|z\.|zod\.|schema\.parse|safeParse)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'shadcn',
+    pattern: /\b(shadcn|shadcn-ui|@shadcn|npx\s+shadcn)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
+  {
+    id: 'astro',
+    pattern: /\b(astro|\.astro\b|frontmatter|---\s*\n)/i,
+    aliases: [],
+    tokenMultiplier: 0,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -358,7 +576,7 @@ function detectUrgency(prompt: string): PromptAnalysis['urgency'] {
 function estimateTokens(prompt: string, languages: string[]): number {
   const codeBlocks = prompt.match(/```[\s\S]*?```/g) || [];
   const prose = prompt.replace(/```[\s\S]*?```/g, '');
-  
+
   let codeTokens = 0;
   for (const block of codeBlocks) {
     const lines = block.split('\n').length;
@@ -366,10 +584,10 @@ function estimateTokens(prompt: string, languages: string[]): number {
     const multiplier = LANGUAGE_PATTERNS.find((l) => l.id === lang)?.tokenMultiplier || 4;
     codeTokens += lines * multiplier;
   }
-  
+
   const proseWords = prose.split(/\s+/).length;
   const proseTokens = proseWords * 1.3; // Better than 1.5 for English
-  
+
   return Math.ceil(codeTokens + proseTokens + prompt.length * 0.1); // Symbol overhead
 }
 
@@ -378,7 +596,9 @@ function estimateTokens(prompt: string, languages: string[]): number {
 // ---------------------------------------------------------------------------
 
 function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0, normA = 0, normB = 0;
+  let dot = 0,
+    normA = 0,
+    normB = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     normA += a[i] * a[i];
@@ -389,33 +609,45 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 // Simple bag-of-words vectorizer for demo — replace with sentence-transformers
 function textToVector(text: string): number[] {
-  const words = text.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
-  const vocab = Array.from(new Set(INTENT_EMBEDDINGS.flatMap((e) => e.vectors.join(' ').split(/\W+/).filter((w) => w.length > 2))));
+  const words = text
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((w) => w.length > 2);
+  const vocab = Array.from(
+    new Set(
+      INTENT_EMBEDDINGS.flatMap((e) =>
+        e.vectors
+          .join(' ')
+          .split(/\W+/)
+          .filter((w) => w.length > 2)
+      )
+    )
+  );
   return vocab.map((word) => words.filter((w) => w === word).length);
 }
 
 function computeSemanticScore(prompt: string, embedding: IntentEmbedding): number {
   const promptVec = textToVector(prompt);
   let maxScore = 0;
-  
+
   for (const vector of embedding.vectors) {
     const vec = textToVector(vector);
     const sim = cosineSimilarity(promptVec, vec);
     maxScore = Math.max(maxScore, sim);
   }
-  
+
   // Keyword boost
-  const keywordHits = embedding.keywords.filter((kw) => 
+  const keywordHits = embedding.keywords.filter((kw) =>
     new RegExp(`\\b${kw}\\b`, 'i').test(prompt)
   ).length;
   const keywordBoost = Math.min(keywordHits * 0.15, 0.4);
-  
+
   // Anti-keyword penalty
-  const antiHits = embedding.antiKeywords.filter((kw) => 
+  const antiHits = embedding.antiKeywords.filter((kw) =>
     new RegExp(`\\b${kw}\\b`, 'i').test(prompt)
   ).length;
   const antiPenalty = Math.min(antiHits * 0.2, 0.5);
-  
+
   return Math.max(0, maxScore + keywordBoost - antiPenalty);
 }
 
@@ -428,10 +660,10 @@ export function analyzePrompt(
   conversationState?: ConversationState
 ): PromptAnalysis {
   const lower = prompt.toLowerCase();
-  
+
   // --- Semantic intent detection ---
   const scores: Array<{ intent: PromptIntent; score: number; weight: number }> = [];
-  
+
   for (const embedding of INTENT_EMBEDDINGS) {
     const semanticScore = computeSemanticScore(prompt, embedding);
     scores.push({
@@ -440,81 +672,86 @@ export function analyzePrompt(
       weight: embedding.weight,
     });
   }
-  
+
   // Sort by weighted score
-  scores.sort((a, b) => (b.score * b.weight) - (a.score * a.weight));
-  
+  scores.sort((a, b) => b.score * b.weight - a.score * a.weight);
+
   let bestIntent = scores[0].intent;
   let bestScore = scores[0].score;
-  
+
   // Multi-intent detection (score within 20% of top)
   const multiIntent = scores
     .filter((s) => s.intent !== bestIntent && s.score > bestScore * 0.2 && s.score > 0.1)
     .map((s) => s.intent);
-  
+
   // Conversation context overrides
   const isFollowUp = !!conversationState && conversationState.turnCount > 0;
-  
+
   if (isFollowUp && conversationState) {
     // Continuation detection
     if (prompt.length < 20 && /^(continue|go on|more|and\?|then\?|keep going)/i.test(prompt)) {
       bestIntent = 'continuation';
       bestScore = 1;
     }
-    
+
     // Correction detection
     if (/^(no|not|actually|wait|hold on|that is wrong|incorrect)/i.test(prompt)) {
       bestIntent = 'correction';
       bestScore = 1;
     }
-    
+
     // Clarification
     if (/^(what do you mean|i do not understand|confused|elaborate|explain that)/i.test(prompt)) {
       bestIntent = 'clarification';
       bestScore = 1;
     }
-    
+
     // Topic drift detection — if current intent diverges from last, boost confidence
     if (bestIntent !== conversationState.lastIntent) {
-      const drift = computeSemanticScore(prompt, INTENT_EMBEDDINGS.find((e) => e.intent === conversationState.lastIntent) || INTENT_EMBEDDINGS[0]);
+      const drift = computeSemanticScore(
+        prompt,
+        INTENT_EMBEDDINGS.find((e) => e.intent === conversationState.lastIntent) ||
+          INTENT_EMBEDDINGS[0]
+      );
       if (drift < 0.1) {
         // Strong drift — user changed topic completely
         bestScore = Math.min(1, bestScore + 0.1);
       }
     }
   }
-  
+
   // Code block override (only if no stronger signal)
   if (/```\w*/.test(prompt)) {
     const codeGenScore = scores.find((s) => s.intent === 'code_generation')?.score || 0;
     const explainScore = scores.find((s) => s.intent === 'explain_code')?.score || 0;
     const debugScore = scores.find((s) => s.intent === 'code_debug')?.score || 0;
-    
+
     // Only force code_generation if no other code intent is stronger
     if (codeGenScore > explainScore && codeGenScore > debugScore && bestScore < 0.5) {
       bestIntent = 'code_generation';
       bestScore = Math.max(bestScore, 0.6);
     }
   }
-  
+
   // File path detection
-  const hasFilePath = /\b\w+\.(ts|tsx|js|jsx|py|rs|go|java|cpp|c|cs|rb|php|swift|kt|sql|json|md|yml|yaml|html|css|scss)\b/.test(prompt);
+  const hasFilePath =
+    /\b\w+\.(ts|tsx|js|jsx|py|rs|go|java|cpp|c|cs|rb|php|swift|kt|sql|json|md|yml|yaml|html|css|scss)\b/.test(
+      prompt
+    );
   if (hasFilePath && bestScore < 0.4) {
     bestIntent = 'codebase_query';
     bestScore = Math.max(bestScore, 0.5);
   }
-  
+
   const confidence = Math.min(1, bestScore * 2 + 0.15); // Calibrate to 0-1
-  
+
   // --- Language & framework detection ---
-  const detectedLanguages = LANGUAGE_PATTERNS
-    .filter((p) => p.pattern.test(prompt))
-    .map((p) => p.id);
-  
-  const frameworks = FRAMEWORK_PATTERNS
-    .filter((p) => p.pattern.test(prompt))
-    .map((p) => p.id);
-  
+  const detectedLanguages = LANGUAGE_PATTERNS.filter((p) => p.pattern.test(prompt)).map(
+    (p) => p.id
+  );
+
+  const frameworks = FRAMEWORK_PATTERNS.filter((p) => p.pattern.test(prompt)).map((p) => p.id);
+
   // --- Complexity analysis ---
   const codeLines = (prompt.match(/\n/g) || []).length;
   const codeBlocks = (prompt.match(/```/g) || []).length / 2;
@@ -522,9 +759,9 @@ export function analyzePrompt(
   const words = prompt.split(/\s+/).length;
   const uniqueTokens = new Set(prompt.toLowerCase().split(/\W+/)).size;
   const lexicalDensity = uniqueTokens / words; // Higher = more complex vocabulary
-  
+
   let complexity: PromptAnalysis['complexity'] = 'simple';
-  
+
   if (words > 300 || codeLines > 100 || hasMultipleFiles || lexicalDensity > 0.7) {
     complexity = 'enterprise';
   } else if (words > 150 || codeLines > 40 || codeBlocks > 2) {
@@ -534,17 +771,26 @@ export function analyzePrompt(
   } else if (words < 8 && !hasFilePath) {
     complexity = 'trivial';
   }
-  
+
   // --- Context & execution needs ---
   const contextIntents: PromptIntent[] = [
-    'code_debug', 'code_review', 'explain_code', 'refactor',
-    'architecture_design', 'codebase_query', 'file_operation',
+    'code_debug',
+    'code_review',
+    'explain_code',
+    'refactor',
+    'architecture_design',
+    'codebase_query',
+    'file_operation',
   ];
   const requiresContext = contextIntents.includes(bestIntent) || hasFilePath;
-  
-  const executionIntents: PromptIntent[] = ['terminal_command', 'file_operation', 'code_generation'];
+
+  const executionIntents: PromptIntent[] = [
+    'terminal_command',
+    'file_operation',
+    'code_generation',
+  ];
   const requiresExecution = executionIntents.includes(bestIntent) && complexity !== 'trivial';
-  
+
   // --- Model tier suggestion ---
   let suggestedModel: PromptAnalysis['suggestedModel'] = 'fast';
   if (complexity === 'enterprise' || bestIntent === 'architecture_design') {
@@ -552,16 +798,16 @@ export function analyzePrompt(
   } else if (complexity === 'complex' || (requiresContext && complexity === 'moderate')) {
     suggestedModel = 'balanced';
   }
-  
+
   // Urgency boost — urgent bugs get powerful model
   const urgency = detectUrgency(prompt);
   if (urgency === 'high' && bestIntent === 'code_debug') {
     suggestedModel = 'powerful';
   }
-  
+
   // Hardware analysis
   const hardware = detectHardware(prompt);
-  
+
   return {
     intent: bestIntent,
     confidence,
@@ -605,13 +851,13 @@ export function updateConversationState(
   } else {
     state.userFrustrationLevel = Math.max(0, state.userFrustrationLevel - 0.1);
   }
-  
+
   state.topicDrift = state.lastIntent === analysis.intent ? 0 : 0.5;
   state.lastIntent = analysis.intent;
   state.lastLanguages = analysis.detectedLanguages;
   state.lastFrameworks = analysis.frameworks;
   state.turnCount++;
-  
+
   return state;
 }
 
@@ -633,7 +879,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
       maxTokens: 256,
     };
   }
-  
+
   if (analysis.intent === 'farewell' || analysis.intent === 'gratitude') {
     return {
       agent: 'chat',
@@ -646,35 +892,38 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
       maxTokens: 128,
     };
   }
-  
+
   if (analysis.intent === 'continuation' && state?.lastIntent) {
     return {
       agent: state.lastIntent === 'general_chat' ? 'chat' : 'coder',
       reasoning: `Continuing previous ${state.lastIntent} task`,
       shouldUseSubagents: false,
-      systemPrompt: state.lastIntent === 'general_chat' ? SYSTEM_PROMPTS.chat : SYSTEM_PROMPTS.coder,
+      systemPrompt:
+        state.lastIntent === 'general_chat' ? SYSTEM_PROMPTS.chat : SYSTEM_PROMPTS.coder,
       tools: [],
       modelTier: analysis.suggestedModel,
       temperature: 0.3, // Lower temp for consistency in continuation
       maxTokens: 4096,
     };
   }
-  
+
   if (analysis.intent === 'correction') {
     return {
       agent: state?.lastIntent === 'general_chat' ? 'chat' : 'coder',
       reasoning: 'User is correcting previous output — need to adapt',
       shouldUseSubagents: false,
       systemPrompt: SYSTEM_PROMPTS.coder, // Always use coder for corrections (can handle both)
-      tools: state?.lastIntent && ['code_debug', 'code_generation', 'refactor'].includes(state.lastIntent) 
-        ? ['codebase_search', 'file_read'] 
-        : [],
+      tools:
+        state?.lastIntent &&
+        ['code_debug', 'code_generation', 'refactor'].includes(state.lastIntent)
+          ? ['codebase_search', 'file_read']
+          : [],
       modelTier: analysis.suggestedModel,
       temperature: 0.4,
       maxTokens: 4096,
     };
   }
-  
+
   if (analysis.intent === 'clarification') {
     return {
       agent: 'chat',
@@ -687,7 +936,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
       maxTokens: 1024,
     };
   }
-  
+
   // General chat routing
   if (analysis.intent === 'general_chat' && analysis.complexity === 'trivial') {
     return {
@@ -701,7 +950,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
       maxTokens: 1024,
     };
   }
-  
+
   // Code-related routing
   const tools: ToolCapability[] = [];
   if (analysis.requiresContext) tools.push('codebase_search', 'file_read');
@@ -710,27 +959,33 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
   if (analysis.detectedLanguages.includes('typescript') && analysis.frameworks.includes('react')) {
     tools.push('image_analysis'); // For UI generation
   }
-  
+
   // Subagent swarm trigger: Activate for highly complex or multi-step tasks
-  const shouldUseSubagents = 
-    analysis.complexity === 'enterprise' || 
+  const shouldUseSubagents =
+    analysis.complexity === 'enterprise' ||
     (analysis.complexity === 'complex' && analysis.requiresExecution) ||
     analysis.intent === 'architecture_design';
-  
+
   // Temperature tuning based on intent
-  const temperature = 
-    analysis.intent === 'code_generation' ? 0.2 :
-    analysis.intent === 'code_debug' ? 0.1 :
-    analysis.intent === 'architecture_design' ? 0.6 :
-    0.3;
-  
+  const temperature =
+    analysis.intent === 'code_generation'
+      ? 0.2
+      : analysis.intent === 'code_debug'
+        ? 0.1
+        : analysis.intent === 'architecture_design'
+          ? 0.6
+          : 0.3;
+
   // Max tokens based on complexity
   const maxTokens =
-    analysis.complexity === 'enterprise' ? 8192 :
-    analysis.complexity === 'complex' ? 4096 :
-    analysis.complexity === 'moderate' ? 2048 :
-    1024;
-  
+    analysis.complexity === 'enterprise'
+      ? 8192
+      : analysis.complexity === 'complex'
+        ? 4096
+        : analysis.complexity === 'moderate'
+          ? 2048
+          : 1024;
+
   return {
     agent: shouldUseSubagents ? 'architect' : 'coder',
     reasoning: `${analysis.intent} (${analysis.complexity})${analysis.multiIntent ? ` + [${analysis.multiIntent.join(', ')}]` : ''}`,
@@ -871,7 +1126,7 @@ export async function classifyPrompt(
   llmExecutor?: (prompt: string, system: string) => Promise<string>
 ): Promise<{ analysis: PromptAnalysis; route: AgentRoute }> {
   const analysis = analyzePrompt(prompt, conversationState);
-  
+
   // Low confidence fallback to LLM
   if (analysis.confidence < 0.4 && llmExecutor) {
     const llmResult = await classifyWithLLM(prompt, llmExecutor);
@@ -880,7 +1135,7 @@ export async function classifyPrompt(
       analysis.confidence = llmResult.confidence;
     }
   }
-  
+
   const route = routeToAgent(analysis, conversationState);
   return { analysis, route };
 }

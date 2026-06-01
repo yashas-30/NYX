@@ -115,8 +115,8 @@ export const CodeMirrorBlock: React.FC<CodeMirrorBlockProps> = ({ code, language
   }, [code]);
 
   return (
-    <div 
-      ref={containerRef} 
+    <div
+      ref={containerRef}
       className="w-full text-left overflow-x-auto bg-card rounded-none"
       style={{ fontFamily: '"Geist Mono","Fira Code","Cascadia Code",ui-monospace,monospace' }}
     />

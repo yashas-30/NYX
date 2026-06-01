@@ -12,13 +12,16 @@ export const validate = (schema: ZodSchema) => {
       next();
     } catch (error: any) {
       if (error instanceof ZodError) {
-        logger.warn(`[Validation Failed on ${req.method} ${req.originalUrl}]:`, JSON.stringify(error.issues, null, 2));
+        logger.warn(
+          `[Validation Failed on ${req.method} ${req.originalUrl}]:`,
+          JSON.stringify(error.issues, null, 2)
+        );
         return res.status(400).json({
           error: 'Validation failed',
-          details: error.issues.map(err => ({
+          details: error.issues.map((err) => ({
             path: err.path.join('.'),
-            message: err.message
-          }))
+            message: err.message,
+          })),
         });
       }
       next(error);

@@ -10,20 +10,23 @@ export class WorkspaceService {
   }
 
   async selectWorkspace() {
-    return { fallback: true, message: 'Native selection unavailable in server context: please input path manually' };
+    return {
+      fallback: true,
+      message: 'Native selection unavailable in server context: please input path manually',
+    };
   }
 
   async createWorkspace(dirPath: string, name?: string) {
     try {
       const fs = await import('fs');
       const path = await import('path');
-      
+
       const targetDir = name ? path.join(dirPath, name) : dirPath;
-      
+
       if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
       }
-      
+
       // Initialize basic files
       const readmePath = path.join(targetDir, 'README.md');
       if (!fs.existsSync(readmePath)) {
@@ -32,7 +35,7 @@ export class WorkspaceService {
           `# ${name || path.basename(targetDir)}\n\nInitialized by NYX Coder agent.\n`
         );
       }
-      
+
       setWorkspaceRoot(targetDir);
       return { success: true, workspace: targetDir };
     } catch (error: any) {

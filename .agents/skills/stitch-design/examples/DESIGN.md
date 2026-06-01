@@ -19,4 +19,5 @@ This is a comprehensive design language for a mindfulness and wellness applicati
 - **Navigation**: Clean, top-aligned, centered menu items.
 
 ---
+
 💡 **Tip**: When calling `generate_screen_from_text`, include the tokens above to ensure the new screen matches this design system.

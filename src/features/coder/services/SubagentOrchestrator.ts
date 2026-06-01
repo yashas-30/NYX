@@ -11,7 +11,8 @@ import { HybridModelRouter } from '@src/infrastructure/services/hybridRouter';
 import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
 import { TOOL_REGISTRY, ToolExecutor } from '@src/infrastructure/services/toolSystem';
 import { SUBAGENT_PERSONAS } from '@src/features/coder/config/agents';
-import { validateWorkspace, searchCodebase, searchWeb } from '@src/infrastructure/api/coderApi';
+import { validateWorkspace } from '@src/infrastructure/api/coderApi';
+import { searchCodebase, searchWeb } from '@src/infrastructure/api/searchApi';
 import {
   SubagentTask,
   SubagentResult,
@@ -451,7 +452,7 @@ Please identify the compile/syntax/import issue, generate the corrected complete
 
     const addParsed = (parsed: any) => {
       if (Array.isArray(parsed)) {
-        parsed.forEach(p => addParsed(p));
+        parsed.forEach((p) => addParsed(p));
       } else if (parsed && typeof parsed === 'object' && typeof parsed.tool === 'string') {
         calls.push(parsed);
       }
@@ -596,15 +597,16 @@ ${profile.openFiles.map((f) => `- ${f}`).join('\n') || 'none'}
         ? `Parent Subagent Outputs:\n${parentOutputs.join('\n\n---\n\n')}`
         : '',
       codebaseContext,
-      webContext
+      webContext,
     ].filter(Boolean);
 
     let coreContext = coreSections.join('\n\n');
     const MAX_HANDOFF_TOKENS = 12000;
-    
+
     if (countTokens(coreContext) > MAX_HANDOFF_TOKENS) {
       const maxChars = Math.floor(MAX_HANDOFF_TOKENS * 3.5);
-      coreContext = coreContext.slice(0, maxChars) + '\n\n[... Context truncated due to token limits ...]';
+      coreContext =
+        coreContext.slice(0, maxChars) + '\n\n[... Context truncated due to token limits ...]';
     }
 
     return `${coreContext}\n\nExecute your subtask precisely. Output complete, production-ready results. Do not truncate.`;
@@ -614,5 +616,3 @@ ${profile.openFiles.map((f) => `- ${f}`).join('\n') || 'none'}
     this.onTaskUpdate?.(Array.from(this.tasks.values()));
   }
 }
-
-

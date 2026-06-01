@@ -13,6 +13,7 @@ import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import compression from 'compression';
 import helmet from 'helmet';
+import { fileURLToPath } from 'url';
 
 // Side-effect import to register apiAgent in the factory
 import './server/lib/apiAgent.ts'; // 🚀 Init global connection pooling
@@ -62,7 +63,8 @@ const execAsync = promisify(exec);
 
 import { PORTS } from './src/shared/constants.ts';
 
-const _dirname = typeof __dirname !== 'undefined' ? __dirname : '';
+const _dirname =
+  typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || String(PORTS.API), 10);
 const FASTIFY_PORT = parseInt(process.env.FASTIFY_PORT || String(PORTS.FASTIFY), 10);
 
@@ -167,7 +169,12 @@ async function startServer() {
   function spawnAntigravity() {
     try {
       const pythonPath = findPythonPath();
-      const antigravityScriptPath = path.join(_dirname, 'server', 'python', 'antigravity_service.py');
+      const antigravityScriptPath = path.join(
+        _dirname,
+        'server',
+        'python',
+        'antigravity_service.py'
+      );
       logger.info(
         `[Antigravity] Spawning Antigravity server on port ${ANTIGRAVITY_PORT} using ${pythonPath}...`
       );
@@ -182,7 +189,10 @@ async function startServer() {
         antigravityProc = null;
       });
     } catch (error: any) {
-      logger.error({ error: error.message }, '[Antigravity] Failed to spawn Antigravity local service');
+      logger.error(
+        { error: error.message },
+        '[Antigravity] Failed to spawn Antigravity local service'
+      );
     }
   }
 
@@ -305,10 +315,25 @@ async function startServer() {
   app.use(
     cors({
       origin: isProd
-        ? ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:1420', 'tauri://localhost', 'nyx://localhost']
+        ? [
+            'http://localhost:3000',
+            'http://127.0.0.1:3000',
+            'http://localhost:1420',
+            'tauri://localhost',
+            'nyx://localhost',
+          ]
         : '*',
       methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-NYX-Session-Token', 'x-nyx-session-token', 'traceparent', 'tracestate', 'Connection', 'Accept'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-NYX-Session-Token',
+        'x-nyx-session-token',
+        'traceparent',
+        'tracestate',
+        'Connection',
+        'Accept',
+      ],
       credentials: false,
     })
   );
@@ -380,29 +405,6 @@ async function startServer() {
       if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Endpoint not found' });
       res.sendFile(path.join(distPath, 'index.html'));
     });
-  } else {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      root: path.join(_dirname, '..'),
-      server: {
-        middlewareMode: true,
-        watch: {
-          ignored: [
-            '**/.nyx-cache/**',
-            '**/.nyx-models/**',
-            '**/.nyx-logs/**',
-            '**/nyx.db*',
-            '**/scratch/**',
-            '**/server.log',
-            '**/server.err',
-            /[/\\]nyx\.db.*/,
-            /.*nyx\.db.*/,
-          ],
-        },
-      },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
   }
 
   const server = http.createServer(app);

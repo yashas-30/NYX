@@ -35,11 +35,11 @@ No competitor does all three. Most stop at deny.
 
 Two independent A/B tests, identical agents, same task:
 
-| Task | Gated | Ungated | Gap |
-| --- | --- | --- | --- |
-| Analytics module | 8.0/10 | 6.5/10 | +1.5 |
-| Webhook validator | 10.0/10 | 7.0/10 | +3.0 |
-| **Average** | **9.0** | **6.75** | **+2.25** |
+| Task              | Gated   | Ungated  | Gap       |
+| ----------------- | ------- | -------- | --------- |
+| Analytics module  | 8.0/10  | 6.5/10   | +1.5      |
+| Webhook validator | 10.0/10 | 7.0/10   | +3.0      |
+| **Average**       | **9.0** | **6.75** | **+2.25** |
 
 Both agents produce code that runs and passes tests. The difference is design depth.
 

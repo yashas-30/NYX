@@ -4,14 +4,7 @@
  *   collapsible reasoning, message actions, and Claude/Kimi-parity UX.
  */
 
-import React, {
-  useState,
-  useRef,
-  useEffect,
-  useCallback,
-  useMemo,
-  memo,
-} from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import {
   useOrchestrator,
   OrchestratorMessage,
@@ -19,11 +12,7 @@ import {
   ToolCall,
   Artifact,
 } from '../hooks/useOrchestrator';
-import {
-  LocalModelConfig,
-  HardwareProfile,
-  LocalTool,
-} from '@src/infrastructure/types/agentTypes';
+import { LocalModelConfig, HardwareProfile, LocalTool } from '@src/infrastructure/types/agentTypes';
 import { Button } from '@src/shared/components/ui/button';
 import { ScrollArea } from '@src/shared/components/ui/scroll-area';
 import { Input } from '@src/shared/components/ui/input';
@@ -93,7 +82,9 @@ const PhaseBadge: React.FC<{ phase: string; active: boolean }> = memo(({ phase, 
       initial={false}
       animate={active ? { scale: 1.05 } : { scale: 1 }}
       className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium border transition-all ${
-        active ? colors[phase] || colors.generating : 'bg-transparent text-[#555] border-transparent'
+        active
+          ? colors[phase] || colors.generating
+          : 'bg-transparent text-[#555] border-transparent'
       }`}
     >
       {labels[phase] || phase}
@@ -190,7 +181,9 @@ const ToolCallCard: React.FC<{ call: ToolCall }> = memo(({ call }) => {
             Running
           </span>
         )}
-        {(call.status === 'completed' || call.status === 'success') && <Check size={12} className="text-emerald-400 ml-auto" />}
+        {(call.status === 'completed' || call.status === 'success') && (
+          <Check size={12} className="text-emerald-400 ml-auto" />
+        )}
         {call.status === 'error' && <AlertCircle size={12} className="text-red-400 ml-auto" />}
         <span className="ml-auto">
           {expanded ? (
@@ -272,7 +265,9 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
   return (
     <div className="relative group/code my-3 rounded-xl border border-[#2A2A2E] bg-[#0d1117] overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 bg-[#161b22] border-b border-[#2A2A2E]">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[#555]">{language}</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[#555]">
+          {language}
+        </span>
         <button
           onClick={handleCopy}
           className="flex items-center gap-1 px-2 py-1 rounded text-[9px] text-[#666] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
@@ -325,7 +320,9 @@ const MarkdownRenderer: React.FC<{ content: string; isStreaming?: boolean }> = m
           );
         },
         h1: ({ children }: any) => (
-          <h1 className="text-base font-bold text-[#E0E0E0] mt-4 mb-2 pb-2 border-b border-[#2A2A2E]">{children}</h1>
+          <h1 className="text-base font-bold text-[#E0E0E0] mt-4 mb-2 pb-2 border-b border-[#2A2A2E]">
+            {children}
+          </h1>
         ),
         h2: ({ children }: any) => (
           <h2 className="text-[14px] font-bold text-[#E0E0E0] mt-3 mb-2 flex items-center gap-2">
@@ -340,12 +337,19 @@ const MarkdownRenderer: React.FC<{ content: string; isStreaming?: boolean }> = m
           <ul className="list-disc pl-5 space-y-1 my-2 text-[14px] text-[#D1D1D1]">{children}</ul>
         ),
         ol: ({ children }: any) => (
-          <ol className="list-decimal pl-5 space-y-1 my-2 text-[14px] text-[#D1D1D1]">{children}</ol>
+          <ol className="list-decimal pl-5 space-y-1 my-2 text-[14px] text-[#D1D1D1]">
+            {children}
+          </ol>
         ),
         li: ({ children }: any) => <li className="leading-relaxed">{children}</li>,
         strong: ({ children }: any) => <strong className="font-bold text-white">{children}</strong>,
         a: ({ href, children }: any) => (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:underline"
+          >
             {children}
           </a>
         ),
@@ -427,7 +431,10 @@ const AssistantMessage: React.FC<{
       )}
 
       {/* Reasoning */}
-      <ThinkingBlock steps={msg.thinking || []} isStreaming={isStreaming && msg.status === 'streaming'} />
+      <ThinkingBlock
+        steps={msg.thinking || []}
+        isStreaming={isStreaming && msg.status === 'streaming'}
+      />
 
       {/* Tool calls */}
       {msg.toolCalls && msg.toolCalls.length > 0 && (
@@ -441,21 +448,40 @@ const AssistantMessage: React.FC<{
       {/* Content */}
       {msg.content && (
         <div className="text-[15px] leading-relaxed text-[#D1D1D1]">
-          <MarkdownRenderer content={msg.content} isStreaming={isStreaming && msg.status === 'streaming'} />
+          <MarkdownRenderer
+            content={msg.content}
+            isStreaming={isStreaming && msg.status === 'streaming'}
+          />
         </div>
       )}
 
       {/* Empty streaming state */}
       {!msg.content && isStreaming && msg.status === 'streaming' && (
         <div className="flex gap-1 items-center h-5">
-          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          <span
+            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"
+            style={{ animationDelay: '0ms' }}
+          />
+          <span
+            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"
+            style={{ animationDelay: '150ms' }}
+          />
+          <span
+            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"
+            style={{ animationDelay: '300ms' }}
+          />
         </div>
       )}
 
       {/* Actions */}
-      {!isStreaming && <MessageActions content={msg.content} onCopy={() => onCopy(msg.content, msg.id)} onRegenerate={onRegenerate} copied={isCopied} />}
+      {!isStreaming && (
+        <MessageActions
+          content={msg.content}
+          onCopy={() => onCopy(msg.content, msg.id)}
+          onRegenerate={onRegenerate}
+          copied={isCopied}
+        />
+      )}
     </div>
   );
 });
@@ -471,7 +497,9 @@ function useSmartScroll<T>(deps: React.DependencyList) {
   const [showJumpButton, setShowJumpButton] = useState(false);
 
   const scrollToBottom = useCallback(() => {
-    const el = containerRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    const el = containerRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]'
+    ) as HTMLElement;
     if (el) {
       el.scrollTop = el.scrollHeight;
       isNearBottomRef.current = true;
@@ -480,7 +508,9 @@ function useSmartScroll<T>(deps: React.DependencyList) {
   }, []);
 
   const handleScroll = useCallback(() => {
-    const el = containerRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    const el = containerRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]'
+    ) as HTMLElement;
     if (!el) return;
     const threshold = 100;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
@@ -529,7 +559,12 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
       if (e.key === 'Escape' && isProcessing) {
         stop();
       }
-      if (e.key === '/' && !e.metaKey && !e.ctrlKey && document.activeElement !== inputRef.current) {
+      if (
+        e.key === '/' &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        document.activeElement !== inputRef.current
+      ) {
         e.preventDefault();
         inputRef.current?.focus();
       }
@@ -558,10 +593,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
     });
   }, []);
 
-  const allArtifacts = useMemo(
-    () => messages.flatMap((m) => m.artifacts || []),
-    [messages]
-  );
+  const allArtifacts = useMemo(() => messages.flatMap((m) => m.artifacts || []), [messages]);
 
   const phases = ['analyzing', 'selecting_model', 'reasoning', 'generating', 'executing_tools'];
 
@@ -607,11 +639,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
         </div>
 
         {/* Messages */}
-        <ScrollArea
-          className="flex-1 relative"
-          ref={containerRef}
-          onScrollCapture={handleScroll}
-        >
+        <ScrollArea className="flex-1 relative" ref={containerRef} onScrollCapture={handleScroll}>
           <div className="max-w-3xl mx-auto px-4 py-6 space-y-6 pb-24">
             <AnimatePresence initial={false}>
               {messages.map((msg, idx) => (
@@ -672,7 +700,9 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                 className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-[#18181B] border border-[#2A2A2E] text-[#888] hover:text-white text-[10px] font-bold uppercase tracking-wider shadow-xl cursor-pointer"
               >
                 <span>Latest</span>
-                {isProcessing && <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />}
+                {isProcessing && (
+                  <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                )}
               </motion.button>
             )}
           </AnimatePresence>
@@ -685,11 +715,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
             {isProcessing && (
               <div className="flex gap-2 text-xs font-mono mb-1 overflow-x-auto pb-1">
                 {phases.map((phase) => (
-                  <PhaseBadge
-                    key={phase}
-                    phase={phase}
-                    active={currentPhase === phase}
-                  />
+                  <PhaseBadge key={phase} phase={phase} active={currentPhase === phase} />
                 ))}
               </div>
             )}

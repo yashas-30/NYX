@@ -121,18 +121,25 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
 
   const selectedImages = pendingImages ?? localSelectedImages;
 
-  const updateImages = useCallback((
-    updater: { name: string; mimeType: string; data: string }[] | ((prev: { name: string; mimeType: string; data: string }[]) => { name: string; mimeType: string; data: string }[])
-  ) => {
-    const nextImages = typeof updater === 'function' ? updater(selectedImages) : updater;
-    if (pendingImages !== undefined) {
-      if (onImagesChange) {
-        onImagesChange(nextImages);
+  const updateImages = useCallback(
+    (
+      updater:
+        | { name: string; mimeType: string; data: string }[]
+        | ((
+            prev: { name: string; mimeType: string; data: string }[]
+          ) => { name: string; mimeType: string; data: string }[])
+    ) => {
+      const nextImages = typeof updater === 'function' ? updater(selectedImages) : updater;
+      if (pendingImages !== undefined) {
+        if (onImagesChange) {
+          onImagesChange(nextImages);
+        }
+      } else {
+        setLocalSelectedImages(nextImages);
       }
-    } else {
-      setLocalSelectedImages(nextImages);
-    }
-  }, [selectedImages, pendingImages, onImagesChange]);
+    },
+    [selectedImages, pendingImages, onImagesChange]
+  );
 
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -233,7 +240,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        setShowSettings(false);
+      setShowSettings(false);
 
       if (e.key === 'Escape' && isLoading) {
         e.preventDefault();
@@ -331,7 +338,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
       <div
         className={`relative w-full transition-all duration-500 ease-out ${prompt.trim().length > 0 ? 'max-w-3xl' : 'max-w-2xl'}`}
       >
-
         {/* ── Settings Panel ────────────────────────────────────────── */}
         <AnimatePresence>
           {isLocalModel && showSettings && (
@@ -596,7 +602,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   <span className="text-[9.5px] font-bold tracking-tight">Optimize prompt</span>
                 </motion.button>
 
-
                 <motion.button
                   variants={tagItemVariants}
                   whileHover={{ y: -1.5, scale: 1.02 }}
@@ -712,8 +717,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
               </div>
 
               <div className="flex items-center gap-2 px-1 pr-12">
-
-
                 <motion.button
                   whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.05)' }}
                   whileTap={{ scale: 0.98 }}

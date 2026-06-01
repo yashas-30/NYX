@@ -14,19 +14,22 @@ interface AgentStateProps {
 
 export const useAgentState = ({
   models: propModels,
-  setModel: propSetModel
+  setModel: propSetModel,
 }: AgentStateProps = {}) => {
   const [localModels, setLocalModels] = useState<Record<'nyx', string>>({
-    nyx: ''
+    nyx: '',
   });
   const models = propModels ?? localModels;
-  const setModel = useCallback((mid: string) => {
-    if (propSetModel) {
-      propSetModel(mid);
-    } else {
-      setLocalModels({ nyx: mid });
-    }
-  }, [propSetModel]);
+  const setModel = useCallback(
+    (mid: string) => {
+      if (propSetModel) {
+        propSetModel(mid);
+      } else {
+        setLocalModels({ nyx: mid });
+      }
+    },
+    [propSetModel]
+  );
 
   const [agentPersonas, setAgentPersonas] = useState<Record<'nyx', AgentPersona>>(DEFAULT_AGENTS);
 
@@ -35,6 +38,6 @@ export const useAgentState = ({
     models,
     setModel,
     agentPersonas,
-    setAgentPersonas
+    setAgentPersonas,
   };
 };

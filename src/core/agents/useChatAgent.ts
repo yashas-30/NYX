@@ -1,5 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { ChatAgent, StreamEvent, Artifact, Citation, StreamMetrics, ImageAttachment } from './chatAgent';
+import { ChatAgent } from './chatAgent';
+import {
+  StreamEvent,
+  Artifact,
+  Citation,
+  StreamMetrics,
+  ImageAttachment,
+} from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 import { ChatMessage } from '@src/infrastructure/types';
 
@@ -42,7 +49,8 @@ export function useChatAgent() {
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 120;
     shouldAutoScrollRef.current = isNearBottom;
 
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
@@ -110,7 +118,13 @@ export function useChatAgent() {
       let metrics: StreamMetrics | undefined;
 
       try {
-        const stream = agent.streamResponse(prompt, analysis, new AbortController().signal, undefined, images);
+        const stream = agent.streamResponse(
+          prompt,
+          analysis,
+          new AbortController().signal,
+          undefined,
+          images
+        );
 
         for await (const event of stream) {
           switch (event.type) {
@@ -245,7 +259,12 @@ export function useChatAgent() {
   // ── Edit ──────────────────────────────────────────────────────────────────
 
   const editMessage = useCallback(
-    async (messageId: string, newContent: string, analysis: PromptAnalysis, config: ConstructorParameters<typeof ChatAgent>[0]) => {
+    async (
+      messageId: string,
+      newContent: string,
+      analysis: PromptAnalysis,
+      config: ConstructorParameters<typeof ChatAgent>[0]
+    ) => {
       const idx = messagesRef.current.findIndex((m) => m.id === messageId);
       if (idx === -1 || messagesRef.current[idx].role !== 'user') return;
 
@@ -267,7 +286,11 @@ export function useChatAgent() {
   // ── Regenerate ────────────────────────────────────────────────────────────
 
   const regenerateResponse = useCallback(
-    async (messageId: string, analysis: PromptAnalysis, config: ConstructorParameters<typeof ChatAgent>[0]) => {
+    async (
+      messageId: string,
+      analysis: PromptAnalysis,
+      config: ConstructorParameters<typeof ChatAgent>[0]
+    ) => {
       const targetIdx = messagesRef.current.findIndex((m) => m.id === messageId);
       let userIdx = targetIdx;
       while (userIdx >= 0 && messagesRef.current[userIdx]?.role !== 'user') userIdx--;

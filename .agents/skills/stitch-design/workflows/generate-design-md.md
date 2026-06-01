@@ -18,18 +18,23 @@ To analyze a Stitch project, you must retrieve metadata and assets using the Sti
 ## 🧠 Analysis & Synthesis
 
 ### 1. Identify Identity
+
 - Capture Project Title and Project ID.
 
 ### 2. Define Atmosphere
+
 - Analyze the HTML and screenshot to capture the "vibe" (e.g., "Airy," "Professional," "Vibrant").
 
 ### 3. Map Color Palette
+
 - Extract exact hex codes and assign functional roles (e.g., "Primary Action: #2563eb").
 
 ### 4. Translate Geometry
+
 - Convert Tailwind/CSS values into descriptive language (e.g., `rounded-full` → "Pill-shaped").
 
 ### 5. Document Depth
+
 - Describe shadow styles and layering (e.g., "Soft, diffused elevation").
 
 ## 📝 Output Structure
@@ -38,26 +43,33 @@ Create a `.stitch/DESIGN.md` file in the project directory with this structure:
 
 ```markdown
 # Design System: [Project Title]
+
 **Project ID:** [Insert Project ID Here]
 
 ## 1. Visual Theme & Atmosphere
+
 (Description of mood and aesthetic philosophy)
 
 ## 2. Color Palette & Roles
+
 (Descriptive Name + Hex Code + Role)
 
 ## 3. Typography Rules
+
 (Font families, weights, and usage)
 
 ## 4. Component Stylings
-* **Buttons:** Shape, color, behavior
-* **Containers:** Roundness, elevation
+
+- **Buttons:** Shape, color, behavior
+- **Containers:** Roundness, elevation
 
 ## 5. Layout Principles
+
 (Whitespace strategy and grid alignment)
 ```
 
 ## 💡 Best Practices
+
 - **Be Precise**: Always include hex codes in parentheses.
 - **Be Descriptive**: Use natural language like "Deep Ocean Blue" instead of just "Blue".
-- **Be Functional**: Explain *why* an element is used.
+- **Be Functional**: Explain _why_ an element is used.

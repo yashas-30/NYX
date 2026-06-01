@@ -4,7 +4,7 @@ import {
   getProviderForModel,
   isLocalModel,
   requiresApiKey,
-  getEffectiveApiKey
+  getEffectiveApiKey,
 } from '../../../src/infrastructure/utils/provider.ts';
 
 describe('AI Provider Utility Functions', () => {

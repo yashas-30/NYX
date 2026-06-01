@@ -34,8 +34,8 @@ export interface ToolDefinition {
 
 /** Represents a single tool call requested by the model */
 export interface ToolCall {
-  id: string;           // Unique call ID (e.g., "call_abc123")
-  name: string;         // Tool name
+  id: string; // Unique call ID (e.g., "call_abc123")
+  name: string; // Tool name
   arguments: Record<string, any>; // Parsed JSON arguments
   rawArguments: string; // Raw JSON string for debugging
 }
@@ -45,7 +45,7 @@ export interface ToolResult {
   callId: string;
   name: string;
   status: 'success' | 'error' | 'cancelled';
-  content: any;         // The actual result data
+  content: any; // The actual result data
   metadata: {
     durationMs: number;
     timestamp: string;
@@ -82,7 +82,7 @@ export interface ToolExecutionConfig {
   maxRetries?: number;
   retryDelayMs?: number;
   maxResultTokens?: number; // Auto-truncate if result exceeds this
-  allowParallel?: boolean;   // Execute multiple tools concurrently
+  allowParallel?: boolean; // Execute multiple tools concurrently
 }
 
 // ============================================================================
@@ -108,7 +108,8 @@ class SchemaValidator {
         if (!Number.isInteger(value)) errors.push(`${path}: expected integer, got ${value}`);
         break;
       case 'boolean':
-        if (typeof value !== 'boolean') errors.push(`${path}: expected boolean, got ${typeof value}`);
+        if (typeof value !== 'boolean')
+          errors.push(`${path}: expected boolean, got ${typeof value}`);
         break;
       case 'array':
         if (!Array.isArray(value)) {
@@ -138,7 +139,15 @@ class SchemaValidator {
   }
 
   static validateToolCall(tool: ToolDefinition, args: Record<string, any>): string[] {
-    return this.validate(args, { type: 'object', properties: tool.parameters.properties, required: tool.parameters.required }, '');
+    return this.validate(
+      args,
+      {
+        type: 'object',
+        properties: tool.parameters.properties,
+        required: tool.parameters.required,
+      },
+      ''
+    );
   }
 }
 
@@ -220,7 +229,8 @@ class ResultProcessor {
 export const TOOL_REGISTRY: ToolDefinition[] = [
   {
     name: 'read_file',
-    description: 'Read the contents of a file in the workspace, optionally between specific lines. Use this to examine code, configs, or documentation.',
+    description:
+      'Read the contents of a file in the workspace, optionally between specific lines. Use this to examine code, configs, or documentation.',
     parameters: {
       type: 'object',
       properties: {
@@ -242,7 +252,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   },
   {
     name: 'edit_file',
-    description: 'Update the content of an existing file with a complete rewrite. Use write_file for new files instead.',
+    description:
+      'Update the content of an existing file with a complete rewrite. Use write_file for new files instead.',
     parameters: {
       type: 'object',
       properties: {
@@ -260,7 +271,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   },
   {
     name: 'write_file',
-    description: 'Create a new file in the workspace. Fails if file already exists unless overwrite is true.',
+    description:
+      'Create a new file in the workspace. Fails if file already exists unless overwrite is true.',
     parameters: {
       type: 'object',
       properties: {
@@ -283,7 +295,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   },
   {
     name: 'search_codebase',
-    description: 'Perform semantic neural and fuzzy search across the codebase to find relevant code blocks, functions, or patterns.',
+    description:
+      'Perform keyword and fuzzy search across the codebase to find relevant code blocks, functions, or patterns.',
     parameters: {
       type: 'object',
       properties: {
@@ -302,7 +315,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   },
   {
     name: 'run_terminal',
-    description: 'Execute a shell command in the terminal sandbox. Use with caution. Prefer read_file over cat/grep when possible.',
+    description:
+      'Execute a shell command in the terminal sandbox. Use with caution. Prefer read_file over cat/grep when possible.',
     parameters: {
       type: 'object',
       properties: {
@@ -325,7 +339,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   },
   {
     name: 'web_search',
-    description: 'Search the web for API documentation, libraries, error solutions, or general knowledge.',
+    description:
+      'Search the web for API documentation, libraries, error solutions, or general knowledge.',
     parameters: {
       type: 'object',
       properties: {
@@ -414,7 +429,7 @@ export class ToolExecutor {
   private registry: Map<string, ToolDefinition>;
 
   private constructor() {
-    this.registry = new Map(TOOL_REGISTRY.map(t => [t.name, t]));
+    this.registry = new Map(TOOL_REGISTRY.map((t) => [t.name, t]));
   }
 
   static getInstance(): ToolExecutor {
@@ -436,7 +451,7 @@ export class ToolExecutor {
 
   /** Validate and parse raw tool calls from model output */
   parseToolCalls(rawCalls: Array<{ id: string; name: string; arguments: string }>): ToolCall[] {
-    return rawCalls.map(raw => {
+    return rawCalls.map((raw) => {
       const tool = this.registry.get(raw.name);
       if (!tool) {
         throw new Error(`Unknown tool: ${raw.name}`);
@@ -464,10 +479,7 @@ export class ToolExecutor {
   }
 
   /** Execute a single tool with full error handling, retries, and streaming */
-  async executeSingle(
-    call: ToolCall,
-    config: ToolExecutionConfig = {}
-  ): Promise<ToolResult> {
+  async executeSingle(call: ToolCall, config: ToolExecutionConfig = {}): Promise<ToolResult> {
     const startTime = Date.now();
     const maxRetries = config.maxRetries ?? 2;
     let retryCount = 0;
@@ -479,10 +491,7 @@ export class ToolExecutor {
     while (retryCount <= maxRetries) {
       try {
         const result = await this.executeToolInternal(call, config);
-        const processed = ResultProcessor.truncateIfNeeded(
-          result,
-          config.maxResultTokens
-        );
+        const processed = ResultProcessor.truncateIfNeeded(result, config.maxResultTokens);
 
         const toolResult: ToolResult = {
           callId: call.id,
@@ -495,14 +504,19 @@ export class ToolExecutor {
             retryCount,
             truncated: processed.truncated,
             tokenCount: ResultProcessor.estimateTokens(
-              typeof processed.content === 'string' ? processed.content : JSON.stringify(processed.content)
+              typeof processed.content === 'string'
+                ? processed.content
+                : JSON.stringify(processed.content)
             ),
           },
         };
 
-        await config.onStream?.({ type: 'tool_result_complete', callId: call.id, result: toolResult });
+        await config.onStream?.({
+          type: 'tool_result_complete',
+          callId: call.id,
+          result: toolResult,
+        });
         return toolResult;
-
       } catch (error: any) {
         lastError = error as Error;
         retryCount++;
@@ -566,10 +580,7 @@ export class ToolExecutor {
   }
 
   /** Main entry point: execute parsed tool calls */
-  async execute(
-    calls: ToolCall[],
-    config: ToolExecutionConfig = {}
-  ): Promise<ToolResult[]> {
+  async execute(calls: ToolCall[], config: ToolExecutionConfig = {}): Promise<ToolResult[]> {
     return this.executeParallel(calls, config);
   }
 
@@ -597,10 +608,7 @@ export class ToolExecutor {
   // INTERNAL TOOL IMPLEMENTATIONS
   // ==========================================================================
 
-  private async executeToolInternal(
-    call: ToolCall,
-    config: ToolExecutionConfig
-  ): Promise<any> {
+  private async executeToolInternal(call: ToolCall, config: ToolExecutionConfig): Promise<any> {
     const { signal } = config;
     const params = call.arguments;
 
@@ -809,12 +817,13 @@ export class ToolExecutor {
     if (error.message.includes('SECURITY')) return 'SECURITY_VIOLATION';
     if (error.message.includes('timeout') || (error as any).code === 'ETIMEDOUT') return 'TIMEOUT';
     if (error.message.includes('not found') || error.message.includes('404')) return 'NOT_FOUND';
-    if (error.message.includes('permission') || error.message.includes('403')) return 'PERMISSION_DENIED';
+    if (error.message.includes('permission') || error.message.includes('403'))
+      return 'PERMISSION_DENIED';
     return 'EXECUTION_ERROR';
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

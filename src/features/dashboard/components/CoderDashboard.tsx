@@ -15,9 +15,19 @@ import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import {
-  PanelLeftClose, PanelLeftOpen, Plus, MessageSquare,
-  Box, Settings, Trash2, ChevronRight, User, Activity,
-  ArrowLeft, ArrowRight, Library
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  MessageSquare,
+  Box,
+  Settings,
+  Trash2,
+  ChevronRight,
+  User,
+  Activity,
+  ArrowLeft,
+  ArrowRight,
+  Library,
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
@@ -27,7 +37,9 @@ import { AgentLightningPanel } from '@src/shared/components/AgentLightningPanel'
 export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -46,11 +58,16 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
   }, []);
 
   const {
-    activeMode, setActiveMode,
+    activeMode,
+    setActiveMode,
     apiKeys,
-    modelSettings, setModelSettings, trackUsage,
+    modelSettings,
+    setModelSettings,
+    trackUsage,
     statuses,
-    models, setModels, setModel,
+    models,
+    setModels,
+    setModel,
     modelsState,
     updateApiKey,
     clearApiKeys,
@@ -59,9 +76,9 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
   const allModels = React.useMemo(() => {
     const seen = new Set();
-    const filteredAvailable = AVAILABLE_MODELS.filter(m => m.provider !== 'nyx-native');
+    const filteredAvailable = AVAILABLE_MODELS.filter((m) => m.provider !== 'nyx-native');
     const merged = [...localLibraryModels, ...filteredAvailable];
-    return merged.filter(m => {
+    return merged.filter((m) => {
       if (seen.has(m.id)) return false;
       seen.add(m.id);
       return true;
@@ -87,7 +104,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
     modelSettings,
     trackUsage,
     models: { nyx: modelsState.chat },
-    setModel: (mid: string) => setModels(prev => ({ ...prev, chat: mid })),
+    setModel: (mid: string) => setModels((prev) => ({ ...prev, chat: mid })),
     chatSessions,
     lightningEnabled: lightningState.lightningEnabledChat,
     lightningDirectives: lightningState.apoDirectives.chat,
@@ -100,7 +117,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
     modelSettings,
     trackUsage,
     models: { nyx: modelsState.coder },
-    setModel: (mid: string) => setModels(prev => ({ ...prev, coder: mid })),
+    setModel: (mid: string) => setModels((prev) => ({ ...prev, coder: mid })),
     chatSessions: coderSessions,
     lightningEnabled: lightningState.lightningEnabledCoder,
     lightningDirectives: lightningState.apoDirectives.coder,
@@ -108,7 +125,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
     submitReward: lightningState.submitReward,
   });
 
-  const filteredSessions = sessions.filter(s =>
+  const filteredSessions = sessions.filter((s) =>
     s.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -119,8 +136,9 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
   return (
     <ErrorBoundary>
-      <main className={`h-[100dvh] w-screen overflow-hidden flex bg-background text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}>
-
+      <main
+        className={`h-[100dvh] w-screen overflow-hidden flex bg-background text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}
+      >
         {/* Backdrop for mobile */}
         <AnimatePresence>
           {isMobile && sidebarOpen && (
@@ -145,7 +163,6 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
           <div className="flex flex-col h-full min-w-[260px] bg-background">
             {/* Sidebar Top Header (Stitch Design Flat) */}
             <div className="px-4.5 pt-3.5 pb-2 select-none border-b border-white/[0.03]">
-              
               {/* Toolbar: Sidebar Toggle + Back/Forward Arrows */}
               <div className="flex items-center gap-3 text-zinc-500">
                 <motion.button
@@ -177,7 +194,10 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
             {/* Top Primary Actions (Stitch design tabs) */}
             <div className="px-3.5 pt-3 pb-2 space-y-1">
               <motion.button
-                whileHover={{ backgroundColor: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)' }}
+                whileHover={{
+                  backgroundColor: 'rgba(255,255,255,0.04)',
+                  borderColor: 'rgba(255,255,255,0.08)',
+                }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => {
                   createSession([]);
@@ -201,7 +221,10 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
                 }`}
               >
-                <MessageSquare size={13} className={activeMode === 'chat' ? 'text-zinc-200' : 'text-zinc-500'} />
+                <MessageSquare
+                  size={13}
+                  className={activeMode === 'chat' ? 'text-zinc-200' : 'text-zinc-500'}
+                />
                 <span>NYX</span>
               </button>
 
@@ -215,7 +238,10 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
                 }`}
               >
-                <Box size={13} className={activeMode === 'coder' ? 'text-zinc-200' : 'text-zinc-500'} />
+                <Box
+                  size={13}
+                  className={activeMode === 'coder' ? 'text-zinc-200' : 'text-zinc-500'}
+                />
                 <span>NYX Coder</span>
               </button>
             </div>
@@ -226,10 +252,12 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                 <AnimatePresence>
                   {filteredSessions.length === 0 ? (
                     <div className="text-left py-4 pl-4.5">
-                      <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">No conversations</p>
+                      <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">
+                        No conversations
+                      </p>
                     </div>
                   ) : (
-                    filteredSessions.map(session => (
+                    filteredSessions.map((session) => (
                       <SessionItem
                         key={session.id}
                         session={session}
@@ -255,10 +283,15 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                   setActiveMode('registry');
                 }}
                 className={`w-full flex items-center gap-2.5 transition-all text-left cursor-pointer text-xs font-semibold ${
-                  activeMode === 'registry' ? 'text-white font-bold' : 'text-zinc-400 hover:text-zinc-200'
+                  activeMode === 'registry'
+                    ? 'text-white font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                <Library size={13} className={activeMode === 'registry' ? 'text-[#FF3366]' : 'text-zinc-500'} />
+                <Library
+                  size={13}
+                  className={activeMode === 'registry' ? 'text-[#FF3366]' : 'text-zinc-500'}
+                />
                 <span>Model Library</span>
               </button>
 
@@ -267,10 +300,15 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                   setActiveMode('settings');
                 }}
                 className={`w-full flex items-center gap-2.5 transition-all text-left cursor-pointer text-xs font-semibold ${
-                  activeMode === 'settings' ? 'text-white font-bold' : 'text-zinc-400 hover:text-zinc-200'
+                  activeMode === 'settings'
+                    ? 'text-white font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                <Settings size={13} className={activeMode === 'settings' ? 'text-white' : 'text-zinc-500'} />
+                <Settings
+                  size={13}
+                  className={activeMode === 'settings' ? 'text-white' : 'text-zinc-500'}
+                />
                 <span>Settings</span>
               </button>
             </div>
@@ -307,7 +345,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               statuses={statuses}
               chatSessions={activeSessions}
               sidebarOpen={sidebarOpen}
-              onToggleSidebar={() => setSidebarOpen(p => !p)}
+              onToggleSidebar={() => setSidebarOpen((p) => !p)}
               models={models}
               setModel={setModel}
               updateApiKey={updateApiKey}
@@ -351,7 +389,11 @@ const SideNavButton: React.FC<{
         : 'text-zinc-400 hover:text-white hover:bg-white/[0.03] border border-transparent'
     }`}
   >
-    <span className={`transition-all duration-200 ${active ? 'scale-105 text-[#FF3366]' : 'opacity-70 text-zinc-400'}`}>{icon}</span>
+    <span
+      className={`transition-all duration-200 ${active ? 'scale-105 text-[#FF3366]' : 'opacity-70 text-zinc-400'}`}
+    >
+      {icon}
+    </span>
     <span className="translate-y-[-0.5px]">{label}</span>
   </motion.button>
 );
@@ -392,12 +434,17 @@ const SessionItem: React.FC<{
       }`}
       onClick={onClick}
     >
-      <span className="flex-1 text-[11px] truncate tracking-normal font-medium">{session.title}</span>
-      
+      <span className="flex-1 text-[11px] truncate tracking-normal font-medium">
+        {session.title}
+      </span>
+
       <div className="flex items-center gap-2 shrink-0 select-none ml-2">
         {hovered ? (
           <button
-            onClick={e => { e.stopPropagation(); onDelete(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
             className="p-1 rounded bg-red-500/10 text-red-400/60 hover:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
             title="Delete Chat"
           >
@@ -406,7 +453,9 @@ const SessionItem: React.FC<{
         ) : isActive ? (
           <span className="w-1.5 h-1.5 rounded-full bg-[#0071E3] shadow-[0_0_6px_#0071E3]" />
         ) : (
-          <span className="text-[9px] text-zinc-500 font-mono tracking-tighter">{timeAgo(session.updatedAt)}</span>
+          <span className="text-[9px] text-zinc-500 font-mono tracking-tighter">
+            {timeAgo(session.updatedAt)}
+          </span>
         )}
       </div>
     </motion.div>

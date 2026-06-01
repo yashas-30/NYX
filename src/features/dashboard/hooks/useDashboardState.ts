@@ -1,7 +1,7 @@
 /**
  * @file src/hooks/useDashboardState.ts
  * @description Monolithic state hook refactored to manage state for CoderDashboard, registry, and settings.
- * NYX is the sole agent — no OpenCode or Claude agent switching.
+ * NYX is the sole agent — no Claude agent switching.
  */
 
 import { useState, useEffect } from 'react';
@@ -30,7 +30,7 @@ export const useDashboardState = (onExit?: () => void) => {
           batchSize: 512,
           repeatPenalty: 1.1,
           mirostat: 0,
-          ...parsed
+          ...parsed,
         };
       } catch {}
     }
@@ -47,11 +47,11 @@ export const useDashboardState = (onExit?: () => void) => {
       mirostat: 0,
     };
   });
-  
+
   // Split models for conversational general chat ('chat') and coding ('coder')
   const [models, setModels] = useState<Record<'chat' | 'coder', string>>({
     chat: '',
-    coder: ''
+    coder: '',
   });
 
   const { usage, updateUsage: trackUsage, refreshProviderQuota } = useTokenUsage();
@@ -60,19 +60,16 @@ export const useDashboardState = (onExit?: () => void) => {
   const [localLibraryModels, setLocalLibraryModels] = useState<any[]>([]);
 
   // 2. Security & API Keys from Zustand store
-  const apiKeys = useNyxStore(state => state.apiKeys);
-  const updateApiKey = useNyxStore(state => state.updateApiKey);
-  const clearApiKeys = useNyxStore(state => state.clearApiKeys);
+  const apiKeys = useNyxStore((state) => state.apiKeys);
+  const updateApiKey = useNyxStore((state) => state.updateApiKey);
+  const clearApiKeys = useNyxStore((state) => state.clearApiKeys);
   const [gatewayUrls, setGatewayUrls] = useState<Record<string, string>>({});
   const updateGatewayUrl = (provider: string, url: string) => {
-    setGatewayUrls(prev => ({ ...prev, [provider]: url }));
+    setGatewayUrls((prev) => ({ ...prev, [provider]: url }));
   };
 
   // 3. Provider Connectivity Status
-  const { statuses, refreshStatuses } = useProviderStatus(
-    apiKeys,
-    localModelsEnabled
-  );
+  const { statuses, refreshStatuses } = useProviderStatus(apiKeys, localModelsEnabled);
 
   // ── Initialization Logic ───────────────────────────────────────────────
   useEffect(() => {
@@ -90,16 +87,16 @@ export const useDashboardState = (onExit?: () => void) => {
     if (savedLocalModelsEnabled !== null) {
       setLocalModelsEnabled(savedLocalModelsEnabled === 'true');
     }
-    
+
     if (savedModels) {
       try {
         const parsed = JSON.parse(savedModels);
         setModels({
           chat: parsed.chat || '',
-          coder: parsed.coder || ''
+          coder: parsed.coder || '',
         });
       } catch (e: any) {
-        console.error("Models load fail", e);
+        console.error('Models load fail', e);
       }
     } else {
       // Migrate from old state if exists
@@ -110,7 +107,7 @@ export const useDashboardState = (onExit?: () => void) => {
           const legacyModel = parsed.nyx || '';
           setModels({
             chat: legacyModel,
-            coder: legacyModel
+            coder: legacyModel,
           });
         } catch {}
       }
@@ -142,7 +139,7 @@ export const useDashboardState = (onExit?: () => void) => {
     return () => {
       delete (window as any).nyxSwitchActiveMode;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Side Effects (Persistence & Lifecycle) ─────────────────────────────
@@ -185,9 +182,9 @@ export const useDashboardState = (onExit?: () => void) => {
                 contextWindow: m.contextLength || '8K',
                 trainingData: 'N/A',
                 maxOutput: 'N/A',
-                modality: 'Text'
+                modality: 'Text',
               },
-              status: m.status
+              status: m.status,
             }));
           setLocalLibraryModels(completed);
         }
@@ -209,26 +206,30 @@ export const useDashboardState = (onExit?: () => void) => {
 
   const setModel = (mid: string) => {
     const targetKey = activeMode === 'chat' ? 'chat' : 'coder';
-    setModels(prev => ({
+    setModels((prev) => ({
       ...prev,
-      [targetKey]: mid
+      [targetKey]: mid,
     }));
   };
 
   return {
     // Top-level State
-    activeMode, setActiveMode,
-    modelSettings, setModelSettings,
+    activeMode,
+    setActiveMode,
+    modelSettings,
+    setModelSettings,
     onExit,
 
     // Coder states — NYX only
     activeAgent: 'nyx' as const,
     models: { nyx: models[activeMode === 'chat' ? 'chat' : 'coder'] } as Record<'nyx', string>,
     modelsState: models,
-    setModels, setModel,
+    setModels,
+    setModel,
 
     // Registry (simplified)
-    localModelsEnabled, setLocalModelsEnabled,
+    localModelsEnabled,
+    setLocalModelsEnabled,
     localLibraryModels,
 
     // Security
@@ -244,8 +245,8 @@ export const useDashboardState = (onExit?: () => void) => {
       await refreshStatuses();
       await loadLocalLibraryModels();
     },
-    
+
     // Shared usage tracker for features
-    trackUsage
+    trackUsage,
   };
 };

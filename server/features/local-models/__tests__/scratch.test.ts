@@ -9,7 +9,7 @@ describe('scratch test', () => {
     logger.info('RECOMMENDED MODEL ID:', compatibility.recommendedModelId);
     logger.info('ALL COMPATIBLE MODEL IDS:', compatibility.allCompatibleModelIds);
     logger.info('PRESETS COMPATIBILITY COUNT:', compatibility.presetsCompatibility?.length);
-    
+
     const list = LocalModelManager.listModels();
     logger.info('LIST MODELS COUNT:', list.length);
     if (list.length > 0) {

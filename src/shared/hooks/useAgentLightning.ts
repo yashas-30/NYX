@@ -221,10 +221,23 @@ export const useAgentLightning = () => {
         if (current.includes(selectedCritique)) return prev;
 
         const updated = [...current, selectedCritique].slice(-5); // Keep last 5 directives
-        return {
+        const newState = {
           ...prev,
           [agentType]: updated,
         };
+
+        // Persist to backend
+        import('@src/infrastructure/api/authFetch').then(({ fetchWithAuth }) => {
+          fetchWithAuth('/api/nyx/lightning/directives', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ directives: newState }),
+          }).catch((err: any) =>
+            console.warn('[Agent Lightning] Failed to sync directives to backend', err)
+          );
+        });
+
+        return newState;
       });
 
       setIsOptimizing(false);

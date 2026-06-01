@@ -11,7 +11,9 @@ describe('CacheServer', () => {
     // Clear any test files before starting
     const filePath = path.join(CACHE_DIR, `${testKey}.json`);
     if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch {}
+      try {
+        fs.unlinkSync(filePath);
+      } catch {}
     }
   });
 
@@ -19,7 +21,9 @@ describe('CacheServer', () => {
     // Clean up after test run
     const filePath = path.join(CACHE_DIR, `${testKey}.json`);
     if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch {}
+      try {
+        fs.unlinkSync(filePath);
+      } catch {}
     }
   });
 
@@ -43,14 +47,14 @@ describe('CacheServer', () => {
         provider: 'gemini',
         model: 'gemini-1.5-pro',
         prompt: 'test prompt',
-        settings: { temperature: 0.7, topP: 0.95 }
+        settings: { temperature: 0.7, topP: 0.95 },
       };
 
       const payload2 = {
         settings: { topP: 0.95, temperature: 0.7 },
         prompt: 'test prompt',
         model: 'gemini-1.5-pro',
-        provider: 'gemini'
+        provider: 'gemini',
       };
 
       const key1 = CacheServer.generateKey(payload1);
@@ -63,13 +67,13 @@ describe('CacheServer', () => {
       const payload1 = {
         provider: 'gemini',
         model: 'gemini-1.5-pro',
-        prompt: 'test prompt 1'
+        prompt: 'test prompt 1',
       };
 
       const payload2 = {
         provider: 'gemini',
         model: 'gemini-1.5-pro',
-        prompt: 'test prompt 2'
+        prompt: 'test prompt 2',
       };
 
       const key1 = CacheServer.generateKey(payload1);

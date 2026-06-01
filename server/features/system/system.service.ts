@@ -16,9 +16,12 @@ interface VRAMResult {
 
 export class SystemService {
   private execNvidiaSmi(): Promise<VRAMResult | null> {
-    const executables = ['nvidia-smi', 'C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe'];
+    const executables = [
+      'nvidia-smi',
+      'C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe',
+    ];
     const args = ['--query-gpu=memory.total,memory.free,gpu_name', '--format=csv,noheader,nounits'];
-    
+
     return new Promise((resolve) => {
       const tryExec = (idx: number) => {
         if (idx >= executables.length) {
@@ -75,7 +78,7 @@ export class SystemService {
             resolve({
               vram: totalBytes,
               freeVram: freeBytes,
-              gpuName: 'AMD Radeon GPU (ROCm)'
+              gpuName: 'AMD Radeon GPU (ROCm)',
             });
             return;
           }
@@ -106,7 +109,7 @@ export class SystemService {
       return {
         vram: totalVramBytes,
         freeVram: Math.round(totalVramBytes * 0.8), // defensive fallback estimate
-        gpuName: gpuNames.join(', ') || 'Generic GPU'
+        gpuName: gpuNames.join(', ') || 'Generic GPU',
       };
     } catch {
       return { vram: 0, freeVram: 0, gpuName: 'Generic GPU' };
@@ -167,8 +170,11 @@ export class SystemService {
       checks.dependencies.disk = 'down';
     }
 
-    const overall = Object.values(checks.dependencies).every(s => s === 'ok') ? 'ok'
-      : Object.values(checks.dependencies).some(s => s === 'down') ? 'degraded' : 'ok';
+    const overall = Object.values(checks.dependencies).every((s) => s === 'ok')
+      ? 'ok'
+      : Object.values(checks.dependencies).some((s) => s === 'down')
+        ? 'degraded'
+        : 'ok';
 
     return { overall, checks };
   }
@@ -211,7 +217,7 @@ export class SystemService {
       vram,
       freeVram,
       gpuName,
-      optimalLayers
+      optimalLayers,
     };
   }
 }

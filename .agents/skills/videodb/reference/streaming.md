@@ -47,10 +47,10 @@ video.play()
 ```python
 # Index and add subtitles first
 video.index_spoken_words(force=True)
-stream_url = video.add_subtitle()
+video.add_subtitle()
 
-# Returned URL already includes subtitles
-print(f"Subtitled stream: {stream_url}")
+# Stream now includes subtitles
+stream_url = video.generate_stream()
 ```
 
 ### Specific Segments
@@ -108,40 +108,26 @@ Compile search results into a single stream of all matching segments:
 
 ```python
 from videodb import SearchType
-from videodb.exceptions import InvalidRequestError
 
 video.index_spoken_words(force=True)
-try:
-    results = video.search("key announcement", search_type=SearchType.semantic)
+results = video.search("key announcement", search_type=SearchType.semantic)
 
-    # Compile all matching shots into one stream
-    stream_url = results.compile()
-    print(f"Search results stream: {stream_url}")
+# Compile all matching shots into one stream
+stream_url = results.compile()
+print(f"Search results stream: {stream_url}")
 
-    # Or play directly
-    results.play()
-except InvalidRequestError as exc:
-    if "No results found" in str(exc):
-        print("No matching announcement segments were found.")
-    else:
-        raise
+# Or play directly
+results.play()
 ```
 
 ### Stream Individual Search Hits
 
 ```python
-from videodb.exceptions import InvalidRequestError
+results = video.search("product demo", search_type=SearchType.semantic)
 
-try:
-    results = video.search("product demo", search_type=SearchType.semantic)
-    for i, shot in enumerate(results.get_shots()):
-        stream_url = shot.generate_stream()
-        print(f"Hit {i+1} [{shot.start:.1f}s-{shot.end:.1f}s]: {stream_url}")
-except InvalidRequestError as exc:
-    if "No results found" in str(exc):
-        print("No product demo segments matched the query.")
-    else:
-        raise
+for i, shot in enumerate(results.get_shots()):
+    stream_url = shot.generate_stream()
+    print(f"Hit {i+1} [{shot.start:.1f}s-{shot.end:.1f}s]: {stream_url}")
 ```
 
 ## Audio Playback
@@ -163,7 +149,6 @@ Combine search, timeline composition, and streaming in one workflow:
 ```python
 import videodb
 from videodb import SearchType
-from videodb.exceptions import InvalidRequestError
 from videodb.timeline import Timeline
 from videodb.asset import VideoAsset, TextAsset, TextStyle
 
@@ -176,33 +161,21 @@ video.index_spoken_words(force=True)
 # Search for key moments
 queries = ["introduction", "main demo", "Q&A"]
 timeline = Timeline(conn)
-timeline_offset = 0.0
 
 for query in queries:
-    try:
-        results = video.search(query, search_type=SearchType.semantic)
-        shots = results.get_shots()
-    except InvalidRequestError as exc:
-        if "No results found" in str(exc):
-            shots = []
-        else:
-            raise
+    # Find matching segments
+    results = video.search(query, search_type=SearchType.semantic)
+    for shot in results.get_shots():
+        timeline.add_inline(
+            VideoAsset(asset_id=shot.video_id, start=shot.start, end=shot.end)
+        )
 
-    if not shots:
-        continue
-
-    # Add the section label where this batch starts in the compiled timeline
-    timeline.add_overlay(timeline_offset, TextAsset(
+    # Add section label as overlay on the first shot
+    timeline.add_overlay(0, TextAsset(
         text=query.title(),
         duration=2,
         style=TextStyle(fontsize=36, fontcolor="white", boxcolor="#222222"),
     ))
-
-    for shot in shots:
-        timeline.add_inline(
-            VideoAsset(asset_id=shot.video_id, start=shot.start, end=shot.end)
-        )
-        timeline_offset += shot.end - shot.start
 
 stream_url = timeline.generate_stream()
 print(f"Dynamic compilation: {stream_url}")
@@ -243,7 +216,6 @@ Build a stream dynamically based on search availability:
 ```python
 import videodb
 from videodb import SearchType
-from videodb.exceptions import InvalidRequestError
 from videodb.timeline import Timeline
 from videodb.asset import VideoAsset, TextAsset, TextStyle
 
@@ -259,29 +231,21 @@ timeline = Timeline(conn)
 topics = ["opening remarks", "technical deep dive", "closing"]
 
 found_any = False
-timeline_offset = 0.0
 for topic in topics:
-    try:
-        results = video.search(topic, search_type=SearchType.semantic)
-        shots = results.get_shots()
-    except InvalidRequestError as exc:
-        if "No results found" in str(exc):
-            shots = []
-        else:
-            raise
-
+    results = video.search(topic, search_type=SearchType.semantic)
+    shots = results.get_shots()
     if shots:
         found_any = True
-        timeline.add_overlay(timeline_offset, TextAsset(
-            text=topic.title(),
-            duration=2,
-            style=TextStyle(fontsize=32, fontcolor="white", boxcolor="#1a1a2e"),
-        ))
         for shot in shots:
             timeline.add_inline(
                 VideoAsset(asset_id=shot.video_id, start=shot.start, end=shot.end)
             )
-            timeline_offset += shot.end - shot.start
+        # Add a label overlay for the section
+        timeline.add_overlay(0, TextAsset(
+            text=topic.title(),
+            duration=2,
+            style=TextStyle(fontsize=32, fontcolor="white", boxcolor="#1a1a2e"),
+        ))
 
 if found_any:
     stream_url = timeline.generate_stream()
@@ -299,7 +263,6 @@ Process an event recording into a streamable recap with multiple sections:
 ```python
 import videodb
 from videodb import SearchType
-from videodb.exceptions import InvalidRequestError
 from videodb.timeline import Timeline
 from videodb.asset import VideoAsset, AudioAsset, ImageAsset, TextAsset, TextStyle
 
@@ -324,63 +287,33 @@ title_img = coll.generate_image(
 
 # Build the recap timeline
 timeline = Timeline(conn)
-timeline_offset = 0.0
 
 # Main video segments from search
-try:
-    keynote = event.search("keynote announcement", search_type=SearchType.semantic)
-    keynote_shots = keynote.get_shots()[:5]
-except InvalidRequestError as exc:
-    if "No results found" in str(exc):
-        keynote_shots = []
-    else:
-        raise
-if keynote_shots:
-    keynote_start = timeline_offset
-    for shot in keynote_shots:
+keynote = event.search("keynote announcement", search_type=SearchType.semantic)
+if keynote.get_shots():
+    for shot in keynote.get_shots()[:5]:
         timeline.add_inline(
             VideoAsset(asset_id=shot.video_id, start=shot.start, end=shot.end)
         )
-        timeline_offset += shot.end - shot.start
-else:
-    keynote_start = None
 
-try:
-    demo = event.search("product demo", search_type=SearchType.semantic)
-    demo_shots = demo.get_shots()[:5]
-except InvalidRequestError as exc:
-    if "No results found" in str(exc):
-        demo_shots = []
-    else:
-        raise
-if demo_shots:
-    demo_start = timeline_offset
-    for shot in demo_shots:
+demo = event.search("product demo", search_type=SearchType.semantic)
+if demo.get_shots():
+    for shot in demo.get_shots()[:5]:
         timeline.add_inline(
             VideoAsset(asset_id=shot.video_id, start=shot.start, end=shot.end)
         )
-        timeline_offset += shot.end - shot.start
-else:
-    demo_start = None
 
 # Overlay title card image
 timeline.add_overlay(0, ImageAsset(
     asset_id=title_img.id, width=100, height=100, x=80, y=20, duration=5
 ))
 
-# Overlay section labels at the correct timeline offsets
-if keynote_start is not None:
-    timeline.add_overlay(max(5, keynote_start), TextAsset(
-        text="Keynote Highlights",
-        duration=3,
-        style=TextStyle(fontsize=40, fontcolor="white", boxcolor="#0d1117"),
-    ))
-if demo_start is not None:
-    timeline.add_overlay(max(5, demo_start), TextAsset(
-        text="Demo Highlights",
-        duration=3,
-        style=TextStyle(fontsize=36, fontcolor="white", boxcolor="#0d1117"),
-    ))
+# Overlay section labels
+timeline.add_overlay(5, TextAsset(
+    text="Keynote Highlights",
+    duration=3,
+    style=TextStyle(fontsize=40, fontcolor="white", boxcolor="#0d1117"),
+))
 
 # Overlay background music
 timeline.add_overlay(0, AudioAsset(

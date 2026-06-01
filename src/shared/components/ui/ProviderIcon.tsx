@@ -19,10 +19,20 @@ const PROVIDER_ICON_MAP: Record<string, React.ReactNode> = {};
 function getIcon(provider: string | undefined, size: number, className: string): React.ReactNode {
   if (!provider) return <Cpu size={size} strokeWidth={1.5} className={className} />;
   switch (provider) {
-    case 'gemini':    return <Logo size={size + 4} className={className} />;
-    case 'terminal':  return <Cpu size={size} strokeWidth={1.5} className={className} />;
-    case 'nyx-native': return <Cpu size={size} strokeWidth={1.5} className={`${className} text-[#FF3366] animate-pulse`} />;
-    default:          return <Cpu size={size} strokeWidth={1.5} className={className} />;
+    case 'gemini':
+      return <Logo size={size + 4} className={className} />;
+    case 'terminal':
+      return <Cpu size={size} strokeWidth={1.5} className={className} />;
+    case 'nyx-native':
+      return (
+        <Cpu
+          size={size}
+          strokeWidth={1.5}
+          className={`${className} text-[#FF3366] animate-pulse`}
+        />
+      );
+    default:
+      return <Cpu size={size} strokeWidth={1.5} className={className} />;
   }
 }
 
@@ -59,7 +69,7 @@ export function inferProviderFromId(modelId: string | undefined): string | undef
   if (!modelId) return undefined;
 
   const id = modelId.toLowerCase();
-  
+
   // Fall back to prefix matching for cloud providers
   if (id.startsWith('gemini') || id.includes('gemini')) return 'gemini';
 

@@ -50,14 +50,17 @@ I only handle coding, software, and embedded hardware development requests.`,
       'intent-classification',
       'complexity-scoring',
       'codebase-rag',
-      'web-search'
-    ]
-  }
+      'web-search',
+    ],
+  },
 };
 
 // ── Subagent Swarm Personas ───────────────────────────────────────────────────
 
-export const SUBAGENT_PERSONAS: Record<'planner' | 'researcher' | 'coder' | 'reviewer' | 'tester' | 'optimizer', string> = {
+export const SUBAGENT_PERSONAS: Record<
+  'planner' | 'researcher' | 'coder' | 'reviewer' | 'tester' | 'optimizer',
+  string
+> = {
   planner: `You are the NYX Planner. Analyze the user's task and decompose it into subtasks.
 Output ONLY a valid JSON object with this exact schema:
 {
@@ -112,5 +115,5 @@ MANDATORY:
 1. Preserve all functionality exactly.
 2. Output the COMPLETE optimized file(s), not just diffs.
 3. Explain key optimizations in comments.
-4. Never truncate. Complete output is required.`
+4. Never truncate. Complete output is required.`,
 };

@@ -8,6 +8,7 @@ description: Build websites and web apps using 21st.dev — the largest marketpl
 Build production-ready websites using [21st.dev](https://21st.dev) — the largest open-source registry of React UI components. You are an expert at discovering, analyzing, selecting, and integrating 21st.dev components to create polished, cohesive web applications.
 
 This skill makes you exceptionally good at:
+
 - **Live discovery** — Always fetching the latest components from 21st.dev before building
 - **Smart analysis** — Evaluating which components best fit the user's needs
 - **Design coherence** — Maintaining visual consistency across components from different authors
@@ -16,9 +17,11 @@ This skill makes you exceptionally good at:
 ## Core Knowledge
 
 ### What is 21st.dev?
+
 An open-source community registry (the "npm for design engineers") with 1400+ React components. Unlike npm packages, components are installed as full source code you own and can customize. Built on shadcn/ui philosophy.
 
 ### Tech Stack
+
 - **Framework**: React 18+ / Next.js (App Router preferred)
 - **Styling**: Tailwind CSS 4+
 - **Primitives**: Radix UI
@@ -26,11 +29,12 @@ An open-source community registry (the "npm for design engineers") with 1400+ Re
 - **Install**: `npx shadcn@latest add "https://21st.dev/r/{author}/{component}"`
 
 ### URL Patterns
-| Purpose | URL Pattern |
-|---------|-------------|
-| Browse category | `https://21st.dev/s/{slug}` |
-| Component detail | `https://21st.dev/r/{author}/{component}` |
-| Author profile | `https://21st.dev/{author}` |
+
+| Purpose          | URL Pattern                                    |
+| ---------------- | ---------------------------------------------- |
+| Browse category  | `https://21st.dev/s/{slug}`                    |
+| Component detail | `https://21st.dev/r/{author}/{component}`      |
+| Author profile   | `https://21st.dev/{author}`                    |
 | Community search | `https://21st.dev/community/components/search` |
 
 ## Workflow
@@ -40,6 +44,7 @@ An open-source community registry (the "npm for design engineers") with 1400+ Re
 Check if the project is ready. Look for `package.json`, `tailwind.config.*`, and `components.json`.
 
 **New project:**
+
 ```bash
 npx create-next-app@latest my-app --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"
 cd my-app
@@ -47,6 +52,7 @@ npx shadcn@latest init -d
 ```
 
 **Existing project missing shadcn:**
+
 ```bash
 npx shadcn@latest init
 ```
@@ -64,18 +70,18 @@ Break down the user's request into a component plan:
 
 #### Component Map
 
-| Building... | Search these categories on 21st.dev |
-|-------------|-------------------------------------|
-| Landing page | `hero`, `features`, `pricing`, `testimonials`, `cta`, `footers`, `navbars`, `backgrounds`, `announcements`, `clients` |
-| Dashboard | `sidebar`, `cards`, `tables`, `tabs`, `buttons`, `menus`, `badges`, `numbers` |
-| Auth pages | `sign-ins`, `sign-ups`, `forms`, `inputs`, `buttons` |
-| Blog / Content | `cards`, `texts`, `images`, `paginations`, `scroll-areas` |
-| E-commerce | `cards`, `carousels`, `badges`, `buttons`, `dialogs`, `inputs`, `tabs`, `selects` |
-| Form-heavy app | `inputs`, `selects`, `checkboxes`, `radio-groups`, `date-pickers`, `forms`, `text-areas`, `toggles` |
-| AI / Chat app | `ai-chats`, `inputs`, `buttons`, `cards`, `spinner-loaders` |
-| Settings page | `forms`, `inputs`, `toggles`, `tabs`, `selects`, `checkboxes`, `accordions` |
-| Portfolio | `hero`, `cards`, `images`, `texts`, `scroll-areas`, `backgrounds`, `navigation-menus` |
-| SaaS product | `hero`, `pricing`, `features`, `testimonials`, `navbars`, `footers`, `cta`, `comparisons` |
+| Building...    | Search these categories on 21st.dev                                                                                   |
+| -------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Landing page   | `hero`, `features`, `pricing`, `testimonials`, `cta`, `footers`, `navbars`, `backgrounds`, `announcements`, `clients` |
+| Dashboard      | `sidebar`, `cards`, `tables`, `tabs`, `buttons`, `menus`, `badges`, `numbers`                                         |
+| Auth pages     | `sign-ins`, `sign-ups`, `forms`, `inputs`, `buttons`                                                                  |
+| Blog / Content | `cards`, `texts`, `images`, `paginations`, `scroll-areas`                                                             |
+| E-commerce     | `cards`, `carousels`, `badges`, `buttons`, `dialogs`, `inputs`, `tabs`, `selects`                                     |
+| Form-heavy app | `inputs`, `selects`, `checkboxes`, `radio-groups`, `date-pickers`, `forms`, `text-areas`, `toggles`                   |
+| AI / Chat app  | `ai-chats`, `inputs`, `buttons`, `cards`, `spinner-loaders`                                                           |
+| Settings page  | `forms`, `inputs`, `toggles`, `tabs`, `selects`, `checkboxes`, `accordions`                                           |
+| Portfolio      | `hero`, `cards`, `images`, `texts`, `scroll-areas`, `backgrounds`, `navigation-menus`                                 |
+| SaaS product   | `hero`, `pricing`, `features`, `testimonials`, `navbars`, `footers`, `cta`, `comparisons`                             |
 
 ### Phase 3: Live Component Discovery
 
@@ -86,21 +92,27 @@ Break down the user's request into a component plan:
 For each component category you need, follow this search sequence:
 
 **Step 1: Browse the category page**
+
 ```
 WebFetch: https://21st.dev/s/{category-slug}
 ```
+
 This shows all available components in that category with names, authors, and popularity.
 
 **Step 2: Deep-dive on promising components**
+
 ```
 WebFetch: https://21st.dev/r/{author}/{component}
 ```
+
 View the component's demo, code, dependencies, and installation command.
 
 **Step 3: Search for specific styles (if category browsing isn't enough)**
+
 ```
 WebSearch: "site:21st.dev {specific style or feature}"
 ```
+
 Example: `site:21st.dev animated gradient hero` or `site:21st.dev glassmorphism card`
 
 #### Category Slugs Reference
@@ -153,11 +165,13 @@ When building a full page or site, try to use components from a small set of aut
 Not every section needs a 21st.dev component. For each section, decide:
 
 **INSTALL from 21st.dev when:**
+
 - The section needs complex interactivity (navbar with dropdowns, pricing toggle, carousel)
 - The section needs polished animations you don't want to write (animated hero, testimonial slider)
 - A 21st.dev component fits the need almost perfectly
 
 **WRITE CUSTOM when:**
+
 - The section is simple (feature grid, stats row, basic CTA)
 - No good 21st.dev component exists for this exact need
 - You need very specific layout that would require heavy modification anyway
@@ -168,17 +182,20 @@ A typical landing page might install 2-3 complex components (hero, navbar, foote
 ### Phase 5: Installation & Integration
 
 #### Install components:
+
 ```bash
 npx shadcn@latest add "https://21st.dev/r/{author}/{component-name}"
 ```
 
 What this does:
+
 - Copies component source code to your project (usually `components/ui/` or `components/blocks/`)
 - Installs required npm dependencies
 - Updates Tailwind config if needed
 - Resolves internal component dependencies
 
 #### Installation order matters:
+
 1. Install base/primitive components first (buttons, inputs)
 2. Then composite components that may depend on them (forms, dialogs)
 3. Finally section-level components (hero, pricing)
@@ -189,6 +206,7 @@ After installing each component, **immediately check for these common issues** b
 
 **1. `render` prop vs `asChild` conflict:**
 Many newer 21st.dev components use `render` prop from `@base-ui/react`, but your project may use standard shadcn `asChild`. If you see TypeScript errors about `render` prop:
+
 ```tsx
 // BROKEN: Component uses render prop
 <Button render={<a href="/signup" />}>Sign Up</Button>
@@ -196,18 +214,18 @@ Many newer 21st.dev components use `render` prop from `@base-ui/react`, but your
 // FIX: Convert to asChild pattern
 <Button asChild><a href="/signup">Sign Up</a></Button>
 ```
+
 Check `Button`, `SheetTrigger`, `SelectTrigger` in every installed component.
 
 **2. Container width mismatch:**
 Components may assume different max-widths. After installing, verify each component uses a consistent container:
+
 ```tsx
 // If component uses its own container, it may conflict with your layout
 // Wrap all sections in a consistent container OR
 // Remove the component's internal container and use your own
 <section className="py-20">
-  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-    {/* component content here */}
-  </div>
+  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">{/* component content here */}</div>
 </section>
 ```
 
@@ -216,45 +234,50 @@ If a component looks invisible or wrong, check that your `globals.css` defines a
 
 **4. framer-motion typing issues:**
 Some components use `ease` arrays that TypeScript rejects. Fix by casting:
+
 ```tsx
 // BROKEN
-ease: [0.16, 1, 0.3, 1]
+ease: [0.16, 1, 0.3, 1];
 // FIX
-ease: [0.16, 1, 0.3, 1] as const
+ease: [0.16, 1, 0.3, 1] as const;
 ```
 
 **5. Faint/invisible card backgrounds:**
 Many 21st.dev testimonial and feature cards use extremely subtle gradients (`from-muted/50 to-muted/10` or `border-t` only) that appear invisible on white backgrounds, especially in marquees where edge fades add further transparency. Fix by giving cards visible styling:
+
 ```tsx
 // BROKEN: Nearly invisible
-"rounded-lg border-t bg-gradient-to-b from-muted/50 to-muted/10"
+'rounded-lg border-t bg-gradient-to-b from-muted/50 to-muted/10';
 
 // FIX: Clearly visible with depth
-"rounded-xl border border-border/60 bg-card shadow-sm"
+'rounded-xl border border-border/60 bg-card shadow-sm';
 ```
 
 **6. Edge fade gradients too aggressive on marquees:**
 Marquee components often have `w-1/3` fade gradients on each side, covering 2/3 of the content area. Reduce to `w-1/6` so cards remain visible:
+
 ```tsx
 // BROKEN: Covers too much
-"absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-background"
+'absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-background';
 
 // FIX: Subtle fade
-"absolute inset-y-0 left-0 w-1/6 bg-gradient-to-r from-background"
+'absolute inset-y-0 left-0 w-1/6 bg-gradient-to-r from-background';
 ```
 
 **7. Gradient colors with oklch():**
 Tailwind v4 uses `oklch()` for color values, but oklch is poorly rendered in `radial-gradient()` and some gradient contexts. Use `rgba()` or hex values for custom gradients:
+
 ```tsx
 // BROKEN: oklch in gradients renders poorly
-"bg-[radial-gradient(ellipse_at_center,_oklch(0.55_0.28_285_/_0.18)_0%,_transparent_65%)]"
+'bg-[radial-gradient(ellipse_at_center,_oklch(0.55_0.28_285_/_0.18)_0%,_transparent_65%)]';
 
 // FIX: Use rgba for reliable gradient rendering
-"bg-[radial-gradient(ellipse_at_center,_rgba(139,92,246,0.18)_0%,_transparent_65%)]"
+'bg-[radial-gradient(ellipse_at_center,_rgba(139,92,246,0.18)_0%,_transparent_65%)]';
 ```
 
 **8. Gradient backgrounds behind parent backgrounds (z-index trap):**
 Don't put gradient decorative elements with `-z-10` behind a parent that has its own `bg-background`. The parent's opaque background covers the gradient. Instead, apply the gradient directly on the section:
+
 ```tsx
 // BROKEN: Gradient div behind parent bg-background
 <section className="bg-background">
@@ -265,6 +288,7 @@ Don't put gradient decorative elements with `-z-10` behind a parent that has its
 ```
 
 #### If installation fails:
+
 1. Check error message — usually a missing peer dependency
 2. Try `npm install {missing-dep}` then retry
 3. If component URL is wrong, search 21st.dev for the correct path
@@ -285,6 +309,7 @@ Before composing, normalize the layout of all installed components so they play 
 #### Composition Patterns
 
 **Landing Page:**
+
 ```tsx
 <Navbar />                          {/* sticky top-0 z-50 */}
 <main>
@@ -299,6 +324,7 @@ Before composing, normalize the layout of all installed components so they play 
 ```
 
 **Dashboard:**
+
 ```tsx
 <SidebarProvider>
   <Sidebar>{/* navigation items */}</Sidebar>
@@ -313,15 +339,17 @@ Before composing, normalize the layout of all installed components so they play 
 ```
 
 **Auth Flow:**
+
 ```tsx
 <div className="min-h-screen flex items-center justify-center bg-muted/30">
   <div className="w-full max-w-md">
-    <SignInCard />  {/* or SignUpCard */}
+    <SignInCard /> {/* or SignUpCard */}
   </div>
 </div>
 ```
 
 **Multi-page App Layout:**
+
 ```tsx
 // app/layout.tsx
 <html>
@@ -334,25 +362,29 @@ Before composing, normalize the layout of all installed components so they play 
 ```
 
 #### Spacing & Layout Rules
+
 - Sections: `py-16 md:py-20 lg:py-24` (responsive vertical padding)
 - Content width: `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8`
 - Card grids: `grid gap-4 sm:grid-cols-2 lg:grid-cols-3`
 - Alternating section backgrounds: use `bg-background` and `bg-muted/50`
 
 #### Dark Mode Setup
+
 21st.dev components use CSS variables with `dark:` prefixes. Ensure:
+
 ```tsx
 // In layout.tsx or providers
-import { ThemeProvider } from "next-themes"
+import { ThemeProvider } from 'next-themes';
 
 <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
   {children}
-</ThemeProvider>
+</ThemeProvider>;
 ```
 
 Install next-themes: `npm install next-themes`
 
 #### Font Setup
+
 ```tsx
 import { Geist, Geist_Mono } from "next/font/google";
 const geist = Geist({ variable: "--font-sans", subsets: ["latin"] });
@@ -378,28 +410,30 @@ AI models have a strong bias toward purple/violet as the default brand color. Th
 
 **Rule: NEVER default to purple.** Choose colors based on the product type and industry:
 
-| Product / Industry | Recommended Primary | Avoid |
-|---|---|---|
-| Finance / Banking | Deep blue (`oklch(0.45 0.15 250)`), Navy, Teal | Purple, Neon |
-| Health / Wellness | Green (`oklch(0.55 0.18 155)`), Teal, Soft blue | Red, Purple |
-| E-commerce / Retail | Orange (`oklch(0.65 0.2 50)`), Coral, Amber | Muted grays |
-| Developer tools | Emerald (`oklch(0.55 0.17 160)`), Cyan, Slate | Purple (overused) |
-| Creative / Design | Rose (`oklch(0.6 0.18 10)`), Amber, Indigo | Plain blue |
-| Education | Blue (`oklch(0.5 0.16 250)`), Teal, Green | Neon, Dark themes |
-| Food / Restaurant | Warm red (`oklch(0.55 0.22 25)`), Orange, Olive | Cold blues |
-| AI / Writing tools | Teal (`oklch(0.55 0.12 195)`), Blue-green, Slate | Purple (cliché!) |
-| Enterprise / B2B | Slate blue (`oklch(0.5 0.1 255)`), Navy, Steel | Bright neons |
-| Social / Community | Coral (`oklch(0.6 0.17 25)`), Sky blue, Warm pink | Dull grays |
+| Product / Industry  | Recommended Primary                               | Avoid             |
+| ------------------- | ------------------------------------------------- | ----------------- |
+| Finance / Banking   | Deep blue (`oklch(0.45 0.15 250)`), Navy, Teal    | Purple, Neon      |
+| Health / Wellness   | Green (`oklch(0.55 0.18 155)`), Teal, Soft blue   | Red, Purple       |
+| E-commerce / Retail | Orange (`oklch(0.65 0.2 50)`), Coral, Amber       | Muted grays       |
+| Developer tools     | Emerald (`oklch(0.55 0.17 160)`), Cyan, Slate     | Purple (overused) |
+| Creative / Design   | Rose (`oklch(0.6 0.18 10)`), Amber, Indigo        | Plain blue        |
+| Education           | Blue (`oklch(0.5 0.16 250)`), Teal, Green         | Neon, Dark themes |
+| Food / Restaurant   | Warm red (`oklch(0.55 0.22 25)`), Orange, Olive   | Cold blues        |
+| AI / Writing tools  | Teal (`oklch(0.55 0.12 195)`), Blue-green, Slate  | Purple (cliché!)  |
+| Enterprise / B2B    | Slate blue (`oklch(0.5 0.1 255)`), Navy, Steel    | Bright neons      |
+| Social / Community  | Coral (`oklch(0.6 0.17 25)`), Sky blue, Warm pink | Dull grays        |
 
 **If the user specifies a brand color, use it.** If not, pick from the table above — but NEVER purple unless the user explicitly asks for it.
 
 **How to apply the chosen color:**
+
 ```css
 /* globals.css — example with teal for an AI writing tool */
 :root {
-  --brand: oklch(0.55 0.12 195);  /* Teal, NOT purple */
+  --brand: oklch(0.55 0.12 195); /* Teal, NOT purple */
 }
 ```
+
 Then use `bg-brand`, `text-brand`, `border-brand/30` etc. throughout the site. Update hero gradients, CTA buttons, icon backgrounds, and accent colors to match.
 
 #### Hero Visual Quality Checklist
@@ -415,6 +449,7 @@ Hero sections make or break the first impression. After installing a hero compon
 - **Avoid AI-cliché colors**: NEVER default to purple/violet. Choose colors from the Color Selection table based on the product type. Purple is the #1 AI color bias.
 
 #### CSS Variable Theming
+
 ```css
 /* globals.css */
 @layer base {
@@ -438,12 +473,15 @@ Hero sections make or break the first impression. After installing a hero compon
 This phase catches the bugs that ruin the user's first impression. Do not skip any step.
 
 #### Step 1: Build passes
+
 ```bash
 npm run build
 ```
+
 Fix any TypeScript or build errors before proceeding.
 
 #### Step 2: Visual inspection (MOST IMPORTANT)
+
 Run `npm run dev` and **actually look at every section** of the page:
 
 1. **Take a screenshot** or use preview_screenshot — look at the full page from top to bottom
@@ -457,17 +495,21 @@ Run `npm run dev` and **actually look at every section** of the page:
 3. **Scroll through the entire page** — every section must be visible and properly styled
 
 #### Step 3: Responsiveness
+
 Test at 3 breakpoints using preview_resize or browser devtools:
+
 - Mobile (375px): single column, readable text, no horizontal overflow
 - Tablet (768px): proper grid transition
 - Desktop (1280px): full layout as designed
 
 #### Step 4: Interactions
+
 - Click every button and link
 - Test navbar dropdown/mobile menu
 - Test any toggles or tabs
 
 #### Step 5: Console check
+
 No errors in browser console. Warnings about missing images or unused vars are acceptable.
 
 **If any visual issue is found in Steps 2-3, fix it immediately before presenting to the user.** The most common fixes are: adjusting container width, fixing CSS variable colors, and reducing hero height.
@@ -475,20 +517,26 @@ No errors in browser console. Warnings about missing images or unused vars are a
 ## Advanced Patterns
 
 ### Component Dependency Chain
+
 Some 21st.dev components depend on other components. The npx installer handles this automatically, but be aware:
+
 - A `Dialog` component may install `Button` as a dependency
 - If you've already customized `Button`, the dialog install might overwrite it
 - Install from leaf components up, and keep track of what's been customized
 
 ### Mixing Authors Safely
+
 When combining components from different authors:
+
 1. Check that all use the same CSS variable naming (most shadcn-based ones do)
 2. Normalize border-radius: pick one style and apply globally via CSS variables
 3. Ensure animation timing is consistent (ease-in-out, duration-200)
 4. Watch for conflicting Tailwind config extensions
 
 ### Building Component Variations
+
 If 21st.dev doesn't have exactly what you need:
+
 1. Find the closest match
 2. Install it
 3. Modify the source code directly (you own it!)
@@ -502,25 +550,25 @@ This means: if you last browsed `https://21st.dev/s/hero` an hour ago, browse it
 
 ## Error Recovery
 
-| Problem | Solution |
-|---------|----------|
-| Component not found | Try alternative spellings, browse the parent category, or search with WebSearch |
-| npx install fails | Check for missing peer deps, verify URL format, try `npm install` for deps first |
-| Component looks wrong | Check if Tailwind config was updated, verify CSS variables are defined |
-| Dark mode broken | Ensure ThemeProvider wraps the app, check CSS variable definitions |
-| TypeScript errors | Check component's expected props, install missing @types packages |
-| Styling conflicts | Check for conflicting Tailwind classes, CSS variable naming collisions |
-| 21st.dev unreachable | Use WebSearch to find component names, construct install URLs from cached knowledge |
-| Component too complex | Simplify by removing unused features from the source code |
-| `render` prop errors | Component uses @base-ui/react pattern — convert to `asChild` pattern |
-| Giant blank space | Hero/section using `min-h-screen` — reduce to `min-h-[80vh]` or remove |
-| Content off-screen right | Container width mismatch — add `max-w-7xl mx-auto` wrapper |
-| Invisible text | CSS variables undefined — check `globals.css` has all required color tokens |
-| Faint/invisible cards | Background gradient too subtle — use `bg-card border border-border/60 shadow-sm` |
-| Marquee cards hidden | Edge fade `w-1/3` too wide — reduce to `w-1/6` |
-| Gradient not showing | Using `-z-10` behind parent `bg-background` — apply gradient directly on section |
-| oklch gradient broken | oklch renders poorly in `radial-gradient()` — use `rgba()` hex values instead |
-| Heading invisible on gradient | `bg-clip-text text-transparent` too faint — use solid `text-foreground` |
+| Problem                       | Solution                                                                            |
+| ----------------------------- | ----------------------------------------------------------------------------------- |
+| Component not found           | Try alternative spellings, browse the parent category, or search with WebSearch     |
+| npx install fails             | Check for missing peer deps, verify URL format, try `npm install` for deps first    |
+| Component looks wrong         | Check if Tailwind config was updated, verify CSS variables are defined              |
+| Dark mode broken              | Ensure ThemeProvider wraps the app, check CSS variable definitions                  |
+| TypeScript errors             | Check component's expected props, install missing @types packages                   |
+| Styling conflicts             | Check for conflicting Tailwind classes, CSS variable naming collisions              |
+| 21st.dev unreachable          | Use WebSearch to find component names, construct install URLs from cached knowledge |
+| Component too complex         | Simplify by removing unused features from the source code                           |
+| `render` prop errors          | Component uses @base-ui/react pattern — convert to `asChild` pattern                |
+| Giant blank space             | Hero/section using `min-h-screen` — reduce to `min-h-[80vh]` or remove              |
+| Content off-screen right      | Container width mismatch — add `max-w-7xl mx-auto` wrapper                          |
+| Invisible text                | CSS variables undefined — check `globals.css` has all required color tokens         |
+| Faint/invisible cards         | Background gradient too subtle — use `bg-card border border-border/60 shadow-sm`    |
+| Marquee cards hidden          | Edge fade `w-1/3` too wide — reduce to `w-1/6`                                      |
+| Gradient not showing          | Using `-z-10` behind parent `bg-background` — apply gradient directly on section    |
+| oklch gradient broken         | oklch renders poorly in `radial-gradient()` — use `rgba()` hex values instead       |
+| Heading invisible on gradient | `bg-clip-text text-transparent` too faint — use solid `text-foreground`             |
 
 ## MCP Setup (Optional)
 
@@ -533,6 +581,7 @@ npx @21st-dev/cli@latest install claude --api-key <YOUR_API_KEY>
 Get API key: https://21st.dev/settings/api-keys
 
 Manual config in `.claude/settings.json`:
+
 ```json
 {
   "mcpServers": {
@@ -546,6 +595,7 @@ Manual config in `.claude/settings.json`:
 ```
 
 MCP provides these tools:
+
 - `21st_magic_component_builder` — Generate components from descriptions
 - `21st_magic_component_inspiration` — Browse component ideas
 - `logo_search` — Find company logos (via SVGL)

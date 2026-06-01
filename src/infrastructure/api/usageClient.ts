@@ -16,12 +16,12 @@ export interface QuotaResult {
   used: number;
   remaining: number;
   percentUsed: number;
-  
+
   // Provider-specific
   totalUSD?: number;
   usedUSD?: number;
   remainingUSD?: number;
-  
+
   // Rate limiting
   rateLimit?: {
     limit: number;
@@ -29,7 +29,7 @@ export interface QuotaResult {
     resetAt: Date;
     retryAfter?: number; // seconds
   };
-  
+
   // Metadata
   provider: string;
   fetchedAt: number;
@@ -70,12 +70,12 @@ const quotaCache = new Map<string, QuotaCacheEntry>();
 function getCached(provider: string): QuotaResult | undefined {
   const entry = quotaCache.get(provider);
   if (!entry || !entry.data) return undefined;
-  
+
   if (Date.now() > entry.data.expiresAt) {
     quotaCache.delete(provider);
     return undefined;
   }
-  
+
   return entry.data;
 }
 
@@ -121,7 +121,7 @@ const PROVIDER_PARSERS: Record<string, ProviderParser> = {
     parse: (data, headers) => {
       // Gemini has generous free tier, but we can check if key is valid
       const isValid = data.status === 'ok' || data.valid === true;
-      
+
       if (!isValid) {
         return {
           status: 'error',
@@ -163,7 +163,7 @@ async function fetchQuotaRaw(
 ): Promise<QuotaResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  
+
   // Merge with user signal
   if (signal) {
     signal.addEventListener('abort', () => controller.abort(), { once: true });
@@ -187,7 +187,7 @@ async function fetchQuotaRaw(
 
     const data = await response.json();
     const parser = PROVIDER_PARSERS[provider] || PROVIDER_PARSERS.gemini;
-    
+
     return parser.parse(data, response.headers);
   } catch (error: any) {
     // Return structured error instead of fake quota
@@ -224,7 +224,8 @@ export async function fetchQuota(
   if (defaults) {
     return {
       ...defaults,
-      remaining: defaults.total === Infinity ? Infinity : (defaults.total || 0) - (defaults.used || 0),
+      remaining:
+        defaults.total === Infinity ? Infinity : (defaults.total || 0) - (defaults.used || 0),
       percentUsed: 0,
       provider,
       fetchedAt: Date.now(),
@@ -252,7 +253,7 @@ export async function fetchQuota(
 
   // Store promise for deduplication
   quotaCache.set(provider, { data: getCached(provider), promise });
-  
+
   // Clean up promise when done
   promise.finally(() => {
     const entry = quotaCache.get(provider);
@@ -282,7 +283,7 @@ export async function fetchAllQuotas(
 
   results.forEach((result, index) => {
     const provider = providers[index].provider;
-    
+
     if (result.status === 'fulfilled') {
       quotas[provider] = result.value;
       if (result.value.status === 'ok') {
@@ -332,7 +333,11 @@ export function invalidateQuotaCache(provider?: string): void {
 /**
  * Get cache status for debugging.
  */
-export function getQuotaCacheStatus(): Array<{ provider: string; ageMs: number; expiresInMs: number }> {
+export function getQuotaCacheStatus(): Array<{
+  provider: string;
+  ageMs: number;
+  expiresInMs: number;
+}> {
   return Array.from(quotaCache.entries())
     .filter(([_, entry]) => entry.data)
     .map(([provider, entry]) => ({

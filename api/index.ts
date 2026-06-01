@@ -4,22 +4,24 @@ import compression from 'compression';
 
 import '../server/lib/apiAgent.ts'; // 🚀 Init global connection pooling
 
-import { geminiRouter }     from '../server/routes/gemini.ts';
-import { terminalRouter }   from '../server/routes/terminal.ts';
-import { agentsRouter }     from '../server/routes/agents.ts';
-import { nyxRouter }        from '../server/routes/nyx.ts';
-import { CacheServer }      from '../server/lib/cache.ts';
+import { geminiRouter } from '../server/routes/gemini.ts';
+import { terminalRouter } from '../server/routes/terminal.ts';
+import { agentsRouter } from '../server/routes/agents.ts';
+import { nyxRouter } from '../server/routes/nyx.ts';
+import { CacheServer } from '../server/lib/cache.ts';
 
 const app = express();
 
 // ── Optimization: Compress non-streaming responses ──────────────────────────
-app.use(compression({
-  filter: (req: express.Request, res: express.Response) => {
-    // Don't compress SSE streams as it blocks flushing
-    if (req.headers.accept === 'text/event-stream' || req.path.includes('/stream')) return false;
-    return compression.filter(req, res);
-  }
-}));
+app.use(
+  compression({
+    filter: (req: express.Request, res: express.Response) => {
+      // Don't compress SSE streams as it blocks flushing
+      if (req.headers.accept === 'text/event-stream' || req.path.includes('/stream')) return false;
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // ── Security & performance headers ───────────────────────────────────────────
 app.use((_req, res, next) => {
@@ -35,10 +37,10 @@ app.use(express.json({ limit: '4mb' }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
 // ── Provider routes ───────────────────────────────────────────────────────────
-app.use('/api/gemini',     geminiRouter);
-app.use('/api/terminal',   terminalRouter);
-app.use('/api/agents',     agentsRouter);
-app.use('/api/nyx',        nyxRouter);
+app.use('/api/gemini', geminiRouter);
+app.use('/api/terminal', terminalRouter);
+app.use('/api/agents', agentsRouter);
+app.use('/api/nyx', nyxRouter);
 
 // ── Model list proxy (Settings page live model discovery) ────────────────────
 app.post('/api/models/list', async (req, res) => {
@@ -46,13 +48,15 @@ app.post('/api/models/list', async (req, res) => {
   try {
     let url = '';
     const headers: Record<string, string> = {};
-    if (provider === 'gemini')     url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+    if (provider === 'gemini')
+      url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
 
     const r = await fetch(url, { headers });
     const data = await r.json();
 
     let models: string[] = [];
-    if (provider === 'gemini')     models = data.models?.map((m: any) => m.name.replace('models/', '')) || [];
+    if (provider === 'gemini')
+      models = data.models?.map((m: any) => m.name.replace('models/', '')) || [];
 
     res.json({ models });
   } catch (error: any) {
@@ -66,7 +70,9 @@ app.post('/api/models/quota', async (req, res) => {
   try {
     if (provider === 'gemini') {
       if (!apiKey) return res.status(401).json({ error: 'API key required for Gemini' });
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+      );
       if (r.ok) return res.json({ status: 'ok' });
     }
     res.json({});
@@ -119,7 +125,9 @@ app.post('/api/cache/clear', (_req, res) => {
 
 // Fastify compatibility layer (empty/mock or fail gracefully since fastify isn't on Vercel)
 app.all('/api/fastify/*', (req, res) => {
-  res.status(503).json({ error: "Local/Fastify server is not active in production/Vercel deployment." });
+  res
+    .status(503)
+    .json({ error: 'Local/Fastify server is not active in production/Vercel deployment.' });
 });
 
 export default app;

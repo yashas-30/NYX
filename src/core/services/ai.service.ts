@@ -10,37 +10,15 @@ import {
   AIResponse,
   ChatMessage,
   Provider,
+  ReasoningStep,
+  AIServiceToolDefinition,
+  ExecuteOptions,
+  EnhancedAIResponse,
+  ToolCall,
 } from '@src/infrastructure/types';
 import { ContinuationManager } from '@src/infrastructure/services/continuationManager';
-import {
-  fetchWithAuth,
-  getSessionToken,
-  setSessionToken,
-} from '@src/infrastructure/api/authFetch';
-
-export interface ReasoningStep {
-  type: 'thinking' | 'planning' | 'reflection';
-  content: string;
-}
-
-export interface AIServiceToolDefinition {
-  type: 'function';
-  function: {
-    name: string;
-    description: string;
-    parameters: object;
-  };
-}
-
-export interface ToolCall {
-  index: number;
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
+import { fetchWithAuth, getSessionToken, setSessionToken } from '@src/infrastructure/api/authFetch';
+import { parseSSEStream } from '@src/infrastructure/api/streamParser';
 
 export interface AIServiceStreamEvent {
   type: 'text' | 'reasoning' | 'tool_calls' | 'error';
@@ -62,23 +40,32 @@ async function initTokenizer(): Promise<void> {
       try {
         return enc.encode(text).length;
       } catch {
-        return Math.ceil(text.length / 4);
+        const asciiChars = (text.match(/[\\x00-\\x7F]/g) || []).length;
+        const nonAsciiChars = text.length - asciiChars;
+        return Math.ceil(asciiChars / 4 + nonAsciiChars / 1.5);
       }
     };
   } catch {
-    _countTokens = (text: string) => Math.ceil(text.length / 4);
+    _countTokens = (text: string) => {
+      const asciiChars = (text.match(/[\\x00-\\x7F]/g) || []).length;
+      const nonAsciiChars = text.length - asciiChars;
+      return Math.ceil(asciiChars / 4 + nonAsciiChars / 1.5);
+    };
   }
 }
 initTokenizer().catch(() => {});
 
 export function countTokens(text: string): number {
-  return _countTokens ? _countTokens(text) : Math.ceil(text.length / 4);
+  if (_countTokens) return _countTokens(text);
+  const asciiChars = (text.match(/[\\x00-\\x7F]/g) || []).length;
+  const nonAsciiChars = text.length - asciiChars;
+  return Math.ceil(asciiChars / 4 + nonAsciiChars / 1.5);
 }
 
 // ---------------------------------------------------------------------------
 // Per-request abort controllers (not global singleton)
 // ---------------------------------------------------------------------------
-const activeControllers = new Map<string, { controller: AbortController, timestamp: number }>();
+const activeControllers = new Map<string, { controller: AbortController; timestamp: number }>();
 
 // Periodic cleanup of stale controllers (older than 5 minutes)
 setInterval(() => {
@@ -87,6 +74,13 @@ setInterval(() => {
     if (now - data.timestamp > 300000) {
       data.controller.abort();
       activeControllers.delete(id);
+
+      // Also find and remove from inFlightRequests
+      for (const [key, promise] of AIService.inFlightRequests.entries()) {
+        if (key.includes(id)) {
+          AIService.inFlightRequests.delete(key);
+        }
+      }
     }
   }
 }, 60000);
@@ -117,7 +111,7 @@ export function cancelCurrentRequest(): void {
 interface CircuitState {
   failures: number;
   lastFailure: number;
-  open: boolean;
+  state: 'closed' | 'open' | 'half-open';
 }
 
 const circuits = new Map<string, CircuitState>();
@@ -126,13 +120,18 @@ const CIRCUIT_TIMEOUT_MS = 30000;
 
 function isCircuitOpen(provider: string): boolean {
   const state = circuits.get(provider);
-  if (!state || !state.open) return false;
-  if (Date.now() - state.lastFailure > CIRCUIT_TIMEOUT_MS) {
-    state.open = false;
-    state.failures = 0;
-    return false;
+  if (!state || state.state === 'closed') return false;
+
+  if (state.state === 'open') {
+    if (Date.now() - state.lastFailure > CIRCUIT_TIMEOUT_MS) {
+      state.state = 'half-open'; // Transition to half-open
+      return false; // Allow one test request
+    }
+    return true; // Still open
   }
-  return true;
+
+  // half-open: allow through, next result will close or re-open
+  return false;
 }
 
 function recordSuccess(provider: string): void {
@@ -140,42 +139,26 @@ function recordSuccess(provider: string): void {
 }
 
 function recordFailure(provider: string): void {
-  const state = circuits.get(provider) || { failures: 0, lastFailure: 0, open: false };
-  state.failures++;
-  state.lastFailure = Date.now();
-  if (state.failures >= CIRCUIT_THRESHOLD) state.open = true;
+  const state = circuits.get(provider) || { failures: 0, lastFailure: 0, state: 'closed' as const };
+
+  if (state.state === 'half-open') {
+    // If we fail while half-open, immediately trip back to open
+    state.state = 'open';
+    state.lastFailure = Date.now();
+  } else {
+    state.failures++;
+    state.lastFailure = Date.now();
+    if (state.failures >= CIRCUIT_THRESHOLD) state.state = 'open';
+  }
+
   circuits.set(provider, state);
-}
-
-// ---------------------------------------------------------------------------
-// Types for enhanced features
-// ---------------------------------------------------------------------------
-export interface ExecuteOptions {
-  history?: ChatMessage[];
-  nodeId?: string;
-  gatewayUrls?: Record<string, string>;
-  agentMode?: 'chat' | 'coder';
-  webSearch?: boolean;
-  images?: ChatMessage['images'];
-  tools?: AIServiceToolDefinition[];
-  responseFormat?: 'text' | 'json' | { type: 'json_schema'; schema: object };
-  reasoning?: boolean; // Extract thinking/reasoning content separately
-  streamEvents?: boolean; // If true, onStream yields AIServiceStreamEvent. Otherwise, yields accumulated text (string)
-}
-
-export interface EnhancedAIResponse extends AIResponse {
-  reasoning?: ReasoningStep[];
-  toolCalls?: ToolCall[];
-  finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter';
-  model: string;
-  provider: string;
 }
 
 // ---------------------------------------------------------------------------
 // AIService
 // ---------------------------------------------------------------------------
 export class AIService {
-  private static inFlightRequests = new Map<string, Promise<EnhancedAIResponse>>();
+  public static inFlightRequests = new Map<string, Promise<EnhancedAIResponse>>();
   private static readonly DEDUPE_TTL_MS = 30000;
   private static cachedVaultStatus: any = null;
   private static cachedVaultStatusTime = 0;
@@ -218,11 +201,7 @@ export class AIService {
     return getSessionToken();
   }
 
-  static async fetchWithAuth(
-    url: string,
-    init?: RequestInit,
-    isStream = false
-  ): Promise<Response> {
+  static async fetchWithAuth(url: string, init?: RequestInit, isStream = false): Promise<Response> {
     return fetchWithAuth(url, init, isStream);
   }
 
@@ -241,13 +220,14 @@ export class AIService {
     options: ExecuteOptions = {}
   ): Promise<EnhancedAIResponse> {
     const requestId = `${provider}:${modelId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
-    
+
     // Circuit breaker check
     if (isCircuitOpen(String(provider))) {
       throw new Error(`Circuit breaker open for provider: ${provider}`);
     }
 
     const dedupeKey = JSON.stringify({
+      sessionId: this.getSessionToken(),
       provider,
       model: modelId,
       prompt,
@@ -292,7 +272,7 @@ export class AIService {
     });
 
     this.inFlightRequests.set(dedupeKey, promise);
-    
+
     // Auto-cleanup dedupe map after TTL to prevent memory leaks
     setTimeout(() => this.inFlightRequests.delete(dedupeKey), this.DEDUPE_TTL_MS);
 
@@ -335,7 +315,9 @@ export class AIService {
       const isAbort = error.name === 'AbortError' || message.includes('aborted');
       const isCloud = String(provider) === 'gemini';
       const isTransient =
-        /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|rate_limit|quota|overloaded|high demand|timeout|network|econnreset|enotfound/i.test(message);
+        /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|rate_limit|quota|overloaded|high demand|timeout|network|econnreset|enotfound/i.test(
+          message
+        );
 
       if (isCloud && isTransient && attempt <= 3 && !isAbort) {
         const delay = Math.pow(2, attempt - 1) * 1000 + Math.random() * 1000;
@@ -474,15 +456,16 @@ export class AIService {
         result = await this.executeGemini(providerConfig);
         break;
       case 'nyx-native':
+      case 'qwen-local':
         result = await this.executeNyxNative(providerConfig);
         break;
       default:
         throw new Error(`Unsupported provider: ${provider}`);
     }
 
-    // Async cache write
+    // Cache write
     if (cacheKey && result.text) {
-      this.fetchWithAuth('/api/cache/set', {
+      await this.fetchWithAuth('/api/cache/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -503,8 +486,20 @@ export class AIService {
 
   private static async executeGemini(config: ProviderConfig): Promise<EnhancedAIResponse> {
     const {
-      modelId, prompt, apiKey, settings, systemInstruction,
-      history, onStream, signal, gatewayUrls, images, tools, responseFormat, reasoning, streamEvents
+      modelId,
+      prompt,
+      apiKey,
+      settings,
+      systemInstruction,
+      history,
+      onStream,
+      signal,
+      gatewayUrls,
+      images,
+      tools,
+      responseFormat,
+      reasoning,
+      streamEvents,
     } = config;
 
     try {
@@ -532,7 +527,14 @@ export class AIService {
       if (error.name === 'AbortError' || error.message?.includes('aborted')) throw error;
       const { directFetchGemini } = await import('@src/infrastructure/api/directClient');
       const text = await directFetchGemini(
-        modelId, prompt, apiKey || '', settings, systemInstruction, history, signal, gatewayUrls
+        modelId,
+        prompt,
+        apiKey || '',
+        settings,
+        systemInstruction,
+        history,
+        signal,
+        gatewayUrls
       );
       if (onStream) {
         if (streamEvents) {
@@ -551,11 +553,18 @@ export class AIService {
     }
   }
 
-
   private static async executeNyxNative(config: ProviderConfig): Promise<EnhancedAIResponse> {
     const {
-      modelId, prompt, systemInstruction, settings, history,
-      onStream, signal, agentMode, webSearch, streamEvents
+      modelId,
+      prompt,
+      systemInstruction,
+      settings,
+      history,
+      onStream,
+      signal,
+      agentMode,
+      webSearch,
+      streamEvents,
     } = config;
 
     const messages = this.buildMessages(prompt, systemInstruction, history);
@@ -567,6 +576,14 @@ export class AIService {
         messages,
         temperature: settings?.temperature ?? 0.7,
         max_tokens: settings?.maxTokens ?? 4096,
+        top_p: settings?.topP,
+        top_k: settings?.topK,
+        repeat_penalty: settings?.repeatPenalty,
+        gpu_layers: settings?.gpuLayers,
+        threads: settings?.threads,
+        context_size: settings?.contextSize,
+        batch_size: settings?.batchSize,
+        mirostat: settings?.mirostat,
         agentMode,
         webSearch,
       }),
@@ -575,8 +592,6 @@ export class AIService {
     if (!response.ok) await this.handleNonOkResponse(response, 'Native GGUF Runner');
     return this.processStream(response, modelId, 'nyx-native', onStream, streamEvents);
   }
-
-
 
   // -------------------------------------------------------------------------
   // Stream processing — token-by-token with reasoning extraction
@@ -588,154 +603,54 @@ export class AIService {
     onStream?: (event: any) => void,
     streamEvents = false
   ): Promise<EnhancedAIResponse> {
-    if (!response.body) throw new Error('No response body');
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let resultText = '';
-    let reasoningText = '';
-    let buffer = '';
-    let toolCalls: ToolCall[] = [];
-    let finishReason: EnhancedAIResponse['finishReason'] = 'stop';
-    let isStreamFinished = false;
-
-    try {
-      while (!isStreamFinished) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith(':')) continue;
-          
-          if (trimmed.startsWith('event: ')) continue;
-          
-          const dataStr = trimmed.startsWith('data: ') ? trimmed.slice(6).trim() : trimmed;
-          if (dataStr === '[DONE]' || dataStr === '[done]') {
-            finishReason = 'stop';
-            isStreamFinished = true;
-            break;
-          }
-          if (!dataStr) continue;
-
-          try {
-            const parsed = JSON.parse(dataStr);
-            
-            // Token rotation
-            if (parsed.tokenRotate) {
-              this.setSessionToken(parsed.tokenRotate);
-              continue;
-            }
-            
-            // Error handling
-            if (parsed.error) {
-              const msg = typeof parsed.error === 'object'
-                ? parsed.error.message || JSON.stringify(parsed.error)
-                : String(parsed.error);
-              throw new Error(msg);
-            }
-
-            // Finish reason
-            if (parsed.finish_reason) {
-              finishReason = parsed.finish_reason;
-            }
-
-            // Tool calls
-            if (parsed.choices?.[0]?.delta?.tool_calls) {
-              const deltaTools = parsed.choices[0].delta.tool_calls;
-              for (const tool of deltaTools) {
-                const existing = toolCalls.find((t) => t.index === tool.index);
-                if (existing) {
-                  existing.function.arguments += tool.function?.arguments || '';
-                } else {
-                  toolCalls.push({
-                    index: tool.index,
-                    id: tool.id,
-                    type: 'function',
-                    function: {
-                      name: tool.function?.name || '',
-                      arguments: tool.function?.arguments || '',
-                    },
-                  });
-                }
-              }
-              if (onStream && streamEvents) {
-                onStream({ type: 'tool_calls', content: toolCalls, final: false });
-              }
-              continue;
-            }
-
-            // Reasoning/thinking extraction (Claude-style thinking blocks)
-            let chunk: string | null = null;
-            let reasoningChunk: string | null = null;
-            
-            if (parsed.choices?.[0]?.delta?.reasoning_content) {
-              reasoningChunk = parsed.choices[0].delta.reasoning_content;
-            } else if (parsed.choices?.[0]?.delta?.thinking) {
-              reasoningChunk = parsed.choices[0].delta.thinking;
-            }
-            
-            if (parsed.choices?.[0]?.delta?.content) {
-              chunk = parsed.choices[0].delta.content;
-            } else if (typeof parsed.chunk === 'string') {
-              chunk = parsed.chunk;
-            }
-
-            if (reasoningChunk) {
-              reasoningText += reasoningChunk;
-              if (onStream && streamEvents) {
-                onStream({ type: 'reasoning', content: reasoningChunk, final: false });
-              }
-            }
-            
-            if (chunk) {
-              resultText += chunk;
-              if (onStream) {
-                if (streamEvents) {
-                  onStream({ type: 'text', content: chunk, final: false });
-                } else {
-                  onStream(resultText);
-                }
-              }
-            }
-          } catch (error: any) {
-            if (error.message?.includes('JSON') || error.message?.includes('Unexpected token')) {
-              console.warn('[AIService] JSON parse error in stream:', error.message);
-              continue;
-            }
-            throw error;
+    const parsed = await parseSSEStream(response, {
+      onChunk: (delta, accumulated) => {
+        if (onStream) {
+          if (streamEvents) {
+            onStream({ type: 'text', content: delta, final: false });
+          } else {
+            onStream(accumulated);
           }
         }
-      }
-    } finally {
-      try { reader.releaseLock(); } catch { /* already released */ }
-    }
+      },
+      onReasoning: (delta, accumulated) => {
+        if (onStream && streamEvents) {
+          onStream({ type: 'reasoning', content: delta, final: false });
+        }
+      },
+      onToolCall: (delta, accumulated) => {
+        if (onStream && streamEvents) {
+          onStream({ type: 'tool_calls', content: accumulated, final: false });
+        }
+      },
+      onError: (err) => {
+        // streamParser throws automatically, this is just for callback if needed
+      },
+    });
 
-    // Final stream event
     if (onStream) {
       if (streamEvents) {
-        onStream({ type: 'text', content: resultText, final: true });
-        if (reasoningText) {
-          onStream({ type: 'reasoning', content: reasoningText, final: true });
+        onStream({ type: 'text', content: parsed.text, final: true });
+        if (parsed.reasoning) {
+          onStream({ type: 'reasoning', content: parsed.reasoning, final: true });
         }
-        if (toolCalls.length) {
-          onStream({ type: 'tool_calls', content: toolCalls, final: true });
+        if (parsed.toolCalls && parsed.toolCalls.length > 0) {
+          onStream({ type: 'tool_calls', content: parsed.toolCalls, final: true });
         }
       } else {
-        onStream(resultText);
+        onStream(parsed.text);
       }
     }
 
     return {
-      text: resultText || '[PROTOCOL HALT]',
+      text: parsed.text || '[PROTOCOL HALT]',
       model,
       provider,
-      reasoning: reasoningText ? [{ content: reasoningText, type: 'thinking' }] : undefined,
-      toolCalls: toolCalls.length ? toolCalls : undefined,
-      finishReason,
-      metrics: this.computeMetrics(resultText, Date.now()),
+      reasoning: parsed.reasoning ? [{ content: parsed.reasoning, type: 'thinking' }] : undefined,
+      toolCalls:
+        parsed.toolCalls && parsed.toolCalls.length ? (parsed.toolCalls as any) : undefined,
+      finishReason: parsed.finishReason as any,
+      metrics: this.computeMetrics(parsed.text, Date.now() - (parsed.metrics.latencyMs || 0)),
     };
   }
 
@@ -780,15 +695,18 @@ export class AIService {
   }
 
   private static validateApiKey(provider: Provider | string, key?: string) {
-    const noKeyProviders = ['nyx-native'];
+    const noKeyProviders = ['nyx-native', 'qwen-local'];
     if (noKeyProviders.includes(String(provider))) return;
-    if (!key?.trim()) return;
-    
+
+    if (!key?.trim()) {
+      throw new Error(`${provider} requires an API key. Please add one in Settings.`);
+    }
+
     const trimmed = key.trim();
     const validators: Record<string, (k: string) => boolean> = {
       gemini: (k) => k.length >= 30,
     };
-    
+
     const validator = validators[String(provider)];
     if (validator && !validator(trimmed)) {
       throw new Error(`Invalid ${provider} API key format`);
@@ -802,7 +720,7 @@ export class AIService {
     provider: Provider | string,
     apiKey?: string
   ): Promise<'online' | 'offline' | 'no-key'> {
-    if (provider === 'nyx-native') {
+    if (provider === 'nyx-native' || provider === 'qwen-local') {
       try {
         const res = await this.fetchWithAuth('/api/nyx/local-models/status');
         if (!res.ok) return 'offline';
@@ -815,7 +733,9 @@ export class AIService {
     try {
       const vaultStatus = await this.getVaultStatus();
       if (vaultStatus?.[provider]) return 'online';
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     if (apiKey?.trim().length) return 'online';
     return 'no-key';
   }

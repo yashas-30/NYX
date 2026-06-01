@@ -36,7 +36,7 @@ test.describe('NYX Core User Workflows E2E', () => {
     const settingsBtn = page.locator('button:has-text("Settings")');
     if (await settingsBtn.isVisible()) {
       await settingsBtn.click();
-      
+
       // Ensure the settings view mounts and headers are visible
       const settingsHeader = page.locator('h2:has-text("Settings")');
       await expect(settingsHeader).toBeVisible();

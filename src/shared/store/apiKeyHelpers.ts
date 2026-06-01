@@ -178,7 +178,9 @@ class SecureKeyRegistry {
         source: 'local',
         biometricUsed: false,
       });
-      toast.error(`Too many failed attempts. Locked out for ${this.config.lockoutDurationMinutes} minutes.`);
+      toast.error(
+        `Too many failed attempts. Locked out for ${this.config.lockoutDurationMinutes} minutes.`
+      );
     }
   }
 
@@ -385,7 +387,11 @@ async function validateGeminiKey(key: string): Promise<KeyValidationResult> {
     return { valid: false, provider: 'gemini', error: `HTTP ${response.status}` };
   } catch (err: any) {
     // Network errors don't mean the key is invalid — assume valid
-    return { valid: true, provider: 'gemini', error: err instanceof Error ? err.message : 'Network error (key assumed valid)' };
+    return {
+      valid: true,
+      provider: 'gemini',
+      error: err instanceof Error ? err.message : 'Network error (key assumed valid)',
+    };
   }
 }
 
@@ -544,7 +550,10 @@ export const updateApiKey = async (
   if (typeof window !== 'undefined' && (window as any).nyxIPC) {
     try {
       // Use the legacy vault:store-key call for compatibility with main process
-      await (window as any).nyxIPC.invoke('vault:store-key', { provider: resolvedProvider, key: trimmed });
+      await (window as any).nyxIPC.invoke('vault:store-key', {
+        provider: resolvedProvider,
+        key: trimmed,
+      });
     } catch (err: any) {
       console.warn('[Vault] Native IPC unavailable:', err);
     }
@@ -753,9 +762,10 @@ export const revalidateAllKeys = async (): Promise<Record<string, KeyValidationR
   for (const entry of registry.getAllEntries()) {
     try {
       const plaintext = await decryptKey(entry.ciphertext);
-      const result = entry.provider === 'gemini'
-        ? await validateGeminiKey(plaintext)
-        : { valid: true, provider: entry.provider };
+      const result =
+        entry.provider === 'gemini'
+          ? await validateGeminiKey(plaintext)
+          : { valid: true, provider: entry.provider };
 
       entry.validationStatus = result.valid ? 'valid' : 'invalid';
       entry.lastValidatedAt = new Date().toISOString();

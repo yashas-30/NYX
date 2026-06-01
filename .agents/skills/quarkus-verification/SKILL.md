@@ -1,6 +1,6 @@
 ---
 name: quarkus-verification
-description: "Verification loop for Quarkus projects: build, static analysis, tests with coverage, security scans, native compilation, and diff review before release or PR."
+description: 'Verification loop for Quarkus projects: build, static analysis, tests with coverage, security scans, native compilation, and diff review before release or PR.'
 origin: ECC
 ---
 
@@ -72,6 +72,7 @@ mvn jacoco:check
 ### Test Categories
 
 #### Unit Tests
+
 Test service logic with mocked dependencies:
 
 ```java
@@ -96,6 +97,7 @@ class UserServiceTest {
 ```
 
 #### Integration Tests
+
 Test with real database (Testcontainers):
 
 ```java
@@ -123,6 +125,7 @@ class UserRepositoryIntegrationTest {
 ```
 
 #### API Tests
+
 Test REST endpoints with REST Assured:
 
 ```java
@@ -159,6 +162,7 @@ class UserResourceTest {
 ### Coverage Report
 
 Check `target/site/jacoco/index.html` for detailed coverage:
+
 - Overall line coverage (target: 80%+)
 - Branch coverage (target: 70%+)
 - Identify uncovered critical paths
@@ -224,11 +228,13 @@ curl http://localhost:8080/q/health/ready
 ### Native Image Troubleshooting
 
 Common issues:
+
 - **Reflection**: Add reflection config for dynamic classes
 - **Resources**: Include resources with `quarkus.native.resources.includes`
 - **JNI**: Register JNI classes if using native libraries
 
 Example reflection config:
+
 ```java
 @RegisterForReflection(targets = {MyDynamicClass.class})
 public class ReflectionConfiguration {}
@@ -261,6 +267,7 @@ export default function () {
 ```
 
 Run:
+
 ```bash
 k6 run load-test.js
 ```
@@ -290,6 +297,7 @@ curl http://localhost:8080/q/metrics
 ```
 
 Expected responses:
+
 ```json
 {
   "status": "UP",
@@ -357,6 +365,7 @@ curl http://localhost:8080/q/dev/io.quarkus.quarkus-vertx-http/config
 - [ ] Configuration properties documented
 
 Generate OpenAPI spec:
+
 ```bash
 curl http://localhost:8080/q/openapi -o openapi.json
 ```
@@ -364,12 +373,14 @@ curl http://localhost:8080/q/openapi -o openapi.json
 ## Verification Checklist
 
 ### Code Quality
+
 - [ ] Build passes without warnings
 - [ ] Static analysis clean (no high/medium issues)
 - [ ] Code follows team conventions
 - [ ] No commented-out code or TODOs in PR
 
 ### Testing
+
 - [ ] All tests pass
 - [ ] Code coverage ≥ 80%
 - [ ] Integration tests with real database
@@ -377,6 +388,7 @@ curl http://localhost:8080/q/openapi -o openapi.json
 - [ ] Performance within acceptable limits
 
 ### Security
+
 - [ ] No dependency vulnerabilities
 - [ ] Authentication/authorization tested
 - [ ] Input validation complete
@@ -384,12 +396,14 @@ curl http://localhost:8080/q/openapi -o openapi.json
 - [ ] Security headers configured
 
 ### Deployment
+
 - [ ] Native compilation successful
 - [ ] Container image builds
 - [ ] Health checks respond correctly
 - [ ] Configuration valid for target environment
 
 ### Native Image
+
 - [ ] Native executable builds
 - [ ] Native tests pass
 - [ ] Startup time < 100ms
@@ -437,28 +451,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up JDK 21
         uses: actions/setup-java@v3
         with:
           java-version: '21'
           distribution: 'temurin'
-      
+
       - name: Cache Maven packages
         uses: actions/cache@v3
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-      
+
       - name: Build
         run: mvn clean verify -DskipTests
-      
+
       - name: Test with Coverage
         run: mvn test jacoco:report jacoco:check
-      
+
       - name: Security Scan
         run: mvn org.owasp:dependency-check-maven:check
-      
+
       - name: Upload Coverage
         uses: codecov/codecov-action@v3
         with:

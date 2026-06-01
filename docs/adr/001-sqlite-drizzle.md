@@ -2,9 +2,10 @@
 
 ## Context and Problem Statement
 
-NYX previously managed chat histories, custom configurations, and interaction logs using temporary in-memory structures mirrored directly to flat `.json` file stores on the user's local disk (e.g., `conversations.json`). 
+NYX previously managed chat histories, custom configurations, and interaction logs using temporary in-memory structures mirrored directly to flat `.json` file stores on the user's local disk (e.g., `conversations.json`).
 
 While simple to implement, this pattern suffered from several architectural constraints:
+
 1. **Concurrency and Lockups:** Simultaneous read/write disk accesses caused periodic lockups, especially during high-speed assistant response streaming.
 2. **Data Integrity Risks:** Power outages or unexpected application shutdowns mid-write risked corrupting the entire JSON flat-file history.
 3. **Inefficient Querying:** Loading complete chat logs just to list thread titles in the sidebar created significant memory and CPU overhead.
@@ -12,10 +13,10 @@ While simple to implement, this pattern suffered from several architectural cons
 
 ## Decision Drivers
 
-* **Performance:** Ensure high-speed, parallel reads and non-blocking writes for seamless streaming.
-* **Reliability:** Maintain strict transactional ACID guarantees to prevent data corruption.
-* **Portability:** Keep the database local and self-contained within the client's state scope (zero external database service dependencies).
-* **Type-Safety:** Ensure compile-time type checked database queries that integrate perfectly with our hardened strict-mode TypeScript pipeline.
+- **Performance:** Ensure high-speed, parallel reads and non-blocking writes for seamless streaming.
+- **Reliability:** Maintain strict transactional ACID guarantees to prevent data corruption.
+- **Portability:** Keep the database local and self-contained within the client's state scope (zero external database service dependencies).
+- **Type-Safety:** Ensure compile-time type checked database queries that integrate perfectly with our hardened strict-mode TypeScript pipeline.
 
 ## Considered Alternatives
 

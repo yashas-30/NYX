@@ -36,8 +36,10 @@ const EXCLUDE_FILES = new Set([
 ]);
 
 const ALLOWED_EXTENSIONS = new Set([
-  '.ts', '.tsx',
-  '.js', '.jsx',
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
   '.json',
   '.css',
   '.md',
@@ -78,21 +80,23 @@ export class CodebaseScanner {
   private static evictOldestVectors(): void {
     const MAX_VECTORS = 5000;
     if (this.vectors.size <= MAX_VECTORS) return;
-    
-    const entries = Array.from(this.vectors.keys()).map(k => ({
+
+    const entries = Array.from(this.vectors.keys()).map((k) => ({
       key: k,
-      time: this.accessTimes.get(k) || 0
+      time: this.accessTimes.get(k) || 0,
     }));
-    
+
     entries.sort((a, b) => a.time - b.time);
     const excess = this.vectors.size - MAX_VECTORS;
     const toEvict = entries.slice(0, excess);
-    
+
     for (const item of toEvict) {
       this.vectors.delete(item.key);
       this.accessTimes.delete(item.key);
     }
-    logger.info(`[RAG] Cap at 5000 reached. Evicted ${excess} oldest files from codebase scanner cache.`);
+    logger.info(
+      `[RAG] Cap at 5000 reached. Evicted ${excess} oldest files from codebase scanner cache.`
+    );
   }
 
   private static async getPipeline(): Promise<any> {
@@ -113,10 +117,12 @@ export class CodebaseScanner {
    */
   public static async init(): Promise<void> {
     const root = getWorkspaceRoot();
-    
+
     // Self-healing reset if workspace root changes
     if (this.isInitialized && this.currentWatchedRoot !== root) {
-      logger.info(`[RAG] Workspace root changed from "${this.currentWatchedRoot}" to "${root}". Disposing old vector index and file watchers...`);
+      logger.info(
+        `[RAG] Workspace root changed from "${this.currentWatchedRoot}" to "${root}". Disposing old vector index and file watchers...`
+      );
       this.dispose();
     }
 
@@ -125,22 +131,22 @@ export class CodebaseScanner {
       logger.info('[RAG] Loading neural embedding model (all-MiniLM-L6-v2)...');
       const pipelineFn = await this.getPipeline();
       this.embedder = await pipelineFn('feature-extraction', 'onnx-community/all-MiniLM-L6-v2');
-      
+
       const cacheDir = path.join(root, '.nyx-cache');
       if (!fs.existsSync(cacheDir)) {
         fs.mkdirSync(cacheDir, { recursive: true });
       }
       this.cacheFilePath = path.join(cacheDir, 'codebase-embeddings.json');
       this.loadEmbeddingsCache();
-      
+
       this.setupFileWatcher();
       this.isInitialized = true;
-      
+
       // Perform initial indexing asynchronously
       setImmediate(() => {
-        this.indexWorkspace().catch(err => logger.error('[RAG] Indexing failed:', err));
+        this.indexWorkspace().catch((err) => logger.error('[RAG] Indexing failed:', err));
       });
-      
+
       logger.info('[RAG] Neural Codebase Scanner initialized successfully.');
     } catch (err: any) {
       logger.error('[RAG] Failed to initialize codebase scanner:', err);
@@ -196,7 +202,7 @@ export class CodebaseScanner {
     const root = getWorkspaceRoot();
     logger.info(`[RAG] Indexing workspace files at: ${root}`);
     const files = this.scanDirectory(root);
-    
+
     let indexCount = 0;
     for (const file of files) {
       const isCached = this.vectors.has(file.relativePath);
@@ -215,7 +221,7 @@ export class CodebaseScanner {
         }
       }
     }
-    
+
     if (indexCount > 0) {
       this.saveEmbeddingsCache();
       logger.info(`[RAG] Incremental indexing complete. Indexed ${indexCount} new files.`);
@@ -230,27 +236,29 @@ export class CodebaseScanner {
   private static setupFileWatcher(): void {
     const root = getWorkspaceRoot();
     if (this.watcher && this.currentWatchedRoot === root) return;
-    
+
     if (this.watcher) {
-      try { this.watcher.close(); } catch {}
+      try {
+        this.watcher.close();
+      } catch {}
     }
-    
+
     this.currentWatchedRoot = root;
     try {
       logger.info(`[RAG] Setting up codebase file watcher at: ${root}`);
       this.watcher = fs.watch(root, { recursive: true }, (eventType, filename) => {
         if (!filename) return;
-        
+
         // Skip ignored directories/files
         const parts = filename.replace(/\\/g, '/').split('/');
-        if (parts.some(p => EXCLUDE_DIRS.has(p) || EXCLUDE_FILES.has(p))) return;
-        
+        if (parts.some((p) => EXCLUDE_DIRS.has(p) || EXCLUDE_FILES.has(p))) return;
+
         const ext = path.extname(filename).toLowerCase();
         if (!ALLOWED_EXTENSIONS.has(ext)) return;
-        
+
         const absolutePath = path.join(root, filename);
         const relativePath = filename.replace(/\\/g, '/');
-        
+
         if (fs.existsSync(absolutePath)) {
           // File modified or created
           setImmediate(async () => {
@@ -262,7 +270,9 @@ export class CodebaseScanner {
                 this.touch(relativePath);
                 this.evictOldestVectors();
                 this.saveEmbeddingsCache();
-                logger.info(`[RAG] Watcher triggered re-indexing for modified file: ${relativePath}`);
+                logger.info(
+                  `[RAG] Watcher triggered re-indexing for modified file: ${relativePath}`
+                );
               }
             } catch {}
           });
@@ -288,11 +298,11 @@ export class CodebaseScanner {
     try {
       if (!fs.existsSync(dir)) return results;
       const list = fs.readdirSync(dir);
-      
+
       for (const file of list) {
         const absolutePath = path.join(dir, file);
         const relativePath = path.relative(baseDir, absolutePath).replace(/\\/g, '/');
-        
+
         const stat = fs.statSync(absolutePath);
         if (stat.isDirectory()) {
           if (!EXCLUDE_DIRS.has(file)) {
@@ -321,7 +331,7 @@ export class CodebaseScanner {
   public static getDirectoryStructure(): string {
     const root = getWorkspaceRoot();
     const files = this.scanDirectory(root);
-    
+
     const folders: Record<string, string[]> = {};
     for (const file of files) {
       const parentDir = path.dirname(file.relativePath);
@@ -332,7 +342,7 @@ export class CodebaseScanner {
 
     let structureStr = 'PROJECT DIRECTORY MAP:\n';
     const folderKeys = Object.keys(folders).sort();
-    
+
     let lineCount = 0;
     const maxLines = 30;
 
@@ -354,7 +364,7 @@ export class CodebaseScanner {
         lineCount++;
       }
     }
-    
+
     return structureStr;
   }
 
@@ -382,10 +392,10 @@ export class CodebaseScanner {
     await this.init();
     const root = getWorkspaceRoot();
     logger.info(`[RAG] Searching index in "${root}" semantically for: "${query}"`);
-    
+
     const queryVector = await this.generateEmbedding(query);
     const scoredResults: SearchResult[] = [];
-    
+
     for (const [relativePath, fileVector] of this.vectors.entries()) {
       const score = this.cosineSimilarity(queryVector, fileVector);
       if (score > 0) {
@@ -399,12 +409,15 @@ export class CodebaseScanner {
         });
       }
     }
-    
+
     // Sort by similarity descending
     scoredResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
-    
+
     const topResults = scoredResults.slice(0, maxResults);
-    logger.info(`[RAG] Semantic search top matches:`, topResults.map(r => `${r.path} (similarity: ${r.relevanceScore.toFixed(2)}%)`));
+    logger.info(
+      `[RAG] Semantic search top matches:`,
+      topResults.map((r) => `${r.path} (similarity: ${r.relevanceScore.toFixed(2)}%)`)
+    );
     return topResults;
   }
 
@@ -415,12 +428,15 @@ export class CodebaseScanner {
     try {
       const stats = fs.statSync(absolutePath);
       const maxSizeBytes = 3 * 1024; // Cap file reads at 3KB
-      
+
       if (stats.size > maxSizeBytes) {
         const stream = fs.readFileSync(absolutePath, 'utf8');
-        return stream.substring(0, maxSizeBytes) + '\n\n... [File truncated due to local context size limit] ...';
+        return (
+          stream.substring(0, maxSizeBytes) +
+          '\n\n... [File truncated due to local context size limit] ...'
+        );
       }
-      
+
       return fs.readFileSync(absolutePath, 'utf8');
     } catch (e: any) {
       return '';

@@ -1,5 +1,5 @@
-import {AbsoluteFill, spring, useCurrentFrame, useVideoConfig} from 'remotion';
-import {Img} from 'remotion';
+import { AbsoluteFill, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { Img } from 'remotion';
 
 interface ScreenSlideProps {
   imageSrc: string;
@@ -17,7 +17,7 @@ export const ScreenSlide: React.FC<ScreenSlideProps> = ({
   height,
 }) => {
   const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
+  const { fps } = useVideoConfig();
 
   // Zoom in animation
   const zoom = spring({

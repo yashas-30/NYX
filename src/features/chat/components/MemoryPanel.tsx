@@ -23,7 +23,10 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ memories }) => {
       </div>
       <div className="p-2 space-y-1 max-h-40 overflow-y-auto">
         {memories.map((mem) => (
-          <div key={mem.id} className="flex items-start gap-2 p-2 hover:bg-[#18181B] rounded transition-colors group">
+          <div
+            key={mem.id}
+            className="flex items-start gap-2 p-2 hover:bg-[#18181B] rounded transition-colors group"
+          >
             <Clock className="w-3 h-3 text-[#4A5059] mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">

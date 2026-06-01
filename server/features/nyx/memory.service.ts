@@ -46,7 +46,10 @@ export class MemoryService {
         logger.info('[MemoryService] Migrated memories table: Added agent_type column.');
       }
     } catch (e: any) {
-      logger.error('[MemoryService] Failed to initialize table rawly, switching to in-memory fallback:', e);
+      logger.error(
+        '[MemoryService] Failed to initialize table rawly, switching to in-memory fallback:',
+        e
+      );
       this.useFallback = true;
     }
   }

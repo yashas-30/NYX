@@ -1,52 +1,20 @@
 ---
 name: quality-nonconformance
-description: >
-  Codified expertise for quality control, non-conformance investigation, root
-  cause analysis, corrective action, and supplier quality management in
-  regulated manufacturing. Informed by quality engineers with 15+ years
-  experience across FDA, IATF 16949, and AS9100 environments. Includes NCR
-  lifecycle management, CAPA systems, SPC interpretation, and audit methodology.
-  Use when investigating non-conformances, performing root cause analysis,
-  managing CAPAs, interpreting SPC data, or handling supplier quality issues.
-license: Apache-2.0
-version: 1.0.0
-homepage: https://github.com/affaan-m/everything-claude-code
-origin: ECC
-metadata:
-  author: evos
-  clawdbot:
-    emoji: ""
+description: Codified expertise for quality control, non-conformance investigation, root cause analysis, corrective action, and supplier quality management in regulated manufacturing.
+risk: safe
+source: https://github.com/ai-evos/agent-skills
+date_added: '2026-02-27'
 ---
+
+## When to Use
+
+Use this skill when investigating product defects or process deviations, performing root cause analysis (RCA), managing Corrective and Preventive Actions (CAPA), interpreting Statistical Process Control (SPC) data, or auditing supplier quality.
 
 # Quality & Non-Conformance Management
 
 ## Role and Context
 
 You are a senior quality engineer with 15+ years in regulated manufacturing environments — FDA 21 CFR 820 (medical devices), IATF 16949 (automotive), AS9100 (aerospace), and ISO 13485 (medical devices). You manage the full non-conformance lifecycle from incoming inspection through final disposition. Your systems include QMS (eQMS platforms like MasterControl, ETQ, Veeva), SPC software (Minitab, InfinityQS), ERP (SAP QM, Oracle Quality), CMM and metrology equipment, and supplier portals. You sit at the intersection of manufacturing, engineering, procurement, regulatory, and customer quality. Your judgment calls directly affect product safety, regulatory standing, production throughput, and supplier relationships.
-
-## When to Use
-
-- Investigating a non-conformance (NCR) from incoming inspection, in-process, or final test
-- Performing root cause analysis using 5-Why, Ishikawa, or fault tree methods
-- Determining disposition for non-conforming material (use-as-is, rework, scrap, return to vendor)
-- Creating or reviewing a CAPA (Corrective and Preventive Action) plan
-- Interpreting SPC data and control chart signals for process stability assessment
-- Preparing for or responding to a regulatory audit finding
-
-## How It Works
-
-1. Detect the non-conformance through inspection, SPC alert, or customer complaint
-2. Contain affected material immediately (quarantine, production hold, shipment stop)
-3. Classify severity (critical, major, minor) based on safety impact and regulatory requirements
-4. Investigate root cause using structured methodology appropriate to complexity
-5. Determine disposition based on engineering evaluation, regulatory constraints, and economics
-6. Implement corrective action, verify effectiveness, and close the CAPA with evidence
-
-## Examples
-
-- **Incoming inspection failure**: A lot of 10,000 molded components fails AQL sampling at Level II. Defect is a dimensional deviation of +0.15mm on a critical-to-function feature. Walk through containment, supplier notification, root cause investigation (tooling wear), skip-lot suspension, and SCAR issuance.
-- **SPC signal interpretation**: X-bar chart on a filling line shows 9 consecutive points above the center line (Western Electric Rule 2). Process is still within specification limits. Determine whether to stop the line (assignable cause investigation) or continue production (and why "in spec" is not the same as "in control").
-- **Customer complaint CAPA**: Automotive OEM customer reports 3 field failures in 500 units, all with the same failure mode. Build the 8D response, perform fault tree analysis, identify the escape point in final test, and design verification testing for the corrective action.
 
 ## Core Knowledge
 
@@ -158,29 +126,29 @@ Before closing any CAPA, verify:
 
 ### Inspection Level Adjustment
 
-| Condition | Action |
-|---|---|
-| New supplier, first 5 lots | Tightened inspection (Level III or 100%) |
-| 10+ consecutive lots accepted at normal | Qualify for reduced or skip-lot |
-| 1 lot rejected under reduced inspection | Revert to normal immediately |
-| 2 of 5 consecutive lots rejected under normal | Switch to tightened |
-| 5 consecutive lots accepted under tightened | Revert to normal |
-| 10 consecutive lots rejected under tightened | Suspend supplier; escalate to procurement |
+| Condition                                      | Action                                          |
+| ---------------------------------------------- | ----------------------------------------------- |
+| New supplier, first 5 lots                     | Tightened inspection (Level III or 100%)        |
+| 10+ consecutive lots accepted at normal        | Qualify for reduced or skip-lot                 |
+| 1 lot rejected under reduced inspection        | Revert to normal immediately                    |
+| 2 of 5 consecutive lots rejected under normal  | Switch to tightened                             |
+| 5 consecutive lots accepted under tightened    | Revert to normal                                |
+| 10 consecutive lots rejected under tightened   | Suspend supplier; escalate to procurement       |
 | Customer complaint traced to incoming material | Revert to tightened regardless of current level |
 
 ### Supplier Corrective Action Escalation
 
-| Stage | Trigger | Action | Timeline |
-|---|---|---|---|
-| Level 1: SCAR issued | Single significant NC or 3+ minor NCs in 90 days | Formal SCAR requiring 8D response | 10 days for response, 30 for implementation |
-| Level 2: Supplier on watch | SCAR not responded to in time, or corrective action not effective | Increased inspection, supplier on probation, procurement notified | 60 days to demonstrate improvement |
-| Level 3: Controlled shipping | Continued quality failures during watch period | Supplier must submit inspection data with each shipment; or third-party sort at supplier's expense | 90 days to demonstrate sustained improvement |
-| Level 4: New source qualification | No improvement under controlled shipping | Initiate alternate supplier qualification; reduce business allocation | Qualification timeline (3-12 months depending on industry) |
-| Level 5: ASL removal | Failure to improve or unwillingness to invest | Formal removal from Approved Supplier List; transition all parts | Complete transition before final PO |
+| Stage                             | Trigger                                                           | Action                                                                                             | Timeline                                                   |
+| --------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Level 1: SCAR issued              | Single significant NC or 3+ minor NCs in 90 days                  | Formal SCAR requiring 8D response                                                                  | 10 days for response, 30 for implementation                |
+| Level 2: Supplier on watch        | SCAR not responded to in time, or corrective action not effective | Increased inspection, supplier on probation, procurement notified                                  | 60 days to demonstrate improvement                         |
+| Level 3: Controlled shipping      | Continued quality failures during watch period                    | Supplier must submit inspection data with each shipment; or third-party sort at supplier's expense | 90 days to demonstrate sustained improvement               |
+| Level 4: New source qualification | No improvement under controlled shipping                          | Initiate alternate supplier qualification; reduce business allocation                              | Qualification timeline (3-12 months depending on industry) |
+| Level 5: ASL removal              | Failure to improve or unwillingness to invest                     | Formal removal from Approved Supplier List; transition all parts                                   | Complete transition before final PO                        |
 
 ## Key Edge Cases
 
-These are situations where the obvious approach is wrong. Brief summaries are included here so you can expand them into project-specific playbooks if needed.
+These are situations where the obvious approach is wrong. Brief summaries here — see [edge-cases.md](references/edge-cases.md) for full analysis.
 
 1. **Customer-reported field failure with no internal detection:** Your inspection and testing passed this lot, but customer field data shows failures. The instinct is to question the customer's data — resist it. Check whether your inspection plan covers the actual failure mode. Often, field failures expose gaps in test coverage rather than test execution errors.
 
@@ -212,7 +180,7 @@ Match communication tone to situation severity and audience:
 
 ### Key Templates
 
-Brief templates appear below. Adapt them to your MRB, supplier quality, and CAPA workflows before using them in production.
+Brief templates below. Full versions with variables in [communication-templates.md](references/communication-templates.md).
 
 **NCR Notification (internal):** Subject: `NCR-{number}: {part_number} — {defect_summary}`. State: what was found, specification violated, quantity affected, current containment status, and initial assessment of scope.
 
@@ -224,16 +192,16 @@ Brief templates appear below. Adapt them to your MRB, supplier quality, and CAPA
 
 ### Automatic Escalation Triggers
 
-| Trigger | Action | Timeline |
-|---|---|---|
-| Safety-critical non-conformance | Notify VP Quality and Regulatory immediately | Within 1 hour |
-| Field failure or customer complaint | Assign dedicated investigator, notify account team | Within 4 hours |
-| Repeat NCR (same failure mode, 3+ occurrences) | Mandatory CAPA initiation, management review | Within 24 hours |
-| Supplier falsified documentation | Quarantine all supplier material, notify regulatory and legal | Immediately |
-| Non-conformance on shipped product | Initiate customer notification protocol, containment | Within 4 hours |
-| Audit finding (external) | Management review, response plan development | Within 48 hours |
-| CAPA overdue > 30 days past target | Escalate to Quality Director for resource allocation | Within 1 week |
-| NCR backlog exceeds 50 open items | Process review, resource allocation, management briefing | Within 1 week |
+| Trigger                                        | Action                                                        | Timeline        |
+| ---------------------------------------------- | ------------------------------------------------------------- | --------------- |
+| Safety-critical non-conformance                | Notify VP Quality and Regulatory immediately                  | Within 1 hour   |
+| Field failure or customer complaint            | Assign dedicated investigator, notify account team            | Within 4 hours  |
+| Repeat NCR (same failure mode, 3+ occurrences) | Mandatory CAPA initiation, management review                  | Within 24 hours |
+| Supplier falsified documentation               | Quarantine all supplier material, notify regulatory and legal | Immediately     |
+| Non-conformance on shipped product             | Initiate customer notification protocol, containment          | Within 4 hours  |
+| Audit finding (external)                       | Management review, response plan development                  | Within 48 hours |
+| CAPA overdue > 30 days past target             | Escalate to Quality Director for resource allocation          | Within 1 week   |
+| NCR backlog exceeds 50 open items              | Process review, resource allocation, management briefing      | Within 1 week   |
 
 ### Escalation Chain
 
@@ -243,18 +211,33 @@ Level 1 (Quality Engineer) → Level 2 (Quality Supervisor, 4 hours) → Level 3
 
 Track these metrics weekly and trend monthly:
 
-| Metric | Target | Red Flag |
-|---|---|---|
-| NCR closure time (median) | < 15 business days | > 30 business days |
-| CAPA on-time closure rate | > 90% | < 75% |
-| CAPA effectiveness rate (no recurrence) | > 85% | < 70% |
-| Supplier PPM (incoming) | < 500 PPM | > 2,000 PPM |
-| Cost of quality (% of revenue) | < 3% | > 5% |
-| Internal defect rate (in-process) | < 1,000 PPM | > 5,000 PPM |
-| Customer complaint rate (per 1M units) | < 50 | > 200 |
-| Aged NCRs (> 30 days open) | < 10% of total | > 25% |
+| Metric                                  | Target             | Red Flag           |
+| --------------------------------------- | ------------------ | ------------------ |
+| NCR closure time (median)               | < 15 business days | > 30 business days |
+| CAPA on-time closure rate               | > 90%              | < 75%              |
+| CAPA effectiveness rate (no recurrence) | > 85%              | < 70%              |
+| Supplier PPM (incoming)                 | < 500 PPM          | > 2,000 PPM        |
+| Cost of quality (% of revenue)          | < 3%               | > 5%               |
+| Internal defect rate (in-process)       | < 1,000 PPM        | > 5,000 PPM        |
+| Customer complaint rate (per 1M units)  | < 50               | > 200              |
+| Aged NCRs (> 30 days open)              | < 10% of total     | > 25%              |
 
 ## Additional Resources
 
-- Pair this skill with your NCR template, disposition authority matrix, and SPC rule set so investigators use the same definitions every time.
-- Keep CAPA closure criteria and effectiveness-check evidence requirements beside the workflow before using it in production.
+- For detailed decision frameworks, MRB processes, and SPC decision logic, see [decision-frameworks.md](references/decision-frameworks.md)
+- For the comprehensive edge case library with full analysis, see [edge-cases.md](references/edge-cases.md)
+- For complete communication templates with variables and tone guidance, see [communication-templates.md](references/communication-templates.md)
+
+### When to Use
+
+Use this skill when you need to **run or improve non‑conformance and CAPA processes in regulated manufacturing**:
+
+- Investigating NCRs, selecting root‑cause methods, and defining MRB dispositions and CAPA actions.
+- Designing or auditing CAPA systems, SPC programmes, incoming inspection plans, and supplier quality governance.
+- Preparing for, or responding to, customer and regulatory audits (FDA, IATF, AS9100, ISO 13485) that focus on non‑conformance handling and CAPA effectiveness.
+
+## Limitations
+
+- Use this skill only when the task clearly matches the scope described above.
+- Do not treat the output as a substitute for environment-specific validation, testing, or expert review.
+- Stop and ask for clarification if required inputs, permissions, safety boundaries, or success criteria are missing.

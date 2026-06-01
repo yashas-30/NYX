@@ -41,7 +41,7 @@ const MAX_ITEMS = 100; // LRU Eviction Limit: max 100 items
 export class CacheServer {
   private static stats = {
     hits: 0,
-    misses: 0
+    misses: 0,
   };
 
   private static sortKeys(obj: any): any {
@@ -69,10 +69,10 @@ export class CacheServer {
       prompt: body.prompt || '',
       systemInstruction: body.systemInstruction || '',
       history: body.history || [],
-      settings: body.settings || {}
+      settings: body.settings || {},
     });
     const hashInput = JSON.stringify(sortedInput);
-    
+
     return crypto.createHash('sha256').update(hashInput).digest('hex');
   }
 
@@ -85,7 +85,7 @@ export class CacheServer {
       this.stats.misses++;
       return null;
     }
-    
+
     let release: (() => Promise<void>) | null = null;
     try {
       const lockInstance = await getLockFn();
@@ -98,13 +98,15 @@ export class CacheServer {
         this.stats.misses++;
         // Evict expired entry asynchronously
         setImmediate(() => {
-          try { fs.unlinkSync(filePath); } catch {}
+          try {
+            fs.unlinkSync(filePath);
+          } catch {}
         });
         return null;
       }
 
       this.stats.hits++;
-      
+
       // Touch file to update mtime for LRU eviction policy
       const now = new Date();
       fs.utimesSync(filePath, now, now);
@@ -125,7 +127,12 @@ export class CacheServer {
   /**
    * Stores a value in the cache with thread-safe lock and LRU eviction
    */
-  public static async set(key: string, data: string, provider: string, model: string): Promise<void> {
+  public static async set(
+    key: string,
+    data: string,
+    provider: string,
+    model: string
+  ): Promise<void> {
     return this.setWithTTL(key, data, provider, model, 0);
   }
 
@@ -133,7 +140,13 @@ export class CacheServer {
    * Stores a value with a TTL (time-to-live). Use for web search results and other short-lived data.
    * @param ttlMs - TTL in milliseconds. 0 means no expiry (permanent). Default for web search: 300000 (5 min).
    */
-  public static async setWithTTL(key: string, data: string, provider: string, model: string, ttlMs = 0): Promise<void> {
+  public static async setWithTTL(
+    key: string,
+    data: string,
+    provider: string,
+    model: string,
+    ttlMs = 0
+  ): Promise<void> {
     const filePath = path.join(CACHE_DIR, `${key}.json`);
     let release: (() => Promise<void>) | null = null;
     try {
@@ -142,13 +155,15 @@ export class CacheServer {
         provider,
         model,
         timestamp: Date.now(),
-        data
+        data,
       };
 
       // Attach expiry timestamp if TTL is specified
       if (ttlMs > 0) {
         payload.expiresAt = Date.now() + ttlMs;
-        logger.info(`[CacheServer] Storing entry with TTL=${ttlMs}ms (expires in ${(ttlMs / 1000).toFixed(0)}s): ${key.slice(0, 12)}...`);
+        logger.info(
+          `[CacheServer] Storing entry with TTL=${ttlMs}ms (expires in ${(ttlMs / 1000).toFixed(0)}s): ${key.slice(0, 12)}...`
+        );
       }
 
       const fileExists = fs.existsSync(filePath);
@@ -159,9 +174,9 @@ export class CacheServer {
       const lockInstance = await getLockFn();
       release = await lockInstance(filePath, { realpath: false, retries: 5 });
       fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf-8');
-      
+
       // Perform LRU Eviction Check asynchronously
-      this.evictOldestIfNeeded().catch(err => {
+      this.evictOldestIfNeeded().catch((err) => {
         logger.error('[CacheServer] LRU Eviction failed:', err.message);
       });
     } catch (error: any) {
@@ -180,9 +195,10 @@ export class CacheServer {
    */
   private static async evictOldestIfNeeded(): Promise<void> {
     try {
-      const files = fs.readdirSync(CACHE_DIR)
-        .filter(f => f.endsWith('.json'))
-        .map(f => {
+      const files = fs
+        .readdirSync(CACHE_DIR)
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => {
           const fp = path.join(CACHE_DIR, f);
           const stats = fs.statSync(fp);
           return { name: f, path: fp, mtime: stats.mtimeMs };
@@ -213,13 +229,13 @@ export class CacheServer {
       let totalSize = 0;
       const items: CacheMetadata[] = [];
 
-      files.forEach(file => {
+      files.forEach((file) => {
         if (file.endsWith('.json')) {
           const filePath = path.join(CACHE_DIR, file);
           try {
             const stat = fs.statSync(filePath);
             totalSize += stat.size;
-            
+
             const raw = fs.readFileSync(filePath, 'utf-8');
             const parsed = JSON.parse(raw);
             items.push({
@@ -227,7 +243,7 @@ export class CacheServer {
               model: parsed.model || 'unknown',
               promptHash: file.replace('.json', ''),
               createdAt: parsed.timestamp || stat.mtimeMs,
-              size: stat.size
+              size: stat.size,
             });
           } catch {
             // fallback
@@ -240,7 +256,7 @@ export class CacheServer {
         totalSizeBytes: totalSize,
         hits: this.stats.hits,
         misses: this.stats.misses,
-        items: items.sort((a, b) => b.createdAt - a.createdAt).slice(0, 50)
+        items: items.sort((a, b) => b.createdAt - a.createdAt).slice(0, 50),
       };
     } catch (e: any) {
       logger.error('[CacheServer] Failed to get stats:', e);
@@ -249,7 +265,7 @@ export class CacheServer {
         totalSizeBytes: 0,
         hits: this.stats.hits,
         misses: this.stats.misses,
-        items: []
+        items: [],
       };
     }
   }
@@ -262,7 +278,7 @@ export class CacheServer {
       const files = fs.readdirSync(CACHE_DIR);
       let clearedCount = 0;
       const hashRegex = /^[a-f0-9]{64}\.json$/i;
-      files.forEach(file => {
+      files.forEach((file) => {
         if (hashRegex.test(file)) {
           fs.unlinkSync(path.join(CACHE_DIR, file));
           clearedCount++;

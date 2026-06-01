@@ -10,9 +10,7 @@ import { TokenUsageProvider } from '@src/shared/context/TokenUsageContext';
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <TokenUsageProvider>
-        {children}
-      </TokenUsageProvider>
+      <TokenUsageProvider>{children}</TokenUsageProvider>
     </ThemeProvider>
   );
 }

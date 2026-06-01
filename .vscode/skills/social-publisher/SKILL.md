@@ -33,23 +33,27 @@ socialclaw login --api-key <workspace-key>
 ## Core Workflow
 
 ### 1. List connected accounts
+
 ```bash
 socialclaw accounts list --json
 ```
 
 If not connected:
+
 ```bash
 socialclaw accounts connect --provider x --open
 socialclaw accounts connect --provider linkedin --open
 ```
 
 ### 2. Upload media (optional)
+
 ```bash
 socialclaw assets upload --file ./image.png --json
 # → { "asset_id": "..." }
 ```
 
 ### 3. Build schedule.json
+
 ```json
 {
   "posts": [
@@ -64,17 +68,20 @@ socialclaw assets upload --file ./image.png --json
 ```
 
 ### 4. Validate before publishing
+
 ```bash
 socialclaw validate -f schedule.json --json
 ```
 
 ### 5. Publish
+
 ```bash
 socialclaw apply -f schedule.json --json
 # → { "run_id": "..." }
 ```
 
 ### 6. Monitor
+
 ```bash
 socialclaw status --run-id <run-id> --json
 socialclaw posts list --json
@@ -82,21 +89,21 @@ socialclaw posts list --json
 
 ## Supported Providers
 
-| Provider | Key |
-|----------|-----|
-| X (Twitter) | `x` |
-| LinkedIn profile | `linkedin` |
-| LinkedIn page | `linkedin_page` |
-| Instagram Business | `instagram_business` |
-| Instagram standalone | `instagram` |
-| Facebook Page | `facebook` |
-| TikTok | `tiktok` |
-| YouTube | `youtube` |
-| Reddit | `reddit` |
-| WordPress | `wordpress` |
-| Discord | `discord` |
-| Telegram | `telegram` |
-| Pinterest | `pinterest` |
+| Provider             | Key                  |
+| -------------------- | -------------------- |
+| X (Twitter)          | `x`                  |
+| LinkedIn profile     | `linkedin`           |
+| LinkedIn page        | `linkedin_page`      |
+| Instagram Business   | `instagram_business` |
+| Instagram standalone | `instagram`          |
+| Facebook Page        | `facebook`           |
+| TikTok               | `tiktok`             |
+| YouTube              | `youtube`            |
+| Reddit               | `reddit`             |
+| WordPress            | `wordpress`          |
+| Discord              | `discord`            |
+| Telegram             | `telegram`           |
+| Pinterest            | `pinterest`          |
 
 ## Security
 

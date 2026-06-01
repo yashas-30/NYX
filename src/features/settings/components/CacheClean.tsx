@@ -16,10 +16,7 @@ interface CacheCleanProps {
   fetchCacheStats: () => Promise<void>;
 }
 
-export const CacheClean: React.FC<CacheCleanProps> = ({
-  cacheStats,
-  fetchCacheStats,
-}) => {
+export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheStats }) => {
   const handleClearCache = async () => {
     try {
       const res = await fetchWithAuth('/api/cache/clear', { method: 'POST' });
@@ -28,7 +25,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
         await fetchCacheStats();
         toast.success(`Successfully cleared ${data.clearedCount || 0} cached items!`);
       } else {
-        toast.error("Failed to clear cache.");
+        toast.error('Failed to clear cache.');
       }
     } catch (error: any) {
       toast.error(`Error: ${error.message}`);
@@ -40,11 +37,15 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
   return (
     <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
       <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity" />
-      
+
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">CACHE STORAGE MANAGER</p>
-          <h3 className="text-xs font-bold text-foreground mt-0.5">Persistent Query Acceleration</h3>
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">
+            CACHE STORAGE MANAGER
+          </p>
+          <h3 className="text-xs font-bold text-foreground mt-0.5">
+            Persistent Query Acceleration
+          </h3>
         </div>
         <span className="text-[10px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-2 py-0.5 rounded-full border border-[#FF3366]/20">
           Active Server
@@ -53,25 +54,29 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         <div className="bg-background/60 border border-white/[0.04] rounded-2xl p-3 flex flex-col justify-between">
-          <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">CACHED QUERIES</span>
-          <span className="text-[15px] font-black font-mono text-foreground mt-1.5">{cacheStats.itemCount}</span>
-        </div>
-        <div className="bg-background/60 border border-white/[0.04] rounded-2xl p-3 flex flex-col justify-between">
-          <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">STORAGE USED</span>
+          <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">
+            CACHED QUERIES
+          </span>
           <span className="text-[15px] font-black font-mono text-foreground mt-1.5">
-            {cacheStats.totalSizeBytes > 1024 * 1024 
-              ? `${(cacheStats.totalSizeBytes / (1024 * 1024)).toFixed(2)} MB`
-              : `${(cacheStats.totalSizeBytes / 1024).toFixed(1)} KB`
-            }
+            {cacheStats.itemCount}
           </span>
         </div>
         <div className="bg-background/60 border border-white/[0.04] rounded-2xl p-3 flex flex-col justify-between">
-          <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">HIT EFFICIENCY</span>
+          <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">
+            STORAGE USED
+          </span>
+          <span className="text-[15px] font-black font-mono text-foreground mt-1.5">
+            {cacheStats.totalSizeBytes > 1024 * 1024
+              ? `${(cacheStats.totalSizeBytes / (1024 * 1024)).toFixed(2)} MB`
+              : `${(cacheStats.totalSizeBytes / 1024).toFixed(1)} KB`}
+          </span>
+        </div>
+        <div className="bg-background/60 border border-white/[0.04] rounded-2xl p-3 flex flex-col justify-between">
+          <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">
+            HIT EFFICIENCY
+          </span>
           <span className="text-[15px] font-black font-mono text-[#FF3366] mt-1.5">
-            {totalCalls > 0
-              ? `${((cacheStats.hits / totalCalls) * 100).toFixed(1)}%`
-              : '0.0%'
-            }
+            {totalCalls > 0 ? `${((cacheStats.hits / totalCalls) * 100).toFixed(1)}%` : '0.0%'}
           </span>
         </div>
       </div>
@@ -84,12 +89,11 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
           </span>
         </div>
         <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-gradient-to-r from-[#FF3366] to-emerald-500 rounded-full transition-all duration-500" 
-            style={{ 
-              width: totalCalls > 0 
-                ? `${Math.min(100, (cacheStats.hits / totalCalls) * 100)}%`
-                : '0%' 
+          <div
+            className="h-full bg-gradient-to-r from-[#FF3366] to-emerald-500 rounded-full transition-all duration-500"
+            style={{
+              width:
+                totalCalls > 0 ? `${Math.min(100, (cacheStats.hits / totalCalls) * 100)}%` : '0%',
             }}
           />
         </div>
@@ -97,15 +101,16 @@ export const CacheClean: React.FC<CacheCleanProps> = ({
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mt-4">
         <p className="text-[11px] text-muted-foreground/80 leading-relaxed max-w-[280px]">
-          Persistent query cache automatically mirrors inference results to disk. Submitting identical prompts returns results instantly, saving network credits.
+          Persistent query cache automatically mirrors inference results to disk. Submitting
+          identical prompts returns results instantly, saving network credits.
         </p>
         <motion.button
           whileTap={cacheStats.itemCount === 0 ? {} : { scale: 0.95 }}
           onClick={handleClearCache}
           disabled={cacheStats.itemCount === 0}
           className={`px-4.5 py-2.5 rounded-xl border text-[11px] font-bold uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
-            cacheStats.itemCount === 0 
-              ? 'bg-white/5 border-white/5 text-muted-foreground/30 cursor-not-allowed' 
+            cacheStats.itemCount === 0
+              ? 'bg-white/5 border-white/5 text-muted-foreground/30 cursor-not-allowed'
               : 'bg-red-500/5 border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white hover:border-red-500 cursor-pointer shadow-sm'
           }`}
         >

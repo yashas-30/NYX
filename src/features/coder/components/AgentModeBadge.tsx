@@ -9,7 +9,7 @@ interface AgentModeBadgeProps {
 
 export const AgentModeBadge: React.FC<AgentModeBadgeProps> = ({ mode, reasoning, isLoading }) => {
   if (!mode || !isLoading) return null;
-  
+
   return (
     <AnimatePresence>
       <motion.div
@@ -30,7 +30,9 @@ export const AgentModeBadge: React.FC<AgentModeBadgeProps> = ({ mode, reasoning,
           </>
         )}
         <span className="text-zinc-500">—</span>
-        <span className="truncate max-w-[200px]" title={reasoning}>{reasoning}</span>
+        <span className="truncate max-w-[200px]" title={reasoning}>
+          {reasoning}
+        </span>
       </motion.div>
     </AnimatePresence>
   );

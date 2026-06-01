@@ -41,5 +41,5 @@ export const MODEL_LAYERS: Record<string, number> = {
   'command-r-plus-104b': 64,
   'openchat-3.5-7b': 32,
   'nemotron-mini-4b': 32,
-  'nemotron-70b-instruct': 80
+  'nemotron-70b-instruct': 80,
 };

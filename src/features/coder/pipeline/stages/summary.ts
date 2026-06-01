@@ -25,7 +25,7 @@ export function runSummaryStage(
   acc += `1. All files have been written directly to your workspace.\n`;
   acc += `2. Review the generated code in your editor.\n`;
   if (plan.verifyCommands.length > 0) {
-    acc += `3. Run verification: ${plan.verifyCommands.map(c => `\`${c}\``).join(', ')}\n`;
+    acc += `3. Run verification: ${plan.verifyCommands.map((c) => `\`${c}\``).join(', ')}\n`;
   }
   acc += `\n*Powered by NYX Autonomous Agent v3.0*\n`;
 

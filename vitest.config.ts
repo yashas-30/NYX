@@ -13,7 +13,7 @@ export default defineConfig({
       'server/lib/__tests__/**/*.test.ts',
       'server/features/**/*.test.ts',
       'src/**/*.test.ts',
-      'src/**/*.test.tsx'
+      'src/**/*.test.tsx',
     ],
     coverage: {
       provider: 'v8',
@@ -21,14 +21,14 @@ export default defineConfig({
       thresholds: {
         lines: 80,
         functions: 80,
-        branches: 70
-      }
-    }
+        branches: 70,
+      },
+    },
   },
   resolve: {
     alias: {
-      '@':       path.resolve(__dirname, '.'),
-      '@src':    path.resolve(__dirname, './src'),
+      '@': path.resolve(__dirname, '.'),
+      '@src': path.resolve(__dirname, './src'),
       '@server': path.resolve(__dirname, './server'),
       '@shared': path.resolve(__dirname, './src/shared'),
     },

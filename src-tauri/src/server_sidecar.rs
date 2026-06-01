@@ -164,14 +164,14 @@ fn get_server_path(app_handle: &AppHandle) -> anyhow::Result<std::path::PathBuf>
         if dir.ends_with("src-tauri") {
             dir.pop();
         }
-        return Ok(dir.join("dist-server").join("server.cjs"));
+        return Ok(dir.join("dist-server").join("server.mjs"));
     }
     let resource_dir = app_handle.path().resource_dir()?;
-    let direct_path = resource_dir.join("dist-server").join("server.cjs");
+    let direct_path = resource_dir.join("dist-server").join("server.mjs");
     if direct_path.exists() {
         return Ok(direct_path);
     }
-    let up_path = resource_dir.join("_up_").join("dist-server").join("server.cjs");
+    let up_path = resource_dir.join("_up_").join("dist-server").join("server.mjs");
     if up_path.exists() {
         return Ok(up_path);
     }

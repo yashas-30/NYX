@@ -7,14 +7,18 @@ Use these examples to format your tool calls to the Stitch MCP server correctly.
 ## 🏗️ Project Management
 
 ### `list_projects`
+
 Lists all Stitch projects accessible to you.
+
 ```json
 // No parameters needed
 {}
 ```
 
 ### `get_project`
+
 Retrieves details of a specific project.
+
 ```json
 {
   "name": "projects/4044680601076201931"
@@ -22,7 +26,9 @@ Retrieves details of a specific project.
 ```
 
 ### `create_project`
+
 Creates a new Stitch project.
+
 ```json
 {
   "title": "My New App"
@@ -34,7 +40,9 @@ Creates a new Stitch project.
 ## 🎨 Design Generation
 
 ### `generate_screen_from_text`
+
 Generates a new screen from a text description.
+
 ```json
 {
   "projectId": "4044680601076201931",
@@ -44,7 +52,9 @@ Generates a new screen from a text description.
 ```
 
 ### `edit_screens`
+
 Edits existing screens with a text prompt.
+
 ```json
 {
   "projectId": "4044680601076201931",
@@ -58,7 +68,9 @@ Edits existing screens with a text prompt.
 ## 🖼️ Screen Management
 
 ### `list_screens`
+
 Lists all screens within a project.
+
 ```json
 {
   "projectId": "4044680601076201931"
@@ -66,7 +78,9 @@ Lists all screens within a project.
 ```
 
 ### `get_screen`
+
 Retrieves details of a specific screen.
+
 ```json
 {
   "projectId": "4044680601076201931",

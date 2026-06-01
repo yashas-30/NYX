@@ -164,7 +164,24 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       return;
     }
 
-    setActionInProgress(customUrl.trim());
+    const urlStr = customUrl.trim();
+    if (!urlStr.toLowerCase().split('?')[0].endsWith('.gguf')) {
+      toast.error('URL must point to a .gguf file');
+      return;
+    }
+
+    try {
+      const allowedDomains = ['huggingface.co', 'github.com', 'modelscope.cn'];
+      const parsedUrl = new URL(urlStr);
+      if (!allowedDomains.some((d) => parsedUrl.hostname.includes(d))) {
+        toast.warning('Untrusted domain. Proceed with caution.');
+      }
+    } catch (e) {
+      toast.error('Invalid URL format');
+      return;
+    }
+
+    setActionInProgress(urlStr);
     try {
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/download', {
         method: 'POST',
@@ -269,18 +286,29 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const handleRun = async (modelId: string) => {
     setActionInProgress(modelId);
     try {
-      let settings = {};
+      let rawSettings: any = {};
       const savedSettings = localStorage.getItem('nyx_model_settings');
       if (savedSettings) {
         try {
-          settings = JSON.parse(savedSettings);
+          rawSettings = JSON.parse(savedSettings);
         } catch {}
       }
+
+      const validatedSettings = {
+        ...rawSettings,
+        temperature: Math.max(0, Math.min(2, rawSettings.temperature ?? 0.7)),
+        maxTokens: Math.max(1, Math.min(32768, rawSettings.maxTokens ?? 4096)),
+        gpuLayers: Math.max(0, Math.min(999, rawSettings.gpuLayers ?? 99)),
+        threads: Math.max(
+          1,
+          Math.min(navigator.hardwareConcurrency || 4, rawSettings.threads ?? 4)
+        ),
+      };
 
       const res = await AIService.fetchWithAuth('/api/nyx/local-models/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId, settings }),
+        body: JSON.stringify({ modelId, settings: validatedSettings }),
       });
       if (res.ok) {
         toast.success('Model loaded natively in Resident RAM.');
@@ -515,8 +543,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
               {(() => {
                 const installedModels = nativeModels.filter(
                   (m) =>
-                    m.status === 'completed' ||
-                    m.status === 'downloading' ||
+                    ['completed', 'downloading', 'failed', 'paused'].includes(m.status || '') ||
                     activeNativeId === m.id
                 );
 

@@ -23,7 +23,10 @@ export function cleanupProcesses(): void {
           }
         });
       } catch (error: any) {
-        logger.error(`[ProcessRegistry] Exception tree-killing process ${proc.pid}:`, error.message);
+        logger.error(
+          `[ProcessRegistry] Exception tree-killing process ${proc.pid}:`,
+          error.message
+        );
       }
     }
   }

@@ -14,7 +14,7 @@ export class PromptAnalysisService {
    */
   public analyze(prompt: string): PromptAnalysis {
     const lower = prompt.toLowerCase();
-    
+
     return {
       intent: this.detectIntent(lower),
       tone: this.detectTone(lower),
@@ -34,18 +34,22 @@ export class PromptAnalysisService {
   }
 
   private detectTone(lower: string): PromptAnalysis['tone'] {
-    if (lower.includes('explain') && (lower.includes('code') || lower.includes('how does'))) return 'technical';
+    if (lower.includes('explain') && (lower.includes('code') || lower.includes('how does')))
+      return 'technical';
     if (lower.match(/\b(hey|hi|thanks|lol|dude|bro)\b/)) return 'casual';
     return 'professional';
   }
 
   private detectDomain(lower: string): string {
     const domains = [
-      { pattern: /\b(react|typescript|python|rust|go|api|database|sql)\b/, name: 'software_engineering' },
+      {
+        pattern: /\b(react|typescript|python|rust|go|api|database|sql)\b/,
+        name: 'software_engineering',
+      },
       { pattern: /\b(math|physics|chemistry|biology|science)\b/, name: 'science' },
       { pattern: /\b(stock|market|finance|invest|economy)\b/, name: 'finance' },
       { pattern: /\b(law|legal|court|sue|attorney)\b/, name: 'legal' },
-      { pattern: /\b(health|medical|doctor|symptom|disease)\b/, name: 'medical' }
+      { pattern: /\b(health|medical|doctor|symptom|disease)\b/, name: 'medical' },
     ];
 
     for (const d of domains) {

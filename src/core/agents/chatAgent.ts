@@ -1,57 +1,30 @@
 import { AIService, countTokens } from '@src/core/services/ai.service';
-import { ChatMessage, AISettings } from '@src/infrastructure/types';
+import {
+  ChatMessage,
+  AISettings,
+  ImageAttachment,
+  Artifact,
+  Citation,
+  ThinkingStep,
+  StreamMetrics,
+  StreamEvent,
+  ToolCall,
+  TelemetryMetrics,
+} from '@src/infrastructure/types';
 import { PromptAnalysis, ConversationState } from '@src/core/services/promptClassifier';
 import { buildChatSystemPrompt, buildChatUserPrompt } from '../prompts/chatPrompts';
-import { searchWeb } from '@src/infrastructure/api/coderApi';
-import { BaseAgent, BaseAgentConfig } from './baseAgent';
+import { searchWeb } from '@src/infrastructure/api/searchApi';
+import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from './baseAgent';
+
+export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface ImageAttachment {
-  name: string;
-  mimeType: string;
-  data: string; // base64
-}
-
-export interface Artifact {
-  id: string;
-  type: 'code' | 'markdown' | 'json' | 'diff' | 'html' | 'svg';
-  title: string;
-  content: string;
-  language?: string;
-}
-
-export interface Citation {
-  id: string;
-  source: string;
-  quote: string;
-  url?: string;
-}
-
-export interface ThinkingStep {
-  id: string;
-  step: number;
-  content: string;
-  timestamp: number;
-}
-
-export interface StreamMetrics {
-  tokensPerSecond: number;
-  totalTokens: number;
-  latencyMs: number;
-  modelName: string;
-}
-
-export interface StreamEvent {
-  type: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'artifact' | 'citation' | 'metrics' | 'error' | 'done';
-  content?: string;
-  metadata?: any;
-}
 
 export interface ChatAgentConfig extends BaseAgentConfig {
   maxSearchResults?: number;
   maxContextLength?: number;
   conversationState?: ConversationState;
+  updateHistory?: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
 }
 
 // ── Agent ─────────────────────────────────────────────────────────────────────
@@ -71,21 +44,50 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
     if (analysis.intent === 'web_search') return true;
 
     const lower = prompt.toLowerCase();
-    
+
     // Traffic Controller & Token Optimizer Rules (Local Regex triggers)
     // 1. Temporal Gaps & News
-    const temporalKeywords = ['current news', 'latest release', 'breaking news', 'recent events', 'today', 'now', 'recently', 'newest', 'latest', 'current'];
-    const infoKeywords = ['price', 'weather', 'status', 'news', 'release', 'update', 'version', 'score', 'match', 'event'];
-    
+    const temporalKeywords = [
+      'current news',
+      'latest release',
+      'breaking news',
+      'recent events',
+      'today',
+      'now',
+      'recently',
+      'newest',
+      'latest',
+      'current',
+    ];
+    const infoKeywords = [
+      'price',
+      'weather',
+      'status',
+      'news',
+      'release',
+      'update',
+      'version',
+      'score',
+      'match',
+      'event',
+    ];
+
     // Check for explicit temporal/live requests
-    if (lower.includes('live') || lower.includes('real-time') || lower.includes('realtime')) return true;
-    
+    if (lower.includes('live') || lower.includes('real-time') || lower.includes('realtime'))
+      return true;
+
     // Check for status requests
-    if (lower.includes('is currently') || lower.includes('what is the current') || lower.includes('who is currently')) return true;
+    if (
+      lower.includes('is currently') ||
+      lower.includes('what is the current') ||
+      lower.includes('who is currently')
+    )
+      return true;
 
     // Check combinations that strongly imply real-time or recent need
-    const hasTemporal = temporalKeywords.some(k => lower.includes(k)) || /(2025|2026|2027)/.test(lower);
-    const hasInfo = infoKeywords.some(k => lower.includes(k));
+    const hasTemporal =
+      temporalKeywords.some((k) => lower.includes(k)) || /(2025|2026|2027)/.test(lower);
+    const hasInfo = infoKeywords.some((k) => lower.includes(k));
 
     if (hasTemporal && hasInfo) {
       return true;
@@ -199,18 +201,21 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
     let accumulatedText = '';
 
     // Use a queue for thread-safe chunk handling
-    const chunkQueue: string[] = [];
+    const eventQueue: StreamEvent[] = [];
     let resolveChunk: (() => void) | null = null;
     let streamDone = false;
     let streamError: Error | null = null;
 
-    const onChunk = (text: string) => {
-      // AIService gives accumulated text — we need to compute delta
-      const delta = text.slice(accumulatedText.length);
-      accumulatedText = text;
-      totalTokens += countTokens(delta);
+    const onStreamEvent = (event: any) => {
+      if (typeof event === 'string') return; // Fallback
+      if (event.type === 'text' && event.content) {
+        totalTokens += countTokens(event.content);
+        accumulatedText += event.content;
+        eventQueue.push({ type: 'text', content: event.content });
+      } else if (event.type === 'reasoning' && event.content) {
+        eventQueue.push({ type: 'thinking', content: event.content });
+      }
 
-      chunkQueue.push(delta);
       if (resolveChunk) {
         resolveChunk();
         resolveChunk = null;
@@ -225,38 +230,65 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
       this.config.apiKey,
       systemPrompt,
       { ...this.config.settings },
-      onChunk,
+      onStreamEvent,
       combinedSignal,
       {
-        history: this.config.history.slice(-20),
+        history: this.config.history.slice(-HISTORY_SLICE_SIZE),
         agentMode: 'chat',
         webSearch: this.config.webSearchEnabled,
         images,
+        streamEvents: true,
       }
-    ).then((result) => {
-      streamDone = true;
-      if (resolveChunk) resolveChunk();
-      return result;
-    }).catch((err) => {
-      streamError = err;
-      streamDone = true;
-      if (resolveChunk) resolveChunk();
-      throw err;
-    });
+    )
+      .then((result) => {
+        streamDone = true;
+        if (resolveChunk) resolveChunk();
+        return result;
+      })
+      .catch((err) => {
+        streamError = err;
+        streamDone = true;
+        if (resolveChunk) resolveChunk();
+        throw err;
+      });
+
+    // Stream processing with backpressure protection
+    const MAX_QUEUE_SIZE = 100;
+    let queueOverflow = false;
 
     // Consume chunks as they arrive
-    while (!streamDone || chunkQueue.length > 0) {
-      if (chunkQueue.length === 0) {
-        await new Promise<void>((resolve) => { resolveChunk = resolve; });
+    while (!streamDone || eventQueue.length > 0) {
+      if (signal.aborted) break;
+      if (eventQueue.length === 0) {
+        await new Promise<void>((resolve) => {
+          const onAbort = () => {
+            resolve();
+          };
+          signal.addEventListener('abort', onAbort, { once: true });
+
+          resolveChunk = () => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+          };
+        });
+        resolveChunk = null;
       }
 
+      if (signal.aborted) break;
       if (streamError) throw streamError;
 
-      while (chunkQueue.length > 0) {
-        const delta = chunkQueue.shift()!;
-        if (delta) {
-          yield { type: 'text', content: delta };
-        }
+      if (eventQueue.length > MAX_QUEUE_SIZE && !queueOverflow) {
+        queueOverflow = true;
+        yield {
+          type: 'thinking',
+          content: '⚠ Stream backpressure detected. Output generating faster than display.',
+        };
+      }
+
+      // Drain chunks efficiently
+      while (eventQueue.length > 0) {
+        const ev = eventQueue.shift()!;
+        yield ev;
       }
     }
 
@@ -287,6 +319,13 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
         modelName: this.config.modelId,
       } as StreamMetrics,
     };
+
+    if (this.config.updateHistory) {
+      this.config.updateHistory((prev) => [
+        ...prev,
+        { role: 'assistant', content: accumulatedText, timestamp: Date.now() },
+      ]);
+    }
 
     yield { type: 'done' };
   }
@@ -437,12 +476,31 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
     return 'english';
   }
 
-  private inferTone(prompt: string, analysis: PromptAnalysis): 'casual' | 'professional' | 'technical' {
+  private inferTone(
+    prompt: string,
+    analysis: PromptAnalysis
+  ): 'casual' | 'professional' | 'technical' {
     const lower = prompt.toLowerCase();
-    if (lower.includes('explain') && lower.includes('how does')) return 'technical';
-    if (['hey', 'hi', 'thanks', 'lol'].some((w) => lower.includes(w))) return 'casual';
+
+    // Technical indicators (highest priority)
+    const technicalIndicators = [
+      'explain',
+      'how does',
+      'how to',
+      'what is',
+      'difference between',
+      'implement',
+      'algorithm',
+    ];
+    const hasTechnical = technicalIndicators.some((w) => lower.includes(w));
+
+    // Casual indicators
+    const casualIndicators = ['hey', 'hi', 'lol', 'haha', 'thanks', 'btw'];
+    const hasCasual = casualIndicators.some((w) => lower.includes(w));
+
+    if (hasTechnical && !hasCasual) return 'technical';
+    if (hasCasual && !hasTechnical) return 'casual';
+    if (hasTechnical && hasCasual) return 'professional'; // Mixed
     return 'professional';
   }
 }
-
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));

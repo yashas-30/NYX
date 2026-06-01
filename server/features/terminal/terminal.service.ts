@@ -33,7 +33,10 @@ interface ShellToken {
   value: string;
 }
 
-export function parseShellCommand(cmd: string): { tokens: ShellToken[]; hasForbiddenChaining: boolean } {
+export function parseShellCommand(cmd: string): {
+  tokens: ShellToken[];
+  hasForbiddenChaining: boolean;
+} {
   const tokens: ShellToken[] = [];
   let hasForbiddenChaining = false;
   let i = 0;
@@ -194,14 +197,20 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   }
 
   // 3. Argument count limit (max 50 tokens)
-  const wordTokens = tokens.filter(t => t.type === 'word');
+  const wordTokens = tokens.filter((t) => t.type === 'word');
   if (wordTokens.length > 50) {
     logSecurityBlock(trimmedCmd, 'Too many arguments (max 50)');
-    return { isDocker: false, error: 'Security Sandbox Block: Too many arguments (max 50 allowed).' };
+    return {
+      isDocker: false,
+      error: 'Security Sandbox Block: Too many arguments (max 50 allowed).',
+    };
   }
 
   const rawExecutable = tokens[0].value;
-  const executable = path.basename(rawExecutable).replace(/\.(exe|cmd|bat|sh)$/i, '').toLowerCase();
+  const executable = path
+    .basename(rawExecutable)
+    .replace(/\.(exe|cmd|bat|sh)$/i, '')
+    .toLowerCase();
 
   // 2. Whitelist Allowed Commands
   const whitelist = ['npm', 'node', 'python', 'python3', 'git', 'gcc', 'make'];
@@ -215,7 +224,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
 
   // 3. Scan for forced Docker execution triggers (eval / code-execution parameters)
   let forceDocker = false;
-  
+
   if (['node', 'python', 'python3'].includes(executable)) {
     // Check if arguments contain eval/execute parameters
     for (const token of tokens) {
@@ -244,12 +253,15 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   const relative = path.relative(workspaceRoot, resolvedCwd);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     logSecurityBlock(trimmedCmd, `cwd '${targetCwd}' is outside workspace root`);
-    return { isDocker: false, error: 'Security Sandbox Block: Working directory must be within the workspace.' };
+    return {
+      isDocker: false,
+      error: 'Security Sandbox Block: Working directory must be within the workspace.',
+    };
   }
 
   const isDockerAvail = await isDockerAvailable();
-  const ALLOW_RAW = process.env.NYX_ALLOW_RAW_TERMINAL === 'true' && 
-                    process.env.NODE_ENV === 'development';
+  const ALLOW_RAW =
+    process.env.NYX_ALLOW_RAW_TERMINAL === 'true' && process.env.NODE_ENV === 'development';
   if (ALLOW_RAW) {
     logger.warn('[Sandbox] WARNING: Raw terminal mode enabled. All sandbox protections disabled.');
   }
@@ -257,7 +269,10 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   // 4. Force Docker Execution Gate
   if (forceDocker) {
     if (!isDockerAvail) {
-      logSecurityBlock(trimmedCmd, `Forced Docker execution failed: Docker is not available for eval flags on executable '${executable}'`);
+      logSecurityBlock(
+        trimmedCmd,
+        `Forced Docker execution failed: Docker is not available for eval flags on executable '${executable}'`
+      );
       return {
         isDocker: false,
         error: 'Sandboxed execution requires Docker. Install Docker or remove -e/--eval flags.',
@@ -265,7 +280,9 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     }
 
     // Docker is available, proceed to run in Docker container
-    logger.info(`[Sandbox] Forcing Docker sandboxed execution for command with eval flags: ${trimmedCmd}`);
+    logger.info(
+      `[Sandbox] Forcing Docker sandboxed execution for command with eval flags: ${trimmedCmd}`
+    );
   }
 
   // 5. Host execution fallback (if ALLOW_RAW_TERMINAL=true and not forced to Docker)
@@ -273,12 +290,12 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     logger.info(`[Sandbox] Executing command on host (NYX_ALLOW_RAW_TERMINAL=true): ${trimmedCmd}`);
     const shellBin = process.platform === 'win32' ? 'cmd.exe' : 'sh';
     const shellArgs = process.platform === 'win32' ? ['/c', trimmedCmd] : ['-c', trimmedCmd];
-    
+
     const child = spawn(shellBin, shellArgs, {
       cwd: resolvedCwd,
       env: { ...process.env, FORCE_COLOR: '1' },
     });
-    
+
     return {
       child,
       isDocker: false,
@@ -294,25 +311,41 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   }
 
   // Determine appropriate image based on command
-  const image = (executable.startsWith('python')) ? 'python:3.11-slim' : 'node:20-alpine';
-  
+  const image = executable.startsWith('python') ? 'python:3.11-slim' : 'node:20-alpine';
+
   // Format exact Docker run command arguments (Amendment A)
   const dockerArgs = [
-    'run', '--rm', '-i',
-    '--network', 'none',
+    'run',
+    '--rm',
+    '-i',
+    '--network',
+    'none',
     '--read-only',
-    '--tmpfs', '/tmp:noexec,nosuid,size=100m',
-    '-v', `${resolvedCwd}:/workspace:ro`, // ONLY mount resolvedCwd, read-only
-    '-w', '/workspace',
-    '--cpus', '1.0',
-    '--memory', '512m',
-    '--pids-limit', '64',
-    '--security-opt', 'no-new-privileges:true',
-    '--cap-drop', 'ALL',
-    image, 'sh', '-c', trimmedCmd,
+    '--tmpfs',
+    '/tmp:noexec,nosuid,size=100m',
+    '-v',
+    `${resolvedCwd}:/workspace:ro`, // ONLY mount resolvedCwd, read-only
+    '-w',
+    '/workspace',
+    '--cpus',
+    '1.0',
+    '--memory',
+    '512m',
+    '--pids-limit',
+    '64',
+    '--security-opt',
+    'no-new-privileges:true',
+    '--cap-drop',
+    'ALL',
+    image,
+    'sh',
+    '-c',
+    trimmedCmd,
   ];
 
-  logger.info(`[Sandbox] Spawning command inside Docker (${image}): docker ${dockerArgs.join(' ')}`);
+  logger.info(
+    `[Sandbox] Spawning command inside Docker (${image}): docker ${dockerArgs.join(' ')}`
+  );
 
   const child = spawn('docker', dockerArgs, {
     cwd: resolvedCwd,
@@ -337,25 +370,35 @@ export class TerminalService {
     TerminalService.pendingExecutions.set(execId, { command, cwd });
 
     if (nodeId) {
-      TerminalService.legacyTasks.set(nodeId, { output: 'Execution started. Connect to stream or wait.', isFinished: false });
-      
+      TerminalService.legacyTasks.set(nodeId, {
+        output: 'Execution started. Connect to stream or wait.',
+        isFinished: false,
+      });
+
       spawnSandbox(command, cwd).then(({ child, error }) => {
         if (error) {
-          TerminalService.legacyTasks.set(nodeId, { output: `Sandbox Error: ${error}`, isFinished: true });
+          TerminalService.legacyTasks.set(nodeId, {
+            output: `Sandbox Error: ${error}`,
+            isFinished: true,
+          });
         } else if (child) {
           let accum = '';
-          child.stdout?.on('data', (d) => { accum += d.toString(); });
-          child.stderr?.on('data', (d) => { accum += d.toString(); });
+          child.stdout?.on('data', (d) => {
+            accum += d.toString();
+          });
+          child.stderr?.on('data', (d) => {
+            accum += d.toString();
+          });
           child.on('close', (code) => {
             TerminalService.legacyTasks.set(nodeId, {
               output: accum || `Exited with code ${code}`,
-              isFinished: true
+              isFinished: true,
             });
           });
           child.on('error', (err) => {
             TerminalService.legacyTasks.set(nodeId, {
               output: accum + `\nProcess error: ${err.message}`,
-              isFinished: true
+              isFinished: true,
             });
           });
         }

@@ -5,6 +5,7 @@ NYX uses Bearer token authentication exclusively.
 ## Session Token
 
 Include in all API requests:
+
 ```http
 Authorization: Bearer <session_token>
 ```

@@ -15,7 +15,9 @@ export const SectionHeader: React.FC<{
       </div>
       <div>
         <h3 className="text-sm font-bold tracking-tight text-foreground">{title}</h3>
-        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">{subtitle}</p>
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
+          {subtitle}
+        </p>
       </div>
     </div>
     {children && <div className="flex items-center gap-2">{children}</div>}
@@ -26,7 +28,9 @@ export const SectionHeader: React.FC<{
 export const EmptyState: React.FC<{ message: string; hint: string }> = ({ message, hint }) => (
   <div className="py-12 rounded-2xl border border-dashed border-white/15 dark:border-white/5 flex flex-col items-center justify-center text-center bg-white/10 dark:bg-white/5">
     <Box size={32} className="text-muted-foreground/15 mb-3" />
-    <p className="text-[11px] font-black uppercase tracking-[0.25em] text-muted-foreground">{message}</p>
+    <p className="text-[11px] font-black uppercase tracking-[0.25em] text-muted-foreground">
+      {message}
+    </p>
     <p className="text-[11px] text-muted-foreground mt-1.5 max-w-[280px]">{hint}</p>
   </div>
 );

@@ -3,4 +3,16 @@
 
 export * from './models';
 export * from './agent';
-export * from './inference';
+export type {
+  TelemetryMetrics,
+  AIResponse,
+  ReasoningStrategy,
+  LocalModelConfig,
+  ModelSelection,
+  LocalTool,
+  ToolResult,
+  HardwareProfile,
+  LocalModelState,
+  WorkspaceProfile,
+  ModelDefinition,
+} from './inference';

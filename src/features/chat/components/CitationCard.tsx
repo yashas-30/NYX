@@ -10,9 +10,16 @@ interface CitationCardProps {
   onClick?: () => void;
 }
 
-export const CitationCard: React.FC<CitationCardProps> = ({ id, source, title, url, snippet, onClick }) => {
+export const CitationCard: React.FC<CitationCardProps> = ({
+  id,
+  source,
+  title,
+  url,
+  snippet,
+  onClick,
+}) => {
   return (
-    <div 
+    <div
       onClick={onClick}
       className={`
         p-3 rounded-md bg-[#09090B] border border-[rgba(255,255,255,0.06)]
@@ -29,9 +36,9 @@ export const CitationCard: React.FC<CitationCardProps> = ({ id, source, title, u
           </span>
         </div>
         {url && (
-          <a 
-            href={url} 
-            target="_blank" 
+          <a
+            href={url}
+            target="_blank"
             rel="noopener noreferrer"
             className="text-[#4A5059] hover:text-[#FF3366] transition-colors"
             onClick={(e) => e.stopPropagation()}
@@ -40,13 +47,11 @@ export const CitationCard: React.FC<CitationCardProps> = ({ id, source, title, u
           </a>
         )}
       </div>
-      
+
       {snippet && (
-        <p className="text-[13px] text-[#4A5059] line-clamp-2 leading-relaxed">
-          {snippet}
-        </p>
+        <p className="text-[13px] text-[#4A5059] line-clamp-2 leading-relaxed">{snippet}</p>
       )}
-      
+
       {!snippet && url && (
         <div className="flex items-center gap-1.5 text-[11px] text-[#4A5059] font-mono mt-1">
           <BookOpen className="w-3 h-3" />

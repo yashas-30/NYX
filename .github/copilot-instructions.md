@@ -15,3 +15,8 @@ source files when (a) modifying/debugging specific code, (b) the graph lacks the
 (c) the graph is missing or stale.
 
 Type `/graphify` in Copilot Chat to build or update the graph.
+
+## DESIGN.md
+
+- Copy a DESIGN.md into your project to generate high-quality UI that stays visually consistent with the design language.
+- You can find a curated collection of DESIGN.md files at: https://github.com/voltagent/awesome-design-md

@@ -23,11 +23,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // No-op: Only dark mode is supported in NYX
   };
 
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
 };
 
 export const useTheme = () => {

@@ -96,24 +96,6 @@ export const useCoderLogic = ({
   const activeSid = chatSessions?.activeSid;
   const lastActiveSidRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (activeSid && activeSid === createdSessionIdRef.current) {
-      lastActiveSidRef.current = activeSid;
-      createdSessionIdRef.current = null;
-      return;
-    }
-    if (activeSid !== lastActiveSidRef.current) {
-      lastActiveSidRef.current = activeSid || null;
-      const msgs = activeSessionMessages || [];
-      messagesRef.current = msgs;
-      setLocalMessages(msgs);
-      clearMetrics();
-    } else if (activeSessionMessages && activeSessionMessages.length >= messagesRef.current.length && !areMessagesEqual(activeSessionMessages, messagesRef.current)) {
-      messagesRef.current = activeSessionMessages;
-      setLocalMessages(activeSessionMessages);
-    }
-  }, [activeSid, activeSessionMessages, clearMetrics]);
-
   // Unified history update callback
   const updateHistory = useCallback(
     (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
@@ -162,6 +144,31 @@ export const useCoderLogic = ({
       lightningDirectives,
       logRollout,
     });
+
+  useEffect(() => {
+    if (activeSid && activeSid === createdSessionIdRef.current) {
+      lastActiveSidRef.current = activeSid;
+      createdSessionIdRef.current = null;
+      return;
+    }
+    if (activeSid !== lastActiveSidRef.current) {
+      lastActiveSidRef.current = activeSid || null;
+      if (!isLoading) {
+        const msgs = activeSessionMessages || [];
+        messagesRef.current = msgs;
+        setLocalMessages(msgs);
+        clearMetrics();
+      }
+    } else if (
+      !isLoading &&
+      activeSessionMessages &&
+      activeSessionMessages.length >= messagesRef.current.length &&
+      !areMessagesEqual(activeSessionMessages, messagesRef.current)
+    ) {
+      messagesRef.current = activeSessionMessages;
+      setLocalMessages(activeSessionMessages);
+    }
+  }, [activeSid, activeSessionMessages, clearMetrics, isLoading]);
 
   return {
     activeAgent,

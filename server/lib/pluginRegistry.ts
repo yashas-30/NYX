@@ -2,9 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import logger from './logger.ts';
 
-// __dirname is always defined in Node CJS and esbuild CJS bundles.
-// eslint-disable-next-line @typescript-eslint/no-var-requires, no-undef
-const _dirname: string = __dirname;
+import { fileURLToPath } from 'url';
+
+const _dirname: string =
+  typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const PLUGINS_DIR = process.env.PLUGINS_DIR || path.join(_dirname, '../../plugins');
 
 export interface NYXPlugin {

@@ -9,7 +9,7 @@ export const terminalRouter = Router();
 terminalRouter.post('/run', validate(terminalRunSchema), async (req, res) => {
   const { command, cwd } = req.body;
   if (!command) {
-    return res.status(400).json({ error: "Command is required" });
+    return res.status(400).json({ error: 'Command is required' });
   }
 
   const { child, error } = await TerminalService.spawn(command, cwd);
@@ -18,7 +18,7 @@ terminalRouter.post('/run', validate(terminalRunSchema), async (req, res) => {
   }
 
   if (!child) {
-    return res.status(500).json({ error: "Failed to initialize sandboxed process" });
+    return res.status(500).json({ error: 'Failed to initialize sandboxed process' });
   }
 
   let stdout = '';
@@ -39,7 +39,7 @@ terminalRouter.post('/run', validate(terminalRunSchema), async (req, res) => {
       res.status(500).json({
         error: `Process exited with code ${code}`,
         stdout,
-        stderr
+        stderr,
       });
     }
   });
@@ -48,7 +48,7 @@ terminalRouter.post('/run', validate(terminalRunSchema), async (req, res) => {
     res.status(500).json({
       error: `Process error: ${err.message}`,
       stdout,
-      stderr
+      stderr,
     });
   });
 });
@@ -57,7 +57,7 @@ terminalRouter.post('/prompt', validate(terminalPromptSchema), (req, res) => {
   const { nodeId, prompt, cwd } = req.body;
   const command = prompt;
   if (!command) {
-    return res.status(400).json({ error: "Command/prompt is required" });
+    return res.status(400).json({ error: 'Command/prompt is required' });
   }
 
   const execId = TerminalService.registerPrompt(nodeId, command, cwd);
@@ -67,12 +67,12 @@ terminalRouter.post('/prompt', validate(terminalPromptSchema), (req, res) => {
 terminalRouter.get('/poll', (req, res) => {
   const nodeId = req.query.nodeId as string;
   if (!nodeId) {
-    return res.status(400).json({ error: "nodeId is required" });
+    return res.status(400).json({ error: 'nodeId is required' });
   }
 
   const task = TerminalService.getLegacy(nodeId);
   if (!task) {
-    return res.status(404).json({ error: "No terminal task found for this nodeId" });
+    return res.status(404).json({ error: 'No terminal task found for this nodeId' });
   }
 
   if (task.isFinished) {
@@ -97,13 +97,17 @@ terminalRouter.get('/stream', async (req, res) => {
   if (execId) {
     const pending = TerminalService.getPending(execId);
     if (!pending) {
-      res.write(`event: error\ndata: ${JSON.stringify({ message: "Execution session not found" })}\n\n`);
+      res.write(
+        `event: error\ndata: ${JSON.stringify({ message: 'Execution session not found' })}\n\n`
+      );
       return res.end();
     }
     command = pending.command;
     cwd = pending.cwd;
   } else {
-    res.write(`event: error\ndata: ${JSON.stringify({ message: "execId parameter is required" })}\n\n`);
+    res.write(
+      `event: error\ndata: ${JSON.stringify({ message: 'execId parameter is required' })}\n\n`
+    );
     return res.end();
   }
 
@@ -116,7 +120,9 @@ terminalRouter.get('/stream', async (req, res) => {
   }
 
   if (!child) {
-    res.write(`event: error\ndata: ${JSON.stringify({ message: "Failed to initialize sandboxed process" })}\n\n`);
+    res.write(
+      `event: error\ndata: ${JSON.stringify({ message: 'Failed to initialize sandboxed process' })}\n\n`
+    );
     return res.end();
   }
 

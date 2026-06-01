@@ -13,14 +13,14 @@ import {
   SubagentTask,
 } from '@src/infrastructure/types';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
-import { isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/promptAnalyzer';
 import { toast } from '@src/shared/components/ui/sonner';
 import { formatProviderError } from '@src/infrastructure/api/streamParser';
-import { triggerCritic, triggerMemoryCommit, writeFile } from '@src/infrastructure/api/coderApi';
-import { analyzePrompt, routeToAgent } from '@src/core/services/promptClassifier';
 import { CoderAgent } from '@src/core/agents/coderAgent';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { SubagentOrchestrator } from '../services/SubagentOrchestrator';
+import { triggerCritic, triggerMemoryCommit, writeFile } from '@src/infrastructure/api/coderApi';
+import { analyzePrompt, routeToAgent } from '@src/core/services/promptClassifier';
+import { isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@src/shared/promptAnalyzer';
 
 interface PipelineProps {
   models: Record<'nyx', string>;
@@ -210,9 +210,14 @@ export const useAgentPipeline = ({
                 return h;
               });
               break;
-             case 'file_write':
+            case 'file_write':
               try {
-                if (chunk.content && chunk.metadata && typeof chunk.metadata === 'object' && 'content' in chunk.metadata) {
+                if (
+                  chunk.content &&
+                  chunk.metadata &&
+                  typeof chunk.metadata === 'object' &&
+                  'content' in chunk.metadata
+                ) {
                   const fileContent = (chunk.metadata as Record<string, any>).content;
                   if (typeof fileContent === 'string') {
                     await writeFile(chunk.content, fileContent);
@@ -230,15 +235,16 @@ export const useAgentPipeline = ({
                 const meta = chunk.metadata as any;
                 const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;
                 const latency = meta.latencyMs || meta.latency || 0;
-                const tps = meta.tokensPerSecond || meta.tps || (latency > 0 ? (tokens / (latency / 1000)) : 0);
-                
+                const tps =
+                  meta.tokensPerSecond || meta.tps || (latency > 0 ? tokens / (latency / 1000) : 0);
+
                 const mappedMetrics: TelemetryMetrics = {
                   latency,
                   tokens,
                   tps,
                   ttft: meta.ttft,
                 };
-                
+
                 finalMetrics = mappedMetrics;
 
                 updateHistory((prev) => {
@@ -250,7 +256,7 @@ export const useAgentPipeline = ({
                   }
                   return h;
                 });
-                
+
                 updateMetrics(mappedMetrics);
               } else {
                 updateHistory((prev) => {
@@ -349,7 +355,7 @@ export const useAgentPipeline = ({
             last.status = isAborted ? 'stopped' : 'error';
             last.content = formatProviderError(
               error.message ||
-              'Error: Generation failed. Please check your model settings or connection.'
+                'Error: Generation failed. Please check your model settings or connection.'
             );
           }
           return h;

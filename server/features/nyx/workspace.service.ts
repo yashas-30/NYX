@@ -39,7 +39,11 @@ export class WorkspaceService {
           const { stdout } = await execAsync('npx tsc --noEmit', { cwd: root, timeout: 30_000 });
           return { success: true, stdout, monorepo: true };
         } catch (error: any) {
-          return { success: false, error: error.stderr || error.stdout || error.message, monorepo: true };
+          return {
+            success: false,
+            error: error.stderr || error.stdout || error.message,
+            monorepo: true,
+          };
         }
       }
       return {

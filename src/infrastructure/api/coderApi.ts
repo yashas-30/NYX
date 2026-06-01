@@ -41,40 +41,6 @@ export interface WriteFilePayload {
   overwrite?: boolean;
 }
 
-export interface SearchResult {
-  success: boolean;
-  error?: string;
-  results?: Array<{
-    path: string;
-    relativePath?: string;
-    content: string;
-    score: number;
-    relevanceScore?: number;
-    snippet?: string;
-  }>;
-  directoryStructure?: string;
-  files?: Array<{
-    path: string;
-    score: number;
-    snippet?: string;
-  }>;
-  total?: number;
-  query?: string;
-}
-
-export interface WebSearchResult {
-  success: boolean;
-  error?: string;
-  results?: Array<{
-    title: string;
-    url?: string;
-    link?: string;
-    snippet: string;
-    source?: string;
-  }>;
-  query?: string;
-}
-
 export interface ValidationResult {
   success: boolean;
   error?: string;
@@ -121,10 +87,7 @@ function mergeSignals(a?: AbortSignal | null, b?: AbortSignal | null): AbortSign
   return ctrl.signal;
 }
 
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  signal?: AbortSignal
-): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   let lastError: Error = new Error('Unknown error');
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -171,7 +134,9 @@ async function parseErrorBody(res: Response): Promise<string> {
 // Secure path validation
 // ---------------------------------------------------------------------------
 
-const ALLOWED_ROOTS = ['/workspace', '/project', '/app', '/src'];
+const ALLOWED_ROOTS = ['/workspace', '/project', '/app', '/src', process.env.WORKSPACE_ROOT].filter(
+  Boolean
+) as string[];
 
 function validateFilePath(filePath: string): void {
   // Normalize separators
@@ -183,9 +148,7 @@ function validateFilePath(filePath: string): void {
   }
 
   // Decode common encodings
-  const decoded = decodeURIComponent(normalized)
-    .replace(/\x2e/g, '.')
-    .replace(/%2e/gi, '.');
+  const decoded = decodeURIComponent(normalized).replace(/\x2e/g, '.').replace(/%2e/gi, '.');
 
   // Check for traversal patterns after decoding
   if (/\.\.(\/|$)/.test(decoded) || decoded.includes('..')) {
@@ -216,11 +179,16 @@ function validateFilePath(filePath: string): void {
 // Core fetch wrapper with timeout + retry
 // ---------------------------------------------------------------------------
 
-async function apiFetch(
+export async function apiFetch(
   endpoint: string,
   options: RequestInit & { timeout?: number; noRetry?: boolean } = {}
 ): Promise<Response> {
-  const { timeout = DEFAULT_TIMEOUT_MS, noRetry = false, signal: userSignal, ...fetchOptions } = options;
+  const {
+    timeout = DEFAULT_TIMEOUT_MS,
+    noRetry = false,
+    signal: userSignal,
+    ...fetchOptions
+  } = options;
 
   const timeoutSignal = createTimeoutSignal(timeout);
   const signal = mergeSignals(userSignal, timeoutSignal);
@@ -272,9 +240,7 @@ export async function fetchEvolutionaryRules(): Promise<string[]> {
 
   let rules: string[] = [];
   if (data.success && Array.isArray(data.rules)) {
-    rules = data.rules.map((r: RuleEntry | string) =>
-      typeof r === 'string' ? r : r.rule
-    );
+    rules = data.rules.map((r: RuleEntry | string) => (typeof r === 'string' ? r : r.rule));
   }
 
   rulesCache = { rules, timestamp: Date.now() };
@@ -283,34 +249,6 @@ export async function fetchEvolutionaryRules(): Promise<string[]> {
 
 export function invalidateRulesCache(): void {
   rulesCache = null;
-}
-
-export async function searchCodebase(
-  query: string,
-  signal?: AbortSignal,
-  options?: { topK?: number; threshold?: number }
-): Promise<SearchResult> {
-  const res = await apiFetch('/api/nyx/codebase-search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, ...options }),
-    signal,
-  });
-  return res.json();
-}
-
-export async function searchWeb(
-  query: string,
-  signal?: AbortSignal,
-  options?: { topK?: number; recency?: 'day' | 'week' | 'month' | 'year' }
-): Promise<WebSearchResult> {
-  const res = await apiFetch('/api/nyx/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, ...options }),
-    signal,
-  });
-  return res.json();
 }
 
 export async function validateWorkspace(signal?: AbortSignal): Promise<ValidationResult> {
@@ -329,7 +267,7 @@ export async function triggerMemoryCommit(payload: MemoryCommitPayload): Promise
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
     timeout: 10000, // Shorter timeout for fire-and-forget
-    noRetry: true,  // Don't block on retry
+    noRetry: true, // Don't block on retry
   });
 }
 
@@ -433,12 +371,11 @@ export async function executeCommand(
   signal?: AbortSignal,
   timeout?: number
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  // Basic command injection prevention
-  const dangerous = /[;&|`$(){}[\]\\]/;
-  if (dangerous.test(command)) {
-    throw new Error(
-      `SECURITY ERROR: Command contains dangerous characters. Use array form for complex commands.`
-    );
+  // Command injection prevention (allowlist approach)
+  const ALLOWED_COMMANDS = ['git', 'npm', 'yarn', 'pnpm', 'node', 'python', 'ls', 'cat'];
+  const parts = command.trim().split(/\s+/);
+  if (!ALLOWED_COMMANDS.includes(parts[0])) {
+    throw new Error(`SECURITY ERROR: Command '${parts[0]}' is not allowed`);
   }
 
   const res = await apiFetch('/api/nyx/execute', {

@@ -1,0 +1,29 @@
+{
+  "name": "nyx-antigravity-extension",
+  "displayName": "NYX Antigravity Companion",
+  "description": "Companion VS Code Extension integrating Antigravity SDK",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "antigravity-sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "18.x",
+    "typescript": "^5.0.0"
+  }
+}

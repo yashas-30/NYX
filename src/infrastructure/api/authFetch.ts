@@ -207,7 +207,9 @@ function logRequest(
   }
 
   if (error || status >= 400) {
-    console.error(`[AuthFetch] ${method} ${url} → ${status} (${latencyMs}ms)${error ? ` | ${error}` : ''}`);
+    console.error(
+      `[AuthFetch] ${method} ${url} → ${status} (${latencyMs}ms)${error ? ` | ${error}` : ''}`
+    );
   } else {
     console.debug(`[AuthFetch] ${method} ${url} → ${status} (${latencyMs}ms)`);
   }
@@ -266,104 +268,107 @@ export async function fetchWithAuth(
     ...init,
     headers,
     signal,
-  }).then(async (response) => {
-    // Delete immediately to prevent microtask-level key re-use on resolved response stream
-    inflightRequests.delete(dedupeKey);
+  })
+    .then(async (response) => {
+      // Delete immediately to prevent microtask-level key re-use on resolved response stream
+      inflightRequests.delete(dedupeKey);
 
-    const latency = Math.round(performance.now() - startTime);
+      const latency = Math.round(performance.now() - startTime);
 
-    // Handle 401 with synchronized retry
-    if (response.status === 401) {
-      logRequest(method, targetUrl, 401, latency, 'Token expired');
+      // Handle 401 with synchronized retry
+      if (response.status === 401) {
+        logRequest(method, targetUrl, 401, latency, 'Token expired');
 
-      // Only one retry attempt, with fresh token under mutex
-      const retryToken = await tokenMutex.runExclusive(async () => {
-        // Force refresh
-        sessionToken = null;
-        tokenExpiresAt = 0;
-        const fresh = await fetchFreshToken(isStream);
-        sessionToken = fresh.token;
-        tokenExpiresAt = fresh.expiresAt;
-        return fresh.token;
-      });
+        // Only one retry attempt, with fresh token under mutex
+        const retryToken = await tokenMutex.runExclusive(async () => {
+          // Force refresh
+          sessionToken = null;
+          tokenExpiresAt = 0;
+          const fresh = await fetchFreshToken(isStream);
+          sessionToken = fresh.token;
+          tokenExpiresAt = fresh.expiresAt;
+          return fresh.token;
+        });
 
-      const retryHeaders = new Headers(init?.headers);
-      retryHeaders.set('Authorization', `Bearer ${retryToken}`);
-      retryHeaders.set('x-nyx-session-token', retryToken);
-      retryHeaders.set('Accept', 'application/json');
-      injectTracing(retryHeaders);
+        const retryHeaders = new Headers(init?.headers);
+        retryHeaders.set('Authorization', `Bearer ${retryToken}`);
+        retryHeaders.set('x-nyx-session-token', retryToken);
+        retryHeaders.set('Accept', 'application/json');
+        injectTracing(retryHeaders);
 
-      const retryResponse = await fetch(targetUrl, {
-        ...init,
-        headers: retryHeaders,
-        signal,
-      });
+        const retryResponse = await fetch(targetUrl, {
+          ...init,
+          headers: retryHeaders,
+          signal,
+        });
 
-      const retryLatency = Math.round(performance.now() - startTime);
-      logRequest(method, targetUrl, retryResponse.status, retryLatency);
+        const retryLatency = Math.round(performance.now() - startTime);
+        logRequest(method, targetUrl, retryResponse.status, retryLatency);
 
-      if (retryResponse.ok) {
-        recordSuccess(targetUrl);
-      } else if (retryResponse.status === 401) {
-        recordFailure(targetUrl);
-        throw new Error('Authentication failed after token refresh. Please log in again.');
+        if (retryResponse.ok) {
+          recordSuccess(targetUrl);
+        } else if (retryResponse.status === 401) {
+          recordFailure(targetUrl);
+          throw new Error('Authentication failed after token refresh. Please log in again.');
+        }
+
+        // Resolve all pending resolvers with clones of the retry response
+        const resolvers = inflightResolvers.get(dedupeKey) || [];
+        inflightResolvers.delete(dedupeKey);
+        inflightRequests.delete(dedupeKey);
+        for (const r of resolvers) {
+          r.resolve(retryResponse.clone());
+        }
+
+        return retryResponse;
       }
 
-      // Resolve all pending resolvers with clones of the retry response
+      logRequest(method, targetUrl, response.status, latency);
+
+      if (response.ok) {
+        recordSuccess(targetUrl);
+      } else if (response.status >= 500) {
+        recordFailure(targetUrl);
+      }
+
+      // Resolve all pending resolvers with clones of the original response
       const resolvers = inflightResolvers.get(dedupeKey) || [];
       inflightResolvers.delete(dedupeKey);
       inflightRequests.delete(dedupeKey);
       for (const r of resolvers) {
-        r.resolve(retryResponse.clone());
+        r.resolve(response.clone());
       }
 
-      return retryResponse;
-    }
+      return response;
+    })
+    .catch((error) => {
+      inflightRequests.delete(dedupeKey);
+      const latency = Math.round(performance.now() - startTime);
 
-    logRequest(method, targetUrl, response.status, latency);
+      const resolvers = inflightResolvers.get(dedupeKey) || [];
+      inflightResolvers.delete(dedupeKey);
+      inflightRequests.delete(dedupeKey);
+      for (const r of resolvers) {
+        r.reject(error);
+      }
 
-    if (response.ok) {
-      recordSuccess(targetUrl);
-    } else if (response.status >= 500) {
+      if (error.name === 'AbortError') {
+        if (signal.aborted && !init?.signal?.aborted) {
+          // Our timeout fired, not user abort
+          logRequest(method, targetUrl, 0, latency, `Request timeout after ${timeoutMs}ms`);
+          throw new Error(`Request timeout after ${timeoutMs}ms`);
+        }
+        logRequest(method, targetUrl, 0, latency, 'Aborted by user');
+        throw error;
+      }
+
+      logRequest(method, targetUrl, 0, latency, error.message);
       recordFailure(targetUrl);
-    }
-
-    // Resolve all pending resolvers with clones of the original response
-    const resolvers = inflightResolvers.get(dedupeKey) || [];
-    inflightResolvers.delete(dedupeKey);
-    inflightRequests.delete(dedupeKey);
-    for (const r of resolvers) {
-      r.resolve(response.clone());
-    }
-
-    return response;
-  }).catch((error) => {
-    inflightRequests.delete(dedupeKey);
-    const latency = Math.round(performance.now() - startTime);
-
-    const resolvers = inflightResolvers.get(dedupeKey) || [];
-    inflightResolvers.delete(dedupeKey);
-    inflightRequests.delete(dedupeKey);
-    for (const r of resolvers) {
-      r.reject(error);
-    }
-
-    if (error.name === 'AbortError') {
-      if (signal.aborted && !init?.signal?.aborted) {
-        // Our timeout fired, not user abort
-        logRequest(method, targetUrl, 0, latency, `Request timeout after ${timeoutMs}ms`);
-        throw new Error(`Request timeout after ${timeoutMs}ms`);
-      }
-      logRequest(method, targetUrl, 0, latency, 'Aborted by user');
       throw error;
-    }
-
-    logRequest(method, targetUrl, 0, latency, error.message);
-    recordFailure(targetUrl);
-    throw error;
-  }).finally(() => {
-    inflightRequests.delete(dedupeKey);
-  });
+    })
+    .finally(() => {
+      inflightRequests.delete(dedupeKey);
+    });
 
   // Track inflight for deduplication
   if (method === 'GET') {
@@ -371,7 +376,7 @@ export async function fetchWithAuth(
     cleanupDedupe();
   }
 
-  return requestPromise.then(res => res.clone());
+  return requestPromise.then((res) => res.clone());
 }
 
 // ---------------------------------------------------------------------------

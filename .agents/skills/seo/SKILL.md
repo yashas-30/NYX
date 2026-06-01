@@ -1,154 +1,152 @@
 ---
 name: seo
-description: Audit, plan, and implement SEO improvements across technical SEO, on-page optimization, structured data, Core Web Vitals, and content strategy. Use when the user wants better search visibility, SEO remediation, schema markup, sitemap/robots work, or keyword mapping.
-origin: ECC
+description: 'Run a broad SEO audit across technical SEO, on-page SEO, schema, sitemaps, content quality, AI search readiness, and GEO. Use as the umbrella skill when the user asks for a full SEO analysis or strategy.'
+risk: unknown
+source: 'https://github.com/AgriciDaniel/claude-seo'
+date_added: '2026-03-21'
+user-invokable: true
+argument-hint: '[command] [url]'
 ---
 
-# SEO
+# SEO: Universal SEO Analysis Skill
 
-Improve search visibility through technical correctness, performance, and content relevance, not gimmicks.
+Comprehensive SEO analysis across all industries (SaaS, local services,
+e-commerce, publishers, agencies). Orchestrates 12 specialized sub-skills and 7 subagents
+(+ optional extension sub-skills like seo-dataforseo).
 
 ## When to Use
 
-Use this skill when:
-- auditing crawlability, indexability, canonicals, or redirects
-- improving title tags, meta descriptions, and heading structure
-- adding or validating structured data
-- improving Core Web Vitals
-- doing keyword research and mapping keywords to URLs
-- planning internal linking or sitemap / robots changes
+- Use when the user asks for a full SEO audit or broad SEO strategy.
+- Use as the umbrella entry point when multiple SEO dimensions are in scope.
+- Use when the task spans technical SEO, content, schema, sitemaps, and AI search readiness together.
 
-## How It Works
+## Quick Reference
 
-### Principles
+| Command                                   | What it does                                         |
+| ----------------------------------------- | ---------------------------------------------------- |
+| `/seo audit <url>`                        | Full website audit with parallel subagent delegation |
+| `/seo page <url>`                         | Deep single-page analysis                            |
+| `/seo sitemap <url or generate>`          | Analyze or generate XML sitemaps                     |
+| `/seo schema <url>`                       | Detect, validate, and generate Schema.org markup     |
+| `/seo images <url>`                       | Image optimization analysis                          |
+| `/seo technical <url>`                    | Technical SEO audit (9 categories)                   |
+| `/seo content <url>`                      | E-E-A-T and content quality analysis                 |
+| `/seo geo <url>`                          | AI Overviews / Generative Engine Optimization        |
+| `/seo plan <business-type>`               | Strategic SEO planning                               |
+| `/seo programmatic [url\|plan]`           | Programmatic SEO analysis and planning               |
+| `/seo competitor-pages [url\|generate]`   | Competitor comparison page generation                |
+| `/seo hreflang [url]`                     | Hreflang/i18n SEO audit and generation               |
+| `/seo dataforseo [command]`               | Live SEO data via DataForSEO (extension)             |
+| `/seo image-gen [use-case] <description>` | AI image generation for SEO assets (extension)       |
 
-1. Fix technical blockers before content optimization.
-2. One page should have one clear primary search intent.
-3. Prefer long-term quality signals over manipulative patterns.
-4. Mobile-first assumptions matter because indexing is mobile-first.
-5. Recommendations should be page-specific and implementable.
+## Orchestration Logic
 
-### Technical SEO checklist
+When the user invokes `/seo audit`, delegate to subagents in parallel:
 
-#### Crawlability
+1. Detect business type (SaaS, local, ecommerce, publisher, agency, other)
+2. Spawn subagents: seo-technical, seo-content, seo-schema, seo-sitemap, seo-performance, seo-visual, seo-geo
+3. Collect results and generate unified report with SEO Health Score (0-100)
+4. Create prioritized action plan (Critical -> High -> Medium -> Low)
 
-- `robots.txt` should allow important pages and block low-value surfaces
-- no important page should be unintentionally `noindex`
-- important pages should be reachable within a shallow click depth
-- avoid redirect chains longer than two hops
-- canonical tags should be self-consistent and non-looping
+For individual commands, load the relevant sub-skill directly.
 
-#### Indexability
+## Industry Detection
 
-- preferred URL format should be consistent
-- multilingual pages need correct hreflang if used
-- sitemaps should reflect the intended public surface
-- no duplicate URLs should compete without canonical control
+Detect business type from homepage signals:
 
-#### Performance
+- **SaaS**: pricing page, /features, /integrations, /docs, "free trial", "sign up"
+- **Local Service**: phone number, address, service area, "serving [city]", Google Maps embed
+- **E-commerce**: /products, /collections, /cart, "add to cart", product schema
+- **Publisher**: /blog, /articles, /topics, article schema, author pages, publication dates
+- **Agency**: /case-studies, /portfolio, /industries, "our work", client logos
 
-- LCP < 2.5s
-- INP < 200ms
-- CLS < 0.1
-- common fixes: preload hero assets, reduce render-blocking work, reserve layout space, trim heavy JS
+## Quality Gates
 
-#### Structured data
+Read `references/quality-gates.md` for thin content thresholds per page type.
+Hard rules:
 
-- homepage: organization or business schema where appropriate
-- editorial pages: `Article` / `BlogPosting`
-- product pages: `Product` and `Offer`
-- interior pages: `BreadcrumbList`
-- Q&A sections: `FAQPage` only when the content truly matches
+- WARNING at 30+ location pages (enforce 60%+ unique content)
+- HARD STOP at 50+ location pages (require user justification)
+- Never recommend HowTo schema (deprecated Sept 2023)
+- FAQ schema for Google rich results: only government and healthcare sites (Aug 2023 restriction); existing FAQPage on commercial sites -> flag Info priority (not Critical), noting AI/LLM citation benefit; adding new FAQPage -> not recommended for Google benefit
+- All Core Web Vitals references use INP, never FID
 
-### On-page rules
+## Reference Files
 
-#### Title tags
+Load these on-demand as needed (do NOT load all at startup):
 
-- aim for roughly 50-60 characters
-- put the primary keyword or concept near the front
-- make the title legible to humans, not stuffed for bots
+- `references/cwv-thresholds.md`: Current Core Web Vitals thresholds and measurement details
+- `references/schema-types.md`: All supported schema types with deprecation status
+- `references/eeat-framework.md`: E-E-A-T evaluation criteria (Sept 2025 QRG update)
+- `references/quality-gates.md`: Content length minimums, uniqueness thresholds
 
-#### Meta descriptions
+## Scoring Methodology
 
-- aim for roughly 120-160 characters
-- describe the page honestly
-- include the main topic naturally
+### SEO Health Score (0-100)
 
-#### Heading structure
+Weighted aggregate of all categories:
 
-- one clear `H1`
-- `H2` and `H3` should reflect actual content hierarchy
-- do not skip structure just for visual styling
+| Category                 | Weight |
+| ------------------------ | ------ |
+| Technical SEO            | 22%    |
+| Content Quality          | 23%    |
+| On-Page SEO              | 20%    |
+| Schema / Structured Data | 10%    |
+| Performance (CWV)        | 10%    |
+| AI Search Readiness      | 10%    |
+| Images                   | 5%     |
 
-### Keyword mapping
+### Priority Levels
 
-1. define the search intent
-2. gather realistic keyword variants
-3. prioritize by intent match, likely value, and competition
-4. map one primary keyword/theme to one URL
-5. detect and avoid cannibalization
+- **Critical**: Blocks indexing or causes penalties (immediate fix required)
+- **High**: Significantly impacts rankings (fix within 1 week)
+- **Medium**: Optimization opportunity (fix within 1 month)
+- **Low**: Nice to have (backlog)
 
-### Internal linking
+## Sub-Skills
 
-- link from strong pages to pages you want to rank
-- use descriptive anchor text
-- avoid generic anchors when a more specific one is possible
-- backfill links from new pages to relevant existing ones
+This skill orchestrates 12 specialized sub-skills (+ 2 extensions):
 
-## Examples
+1. **seo-audit** -- Full website audit with parallel delegation
+2. **seo-page** -- Deep single-page analysis
+3. **seo-technical** -- Technical SEO (9 categories)
+4. **seo-content** -- E-E-A-T and content quality
+5. **seo-schema** -- Schema markup detection and generation
+6. **seo-images** -- Image optimization
+7. **seo-sitemap** -- Sitemap analysis and generation
+8. **seo-geo** -- AI Overviews / GEO optimization
+9. **seo-plan** -- Strategic planning with templates
+10. **seo-programmatic** -- Programmatic SEO analysis and planning
+11. **seo-competitor-pages** -- Competitor comparison page generation
+12. **seo-hreflang** -- Hreflang/i18n SEO audit and generation
+13. **seo-dataforseo** -- Live SEO data via DataForSEO MCP (extension)
+14. **seo-image-gen** -- AI image generation for SEO assets via Gemini (extension)
 
-### Title formula
+## Subagents
 
-```text
-Primary Topic - Specific Modifier | Brand
-```
+For parallel analysis during audits:
 
-### Meta description formula
+- `seo-technical` -- Crawlability, indexability, security, CWV
+- `seo-content` -- E-E-A-T, readability, thin content
+- `seo-schema` -- Detection, validation, generation
+- `seo-sitemap` -- Structure, coverage, quality gates
+- `seo-performance` -- Core Web Vitals measurement
+- `seo-visual` -- Screenshots, mobile testing, above-fold
+- `seo-geo` -- AI crawler access, llms.txt, citability, brand mention signals
+- `seo-dataforseo` -- Live SERP, keyword, backlink, local SEO data (extension, optional)
+- `seo-image-gen` -- SEO image audit and generation plan (extension, optional)
 
-```text
-Action + topic + value proposition + one supporting detail
-```
+## Error Handling
 
-### JSON-LD example
+| Scenario                          | Action                                                                                                                                                |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unrecognized command              | List available commands from the Quick Reference table. Suggest the closest matching command.                                                         |
+| URL unreachable                   | Report the error and suggest the user verify the URL. Do not attempt to guess site content.                                                           |
+| Sub-skill fails during audit      | Report partial results from successful sub-skills. Clearly note which sub-skill failed and why. Suggest re-running the failed sub-skill individually. |
+| Ambiguous business type detection | Present the top two detected types with supporting signals. Ask the user to confirm before proceeding with industry-specific recommendations.         |
 
-```json
-{
-  "@context": "https://schema.org",
-  "@type": "Article",
-  "headline": "Page Title Here",
-  "author": {
-    "@type": "Person",
-    "name": "Author Name"
-  },
-  "publisher": {
-    "@type": "Organization",
-    "name": "Brand Name"
-  }
-}
-```
+## Limitations
 
-### Audit output shape
-
-```text
-[HIGH] Duplicate title tags on product pages
-Location: src/routes/products/[slug].tsx
-Issue: Dynamic titles collapse to the same default string, which weakens relevance and creates duplicate signals.
-Fix: Generate a unique title per product using the product name and primary category.
-```
-
-## Anti-Patterns
-
-| Anti-pattern | Fix |
-| --- | --- |
-| keyword stuffing | write for users first |
-| thin near-duplicate pages | consolidate or differentiate them |
-| schema for content that is not actually present | match schema to reality |
-| content advice without checking the actual page | read the real page first |
-| generic “improve SEO” outputs | tie every recommendation to a page or asset |
-
-## Related Skills
-
-- `seo-specialist`
-- `frontend-patterns`
-- `brand-voice`
-- `market-research`
+- Use this skill only when the task clearly matches the scope described above.
+- Do not treat the output as a substitute for environment-specific validation, testing, or expert review.
+- Stop and ask for clarification if required inputs, permissions, safety boundaries, or success criteria are missing.

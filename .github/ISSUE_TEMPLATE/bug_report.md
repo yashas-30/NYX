@@ -11,6 +11,7 @@ A clear and concise description of what the bug is.
 
 **Steps to reproduce**
 Steps to reproduce the behavior:
+
 1. Go to '...'
 2. Click on '....'
 3. Scroll down to '....'
@@ -20,6 +21,7 @@ Steps to reproduce the behavior:
 A clear and concise description of what you expected to happen.
 
 **Environment**
+
 - OS: [Windows / macOS / Linux]
 - GPU: [NVIDIA / AMD / None]
 - VRAM: [GB]
@@ -28,6 +30,7 @@ A clear and concise description of what you expected to happen.
 
 **Logs**
 Paste any console logs, error stacks, or terminal outputs here:
+
 ```
 Paste logs here
 ```

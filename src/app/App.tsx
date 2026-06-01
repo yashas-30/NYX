@@ -18,8 +18,8 @@ export default function App() {
 
 function AppContent() {
   const { theme } = useTheme();
-  const privacyMode = useNyxStore(state => state.privacyMode);
-  const clearPrivacyData = useNyxStore(state => state.clearPrivacyData);
+  const privacyMode = useNyxStore((state) => state.privacyMode);
+  const clearPrivacyData = useNyxStore((state) => state.clearPrivacyData);
 
   useEffect(() => {
     DebugLogger.init();
@@ -29,18 +29,24 @@ function AppContent() {
 
     const resetTimer = () => {
       if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        clearPrivacyData();
-        window.dispatchEvent(new Event('nyx:privacy-inactivity-wipe'));
-        toast.error('Session auto-destructed due to 5 minutes of inactivity. Ephemeral keys and private history have been wiped.', {
-          duration: 8000,
-        });
-      }, 5 * 60 * 1000); // 5 minutes
+      timeoutId = setTimeout(
+        () => {
+          clearPrivacyData();
+          window.dispatchEvent(new Event('nyx:privacy-inactivity-wipe'));
+          toast.error(
+            'Session auto-destructed due to 5 minutes of inactivity. Ephemeral keys and private history have been wiped.',
+            {
+              duration: 8000,
+            }
+          );
+        },
+        5 * 60 * 1000
+      ); // 5 minutes
     };
 
     const events = ['mousemove', 'keydown', 'click', 'scroll', 'mousedown', 'touchstart'];
-    
-    events.forEach(event => {
+
+    events.forEach((event) => {
       window.addEventListener(event, resetTimer);
     });
 
@@ -49,7 +55,7 @@ function AppContent() {
 
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
-      events.forEach(event => {
+      events.forEach((event) => {
         window.removeEventListener(event, resetTimer);
       });
     };
@@ -61,11 +67,11 @@ function AppContent() {
         <CoderDashboard onExit={() => {}} />
       </ErrorBoundary>
 
-      <Toaster 
-        position="bottom-right" 
-        theme={theme} 
-        expand={false} 
-        richColors 
+      <Toaster
+        position="bottom-right"
+        theme={theme}
+        expand={false}
+        richColors
         closeButton
         toastOptions={{
           style: {
@@ -77,8 +83,8 @@ function AppContent() {
             fontWeight: '900',
             textTransform: 'uppercase',
             letterSpacing: '0.1em',
-            color: 'var(--foreground)'
-          }
+            color: 'var(--foreground)',
+          },
         }}
       />
     </div>

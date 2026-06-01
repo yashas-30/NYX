@@ -10,11 +10,12 @@ export const PROVIDER_LABELS: Record<string, string> = {
   gemini: 'Gemini',
   terminal: 'Terminal',
   'nyx-native': 'NYX Native',
+  'qwen-local': 'Qwen Local',
 };
 
 export const CLOUD_PROVIDERS: string[] = ['gemini'];
 
-export const LOCAL_PROVIDERS: string[] = ['nyx-native'];
+export const LOCAL_PROVIDERS: string[] = ['nyx-native', 'qwen-local'];
 
 const LOCAL_MODEL_IDS = new Set([
   'nyx-gemma-4-e2b-it',
@@ -43,15 +44,13 @@ const LOCAL_MODEL_IDS = new Set([
   'deepseek-r1-distill-qwen-14b',
   'deepseek-r1-distill-llama-8b',
   'mistral-7b-v0.3',
-  'openchat-3.5-7b'
+  'openchat-3.5-7b',
 ]);
 
 /**
  * Structured provider detection that checks in priority order.
  */
-export const detectProvider = (
-  modelId: string
-): Provider => {
+export const detectProvider = (modelId: string): Provider => {
   if (!modelId) return 'gemini';
 
   // 1. Check in local GGUF model presets first
@@ -60,14 +59,12 @@ export const detectProvider = (
   }
 
   // 2. Check in static AVAILABLE_MODELS presets
-  const availableModel = AVAILABLE_MODELS.find(m => m.id === modelId);
+  const availableModel = AVAILABLE_MODELS.find((m) => m.id === modelId);
   if (availableModel) return availableModel.provider;
 
   // 3. Check GGUF and custom patterns for imported models
   const lowerId = modelId.toLowerCase();
-  if (lowerId.endsWith('.gguf') || 
-      lowerId.includes('.gguf') || 
-      lowerId.startsWith('custom-')) {
+  if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
     return 'nyx-native';
   }
 
@@ -84,14 +81,12 @@ export const getProviderForModel = (modelId: string): Provider => {
   }
 
   // 2. Check in static AVAILABLE_MODELS presets
-  const availableModel = AVAILABLE_MODELS.find(m => m.id === modelId);
+  const availableModel = AVAILABLE_MODELS.find((m) => m.id === modelId);
   if (availableModel) return availableModel.provider;
 
   // 3. Check GGUF and custom patterns for imported models
   const lowerId = modelId.toLowerCase();
-  if (lowerId.endsWith('.gguf') || 
-      lowerId.includes('.gguf') || 
-      lowerId.startsWith('custom-')) {
+  if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
     return 'nyx-native';
   }
 
@@ -116,12 +111,19 @@ export const requiresApiKey = (provider: Provider): boolean => {
 /**
  * Resolves the effective API key for a given provider.
  */
-export const getEffectiveApiKey = (provider: string, apiKeys: Record<string, string>): string | undefined => {
+export const getEffectiveApiKey = (
+  provider: string,
+  apiKeys: Record<string, string>
+): string | undefined => {
   const key = apiKeys[provider]?.trim();
   if (key && key !== '') return key;
 
   if (provider === 'gemini') {
-    if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) {
+    if (
+      typeof import.meta !== 'undefined' &&
+      (import.meta as any).env &&
+      (import.meta as any).env.VITE_GEMINI_API_KEY
+    ) {
       return (import.meta as any).env.VITE_GEMINI_API_KEY;
     }
     if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
@@ -146,7 +148,7 @@ export interface ModelCapabilities {
 
 export const getModelCapabilities = (modelId: string): ModelCapabilities => {
   const lowerId = modelId.toLowerCase();
-  
+
   const caps: ModelCapabilities = {
     supportsVision: false,
     supportsStreaming: true,
@@ -201,7 +203,7 @@ export const recordModelSuccess = (modelId: string) => {
 export const isModelHealthy = (modelId: string): boolean => {
   const record = healthCache.get(modelId);
   if (!record) return true;
-  
+
   if (record.failures >= HEALTH_THRESHOLD) {
     if (Date.now() - record.lastFailure > COOLDOWN_MS) {
       return true; // Cooldown expired, optimistic retry

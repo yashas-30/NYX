@@ -1,10 +1,7 @@
 // ─── Model & Provider Types ───────────────────────────────────────────────────
 // Add new providers here → they will automatically appear in the UI selector
 
-export type ModelProvider =
-  | 'gemini'
-  | 'terminal'
-  | 'nyx-native';
+export type ModelProvider = 'gemini' | 'terminal' | 'nyx-native';
 
 export interface ModelSpecs {
   contextWindow: string;
@@ -53,4 +50,3 @@ export interface LocalModelPreset {
   status?: string;
   progress?: any;
 }
-

@@ -9,7 +9,7 @@ import { ChatPage } from '@src/features/chat';
 import { SettingsPage } from '@src/features/settings';
 
 const ModelRegistryView = lazy(() =>
-  import('@src/features/model-registry').then(m => ({ default: m.ModelRegistryView }))
+  import('@src/features/model-registry').then((m) => ({ default: m.ModelRegistryView }))
 );
 
 const LoadingFallback = () => (

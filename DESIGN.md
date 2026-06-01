@@ -1,4 +1,5 @@
 # Design System: react-example (NYX)
+
 **Project ID:** local/react-example
 
 ## 1. Visual Theme & Atmosphere
@@ -28,6 +29,7 @@ Design tokens live as CSS custom properties (see src/index.css) and should be re
 - Character: Modern geometric sans with good x-height and clear legibility.
 
 Hierarchy guidance (web-relative):
+
 - H1 / Display: bold/semibold, large scale (approx. 2.25–3rem) for primary screens.
 - H2: semibold, ~1.5–2rem.
 - Body: regular (400), 1rem with comfortable line-height.

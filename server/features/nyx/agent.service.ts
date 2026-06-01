@@ -81,22 +81,22 @@ ${nyxResponse}
         let responseText = '';
         const keys = loadKeys();
         const activeKey = keys[provider] || '';
-        
-        logger.info(`[Background Critic] Executing meta-critic using selected model ${modelId} (${provider})`);
+
+        logger.info(
+          `[Background Critic] Executing meta-critic using selected model ${modelId} (${provider})`
+        );
 
         if (provider === 'gemini') {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${activeKey}`;
-          const contents = [
-            { role: 'user', parts: [{ text: conversationPayload }] }
-          ];
+          const contents = [{ role: 'user', parts: [{ text: conversationPayload }] }];
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents,
               systemInstruction: { parts: [{ text: criticSystemPrompt }] },
-              generationConfig: { temperature: 0.3, maxOutputTokens: 512 }
-            })
+              generationConfig: { temperature: 0.3, maxOutputTokens: 512 },
+            }),
           });
           if (!res.ok) throw new Error(`Gemini Critic API error: ${res.statusText}`);
           const data: any = await res.json();
@@ -110,12 +110,12 @@ ${nyxResponse}
               model: modelId,
               messages: [
                 { role: 'system', content: criticSystemPrompt },
-                { role: 'user', content: conversationPayload }
+                { role: 'user', content: conversationPayload },
               ],
               stream: false,
               temperature: 0.3,
-              max_tokens: 512
-            })
+              max_tokens: 512,
+            }),
           });
           if (!res.ok) throw new Error(`Local GGUF Critic error: ${res.statusText}`);
           const data: any = await res.json();
@@ -128,20 +128,28 @@ ${nyxResponse}
           const jsonMatch = responseText.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             const analysis = JSON.parse(jsonMatch[0]);
-            const hasImprovement = analysis.rule && 
-              !analysis.rule.toLowerCase().includes('no improvement needed') && 
+            const hasImprovement =
+              analysis.rule &&
+              !analysis.rule.toLowerCase().includes('no improvement needed') &&
               !analysis.rule.toLowerCase().includes('none');
             if (hasImprovement) {
               RulesDb.addRule(analysis.metric, analysis.critique, analysis.rule);
-              logger.info(`[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`);
+              logger.info(
+                `[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`
+              );
             } else {
-              logger.info('[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.');
+              logger.info(
+                '[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.'
+              );
             }
             return;
           }
         }
       } catch (error: any) {
-        logger.warn('[Background Critic] Selected model run failed, falling back to local Python server:', error.message);
+        logger.warn(
+          '[Background Critic] Selected model run failed, falling back to local Python server:',
+          error.message
+        );
       }
     }
 
@@ -156,9 +164,9 @@ ${nyxResponse}
           systemInstruction: criticSystemPrompt,
           settings: {
             maxTokens: 512,
-            temperature: 0.3
-          }
-        })
+            temperature: 0.3,
+          },
+        }),
       });
 
       if (!hfRes.ok) {
@@ -179,14 +187,19 @@ ${nyxResponse}
       }
 
       const analysis = JSON.parse(jsonMatch[0]);
-      const hasImprovement = analysis.rule && 
-        !analysis.rule.toLowerCase().includes('no improvement needed') && 
+      const hasImprovement =
+        analysis.rule &&
+        !analysis.rule.toLowerCase().includes('no improvement needed') &&
         !analysis.rule.toLowerCase().includes('none');
       if (hasImprovement) {
         RulesDb.addRule(analysis.metric, analysis.critique, analysis.rule);
-        logger.info(`[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`);
+        logger.info(
+          `[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`
+        );
       } else {
-        logger.info('[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.');
+        logger.info(
+          '[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.'
+        );
       }
     } catch (error: any) {
       logger.error('[Background Critic] Error during evaluation or parsing:', error);

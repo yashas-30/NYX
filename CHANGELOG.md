@@ -5,6 +5,7 @@ All notable changes to NYX will be documented in this file.
 ## [3.0.0] — 2026-05-27
 
 ### Added
+
 - Helmet security headers with comprehensive CSP
 - General rate limiter (200 req/min) on all API routes
 - AMD GPU detection via rocm-smi + systeminformation fallback
@@ -15,6 +16,7 @@ All notable changes to NYX will be documented in this file.
 - CHANGELOG.md
 
 ### Changed
+
 - Bumped inference rate limiter from 20 → 30 req/min
 - Upgraded admin log watcher from fs.watch → chokidar
 - Replaced manual security headers with helmet
@@ -24,6 +26,7 @@ All notable changes to NYX will be documented in this file.
 - electron-builder asarUnpack narrowed to only binaries, dist-server, better-sqlite3, electron-store
 
 ### Removed
+
 - @vercel/analytics (Electron desktop app, not a Vercel web app)
 - next-themes (Next.js specific, wrong framework)
 - DNS override (breaks enterprise VPNs and split-horizon DNS)

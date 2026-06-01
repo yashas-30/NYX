@@ -98,10 +98,14 @@ function mergeSignals(a?: AbortSignal | null, b?: AbortSignal | null): AbortSign
 async function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer);
-      reject(new Error('Aborted'));
-    }, { once: true });
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(new Error('Aborted'));
+      },
+      { once: true }
+    );
   });
 }
 
@@ -173,7 +177,8 @@ async function* parseSSEStream(response: Response): AsyncGenerator<StreamChunk> 
           }
 
           // Finish reason
-          const finishReason = parsed.choices?.[0]?.finish_reason || parsed.candidates?.[0]?.finishReason;
+          const finishReason =
+            parsed.choices?.[0]?.finish_reason || parsed.candidates?.[0]?.finishReason;
           if (finishReason) {
             yield { type: 'finish', metadata: { finish_reason: finishReason } };
           }
@@ -237,7 +242,7 @@ async function makeRequest(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Accept': 'text/event-stream, application/json',
+      Accept: 'text/event-stream, application/json',
     },
     body: JSON.stringify(payload),
     signal: mergedSignal,
@@ -264,12 +269,25 @@ async function handleProvider(
     throw new Error(`Unsupported provider: ${provider}`);
   }
 
-  const payload = buildPayload(provider, modelId, prompt, apiKey, settings, systemInstruction, options);
+  const payload = buildPayload(
+    provider,
+    modelId,
+    prompt,
+    apiKey,
+    settings,
+    systemInstruction,
+    options
+  );
   const startTime = Date.now();
 
   try {
     // Try proxy endpoint first
-    const response = await makeRequest(endpoint, payload, signal, onStream ? STREAM_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
+    const response = await makeRequest(
+      endpoint,
+      payload,
+      signal,
+      onStream ? STREAM_TIMEOUT_MS : DEFAULT_TIMEOUT_MS
+    );
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
@@ -277,7 +295,9 @@ async function handleProvider(
     }
 
     const contentType = response.headers.get('content-type') || '';
-    const isSSE = contentType.includes('text/event-stream') || response.headers.get('transfer-encoding') === 'chunked';
+    const isSSE =
+      contentType.includes('text/event-stream') ||
+      response.headers.get('transfer-encoding') === 'chunked';
 
     if (isSSE && onStream) {
       // Real streaming
@@ -318,7 +338,10 @@ async function handleProvider(
         text: fullText,
         latency,
         tokens: tokenCount || Math.ceil(fullText.length / 4),
-        tps: latency > 0 ? Math.round((tokenCount || Math.ceil(fullText.length / 4)) / (latency / 1000)) : 0,
+        tps:
+          latency > 0
+            ? Math.round((tokenCount || Math.ceil(fullText.length / 4)) / (latency / 1000))
+            : 0,
         finishReason,
         reasoning: reasoning || undefined,
         toolCalls: toolCalls.length ? toolCalls : undefined,
@@ -326,10 +349,14 @@ async function handleProvider(
     } else {
       // JSON response
       const data = await response.json();
-      const text = data.text || data.choices?.[0]?.message?.content || data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      
+      const text =
+        data.text ||
+        data.choices?.[0]?.message?.content ||
+        data.candidates?.[0]?.content?.parts?.[0]?.text ||
+        '';
+
       if (onStream) onStream({ type: 'text', content: text });
-      
+
       const latency = Date.now() - startTime;
       return {
         text,
@@ -342,7 +369,10 @@ async function handleProvider(
     const isAbort = error.name === 'AbortError' || signal?.aborted;
     if (isAbort) throw error;
 
-    console.warn(`[inferenceClient] ${provider} proxy failed, falling back to direct:`, error.message);
+    console.warn(
+      `[inferenceClient] ${provider} proxy failed, falling back to direct:`,
+      error.message
+    );
 
     const { directFetch } = await import('./directClient');
     const result = await directFetch(modelId, prompt, {
@@ -408,9 +438,23 @@ export async function callAI(
     // Retry on transient errors
     if (isTransientError(message) && retryCount < MAX_RETRIES) {
       const delayMs = BASE_RETRY_DELAY_MS * Math.pow(2, retryCount) + Math.random() * 500;
-      console.warn(`[inferenceClient] Retry ${retryCount + 1}/${MAX_RETRIES} for ${provider} in ${delayMs}ms`);
+      console.warn(
+        `[inferenceClient] Retry ${retryCount + 1}/${MAX_RETRIES} for ${provider} in ${delayMs}ms`
+      );
       await delay(delayMs, signal);
-      return callAI(modelId, provider, prompt, apiKey, systemInstruction, settings, onStream, retryCount + 1, signal, nodeId, options);
+      return callAI(
+        modelId,
+        provider,
+        prompt,
+        apiKey,
+        systemInstruction,
+        settings,
+        onStream,
+        retryCount + 1,
+        signal,
+        nodeId,
+        options
+      );
     }
 
     console.error(`[inferenceClient] Error calling ${provider}/${modelId}:`, error);
@@ -435,7 +479,7 @@ export async function callAIBatch(
   concurrency = 3
 ): Promise<InferenceResult[]> {
   const results: InferenceResult[] = [];
-  
+
   for (let i = 0; i < requests.length; i += concurrency) {
     const batch = requests.slice(i, i + concurrency);
     const batchResults = await Promise.all(
@@ -475,22 +519,54 @@ export function isCodePrompt(prompt: string): boolean {
   if (prompt.trim().startsWith('CODE: ')) return true;
 
   const strongKeywords = [
-    'generate code', 'write code', 'write a function', 'write a class',
-    'implement a function', 'implement a class', 'implement an algorithm',
-    'debug this code', 'refactor this', 'fix this code', 'fix the bug',
-    'code snippet', 'python script', 'javascript function', 'typescript',
-    'sql query', 'bash script', 'shell script', 'html template',
-    'css style', 'react component', 'react hook', 'api endpoint',
-    'rest api', 'graphql', 'dockerfile', 'kubernetes', 'terraform',
-    'unit test', 'test case', 'pseudocode', 'time complexity', 'space complexity',
-    'big o', 'recursion', 'data structure', 'linked list', 'binary tree',
-    'sorting algorithm', 'merge sort', 'quick sort',
+    'generate code',
+    'write code',
+    'write a function',
+    'write a class',
+    'implement a function',
+    'implement a class',
+    'implement an algorithm',
+    'debug this code',
+    'refactor this',
+    'fix this code',
+    'fix the bug',
+    'code snippet',
+    'python script',
+    'javascript function',
+    'typescript',
+    'sql query',
+    'bash script',
+    'shell script',
+    'html template',
+    'css style',
+    'react component',
+    'react hook',
+    'api endpoint',
+    'rest api',
+    'graphql',
+    'dockerfile',
+    'kubernetes',
+    'terraform',
+    'unit test',
+    'test case',
+    'pseudocode',
+    'time complexity',
+    'space complexity',
+    'big o',
+    'recursion',
+    'data structure',
+    'linked list',
+    'binary tree',
+    'sorting algorithm',
+    'merge sort',
+    'quick sort',
   ];
 
   if (strongKeywords.some((kw) => p.includes(kw))) return true;
   if (/```[\w]*\n/.test(prompt)) return true;
 
-  const langPattern = /\b(python|javascript|typescript|java|c\+\+|c#|rust|golang|ruby|php|swift|kotlin|scala)\b/;
+  const langPattern =
+    /\b(python|javascript|typescript|java|c\+\+|c#|rust|golang|ruby|php|swift|kotlin|scala)\b/;
   const taskPattern = /\b(write|implement|create|build|code|function|class|script|program)\b/;
   if (langPattern.test(p) && taskPattern.test(p)) return true;
 

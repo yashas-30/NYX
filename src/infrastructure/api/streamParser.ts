@@ -62,10 +62,10 @@ export interface ParseResult {
 export function createTimeoutController(timeoutMs: number): AbortController {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  
+
   // Clean up timer if manually aborted
   controller.signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
-  
+
   return controller;
 }
 
@@ -174,9 +174,10 @@ function extractContent(parsed: any): ExtractedContent {
 
   // Error handling
   if (parsed.error) {
-    result.error = typeof parsed.error === 'object'
-      ? parsed.error.message || parsed.error.code || JSON.stringify(parsed.error)
-      : String(parsed.error);
+    result.error =
+      typeof parsed.error === 'object'
+        ? parsed.error.message || parsed.error.code || JSON.stringify(parsed.error)
+        : String(parsed.error);
     return result;
   }
 
@@ -202,20 +203,20 @@ function extractContent(parsed: any): ExtractedContent {
     }
   }
 
-  // OpenAI / OpenRouter / NVIDIA format
+  // OpenAI format
   const choice = parsed.choices?.[0];
   if (choice) {
     const delta = choice.delta || choice.message;
-    
+
     if (delta?.content) {
       result.text = delta.content;
     }
-    
+
     // Reasoning / thinking (Claude, DeepSeek, etc.)
     if (delta?.reasoning_content || delta?.thinking) {
       result.reasoning = delta.reasoning_content || delta.thinking;
     }
-    
+
     // Tool calls (accumulated)
     if (delta?.tool_calls) {
       const tc = delta.tool_calls[0];
@@ -377,7 +378,7 @@ export async function parseSSEStream(
         if (extracted.toolCall) {
           const tc = extracted.toolCall;
           const existing = toolCallsMap.get(tc.index);
-          
+
           if (existing) {
             // Merge partial tool call
             existing.function.name = existing.function.name || tc.function?.name || '';
@@ -418,7 +419,7 @@ export async function parseSSEStream(
         try {
           const parsed = JSON.parse(sseLine.data);
           const extracted = extractContent(parsed);
-          
+
           if (extracted.text) {
             resultText += extracted.text;
             onChunk?.(extracted.text, resultText);
@@ -462,7 +463,7 @@ export async function parseSSEStreamLegacy(
   options: StreamParserOptions & { timeoutMs?: number; onDone?: () => void }
 ): Promise<string> {
   const { onChunk, onError, onDone, ...rest } = options;
-  
+
   const result = await parseSSEStream(response, {
     ...rest,
     onChunk,

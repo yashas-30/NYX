@@ -33,9 +33,13 @@ export const useMessageHistory = () => {
     }
 
     const content = lastMsg.content.toLowerCase();
-    
+
     // Default fallback general recommendations
-    let suggestions = ['Explain this logic step-by-step', 'Add robust error handling', 'Provide unit tests for this'];
+    let suggestions = [
+      'Explain this logic step-by-step',
+      'Add robust error handling',
+      'Provide unit tests for this',
+    ];
 
     // 1. Arduino / Raspberry Pi / Hardware
     if (
@@ -54,7 +58,7 @@ export const useMessageHistory = () => {
       suggestions = [
         'Add debounce logic for buttons',
         'Show standard circuit wiring details',
-        'Configure deep sleep low-power mode'
+        'Configure deep sleep low-power mode',
       ];
     }
     // 2. React / Frontend Components
@@ -71,7 +75,7 @@ export const useMessageHistory = () => {
       suggestions = [
         'Add custom loading skeleton state',
         'Refactor to clean custom React Hook',
-        'Optimize re-renders & memoization'
+        'Optimize re-renders & memoization',
       ];
     }
     // 3. Database / SQL
@@ -87,7 +91,7 @@ export const useMessageHistory = () => {
       suggestions = [
         'Create database migration script',
         'Optimize indexes for fast queries',
-        'Wrap operations in a secure transaction'
+        'Wrap operations in a secure transaction',
       ];
     }
     // 4. CSS / Styling / Premium design
@@ -103,7 +107,7 @@ export const useMessageHistory = () => {
       suggestions = [
         'Make this layout fully responsive',
         'Add elegant glassmorphic effects',
-        'Audit accessibility (WCAG AA compliance)'
+        'Audit accessibility (WCAG AA compliance)',
       ];
     }
     // 5. General Error / Debugging
@@ -119,7 +123,7 @@ export const useMessageHistory = () => {
       suggestions = [
         'Explain the exact root cause',
         'Add fallback error boundary recovery',
-        'Write edge-case tests to prevent this'
+        'Write edge-case tests to prevent this',
       ];
     }
 
@@ -132,6 +136,6 @@ export const useMessageHistory = () => {
     setSuggestedPrompts,
     updateMetrics,
     clearMetrics,
-    getSuggestions
+    getSuggestions,
   };
 };

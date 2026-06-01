@@ -18,8 +18,12 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplet
         className="w-full flex items-center justify-between px-3 py-2 text-left bg-[#0e1416] hover:bg-[#18181B] transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Brain className={`w-4 h-4 ${!isComplete ? 'text-[#FF3366] animate-pulse' : 'text-[#4A5059]'}`} />
-          <span className={`text-[13px] font-mono font-medium ${!isComplete ? 'text-[#F8FAFC]' : 'text-[#4A5059]'}`}>
+          <Brain
+            className={`w-4 h-4 ${!isComplete ? 'text-[#FF3366] animate-pulse' : 'text-[#4A5059]'}`}
+          />
+          <span
+            className={`text-[13px] font-mono font-medium ${!isComplete ? 'text-[#F8FAFC]' : 'text-[#4A5059]'}`}
+          >
             {!isComplete ? 'Agent is thinking...' : 'Reasoning Process'}
           </span>
         </div>

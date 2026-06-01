@@ -110,7 +110,9 @@ export class HybridModelRouter {
   }
 
   private async doRefreshPool(): Promise<void> {
-    const localEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('llm_ref_local_models_enabled') === 'true';
+    const localEnabled =
+      typeof localStorage !== 'undefined' &&
+      localStorage.getItem('llm_ref_local_models_enabled') === 'true';
     if (!localEnabled) {
       this.localModelPool.clear();
       return;
@@ -131,8 +133,8 @@ export class HybridModelRouter {
           modelId: m.id,
           status: isHot ? 'hot' : m.status === 'completed' ? 'cold' : 'failed',
           lastUsed: existing?.lastUsed || Date.now(),
-          vramUsageMB: isHot ? (m.vramUsageMB || 4096) : 0,
-          avgLatencyMs: isHot ? (m.avgLatencyMs || 150) : 0,
+          vramUsageMB: isHot ? m.vramUsageMB || 4096 : 0,
+          avgLatencyMs: isHot ? m.avgLatencyMs || 150 : 0,
           totalRequests: existing?.totalRequests || 0,
         });
       }
@@ -231,8 +233,7 @@ export class HybridModelRouter {
       capabilities: [],
     };
 
-    perf.avgLatencyMs =
-      state.latencyWindow.reduce((a, b) => a + b, 0) / state.latencyWindow.length;
+    perf.avgLatencyMs = state.latencyWindow.reduce((a, b) => a + b, 0) / state.latencyWindow.length;
     perf.successRate = state.successes / (state.successes + state.failures);
     perf.lastUsed = Date.now();
     this.performanceLog.set(modelId, perf);
@@ -254,11 +255,7 @@ export class HybridModelRouter {
   // Scoring
   // -------------------------------------------------------------------------
 
-  private scoreModel(
-    modelId: string,
-    provider: string,
-    context: RoutingContext
-  ): number {
+  private scoreModel(modelId: string, provider: string, context: RoutingContext): number {
     const perf = this.performanceLog.get(modelId);
     const warmth = this.predictWarmth(modelId);
 
@@ -307,7 +304,9 @@ export class HybridModelRouter {
   async selectModel(context: RoutingContext): Promise<RoutingDecision> {
     await this.refreshLocalModelPool();
 
-    const localEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('llm_ref_local_models_enabled') === 'true';
+    const localEnabled =
+      typeof localStorage !== 'undefined' &&
+      localStorage.getItem('llm_ref_local_models_enabled') === 'true';
     const candidates = AVAILABLE_MODELS.filter((m) => {
       // Exclusively support Gemini and local models (nyx-native)
       if (m.provider === 'nyx-native') return localEnabled;
@@ -348,7 +347,8 @@ export class HybridModelRouter {
       reasoning: `Selected ${best.model.name} (score: ${best.score.toFixed(2)}). ${
         warmth.timeToWarmMs > 0 ? `Cold boot: ${warmth.timeToWarmMs}ms.` : 'Hot in VRAM.'
       }`,
-      estimatedLatency: warmth.timeToWarmMs + (this.performanceLog.get(best.model.id)?.avgLatencyMs || 500),
+      estimatedLatency:
+        warmth.timeToWarmMs + (this.performanceLog.get(best.model.id)?.avgLatencyMs || 500),
       estimatedCost: best.model.provider === 'nyx-native' ? 'free' : 'low',
     };
   }
@@ -358,7 +358,11 @@ export class HybridModelRouter {
     checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>
   ): Promise<RoutingDecision> {
     return this.selectModel({
-      task: { type: 'planning', complexity: 'moderate', description: 'planning' } as any as SubagentTask,
+      task: {
+        type: 'planning',
+        complexity: 'moderate',
+        description: 'planning',
+      } as any as SubagentTask,
       apiKeys,
       requiresStreaming: false,
       requiresTools: false,
@@ -418,14 +422,22 @@ export class HybridModelRouter {
       return false;
     }).sort((a, b) => {
       const scoreA = this.scoreModel(a.id, a.provider, {
-        task: { type: 'fallback', complexity: 'moderate', description: 'fallback' } as any as SubagentTask,
+        task: {
+          type: 'fallback',
+          complexity: 'moderate',
+          description: 'fallback',
+        } as any as SubagentTask,
         apiKeys,
         requiresStreaming: !!onStream,
         requiresTools: false,
         requiresVision: false,
       });
       const scoreB = this.scoreModel(b.id, b.provider, {
-        task: { type: 'fallback', complexity: 'moderate', description: 'fallback' } as any as SubagentTask,
+        task: {
+          type: 'fallback',
+          complexity: 'moderate',
+          description: 'fallback',
+        } as any as SubagentTask,
         apiKeys,
         requiresStreaming: !!onStream,
         requiresTools: false,
@@ -451,7 +463,9 @@ export class HybridModelRouter {
       }
 
       try {
-        console.log(`[FallbackChain] ${current.id} (${current.provider}) [${i + 1}/${chain.length}]`);
+        console.log(
+          `[FallbackChain] ${current.id} (${current.provider}) [${i + 1}/${chain.length}]`
+        );
 
         if (current.provider === 'nyx-native') {
           const status = await checkStatusFn('nyx-native').catch(() => 'offline');
@@ -548,7 +562,13 @@ export class HybridModelRouter {
   private matchesComplexity(modelId: string, complexity: string): boolean {
     const model = AVAILABLE_MODELS.find((m) => m.id === modelId);
     if (!model) return false;
-    const tiers: Record<string, number> = { trivial: 1, simple: 2, moderate: 3, complex: 4, enterprise: 5 };
+    const tiers: Record<string, number> = {
+      trivial: 1,
+      simple: 2,
+      moderate: 3,
+      complex: 4,
+      enterprise: 5,
+    };
     const modelTier = tiers[model.id.includes('pro') ? 'complex' : 'moderate'] || 3;
     const taskTier = tiers[complexity] || 3;
     return modelTier >= taskTier;

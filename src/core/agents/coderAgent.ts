@@ -1,52 +1,20 @@
 import { AIService } from '@src/core/services/ai.service';
-import { ChatMessage, AISettings, TelemetryMetrics, SubagentTask, ISubagentOrchestrator } from '@src/infrastructure/types';
-import { PromptAnalysis, AgentRoute } from '@src/core/services/promptClassifier';
 import {
-  fetchEvolutionaryRules,
-  searchCodebase,
-  searchWeb,
-  writeFile,
-} from '@src/infrastructure/api/coderApi';
-import { buildCoderSystemPrompt, buildCoderUserPrompt, CodeContext } from '../prompts/coderPrompts';
-import { BaseAgent, BaseAgentConfig } from './baseAgent';
-
-// ── Stream Event Types (Claude/Kimi-style rich events) ───────────────────────
-
-export type CoderStreamEventType =
-  | 'thinking'        // Reasoning steps (visible to user, collapsible)
-  | 'text'            // Main response text
-  | 'tool_call'       // Tool invocation start
-  | 'tool_result'     // Tool result
-  | 'tool_error'      // Tool failure (with fallback)
-  | 'file_proposal'   // Detected file to write (before writing)
-  | 'file_write'      // File write confirmation
-  | 'file_error'      // File write failure
-  | 'code_block'      // Standalone code block detected
-  | 'validation'      // Code validation result
-  | 'citation'        // Source reference
-  | 'warning'         // Non-fatal issue
-  | 'error'           // Fatal error
-  | 'complete';       // Stream complete with metadata
-
-export interface CoderStreamEvent {
-  type: CoderStreamEventType;
-  content: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface FileProposal {
-  path: string;
-  language: string;
-  content: string;
-  explanation: string;
-}
-
-export interface ValidationResult {
-  passed: boolean;
-  type: 'syntax' | 'types' | 'tests' | 'lint';
-  message: string;
-  details?: string;
-}
+  ChatMessage,
+  AISettings,
+  TelemetryMetrics,
+  SubagentTask,
+  ISubagentOrchestrator,
+  CoderStreamEventType,
+  CoderStreamEvent,
+  FileProposal,
+  ValidationResult,
+} from '@src/infrastructure/types';
+import { PromptAnalysis, AgentRoute } from '@src/core/services/promptClassifier';
+import { fetchEvolutionaryRules, writeFile } from '@src/infrastructure/api/coderApi';
+import { searchCodebase, searchWeb } from '@src/infrastructure/api/searchApi';
+import { buildCoderPrompts, CodeContext } from '../prompts/coderPrompts';
+import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from './baseAgent';
 
 // ── Retry Configuration ──────────────────────────────────────────────────────
 
@@ -103,11 +71,20 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
     try {
       // Phase 1: Planning & Reasoning (Claude-style visible thinking)
       yield* this.emitThinking('Analyzing task requirements...', reasoningChain);
-      yield* this.emitThinking(`Detected intent: ${analysis.intent}, complexity: ${analysis.complexity}`, reasoningChain);
-      yield* this.emitThinking(`Required tools: ${route.tools.join(', ') || 'none'}`, reasoningChain);
+      yield* this.emitThinking(
+        `Detected intent: ${analysis.intent}, complexity: ${analysis.complexity}`,
+        reasoningChain
+      );
+      yield* this.emitThinking(
+        `Required tools: ${route.tools.join(', ') || 'none'}`,
+        reasoningChain
+      );
 
       if (route.shouldUseSubagents) {
-        yield* this.emitThinking('Task complexity warrants subagent swarm approach', reasoningChain);
+        yield* this.emitThinking(
+          'Task complexity warrants subagent swarm approach',
+          reasoningChain
+        );
       } else {
         yield* this.emitThinking('Single-agent pipeline sufficient for this task', reasoningChain);
       }
@@ -115,10 +92,16 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
       // Phase 2: Gather context with parallel execution and retry
       yield* this.emitThinking('Gathering context from available sources...', reasoningChain);
 
-      const context = await this.gatherContextWithRetry(prompt, analysis, route.tools, signal, (msg) => {
-        // Emit sub-thinkings during context gathering
-        reasoningChain.push(msg);
-      });
+      const context = await this.gatherContextWithRetry(
+        prompt,
+        analysis,
+        route.tools,
+        signal,
+        (msg) => {
+          // Emit sub-thinkings during context gathering
+          reasoningChain.push(msg);
+        }
+      );
 
       yield* this.emitThinking(
         `Context gathered: ${context.codebase ? 'codebase ✓' : 'codebase ✗'} ${context.webSearch ? 'web ✓' : 'web ✗'} ${context.rules?.length ? 'rules ✓' : 'rules ✗'}`,
@@ -129,14 +112,20 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
       if (route.shouldUseSubagents && this.config.createOrchestrator) {
         yield* this.runSubagentPipeline(prompt, context, analysis, signal, reasoningChain);
       } else {
-        yield* this.runSingleAgentPipeline(prompt, context, analysis, signal, reasoningChain, startTime);
+        yield* this.runSingleAgentPipeline(
+          prompt,
+          context,
+          analysis,
+          signal,
+          reasoningChain,
+          startTime
+        );
       }
 
       // Phase 4: Background critic (non-blocking)
       if (this.config.triggerBackgroundCritic) {
         this.config.triggerBackgroundCritic(prompt, reasoningChain.join('\n')).catch(() => {});
       }
-
     } catch (err: any) {
       yield {
         type: 'error',
@@ -239,13 +228,30 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
 
     yield* this.emitThinking('Building optimized prompts...', reasoningChain);
 
-    const systemPrompt = buildCoderSystemPrompt(this.config.modelId, codeContext);
-    const finalPrompt = buildCoderUserPrompt(prompt, codeContext, context.codebase, context.webSearch);
+    const {
+      systemPrompt,
+      userPrompt: finalPrompt,
+      metadata,
+    } = buildCoderPrompts(
+      this.config.modelId,
+      codeContext,
+      prompt,
+      this.config.history.slice(-HISTORY_SLICE_SIZE),
+      context.codebase,
+      context.webSearch
+    );
+
+    if (metadata?.estimatedTokens) {
+      this.tokenBudget.consume(metadata.estimatedTokens);
+    }
 
     // Adaptive temperature based on task
     const temperature = this.getAdaptiveTemperature(analysis.intent);
 
-    yield* this.emitThinking(`Using temperature ${temperature} for ${analysis.intent} task`, reasoningChain);
+    yield* this.emitThinking(
+      `Using temperature ${temperature} for ${analysis.intent} task`,
+      reasoningChain
+    );
 
     // Setup streaming with proper delta tracking
     let lastEmittedLength = 0;
@@ -276,7 +282,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
       onStreamCallback,
       signal,
       {
-        history: this.config.history.slice(-10),
+        history: this.config.history.slice(-HISTORY_SLICE_SIZE),
         agentMode: 'coder',
         webSearch: this.config.webSearchEnabled,
       }
@@ -297,20 +303,31 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
     let queueOverflow = false;
 
     while (!finished || chunks.length > 0) {
+      if (signal.aborted) break;
       if (chunks.length === 0) {
         await new Promise<void>((resolve) => {
-          resolveStream = resolve;
+          const onAbort = () => {
+            resolve();
+          };
+          signal.addEventListener('abort', onAbort, { once: true });
+
+          resolveStream = () => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+          };
         });
         resolveStream = null;
       }
 
+      if (signal.aborted) break;
       if (streamError) throw streamError;
 
       if (chunks.length > MAX_QUEUE_SIZE && !queueOverflow) {
         queueOverflow = true;
         yield {
           type: 'warning',
-          content: 'Generation is producing text faster than display. Some intermediate states may be skipped.',
+          content:
+            'Generation is producing text faster than display. Some intermediate states may be skipped.',
         };
       }
 
@@ -350,7 +367,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
 
     // Yield standalone code blocks (not in === FILE: === format)
     for (const block of codeBlocks) {
-      if (!files.some(f => f.content === block.content)) {
+      if (!files.some((f) => f.content === block.content)) {
         yield {
           type: 'code_block',
           content: block.language || 'code',
@@ -364,20 +381,26 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
       yield* this.emitThinking(`Writing ${files.length} files...`, reasoningChain);
       for (const file of files) {
         try {
+          // Additional validation
+          if (file.path.includes('..')) {
+            throw new Error(`Invalid file path (traversal detected): ${file.path}`);
+          }
+
           const fullPath = this.config.workspacePath
             ? `${this.config.workspacePath}/${file.path}`.replace(/\/+/g, '/')
             : file.path;
-          const writeRes = await writeFile(fullPath, file.content, true);
-          if (!writeRes.success) {
-            throw new Error(`Write operation failed for ${file.path}`);
+
+          if (this.config.workspacePath && !fullPath.startsWith(this.config.workspacePath)) {
+            throw new Error(`Invalid file path (outside workspace): ${file.path}`);
           }
           yield {
             type: 'file_write',
-            content: file.path,
+            content: fullPath,
             metadata: {
-              path: file.path,
+              path: fullPath,
               language: file.language,
               lineCount: file.content.split('\n').length,
+              content: file.content,
             },
           };
         } catch (writeErr: any) {
@@ -448,36 +471,80 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
 
     // Setup task update streaming
     let lastTaskCount = 0;
-    if (this.config.onSubagentTaskUpdate) {
-      orchestrator.onTaskUpdate = (tasks) => {
-        const newTasks = tasks.slice(lastTaskCount);
-        lastTaskCount = tasks.length;
-        for (const task of newTasks) {
-          // This would need to be bridged to the generator — simplified here
-          reasoningChain.push(`Subagent task: [${task.type}] ${task.description} - ${task.status}`);
-        }
-        this.config.onSubagentTaskUpdate!(tasks);
-      };
-    }
+    const taskQueue: SubagentTask[] = [];
+    let queueResolve: (() => void) | null = null;
+
+    orchestrator.onTaskUpdate = (tasks) => {
+      const newTasks = tasks.slice(lastTaskCount);
+      lastTaskCount = tasks.length;
+      for (const task of newTasks) {
+        taskQueue.push(task);
+      }
+      if (queueResolve) queueResolve();
+      if (this.config.onSubagentTaskUpdate) {
+        this.config.onSubagentTaskUpdate(tasks);
+      }
+    };
 
     yield* this.emitThinking('Starting subagent swarm execution...', reasoningChain);
 
     try {
-      const results = await orchestrator.execute(prompt, {
-        apiKeys: this.config.apiKeys,
-        modelSettings: this.config.settings,
-        trackUsage: this.config.trackUsage,
-        history: this.config.history,
-        updateHistory: this.config.updateHistory,
-        updateMetrics: this.config.updateMetrics,
-        getSuggestions: this.config.getSuggestions,
-        setSuggestedPrompts: this.config.setSuggestedPrompts,
-        webSearchEnabled: this.config.webSearchEnabled ?? false,
-        codebaseKnowledgeEnabled: this.config.codebaseKnowledgeEnabled ?? false,
-        signal,
-        originalPrompt: this.config.originalPrompt || prompt,
-        triggerBackgroundCritic: this.config.triggerBackgroundCritic,
-      });
+      let executeFinished = false;
+      let executeError: any = null;
+      let executeResult: any = null;
+
+      const executePromise = orchestrator
+        .execute(prompt, {
+          apiKeys: this.config.apiKeys,
+          modelSettings: this.config.settings,
+          trackUsage: this.config.trackUsage,
+          history: this.config.history,
+          updateHistory: this.config.updateHistory,
+          updateMetrics: this.config.updateMetrics,
+          getSuggestions: this.config.getSuggestions,
+          setSuggestedPrompts: this.config.setSuggestedPrompts,
+          webSearchEnabled: this.config.webSearchEnabled ?? false,
+          codebaseKnowledgeEnabled: this.config.codebaseKnowledgeEnabled ?? false,
+          signal,
+          originalPrompt: this.config.originalPrompt || prompt,
+          triggerBackgroundCritic: this.config.triggerBackgroundCritic,
+        })
+        .then((res) => {
+          executeResult = res;
+          executeFinished = true;
+          if (queueResolve) queueResolve();
+        })
+        .catch((err) => {
+          executeError = err;
+          executeFinished = true;
+          if (queueResolve) queueResolve();
+        });
+
+      while (!executeFinished || taskQueue.length > 0) {
+        if (taskQueue.length === 0) {
+          await new Promise<void>((resolve) => {
+            queueResolve = resolve;
+          });
+          queueResolve = null;
+        }
+
+        while (taskQueue.length > 0) {
+          const task = taskQueue.shift()!;
+          const content = `Subagent task: [${task.type}] ${task.description} - ${task.status}`;
+          reasoningChain.push(content);
+          if (this.config.showReasoning !== false) {
+            yield {
+              type: 'thinking',
+              content,
+              metadata: { step: reasoningChain.length, source: 'subagent', task },
+            };
+          }
+        }
+      }
+
+      if (executeError) throw executeError;
+
+      const results = executeResult;
 
       // Stream subagent results as they complete
       if (Array.isArray(results)) {
@@ -495,7 +562,6 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
         content: 'Subagent swarm execution complete',
         metadata: { results },
       };
-
     } catch (err: any) {
       yield {
         type: 'error',
@@ -528,12 +594,14 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
             this.retryConfig.baseDelayMs * Math.pow(2, attempt),
             this.retryConfig.maxDelayMs
           );
-          await new Promise(r => setTimeout(r, delay));
+          await new Promise((r) => setTimeout(r, delay));
         }
       }
     }
 
-    onError(lastError || new Error(`${operationName} failed after ${this.retryConfig.maxRetries} retries`));
+    onError(
+      lastError || new Error(`${operationName} failed after ${this.retryConfig.maxRetries} retries`)
+    );
   }
 
   // ── Thinking Emission ─────────────────────────────────────────────────────
@@ -610,8 +678,17 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
   /**
    * Extract === FILE: path === format (Claude Code style)
    */
-  private extractFileBlocks(text: string): Array<{ path: string; language: string; content: string }> {
+  private extractFileBlocks(
+    text: string
+  ): Array<{ path: string; language: string; content: string }> {
     const files: Array<{ path: string; language: string; content: string }> = [];
+
+    // Prevent regex evaluation hanging on massive strings
+    const MAX_PARSE_LENGTH = 100000;
+    if (text.length > MAX_PARSE_LENGTH) {
+      text = text.slice(0, MAX_PARSE_LENGTH);
+    }
+
     const regex = /===\s*FILE:\s*([^\n\r]+?)\s*===[\r\n]+```(\w*)[\r\n]+([\s\S]*?)```/g;
     let match;
     while ((match = regex.exec(text)) !== null) {
@@ -628,8 +705,17 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
   /**
    * Extract markdown code blocks with optional filename in comment
    */
-  private extractMarkdownCodeBlocks(text: string): Array<{ language: string | null; content: string; filename?: string }> {
+  private extractMarkdownCodeBlocks(
+    text: string
+  ): Array<{ language: string | null; content: string; filename?: string }> {
     const blocks: Array<{ language: string | null; content: string; filename?: string }> = [];
+
+    // Prevent regex evaluation hanging on massive strings
+    const MAX_PARSE_LENGTH = 100000;
+    if (text.length > MAX_PARSE_LENGTH) {
+      text = text.slice(0, MAX_PARSE_LENGTH);
+    }
+
     const regex = /```(\w*)\n([\s\S]*?)```/g;
     let match;
     while ((match = regex.exec(text)) !== null) {
@@ -637,11 +723,15 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
       const content = match[2];
       // Check for filename in first line comment
       const firstLine = content.split('\n')[0];
-      const filenameMatch = firstLine.match(/\/\/\s*([^\s]+\.\w+)|#\s*([^\s]+\.\w+)|<!--\s*([^\s]+\.\w+)\s*-->/);
+      const filenameMatch = firstLine.match(
+        /\/\/\s*([^\s]+\.\w+)|#\s*([^\s]+\.\w+)|<!--\s*([^\s]+\.\w+)\s*-->/
+      );
       blocks.push({
         language,
         content,
-        filename: filenameMatch ? (filenameMatch[1] || filenameMatch[2] || filenameMatch[3]) : undefined,
+        filename: filenameMatch
+          ? filenameMatch[1] || filenameMatch[2] || filenameMatch[3]
+          : undefined,
       });
     }
     return blocks;
@@ -650,20 +740,46 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
   private inferLanguage(filePath: string): string {
     const ext = filePath.split('.').pop()?.toLowerCase();
     const map: Record<string, string> = {
-      ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-      py: 'python', rs: 'rust', go: 'go', java: 'java',
-      cpp: 'cpp', c: 'c', h: 'c', hpp: 'cpp',
-      cs: 'csharp', rb: 'ruby', php: 'php', swift: 'swift',
-      kt: 'kotlin', scala: 'scala', r: 'r', m: 'objectivec',
-      sql: 'sql', sh: 'bash', ps1: 'powershell', yaml: 'yaml',
-      yml: 'yaml', json: 'json', xml: 'xml', html: 'html',
-      css: 'css', scss: 'scss', sass: 'sass', less: 'less',
-      md: 'markdown', dockerfile: 'dockerfile', tf: 'hcl',
+      ts: 'typescript',
+      tsx: 'tsx',
+      js: 'javascript',
+      jsx: 'jsx',
+      py: 'python',
+      rs: 'rust',
+      go: 'go',
+      java: 'java',
+      cpp: 'cpp',
+      c: 'c',
+      h: 'c',
+      hpp: 'cpp',
+      cs: 'csharp',
+      rb: 'ruby',
+      php: 'php',
+      swift: 'swift',
+      kt: 'kotlin',
+      scala: 'scala',
+      r: 'r',
+      m: 'objectivec',
+      sql: 'sql',
+      sh: 'bash',
+      ps1: 'powershell',
+      yaml: 'yaml',
+      yml: 'yaml',
+      json: 'json',
+      xml: 'xml',
+      html: 'html',
+      css: 'css',
+      scss: 'scss',
+      sass: 'sass',
+      less: 'less',
+      md: 'markdown',
+      dockerfile: 'dockerfile',
+      tf: 'hcl',
     };
     return map[ext || ''] || 'text';
   }
 
-  // ── Code Validation (Mock — implement with actual tools) ──────────────────
+  // ── Code Validation ──────────────────────────────────────────────────────────
 
   private async validateGeneratedCode(
     files: Array<{ path: string; language: string; content: string }>,
@@ -671,25 +787,56 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
   ): Promise<ValidationResult[]> {
     const results: ValidationResult[] = [];
 
-    // Syntax validation for TypeScript/JavaScript
-    const tsFiles = files.filter(f => ['typescript', 'javascript', 'tsx', 'jsx'].includes(f.language));
-    if (tsFiles.length > 0) {
+    try {
+      // Call actual backend validation
+      const { validateWorkspace } = await import('@src/infrastructure/api/coderApi');
+      const validationResponse = await validateWorkspace();
+
+      if (validationResponse.valid) {
+        results.push({
+          passed: true,
+          type: 'syntax',
+          message: 'Workspace validation passed',
+        });
+      } else {
+        const errors = validationResponse.errors || [];
+        results.push({
+          passed: false,
+          type: 'syntax',
+          message: `Workspace validation failed with ${errors.length} errors`,
+          details: errors.join('\\n'),
+        });
+      }
+
+      if (validationResponse.warnings?.length) {
+        results.push({
+          passed: true,
+          type: 'lint',
+          message: `Found ${validationResponse.warnings.length} warnings`,
+          details: validationResponse.warnings.join('\\n'),
+        });
+      }
+    } catch (err: any) {
       results.push({
-        passed: true, // Would run actual tsc or eslint
+        passed: false,
         type: 'syntax',
-        message: `Syntax check passed for ${tsFiles.length} TypeScript/JavaScript file(s)`,
+        message: 'Failed to run code validation',
+        details: err instanceof Error ? err.message : String(err),
       });
     }
 
-    // General validation
-    const totalLines = [...files, ...blocks].reduce((sum, f) => sum + f.content.split('\n').length, 0);
-    results.push({
-      passed: totalLines < 1000,
-      type: 'lint',
-      message: totalLines < 1000
-        ? `Code size acceptable (${totalLines} lines)`
-        : `Warning: Large code output (${totalLines} lines), consider splitting`,
-    });
+    // General size validation
+    const totalLines = [...files, ...blocks].reduce(
+      (sum, f) => sum + f.content.split('\\n').length,
+      0
+    );
+    if (totalLines >= 1000) {
+      results.push({
+        passed: false,
+        type: 'lint',
+        message: `Warning: Large code output (${totalLines} lines), consider splitting`,
+      });
+    }
 
     return results;
   }
@@ -702,7 +849,10 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
 
     const results = data.results || [];
     const resultsStr = results
-      .map((f: any) => `File: ${f.relativePath || f.path} (Score: ${f.relevanceScore || f.score})\n\`\`\`\n${f.content}\n\`\`\``)
+      .map(
+        (f: any) =>
+          `File: ${f.relativePath || f.path} (Score: ${f.relevanceScore || f.score})\n\`\`\`\n${f.content}\n\`\`\``
+      )
       .join('\n\n');
 
     return `\n\n[CODEBASE CONTEXT]\n${data.directoryStructure || ''}\n\n${resultsStr}\n[END CODEBASE CONTEXT]\n`;
@@ -724,7 +874,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
 
   private deduplicateByUrl(results: any[]): any[] {
     const seen = new Set<string>();
-    return results.filter(r => {
+    return results.filter((r) => {
       if (!r.link || seen.has(r.link)) return false;
       seen.add(r.link);
       return true;

@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "target": "ES2022",
     "strict": true,
     "noImplicitAny": true,
@@ -7,11 +8,7 @@
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
     "module": "ESNext",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "esModuleInterop": true,
@@ -29,21 +26,13 @@
       "@features/*": ["./src/features/*"],
       "@core/*": ["./src/core/*"],
       "@assets/*": ["./src/assets/*"],
-      "electron-vite": [
-        "./node_modules/electron-vite/dist/index.d.ts"
-      ],
-      "electron-updater": [
-        "./node_modules/electron-updater/out/main.d.ts"
-      ],
+      "electron-vite": ["./node_modules/electron-vite/dist/index.d.ts"],
+      "electron-updater": ["./node_modules/electron-updater/out/main.d.ts"],
       "@huggingface/transformers": [
         "./node_modules/@huggingface/transformers/types/transformers.d.ts"
       ],
-      "electron-window-state": [
-        "./node_modules/electron-window-state/index.d.ts"
-      ],
-      "conf": [
-        "./node_modules/conf/dist/source/index.d.ts"
-      ]
+      "electron-window-state": ["./node_modules/electron-window-state/index.d.ts"],
+      "conf": ["./node_modules/conf/dist/source/index.d.ts"]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
@@ -59,7 +48,13 @@
     "server.ts"
   ],
   "watchOptions": {
-    "excludeDirectories": ["**/node_modules", "**/dist", "**/scratch", "**/.nyx-cache", "**/.nyx-models"],
+    "excludeDirectories": [
+      "**/node_modules",
+      "**/dist",
+      "**/scratch",
+      "**/.nyx-cache",
+      "**/.nyx-models"
+    ],
     "excludeFiles": ["**/server.log", "**/server.err"]
   }
 }

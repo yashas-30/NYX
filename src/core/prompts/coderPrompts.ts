@@ -12,7 +12,15 @@ export interface CodeContext {
   workspaceStructure?: string;
   existingCode?: string;
   existingFilePath?: string;
-  taskType: 'generate' | 'debug' | 'review' | 'refactor' | 'explain' | 'test' | 'migrate' | 'optimize';
+  taskType:
+    | 'generate'
+    | 'debug'
+    | 'review'
+    | 'refactor'
+    | 'explain'
+    | 'test'
+    | 'migrate'
+    | 'optimize';
   lightningDirectives?: string[];
   targetStandards?: string[];
   securityLevel?: 'standard' | 'strict' | 'critical';
@@ -416,7 +424,7 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   curl: `- curl: command-line transfers, protocols, scripts`,
   wget: `- wget: file retrieval, recursive, mirrors, resumes`,
   aria2: `- aria2: multi-protocol, multi-source, BitTorrent`,
-  "yt-dlp": `- yt-dlp: video download, extractors, post-processing`,
+  'yt-dlp': `- yt-dlp: video download, extractors, post-processing`,
   ffmpeg: `- FFmpeg: multimedia, codecs, filters, streaming`,
   gstreamer: `- GStreamer: pipeline, elements, plugins, pads`,
   obs: `- OBS Studio: streaming, recording, scenes, sources`,
@@ -443,7 +451,7 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   lorawan: `- LoRaWAN: LPWAN, gateways, end devices, chirp`,
   sigfox: `- Sigfox: LPWAN, ultra-narrowband, downlink`,
   nbiot: `- NB-IoT: cellular IoT, eDRX, PSM, coverage`,
-  "lte-m": `- LTE-M: cellular IoT, mobility, voice, positioning`,
+  'lte-m': `- LTE-M: cellular IoT, mobility, voice, positioning`,
   thread: `- Thread: mesh, 6LoWPAN, border routers, commissioning`,
   openthread: `- OpenThread: Nest, border router, RCP, NCP`,
   contiki: `- Contiki: IoT OS, Cooja, RPL, 6LoWPAN`,
@@ -506,13 +514,13 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   vtk: `- VTK: visualization, rendering, image processing`,
   itk: `- ITK: image analysis, registration, segmentation`,
   simpleitk: `- SimpleITK: ITK wrapper, Python, Java, C#`,
-  "3dslicer": `- 3D Slicer: medical imaging, plugins, Python`,
+  '3dslicer': `- 3D Slicer: medical imaging, plugins, Python`,
   mitk: `- MITK: medical imaging, segmentation, registration`,
   gdcm: `- GDCM: DICOM, C++, Python, Grassroots`,
   dcmtk: `- DCMTK: DICOM toolkit, C++, networking, worklist`,
   orthanc: `- Orthanc: DICOM server, REST API, plugins, Lua`,
   dcm4che: `- dcm4che: DICOM, Java, archive, modalities`,
-  "fo-dicom": `- fo-dicom: C# DICOM, .NET Core, Unity`,
+  'fo-dicom': `- fo-dicom: C# DICOM, .NET Core, Unity`,
   pydicom: `- pydicom: Python DICOM, datasets, pixel data`,
   dicomweb: `- DICOMweb: WADO, QIDO, STOW, RS`,
   fhir: `- FHIR: healthcare data, resources, REST, SMART`,
@@ -555,7 +563,7 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   ors: `- ORS: object research systems, 3D imaging, analysis`,
   simpleware: `- Simpleware: ScanIP, FE, CAD, medical, materials`,
   mimics: `- Mimics: Materialise, medical, 3D, engineering`,
-  "3matic": `- 3-matic: Materialise, design, mesh, automation`,
+  '3matic': `- 3-matic: Materialise, design, mesh, automation`,
   magics: `- Magics: Materialise, STL, supports, build prep`,
   netfabb: `- Netfabb: Autodesk, additive, simulation, supports`,
   preform: `- PreForm: Formlabs, SLA, supports, orientation`,
@@ -640,9 +648,9 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   stratasysf170: `- Stratasys F170: FDM, soluble supports, 255x254x254`,
   stratasysj55: `- Stratasys J55: PolyJet, 5 materials, full color`,
   stratasysj850: `- Stratasys J850: PolyJet, 7 materials, full color`,
-  "3dsystemsfabpro": `- 3D Systems FabPro: DLP, jewelry, dental`,
-  "3dsystemsprojet": `- 3D Systems ProJet: MJP, wax, casting`,
-  "3dsystemssls": `- 3D Systems SLS: sPro, nylon, production`,
+  '3dsystemsfabpro': `- 3D Systems FabPro: DLP, jewelry, dental`,
+  '3dsystemsprojet': `- 3D Systems ProJet: MJP, wax, casting`,
+  '3dsystemssls': `- 3D Systems SLS: sPro, nylon, production`,
   eos: `- EOS: industrial SLS, metals, polymers, DMLS`,
   slmsolutions: `- SLM Solutions: metal, selective laser melting`,
   renishaw: `- Renishaw: metal AM, RenAM, dental, aerospace`,
@@ -703,7 +711,7 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   iqi: `- iQIYI: iQUT, VR, 8K, 5G, content`,
   idealens: `- IDEALENS: K2+, 6DoF, SteamVR, wireless`,
   hypereal: `- Hypereal: Pano, Senz, PC VR, controllers`,
-  "3glasses": `- 3Glasses: X1, S1, PC VR, all-in-one`,
+  '3glasses': `- 3Glasses: X1, S1, PC VR, all-in-one`,
   shadowcreator: `- Shadow Creator: Action One, AR glasses, Nreal`,
   nreal: `- Nreal/XREAL: Air, Light, AR glasses, spatial`,
   rokid: `- Rokid: Max, Station, AR glasses, spatial`,
@@ -788,16 +796,16 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   mkdirp: `- mkdirp: npm, directories, recursive, promises`,
   ncp: `- ncp: npm, copy, recursive, filters`,
   cpr: `- cpr: npm, copy, recursive, filters, overwrite`,
-  "fs-extra": `- fs-extra: Node.js, fs, promises, copy, move`,
-  "graceful-fs": `- graceful-fs: Node.js, fs, EMFILE, queues`,
+  'fs-extra': `- fs-extra: Node.js, fs, promises, copy, move`,
+  'graceful-fs': `- graceful-fs: Node.js, fs, EMFILE, queues`,
   chokidar: `- chokidar: Node.js, file watching, polling, native`,
   sane: `- sane: file watching, Watchman, polling, Node.js`,
   watchpack: `- watchpack: webpack, watching, aggregation, polling`,
   gaze: `- gaze: file watching, glob, events, Node.js`,
   pathwatcher: `- pathwatcher: Atom, file watching, native, async`,
   nsfw: `- nsfw: Axosoft, file watching, native, cross-platform`,
-  "@parcel/watcher": `- @parcel/watcher: Rust, file watching, native`,
-  "@vscode/filewatcher": `- @vscode/filewatcher: VS Code, file watching, native`,
+  '@parcel/watcher': `- @parcel/watcher: Rust, file watching, native`,
+  '@vscode/filewatcher': `- @vscode/filewatcher: VS Code, file watching, native`,
   fsevents: `- fsevents: macOS, file watching, native, Node.js`,
   inotify: `- inotify: Linux, file watching, native, events`,
   ReadDirectoryChangesW: `- ReadDirectoryChangesW: Windows, file watching, native`,
@@ -809,7 +817,7 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   gamin: `- gamin: FAM, file watching, compatibility, polling`,
   imklog: `- imklog: klogd, kernel logging, syslog, Linux`,
   rsyslog: `- rsyslog: syslog, high performance, queues, TLS`,
-  "syslog-ng": `- syslog-ng: Balabit, syslog, high performance, patterns`,
+  'syslog-ng': `- syslog-ng: Balabit, syslog, high performance, patterns`,
   fluentbit: `- Fluent Bit: CNCF, logging, metrics, traces, streams`,
   // vector: `- Vector: Datadog, observability, transforms, sinks`,
   // logstash: `- Logstash: Elastic, pipelines, filters, outputs`,
@@ -823,36 +831,36 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   functionbeat: `- Functionbeat: Elastic, serverless, cloudwatch, logs`,
   osquerybeat: `- Osquerybeat: Elastic, osquery, SQL, security`,
   cloudbeat: `- Cloudbeat: Elastic, CSPM, KSPM, benchmarks`,
-  "apm-server": `- APM Server: Elastic, traces, RUM, OpenTelemetry`,
-  "fleet-server": `- Fleet Server: Elastic, agents, policies, actions`,
+  'apm-server': `- APM Server: Elastic, traces, RUM, OpenTelemetry`,
+  'fleet-server': `- Fleet Server: Elastic, agents, policies, actions`,
   // elasticsearch: `- elasticsearch: search, analytics, logs, vectors`,
   kibana: `- Kibana: visualization, dashboards, alerts, Canvas`,
   // logstash: `- Logstash: data processing, pipelines, plugins`,
   beats: `- Beats: data shippers, lightweight, modules`,
   apm: `- Elastic APM: traces, metrics, RUM, profiling`,
-  "enterprise-search": `- Enterprise Search: App Search, Workplace Search`,
+  'enterprise-search': `- Enterprise Search: App Search, Workplace Search`,
   observability: `- Elastic Observability: logs, metrics, traces, profiling`,
   security: `- Elastic Security: SIEM, endpoint, cloud, detection`,
   maps: `- Elastic Maps: geo, layers, EMS, GeoJSON`,
   uptime: `- Elastic Uptime: monitors, alerts, Synthetics`,
   synthetics: `- Elastic Synthetics: monitors, journeys, testing`,
   profiling: `- Elastic Universal Profiling: eBPF, continuous, CO2`,
-  "machine-learning": `- Elastic ML: anomaly detection, forecasting, NLP`,
-  "data-frame-analytics": `- Elastic DFA: classification, regression, outlier`,
+  'machine-learning': `- Elastic ML: anomaly detection, forecasting, NLP`,
+  'data-frame-analytics': `- Elastic DFA: classification, regression, outlier`,
   transform: `- Elastic Transform: pivot, latest, aggregations`,
   rollup: `- Elastic Rollup: historical, downsampling, aggregations`,
-  "searchable-snapshots": `- Searchable Snapshots: cold, frozen, S3, cache`,
-  "frozen-tier": `- Frozen Tier: searchable snapshots, S3, cache`,
-  "cross-cluster": `- Cross-Cluster: search, replication, CCS, CCR`,
+  'searchable-snapshots': `- Searchable Snapshots: cold, frozen, S3, cache`,
+  'frozen-tier': `- Frozen Tier: searchable snapshots, S3, cache`,
+  'cross-cluster': `- Cross-Cluster: search, replication, CCS, CCR`,
   autoscaling: `- Elastic Autoscaling: ML, hot, warm, cold, frozen`,
   ilm: `- ILM: hot, warm, cold, frozen, delete, rollover`,
   slm: `- SLM: snapshots, policies, schedules, retention`,
   eck: `- ECK: Kubernetes, operators, Elastic Stack, orchestration`,
   cloud: `- Elastic Cloud: managed, SaaS, serverless, hosted`,
   serverless: `- Elastic Serverless: projects, Vector Search, AI`,
-  "serverless-search": `- Elastic Serverless Search: AI, search, relevance`,
-  "serverless-observability": `- Elastic Serverless Observability: OTel, profiling`,
-  "serverless-security": `- Elastic Serverless Security: AI, SIEM, detection`,
+  'serverless-search': `- Elastic Serverless Search: AI, search, relevance`,
+  'serverless-observability': `- Elastic Serverless Observability: OTel, profiling`,
+  'serverless-security': `- Elastic Serverless Security: AI, SIEM, detection`,
   esql: `- ES|QL: Elastic, query language, piped, aggregations`,
   kql: `- KQL: Kibana, query language, autocomplete, filters`,
   lucene: `- Lucene: search, indexing, queries, analyzers`,
@@ -875,10 +883,10 @@ const FRAMEWORK_GUIDES: Record<string, string> = {
   // voyager: `- Voyager: Spotify, HNSW, bindings, persistence`,
   // usearch: `- USearch: single-file, SIMD, metric agnostic`,
   pgvector: `- pgvector: Postgres, vector, ivfflat, hnsw`,
-  "sqlite-vss": `- sqlite-vss: SQLite, vector, virtual tables`,
+  'sqlite-vss': `- sqlite-vss: SQLite, vector, virtual tables`,
   // duckdb: `- DuckDB: embedded, SQL, Parquet, Arrow, analytics`,
   // clickhouse: `- ClickHouse: columnar, SQL, materialized views`,
-  "apache Druid": `- Druid: real-time analytics, ingestion, queries`,
+  'apache Druid': `- Druid: real-time analytics, ingestion, queries`,
   pinot: `- Pinot: LinkedIn, real-time OLAP, multi-tenant`,
   starrocks: `- StarRocks: MPP, real-time, vectorized, short-circuit`,
   doris: `- Apache Doris: MPP, real-time, vectorized, federated`,
@@ -959,21 +967,18 @@ function estimateTokens(text: string): number {
 function formatHistoryForPrompt(history: ChatMessage[], maxMessages: number): string {
   if (!history || !history.length || maxMessages <= 0) return '';
   const recent = history.slice(-maxMessages);
-  const formatted = recent.map((msg) => {
-    const role = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
-    const content = msg.content.length > 500 
-      ? msg.content.slice(0, 500) + '... [truncated]' 
-      : msg.content;
-    return `[${role}]: ${content}`;
-  }).join('\n\n');
+  const formatted = recent
+    .map((msg) => {
+      const role = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
+      const content =
+        msg.content.length > 500 ? msg.content.slice(0, 500) + '... [truncated]' : msg.content;
+      return `[${role}]: ${content}`;
+    })
+    .join('\n\n');
   return `<conversation_history>\n${formatted}\n</conversation_history>`;
 }
 
-function buildCoderSystemPromptInternal(
-  modelId: string,
-  context: CodeContext,
-  now: Date
-): string {
+function buildCoderSystemPromptInternal(modelId: string, context: CodeContext, now: Date): string {
   const parts: string[] = [];
   const dateStr = now.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -1065,7 +1070,7 @@ Rules:
   if (context.lightningDirectives && context.lightningDirectives.length > 0) {
     parts.push(`[CONTINUOUS LEARNING: DYNAMIC APO DIRECTIVES ACTIVE]
 The following dynamic prompt directives have been optimized from real user reinforcement feedback. Treat them with HIGHEST behavioral weight (Priority multiplier: 2.0x) over default coding conventions:
-${context.lightningDirectives.map((d, i) => `Directive #${i+1}: ${d}`).join('\n')}`);
+${context.lightningDirectives.map((d, i) => `Directive #${i + 1}: ${d}`).join('\n')}`);
   }
 
   parts.push(`Output Format:
@@ -1112,7 +1117,13 @@ export function buildCoderPrompts(
   const systemPrompt = buildCoderSystemPromptInternal(modelId, context, now);
   contextBreakdown.system = estimateTokens(systemPrompt);
 
-  const userPrompt = buildCoderUserPromptInternal(rawPrompt, context, codebaseContext, webSearchResults, now);
+  const userPrompt = buildCoderUserPromptInternal(
+    rawPrompt,
+    context,
+    codebaseContext,
+    webSearchResults,
+    now
+  );
   contextBreakdown.user = estimateTokens(userPrompt);
 
   const historyText = formatHistoryForPrompt(history, 10);
@@ -1190,5 +1201,6 @@ export function buildCoderUserPrompt(
   codebaseContext?: string,
   webSearchResults?: string
 ): string {
-  return buildCoderPrompts(context as any, context, rawPrompt, [], codebaseContext, webSearchResults).userPrompt;
+  return buildCoderPrompts('', context, rawPrompt, [], codebaseContext, webSearchResults)
+    .userPrompt;
 }

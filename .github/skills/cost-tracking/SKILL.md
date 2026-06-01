@@ -37,16 +37,16 @@ cost-tracking hook/plugin.
 The expected `usage` table usually contains one row per tool call or model
 interaction. Column names vary by tracker, but the examples below assume:
 
-| Column | Meaning |
-| --- | --- |
-| `timestamp` | ISO timestamp for the usage event |
-| `project` | Project or repository name |
-| `tool_name` | Tool or event name |
-| `input_tokens` | Input token count, when recorded |
+| Column          | Meaning                           |
+| --------------- | --------------------------------- |
+| `timestamp`     | ISO timestamp for the usage event |
+| `project`       | Project or repository name        |
+| `tool_name`     | Tool or event name                |
+| `input_tokens`  | Input token count, when recorded  |
 | `output_tokens` | Output token count, when recorded |
-| `cost_usd` | Precomputed cost in USD |
-| `session_id` | Claude Code session identifier |
-| `model` | Model used for the event |
+| `cost_usd`      | Precomputed cost in USD           |
+| `session_id`    | Claude Code session identifier    |
+| `model`         | Model used for the event          |
 
 Prefer `cost_usd` over hand-calculating pricing. Model prices and cache pricing
 change over time, and the tracker should be the source of truth for how each row

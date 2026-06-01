@@ -32,7 +32,9 @@ export class ContinuationManager {
     settings: AISettings | undefined,
     onStream: ((text: string) => void) | undefined,
     signal: AbortSignal | undefined,
-    options: { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> } | undefined
+    options:
+      | { history?: ChatMessage[]; nodeId?: string; gatewayUrls?: Record<string, string> }
+      | undefined
   ): Promise<{ text: string; metrics: TelemetryMetrics }> {
     let baseText = '';
     let totalTokens = 0;
@@ -85,13 +87,13 @@ export class ContinuationManager {
           metrics: {
             latency: totalLatency,
             tokens: totalTokens,
-            tps: totalLatency > 0 ? Math.round(totalTokens / (totalLatency / 1000)) : 0
-          }
+            tps: totalLatency > 0 ? Math.round(totalTokens / (totalLatency / 1000)) : 0,
+          },
         };
       }
 
       if (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 300));
       }
     }
 
@@ -100,12 +102,16 @@ export class ContinuationManager {
       metrics: {
         latency: totalLatency,
         tokens: totalTokens,
-        tps: totalLatency > 0 ? Math.round(totalTokens / (totalLatency / 1000)) : 0
-      }
+        tps: totalLatency > 0 ? Math.round(totalTokens / (totalLatency / 1000)) : 0,
+      },
     };
   }
 
-  private static estimateMaxTokens(provider: string, modelId: string, settings?: AISettings): number {
+  private static estimateMaxTokens(
+    provider: string,
+    modelId: string,
+    settings?: AISettings
+  ): number {
     if (settings?.maxTokens) return settings.maxTokens;
 
     if (provider === 'nyx-native') {

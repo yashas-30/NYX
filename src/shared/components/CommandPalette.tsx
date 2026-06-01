@@ -12,7 +12,7 @@ import {
   Settings,
   Check,
   CornerDownLeft,
-  ArrowLeft
+  ArrowLeft,
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
@@ -139,7 +139,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           createSession([]);
           setActiveMode(activeMode === 'chat' ? 'chat' : 'coder');
           toast.success('New conversation started');
-        }
+        },
       },
       {
         id: 'clear_chat',
@@ -150,7 +150,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         action: () => {
           clearHistory();
           toast.success('Chat context cleared');
-        }
+        },
       },
       {
         id: 'toggle_privacy',
@@ -166,7 +166,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           } else {
             toast.info('Privacy Mode Disabled');
           }
-        }
+        },
       },
       {
         id: 'switch_model',
@@ -174,7 +174,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         subtitle: 'Select available GGUF/Cloud model',
         icon: <Cpu size={16} />,
         shortcut: ['⌘', 'M'],
-        action: () => setView('models')
+        action: () => setView('models'),
       },
       {
         id: 'go_chat',
@@ -183,7 +183,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: <MessageSquare size={16} />,
         action: () => {
           setActiveMode('chat');
-        }
+        },
       },
       {
         id: 'go_coder',
@@ -192,7 +192,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: <MessageSquare size={16} />,
         action: () => {
           setActiveMode('coder');
-        }
+        },
       },
       {
         id: 'go_registry',
@@ -201,7 +201,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: <Library size={16} />,
         action: () => {
           setActiveMode('registry');
-        }
+        },
       },
       {
         id: 'go_settings',
@@ -210,13 +210,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: <Settings size={16} />,
         action: () => {
           setActiveMode('settings');
-        }
-      }
+        },
+      },
     ];
 
-    return list.filter(cmd =>
-      cmd.title.toLowerCase().includes(query.toLowerCase()) ||
-      cmd.subtitle.toLowerCase().includes(query.toLowerCase())
+    return list.filter(
+      (cmd) =>
+        cmd.title.toLowerCase().includes(query.toLowerCase()) ||
+        cmd.subtitle.toLowerCase().includes(query.toLowerCase())
     );
   }, [query, privacyMode, createSession, clearHistory, setPrivacyMode, setActiveMode]);
 
@@ -224,10 +225,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const filteredModels = useMemo(() => {
     if (view !== 'models') return [];
     const source = allModels || AVAILABLE_MODELS;
-    return source.filter(model =>
-      model.name.toLowerCase().includes(query.toLowerCase()) ||
-      model.provider.toLowerCase().includes(query.toLowerCase()) ||
-      model.id.toLowerCase().includes(query.toLowerCase())
+    return source.filter(
+      (model) =>
+        model.name.toLowerCase().includes(query.toLowerCase()) ||
+        model.provider.toLowerCase().includes(query.toLowerCase()) ||
+        model.id.toLowerCase().includes(query.toLowerCase())
     );
   }, [view, query, allModels]);
 
@@ -330,9 +332,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={
-                  view === 'models' ? 'Search models...' : 'Type a command or search...'
-                }
+                placeholder={view === 'models' ? 'Search models...' : 'Type a command or search...'}
                 className="flex-1 bg-transparent border-0 outline-0 text-sm text-zinc-100 placeholder-zinc-500 focus:ring-0"
               />
               <span className="text-[10px] font-bold text-zinc-600 bg-white/5 px-2 py-0.5 rounded border border-white/[0.02] uppercase tracking-wider select-none">
@@ -460,16 +460,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             <div className="flex items-center justify-between px-4 py-2 bg-white/[0.01] border-t border-white/[0.03] text-[10px] text-zinc-500 select-none">
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1 py-0.2 rounded bg-white/5 border border-white/[0.02]">↑↓</kbd>{' '}
+                  <kbd className="px-1 py-0.2 rounded bg-white/5 border border-white/[0.02]">
+                    ↑↓
+                  </kbd>{' '}
                   Navigate
                 </span>
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1 py-0.2 rounded bg-white/5 border border-white/[0.02]">Enter</kbd>{' '}
+                  <kbd className="px-1 py-0.2 rounded bg-white/5 border border-white/[0.02]">
+                    Enter
+                  </kbd>{' '}
                   Select
                 </span>
                 {view === 'models' && (
                   <span className="flex items-center gap-1">
-                    <kbd className="px-1 py-0.2 rounded bg-white/5 border border-white/[0.02]">Backspace</kbd>{' '}
+                    <kbd className="px-1 py-0.2 rounded bg-white/5 border border-white/[0.02]">
+                      Backspace
+                    </kbd>{' '}
                     Back
                   </span>
                 )}

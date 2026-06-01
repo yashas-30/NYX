@@ -37,16 +37,16 @@ export async function preWarmDns(hostname: string): Promise<string> {
  * Combines with custom DNS caching lookup hook to hit 0ms domain resolution.
  */
 export const globalAgent = new Agent({
-  keepAliveTimeout: 180_000,    // 180s (keep connections alive longer)
+  keepAliveTimeout: 180_000, // 180s (keep connections alive longer)
   keepAliveMaxTimeout: 240_000, // 240s
-  maxCachedSessions: 1024,      // More TLS session caching
-  connections: 512,             // Up to 512 concurrent connections
-  pipelining: 1,                // Standard for streaming and quick API REST calls
+  maxCachedSessions: 1024, // More TLS session caching
+  connections: 512, // Up to 512 concurrent connections
+  pipelining: 1, // Standard for streaming and quick API REST calls
   connect: {
-    noDelay: true,              // Disable Nagle's algorithm for instant packet transmission
-    keepAlive: true,            // Persistent TCP
-    keepAliveInitialDelay: 5000,// Initial TCP keepalive delay
-    timeout: 10_000,            // 10s connect timeout
+    noDelay: true, // Disable Nagle's algorithm for instant packet transmission
+    keepAlive: true, // Persistent TCP
+    keepAliveInitialDelay: 5000, // Initial TCP keepalive delay
+    timeout: 10_000, // 10s connect timeout
     lookup: (hostname, options, callback) => {
       // Zero-latency DNS pre-lookup interception
       const cached = DNS_CACHE.get(hostname);
@@ -59,21 +59,23 @@ export const globalAgent = new Agent({
         return;
       }
       dns.lookup(hostname, options, callback);
-    }
-  }
+    },
+  },
 });
 
 // Set as global dispatcher for all native 'fetch' calls in the app (Express & Fastify)
 setGlobalDispatcher(globalAgent);
 
-logger.info('[ConnectionPool] Global undici dispatcher initialized with keep-alive & 0ms DNS lookup.');
+logger.info(
+  '[ConnectionPool] Global undici dispatcher initialized with keep-alive & 0ms DNS lookup.'
+);
 
-const criticalHosts = [
-  'generativelanguage.googleapis.com',
-];
+const criticalHosts = ['generativelanguage.googleapis.com'];
 
-criticalHosts.forEach(host => {
-  preWarmDns(host).then(ip => {
-    logger.info(`[DNS Warmup] ${host} pre-cached to ${ip} for ZERO latency connection routing.`);
-  }).catch(() => {});
+criticalHosts.forEach((host) => {
+  preWarmDns(host)
+    .then((ip) => {
+      logger.info(`[DNS Warmup] ${host} pre-cached to ${ip} for ZERO latency connection routing.`);
+    })
+    .catch(() => {});
 });

@@ -23,7 +23,7 @@ export async function writeFileWithHistory(
     path: filePath,
     previousContent,
     newContent: content,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   });
   historyIndex++;
   if (history.length > 50) {
@@ -35,9 +35,9 @@ export async function writeFileWithHistory(
   const response = await fetchWithAuth('/api/nyx/write-file', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filePath, content, overwrite: true })
+    body: JSON.stringify({ filePath, content, overwrite: true }),
   });
-  
+
   if (!response.ok) {
     const data = await response.json();
     throw new Error(data.error || 'Failed to write file');
@@ -47,20 +47,20 @@ export async function writeFileWithHistory(
 export async function undo(): Promise<boolean> {
   if (historyIndex < 0) return false;
   const op = history[historyIndex];
-  
+
   try {
     if (op.previousContent !== null) {
       await fetchWithAuth('/api/nyx/write-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath: op.path, content: op.previousContent, overwrite: true })
+        body: JSON.stringify({ filePath: op.path, content: op.previousContent, overwrite: true }),
       });
     } else {
       // If it didn't exist previously, write empty to simulate deletion safely
       await fetchWithAuth('/api/nyx/write-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath: op.path, content: '', overwrite: true })
+        body: JSON.stringify({ filePath: op.path, content: '', overwrite: true }),
       });
     }
     historyIndex--;
@@ -75,12 +75,12 @@ export async function redo(): Promise<boolean> {
   if (historyIndex >= history.length - 1) return false;
   historyIndex++;
   const op = history[historyIndex];
-  
+
   try {
     await fetchWithAuth('/api/nyx/write-file', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filePath: op.path, content: op.newContent, overwrite: true })
+      body: JSON.stringify({ filePath: op.path, content: op.newContent, overwrite: true }),
     });
     return true;
   } catch (error: any) {

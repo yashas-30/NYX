@@ -68,11 +68,14 @@ export function shouldTriggerWebSearch(query: string, analysis?: any): boolean {
   // -------------------------------------------------------------------------
 
   // 1. Static & Historical Facts
-  const staticFacts = /\b(when was|who was|who is|capital of|define|theorem|law of|history of|biography)\b/i;
+  const staticFacts =
+    /\b(when was|who was|who is|capital of|define|theorem|law of|history of|biography)\b/i;
   // 2. Reasoning, Math, Logic & Code Generation
-  const reasoningAndCode = /\b(write|create|build|script|debug|refactor|solve|equation|riddle|algorithm|architecture|boilerplate)\b/i;
+  const reasoningAndCode =
+    /\b(write|create|build|script|debug|refactor|solve|equation|riddle|algorithm|architecture|boilerplate)\b/i;
   // 3. Creative & Textual Tasks
-  const creativeTasks = /\b(draft|email|resume|essay|story|brainstorm|roleplay|summarize|translate|rewrite)\b/i;
+  const creativeTasks =
+    /\b(draft|email|resume|essay|story|brainstorm|roleplay|summarize|translate|rewrite)\b/i;
   // 4. Conceptual Explanations
   const conceptual = /\b(how does.*work|explain the concept|what is the concept|explain how)\b/i;
 
@@ -94,17 +97,21 @@ export function shouldTriggerWebSearch(query: string, analysis?: any): boolean {
   // -------------------------------------------------------------------------
 
   // 1. Temporal Gaps & News
-  const temporal = /\b(recent|latest|current|this week|today|yesterday|newest|news|update|2025|2026)\b/i;
-  
+  const temporal =
+    /\b(recent|latest|current|this week|today|yesterday|newest|news|update|2025|2026)\b/i;
+
   // 2. Highly Dynamic & Volatile Data
-  const dynamicData = /\b(live|crypto|stock|valuation|market trend|weather|travel advisory|flight status|score|match table|tournament|bracket|price)\b/i;
-  
+  const dynamicData =
+    /\b(live|crypto|stock|valuation|market trend|weather|travel advisory|flight status|score|match table|tournament|bracket|price)\b/i;
+
   // 3. Low-Tolerance Technical / API Specifications
-  const techSpecs = /\b(api docs|api documentation|library version|syntax change|langchain|openai api|next\.js|nextjs|claude code|documentation|version)\b/i;
+  const techSpecs =
+    /\b(api docs|api documentation|library version|syntax change|langchain|openai api|next\.js|nextjs|claude code|documentation|version)\b/i;
   const hasUrl = /(https?:\/\/[^\s]+)/i;
 
   // 4. Explicit Intent / Verification
-  const explicitIntent = /\b(search the web|look up|browse|verify online|competitive market intelligence|pricing table|scrape|find online)\b/i;
+  const explicitIntent =
+    /\b(search the web|look up|browse|verify online|competitive market intelligence|pricing table|scrape|find online)\b/i;
 
   if (
     temporal.test(lower) ||
@@ -116,7 +123,7 @@ export function shouldTriggerWebSearch(query: string, analysis?: any): boolean {
     return true;
   }
 
-  // Fallback: If it's a general question and missing details, maybe search. 
+  // Fallback: If it's a general question and missing details, maybe search.
   // Otherwise, default to false to save tokens.
   if (analysis && (analysis.isMissingDebugDetails || analysis.complexity === 'enterprise')) {
     // Only search if it strongly looks like it needs external context that is missing.

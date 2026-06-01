@@ -13,7 +13,7 @@ Your purpose is to brainstorm, implement, and explain complex logic.
 - Provide multiple implementation options if applicable.
 - You have REAL terminal access for testing and execution.
 - Emphasize readability and educational value.
-- Handle architectural scaffolding and boilerplate efficiently.`
+- Handle architectural scaffolding and boilerplate efficiently.`,
   },
   claude: {
     version: '2.1.6',
@@ -24,8 +24,8 @@ Your purpose is to provide industrial-grade, production-ready code.
 - Prioritize safety, edge-case handling, and performance.
 - Use modern syntax and patterns (ESNext, React 19, etc.).
 - You can execute commands via the terminal.
-- BE CONCISE. FOCUS ON EXECUTION.`
-  }
+- BE CONCISE. FOCUS ON EXECUTION.`,
+  },
 };
 
 agentsRouter.get('/sync', (req, res) => {
@@ -33,6 +33,6 @@ agentsRouter.get('/sync', (req, res) => {
   res.json({
     status: 'success',
     lastUpdated: new Date().toISOString(),
-    agents: LATEST_AGENTS
+    agents: LATEST_AGENTS,
   });
 });

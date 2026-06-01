@@ -7,9 +7,7 @@
 import { loadKeys } from '../features/vault/vault.service.ts';
 import logger from './logger.ts';
 
-export type Provider =
-  | 'gemini'
-  | 'nyx-native';
+export type Provider = 'gemini' | 'nyx-native';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'model';
@@ -298,10 +296,9 @@ export class Gateway {
             }
 
             // Handle finish_reason to detect end of stream
-            const finishReason = 
-              data.choices?.[0]?.finish_reason || 
-              data.candidates?.[0]?.finishReason;
-              
+            const finishReason =
+              data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason;
+
             if (
               finishReason === 'stop' ||
               finishReason === 'length' ||

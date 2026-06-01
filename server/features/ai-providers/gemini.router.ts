@@ -11,15 +11,19 @@ interface StreamListener {
   end: () => void;
 }
 
-const activeStreams = new Map<string, { listeners: Set<StreamListener>; controller: AbortController }>();
+const activeStreams = new Map<
+  string,
+  { listeners: Set<StreamListener>; controller: AbortController }
+>();
 
 geminiRouter.post('/stream', async (req, res) => {
   logger.info('[Gemini Router] Received /stream request:', {
     headers: req.headers,
-    model: req.body?.model
+    model: req.body?.model,
   });
-  
-  const { model, prompt, settings, systemInstruction, history, apiKey, images } = req.body || {};
+
+  const { model, prompt, settings, systemInstruction, history, apiKey, images, gatewayUrls } =
+    req.body || {};
 
   if (!model) {
     logger.error('[Gemini Router] Returning 400 because model is missing. Body was:', req.body);
@@ -100,10 +104,12 @@ geminiRouter.post('/stream', async (req, res) => {
       const WebSocket = require('ws');
       const ws = new WebSocket('ws://localhost:3099?client=server');
       ws.on('open', () => {
-        ws.send(JSON.stringify({
-          type: 'LOG',
-          message: `dYs? LLM is generating response for model: ${model}...`
-        }));
+        ws.send(
+          JSON.stringify({
+            type: 'LOG',
+            message: `dYs? LLM is generating response for model: ${model}...`,
+          })
+        );
         ws.close();
       });
       ws.on('error', () => {});
@@ -118,6 +124,7 @@ geminiRouter.post('/stream', async (req, res) => {
         history,
         apiKey,
         images,
+        gatewayUrls,
       },
       (chunk) => {
         const payload = `data: ${JSON.stringify(chunk)}\n\n`;

@@ -14,7 +14,13 @@ import {
   ToolCall,
 } from '@src/infrastructure/types';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
-import { analyzePrompt, PromptAnalysis, createConversationState, updateConversationState, ConversationState } from '@src/core/services/promptClassifier';
+import {
+  analyzePrompt,
+  PromptAnalysis,
+  createConversationState,
+  updateConversationState,
+  ConversationState,
+} from '@src/core/services/promptClassifier';
 import { ChatAgent } from '@src/core/agents/chatAgent';
 import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
 import { countTokens } from '@src/core/services/ai.service';
@@ -60,7 +66,17 @@ interface Citation {
 }
 
 interface StreamChunk {
-  type: 'text' | 'thinking' | 'reasoning' | 'tool_call' | 'citation' | 'metrics' | 'finish' | 'done' | 'artifact' | 'error';
+  type:
+    | 'text'
+    | 'thinking'
+    | 'reasoning'
+    | 'tool_call'
+    | 'citation'
+    | 'metrics'
+    | 'finish'
+    | 'done'
+    | 'artifact'
+    | 'error';
   content?: string;
   metadata?: any;
 }
@@ -121,7 +137,7 @@ export const useChatPipeline = ({
   lightningEnabled,
   lightningDirectives,
   logRollout,
-  webSearchEnabled = true,
+  webSearchEnabled = false,
   onStream,
   maxRetries = 2,
 }: ChatPipelineProps) => {
@@ -138,7 +154,9 @@ export const useChatPipeline = ({
   const streamMetricsRef = useRef<TelemetryMetrics | null>(null);
   const conversationStateRef = useRef<ConversationState>(createConversationState());
   const onStreamRef = useRef(onStream);
-  useEffect(() => { onStreamRef.current = onStream; }, [onStream]);
+  useEffect(() => {
+    onStreamRef.current = onStream;
+  }, [onStream]);
 
   // Keep snapshot in sync without triggering re-renders
   useEffect(() => {
@@ -147,6 +165,7 @@ export const useChatPipeline = ({
 
   // Cleanup on unmount
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       if (controllerRef.current) {
@@ -185,7 +204,8 @@ export const useChatPipeline = ({
   const processStream = useCallback(
     async (
       generator: AsyncGenerator<StreamChunk>,
-      signal: AbortSignal
+      signal: AbortSignal,
+      timeoutMs: number = 60000
     ): Promise<{ text: string; metrics: TelemetryMetrics | null; finishReason: string }> => {
       let accumulatedText = '';
       let accumulatedReasoning = '';
@@ -194,177 +214,187 @@ export const useChatPipeline = ({
       const artifacts: any[] = [];
       let finalMetrics: TelemetryMetrics | null = null;
       let finishReason = 'stop';
+      let hasReceivedFirstChunk = false;
+      const streamStartTime = Date.now();
 
-      for await (const chunk of generator) {
-        if (signal.aborted) break;
+      try {
+        for await (const chunk of generator) {
+          hasReceivedFirstChunk = true;
 
-        if (!chunk || !chunk.type) {
-          console.warn('[Chat Pipeline] Invalid chunk received:', chunk);
-          continue;
-        }
+          if (signal.aborted) break;
 
-        switch (chunk.type) {
-          case 'text': {
-            const delta = chunk.content || '';
-            accumulatedText += delta;
-
-            safeUpdateHistory((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              if (last?.role === 'assistant') {
-                next[next.length - 1] = {
-                  ...last,
-                  content: accumulatedText,
-                };
-              }
-              return next;
-            });
-
-            onStreamRef.current?.({
-              type: 'text',
-              content: accumulatedText,
-            } as any);
-            break;
+          if (!chunk || !chunk.type) {
+            console.warn('[Chat Pipeline] Invalid chunk received:', chunk);
+            continue;
           }
 
-          case 'thinking':
-          case 'reasoning': {
-            const delta = chunk.content || '';
-            accumulatedReasoning += delta;
+          switch (chunk.type) {
+            case 'text': {
+              const delta = chunk.content || '';
+              accumulatedText += delta;
 
-            safeUpdateHistory((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              if (last?.role === 'assistant') {
-                next[next.length - 1] = {
-                  ...last,
-                  reasoning: accumulatedReasoning,
-                };
-              }
-              return next;
-            });
-
-            onStreamRef.current?.({
-              type: 'thinking',
-              content: accumulatedReasoning,
-            } as any);
-            break;
-          }
-
-          case 'tool_call': {
-            const tc = chunk.metadata as ToolCall;
-            if (!tc?.id) break;
-
-            const existing = toolCallsMap.get(tc.id);
-            if (existing) {
-              existing.function.arguments += tc.function.arguments || '';
-            } else {
-              toolCallsMap.set(tc.id, {
-                id: tc.id,
-                type: 'function',
-                index: tc.index || toolCallsMap.size,
-                function: {
-                  name: tc.function.name,
-                  arguments: tc.function.arguments || '',
-                },
-              });
-            }
-
-            const calls = Array.from(toolCallsMap.values());
-            safeUpdateHistory((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              if (last?.role === 'assistant') {
-                next[next.length - 1] = {
-                  ...last,
-                  toolCalls: calls,
-                };
-              }
-              return next;
-            });
-
-            onStreamRef.current?.({
-              type: 'tool_use',
-              content: JSON.stringify(calls),
-            } as any);
-            break;
-          }
-
-          case 'citation': {
-            const cite = chunk.metadata as Citation;
-            if (cite) {
-              citations.push(cite);
               safeUpdateHistory((prev) => {
                 const next = [...prev];
                 const last = next[next.length - 1];
                 if (last?.role === 'assistant') {
                   next[next.length - 1] = {
                     ...last,
-                    citations: [...citations],
+                    content: accumulatedText,
                   };
                 }
                 return next;
               });
-            }
-            break;
-          }
 
-          case 'artifact': {
-            const artifact = chunk.metadata;
-            if (artifact) {
-              artifacts.push(artifact);
+              onStreamRef.current?.({
+                type: 'text',
+                content: accumulatedText,
+              } as any);
+              break;
+            }
+
+            case 'thinking':
+            case 'reasoning': {
+              const delta = chunk.content || '';
+              accumulatedReasoning += delta;
+
               safeUpdateHistory((prev) => {
                 const next = [...prev];
                 const last = next[next.length - 1];
                 if (last?.role === 'assistant') {
                   next[next.length - 1] = {
                     ...last,
-                    artifacts: [...artifacts],
+                    reasoning: accumulatedReasoning,
                   };
                 }
                 return next;
               });
+
+              onStreamRef.current?.({
+                type: 'thinking',
+                content: accumulatedReasoning,
+              } as any);
+              break;
             }
-            break;
-          }
 
-          case 'error': {
-            finishReason = 'error';
-            throw new Error(chunk.content || 'Stream error from agent');
-          }
+            case 'tool_call': {
+              const tc = chunk.metadata as ToolCall;
+              if (!tc?.id) break;
 
-          case 'metrics': {
-            if (chunk.metadata) {
-              const meta = chunk.metadata as any;
-              const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;
-              const latency = meta.latencyMs || meta.latency || 0;
-              const tps = meta.tokensPerSecond || meta.tps || (latency > 0 ? (tokens / (latency / 1000)) : 0);
-              
-              const mappedMetrics: TelemetryMetrics = {
-                latency,
-                tokens,
-                tps,
-                ttft: meta.ttft,
-              };
+              const existing = toolCallsMap.get(tc.id);
+              if (existing) {
+                existing.function.arguments += tc.function.arguments || '';
+              } else {
+                toolCallsMap.set(tc.id, {
+                  id: tc.id,
+                  type: 'function',
+                  index: tc.index || toolCallsMap.size,
+                  function: {
+                    name: tc.function.name,
+                    arguments: tc.function.arguments || '',
+                  },
+                });
+              }
 
-              finalMetrics = mappedMetrics;
-              streamMetricsRef.current = mappedMetrics;
-              updateMetrics(mappedMetrics);
+              const calls = Array.from(toolCallsMap.values());
+              safeUpdateHistory((prev) => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last?.role === 'assistant') {
+                  next[next.length - 1] = {
+                    ...last,
+                    toolCalls: calls,
+                  };
+                }
+                return next;
+              });
+
+              onStreamRef.current?.({
+                type: 'tool_use',
+                content: JSON.stringify(calls),
+              } as any);
+              break;
             }
-            break;
-          }
 
-          case 'done':
-          case 'finish': {
-            if (chunk.metadata?.finish_reason) {
-              finishReason = chunk.metadata.finish_reason;
+            case 'citation': {
+              const cite = chunk.metadata as Citation;
+              if (cite) {
+                citations.push(cite);
+                safeUpdateHistory((prev) => {
+                  const next = [...prev];
+                  const last = next[next.length - 1];
+                  if (last?.role === 'assistant') {
+                    next[next.length - 1] = {
+                      ...last,
+                      citations: [...citations],
+                    };
+                  }
+                  return next;
+                });
+              }
+              break;
             }
-            break;
+
+            case 'artifact': {
+              const artifact = chunk.metadata;
+              if (artifact) {
+                artifacts.push(artifact);
+                safeUpdateHistory((prev) => {
+                  const next = [...prev];
+                  const last = next[next.length - 1];
+                  if (last?.role === 'assistant') {
+                    next[next.length - 1] = {
+                      ...last,
+                      artifacts: [...artifacts],
+                    };
+                  }
+                  return next;
+                });
+              }
+              break;
+            }
+
+            case 'error': {
+              finishReason = 'error';
+              throw new Error(chunk.content || 'Stream error from agent');
+            }
+
+            case 'metrics': {
+              if (chunk.metadata) {
+                const meta = chunk.metadata as any;
+                const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;
+                const latency = meta.latencyMs || meta.latency || 0;
+                const tps =
+                  meta.tokensPerSecond || meta.tps || (latency > 0 ? tokens / (latency / 1000) : 0);
+
+                const mappedMetrics: TelemetryMetrics = {
+                  latency,
+                  tokens,
+                  tps,
+                  ttft: meta.ttft,
+                };
+
+                finalMetrics = mappedMetrics;
+                streamMetricsRef.current = mappedMetrics;
+                updateMetrics(mappedMetrics);
+              }
+              break;
+            }
+
+            case 'done':
+            case 'finish': {
+              if (chunk.metadata?.finish_reason) {
+                finishReason = chunk.metadata.finish_reason;
+              }
+              break;
+            }
+            default:
+              console.warn(`[Chat Pipeline] Unknown chunk type received: ${(chunk as any).type}`);
+              break;
           }
-          default:
-            console.warn(`[Chat Pipeline] Unknown chunk type received: ${(chunk as any).type}`);
-            break;
         }
+      } catch (err: any) {
+        console.error('[Chat Pipeline] Stream processing error:', err);
+        throw err;
       }
 
       return { text: accumulatedText, metrics: finalMetrics, finishReason };
@@ -383,7 +413,8 @@ export const useChatPipeline = ({
       analysis: PromptAnalysis,
       signal: AbortSignal
     ): Promise<string> => {
-      if (!agent.shouldSearchWeb(prompt, analysis)) return '';
+      // Skip web search if disabled
+      if (!webSearchEnabled || !agent.shouldSearchWeb(prompt, analysis)) return '';
 
       setState((s) => ({ ...s, isSearching: true }));
 
@@ -396,22 +427,23 @@ export const useChatPipeline = ({
           }
         );
 
-        const timeoutPromise = new Promise<string>((_, reject) => 
-          setTimeout(() => reject(new Error('Web search timed out after 30s')), 30000)
+        // Timeout after 10 seconds max (instead of 30) to prevent hanging
+        const timeoutPromise = new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('Web search timed out')), 10000)
         );
 
         return await Promise.race([searchPromise, timeoutPromise]);
       } catch (error: any) {
         console.warn('[Chat Pipeline] Search failed:', error.message);
-        toast.error(`Web Search Failed: ${error.message}`);
-        return ''; // Continue without search context
+        // Don't show error toast - just continue without search context
+        return '';
       } finally {
         if (isMountedRef.current) {
           setState((s) => ({ ...s, isSearching: false }));
         }
       }
     },
-    [maxRetries]
+    [maxRetries, webSearchEnabled]
   );
 
   // -------------------------------------------------------------------------
@@ -421,10 +453,17 @@ export const useChatPipeline = ({
   const runChat = useCallback(
     async (prompt: string, images?: { name: string; mimeType: string; data: string }[]) => {
       const nyxModel = models['nyx'];
-      if ((!prompt.trim() && (!images || images.length === 0)) || !nyxModel) return;
+      if ((!prompt.trim() && (!images || images.length === 0)) || !nyxModel) {
+        console.warn('[Chat Pipeline] Missing prompt or model:', { prompt: !!prompt, nyxModel });
+        return;
+      }
+
+      console.log('[Chat Pipeline] Starting chat with model:', nyxModel);
 
       const nyxProvider = detectProvider(nyxModel);
       const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys) || '';
+
+      console.log('[Chat Pipeline] Provider:', nyxProvider, 'Has API key:', !!nyxApiKey);
 
       // Cancel any existing request
       if (controllerRef.current) {
@@ -434,20 +473,44 @@ export const useChatPipeline = ({
       const controller = new AbortController();
       controllerRef.current = controller;
 
-      // Reset state
-      setState({
-        isLoading: true,
-        isSearching: false,
-        isThinking: false,
-        finishReason: null,
-      });
-      streamMetricsRef.current = null;
-      setSuggestedPrompts([]);
-      updateMetrics({ latency: 0, tokens: 0, tps: 0 });
-
-      const startTime = Date.now();
+      // Quick health check for backend
+      try {
+        const healthRes = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });
+        if (!healthRes.ok) {
+          console.warn('[Chat Pipeline] Backend health check failed');
+          toast.error('Backend server is not responding. Please ensure the server is running.');
+          return;
+        }
+      } catch (healthErr: any) {
+        if (healthErr.name !== 'AbortError') {
+          console.warn('[Chat Pipeline] Backend health check error:', healthErr);
+          toast.error('Cannot reach backend server. Please start the server first.');
+          return;
+        }
+      }
 
       try {
+        // Validate API key early
+        if (!nyxApiKey && nyxProvider !== 'nyx-native') {
+          throw new Error(
+            `${nyxProvider} API key not found. Please add your API key in Settings before using this model.`
+          );
+        }
+
+        console.log('[Chat Pipeline] Starting chat initialization...');
+
+        // Reset state
+        setState({
+          isLoading: true,
+          isSearching: false,
+          isThinking: false,
+          finishReason: null,
+        });
+        streamMetricsRef.current = null;
+        setSuggestedPrompts([]);
+        updateMetrics({ latency: 0, tokens: 0, tps: 0 });
+
+        const startTime = Date.now();
         // 1. Add user message
         const userMsg: ChatMessage = {
           role: 'user',
@@ -460,7 +523,10 @@ export const useChatPipeline = ({
 
         // 2. Analyze prompt
         const analysis = analyzePrompt(prompt, conversationStateRef.current);
-        conversationStateRef.current = updateConversationState(conversationStateRef.current, analysis);
+        conversationStateRef.current = updateConversationState(
+          conversationStateRef.current,
+          analysis
+        );
 
         // 3. Add loading assistant message
         safeUpdateHistory((prev) => [
@@ -474,7 +540,11 @@ export const useChatPipeline = ({
         ]);
 
         // Optimize conversation history
-        const optimizedHistory = ContextManager.optimizeContextWindow(historySnapshotRef.current, 8192, 5);
+        const optimizedHistory = ContextManager.optimizeContextWindow(
+          historySnapshotRef.current,
+          8192,
+          5
+        );
 
         // 4. Initialize agent with snapshot (not live ref)
         const agent = new ChatAgent({
@@ -484,14 +554,14 @@ export const useChatPipeline = ({
           settings: modelSettings,
           history: optimizedHistory,
           lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
-          webSearchEnabled: true,
+          webSearchEnabled: false,
           conversationState: conversationStateRef.current,
         });
 
         // 5. Gather search context (non-blocking UI)
         const searchContext = await gatherSearchContext(agent, prompt, analysis, controller.signal);
 
-        // 6. Stream response (Retries are handled natively by AIService)
+        // 6. Stream response with timeout protection
         const generator = agent.streamResponse(
           prompt,
           analysis,
@@ -499,98 +569,132 @@ export const useChatPipeline = ({
           searchContext,
           images
         ) as AsyncGenerator<any>;
-        const { text, metrics, finishReason } = await processStream(generator, controller.signal);
 
-        // 7. Finalize assistant message
-        const finalMetrics: TelemetryMetrics = metrics || {
-          latency: Date.now() - startTime,
-          tokens: countTokens(text),
-          tps: 0,
-        };
-
-        if (finalMetrics.latency > 0 && finalMetrics.tokens > 0) {
-          finalMetrics.tps = Math.round(finalMetrics.tokens / (finalMetrics.latency / 1000));
-        }
-
-        const enrichedMetrics = {
-          ...finalMetrics,
-          finishReason,
-        };
-
-        safeUpdateHistory((prev) => {
-          const next = [...prev];
-          const last = next[next.length - 1];
-          if (last?.role === 'assistant') {
-            next[next.length - 1] = {
-              ...last,
-              content: text,
-              status: finishReason === 'error' ? 'error' : 'success',
-              metrics: enrichedMetrics,
-              reasoning: last.reasoning || undefined,
-              toolCalls: last.toolCalls || undefined,
-              citations: last.citations || undefined,
-              artifacts: last.artifacts || undefined,
-            };
-          }
-          return next;
+        // Wrap processStream with timeout
+        let streamTimeoutHandle: NodeJS.Timeout | null = null;
+        const streamTimeoutPromise = new Promise<any>((_, reject) => {
+          streamTimeoutHandle = setTimeout(() => {
+            controller.abort();
+            reject(
+              new Error('Stream response timeout after 60 seconds - no data received from model')
+            );
+          }, 60000);
         });
 
-        updateMetrics(finalMetrics);
-        trackUsage(nyxProvider, finalMetrics.tokens);
+        try {
+          const streamPromise = processStream(generator, controller.signal, 60000);
+          const { text, metrics, finishReason } = await Promise.race([
+            streamPromise,
+            streamTimeoutPromise,
+          ]);
 
-        // 8. Log rollout
-        if (logRollout && text) {
-          logRollout(
-            'chat',
-            prompt,
-            text,
-            finalMetrics
-              ? [
-                  {
-                    name: 'chat_agent_inference',
-                    type: 'llm_call',
-                    input: prompt,
-                    output: text,
-                    durationMs: finalMetrics.latency,
-                    tokensUsed: finalMetrics.tokens,
-                    finishReason,
-                  },
-                ]
-              : []
-          );
-        }
+          // Clear timeout since we got a response
+          if (streamTimeoutHandle) clearTimeout(streamTimeoutHandle);
 
-        // 9. Update suggestions
-        getSuggestions(historySnapshotRef.current);
+          // 7. Finalize assistant message
+          const finalMetrics: TelemetryMetrics = metrics || {
+            latency: Date.now() - startTime,
+            tokens: countTokens(text),
+            tps: 0,
+          };
 
-        // 10. Fire-and-forget memory commit
-        if (text.trim()) {
-          const memoryPromise = triggerMemoryCommit({
-            prompt,
-            response: text,
-            provider: nyxProvider,
-            modelId: nyxModel,
-            agentType: 'chat',
+          if (finalMetrics.latency > 0 && finalMetrics.tokens > 0) {
+            finalMetrics.tps = Math.round(finalMetrics.tokens / (finalMetrics.latency / 1000));
+          }
+
+          const enrichedMetrics = {
+            ...finalMetrics,
+            finishReason,
+          };
+
+          safeUpdateHistory((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = {
+                ...last,
+                content: text,
+                status: finishReason === 'error' ? 'error' : 'success',
+                metrics: enrichedMetrics,
+                reasoning: last.reasoning || undefined,
+                toolCalls: last.toolCalls || undefined,
+                citations: last.citations || undefined,
+                artifacts: last.artifacts || undefined,
+              };
+            }
+            return next;
           });
 
-          // Don't await — but catch errors
-          memoryPromise.catch((err) => {
-            console.warn('[Chat Pipeline] Memory commit failed:', err);
-          });
+          updateMetrics(finalMetrics);
+          trackUsage(nyxProvider, finalMetrics.tokens);
 
-          // Set timeout to prevent hanging if component unmounts
-          const memoryTimeout = setTimeout(() => {
-            console.warn('[Chat Pipeline] Memory commit timeout');
-          }, 30000);
+          // 8. Log rollout
+          if (logRollout && text) {
+            logRollout(
+              'chat',
+              prompt,
+              text,
+              finalMetrics
+                ? [
+                    {
+                      name: 'chat_agent_inference',
+                      type: 'llm_call',
+                      input: prompt,
+                      output: text,
+                      durationMs: finalMetrics.latency,
+                      tokensUsed: finalMetrics.tokens,
+                      finishReason,
+                    },
+                  ]
+                : []
+            );
+          }
 
-          memoryPromise.finally(() => clearTimeout(memoryTimeout));
+          // 9. Update suggestions
+          getSuggestions(historySnapshotRef.current);
+
+          // 10. Fire-and-forget memory commit
+          if (text.trim()) {
+            const memoryPromise = triggerMemoryCommit({
+              prompt,
+              response: text,
+              provider: nyxProvider,
+              modelId: nyxModel,
+              agentType: 'chat',
+            });
+
+            // Don't await — but catch errors
+            memoryPromise.catch((err) => {
+              console.warn('[Chat Pipeline] Memory commit failed:', err);
+            });
+
+            // Set timeout to prevent hanging if component unmounts
+            const memoryTimeout = setTimeout(() => {
+              console.warn('[Chat Pipeline] Memory commit timeout');
+            }, 30000);
+
+            memoryPromise.finally(() => clearTimeout(memoryTimeout));
+          }
+
+          setState((s) => ({ ...s, finishReason: finishReason as any }));
+        } catch (timeoutErr: any) {
+          // Stream timeout or Promise.race error
+          if (streamTimeoutHandle) clearTimeout(streamTimeoutHandle);
+          throw timeoutErr;
         }
-
-        setState((s) => ({ ...s, finishReason: finishReason as any }));
       } catch (error: any) {
         const isAborted = error?.name === 'AbortError' || controller.signal.aborted;
 
         console.error('[Chat Pipeline] Error:', error);
+
+        // Show error toast to user immediately
+        if (!isAborted) {
+          const errorMsg = formatProviderError(
+            error.message ||
+              'Error: Generation failed. Please check your model settings or connection.'
+          );
+          toast.error(errorMsg);
+        }
 
         safeUpdateHistory((prev) => {
           const next = [...prev];
@@ -605,8 +709,10 @@ export const useChatPipeline = ({
                 partialContent ||
                 (isAborted
                   ? 'Generation stopped.'
-                  : formatProviderError(error.message ||
-                    'Error: Generation failed. Please check your model settings or connection.')),
+                  : formatProviderError(
+                      error.message ||
+                        'Error: Generation failed. Please check your model settings or connection.'
+                    )),
               metrics: {
                 ...(last.metrics || {}),
                 finishReason: isAborted ? 'stopped' : 'error',
@@ -621,7 +727,7 @@ export const useChatPipeline = ({
           finishReason: isAborted ? 'stopped' : 'error',
         }));
       } finally {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && controllerRef.current === controller) {
           controllerRef.current = null;
           setState((s) => ({
             ...s,
@@ -641,7 +747,6 @@ export const useChatPipeline = ({
       updateMetrics,
       setSuggestedPrompts,
       getSuggestions,
-      webSearchEnabled,
       lightningEnabled,
       lightningDirectives,
       logRollout,

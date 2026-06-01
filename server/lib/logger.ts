@@ -22,19 +22,22 @@ const transport = pino.transport({
       target: 'pino/file', // Output plain NDJSON to console
       options: { destination: 1 }, // 1 is stdout
       level: process.env.LOG_LEVEL || 'info',
-    }
-  ]
+    },
+  ],
 });
 
 // Configure base pino logger
-const logger: any = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  timestamp: () => `,"time":${Date.now()}`,
-  formatters: {
-    level: (label) => {
-      return { level: label };
-    }
-  }
-}, transport);
+const logger: any = pino(
+  {
+    level: process.env.LOG_LEVEL || 'info',
+    timestamp: () => `,"time":${Date.now()}`,
+    formatters: {
+      level: (label) => {
+        return { level: label };
+      },
+    },
+  },
+  transport
+);
 
 export default logger;

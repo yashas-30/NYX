@@ -2,9 +2,9 @@
 name: stitch-design
 description: Unified entry point for Stitch design work. Handles prompt enhancement (UI/UX keywords, atmosphere), design system synthesis (.stitch/DESIGN.md), and high-fidelity screen generation/editing via Stitch MCP.
 allowed-tools:
-  - "StitchMCP"
-  - "Read"
-  - "Write"
+  - 'StitchMCP'
+  - 'Read'
+  - 'Write'
 ---
 
 # Stitch Design Expert
@@ -25,11 +25,11 @@ You are an expert Design Systems Lead and Prompt Engineer specializing in the **
 
 Based on the user's request, follow one of these workflows:
 
-| User Intent | Workflow | Primary Tool |
-|:---|:---|:---|
-| "Design a [page]..." | [text-to-design](workflows/text-to-design.md) | `generate_screen_from_text` + `Download` |
-| "Edit this [screen]..." | [edit-design](workflows/edit-design.md) | `edit_screens` + `Download` |
-| "Create/Update .stitch/DESIGN.md" | [generate-design-md](workflows/generate-design-md.md) | `get_screen` + `Write` |
+| User Intent                       | Workflow                                              | Primary Tool                             |
+| :-------------------------------- | :---------------------------------------------------- | :--------------------------------------- |
+| "Design a [page]..."              | [text-to-design](workflows/text-to-design.md)         | `generate_screen_from_text` + `Download` |
+| "Edit this [screen]..."           | [edit-design](workflows/edit-design.md)               | `edit_screens` + `Download`              |
+| "Create/Update .stitch/DESIGN.md" | [generate-design-md](workflows/generate-design-md.md) | `get_screen` + `Write`                   |
 
 ---
 
@@ -38,26 +38,32 @@ Based on the user's request, follow one of these workflows:
 Before calling any Stitch generation or editing tool, you MUST enhance the user's prompt.
 
 ### 1. Analyze Context
+
 - **Project Scope**: Maintain the current `projectId`. Use `list_projects` if unknown.
 - **Design System**: Check for `.stitch/DESIGN.md`. If it exists, incorporate its tokens (colors, typography). If not, suggest the `generate-design-md` workflow.
 
 ### 2. Refine UI/UX Terminology
+
 Consult [Design Mappings](references/design-mappings.md) to replace vague terms.
+
 - Vague: "Make a nice header"
 - Professional: "Sticky navigation bar with glassmorphism effect and centered logo"
 
 ### 3. Structure the Final Prompt
+
 Format the enhanced prompt for Stitch like this:
 
 ```markdown
 [Overall vibe, mood, and purpose of the page]
 
 **DESIGN SYSTEM (REQUIRED):**
+
 - Platform: [Web/Mobile], [Desktop/Mobile]-first
 - Palette: [Primary Name] (#hex for role), [Secondary Name] (#hex for role)
 - Styles: [Roundness description], [Shadow/Elevation style]
 
 **PAGE STRUCTURE:**
+
 1. **Header:** [Description of navigation and branding]
 2. **Hero Section:** [Headline, subtext, and primary CTA]
 3. **Primary Content Area:** [Detailed component breakdown]
@@ -65,6 +71,7 @@ Format the enhanced prompt for Stitch like this:
 ```
 
 ### 4. Present AI Insights
+
 After any tool call, always surface the `outputComponents` (Text Description and Suggestions) to the user.
 
 ---

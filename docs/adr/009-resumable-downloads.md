@@ -4,14 +4,15 @@
 
 NYX allows users to download heavy GGUF model files (ranging from 1.5 GB to 40+ GB) directly from HuggingFace or custom URLs onto their local GPUs.
 Previously, downloading was handled via a simple HTTP pipeline streaming directly to `.tmp` files. This model suffered from critical drawbacks:
+
 1. **No Resumption Support:** Any network blip, connection timeout, or user pause forced the download to restart from 0% — leading to massive user frustration and wasted bandwidth.
 2. **State Corruption:** Interrupted files were often left in a half-written state without clear markers of integrity.
 
 ## Decision Drivers
 
-* **Reliability:** Bulletproof model delivery over highly variable network conditions.
-* **Bandwidth Preservation:** Eliminate redundant downloads for heavy GGUF files.
-* **State Accuracy:** Provide accurate progress metrics to the frontend during pause, play, and resume cycles.
+- **Reliability:** Bulletproof model delivery over highly variable network conditions.
+- **Bandwidth Preservation:** Eliminate redundant downloads for heavy GGUF files.
+- **State Accuracy:** Provide accurate progress metrics to the frontend during pause, play, and resume cycles.
 
 ## Decision Outcome
 
