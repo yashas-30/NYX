@@ -238,9 +238,10 @@ export async function directFetch(
   }
 
   const realModel = resolveRealGeminiModel(model);
+  const rawGateway = options.gatewayUrls?.gemini || options.gatewayUrls?.google;
   const gatewayBase =
-    options.gatewayUrls?.gemini && options.gatewayUrls.gemini.trim() !== ''
-      ? options.gatewayUrls.gemini.replace(/\/$/, '')
+    rawGateway && rawGateway.trim() !== ''
+      ? rawGateway.replace(/\/$/, '')
       : 'https://generativelanguage.googleapis.com/v1beta';
 
   const isStream = !!options.onStream;
