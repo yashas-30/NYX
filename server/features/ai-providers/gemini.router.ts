@@ -22,8 +22,17 @@ geminiRouter.post('/stream', async (req, res) => {
     model: req.body?.model,
   });
 
-  const { model, prompt, settings, systemInstruction, history, apiKey, images, gatewayUrls } =
-    req.body || {};
+  const {
+    model,
+    prompt,
+    settings,
+    systemInstruction,
+    history,
+    apiKey,
+    images,
+    gatewayUrls,
+    tools,
+  } = req.body || {};
 
   if (!model) {
     logger.error('[Gemini Router] Returning 400 because model is missing. Body was:', req.body);
@@ -57,6 +66,7 @@ geminiRouter.post('/stream', async (req, res) => {
     settings: settings || {},
     images: images || [],
     apiKey: apiKey || '',
+    tools: tools || [],
   });
 
   const listener: StreamListener = {
@@ -125,6 +135,7 @@ geminiRouter.post('/stream', async (req, res) => {
         apiKey,
         images,
         gatewayUrls,
+        tools,
       },
       (chunk) => {
         const payload = `data: ${JSON.stringify(chunk)}\n\n`;

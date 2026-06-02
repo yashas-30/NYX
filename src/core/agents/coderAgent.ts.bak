@@ -178,10 +178,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
           () => this.webSearch(prompt, signal),
           'web_search',
           (result) => {
-            context.webSearch = this.tokenBudget.truncate(
-              result.formatted,
-              budgets.webSearch || 4000
-            );
+            context.webSearch = this.tokenBudget.truncate(result.formatted, budgets.webSearch || 4000);
             context.rawWebSearchResults = result.raw;
             onProgress(`Found ${result.formatted.length} chars of web context`);
           },
@@ -231,7 +228,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
     };
 
     yield* this.emitThinking('Building optimized prompts...', reasoningChain);
-
+    
     if (context.rawWebSearchResults && context.rawWebSearchResults.length > 0) {
       for (let i = 0; i < context.rawWebSearchResults.length && i < 5; i++) {
         const r = context.rawWebSearchResults[i];
@@ -244,7 +241,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
             title: r.title,
             snippet: r.snippet,
             source: r.source || new URL(r.url || r.link || 'https://unknown').hostname,
-          },
+          }
         };
       }
     }
@@ -254,9 +251,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
       const olderMessages = processedHistory.slice(0, processedHistory.length - HISTORY_SLICE_SIZE);
       const recentMessages = processedHistory.slice(-HISTORY_SLICE_SIZE);
       const summaryText = olderMessages
-        .map(
-          (m) => `${m.role.toUpperCase()}: ${m.content.substring(0, 150).replace(/\n/g, ' ')}...`
-        )
+        .map((m) => `${m.role.toUpperCase()}: ${m.content.substring(0, 150).replace(/\n/g, ' ')}...`)
         .join('\n');
       processedHistory = [
         {
@@ -898,10 +893,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
     return `\n\n[CODEBASE CONTEXT]\n${data.directoryStructure || ''}\n\n${resultsStr}\n[END CODEBASE CONTEXT]\n`;
   }
 
-  private async webSearch(
-    query: string,
-    signal: AbortSignal
-  ): Promise<{ raw: any[]; formatted: string }> {
+  private async webSearch(query: string, signal: AbortSignal): Promise<{ raw: any[]; formatted: string }> {
     const data = await searchWeb(query, signal);
     if (!data.success) throw new Error(data.error || 'Web search failed');
 

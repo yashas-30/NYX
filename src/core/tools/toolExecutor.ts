@@ -1,0 +1,106 @@
+import { searchWeb, searchCodebase } from '@src/infrastructure/api/searchApi';
+import {
+  readFile,
+  writeFile,
+  listDirectory,
+  executeCommand,
+  validateWorkspace,
+  fetchEvolutionaryRules,
+} from '@src/infrastructure/api/coderApi';
+
+export interface ToolResult {
+  success: boolean;
+  result: any;
+  error?: string;
+}
+
+export async function executeTool(
+  name: string,
+  args: Record<string, any>,
+  workspacePath: string,
+  signal?: AbortSignal
+): Promise<ToolResult> {
+  try {
+    switch (name) {
+      case 'web_search': {
+        const data = await searchWeb(args.query, signal, { recency: args.recency });
+        return {
+          success: data.success,
+          result:
+            data.results?.slice(0, 5).map((r: any) => ({
+              title: r.title,
+              url: r.link || r.url,
+              snippet: r.snippet,
+            })) || [],
+        };
+      }
+
+      case 'search_codebase': {
+        const data = await searchCodebase(args.query, signal, {
+          topK: 10,
+          threshold: 0.3,
+        });
+        return {
+          success: data.success,
+          result:
+            data.results?.map((f: any) => ({
+              path: f.relativePath || f.path,
+              score: f.relevanceScore || f.score,
+              snippet: f.content?.slice(0, 500),
+            })) || [],
+        };
+      }
+
+      case 'read_file': {
+        const content = await readFile(args.path, signal);
+        return { success: true, result: { path: args.path, content } };
+      }
+
+      case 'write_file': {
+        const fullPath = args.path.startsWith('/') ? args.path : `${workspacePath}/${args.path}`;
+
+        // TODO: The frontend should theoretically pause and ask for confirmation.
+        // For now, we will proceed. In the future, we will throw a specific error
+        // or yield a confirmation event if overwrite is not explicitly permitted.
+        const result = await writeFile(fullPath, args.content, args.overwrite);
+        return { success: true, result };
+      }
+
+      case 'run_command': {
+        const result = await executeCommand(args.command, args.cwd || workspacePath, signal, 60000);
+        return { success: true, result };
+      }
+
+      case 'validate_code': {
+        const result = await validateWorkspace(signal);
+        return { success: true, result };
+      }
+
+      case 'get_workspace_info': {
+        const files = await listDirectory(workspacePath, signal);
+        return {
+          success: true,
+          result: {
+            root: workspacePath,
+            fileCount: files.length,
+            topLevelFiles: files.slice(0, 20),
+          },
+        };
+      }
+
+      case 'get_evolutionary_rules': {
+        const rules = await fetchEvolutionaryRules();
+        return { success: true, result: rules };
+      }
+
+      default:
+        return { success: false, result: null, error: `Unknown tool: ${name}` };
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      result: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}

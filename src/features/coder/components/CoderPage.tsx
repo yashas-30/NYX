@@ -22,6 +22,7 @@ import { ModelDefinition, Provider } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 
+import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import { CoderHeader } from './CoderHeader';
 import { MessageList } from './MessageList';
 import { PromptInput } from './PromptInput';
@@ -55,6 +56,8 @@ interface CoderPageProps {
   runCoder: (prompt: string) => void;
   stopCoder: () => void;
   clearHistory: () => void;
+  forkAndRun: (index: number, prompt: string) => void;
+  togglePin?: (index: number) => void;
   suggestedPrompts: string[];
   subagentTasks: any[];
   webSearchEnabled: boolean;
@@ -95,6 +98,9 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   runCoder,
   stopCoder,
   clearHistory,
+  forkAndRun,
+  togglePin,
+  agentPersonas,
   suggestedPrompts,
   subagentTasks,
   webSearchEnabled,
@@ -215,11 +221,47 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     [isLoading, currentModelId, runCoder]
   );
 
-  const copyToClipboard = useCallback((text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-    toast.success('Code copied to clipboard');
+  const handleRetry = useCallback(() => {
+    if (isLoading) return;
+    const lastUserMsg = [...history].reverse().find((m) => m.role === 'user');
+    if (lastUserMsg && lastUserMsg.content) {
+      runCoder(lastUserMsg.content);
+    }
+  }, [history, isLoading, runCoder]);
+
+  const handleEditMessage = useCallback(
+    (index: number, newContent: string) => {
+      if (isLoading) return;
+      forkAndRun(index, newContent);
+    },
+    [isLoading, forkAndRun]
+  );
+
+  const copyToClipboard = useCallback(async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+      toast.success('Code copied to clipboard');
+    } catch (err) {
+      // Fallback for large content or blocked clipboard API
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2000);
+        toast.success('Code copied to clipboard (fallback)');
+      } catch (fallbackErr) {
+        toast.error('Failed to copy code to clipboard');
+        console.error('Clipboard copy failed:', fallbackErr);
+      }
+    }
   }, []);
 
   const handleBrowseParent = useCallback(async () => {
@@ -278,234 +320,308 @@ export const CoderPage: React.FC<CoderPageProps> = ({
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
-      <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative bg-background">
-        <CoderHeader
-          activeMode={activeMode}
-          onModeChange={setActiveMode}
-          metrics={metrics}
-          isLoading={isLoading}
-          badgeStatus={badgeStatus}
-          onClear={clearHistory}
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={onToggleSidebar}
-          sessionTitle={chatSessions?.activeSession?.title || 'New chat'}
-          mode="code"
-          onOpenLightning={onOpenLightning}
-        />
-        {subagentTasks && subagentTasks.length > 0 && (
-          <div className="px-6 pt-3 shrink-0">
-            <AgentPlanner subagentTasks={subagentTasks} isLoading={isLoading} />
+      <ErrorBoundary
+        fallback={
+          <div className="flex-1 p-6 text-red-400 flex items-center justify-center">
+            A critical error occurred in CoderPage. Please refresh the app.
           </div>
-        )}
+        }
+      >
+        <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative bg-background">
+          <CoderHeader
+            activeMode={activeMode}
+            onModeChange={setActiveMode}
+            metrics={metrics}
+            isLoading={isLoading}
+            badgeStatus={badgeStatus}
+            onClear={clearHistory}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={onToggleSidebar}
+            sessionTitle={chatSessions?.activeSession?.title || 'New chat'}
+            mode="code"
+            onOpenLightning={onOpenLightning}
+            history={history}
+          />
+          {subagentTasks && subagentTasks.length > 0 && (
+            <div className="px-6 pt-3 shrink-0">
+              <AgentPlanner subagentTasks={subagentTasks} isLoading={isLoading} />
+            </div>
+          )}
 
-        {history.length === 0 && !isLoading ? (
-          <div className="flex-1 w-full flex flex-col items-center justify-center p-6 relative overflow-y-auto">
-            {!workspacePath ? (
-              <div className="w-full max-w-4xl flex flex-col gap-6 animate-fade-in my-8">
-                <div className="text-center space-y-2">
-                  <h1 className="text-2xl font-bold tracking-tight text-white leading-none">
-                    Welcome to NYX Coder
-                  </h1>
-                  <p className="text-sm text-zinc-400 max-w-lg mx-auto">
-                    NYX Coder is a dedicated agent for software engineering. Mount an existing
-                    directory, or initialize a new project workspace to begin.
-                  </p>
-                </div>
+          {history.length === 0 && !isLoading ? (
+            <div className="flex-1 w-full flex flex-col items-center justify-center p-6 relative overflow-y-auto">
+              {!workspacePath ? (
+                <div className="w-full max-w-4xl flex flex-col gap-6 animate-fade-in my-8">
+                  <div className="text-center space-y-2">
+                    <h1 className="text-2xl font-bold tracking-tight text-white leading-none">
+                      Welcome to NYX Coder
+                    </h1>
+                    <p className="text-sm text-zinc-400 max-w-lg mx-auto">
+                      NYX Coder is a dedicated agent for software engineering. Mount an existing
+                      directory, or initialize a new project workspace to begin.
+                    </p>
+                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  {/* Card 1: Open Directory */}
-                  <motion.div
-                    whileHover={{ scale: 1.01, borderColor: 'rgba(34,211,238,0.2)' }}
-                    onClick={selectWorkspace}
-                    className="p-6 rounded-2xl border border-white/[0.04] bg-card hover:bg-white/[0.01] transition-all cursor-pointer group flex flex-col justify-between h-48 select-none"
-                  >
-                    <div className="space-y-3">
-                      <div className="p-3 w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-all">
-                        <FolderPlus size={22} />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    {/* Card 1: Open Directory */}
+                    <motion.div
+                      whileHover={{ scale: 1.01, borderColor: 'rgba(34,211,238,0.2)' }}
+                      onClick={selectWorkspace}
+                      className="p-6 rounded-2xl border border-white/[0.04] bg-card hover:bg-white/[0.01] transition-all cursor-pointer group flex flex-col justify-between h-48 select-none"
+                    >
+                      <div className="space-y-3">
+                        <div className="p-3 w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-all">
+                          <FolderPlus size={22} />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-zinc-200">
+                            Open Existing Codebase
+                          </h3>
+                          <p className="text-xs text-zinc-500 mt-1">
+                            Select an existing folder on your computer to let NYX index, query, and
+                            refactor your codebase.
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-zinc-200">Open Existing Codebase</h3>
-                        <p className="text-xs text-zinc-500 mt-1">
-                          Select an existing folder on your computer to let NYX index, query, and
-                          refactor your codebase.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-cyan-400 group-hover:gap-2 transition-all mt-4">
-                      <span>Choose Folder</span>
-                      <ArrowRight size={12} />
-                    </div>
-                  </motion.div>
-
-                  {/* Card 2: Create New Project */}
-                  <motion.div
-                    whileHover={{ scale: 1.01, borderColor: 'rgba(16,185,129,0.2)' }}
-                    onClick={() => setShowCreateForm((p) => !p)}
-                    className="p-6 rounded-2xl border border-white/[0.04] bg-card hover:bg-white/[0.01] transition-all cursor-pointer group flex flex-col justify-between min-h-48 select-none"
-                  >
-                    <div className="space-y-3">
-                      <div className="p-3 w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-all">
-                        <Plus size={22} />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-zinc-200">Create New Project</h3>
-                        <p className="text-xs text-zinc-500 mt-1">
-                          Initialize a clean directory with a default README template and set it as
-                          your active workspace.
-                        </p>
-                      </div>
-                    </div>
-
-                    {!showCreateForm && (
-                      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400 group-hover:gap-2 transition-all mt-4">
-                        <span>Configure Project</span>
+                      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-cyan-400 group-hover:gap-2 transition-all mt-4">
+                        <span>Choose Folder</span>
                         <ArrowRight size={12} />
                       </div>
-                    )}
+                    </motion.div>
 
-                    <AnimatePresence>
-                      {showCreateForm && (
-                        <motion.form
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          onClick={(e) => e.stopPropagation()}
-                          onSubmit={handleCreateProjectSubmit}
-                          className="space-y-3 mt-4 text-left w-full"
-                        >
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
-                              Parent Directory
-                            </label>
-                            <div className="flex gap-2">
+                    {/* Card 2: Create New Project */}
+                    <motion.div
+                      whileHover={{ scale: 1.01, borderColor: 'rgba(16,185,129,0.2)' }}
+                      onClick={() => setShowCreateForm((p) => !p)}
+                      className="p-6 rounded-2xl border border-white/[0.04] bg-card hover:bg-white/[0.01] transition-all cursor-pointer group flex flex-col justify-between min-h-48 select-none"
+                    >
+                      <div className="space-y-3">
+                        <div className="p-3 w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-all">
+                          <Plus size={22} />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-zinc-200">Create New Project</h3>
+                          <p className="text-xs text-zinc-500 mt-1">
+                            Initialize a clean directory with a default README template and set it
+                            as your active workspace.
+                          </p>
+                        </div>
+                      </div>
+
+                      {!showCreateForm && (
+                        <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400 group-hover:gap-2 transition-all mt-4">
+                          <span>Configure Project</span>
+                          <ArrowRight size={12} />
+                        </div>
+                      )}
+
+                      <AnimatePresence>
+                        {showCreateForm && (
+                          <motion.form
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            onClick={(e) => e.stopPropagation()}
+                            onSubmit={handleCreateProjectSubmit}
+                            className="space-y-3 mt-4 text-left w-full"
+                          >
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                                Parent Directory
+                              </label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={parentPath}
+                                  onChange={(e) => setParentPath(e.target.value)}
+                                  placeholder="C:\Users\Username\Projects"
+                                  className="flex-1 bg-background text-zinc-300 text-xs px-3 py-2 rounded-lg border border-white/5 focus:outline-none focus:border-cyan-500/50"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleBrowseParent}
+                                  className="bg-white/5 hover:bg-white/10 text-zinc-300 text-[10px] font-bold uppercase px-3 rounded-lg border border-white/5 transition-all cursor-pointer shrink-0"
+                                >
+                                  Browse
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                                Project Name
+                              </label>
                               <input
                                 type="text"
-                                value={parentPath}
-                                onChange={(e) => setParentPath(e.target.value)}
-                                placeholder="C:\Users\Username\Projects"
-                                className="flex-1 bg-background text-zinc-300 text-xs px-3 py-2 rounded-lg border border-white/5 focus:outline-none focus:border-cyan-500/50"
+                                value={newProjectName}
+                                onChange={(e) => setNewProjectName(e.target.value)}
+                                placeholder="my-cool-app"
+                                className="w-full bg-background text-zinc-300 text-xs px-3 py-2 rounded-lg border border-white/5 focus:outline-none focus:border-emerald-500/50"
                               />
-                              <button
-                                type="button"
-                                onClick={handleBrowseParent}
-                                className="bg-white/5 hover:bg-white/10 text-zinc-300 text-[10px] font-bold uppercase px-3 rounded-lg border border-white/5 transition-all cursor-pointer shrink-0"
-                              >
-                                Browse
-                              </button>
                             </div>
-                          </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">
-                              Project Name
-                            </label>
-                            <input
-                              type="text"
-                              value={newProjectName}
-                              onChange={(e) => setNewProjectName(e.target.value)}
-                              placeholder="my-cool-app"
-                              className="w-full bg-background text-zinc-300 text-xs px-3 py-2 rounded-lg border border-white/5 focus:outline-none focus:border-emerald-500/50"
-                            />
-                          </div>
-
-                          <button
-                            type="submit"
-                            disabled={isCreatingProject}
-                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-700 text-black text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer mt-1"
-                          >
-                            {isCreatingProject ? 'Initializing...' : 'Create & Open Project'}
-                          </button>
-                        </motion.form>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
-                </div>
-              </div>
-            ) : (
-              <div className="w-full max-w-2xl flex flex-col gap-3.5 mb-12 animate-fade-in">
-                {/* Project Selector & VS Code Launcher */}
-                <div className="flex justify-start pl-1 gap-2">
-                  <div
-                    onClick={selectWorkspace}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-zinc-400 border border-white/[0.04] bg-card hover:bg-white/[0.03] transition-all cursor-pointer select-none"
-                  >
-                    <Folder size={12} className="text-[#FF3366] fill-cyan-500/10" />
-                    <span>{workspacePath.split(/[/\\]/).pop() || 'NYX'}</span>
-                    <ChevronDown size={10} className="text-zinc-500 opacity-60" />
-                  </div>
-
-                  <div
-                    onClick={() => {
-                      const formattedPath = workspacePath.replace(/\\/g, '/');
-                      window.location.href = `vscode://file/${formattedPath}`;
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-cyan-400 border border-cyan-500/20 bg-cyan-500/10 hover:bg-cyan-500/20 transition-all cursor-pointer select-none"
-                    title="Launch Antigravity VS Code Environment"
-                  >
-                    <Monitor size={12} />
-                    <span>Open in VS Code</span>
+                            <button
+                              type="submit"
+                              disabled={isCreatingProject}
+                              className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-700 text-black text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer mt-1"
+                            >
+                              {isCreatingProject ? 'Initializing...' : 'Create & Open Project'}
+                            </button>
+                          </motion.form>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
                   </div>
                 </div>
+              ) : (
+                <div className="w-full max-w-2xl flex flex-col gap-3.5 mb-12 animate-fade-in">
+                  {/* Project Selector & VS Code Launcher */}
+                  <div className="flex justify-start pl-1 gap-2">
+                    <div
+                      onClick={selectWorkspace}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-zinc-400 border border-white/[0.04] bg-card hover:bg-white/[0.03] transition-all cursor-pointer select-none"
+                    >
+                      <Folder size={12} className="text-[#FF3366] fill-cyan-500/10" />
+                      <span>{workspacePath.split(/[/\\]/).pop() || 'NYX'}</span>
+                      <ChevronDown size={10} className="text-zinc-500 opacity-60" />
+                    </div>
 
-                {/* Prompt Input Box */}
-                <div className="w-full">
-                  <PromptInput
-                    prompt={prompt}
-                    onPromptChange={setPrompt}
-                    onSubmit={handleSubmit}
-                    isLoading={isLoading}
-                    onStop={stopCoder}
-                    currentModelId={currentModelId}
-                    currentModel={currentModel}
-                    allModels={allModels}
-                    providerStatuses={providerStatuses}
-                    gatewayUrls={gatewayUrls}
-                    onModelSelect={setModel}
-                    onClearHistory={clearHistory}
-                    onModelSettingsChange={setModelSettings}
-                    modelSettings={modelSettings}
-                    suggestedPrompts={suggestedPrompts}
-                    getCustomModelIcon={getCustomModelIcon}
-                    webSearchEnabled={webSearchEnabled}
-                    onWebSearchToggle={setWebSearchEnabled}
-                    codebaseKnowledgeEnabled={codebaseKnowledgeEnabled}
-                    onCodebaseKnowledgeToggle={setCodebaseKnowledgeEnabled}
-                    mode="code"
-                    alignDropdown="bottom"
-                    agentMode={agentMode}
-                    agentReasoning={agentReasoning}
-                  />
-                </div>
+                    <div
+                      onClick={() => {
+                        const formattedPath = workspacePath.replace(/\\/g, '/');
+                        window.location.href = `vscode://file/${formattedPath}`;
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-cyan-400 border border-cyan-500/20 bg-cyan-500/10 hover:bg-cyan-500/20 transition-all cursor-pointer select-none"
+                      title="Launch Antigravity VS Code Environment"
+                    >
+                      <Monitor size={12} />
+                      <span>Open in VS Code</span>
+                    </div>
+                  </div>
 
-                {/* Local Selector Pill (Laptop Pill) */}
-                <div className="flex justify-start pl-1">
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-zinc-400 border border-white/[0.04] bg-card hover:bg-white/[0.03] transition-all cursor-pointer select-none">
-                    <Monitor size={12} className="text-zinc-500" />
-                    <span>Local</span>
-                    <ChevronDown size={10} className="text-zinc-500 opacity-60" />
+                  {/* Prompt Input Box */}
+                  <div className="w-full">
+                    <PromptInput
+                      prompt={prompt}
+                      onPromptChange={setPrompt}
+                      onSubmit={handleSubmit}
+                      isLoading={isLoading}
+                      onStop={stopCoder}
+                      currentModelId={currentModelId}
+                      currentModel={currentModel}
+                      allModels={allModels}
+                      providerStatuses={providerStatuses}
+                      gatewayUrls={gatewayUrls}
+                      onModelSelect={setModel}
+                      onClearHistory={clearHistory}
+                      onModelSettingsChange={setModelSettings}
+                      modelSettings={modelSettings}
+                      suggestedPrompts={suggestedPrompts}
+                      getCustomModelIcon={getCustomModelIcon}
+                      webSearchEnabled={webSearchEnabled}
+                      onWebSearchToggle={setWebSearchEnabled}
+                      codebaseKnowledgeEnabled={codebaseKnowledgeEnabled}
+                      onCodebaseKnowledgeToggle={setCodebaseKnowledgeEnabled}
+                      mode="code"
+                      alignDropdown="bottom"
+                      agentMode={agentMode}
+                      agentReasoning={agentReasoning}
+                    />
+                  </div>
+
+                  {/* Local Selector Pill (Laptop Pill) */}
+                  <div className="flex justify-start pl-1">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-zinc-400 border border-white/[0.04] bg-card hover:bg-white/[0.03] transition-all cursor-pointer select-none">
+                      <Monitor size={12} className="text-zinc-500" />
+                      <span>Local</span>
+                      <ChevronDown size={10} className="text-zinc-500 opacity-60" />
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        ) : workspacePath ? (
-          <div className="flex-1 w-full flex flex-row overflow-hidden bg-background">
-            <WorkspaceSidebar />
-            <div className="flex-1 flex flex-col min-w-0 border-r border-white/5">
-              <CodeEditor />
+              )}
             </div>
-            <div className="w-[400px] shrink-0 flex flex-col h-full bg-card">
-              <MessageList
-                history={history}
-                activeAgent={activeAgent}
-                isLoading={isLoading}
-                onCopy={copyToClipboard}
-                copiedId={copiedId}
-                suggestedPrompts={suggestedPrompts}
-                onSuggestedPromptClick={setPrompt}
-                subagentTasks={subagentTasks}
-                submitReward={submitReward}
-              />
+          ) : workspacePath ? (
+            <div className="flex-1 w-full flex flex-row overflow-hidden bg-background">
+              <WorkspaceSidebar />
+              <div className="flex-1 flex flex-col min-w-0 border-r border-white/5">
+                <CodeEditor />
+              </div>
+              <div className="w-[400px] shrink-0 flex flex-col h-full bg-card">
+                <ErrorBoundary
+                  fallback={
+                    <div className="flex-1 p-4 text-red-400 text-sm">
+                      Failed to render message history.
+                    </div>
+                  }
+                >
+                  <MessageList
+                    history={history}
+                    activeAgent={activeAgent}
+                    isLoading={isLoading}
+                    onCopy={copyToClipboard}
+                    copiedId={copiedId}
+                    suggestedPrompts={suggestedPrompts}
+                    onSuggestedPromptClick={setPrompt}
+                    subagentTasks={subagentTasks}
+                    submitReward={submitReward}
+                    onRetry={handleRetry}
+                    onEditMessage={handleEditMessage}
+                    onTogglePin={togglePin}
+                  />
+                </ErrorBoundary>
+                <PromptInput
+                  prompt={prompt}
+                  onPromptChange={setPrompt}
+                  onSubmit={handleSubmit}
+                  isLoading={isLoading}
+                  onStop={stopCoder}
+                  currentModelId={currentModelId}
+                  currentModel={currentModel}
+                  allModels={allModels}
+                  providerStatuses={providerStatuses}
+                  gatewayUrls={gatewayUrls}
+                  onModelSelect={setModel}
+                  onClearHistory={clearHistory}
+                  onModelSettingsChange={setModelSettings}
+                  modelSettings={modelSettings}
+                  suggestedPrompts={suggestedPrompts}
+                  getCustomModelIcon={getCustomModelIcon}
+                  webSearchEnabled={webSearchEnabled}
+                  onWebSearchToggle={setWebSearchEnabled}
+                  codebaseKnowledgeEnabled={codebaseKnowledgeEnabled}
+                  onCodebaseKnowledgeToggle={setCodebaseKnowledgeEnabled}
+                  mode="code"
+                  alignDropdown="top"
+                  agentMode={agentMode}
+                  agentReasoning={agentReasoning}
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              <ErrorBoundary
+                fallback={
+                  <div className="flex-1 p-4 text-red-400 text-sm">
+                    Failed to render message history.
+                  </div>
+                }
+              >
+                <MessageList
+                  history={history}
+                  activeAgent={activeAgent}
+                  isLoading={isLoading}
+                  onCopy={copyToClipboard}
+                  copiedId={copiedId}
+                  suggestedPrompts={suggestedPrompts}
+                  onSuggestedPromptClick={setPrompt}
+                  subagentTasks={subagentTasks}
+                  submitReward={submitReward}
+                  onRetry={handleRetry}
+                  onEditMessage={handleEditMessage}
+                  onTogglePin={togglePin}
+                />
+              </ErrorBoundary>
+
               <PromptInput
                 prompt={prompt}
                 onPromptChange={setPrompt}
@@ -532,51 +648,10 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                 agentMode={agentMode}
                 agentReasoning={agentReasoning}
               />
-            </div>
-          </div>
-        ) : (
-          <>
-            <MessageList
-              history={history}
-              activeAgent={activeAgent}
-              isLoading={isLoading}
-              onCopy={copyToClipboard}
-              copiedId={copiedId}
-              suggestedPrompts={suggestedPrompts}
-              onSuggestedPromptClick={setPrompt}
-              subagentTasks={subagentTasks}
-              submitReward={submitReward}
-            />
-
-            <PromptInput
-              prompt={prompt}
-              onPromptChange={setPrompt}
-              onSubmit={handleSubmit}
-              isLoading={isLoading}
-              onStop={stopCoder}
-              currentModelId={currentModelId}
-              currentModel={currentModel}
-              allModels={allModels}
-              providerStatuses={providerStatuses}
-              gatewayUrls={gatewayUrls}
-              onModelSelect={setModel}
-              onClearHistory={clearHistory}
-              onModelSettingsChange={setModelSettings}
-              modelSettings={modelSettings}
-              suggestedPrompts={suggestedPrompts}
-              getCustomModelIcon={getCustomModelIcon}
-              webSearchEnabled={webSearchEnabled}
-              onWebSearchToggle={setWebSearchEnabled}
-              codebaseKnowledgeEnabled={codebaseKnowledgeEnabled}
-              onCodebaseKnowledgeToggle={setCodebaseKnowledgeEnabled}
-              mode="code"
-              alignDropdown="top"
-              agentMode={agentMode}
-              agentReasoning={agentReasoning}
-            />
-          </>
-        )}
-      </div>
+            </>
+          )}
+        </div>
+      </ErrorBoundary>
 
       <style
         dangerouslySetInnerHTML={{

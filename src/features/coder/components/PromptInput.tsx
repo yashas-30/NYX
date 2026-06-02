@@ -39,7 +39,10 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 interface PromptInputProps {
   prompt: string;
   onPromptChange: (value: string) => void;
-  onSubmit: (finalPrompt: string) => void;
+  onSubmit: (
+    finalPrompt: string,
+    images?: Array<{ name: string; dataUrl: string; mimeType?: string }>
+  ) => void;
   isLoading: boolean;
   onStop: () => void;
   currentModelId: string | null;
@@ -228,6 +231,56 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     }
   };
 
+  const canSubmit = !!prompt.trim() && !!currentModelId && !isLoading;
+
+  const handleSubmit = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      if (!canSubmit || isSubmitting.current) return;
+
+      const finalPrompt = prompt.trim();
+      if (!finalPrompt) return;
+
+      isSubmitting.current = true;
+      setShowModelSelector(false);
+      setShowSettings(false);
+
+      let images: Array<{ name: string; dataUrl: string; mimeType?: string }> | undefined;
+
+      if (selectedFile) {
+        try {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(selectedFile);
+          });
+          images = [
+            {
+              name: selectedFile.name,
+              mimeType: selectedFile.type,
+              dataUrl,
+            },
+          ];
+        } catch (err) {
+          console.error('Failed to read file', err);
+          toast.error('Failed to read attached file');
+        }
+      }
+
+      onSubmit(finalPrompt, images);
+      setSelectedFile(null);
+
+      setTimeout(() => {
+        isSubmitting.current = false;
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+        }
+      }, 100);
+    },
+    [prompt, onSubmit, canSubmit, selectedFile]
+  );
+
   const adjustHeight = (reset?: boolean) => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -238,51 +291,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     ta.style.height = '36px';
     ta.style.height = `${Math.max(36, Math.min(ta.scrollHeight, 220))}px`;
   };
-
-  const handleSubmit = async (e?: React.SyntheticEvent) => {
-    e?.preventDefault();
-    if (!prompt.trim() || isLoading || isSubmitting.current) return;
-    if (!currentModelId) {
-      toast.error('Please select a model first');
-      return;
-    }
-
-    if (!workspacePath && !selectedFile) {
-      toast.error(
-        'NYX Coder requires a selected file or an active workspace project to execute coding tasks.'
-      );
-      return;
-    }
-
-    isSubmitting.current = true;
-    try {
-      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-      let finalPrompt = prompt;
-      if (selectedFile) {
-        try {
-          const content = await new Promise<string>((res, rej) => {
-            const r = new FileReader();
-            r.onload = () => res(r.result as string);
-            r.onerror = () => rej(r.error);
-            r.readAsText(selectedFile);
-          });
-          finalPrompt = `[ATTACHED FILE: ${selectedFile.name}]\n\`\`\`\n${content}\n\`\`\`\n\n${prompt}`;
-          setSelectedFile(null);
-        } catch {
-          toast.error('Could not read file');
-          return;
-        }
-      }
-      onSubmit(finalPrompt);
-      adjustHeight(true);
-    } finally {
-      setTimeout(() => {
-        isSubmitting.current = false;
-      }, 500);
-    }
-  };
-
-  const canSubmit = !!prompt.trim() && !!currentModelId && !isLoading;
 
   /* ── GPU label helpers ───────────────────────────────────────────────── */
   const gpuModeLabel =
@@ -911,7 +919,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
               </div>
             </motion.div>
 
-            {/* Inner box: input area itself - Focused Glow transition */}
             <div
               className={`w-full bg-[#121214] border rounded-[16px] p-3 mt-1.5 flex flex-col gap-2 relative shadow-inner transition-all duration-300 ${
                 isFocused
@@ -919,6 +926,64 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   : 'border-white/[0.02]'
               }`}
             >
+              {/* Slash Command Menu */}
+              <AnimatePresence>
+                {prompt.startsWith('/') && isFocused && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                    className="absolute bottom-full left-0 mb-2 w-64 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col"
+                  >
+                    <div className="px-3 py-2 border-b border-white/5 bg-white/5">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                        Slash Commands
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onPromptChange('');
+                        setTimeout(() => {
+                          onPromptChange(
+                            optimizePromptText(prompt, analysis || analyzePrompt(prompt))
+                          );
+                          toast.success('Prompt optimized!');
+                        }, 50);
+                      }}
+                      className="px-3 py-2.5 text-left text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white transition-colors border-b border-white/5"
+                    >
+                      <span className="text-cyan-400 font-mono mr-2">/optimize</span> Optimize
+                      current prompt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onPromptChange('');
+                        onClearHistory();
+                        toast.success('Context reset');
+                      }}
+                      className="px-3 py-2.5 text-left text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white transition-colors border-b border-white/5"
+                    >
+                      <span className="text-amber-400 font-mono mr-2">/clear</span> Reset context
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onPromptChange('');
+                        onCodebaseKnowledgeToggle(!codebaseKnowledgeEnabled);
+                        toast.success(
+                          `Codebase knowledge ${!codebaseKnowledgeEnabled ? 'enabled' : 'disabled'}`
+                        );
+                      }}
+                      className="px-3 py-2.5 text-left text-xs font-medium text-zinc-300 hover:bg-white/5 hover:text-white transition-colors"
+                    >
+                      <span className="text-purple-400 font-mono mr-2">/codebase</span> Toggle
+                      codebase search
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               {isDragging && (
                 <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-[2px] rounded-[16px] flex items-center justify-center z-50 border border-dashed border-[#FF3366]/30 pointer-events-none">
                   <span className="text-xs font-black uppercase tracking-widest text-[#FF3366] animate-pulse flex items-center gap-2">
@@ -1081,14 +1146,14 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     adjustHeight();
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
                       if (document.activeElement instanceof HTMLElement)
                         document.activeElement.blur();
                       handleSubmit(e);
                     }
                   }}
-                  placeholder="Type / for actions, ask anything..."
+                  placeholder="Type / for actions, Cmd+Enter to send..."
                   className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1.5 px-1 resize-none min-h-[36px] max-h-[220px] font-medium outline-none text-foreground/90 placeholder:text-zinc-600 focus:outline-none"
                   style={{ scrollbarWidth: 'none' }}
                 />

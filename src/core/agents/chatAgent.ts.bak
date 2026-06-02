@@ -144,9 +144,10 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
       .join('\n\n---\n\n');
 
     const limit = this.config.maxContextLength!;
-    const truncated =
-      formatted.length > limit ? formatted.substring(0, limit) + '\n\n[... truncated]' : formatted;
-
+    const truncated = formatted.length > limit
+      ? formatted.substring(0, limit) + '\n\n[... truncated]'
+      : formatted;
+      
     return `\n\n[WEB SEARCH RESULTS]\n${truncated}\n[END WEB SEARCH]\n\n[CRITICAL INSTRUCTION: You MUST cite your sources using inline citations like [1], [2] when referencing the web search results above. Ensure the citation number matches the Source number.]\n`;
   }
 
@@ -164,7 +165,7 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
 
     const detectedLang = this.detectLanguage(prompt);
     const tone = this.inferTone(prompt, analysis);
-
+    
     let rawResults = prefetchedWebSearchResults || [];
     let webSearchResults = '';
 
@@ -180,7 +181,7 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
         }
       }
     }
-
+    
     if (rawResults.length > 0) {
       webSearchResults = this.formatSearchResults(rawResults);
       // Yield citations so the UI can populate source cards
@@ -194,7 +195,7 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
             title: r.title,
             snippet: r.snippet,
             source: r.source || new URL(r.url || r.link || 'https://unknown').hostname,
-          },
+          }
         };
       }
     }

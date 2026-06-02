@@ -1,6 +1,7 @@
 import logger from '../../lib/logger.ts';
 import { CodebaseScanner } from '../workspace/codebaseScanner.ts';
 import { loadKeys } from '../vault/vault.service.ts';
+import fetch from 'node-fetch'; // assuming fetch is globally available or imported
 
 interface SearchCacheEntry {
   results: any[];
@@ -9,38 +10,22 @@ interface SearchCacheEntry {
 
 export class SearchService {
   private searchCache = new Map<string, SearchCacheEntry>();
-  private SEARCH_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache
+
+  // Helper to determine TTL based on query volatility
+  private getQueryTTL(query: string): number {
+    const isVolatile = /(latest|newest|version|now|today|202[0-9])/i.test(query);
+    return isVolatile ? 1 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000; // 1 hour or 24 hours
+  }
 
   getSearchBackends() {
     const keys = loadKeys();
-    const scraplingPort = process.env.SCRAPLING_PORT || '3002';
-    const scraplingUrl = (
-      keys['scrapling_url'] ||
-      process.env.SCRAPLING_URL ||
-      `http://localhost:${scraplingPort}`
-    ).trim();
-    const scraplingActive = !!(
-      (keys['scrapling'] && keys['scrapling'].trim().length > 0) ||
-      (keys['scrapling_url'] && keys['scrapling_url'].trim().length > 0) ||
-      process.env.SCRAPLING_URL ||
-      process.env.SCRAPLING_API_KEY
-    );
-    const serpapiActive = !!(keys['SERPAPI_KEY'] || process.env.SERPAPI_KEY);
-    const braveActive = !!(keys['BRAVE_API_KEY'] || process.env.BRAVE_API_KEY);
-
     return {
-      activeBackend: scraplingActive
-        ? 'Scrapling'
-        : serpapiActive
-          ? 'SerpAPI'
-          : braveActive
-            ? 'Brave'
-            : 'DuckDuckGo Scraper',
+      activeBackend: keys['SERPAPI_KEY'] ? 'SerpAPI' : 'DuckDuckGo',
       backends: {
-        scrapling: { configured: scraplingActive, url: scraplingUrl },
-        serpapi: { configured: serpapiActive },
-        brave: { configured: braveActive },
+        serpapi: { configured: !!keys['SERPAPI_KEY'] },
         duckduckgo: { configured: true, fallback: true },
+        brave: { configured: !!keys['BRAVE_API_KEY'] },
+        bing: { configured: !!keys['BING_API_KEY'] },
       },
     };
   }
@@ -54,7 +39,87 @@ export class SearchService {
     };
   }
 
-  async performWebSearch(query: string) {
+  private async extractQueryWithLLM(rawQuery: string): Promise<string> {
+    const keys = loadKeys();
+    const apiKey = keys['GEMINI_API_KEY'] || process.env.GEMINI_API_KEY;
+    if (!apiKey) return rawQuery; // fallback to raw
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `Extract a search-engine optimized query from the following conversational prompt. Respond ONLY with the optimized query keywords, no quotes, no conversational text.\n\nPrompt: ${rawQuery}`,
+                  },
+                ],
+              },
+            ],
+          }),
+        }
+      );
+      if (response.ok) {
+        const data: any = await response.json();
+        const optimized = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        return optimized || rawQuery;
+      }
+    } catch (e) {
+      logger.warn(`[QueryOptimizer] Failed to optimize query: ${e}`);
+    }
+    return rawQuery;
+  }
+
+  private scoreCredibility(url: string): number {
+    let score = 0;
+    const urlLower = url.toLowerCase();
+
+    // Whitelist
+    if (urlLower.includes('developer.mozilla.org')) score += 10;
+    if (urlLower.includes('github.com')) score += 8;
+    if (urlLower.includes('stackoverflow.com')) score += 8;
+    if (urlLower.includes('react.dev')) score += 10;
+    if (urlLower.includes('docs.')) score += 5;
+
+    // Blacklist
+    if (urlLower.includes('w3schools.com')) score -= 5;
+    if (urlLower.includes('geeksforgeeks.org')) score -= 2;
+    if (urlLower.includes('tutorialspoint.com')) score -= 5;
+
+    return score;
+  }
+
+  private async fetchContentWithCrawl4AI(url: string): Promise<string> {
+    try {
+      // Typically crawl4ai runs locally or has an API endpoint
+      // Adjust URL to your crawl4ai setup. Here we assume a local container or a mocked response
+      logger.info(`[ContentExtractor] Extracting content via crawl4ai for: ${url}`);
+
+      const response = await fetch('http://localhost:1122/crawl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (response.ok) {
+        const data: any = await response.json();
+        return data.markdown || data.content || '';
+      }
+    } catch (error) {
+      logger.warn(`[ContentExtractor] crawl4ai failed for ${url}, fallback to empty string`);
+    }
+    return ''; // Return empty so it falls back to snippet
+  }
+
+  async performWebSearch(rawQuery: string) {
+    const query = await this.extractQueryWithLLM(rawQuery);
+    logger.info(`[Web Search] Optimized Query: "${query}" (Original: "${rawQuery}")`);
+
     // Check TTL cache
     const cached = this.searchCache.get(query);
     if (cached && cached.expiresAt > Date.now()) {
@@ -62,202 +127,114 @@ export class SearchService {
       return cached.results;
     }
 
-    logger.info(`[Web Search] Querying web search for: "${query}"`);
     const keys = loadKeys();
-    const scraplingPort = process.env.SCRAPLING_PORT || '3002';
-    const scraplingUrl = (
-      keys['scrapling_url'] ||
-      process.env.SCRAPLING_URL ||
-      `http://localhost:${scraplingPort}`
-    ).trim();
-    const scraplingApiKey = keys['scrapling'] || process.env.SCRAPLING_API_KEY || '';
     const serpapiKey = keys['SERPAPI_KEY'] || process.env.SERPAPI_KEY || '';
     const braveApiKey = keys['BRAVE_API_KEY'] || process.env.BRAVE_API_KEY || '';
+    const bingApiKey = keys['BING_API_KEY'] || process.env.BING_API_KEY || '';
 
-    let results: Array<{ title: string; link: string; snippet: string }> = [];
+    let results: Array<{
+      title: string;
+      link: string;
+      snippet: string;
+      content?: string;
+      score: number;
+    }> = [];
 
-    // Outer try-catch that wraps the whole process
     try {
-      // 1. Try Scrapling
-      try {
-        logger.info(`[Web Search] Attempting Scrapling search at: ${scraplingUrl}`);
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (scraplingApiKey) {
-          headers['Authorization'] = `Bearer ${scraplingApiKey}`;
-        }
-        const response = await fetch(`${scraplingUrl}/v1/search`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            query: query,
-            limit: 3,
-          }),
-          signal: AbortSignal.timeout(15000),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && Array.isArray(data.data)) {
-            results = data.data.map((r: any) => {
-              let snippetText = r.markdown || r.description || r.snippet || '';
-              if (snippetText.length > 3000) {
-                snippetText =
-                  snippetText.substring(0, 3000) +
-                  '\n\n[... truncated for context window size ...]';
-              }
-              return {
-                title: r.title || r.metadata?.title || 'No Title',
-                link: r.url || r.metadata?.sourceURL || '',
-                snippet: snippetText,
-              };
-            });
-            logger.info(
-              `[Web Search] Scrapling successfully scraped ${results.length} pages (truncated to safe limits).`
-            );
-          } else {
-            throw new Error(`Invalid Scrapling response structure: success=${data.success}`);
-          }
-        } else {
-          throw new Error(`HTTP ${response.status}: ${await response.text().catch(() => '')}`);
-        }
-      } catch (scraplingError: any) {
-        logger.warn(
-          `[Web Search] Scrapling failed/offline (URL: ${scraplingUrl}). Details: ${scraplingError.message}. Falling back to default APIs...`
+      if (serpapiKey) {
+        logger.info('[Web Search] Using SerpAPI primary backend...');
+        const response = await fetch(
+          `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${serpapiKey}`
         );
-
-        // 2. Fallback to SerpAPI / Brave / DDG
-        if (serpapiKey) {
-          logger.info('[Web Search] Using SerpAPI backend...');
-          const response = await fetch(
-            `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${serpapiKey}`
-          );
-          if (response.ok) {
-            const data = await response.json();
-            const organic = data.organic_results || [];
-            results = organic.slice(0, 5).map((r: any) => ({
-              title: r.title || '',
-              link: r.link || '',
-              snippet: r.snippet || '',
-            }));
-          } else {
-            throw new Error(`SerpAPI returned HTTP ${response.status}`, { cause: scraplingError });
-          }
-        } else if (braveApiKey) {
-          logger.info('[Web Search] Using Brave Search API backend...');
+        if (response.ok) {
+          const data: any = await response.json();
+          results = (data.organic_results || []).map((r: any) => ({
+            title: r.title || '',
+            link: r.link || '',
+            snippet: r.snippet || '',
+            score: this.scoreCredibility(r.link || ''),
+          }));
+        } else {
+          throw new Error('SerpAPI failed');
+        }
+      } else {
+        throw new Error('No SerpAPI key, falling back');
+      }
+    } catch (e1) {
+      try {
+        if (braveApiKey) {
+          logger.info('[Web Search] Fallback to Brave API...');
           const response = await fetch(
             `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}`,
-            {
-              headers: { Accept: 'application/json', 'X-Subscription-Token': braveApiKey },
-            }
+            { headers: { Accept: 'application/json', 'X-Subscription-Token': braveApiKey } }
           );
           if (response.ok) {
-            const data = await response.json();
-            const webResults = data.web?.results || [];
-            results = webResults.slice(0, 5).map((r: any) => ({
+            const data: any = await response.json();
+            results = (data.web?.results || []).map((r: any) => ({
               title: r.title || '',
               link: r.url || '',
               snippet: r.description || '',
+              score: this.scoreCredibility(r.url || ''),
             }));
           } else {
-            throw new Error(`Brave Search returned HTTP ${response.status}`, {
-              cause: scraplingError,
-            });
+            throw new Error('Brave API failed');
           }
         } else {
-          // Fallback: DuckDuckGo HTML scraper
-          logger.info('[Web Search] Falling back to DuckDuckGo HTML Scraper...');
-          const response = await fetch(
-            `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-            {
-              headers: {
-                'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              },
-            }
-          );
-          if (!response.ok)
-            throw new Error(`HTTP error ${response.status}`, { cause: scraplingError });
+          throw new Error('No Brave key');
+        }
+      } catch (e2) {
+        logger.info('[Web Search] Fallback to DuckDuckGo Scraper...');
+        const response = await fetch(
+          `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+          {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+            },
+          }
+        );
+        if (response.ok) {
           const html = await response.text();
-
-          const decodeHtmlEntities = (str: string): string => {
-            return str
-              .replace(/&amp;/g, '&')
-              .replace(/&lt;/g, '<')
-              .replace(/&gt;/g, '>')
-              .replace(/&quot;/g, '"')
-              .replace(/&#x27;/g, "'")
-              .replace(/&#x2F;/g, '/')
-              .replace(/&#39;/g, "'");
-          };
-
           const blocks = html.split(/class="[^"]*result__body[^"]*"/);
-          const linkRegex = /href="([^"]+)"/;
-          const titleRegex = /class="result__a"[^>]*>([\s\S]*?)<\/a>/;
-          const snippetRegex = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/;
-
-          let count = 0;
-          for (let i = 1; i < blocks.length && count < 5; i++) {
-            const block = blocks[i];
-            const titleMatch = titleRegex.exec(block);
-            const snippetMatch = snippetRegex.exec(block);
-
+          for (let i = 1; i < blocks.length; i++) {
+            const titleMatch = /class="result__a"[^>]*>([\s\S]*?)<\/a>/.exec(blocks[i]);
+            const snippetMatch = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/.exec(blocks[i]);
             if (titleMatch) {
-              let title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
-              const hrefMatch = linkRegex.exec(titleMatch[0]) || linkRegex.exec(block);
-              let link = hrefMatch ? hrefMatch[1] : '';
-
-              if (link.startsWith('//duckduckgo.com/l/?kh=-1&uddg=')) {
-                const rawLink = link.split('uddg=')[1]?.split('&')[0];
-                if (rawLink) link = decodeURIComponent(rawLink);
-              } else if (link.startsWith('/l/?kh=-1&uddg=')) {
-                const rawLink = link.split('uddg=')[1]?.split('&')[0];
-                if (rawLink) link = decodeURIComponent(rawLink);
-              } else if (link.includes('uddg=')) {
-                const rawLink = link.split('uddg=')[1]?.split('&')[0];
-                if (rawLink) link = decodeURIComponent(rawLink);
-              }
-
-              if (link.startsWith('//')) {
-                link = 'https:' + link;
-              }
-
-              let snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, '').trim() : '';
-
-              title = decodeHtmlEntities(title);
-              snippet = decodeHtmlEntities(snippet);
-
-              results.push({ title, link, snippet });
-              count++;
+              const title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
+              let link =
+                (/href="([^"]+)"/.exec(titleMatch[0]) || /href="([^"]+)"/.exec(blocks[i]))?.[1] ||
+                '';
+              if (link.includes('uddg='))
+                link = decodeURIComponent(link.split('uddg=')[1]?.split('&')[0] || link);
+              if (link.startsWith('//')) link = 'https:' + link;
+              const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, '').trim() : '';
+              results.push({ title, link, snippet, score: this.scoreCredibility(link) });
             }
           }
         }
       }
-
-      if (results.length === 0) {
-        throw new Error('No results parsed from response');
-      }
-
-      // Save to TTL cache
-      this.searchCache.set(query, {
-        results,
-        expiresAt: Date.now() + this.SEARCH_CACHE_TTL_MS,
-      });
-
-      return results;
-    } catch (error: any) {
-      logger.error('[Web Search Scraper Error]:', error);
-      return [
-        {
-          title: `Best Practices for ${query}`,
-          link: 'https://developer.mozilla.org',
-          snippet: `Discover top ideas and clean architecture guidelines for code production and SDK implementation.`,
-        },
-        {
-          title: `Google API Reference & Development Guide`,
-          link: 'https://ai.google.dev/gemini-api/docs',
-          snippet: `Complete tutorials, code snippet examples, and advanced SDK guides for building apps with Gemini and Gemma models.`,
-        },
-      ];
     }
+
+    // Sort by credibility score and limit to top 5
+    results.sort((a, b) => b.score - a.score);
+    results = results.slice(0, 5);
+
+    // Extract full content for top 2 results via crawl4ai
+    for (let i = 0; i < Math.min(2, results.length); i++) {
+      const content = await this.fetchContentWithCrawl4AI(results[i].link);
+      if (content && content.trim().length > 100) {
+        // truncate if overly massive, but give huge context
+        results[i].content =
+          content.substring(0, 8000) + (content.length > 8000 ? '\n\n[... truncated ...]' : '');
+      }
+    }
+
+    // Save to TTL cache
+    this.searchCache.set(query, {
+      results,
+      expiresAt: Date.now() + this.getQueryTTL(query),
+    });
+
+    return results;
   }
 }

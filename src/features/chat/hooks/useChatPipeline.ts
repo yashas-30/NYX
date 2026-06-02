@@ -21,8 +21,8 @@ import {
   updateConversationState,
   ConversationState,
 } from '@src/core/services/promptClassifier';
-import { ChatAgent } from '@src/core/agents/chatAgent';
-import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
+import { ChatAgentWithTools } from '@src/core/agents/chatAgentWithTools';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { countTokens } from '@src/core/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
 import { ContextManager } from '../utils/ContextManager';
@@ -414,7 +414,7 @@ export const useChatPipeline = ({
 
   const gatherSearchContext = useCallback(
     async (
-      agent: ChatAgent,
+      agent: ChatAgentWithTools,
       prompt: string,
       analysis: PromptAnalysis,
       signal: AbortSignal
@@ -553,7 +553,7 @@ export const useChatPipeline = ({
         );
 
         // 4. Initialize agent with snapshot (not live ref)
-        const agent = new ChatAgent({
+        const agent = new ChatAgentWithTools({
           modelId: nyxModel,
           provider: nyxProvider,
           apiKey: nyxApiKey,

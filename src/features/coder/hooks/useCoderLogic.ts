@@ -126,6 +126,42 @@ export const useCoderLogic = ({
     clearMetrics();
   }, [chatSessions, clearMetrics]);
 
+  const togglePin = useCallback(
+    (index: number) => {
+      updateHistory((prev) => {
+        const newHistory = [...prev];
+        if (newHistory[index]) {
+          newHistory[index].isPinned = !newHistory[index].isPinned;
+        }
+        return newHistory;
+      });
+    },
+    [updateHistory]
+  );
+
+  const forkAndRun = useCallback(
+    (index: number, newPrompt: string) => {
+      const newHistory = messagesRef.current.slice(0, index);
+      let sid = null;
+      if (chatSessions?.createSession) {
+        sid = chatSessions.createSession(newHistory);
+        if (sid && chatSessions.setActiveSession) {
+          chatSessions.setActiveSession(sid);
+        }
+      }
+      messagesRef.current = newHistory;
+      setLocalMessages(newHistory);
+      if (sid) {
+        activeSidRef.current = sid;
+        createdSessionIdRef.current = sid;
+      }
+      setTimeout(() => {
+        runCoder(newPrompt);
+      }, 0);
+    },
+    [chatSessions, runCoder]
+  );
+
   const { isLoading, runCoder, stopCoder, subagentTasks, agentMode, agentReasoning } =
     useAgentPipeline({
       models,
@@ -180,6 +216,8 @@ export const useCoderLogic = ({
     runCoder,
     stopCoder,
     clearHistory,
+    forkAndRun,
+    togglePin,
     agentPersonas,
     suggestedPrompts,
     webSearchEnabled,

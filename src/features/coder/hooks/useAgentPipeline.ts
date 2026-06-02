@@ -15,7 +15,7 @@ import {
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { toast } from '@src/shared/components/ui/sonner';
 import { formatProviderError } from '@src/infrastructure/api/streamParser';
-import { CoderAgent } from '@src/core/agents/coderAgent';
+import { CoderAgentWithTools } from '@src/core/agents/coderAgentWithTools';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { SubagentOrchestrator } from '../services/SubagentOrchestrator';
 import { triggerCritic, triggerMemoryCommit, writeFile } from '@src/infrastructure/api/coderApi';
@@ -162,7 +162,7 @@ export const useAgentPipeline = ({
           return;
         }
 
-        const agent = new CoderAgent({
+        const agent = new CoderAgentWithTools({
           modelId: nyxModel,
           provider: nyxProvider,
           apiKey: nyxApiKey,
@@ -269,7 +269,37 @@ export const useAgentPipeline = ({
                 });
               }
               break;
+            case 'tool_call':
+              updateHistory((prev) => {
+                const h = [...prev];
+                const last = h[h.length - 1];
+                if (last?.role === 'assistant') {
+                  const currentToolCalls = last.toolCalls || [];
+                  last.toolCalls = [
+                    ...currentToolCalls,
+                    {
+                      id: chunk.metadata.id,
+                      name: chunk.metadata.function.name,
+                      arguments: chunk.metadata.function.arguments,
+                    } as any,
+                  ];
+                }
+                return h;
+              });
+              break;
             case 'tool_result':
+              updateHistory((prev) => {
+                const h = [...prev];
+                const last = h[h.length - 1];
+                if (last?.role === 'assistant' && last.toolCalls) {
+                  const callIndex = last.toolCalls.findIndex((tc) => tc.id === chunk.metadata.id);
+                  if (callIndex !== -1) {
+                    // Just triggering an update to react. We could store the result if needed
+                    last.toolCalls[callIndex] = { ...last.toolCalls[callIndex] };
+                  }
+                }
+                return h;
+              });
               break;
           }
         }
@@ -357,6 +387,14 @@ export const useAgentPipeline = ({
               error.message ||
                 'Error: Generation failed. Please check your model settings or connection.'
             );
+          } else if (last && last.role === 'user') {
+            // Agent failed before inserting the assistant placeholder
+            h.push({
+              role: 'assistant',
+              content: formatProviderError(error.message || 'Error: Generation failed.'),
+              timestamp: Date.now(),
+              status: 'error',
+            });
           }
           return h;
         });

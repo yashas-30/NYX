@@ -38,6 +38,7 @@ export interface UnifiedRequest {
   baseUrl?: string;
   signal?: AbortSignal;
   customGatewayUrls?: Record<string, string>;
+  tools?: any[];
 }
 
 export class UnifiedEngine {
@@ -50,7 +51,7 @@ export class UnifiedEngine {
     writeChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
-    const { provider, model, messages, settings, apiKey, customGatewayUrls } = req;
+    const { provider, model, messages, settings, apiKey, customGatewayUrls, tools } = req;
 
     // 1. Auth validation
     const authResult = Gateway.validateAuth(provider, model, apiKey);
@@ -121,6 +122,7 @@ export class UnifiedEngine {
           activeKey,
           settings,
           customGatewayUrls,
+          tools,
           writeChunk,
           onDone
         );
@@ -163,6 +165,7 @@ export class UnifiedEngine {
     apiKey: string,
     settings: AISettings | undefined,
     customGatewayUrls: Record<string, string> | undefined,
+    tools: any[] | undefined,
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
@@ -188,6 +191,7 @@ export class UnifiedEngine {
           topP: settings?.topP ?? 0.9,
           topK: settings?.topK ?? 20,
         },
+        tools: tools,
       }),
     });
 

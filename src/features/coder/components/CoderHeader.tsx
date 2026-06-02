@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Zap, Trash2, Timer, PanelLeftOpen, ChevronDown, Share2, Lock, Unlock } from 'lucide-react';
+import {
+  Zap,
+  Trash2,
+  Timer,
+  PanelLeftOpen,
+  ChevronDown,
+  Share2,
+  Lock,
+  Unlock,
+  Download,
+} from 'lucide-react';
 import { StatusBadge } from '@src/shared/components/ui/StatusBadge';
 import { AgentPersona } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -21,6 +31,7 @@ interface CoderHeaderProps {
   sessionTitle?: string;
   mode?: 'chat' | 'code';
   onOpenLightning?: () => void;
+  history?: any[];
 }
 
 function formatLatency(ms: number): string {
@@ -44,10 +55,12 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
   sessionTitle = 'New chat',
   mode = 'chat',
   onOpenLightning,
+  history = [],
 }) => {
   const [liveElapsed, setLiveElapsed] = useState(0);
   const privacyMode = useNyxStore((state) => state.privacyMode);
   const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
+  const [showExport, setShowExport] = useState(false);
   const [scraplingStatus, setScraplingStatus] = useState<
     'checking' | 'running' | 'restarting' | 'offline'
   >('checking');
@@ -92,6 +105,35 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
 
   const displayLatency = isLoading ? liveElapsed : metrics.latency;
   const latencyText = formatLatency(displayLatency);
+
+  const downloadFile = (filename: string, content: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportMarkdown = () => {
+    const md = history.map((m) => `### ${m.role}\n\n${m.content}`).join('\n\n---\n\n');
+    downloadFile(`session-${Date.now()}.md`, md, 'text/markdown');
+    setShowExport(false);
+  };
+
+  const handleExportJSON = () => {
+    const json = JSON.stringify(history, null, 2);
+    downloadFile(`session-${Date.now()}.json`, json, 'application/json');
+    setShowExport(false);
+  };
+
+  const handleExportPDF = () => {
+    window.print();
+    setShowExport(false);
+  };
 
   return (
     <header className="flex items-center justify-between px-6 py-3 shrink-0 select-none bg-background border-b border-white/[0.03]">
@@ -193,6 +235,42 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
             <Unlock size={13} strokeWidth={1.8} />
           )}
         </motion.button>
+
+        {/* Export Action */}
+        <div className="relative">
+          <motion.button
+            whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+            whileTap={{ scale: 0.94 }}
+            onClick={() => setShowExport(!showExport)}
+            className="p-2 rounded-xl text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer"
+            title="Export Chat"
+          >
+            <Download size={13} strokeWidth={1.8} />
+          </motion.button>
+
+          {showExport && (
+            <div className="absolute right-0 mt-2 w-36 bg-secondary border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+              <button
+                onClick={handleExportMarkdown}
+                className="w-full text-left px-4 py-2 text-xs text-zinc-300 hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
+              >
+                Markdown
+              </button>
+              <button
+                onClick={handleExportJSON}
+                className="w-full text-left px-4 py-2 text-xs text-zinc-300 hover:bg-white/5 hover:text-white transition-colors cursor-pointer border-t border-white/5"
+              >
+                JSON
+              </button>
+              <button
+                onClick={handleExportPDF}
+                className="w-full text-left px-4 py-2 text-xs text-zinc-300 hover:bg-white/5 hover:text-white transition-colors cursor-pointer border-t border-white/5"
+              >
+                PDF
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Share Action */}
         <motion.button

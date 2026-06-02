@@ -256,6 +256,22 @@ function extractContent(parsed: any): ExtractedContent {
     result.text = parsed.text;
   }
 
+  // functionCall from backend
+  if (parsed.functionCall) {
+    result.toolCall = {
+      index: 0, // Gemini only returns one function call per chunk usually
+      id: parsed.functionCall.name + '_' + Date.now(),
+      type: 'function',
+      function: {
+        name: parsed.functionCall.name,
+        arguments:
+          typeof parsed.functionCall.args === 'string'
+            ? parsed.functionCall.args
+            : JSON.stringify(parsed.functionCall.args),
+      },
+    };
+  }
+
   return result;
 }
 

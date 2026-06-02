@@ -291,8 +291,13 @@ export class Gateway {
               chunk = data.candidates[0].content.parts[0].text;
             }
 
+            let functionCall = data.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+
             if (chunk) {
               callbacks.onChunk(chunk);
+            }
+            if (functionCall) {
+              callbacks.onChunk({ functionCall });
             }
 
             // Handle finish_reason to detect end of stream
@@ -324,8 +329,17 @@ export class Gateway {
       const systemInstruction = messages.find((m) => m.role === 'system')?.content;
       const contents = messages
         .filter((m) => m.role !== 'system')
-        .map((m) => {
-          const parts: any[] = [{ text: m.content || ' ' }];
+        .map((m: any) => {
+          const parts: any[] = [];
+          if (m.content) {
+            parts.push({ text: m.content });
+          }
+          if (m.functionCall) {
+            parts.push({ functionCall: m.functionCall });
+          }
+          if (m.functionResponse) {
+            parts.push({ functionResponse: m.functionResponse });
+          }
           if (m.images && Array.isArray(m.images)) {
             for (const img of m.images) {
               parts.push({
@@ -336,8 +350,12 @@ export class Gateway {
               });
             }
           }
+          // If empty, provide a default space
+          if (parts.length === 0) {
+            parts.push({ text: ' ' });
+          }
           return {
-            role: m.role === 'assistant' ? 'model' : 'user',
+            role: m.role === 'assistant' ? 'model' : m.role === 'function' ? 'user' : m.role,
             parts,
           };
         });

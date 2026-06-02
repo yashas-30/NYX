@@ -157,12 +157,12 @@ export interface ChatMessage {
   metrics?: any;
   rolloutId?: string;
   reward?: number | null;
+  isPinned?: boolean;
   images?: Array<{
     name: string;
     mimeType?: string;
     data?: string;
     url?: string;
-    dataUrl?: string;
   }>;
   reasoning?: string; // Chain-of-thought content
   toolCalls?: ToolCall[]; // Tool invocations
