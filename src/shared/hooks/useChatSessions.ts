@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChatMessage } from '@src/infrastructure/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
@@ -37,6 +37,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
   const [regularSessions, setRegularSessions] = useState<ChatSession[]>([]);
   const [activeSid, setActiveSid] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Helper to check if session matches the agentType
   const matchesAgentType = useCallback(
@@ -201,6 +202,7 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
   const updateSession = useCallback(
     (sid: string, messages: ChatMessage[]) => {
       const now = Date.now();
+      let latestUpdated: ChatSession | null = null;
 
       setRegularSessions((prev) =>
         prev.map((s) => {
@@ -211,22 +213,27 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
               title: deriveTitleFromMessages(messages),
               updatedAt: now,
             };
-            // Sync to backend
-            const url = agentType
-              ? `/api/v1/conversations?agentType=${agentType}`
-              : '/api/v1/conversations';
-            fetchWithAuth(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(updated),
-            }).catch((err) =>
-              console.warn('[useChatSessions] Failed to sync session update:', err)
-            );
+            latestUpdated = updated;
             return updated;
           }
           return s;
         })
       );
+
+      if (latestUpdated) {
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+
+        syncTimeoutRef.current = setTimeout(() => {
+          const url = agentType
+            ? `/api/v1/conversations?agentType=${agentType}`
+            : '/api/v1/conversations';
+          fetchWithAuth(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(latestUpdated),
+          }).catch((err) => console.warn('[useChatSessions] Failed to sync session update:', err));
+        }, 1000);
+      }
     },
     [agentType]
   );

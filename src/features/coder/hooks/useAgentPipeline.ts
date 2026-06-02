@@ -67,6 +67,11 @@ export const useAgentPipeline = ({
   const [subagentTasks, setSubagentTasks] = useState<SubagentTask[]>([]);
   const [agentMode, setAgentMode] = useState<'chat' | 'coder' | 'architect' | null>(null);
   const [agentReasoning, setAgentReasoning] = useState<string>('');
+  const [pendingToolConfirm, setPendingToolConfirm] = useState<{
+    toolName: string;
+    args: any;
+    resolve: (approved: boolean) => void;
+  } | null>(null);
 
   const controllerRef = useRef<AbortController | null>(null);
   const historyRef = useRef(history);
@@ -198,6 +203,18 @@ export const useAgentPipeline = ({
             },
             lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
             createOrchestrator: () => new SubagentOrchestrator(),
+            confirmTool: (toolName, args) => {
+              return new Promise<boolean>((resolve) => {
+                setPendingToolConfirm({
+                  toolName,
+                  args,
+                  resolve: (approved) => {
+                    setPendingToolConfirm(null);
+                    resolve(approved);
+                  },
+                });
+              });
+            },
           });
         }
 
@@ -445,5 +462,13 @@ export const useAgentPipeline = ({
     setIsLoading(false);
   }, []);
 
-  return { isLoading, runCoder, stopCoder, subagentTasks, agentMode, agentReasoning };
+  return {
+    runCoder,
+    stopCoder,
+    isLoading,
+    subagentTasks,
+    agentMode,
+    agentReasoning,
+    pendingToolConfirm,
+  };
 };

@@ -10,6 +10,8 @@ import {
   Lock,
   Unlock,
   Download,
+  Search,
+  X,
 } from 'lucide-react';
 import { StatusBadge } from '@src/shared/components/ui/StatusBadge';
 import { AgentPersona } from '@src/infrastructure/types';
@@ -32,6 +34,8 @@ interface CoderHeaderProps {
   mode?: 'chat' | 'code';
   onOpenLightning?: () => void;
   history?: any[];
+  messageSearchQuery?: string;
+  onMessageSearchChange?: (query: string) => void;
 }
 
 function formatLatency(ms: number): string {
@@ -56,6 +60,8 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
   mode = 'chat',
   onOpenLightning,
   history = [],
+  messageSearchQuery = '',
+  onMessageSearchChange,
 }) => {
   const [liveElapsed, setLiveElapsed] = useState(0);
   const privacyMode = useNyxStore((state) => state.privacyMode);
@@ -165,6 +171,30 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
 
       {/* Right: share, status, clear */}
       <div className="flex items-center gap-2.5">
+        {onMessageSearchChange && (
+          <div className="relative flex items-center group">
+            <Search
+              size={12}
+              className="absolute left-2.5 text-zinc-500 group-hover:text-zinc-400 transition-colors pointer-events-none"
+            />
+            <input
+              type="text"
+              placeholder="Search messages..."
+              value={messageSearchQuery}
+              onChange={(e) => onMessageSearchChange(e.target.value)}
+              className="w-36 md:w-48 bg-white/[0.03] hover:bg-white/[0.05] focus:bg-white/[0.05] border border-white/[0.05] focus:border-white/10 rounded-full py-1.5 pl-7 pr-7 text-xs text-zinc-300 placeholder:text-zinc-600 outline-none transition-all focus:w-48 md:focus:w-56"
+            />
+            {messageSearchQuery && (
+              <button
+                onClick={() => onMessageSearchChange('')}
+                className="absolute right-2 p-0.5 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-white/10 transition-colors"
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Scrapling Health Badge */}
         <div
           className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-800/40 border border-white/5 text-[9px] font-extrabold uppercase tracking-wider text-zinc-400 select-none cursor-pointer"

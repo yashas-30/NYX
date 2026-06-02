@@ -2,14 +2,56 @@ import logger from '../../lib/logger.ts';
 import { CodebaseScanner } from '../workspace/codebaseScanner.ts';
 import { loadKeys } from '../vault/vault.service.ts';
 import fetch from 'node-fetch'; // assuming fetch is globally available or imported
+import * as fs from 'fs';
+import * as path from 'path';
 
 interface SearchCacheEntry {
   results: any[];
   expiresAt: number;
 }
 
+const CACHE_FILE = path.join(process.cwd(), 'server', 'data', 'search_cache.json');
+
 export class SearchService {
   private searchCache = new Map<string, SearchCacheEntry>();
+
+  constructor() {
+    this.loadCacheFromDisk();
+  }
+
+  private loadCacheFromDisk() {
+    try {
+      if (fs.existsSync(CACHE_FILE)) {
+        const data = fs.readFileSync(CACHE_FILE, 'utf-8');
+        const parsed = JSON.parse(data);
+        for (const key of Object.keys(parsed)) {
+          if (parsed[key].expiresAt > Date.now()) {
+            this.searchCache.set(key, parsed[key]);
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn(`[SearchCache] Failed to load cache from disk: ${e}`);
+    }
+  }
+
+  private saveCacheToDisk() {
+    try {
+      const dir = path.dirname(CACHE_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const obj: any = {};
+      for (const [key, val] of this.searchCache.entries()) {
+        if (val.expiresAt > Date.now()) {
+          obj[key] = val;
+        } else {
+          this.searchCache.delete(key);
+        }
+      }
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+    } catch (e) {
+      logger.warn(`[SearchCache] Failed to save cache to disk: ${e}`);
+    }
+  }
 
   // Helper to determine TTL based on query volatility
   private getQueryTTL(query: string): number {
@@ -74,6 +116,42 @@ export class SearchService {
     return rawQuery;
   }
 
+  private async summarizeWithLLM(content: string, query: string): Promise<string> {
+    const keys = loadKeys();
+    const apiKey = keys['GEMINI_API_KEY'] || process.env.GEMINI_API_KEY;
+    if (!apiKey || content.trim().length < 500) return content;
+
+    try {
+      logger.info(`[SearchSummarizer] Summarizing web content for query: ${query}`);
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `You are a search summarizer. Extract the most relevant technical information, facts, and key points from this web page content that answers the query "${query}". Be extremely concise and focus only on the facts. Return the summary in markdown format.\n\nContent:\n${content.substring(0, 15000)}`,
+                  },
+                ],
+              },
+            ],
+          }),
+        }
+      );
+      if (response.ok) {
+        const data: any = await response.json();
+        const summary = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        return summary || content;
+      }
+    } catch (e) {
+      logger.warn(`[SearchSummarizer] Failed to summarize: ${e}`);
+    }
+    return content;
+  }
+
   private scoreCredibility(url: string): number {
     let score = 0;
     const urlLower = url.toLowerCase();
@@ -95,10 +173,7 @@ export class SearchService {
 
   private async fetchContentWithCrawl4AI(url: string): Promise<string> {
     try {
-      // Typically crawl4ai runs locally or has an API endpoint
-      // Adjust URL to your crawl4ai setup. Here we assume a local container or a mocked response
       logger.info(`[ContentExtractor] Extracting content via crawl4ai for: ${url}`);
-
       const response = await fetch('http://localhost:1122/crawl', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -116,14 +191,15 @@ export class SearchService {
     return ''; // Return empty so it falls back to snippet
   }
 
-  async performWebSearch(rawQuery: string) {
+  private async performBaseSearch(rawQuery: string, shouldSummarize: boolean) {
     const query = await this.extractQueryWithLLM(rawQuery);
     logger.info(`[Web Search] Optimized Query: "${query}" (Original: "${rawQuery}")`);
 
     // Check TTL cache
-    const cached = this.searchCache.get(query);
+    const cacheKey = `${query}_${shouldSummarize}`;
+    const cached = this.searchCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
-      logger.info(`[Web Search] Cache hit for: "${query}"`);
+      logger.info(`[Web Search] Cache hit for: "${cacheKey}"`);
       return cached.results;
     }
 
@@ -221,20 +297,40 @@ export class SearchService {
 
     // Extract full content for top 2 results via crawl4ai
     for (let i = 0; i < Math.min(2, results.length); i++) {
-      const content = await this.fetchContentWithCrawl4AI(results[i].link);
+      let content = await this.fetchContentWithCrawl4AI(results[i].link);
       if (content && content.trim().length > 100) {
-        // truncate if overly massive, but give huge context
-        results[i].content =
-          content.substring(0, 8000) + (content.length > 8000 ? '\n\n[... truncated ...]' : '');
+        if (shouldSummarize) {
+          content = await this.summarizeWithLLM(content, query);
+        } else {
+          content =
+            content.substring(0, 8000) + (content.length > 8000 ? '\n\n[... truncated ...]' : '');
+        }
+        results[i].content = content;
       }
     }
 
     // Save to TTL cache
-    this.searchCache.set(query, {
+    this.searchCache.set(cacheKey, {
       results,
       expiresAt: Date.now() + this.getQueryTTL(query),
     });
+    this.saveCacheToDisk();
 
     return results;
+  }
+
+  // Used by Chat Page (Conversational context)
+  async performConversationalSearch(rawQuery: string) {
+    return this.performBaseSearch(rawQuery, true);
+  }
+
+  // Used by Coder Page (Technical documentation lookup)
+  async performTechnicalSearch(rawQuery: string) {
+    return this.performBaseSearch(rawQuery, false);
+  }
+
+  // Backwards compatibility for existing performWebSearch
+  async performWebSearch(rawQuery: string) {
+    return this.performConversationalSearch(rawQuery);
   }
 }

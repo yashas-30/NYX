@@ -20,6 +20,7 @@ export interface CoderAgentConfig extends BaseAgentConfig {
   setSuggestedPrompts: (prompts: string[]) => void;
   validateCode?: boolean;
   showReasoning?: boolean;
+  confirmTool?: (toolName: string, args: any) => Promise<boolean>;
 }
 
 const MAX_ROUNDS = 10;
@@ -40,9 +41,10 @@ export class CoderAgentWithTools extends BaseAgent<CoderAgentConfig, CoderStream
     }
 
     const systemInstruction = `You are NYX Coder Agent. 
-You have access to native tools. Use them to gather context, read files, and execute commands.
+You have access to native tools. Use them to gather context, read files, execute commands, and search the web.
 ALWAYS confirm before making destructive changes.
-When you write code, explain what you are doing.`;
+When you write code, explain what you are doing.
+If you use search results, YOU MUST cite your sources using inline links [Source Name](url).`;
 
     let currentHistory = [...processedHistory];
 
@@ -70,6 +72,10 @@ When you write code, explain what you are doing.`;
         if (resolveStream) resolveStream();
       };
 
+      const availableTools = NYX_TOOLS.filter(
+        (t) => t.name !== 'web_search' || this.config.webSearchEnabled
+      );
+
       const runPromise = AIService.execute(
         this.config.modelId,
         this.config.provider,
@@ -82,7 +88,7 @@ When you write code, explain what you are doing.`;
         {
           history: currentHistory,
           agentMode: 'coder',
-          tools: NYX_TOOLS,
+          tools: availableTools,
           streamEvents: true,
         }
       )
@@ -145,12 +151,31 @@ When you write code, explain what you are doing.`;
             args = call.function.arguments;
           }
 
-          const result = await executeTool(
-            call.function.name,
-            args,
-            this.config.workspacePath || '',
-            signal
-          );
+          let result;
+
+          if (
+            this.config.confirmTool &&
+            (call.function.name === 'write_file' || call.function.name === 'run_command')
+          ) {
+            yield {
+              type: 'tool_call',
+              content: `Waiting for user confirmation to run ${call.function.name}...`,
+              metadata: call,
+            };
+            const approved = await this.config.confirmTool(call.function.name, args);
+            if (!approved) {
+              result = { success: false, result: null, error: 'User rejected tool execution.' };
+            }
+          }
+
+          if (!result) {
+            result = await executeTool(
+              call.function.name,
+              args,
+              this.config.workspacePath || '',
+              signal
+            );
+          }
 
           yield {
             type: 'tool_result',

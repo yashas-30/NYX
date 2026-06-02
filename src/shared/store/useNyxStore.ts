@@ -18,8 +18,11 @@ export interface ModelSettings {
 
 export type ActiveMode = 'coder' | 'registry' | 'settings';
 
+export type ExecutionMode = 'standard' | 'parallel' | 'ensemble' | 'ab-test';
+
 export interface NyxState {
   activeMode: ActiveMode;
+  executionMode: ExecutionMode;
   workspacePath: string;
   localModelsEnabled: boolean;
   modelSettings: ModelSettings;
@@ -32,6 +35,7 @@ export interface NyxState {
 
   // Actions
   setActiveMode: (mode: ActiveMode) => void;
+  setExecutionMode: (mode: ExecutionMode) => void;
   setWorkspacePath: (path: string) => void;
   setLocalModelsEnabled: (enabled: boolean) => void;
   updateModelSettings: (settings: Partial<ModelSettings>) => void;
@@ -85,6 +89,7 @@ export const useNyxStore = create<NyxState>()(
   persist(
     (set, get) => ({
       activeMode: 'coder',
+      executionMode: 'standard',
       workspacePath: '',
       localModelsEnabled: false,
       modelSettings: DEFAULT_SETTINGS,
@@ -96,6 +101,7 @@ export const useNyxStore = create<NyxState>()(
       currentModel: DEFAULT_MODEL,
 
       setActiveMode: (mode) => set({ activeMode: mode }),
+      setExecutionMode: (mode) => set({ executionMode: mode }),
       setWorkspacePath: (path) => set({ workspacePath: path }),
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
       updateModelSettings: (settings) =>
@@ -316,6 +322,7 @@ export const useNyxStore = create<NyxState>()(
       name: 'nyx-global-state',
       partialize: (state) => ({
         activeMode: state.activeMode,
+        executionMode: state.executionMode,
         localModelsEnabled: state.localModelsEnabled,
         modelSettings: state.modelSettings,
         models: state.models,

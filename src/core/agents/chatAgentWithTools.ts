@@ -41,7 +41,7 @@ export class ChatAgentWithTools extends BaseAgent<ChatAgentConfig, StreamEvent> 
         history: processedHistory,
         apiKey: this.config.apiKey,
         gatewayUrls: this.config.settings?.gatewayUrls,
-        images: images ? images.map((f: any) => f.name) : [], // simplified image handling
+        images: images || [],
       }),
       signal,
     });

@@ -125,6 +125,19 @@ export const usageCosts = sqliteTable('usage_costs', {
   timestamp: integer('timestamp').notNull(),
 });
 
+export const asyncJobs = sqliteTable('async_jobs', {
+  id: text('id').primaryKey(),
+  provider: text('provider').notNull(),
+  model: text('model').notNull(),
+  status: text('status').notNull(), // 'pending', 'processing', 'completed', 'failed'
+  webhookUrl: text('webhook_url').notNull(),
+  requestPayload: text('request_payload').notNull(),
+  resultPayload: text('result_payload'),
+  error: text('error'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
 // New Relations
 export const chatConversationsRelations = relations(chatConversations, ({ many }) => ({
   messages: many(chatMessages),

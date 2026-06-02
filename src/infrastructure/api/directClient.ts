@@ -46,6 +46,7 @@ export interface DirectClientResult {
     latency: number;
     tokens: number;
     tps: number;
+    estimatedCostUsd?: number;
   };
   finishReason?: string;
 }
@@ -187,6 +188,23 @@ function resolveRealGeminiModel(model: string): string {
   return modelMap[model] || model;
 }
 
+// Cost estimation helper
+function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
+  const m = model.toLowerCase();
+  let inputPricePerM = 0;
+  let outputPricePerM = 0;
+
+  if (m.includes('flash')) {
+    inputPricePerM = 0.075;
+    outputPricePerM = 0.3;
+  } else if (m.includes('pro')) {
+    inputPricePerM = 3.5;
+    outputPricePerM = 10.5;
+  }
+
+  return (inputTokens / 1_000_000) * inputPricePerM + (outputTokens / 1_000_000) * outputPricePerM;
+}
+
 // ---------------------------------------------------------------------------
 // Main Gemini fetch function
 // ---------------------------------------------------------------------------
@@ -227,7 +245,7 @@ export async function directFetch(
           parts.push({
             inlineData: {
               mimeType: img.mimeType || 'image/png',
-              data: img.base64,
+              data: img.data || img.base64,
             },
           });
         }
@@ -246,7 +264,7 @@ export async function directFetch(
       promptParts.push({
         inlineData: {
           mimeType: img.mimeType || 'image/png',
-          data: img.base64,
+          data: img.data || img.base64,
         },
       });
     }
@@ -349,13 +367,21 @@ export async function directFetch(
     });
 
     const latency = Math.round(performance.now() - startTime);
-    const tokens = Math.ceil(fullText.length / 4);
+    const inputTokens = Math.ceil(prompt.length / 4); // heuristic for input
+    const outputTokens = Math.ceil(fullText.length / 4);
+    const tokens = inputTokens + outputTokens;
+    const cost = estimateCost(realModel, inputTokens, outputTokens);
 
     return {
       text: fullText,
       reasoning: parsed.reasoning,
       toolCalls: parsed.toolCalls as any,
-      metrics: { latency, tokens, tps: latency > 0 ? Math.round(tokens / (latency / 1000)) : 0 },
+      metrics: {
+        latency,
+        tokens,
+        tps: latency > 0 ? Math.round(outputTokens / (latency / 1000)) : 0,
+        estimatedCostUsd: cost,
+      },
       finishReason: parsed.finishReason || 'stop',
     };
   }
@@ -379,11 +405,19 @@ export async function directFetch(
   }
 
   const latency = Math.round(performance.now() - startTime);
-  const tokens = Math.ceil(text.length / 4);
+  const inputTokens = Math.ceil(prompt.length / 4); // heuristic
+  const outputTokens = Math.ceil(text.length / 4);
+  const tokens = inputTokens + outputTokens;
+  const cost = estimateCost(realModel, inputTokens, outputTokens);
 
   return {
     text,
-    metrics: { latency, tokens, tps: latency > 0 ? Math.round(tokens / (latency / 1000)) : 0 },
+    metrics: {
+      latency,
+      tokens,
+      tps: latency > 0 ? Math.round(outputTokens / (latency / 1000)) : 0,
+      estimatedCostUsd: cost,
+    },
     finishReason,
   };
 }

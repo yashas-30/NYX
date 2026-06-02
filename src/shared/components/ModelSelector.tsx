@@ -18,6 +18,7 @@ import { AVAILABLE_MODELS } from '@shared/config/models';
 import { ModelOption } from '@src/types';
 import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
 import { AIService } from '@src/core/services/ai.service';
+import { useNyxStore, ExecutionMode } from '@src/shared/store/useNyxStore';
 
 interface Props {
   currentModelId?: string;
@@ -89,6 +90,8 @@ export const ModelSelector: React.FC<Props> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   const [localLibraryModels, setLocalLibraryModels] = React.useState<ModelOption[]>([]);
+  const executionMode = useNyxStore((s) => s.executionMode);
+  const setExecutionMode = useNyxStore((s) => s.setExecutionMode);
 
   React.useEffect(() => {
     let active = true;
@@ -469,6 +472,28 @@ export const ModelSelector: React.FC<Props> = ({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Execution Mode Selector */}
+        <div className="p-1.5 border-t border-white/[0.04] flex items-center gap-1 bg-[#161616]/40">
+          <span className="px-1 text-[7px] font-black uppercase tracking-[0.2em] text-zinc-500 shrink-0 w-[80px]">
+            Execution
+          </span>
+          <div className="flex-1 flex gap-1 bg-black/40 p-0.5 rounded-xl border border-white/[0.06] shadow-inner">
+            {(['standard', 'parallel', 'ensemble', 'ab-test'] as ExecutionMode[]).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setExecutionMode(mode)}
+                className={`flex-1 py-1 rounded-lg text-[7px] font-black uppercase tracking-wider transition-all ${
+                  executionMode === mode
+                    ? 'bg-white/[0.08] text-white shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
+                }`}
+              >
+                {mode.replace('-', ' ')}
+              </button>
+            ))}
           </div>
         </div>
       </motion.div>

@@ -262,13 +262,17 @@ export async function validateWorkspace(signal?: AbortSignal): Promise<Validatio
 }
 
 export async function triggerMemoryCommit(payload: MemoryCommitPayload): Promise<void> {
-  await apiFetch('/api/v1/nyx/memory/commit', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    timeout: 10000, // Shorter timeout for fire-and-forget
-    noRetry: true, // Don't block on retry
-  });
+  try {
+    await apiFetch('/api/v1/nyx/memory/commit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      timeout: 10000, // Shorter timeout for fire-and-forget
+      noRetry: true, // Don't block on retry
+    });
+  } catch (err: any) {
+    console.warn('[CoderApi] Memory commit failed silently:', err.message);
+  }
 }
 
 export async function writeFile(

@@ -150,7 +150,29 @@ export const NYX_TOOLS = [
     },
   },
 
-  // ── Memory / Rules ──
+  // 🖥️ Code Execution 🖥️
+  {
+    name: 'run_code',
+    description:
+      'Execute code snippets (Node.js, Python, or shell) in a temporary local environment. Use for: testing logic, evaluating regex, or verifying script behavior before writing files.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        code: {
+          type: Type.STRING,
+          description: 'The exact code to execute.',
+        },
+        language: {
+          type: Type.STRING,
+          enum: ['javascript', 'typescript', 'python', 'sh'],
+          description: 'The programming language of the code.',
+        },
+      },
+      required: ['code', 'language'],
+    },
+  },
+
+  // 🧠 Memory / Rules 🧠
   {
     name: 'get_evolutionary_rules',
     description: 'Retrieve learned coding rules and preferences from previous sessions.',

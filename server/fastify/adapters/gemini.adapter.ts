@@ -48,7 +48,7 @@ export class GeminiAdapter implements ProviderAdapter {
     });
 
     if (!res.ok) {
-      throw new Error(`Gemini API Error: ${res.statusText}`);
+      throw new Error(`Gemini API Error ${res.status}: ${res.statusText}`);
     }
 
     const reader = res.body!.getReader();

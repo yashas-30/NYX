@@ -15,10 +15,15 @@ import compression from 'compression';
 import helmet from 'helmet';
 import { fileURLToPath } from 'url';
 
+import crypto from 'crypto';
+
 // Side-effect import to register apiAgent in the factory
 import './server/lib/apiAgent.ts'; // 🚀 Init global connection pooling
 
 // New extracted routes
+import { cacheRouter } from './server/features/cache/cache.router.ts';
+import { graphqlRouter } from './server/features/graphql/graphql.router.ts';
+import { uploadRouter } from './server/features/upload/upload.router.ts';
 import { vaultRouter } from './server/features/vault/vault.router.ts';
 import { adminRouter, setScraplingHealthState } from './server/features/admin/admin.router.ts';
 import { systemRouter } from './server/features/system/system.router.ts';
@@ -146,8 +151,34 @@ async function startServer() {
   const ANTIGRAVITY_PORT = parseInt(process.env.ANTIGRAVITY_PORT || String(PORTS.ANTIGRAVITY), 10);
   let antigravityProc: ReturnType<typeof spawn> | null = null;
 
-  function spawnScrapling() {
+  async function checkPortAvailable(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const server = http.createServer();
+      server.once('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          resolve(false);
+        } else {
+          resolve(true);
+        }
+      });
+      server.once('listening', () => {
+        server.close();
+        resolve(true);
+      });
+      server.listen(port, '127.0.0.1');
+    });
+  }
+
+  async function spawnScrapling() {
     try {
+      const isAvailable = await checkPortAvailable(SCRAPLING_PORT);
+      if (!isAvailable) {
+        logger.warn(
+          `[Scrapling] Port ${SCRAPLING_PORT} is already in use. Skipping spawn to avoid crash-loop. Assuming external instance.`
+        );
+        return; // Don't crash loop, assume it's running externally
+      }
+
       const pythonPath = findPythonPath();
       const scraplingScriptPath = path.join(_dirname, 'server', 'python', 'scrapling_server.py');
       logger.info(
@@ -171,8 +202,16 @@ async function startServer() {
     }
   }
 
-  function spawnAntigravity() {
+  async function spawnAntigravity() {
     try {
+      const isAvailable = await checkPortAvailable(ANTIGRAVITY_PORT);
+      if (!isAvailable) {
+        logger.warn(
+          `[Antigravity] Port ${ANTIGRAVITY_PORT} is already in use. Skipping spawn to avoid crash-loop. Assuming external instance.`
+        );
+        return;
+      }
+
       const pythonPath = findPythonPath();
       const antigravityScriptPath = path.join(
         _dirname,
@@ -201,8 +240,8 @@ async function startServer() {
     }
   }
 
-  spawnScrapling();
-  spawnAntigravity();
+  await spawnScrapling();
+  await spawnAntigravity();
 
   // Start Fastify SSE Server
   startFastifyServer(FASTIFY_PORT).catch((err) => {
@@ -266,10 +305,34 @@ async function startServer() {
   const app = express();
   app.use(requestIdMiddleware);
 
-  // Structured Logging
+  // Structured Logging with body capture
   app.use((req, res, next) => {
     const start = Date.now();
+    const oldWrite = res.write;
+    const oldEnd = res.end;
+    const chunks: Buffer[] = [];
+
+    res.write = function (chunk: any, ...args: any[]) {
+      if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      return oldWrite.apply(res, [chunk, ...args] as any);
+    };
+
+    res.end = function (chunk: any, ...args: any[]) {
+      if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      return oldEnd.apply(res, [chunk, ...args] as any);
+    };
+
     res.on('finish', () => {
+      // Don't log bodies for large payloads or streams
+      let resBody = '';
+      if (
+        !req.path.includes('/stream') &&
+        !req.path.includes('/logs') &&
+        res.get('Content-Type')?.includes('application/json')
+      ) {
+        resBody = Buffer.concat(chunks).toString('utf8');
+      }
+
       logger.info(
         {
           requestId: req.requestId,
@@ -277,6 +340,8 @@ async function startServer() {
           path: req.path,
           statusCode: res.statusCode,
           latencyMs: Date.now() - start,
+          reqBody: req.body,
+          resBody: resBody.length < 5000 ? resBody : '[Truncated]',
         },
         `Request finished: ${req.method} ${req.path}`
       );
@@ -300,12 +365,25 @@ async function startServer() {
     })
   );
 
+  app.set('trust proxy', 1);
+
+  // CSP Nonce generation
+  app.use((req, res, next) => {
+    res.locals.nonce = crypto.randomBytes(16).toString('base64');
+    next();
+  });
+
   app.use(
     helmet({
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-eval'", "'unsafe-inline'"],
+          scriptSrc: [
+            "'self'",
+            "'unsafe-eval'",
+            (req, res) => `'nonce-${(res as any).locals.nonce}'`,
+          ],
+
           connectSrc: [
             "'self'",
             'http://127.0.0.1:*',
@@ -321,18 +399,19 @@ async function startServer() {
     })
   );
 
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '100kb' }));
   app.use(
     cors({
-      origin: isProd
-        ? [
-            'http://localhost:3000',
-            'http://127.0.0.1:3000',
-            'http://localhost:1420',
-            'tauri://localhost',
-            'nyx://localhost',
-          ]
-        : '*',
+      origin: [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:1420',
+        'http://127.0.0.1:1420',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'tauri://localhost',
+        'nyx://localhost',
+      ],
       methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
       allowedHeaders: [
         'Content-Type',
@@ -361,6 +440,8 @@ async function startServer() {
       '/api/v1/vault/token',
       '/api/v1/auth/session',
       '/api/v1/admin/logs',
+      '/api/v1/metrics',
+      '/api/v1/graphql',
     ]).has(fullPath);
 
     if (isPublic) return next();
@@ -376,35 +457,43 @@ async function startServer() {
 
   const generalLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 10000,
+    max: 5000, // Increased to support frequent frontend polling
     standardHeaders: true,
     legacyHeaders: false,
   });
   app.use('/api/v1', generalLimiter);
 
   // Mount routes
-  app.use('/api/v1/vault', vaultRouter);
-  app.get('/api/v1/auth/session', (req, res) => {
+  const v1Router = express.Router();
+  const v2Router = express.Router(); // Placeholder for migration path
+
+  v1Router.use('/vault', vaultRouter);
+  v1Router.get('/auth/session', (req, res) => {
     const isStream = req.query.stream === 'true';
     res.json({ token: createSessionToken(isStream), expiresAt: Date.now() + 5 * 60 * 1000 });
   });
-  app.use('/api/v1/admin', adminRouter);
-  app.use('/api/v1', systemRouter);
-  app.use('/api/v1', healthRouter);
-  app.use('/api/v1', metricsRouter);
-  app.use('/api/v1/conversations', conversationsRouter);
-  app.use('/api/v1/chat', chatRouter);
-  app.use('/api/v1/files', filesRouter);
-  app.use('/api/v1/cache', cacheRouter);
-  app.use('/api/v1/workspace', workspaceRouter);
-  app.use('/api/v1/models', modelProxyRouter);
-  app.use('/api/v1/prompt-templates', promptTemplatesRouter);
+  v1Router.use('/admin', adminRouter);
+  v1Router.use('/', systemRouter);
+  v1Router.use('/', healthRouter);
+  v1Router.use('/', metricsRouter);
+  v1Router.use('/conversations', conversationsRouter);
+  v1Router.use('/chat', chatRouter);
+  v1Router.use('/files', filesRouter);
+  v1Router.use('/cache', cacheRouter);
+  v1Router.use('/workspace', workspaceRouter);
+  v1Router.use('/models', modelProxyRouter);
+  v1Router.use('/prompt-templates', promptTemplatesRouter);
 
-  app.use('/api/v1/gemini', providerRateLimiter('gemini'), geminiRouter);
-  app.use('/api/v1/terminal', terminalRouter);
-  app.use('/api/v1/agents', agentsRouter);
-  app.use('/api/v1/nyx/local-models', localModelsRouter);
-  app.use('/api/v1/nyx', nyxRouter);
+  v1Router.use('/gemini', providerRateLimiter('gemini'), geminiRouter);
+  v1Router.use('/terminal', terminalRouter);
+  v1Router.use('/agents', agentsRouter);
+  v1Router.use('/nyx/local-models', localModelsRouter);
+  v1Router.use('/nyx', nyxRouter);
+  v1Router.use('/graphql', graphqlRouter);
+  v1Router.use('/upload', uploadRouter);
+
+  app.use('/api/v1', v1Router);
+  app.use('/api/v2', v2Router);
 
   if (isProd) {
     let distPath = path.join(_dirname, 'dist');
@@ -439,12 +528,22 @@ async function startServer() {
 
   server.on('upgrade', (request, socket, head) => {
     try {
-      const { pathname } = new URL(
+      const { pathname, searchParams } = new URL(
         request.url || '',
         `http://${request.headers.host || 'localhost'}`
       );
+
+      const token = searchParams.get('token');
+      if (!token || !verifySessionToken(token)) {
+        logger.warn('[WebSocket] Unauthorized connection attempt');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
       if (pathname === '/ws/session-sync') {
         wss.handleUpgrade(request, socket, head, (ws) => {
+          (ws as any).roomId = searchParams.get('roomId') || 'global';
           wss.emit('connection', ws, request);
         });
       } else if (pathname === '/ws/file-watcher') {
@@ -484,7 +583,7 @@ async function startServer() {
         logger.info({ event: data.event }, '[WebSocket] Received event');
 
         wss.clients.forEach((client) => {
-          if (client !== ws && client.readyState === 1) {
+          if (client !== ws && client.readyState === 1 && (client as any).roomId === ws.roomId) {
             client.send(JSON.stringify(data));
           }
         });
@@ -517,6 +616,7 @@ async function startServer() {
       CodebaseScanner.dispose();
     } catch (error: any) {
       logger.error({ err: error }, '[Shutdown] Failed to dispose CodebaseScanner');
+      throw error; // Escalate failure instead of swallowing silently
     }
     server.close(() => {
       process.exit(0);
@@ -537,6 +637,7 @@ process.on('uncaughtException', (e) => {
     CodebaseScanner.dispose();
   } catch (error: any) {
     logger.error({ error }, '[UncaughtException] Failed to dispose CodebaseScanner');
+    process.exit(1);
   }
   process.exit(1);
 });

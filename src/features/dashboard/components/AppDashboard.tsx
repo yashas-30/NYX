@@ -1,5 +1,5 @@
 /**
- * @file src/components/CoderDashboard.tsx
+ * @file src/components/AppDashboard.tsx
  * @description Claude Desktop-style dashboard with a warm-slate sidebar, Chat/Coder pages,
  *              main chat canvas, and top-level view routing (chat / coder / registry / settings).
  */
@@ -8,8 +8,6 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useDashboardState } from '../hooks/useDashboardState';
 import { useChatSessions } from '@src/shared/hooks/useChatSessions';
-import { useCoderLogic } from '@src/features/coder';
-import { useChatLogic } from '@src/features/chat';
 import { AppRouter } from '@src/app/router';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
@@ -37,7 +35,7 @@ import { CommandPalette } from '@src/shared/components/CommandPalette';
 import { useAgentLightning } from '@src/shared/hooks/useAgentLightning';
 import { AgentLightningPanel } from '@src/shared/components/AgentLightningPanel';
 
-export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
+export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobile, setIsMobile] = useState(
@@ -64,8 +62,10 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
     activeMode,
     setActiveMode,
     apiKeys,
-    modelSettings,
-    setModelSettings,
+    chatSettings,
+    setChatSettings,
+    coderSettings,
+    setCoderSettings,
     trackUsage,
     statuses,
     models,
@@ -110,33 +110,6 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
     deleteFolder,
     updateSessionMeta,
   } = activeSessions;
-
-  // Dedicated separate frontend state managers
-  const chatState = useChatLogic({
-    apiKeys,
-    modelSettings,
-    trackUsage,
-    models: { nyx: modelsState.chat },
-    setModel: (mid: string) => setModels((prev) => ({ ...prev, chat: mid })),
-    chatSessions,
-    lightningEnabled: lightningState.lightningEnabledChat,
-    lightningDirectives: lightningState.apoDirectives.chat,
-    logRollout: lightningState.logRollout,
-    submitReward: lightningState.submitReward,
-  });
-
-  const coderState = useCoderLogic({
-    apiKeys,
-    modelSettings,
-    trackUsage,
-    models: { nyx: modelsState.coder },
-    setModel: (mid: string) => setModels((prev) => ({ ...prev, coder: mid })),
-    chatSessions: coderSessions,
-    lightningEnabled: lightningState.lightningEnabledCoder,
-    lightningDirectives: lightningState.apoDirectives.coder,
-    logRollout: lightningState.logRollout,
-    submitReward: lightningState.submitReward,
-  });
 
   const filteredSessions = sessions.filter((s) =>
     s.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -393,9 +366,11 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               activeMode={activeMode}
               setActiveMode={setActiveMode}
               apiKeys={apiKeys}
-              modelSettings={modelSettings}
+              chatSettings={chatSettings}
+              setChatSettings={setChatSettings}
+              coderSettings={coderSettings}
+              setCoderSettings={setCoderSettings}
               trackUsage={trackUsage}
-              setModelSettings={setModelSettings}
               statuses={statuses}
               chatSessions={activeSessions}
               sidebarOpen={sidebarOpen}
@@ -404,8 +379,9 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               setModel={setModel}
               updateApiKey={updateApiKey}
               clearApiKeys={clearApiKeys}
-              coderState={coderState}
-              chatState={chatState}
+              modelsState={modelsState}
+              setModelsState={setModels}
+              lightningState={lightningState}
               allModels={allModels}
             />
           </AnimatePresence>
@@ -416,7 +392,7 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
           activeMode={activeMode}
           setActiveMode={setActiveMode}
           createSession={createSession}
-          clearHistory={activeMode === 'coder' ? coderState.clearHistory : chatState.clearHistory}
+          clearHistory={() => {}} // CommandPalette might need refactoring to clear history without accessing state directly
           models={models}
           setModel={setModel}
           allModels={allModels}

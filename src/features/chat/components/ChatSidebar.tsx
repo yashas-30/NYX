@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { MessageSquare, Plus, PanelLeftClose, Trash2 } from 'lucide-react';
 
 interface ChatSession {
@@ -22,20 +23,28 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   onSelectSession,
   onNewSession,
 }) => {
+  const { t } = useTranslation();
+
   if (!isOpen) return null;
 
   return (
-    <div className="w-[240px] h-full bg-[#09090B] border-r border-[rgba(255,255,255,0.06)] flex flex-col flex-shrink-0 transition-all duration-300">
+    <div
+      className="w-[240px] h-full bg-[#09090B] border-r border-[rgba(255,255,255,0.06)] flex flex-col flex-shrink-0 transition-all duration-300"
+      aria-label="Chat Sidebar"
+      role="complementary"
+    >
       <div className="p-4 border-b border-[rgba(255,255,255,0.06)] flex items-center justify-between">
         <button
           onClick={onNewSession}
+          aria-label={t('new_chat', 'New Chat')}
           className="flex-1 flex items-center justify-center gap-2 bg-[#FF3366]/10 text-[#FF3366] hover:bg-[#FF3366]/20 transition-colors py-2 rounded text-[13px] font-medium border border-[#FF3366]/20 mr-2"
         >
           <Plus className="w-4 h-4" />
-          New Chat
+          {t('new_chat', 'New Chat')}
         </button>
         <button
           onClick={onClose}
+          aria-label="Close Sidebar"
           className="p-2 text-[#4A5059] hover:text-[#F8FAFC] transition-colors rounded"
         >
           <PanelLeftClose className="w-4 h-4" />
@@ -57,6 +66,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             </div>
             <span className="text-[11px] text-[#4A5059] ml-5.5 mt-0.5">{session.date}</span>
             <button
+              aria-label={`Delete session ${session.title}`}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 opacity-0 group-hover:opacity-100 hover:text-[#ffb4ab] text-[#4A5059] transition-all"
               onClick={(e) => {
                 e.stopPropagation();

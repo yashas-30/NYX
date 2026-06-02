@@ -139,24 +139,82 @@ export const useCoderLogic = ({
     [updateHistory]
   );
 
-  const { isLoading, runCoder, stopCoder, subagentTasks, agentMode, agentReasoning } =
-    useAgentPipeline({
-      models,
-      apiKeys,
-      agentPersonas,
-      modelSettings,
-      trackUsage,
-      history: localMessages,
-      updateHistory,
-      updateMetrics,
-      getSuggestions,
-      setSuggestedPrompts,
-      webSearchEnabled,
-      codebaseKnowledgeEnabled,
-      lightningEnabled,
-      lightningDirectives,
-      logRollout,
-    });
+  const {
+    isLoading,
+    runCoder,
+    stopCoder,
+    subagentTasks,
+    agentMode,
+    agentReasoning,
+    pendingToolConfirm,
+  } = useAgentPipeline({
+    models,
+    apiKeys,
+    agentPersonas,
+    modelSettings,
+    trackUsage,
+    history: localMessages,
+    updateHistory,
+    updateMetrics,
+    getSuggestions,
+    setSuggestedPrompts,
+    webSearchEnabled,
+    codebaseKnowledgeEnabled,
+    lightningEnabled,
+    lightningDirectives,
+    logRollout,
+  });
+
+  const editMessage = useCallback(
+    (index: number, newContent: string) => {
+      updateHistory((prev) => {
+        const newHistory = [...prev];
+        if (newHistory[index]) {
+          newHistory[index] = { ...newHistory[index], content: newContent };
+        }
+        return newHistory;
+      });
+    },
+    [updateHistory]
+  );
+
+  const regenerateMessage = useCallback(
+    (index: number) => {
+      // Typically, regeneration slices the history just before the message
+      // and triggers runCoder again with the last user prompt.
+      // We will look for the last user prompt before or at index.
+      const msgs = messagesRef.current;
+      let targetUserIndex = -1;
+      for (let i = index; i >= 0; i--) {
+        if (msgs[i].role === 'user') {
+          targetUserIndex = i;
+          break;
+        }
+      }
+      if (targetUserIndex !== -1) {
+        const newPrompt = msgs[targetUserIndex].content;
+        const newHistory = msgs.slice(0, targetUserIndex);
+
+        let sid = null;
+        if (chatSessions?.createSession) {
+          sid = chatSessions.createSession(newHistory);
+          if (sid && chatSessions.setActiveSession) {
+            chatSessions.setActiveSession(sid);
+          }
+        }
+        messagesRef.current = newHistory;
+        setLocalMessages(newHistory);
+        if (sid) {
+          activeSidRef.current = sid;
+          createdSessionIdRef.current = sid;
+        }
+        setTimeout(() => {
+          runCoder?.(newPrompt);
+        }, 0);
+      }
+    },
+    [chatSessions, runCoder]
+  );
 
   const forkAndRun = useCallback(
     (index: number, newPrompt: string) => {
@@ -217,6 +275,8 @@ export const useCoderLogic = ({
     stopCoder,
     clearHistory,
     forkAndRun,
+    editMessage,
+    regenerateMessage,
     togglePin,
     agentPersonas,
     suggestedPrompts,
@@ -227,6 +287,7 @@ export const useCoderLogic = ({
     subagentTasks,
     agentMode,
     agentReasoning,
+    pendingToolConfirm,
     submitReward,
     lightningEnabled,
     lightningDirectives,

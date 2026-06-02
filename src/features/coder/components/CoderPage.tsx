@@ -3,7 +3,7 @@
  * @description The standalone Coder feature page — NYX is the sole agent.
  */
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search,
@@ -17,6 +17,7 @@ import {
   ArrowRight,
   FolderPlus,
   HelpCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { ModelDefinition, Provider } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -46,32 +47,15 @@ interface CoderPageProps {
   onToggleSidebar?: () => void;
   chatSessions: any;
 
-  // Lifted state props:
-  activeAgent: 'nyx';
-  isLoading: boolean;
-  history: any[];
-  metrics: any;
+  // Model Selection
   models: Record<'nyx', string>;
   setModel: (modelId: string) => void;
-  runCoder: (prompt: string) => void;
-  stopCoder: () => void;
-  clearHistory: () => void;
-  forkAndRun: (index: number, prompt: string) => void;
-  togglePin?: (index: number) => void;
-  suggestedPrompts: string[];
-  subagentTasks: any[];
-  webSearchEnabled: boolean;
-  setWebSearchEnabled: (val: boolean) => void;
-  codebaseKnowledgeEnabled: boolean;
-  setCodebaseKnowledgeEnabled: (val: boolean) => void;
-  agentMode?: 'chat' | 'coder' | null;
-  agentReasoning?: string;
-  onOpenLightning?: () => void;
-  submitReward?: (id: string, reward: number) => void;
 
   // Microsoft Lightning:
   lightningEnabled?: boolean;
   lightningDirectives?: string[];
+  logRollout?: any;
+  submitReward?: (rolloutId: string, reward: number) => void;
 }
 
 export const CoderPage: React.FC<CoderPageProps> = ({
@@ -88,39 +72,66 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   onToggleSidebar,
   chatSessions,
 
-  // Destructure lifted props:
-  activeAgent,
-  isLoading,
-  history,
-  metrics,
   models,
   setModel,
-  runCoder,
-  stopCoder,
-  clearHistory,
-  forkAndRun,
-  togglePin,
-  agentPersonas,
-  suggestedPrompts,
-  subagentTasks,
-  webSearchEnabled,
-  setWebSearchEnabled,
-  codebaseKnowledgeEnabled,
-  setCodebaseKnowledgeEnabled,
-  agentMode = null,
-  agentReasoning = '',
   onOpenLightning,
-  submitReward,
 
   // Microsoft Lightning:
   lightningEnabled = true,
   lightningDirectives = [],
+  logRollout,
+  submitReward,
 }) => {
+  const {
+    activeAgent,
+    isLoading,
+    history,
+    metrics,
+    runCoder,
+    stopCoder,
+    clearHistory,
+    forkAndRun,
+    editMessage,
+    regenerateMessage,
+    togglePin,
+    agentPersonas,
+    suggestedPrompts,
+    subagentTasks,
+    webSearchEnabled,
+    setWebSearchEnabled,
+    codebaseKnowledgeEnabled,
+    setCodebaseKnowledgeEnabled,
+    agentMode,
+    agentReasoning,
+    pendingToolConfirm,
+  } = useCoderLogic({
+    apiKeys,
+    modelSettings,
+    trackUsage,
+    models,
+    setModel,
+    chatSessions,
+    lightningEnabled,
+    lightningDirectives,
+    logRollout,
+    submitReward,
+  });
+
   const workspacePath = useNyxStore((s) => s.workspacePath);
   const selectWorkspace = useNyxStore((s) => s.selectWorkspace);
   const createWorkspace = useNyxStore((s) => s.createWorkspace);
+  const [scrolledToBottom, setScrolledToBottom] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [messageSearchQuery, setMessageSearchQuery] = useState('');
+  const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
+
   const [scraplingStatus, setScraplingStatus] = useState<'checking' | 'online' | 'offline'>(
     'checking'
   );
@@ -208,6 +219,10 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     return 'success';
   }, [isLoading, currentModel, providerStatuses]);
 
+  const filteredHistory = history.filter((msg) =>
+    msg.content.toLowerCase().includes(messageSearchQuery.toLowerCase())
+  );
+
   const handleSubmit = useCallback(
     (finalPrompt: string) => {
       if (!finalPrompt.trim() || isLoading) return;
@@ -238,10 +253,11 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   );
 
   const copyToClipboard = useCallback(async (text: string, id: string) => {
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
     try {
       await navigator.clipboard.writeText(text);
       setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2000);
+      copyTimeoutRef.current = setTimeout(() => setCopiedId(null), 2000);
       toast.success('Code copied to clipboard');
     } catch (err) {
       // Fallback for large content or blocked clipboard API
@@ -255,7 +271,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
         document.execCommand('copy');
         document.body.removeChild(textArea);
         setCopiedId(id);
-        setTimeout(() => setCopiedId(null), 2000);
+        copyTimeoutRef.current = setTimeout(() => setCopiedId(null), 2000);
         toast.success('Code copied to clipboard (fallback)');
       } catch (fallbackErr) {
         toast.error('Failed to copy code to clipboard');
@@ -341,6 +357,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
             mode="code"
             onOpenLightning={onOpenLightning}
             history={history}
+            messageSearchQuery={messageSearchQuery}
+            onMessageSearchChange={setMessageSearchQuery}
           />
           {subagentTasks && subagentTasks.length > 0 && (
             <div className="px-6 pt-3 shrink-0">
@@ -555,7 +573,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                   }
                 >
                   <MessageList
-                    history={history}
+                    history={filteredHistory}
                     activeAgent={activeAgent}
                     isLoading={isLoading}
                     onCopy={copyToClipboard}
@@ -564,9 +582,9 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     onSuggestedPromptClick={setPrompt}
                     subagentTasks={subagentTasks}
                     submitReward={submitReward}
-                    onRetry={handleRetry}
-                    onEditMessage={handleEditMessage}
-                    onTogglePin={togglePin}
+                    onEditMessage={editMessage}
+                    onRegenerate={regenerateMessage}
+                    onBranchFromMessage={(idx) => forkAndRun(idx, history[idx]?.content || '')}
                   />
                 </ErrorBoundary>
                 <PromptInput
@@ -616,9 +634,9 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                   onSuggestedPromptClick={setPrompt}
                   subagentTasks={subagentTasks}
                   submitReward={submitReward}
-                  onRetry={handleRetry}
-                  onEditMessage={handleEditMessage}
-                  onTogglePin={togglePin}
+                  onEditMessage={editMessage}
+                  onRegenerate={regenerateMessage}
+                  onBranchFromMessage={(idx) => forkAndRun(idx, history[idx]?.content || '')}
                 />
               </ErrorBoundary>
 
@@ -649,6 +667,35 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                 agentReasoning={agentReasoning}
               />
             </>
+          )}
+
+          {pendingToolConfirm && (
+            <div className="absolute bottom-24 right-4 z-50 bg-neutral-900 border border-neutral-700 rounded-lg p-4 shadow-xl max-w-sm">
+              <h3 className="text-sm font-semibold text-white mb-2 flex items-center">
+                <AlertTriangle className="w-4 h-4 mr-2 text-yellow-500" />
+                Confirmation Required
+              </h3>
+              <p className="text-xs text-neutral-400 mb-4">
+                NYX wants to execute <strong>{pendingToolConfirm.toolName}</strong>
+              </p>
+              <pre className="text-xs text-green-400 bg-black p-2 rounded mb-4 overflow-x-auto max-h-32">
+                {JSON.stringify(pendingToolConfirm.args, null, 2)}
+              </pre>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => pendingToolConfirm.resolve(false)}
+                  className="px-3 py-1.5 bg-neutral-800 text-neutral-300 text-xs rounded hover:bg-neutral-700"
+                >
+                  Reject
+                </button>
+                <button
+                  onClick={() => pendingToolConfirm.resolve(true)}
+                  className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-500"
+                >
+                  Approve
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </ErrorBoundary>

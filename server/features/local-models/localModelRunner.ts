@@ -13,11 +13,18 @@ import { MODEL_LAYERS } from '../../config/constants.ts';
 import { Mutex } from 'async-mutex';
 import { ModelOptimizer, OptimizationProfile } from './modelOptimizer.ts';
 import { LOCAL_MODEL_PORT } from '../../../src/config/ports.ts';
+import AdmZip from 'adm-zip';
+import * as tar from 'tar';
+import { gguf } from '@huggingface/gguf';
+import crypto from 'crypto';
+import net from 'net';
 
 import { MODELS_DIR as BASE_DIR, findPythonPath } from '../../lib/paths.ts';
 const BIN_DIR = path.join(BASE_DIR, 'bin');
 
 const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
+const IS_LINUX = process.platform === 'linux';
 const BIN_NAME = IS_WIN ? 'llama-server.exe' : 'llama-server';
 const BINARY_PATH = path.join(BIN_DIR, BIN_NAME);
 
@@ -47,8 +54,27 @@ function getModelFormat(modelId: string): 'gguf' | 'unknown' {
 
 // ── State machine (mutex-protected) ──────────────────────────────────────────
 const runnerMutex = new Mutex();
+let activePort = parseInt(process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString(), 10);
+
+async function findAvailablePort(startPort: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.listen(startPort, '127.0.0.1', () => {
+      const port = (server.address() as net.AddressInfo).port;
+      server.close(() => resolve(port));
+    });
+    server.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE') {
+        resolve(findAvailablePort(startPort + 1));
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
 function getLlamaPort(): number {
-  return parseInt(process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString(), 10);
+  return activePort;
 }
 let modelState: ModelState = 'idle';
 let activeProcess: ChildProcess | null = null;
@@ -264,24 +290,48 @@ export const LocalModelRunner = {
   },
 
   getFreeVram(): Promise<number> {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
+      if (process.platform === 'darwin') {
+        // macOS Unified Memory
+        const total = os.totalmem();
+        const free = os.freemem();
+        resolve(Math.max(0, free - 1024 * 1024 * 1024)); // Reserve 1GB for OS
+        return;
+      }
+
       const commands = [
         'nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits',
         '"C:\\Windows\\System32\\nvidia-smi.exe" --query-gpu=memory.free --format=csv,noheader,nounits',
         '"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" --query-gpu=memory.free --format=csv,noheader,nounits',
+        'rocm-smi --showmeminfo vram --json', // AMD ROCm fallback
       ];
 
       const tryExec = (idx: number) => {
         if (idx >= commands.length) {
-          resolve(0);
+          // Fallback to generic system free memory for integrated graphics
+          resolve(Math.max(0, os.freemem() - 1024 * 1024 * 1024));
           return;
         }
         exec(commands[idx], (error: any, stdout: string) => {
           if (error) {
             tryExec(idx + 1);
           } else {
-            const mem = parseInt(stdout.trim(), 10);
-            resolve(isNaN(mem) ? 0 : mem * 1024 * 1024); // Convert MiB to bytes
+            if (commands[idx].includes('rocm')) {
+              try {
+                const data = JSON.parse(stdout);
+                // Extract VRAM from first GPU
+                const key = Object.keys(data)[0];
+                const vram =
+                  parseInt(data[key]?.['VRAM Total Memory (B)'] || '0', 10) -
+                  parseInt(data[key]?.['VRAM Total Used Memory (B)'] || '0', 10);
+                resolve(vram > 0 ? vram : 0);
+              } catch {
+                tryExec(idx + 1);
+              }
+            } else {
+              const mem = parseInt(stdout.trim(), 10);
+              resolve(isNaN(mem) ? 0 : mem * 1024 * 1024);
+            }
           }
         });
       };
@@ -476,73 +526,34 @@ export const LocalModelRunner = {
     let totalLayers = 32;
     const models = LocalModelManager.listModels();
     const model = models.find((m) => m.id === modelId);
-
-    if (model) {
-      if (MODEL_LAYERS[model.id]) {
-        totalLayers = MODEL_LAYERS[model.id];
-      } else {
-        const filenameLower = model.fileName.toLowerCase();
-        if (filenameLower.includes('70b') || filenameLower.includes('80l')) {
-          totalLayers = 80;
-        } else if (
-          filenameLower.includes('32b') ||
-          filenameLower.includes('35b') ||
-          filenameLower.includes('64l')
-        ) {
-          totalLayers = 64;
-        } else if (
-          filenameLower.includes('22b') ||
-          filenameLower.includes('27b') ||
-          filenameLower.includes('56l')
-        ) {
-          totalLayers = 56;
-        } else if (
-          filenameLower.includes('14b') ||
-          filenameLower.includes('13b') ||
-          filenameLower.includes('12b') ||
-          filenameLower.includes('40l')
-        ) {
-          totalLayers = 40;
-        } else if (
-          filenameLower.includes('8b') ||
-          filenameLower.includes('9b') ||
-          filenameLower.includes('7b') ||
-          filenameLower.includes('32l')
-        ) {
-          totalLayers = 32;
-        } else if (
-          filenameLower.includes('3b') ||
-          filenameLower.includes('4b') ||
-          filenameLower.includes('28l')
-        ) {
-          totalLayers = 28;
-        } else if (
-          filenameLower.includes('1.5b') ||
-          filenameLower.includes('2b') ||
-          filenameLower.includes('24l')
-        ) {
-          totalLayers = 24;
-        } else if (filenameLower.includes('1b') || filenameLower.includes('16l')) {
-          totalLayers = 16;
-        }
-      }
-    }
-
     let fileSize = 2 * 1024 * 1024 * 1024;
+
     if (model && model.status === 'completed' && model.filePath) {
       try {
         fileSize = fs.statSync(model.filePath).size;
-      } catch {}
+        // Parse GGUF metadata
+        const metadata = await gguf(model.filePath, { allowLocalFile: true });
+        if (metadata?.metadata) {
+          const blockCount =
+            metadata.metadata['llama.block_count'] ||
+            metadata.metadata['qwen2.block_count'] ||
+            metadata.metadata['gemma2.block_count'] ||
+            metadata.metadata['phi3.block_count'];
+          if (blockCount) {
+            totalLayers = Number(blockCount);
+            logger.info(`[GGUF Parser] Extracted ${totalLayers} layers from ${modelId}`);
+          }
+        }
+      } catch (err) {
+        logger.warn('Failed to parse GGUF metadata, falling back to heuristics:', err);
+      }
     } else if (model) {
       const parsed = parseFloat(model.size);
-      if (!isNaN(parsed)) {
-        fileSize = parsed * 1024 * 1024 * 1024;
-      }
+      if (!isNaN(parsed)) fileSize = parsed * 1024 * 1024 * 1024;
     }
 
     const gpus = await this.detectGPUs();
     const hasGPU = gpus.length > 0;
-
     let batchSize = Math.min(2048, contextSize);
     let microBatchSize = Math.min(512, batchSize);
 
@@ -562,78 +573,42 @@ export const LocalModelRunner = {
     const primaryGPU = gpus[0];
     let availableVram = primaryGPU.vramBytes;
     let freeNvidiaVram = 0;
-
-    if (
-      primaryGPU.vendor.toLowerCase().includes('nvidia') ||
-      primaryGPU.model.toLowerCase().includes('nvidia')
-    ) {
-      try {
-        freeNvidiaVram = await this.getFreeVram();
-        if (freeNvidiaVram > 0) {
-          availableVram = freeNvidiaVram;
-        }
-      } catch {}
-    }
+    try {
+      freeNvidiaVram = await this.getFreeVram();
+    } catch {}
 
     let usableVram = 0;
     if (freeNvidiaVram > 0) {
-      // Dynamic: We have actual free VRAM! Only deduct a small safety headroom (250MB) for UI and graphics redraws.
       usableVram = Math.max(0, freeNvidiaVram - 250 * 1024 * 1024);
     } else {
-      // Fallback: Deduct conservative overhead baseline from total VRAM
-      const baselineOverhead =
-        primaryGPU.vramBytes <= 6.2 * 1024 * 1024 * 1024 ? 1200 * 1024 * 1024 : 750 * 1024 * 1024;
-      usableVram = Math.max(0, availableVram - baselineOverhead);
+      usableVram = Math.max(0, availableVram - 750 * 1024 * 1024);
     }
 
-    // Determine installed backend to adjust KV cache sizing
     let usedBackend: 'cuda' | 'vulkan' = 'vulkan';
     try {
-      const versionFilePath = path.join(BIN_DIR, '.version');
-      let installedVersion = '';
-      if (fs.existsSync(versionFilePath)) {
-        installedVersion = fs.readFileSync(versionFilePath, 'utf-8').trim();
-      }
+      const installedVersion = fs.readFileSync(path.join(BIN_DIR, '.version'), 'utf-8').trim();
       usedBackend = installedVersion.endsWith('-cuda') ? 'cuda' : 'vulkan';
     } catch {}
 
-    // Modern GQA (Grouped-Query Attention) KV cache size estimate:
-    // Vulkan forces f16 cache in llama.cpp to avoid crashes (~4096 bytes per token per layer)
-    // CUDA uses quantized Q8_0 KV cache (~2048 bytes per token per layer)
     const kvCachePerTokenPerLayer = usedBackend === 'vulkan' ? 4096 : 2048;
     const kvCachePerLayer = contextSize * kvCachePerTokenPerLayer;
 
-    // Adjust batch size to protect VRAM on smaller cards
     const computeBuffer = batchSize * 512 * 4;
     if (fileSize + computeBuffer > usableVram) {
       batchSize = 512;
       microBatchSize = 128;
     }
 
-    const netComputeBuffer = batchSize * 512 * 4;
-    const availableForLayers = Math.max(0, usableVram - netComputeBuffer);
-
-    // Calculate VRAM cost per layer (weight slice + KV cache slice)
+    const availableForLayers = Math.max(0, usableVram - batchSize * 512 * 4);
     const layerWeightSize = fileSize / totalLayers;
     const layerSize = layerWeightSize + kvCachePerLayer;
-
     const maxLayersByVram = Math.floor(availableForLayers / layerSize);
     const safeLayers = Math.max(0, Math.min(totalLayers, maxLayersByVram));
-    const pct = Math.round((safeLayers / totalLayers) * 100);
 
-    // Vulkan hybrid splits are highly susceptible to GGML_SCHED_MAX_SPLIT_INPUTS assertion crashes
-    // when processing large batches. Cap batch sizes aggressively for hybrid splits on Vulkan.
-    if (usedBackend === 'vulkan' && safeLayers > 0 && safeLayers < totalLayers) {
-      batchSize = Math.min(512, batchSize);
-      microBatchSize = Math.min(128, microBatchSize);
-    }
-
-    let message = '';
-    if (safeLayers >= totalLayers) {
-      message = `GPU has abundant VRAM! Loaded all ${totalLayers}/${totalLayers} layers (100%) to GPU VRAM for maximum speed.`;
-    } else {
-      message = `GPU VRAM limit reached. Offloaded exactly ${safeLayers}/${totalLayers} layers (${pct}%) to VRAM. CPU/RAM handles the remaining ${totalLayers - safeLayers} layers.`;
-    }
+    let message =
+      safeLayers >= totalLayers
+        ? `GPU has abundant VRAM! Loaded all ${totalLayers}/${totalLayers} layers to GPU.`
+        : `GPU VRAM limit reached. Offloaded ${safeLayers}/${totalLayers} layers to VRAM.`;
 
     return {
       gpuLayers: safeLayers,
@@ -656,12 +631,23 @@ export const LocalModelRunner = {
 
   async ensureBinaryInstalled(forceBackend?: 'cuda' | 'vulkan'): Promise<'cuda' | 'vulkan'> {
     let backend = forceBackend || (await this.detectBackend());
-    const vulkanDllPath = path.join(BIN_DIR, 'ggml-vulkan.dll');
-    const cudaDllPath = path.join(BIN_DIR, 'cudart64_12.dll');
     const versionFilePath = path.join(BIN_DIR, '.version');
-    const CURRENT_VERSION = 'b9294';
-    let expectedVersion = `${CURRENT_VERSION}-${backend}`;
 
+    // Fetch latest release from GitHub API
+    let CURRENT_VERSION = 'b9479'; // default fallback
+    try {
+      const res = await fetch('https://api.github.com/repos/ggml-org/llama.cpp/releases/latest');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.tag_name) {
+          CURRENT_VERSION = data.tag_name;
+        }
+      }
+    } catch (err) {
+      logger.warn('[Binary Updater] Failed to check GitHub for updates. Using fallback version.');
+    }
+
+    let expectedVersion = `${CURRENT_VERSION}-${backend}-${process.platform}`;
     let installedVersion = '';
     if (fs.existsSync(versionFilePath)) {
       try {
@@ -669,205 +655,65 @@ export const LocalModelRunner = {
       } catch {}
     }
 
-    // Check if the server executable, correct backend DLLs, and version exist.
     const resolvedBinaryPath = findLlamaServerPath();
-    let binaryReady =
-      fs.existsSync(resolvedBinaryPath) &&
-      (installedVersion === expectedVersion ||
-        (backend === 'vulkan' && installedVersion === CURRENT_VERSION));
-    if (binaryReady) {
-      if (backend === 'vulkan' && !fs.existsSync(vulkanDllPath)) {
-        binaryReady = false;
-      } else if (backend === 'cuda' && !fs.existsSync(cudaDllPath)) {
-        binaryReady = false;
-      }
-    }
+    let binaryReady = fs.existsSync(resolvedBinaryPath) && installedVersion === expectedVersion;
 
-    // Smart Fallback: If CUDA is preferred but not ready, check if Vulkan is already installed and ready.
-    if (!binaryReady && backend === 'cuda' && !forceBackend) {
-      const vulkanReady =
-        fs.existsSync(resolvedBinaryPath) &&
-        fs.existsSync(vulkanDllPath) &&
-        (installedVersion === `${CURRENT_VERSION}-vulkan` || installedVersion === CURRENT_VERSION);
-      if (vulkanReady) {
-        logger.info(
-          '[GPU Optimizer] CUDA backend is preferred but not downloaded. Vulkan is already installed and ready. Using Vulkan to avoid slow download.'
-        );
-        backend = 'vulkan';
-        expectedVersion = `${CURRENT_VERSION}-vulkan`;
-        binaryReady = true;
-      }
-    }
+    if (binaryReady) return backend;
 
-    if (binaryReady) {
-      if (backend === 'vulkan' && installedVersion === CURRENT_VERSION) {
-        try {
-          fs.writeFileSync(versionFilePath, expectedVersion, 'utf-8');
-        } catch {}
-      }
-      return backend;
-    }
-
-    // Clean up old files to avoid mismatched DLL issues
-    const filesToClean = [
-      resolvedBinaryPath,
-      vulkanDllPath,
-      cudaDllPath,
-      path.join(BIN_DIR, 'ggml-cuda.dll'),
-      path.join(BIN_DIR, 'cublas64_12.dll'),
-      path.join(BIN_DIR, 'cublasLt64_12.dll'),
-    ];
-    for (const f of filesToClean) {
-      if (fs.existsSync(f)) {
-        try {
-          fs.unlinkSync(f);
-        } catch {}
-      }
-    }
-
+    logger.info(
+      `Portable llama-server version ${CURRENT_VERSION} (${backend.toUpperCase()}) not found or outdated. Downloading...`
+    );
     modelState = 'downloading';
     startProgress = 10;
-    logger.info(
-      `Portable llama-server.exe version ${CURRENT_VERSION} (${backend.toUpperCase()} backend) not found. Preparing direct download...`
-    );
 
-    const zipPath = path.join(BIN_DIR, 'llama-bin.zip');
-    const cudartZipPath = path.join(BIN_DIR, 'cudart-bin.zip');
+    let assetUrl = '';
+    const isMac = process.platform === 'darwin';
+    const isLinux = process.platform === 'linux';
+    const isWin = process.platform === 'win32';
+
+    if (isMac) {
+      assetUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-macos-${os.arch() === 'arm64' ? 'arm64' : 'x64'}.tar.gz`;
+    } else if (isLinux) {
+      assetUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-ubuntu-${backend === 'vulkan' ? 'vulkan-' : ''}x64.tar.gz`;
+    } else {
+      assetUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-win-${backend === 'cuda' ? 'cuda-12.4' : 'vulkan'}-x64.zip`;
+    }
+
+    const archivePath = path.join(BIN_DIR, isWin ? 'llama-bin.zip' : 'llama-bin.tar.gz');
 
     try {
-      if (backend === 'cuda') {
-        const zipUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-win-cuda-12.4-x64.zip`;
-        const cudartUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/cudart-llama-bin-win-cuda-12.4-x64.zip`;
+      startProgress = 20;
+      await this.downloadBinaryZipNode(assetUrl, archivePath);
+      startProgress = 60;
+      logger.info('Archive downloaded successfully. Extracting natively...');
 
-        // Download main CUDA zip
-        startProgress = 20;
-        await this.downloadBinaryZip(zipUrl, zipPath);
-        startProgress = 40;
-
-        // Download CUDA runtime DLLs
-        logger.info('Downloading CUDA runtime libraries...');
-        await this.downloadBinaryZip(cudartUrl, cudartZipPath);
-        startProgress = 60;
-
-        logger.info('Extracting main CUDA archive natively via PowerShell...');
-        await new Promise<void>((resolve, reject) => {
-          const cmd = `powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
-          exec(cmd, (err, stdout, stderr) => {
-            if (err) {
-              logger.error('PowerShell extraction of CUDA binary failed:', stderr);
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        });
-
-        logger.info('Extracting CUDA runtime libraries natively via PowerShell...');
-        await new Promise<void>((resolve, reject) => {
-          const cmd = `powershell -Command "Expand-Archive -Path '${cudartZipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
-          exec(cmd, (err, stdout, stderr) => {
-            if (err) {
-              logger.error('PowerShell extraction of CUDA runtime failed:', stderr);
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        });
+      if (isWin) {
+        const zip = new AdmZip(archivePath);
+        zip.extractAllTo(BIN_DIR, true);
       } else {
-        // Vulkan download
-        const zipUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-win-vulkan-x64.zip`;
-        startProgress = 20;
-        await this.downloadBinaryZip(zipUrl, zipPath);
-        startProgress = 60;
-        logger.info(
-          'Vulkan GPU binary downloaded successfully. Extracting archive natively via PowerShell...'
-        );
-
-        await new Promise<void>((resolve, reject) => {
-          const cmd = `powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${BIN_DIR}' -Force"`;
-          exec(cmd, (err, stdout, stderr) => {
-            if (err) {
-              logger.error('PowerShell extraction failed:', stderr);
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        });
+        await tar.x({ file: archivePath, cwd: BIN_DIR });
+        fs.chmodSync(path.join(BIN_DIR, 'llama-server'), 0o755);
       }
 
       startProgress = 90;
-      // Write the installed version
-      try {
-        fs.writeFileSync(versionFilePath, expectedVersion, 'utf-8');
-      } catch (error: any) {
-        logger.error('Failed to write .version file:', error.message);
-      }
+      fs.writeFileSync(versionFilePath, expectedVersion, 'utf-8');
 
-      // Clean up zip files
-      if (fs.existsSync(zipPath)) {
-        try {
-          fs.unlinkSync(zipPath);
-        } catch {}
-      }
-      if (fs.existsSync(cudartZipPath)) {
-        try {
-          fs.unlinkSync(cudartZipPath);
-        } catch {}
-      }
+      try {
+        fs.unlinkSync(archivePath);
+      } catch {}
 
       startProgress = 100;
       modelState = 'idle';
-      logger.info(
-        `Binary extraction complete. Native llama-server.exe version ${CURRENT_VERSION} (${backend.toUpperCase()} backend) is ready.`
-      );
+      logger.info(`Binary extraction complete. Native llama-server ${CURRENT_VERSION} ready.`);
       return backend;
     } catch (error: any) {
       modelState = 'idle';
       startProgress = 0;
-      if (fs.existsSync(zipPath)) {
-        try {
-          fs.unlinkSync(zipPath);
-        } catch {}
-      }
-      if (fs.existsSync(cudartZipPath)) {
-        try {
-          fs.unlinkSync(cudartZipPath);
-        } catch {}
-      }
+      try {
+        fs.unlinkSync(archivePath);
+      } catch {}
       throw new Error(`Failed to initialize built-in llama-server executable: ${error.message}`);
     }
-  },
-
-  downloadBinaryZip(url: string, destPath: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      // Prefer native curl on Windows for speed and system-proxy compatibility
-      if (process.platform === 'win32') {
-        logger.info(`[Binary Downloader] Attempting download via curl.exe from: ${url}`);
-        const cmd = `curl.exe -L "${url}" -o "${destPath}"`;
-        exec(cmd, (err, stdout, stderr) => {
-          if (!err && fs.existsSync(destPath) && fs.statSync(destPath).size > 0) {
-            logger.info(
-              `[Binary Downloader] Successfully downloaded via curl: ${path.basename(destPath)}`
-            );
-            resolve();
-          } else {
-            logger.warn(
-              `[Binary Downloader] curl download failed or not available, falling back to Node https:`,
-              err || stderr
-            );
-            this.downloadBinaryZipNode(url, destPath)
-              .then(resolve)
-              .catch((err: any) => reject(err));
-          }
-        });
-        return;
-      }
-      this.downloadBinaryZipNode(url, destPath)
-        .then(resolve)
-        .catch((err: any) => reject(err));
-    });
   },
 
   downloadBinaryZipNode(url: string, destPath: string): Promise<void> {
@@ -878,10 +724,8 @@ export const LocalModelRunner = {
         const urlObj = new URL(currentUrl);
         const options = {
           headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0',
             Accept: '*/*',
-            Connection: 'keep-alive',
           },
         };
 
@@ -893,9 +737,9 @@ export const LocalModelRunner = {
             res.statusCode === 308
           ) {
             let redirectUrl = res.headers.location;
-            res.resume(); // Free the socket
+            res.resume();
             if (redirectUrl) {
-              if (!redirectUrl.startsWith('http://') && !redirectUrl.startsWith('https://')) {
+              if (!redirectUrl.startsWith('http')) {
                 redirectUrl = new URL(redirectUrl, currentUrl).href;
               }
               makeRequest(redirectUrl);
@@ -904,22 +748,18 @@ export const LocalModelRunner = {
           }
 
           if (res.statusCode !== 200) {
-            res.resume(); // Free the socket
-            reject(new Error(`Server responded with status code ${res.statusCode}`));
+            res.resume();
+            reject(new Error(`Server responded with status ${res.statusCode}`));
             return;
           }
 
           res.pipe(fileStream);
-
           fileStream.on('finish', () => {
             fileStream.close(() => resolve());
           });
         });
 
-        req.setTimeout(60000, () => {
-          req.destroy(new Error('Download request timed out after 60 seconds'));
-        });
-
+        req.setTimeout(120000, () => req.destroy(new Error('Timeout')));
         req.on('error', (err) => {
           fileStream.close(() => {
             try {
@@ -956,10 +796,13 @@ export const LocalModelRunner = {
       activeProcess &&
       activeContextSize >= (settings?.contextSize || 8192)
     ) {
-      return; // Already running with equal or larger context window
+      return;
     }
 
-    const port = getLlamaPort();
+    const defaultPort = parseInt(process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString(), 10);
+    // Use dynamic port finding starting from default port
+    const port = await findAvailablePort(activePort || defaultPort);
+    activePort = port;
 
     // Check if the port is already alive and running the correct model
     try {

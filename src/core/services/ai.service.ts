@@ -42,14 +42,12 @@ async function initTokenizer(): Promise<void> {
       } catch {
         const asciiChars = (text.match(/[\\x00-\\x7F]/g) || []).length;
         const nonAsciiChars = text.length - asciiChars;
-        return Math.ceil(asciiChars / 4 + nonAsciiChars / 1.5);
+        return Math.ceil(text.length / 3.5); // Better heuristic for code
       }
     };
   } catch {
     _countTokens = (text: string) => {
-      const asciiChars = (text.match(/[\\x00-\\x7F]/g) || []).length;
-      const nonAsciiChars = text.length - asciiChars;
-      return Math.ceil(asciiChars / 4 + nonAsciiChars / 1.5);
+      return Math.ceil(text.length / 3.5); // Better heuristic for code
     };
   }
 }
@@ -57,9 +55,7 @@ initTokenizer().catch(() => {});
 
 export function countTokens(text: string): number {
   if (_countTokens) return _countTokens(text);
-  const asciiChars = (text.match(/[\\x00-\\x7F]/g) || []).length;
-  const nonAsciiChars = text.length - asciiChars;
-  return Math.ceil(asciiChars / 4 + nonAsciiChars / 1.5);
+  return Math.ceil(text.length / 3.5); // Better heuristic for code
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +251,7 @@ export class AIService {
       return existing;
     }
 
-    const promise = this.executeWithRetry(
+    const executePromise = this.executeWithRetry(
       requestId,
       modelId,
       provider,
@@ -266,17 +262,20 @@ export class AIService {
       onStream,
       signal,
       options
-    ).finally(() => {
+    );
+
+    const cleanupPromise = executePromise.finally(() => {
       this.inFlightRequests.delete(dedupeKey);
       activeControllers.delete(requestId);
     });
 
-    this.inFlightRequests.set(dedupeKey, promise);
+    cleanupPromise.catch(() => {}); // prevent unhandled rejections if unawaited
+    this.inFlightRequests.set(dedupeKey, cleanupPromise);
 
     // Auto-cleanup dedupe map after TTL to prevent memory leaks
     setTimeout(() => this.inFlightRequests.delete(dedupeKey), this.DEDUPE_TTL_MS);
 
-    return promise;
+    return cleanupPromise;
   }
 
   // -------------------------------------------------------------------------
@@ -505,55 +504,49 @@ export class AIService {
       streamEvents,
     } = config;
 
-    try {
-      const response = await this.fetchWithAuth('/api/v1/gemini/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Connection: 'keep-alive' },
-        body: JSON.stringify({
-          model: modelId,
-          prompt,
-          apiKey,
-          settings,
-          systemInstruction,
-          history,
-          gatewayUrls,
-          images,
-          tools,
-          responseFormat,
-          reasoning,
-        }),
-        signal,
-      });
-      if (!response.ok) await this.handleNonOkResponse(response, 'Gemini');
-      return await this.processStream(response, modelId, 'gemini', onStream, streamEvents);
-    } catch (error: any) {
-      if (error.name === 'AbortError' || error.message?.includes('aborted')) throw error;
-      const { directFetchGemini } = await import('@src/infrastructure/api/directClient');
-      const text = await directFetchGemini(
-        modelId,
-        prompt,
-        apiKey || '',
-        settings,
-        systemInstruction,
-        history,
-        signal,
-        gatewayUrls
-      );
-      if (onStream) {
-        if (streamEvents) {
-          onStream({ type: 'text', content: text, final: true });
-        } else {
-          onStream(text);
-        }
-      }
-      return {
-        text,
-        model: modelId,
-        provider: 'gemini',
-        metrics: this.computeMetrics(text, Date.now()),
-        finishReason: 'stop',
-      };
-    }
+    // Direct bypass for Gemini if API key is present, avoiding the non-streaming proxy
+    const { directFetch } = await import('@src/infrastructure/api/directClient');
+
+    const result = await directFetch(modelId, prompt, {
+      apiKey: apiKey || '',
+      settings,
+      systemInstruction,
+      history,
+      signal,
+      gatewayUrls,
+      images,
+      tools: tools as any,
+      responseFormat: responseFormat as any,
+      webSearch: config.webSearch,
+      onStream: onStream
+        ? (chunk) => {
+            if (streamEvents) {
+              if (chunk.type === 'text')
+                onStream({ type: 'text', content: chunk.content, final: false });
+              if (chunk.type === 'reasoning')
+                onStream({ type: 'reasoning', content: chunk.content, final: false });
+              if (chunk.type === 'tool_call')
+                onStream({
+                  type: 'tool_calls',
+                  content: JSON.parse(chunk.content || '[]'),
+                  final: false,
+                });
+            } else if (chunk.type === 'text' && chunk.content) {
+              onStream(chunk.content);
+            }
+          }
+        : undefined,
+    });
+
+    return {
+      text: result.text,
+      model: modelId,
+      provider: 'gemini',
+      metrics: result.metrics || this.computeMetrics(result.text, Date.now()),
+      finishReason: (result.finishReason as any) || 'stop',
+      reasoning: result.reasoning ? [{ content: result.reasoning, type: 'thinking' }] : undefined,
+      toolCalls: result.toolCalls as any,
+    };
   }
 
   private static async executeNyxNative(config: ProviderConfig): Promise<EnhancedAIResponse> {
@@ -587,8 +580,7 @@ export class AIService {
         context_size: settings?.contextSize,
         batch_size: settings?.batchSize,
         mirostat: settings?.mirostat,
-        agentMode,
-        webSearch,
+        // local models don't use agentMode/webSearch
       }),
       signal,
     });
@@ -707,7 +699,7 @@ export class AIService {
 
     const trimmed = key.trim();
     const validators: Record<string, (k: string) => boolean> = {
-      gemini: (k) => k.length >= 30,
+      gemini: (k) => k.length >= 10,
     };
 
     const validator = validators[String(provider)];
@@ -746,6 +738,119 @@ export class AIService {
   // -------------------------------------------------------------------------
   // Continuation support
   // -------------------------------------------------------------------------
+  static compressPrompt(prompt: string, maxTokens = 100000): string {
+    const tokens = countTokens(prompt);
+    if (tokens <= maxTokens) return prompt;
+    // rough heuristic: 1 token = 3.5 chars
+    const maxChars = Math.floor(maxTokens * 3.5);
+    const half = Math.floor(maxChars / 2);
+    return `${prompt.substring(0, half)}\n\n...[TRUNCATED FOR LENGTH]...\n\n${prompt.substring(prompt.length - half)}`;
+  }
+
+  static async executeParallel(
+    configs: { modelId: string; provider: string }[],
+    prompt: string,
+    baseOptions: {
+      apiKey?: string;
+      systemInstruction?: string;
+      settings?: AISettings;
+      options?: ExecuteOptions;
+    }
+  ): Promise<EnhancedAIResponse[]> {
+    const promises = configs.map((config) =>
+      this.execute(
+        config.modelId,
+        config.provider,
+        prompt,
+        baseOptions.apiKey,
+        baseOptions.systemInstruction,
+        baseOptions.settings,
+        undefined,
+        undefined,
+        baseOptions.options
+      ).catch(
+        (e) =>
+          ({
+            text: `Error: ${e.message}`,
+            model: config.modelId,
+            provider: config.provider,
+            metrics: { latency: 0, tokens: 0, tps: 0 },
+            finishReason: 'error',
+          }) as EnhancedAIResponse
+      )
+    );
+    return Promise.all(promises);
+  }
+
+  static async executeEnsemble(
+    configs: { modelId: string; provider: string }[],
+    synthesizerConfig: { modelId: string; provider: string },
+    prompt: string,
+    baseOptions: {
+      apiKey?: string;
+      systemInstruction?: string;
+      settings?: AISettings;
+      options?: ExecuteOptions;
+    }
+  ): Promise<EnhancedAIResponse> {
+    const parallelResults = await this.executeParallel(configs, prompt, baseOptions);
+
+    let synthesisPrompt = `I asked multiple AI models the following prompt:\n\n<prompt>${prompt}</prompt>\n\nHere are their responses:\n\n`;
+
+    parallelResults.forEach((res, i) => {
+      synthesisPrompt += `<response model="${res.model}" provider="${res.provider}">\n${res.text}\n</response>\n\n`;
+    });
+
+    synthesisPrompt += `Synthesize these responses into a single, high-quality final answer that takes the best parts of each approach.`;
+
+    return this.execute(
+      synthesizerConfig.modelId,
+      synthesizerConfig.provider,
+      synthesisPrompt,
+      baseOptions.apiKey,
+      baseOptions.systemInstruction,
+      baseOptions.settings,
+      undefined,
+      undefined,
+      baseOptions.options
+    );
+  }
+
+  static async executeABTest(
+    prompt: string,
+    variants: { weight: number; config: { modelId: string; provider: string } }[],
+    baseOptions: {
+      apiKey?: string;
+      systemInstruction?: string;
+      settings?: AISettings;
+      options?: ExecuteOptions;
+    }
+  ): Promise<EnhancedAIResponse> {
+    const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0);
+    let rand = Math.random() * totalWeight;
+
+    let selectedVariant = variants[0];
+    for (const v of variants) {
+      if (rand < v.weight) {
+        selectedVariant = v;
+        break;
+      }
+      rand -= v.weight;
+    }
+
+    return this.execute(
+      selectedVariant.config.modelId,
+      selectedVariant.config.provider,
+      prompt,
+      baseOptions.apiKey,
+      baseOptions.systemInstruction,
+      baseOptions.settings,
+      undefined,
+      undefined,
+      baseOptions.options
+    );
+  }
+
   static async executeWithContinuation(
     modelId: string,
     provider: Provider | string,

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { LOGS_DIR } from '../../lib/paths.ts';
@@ -165,5 +166,59 @@ adminRouter.delete('/rules', (_req, res) => {
     res.json({ success: true, message: 'All rules cleared' });
   } catch (error: any) {
     res.status(500).json({ error: 'Failed to reset rules' });
+  }
+});
+
+adminRouter.get('/stats', (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey) {
+    const clientKey = (req.headers['x-admin-key'] || req.query.adminKey) as string | undefined;
+    if (!clientKey || !safeCompare(clientKey, adminKey)) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid admin key' });
+    }
+  }
+  try {
+    const memoryUsage = process.memoryUsage();
+    const systemMemory = {
+      total: os.totalmem(),
+      free: os.freemem(),
+    };
+    const cpus = os.cpus();
+
+    // Aggregate token info from UsageTracker
+    const days = 30;
+    const summary = UsageTracker.getUsageSummary(days);
+
+    // We can surface the quotas or remaining tokens if we have them in env or some config,
+    // otherwise we just show consumed. We'll send a placeholder for remaining if unknown.
+    let totalConsumed = 0;
+    Object.values(summary).forEach((v: any) => {
+      totalConsumed += v.totalTokens || 0;
+    });
+
+    const tokenQuotas = {
+      consumed: totalConsumed,
+      remaining: process.env.MAX_TOKEN_QUOTA
+        ? parseInt(process.env.MAX_TOKEN_QUOTA, 10) - totalConsumed
+        : 'unlimited',
+      breakdown: summary,
+    };
+
+    res.json({
+      success: true,
+      system: {
+        memory: {
+          process: memoryUsage,
+          system: systemMemory,
+        },
+        cpus: cpus.length,
+        loadavg: os.loadavg(),
+        uptime: os.uptime(),
+      },
+      tokens: tokenQuotas,
+    });
+  } catch (error: any) {
+    logger.error({ error }, '[Admin] Failed to get stats');
+    res.status(500).json({ error: 'Failed to retrieve stats' });
   }
 });

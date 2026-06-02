@@ -18,23 +18,46 @@ const LoadingFallback = () => (
   </div>
 );
 
+export interface ModelSettings {
+  temperature?: number;
+  maxTokens?: number;
+  systemPrompt?: string;
+  [key: string]: any;
+}
+
+export interface ChatSessionHookResult {
+  sessions: any[];
+  activeSessionId: string | null;
+  createNewSession: () => string;
+  switchSession: (id: string) => void;
+  deleteSession: (id: string) => void;
+  updateSessionTitle: (id: string, title: string) => void;
+  clearAllSessions: () => void;
+  saveMessage: (sessionId: string, message: any) => void;
+  saveSessionMetadata: (sessionId: string, changes: any) => void;
+  isLoading: boolean;
+}
+
 interface AppRouterProps {
   activeMode: 'chat' | 'coder' | 'registry' | 'settings';
   setActiveMode: (mode: 'chat' | 'coder' | 'registry' | 'settings') => void;
   apiKeys: Record<string, string>;
-  modelSettings: any;
+  chatSettings: ModelSettings;
+  setChatSettings: (settings: ModelSettings) => void;
+  coderSettings: ModelSettings;
+  setCoderSettings: (settings: ModelSettings) => void;
   trackUsage: (provider: string, tokens: number) => void;
-  setModelSettings: (settings: any) => void;
   statuses: Record<string, 'online' | 'offline' | 'no-key'>;
-  chatSessions: any;
+  chatSessions: ChatSessionHookResult;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
   models: Record<'nyx', string>;
   setModel: (modelId: string) => void;
   updateApiKey: (provider: string, key: string) => void;
   clearApiKeys: () => void;
-  coderState: any;
-  chatState: any;
+  modelsState: { chat: string; coder: string };
+  setModelsState: React.Dispatch<React.SetStateAction<{ chat: string; coder: string }>>;
+  lightningState: any;
   allModels: any[];
   onOpenLightning?: () => void;
 }
@@ -43,9 +66,11 @@ export function AppRouter({
   activeMode,
   setActiveMode,
   apiKeys,
-  modelSettings,
+  chatSettings,
+  setChatSettings,
+  coderSettings,
+  setCoderSettings,
   trackUsage,
-  setModelSettings,
   statuses,
   chatSessions,
   sidebarOpen,
@@ -54,8 +79,9 @@ export function AppRouter({
   setModel,
   updateApiKey,
   clearApiKeys,
-  coderState,
-  chatState,
+  modelsState,
+  setModelsState,
+  lightningState,
   allModels,
   onOpenLightning,
 }: AppRouterProps) {
@@ -90,9 +116,9 @@ export function AppRouter({
         <ChatPage
           allModels={allModels}
           apiKeys={apiKeys}
-          modelSettings={modelSettings}
+          modelSettings={chatSettings}
           trackUsage={trackUsage}
-          setModelSettings={setModelSettings}
+          setModelSettings={setChatSettings}
           providerStatuses={statuses}
           chatSessions={chatSessions}
           sidebarOpen={sidebarOpen}
@@ -100,7 +126,12 @@ export function AppRouter({
           activeMode={activeMode}
           setActiveMode={setActiveMode}
           onOpenLightning={onOpenLightning}
-          {...chatState}
+          models={{ nyx: modelsState.chat }}
+          setModel={(mid) => setModelsState((prev: any) => ({ ...prev, chat: mid }))}
+          lightningEnabled={lightningState.lightningEnabledChat}
+          lightningDirectives={lightningState.apoDirectives.chat}
+          logRollout={lightningState.logRollout}
+          submitReward={lightningState.submitReward}
         />
       );
     default:
@@ -108,9 +139,9 @@ export function AppRouter({
         <CoderPage
           allModels={allModels}
           apiKeys={apiKeys}
-          modelSettings={modelSettings}
+          modelSettings={coderSettings}
           trackUsage={trackUsage}
-          setModelSettings={setModelSettings}
+          setModelSettings={setCoderSettings}
           providerStatuses={statuses}
           chatSessions={chatSessions}
           sidebarOpen={sidebarOpen}
@@ -118,7 +149,12 @@ export function AppRouter({
           activeMode={activeMode}
           setActiveMode={setActiveMode}
           onOpenLightning={onOpenLightning}
-          {...coderState}
+          models={{ nyx: modelsState.coder }}
+          setModel={(mid) => setModelsState((prev: any) => ({ ...prev, coder: mid }))}
+          lightningEnabled={lightningState.lightningEnabledCoder}
+          lightningDirectives={lightningState.apoDirectives.coder}
+          logRollout={lightningState.logRollout}
+          submitReward={lightningState.submitReward}
         />
       );
   }

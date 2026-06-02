@@ -120,6 +120,9 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const isSubmitting = useRef(false);
   const localSettings = modelSettings;
 
+  const [visibleTemplates, setVisibleTemplates] = useState<PromptTemplate[]>([]);
+  const [templateSelectedIndex, setTemplateSelectedIndex] = useState(0);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [localSelectedImages, setLocalSelectedImages] = useState<
@@ -296,6 +299,35 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     }
     ta.style.height = '36px';
     ta.style.height = `${Math.max(36, Math.min(ta.scrollHeight, 220))}px`;
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (visibleTemplates.length > 0 && prompt.startsWith('/')) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setTemplateSelectedIndex((i) => Math.min(i + 1, visibleTemplates.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setTemplateSelectedIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const t = visibleTemplates[templateSelectedIndex];
+        if (t) {
+          onPromptChange(t.content);
+          setTimeout(() => textareaRef.current?.focus(), 0);
+        }
+        return;
+      }
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
   };
 
   const handleSubmit = async (e?: React.SyntheticEvent) => {

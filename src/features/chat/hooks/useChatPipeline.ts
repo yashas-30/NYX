@@ -24,10 +24,11 @@ import {
 import { ChatAgentWithTools } from '@src/core/agents/chatAgentWithTools';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
-import { countTokens } from '@src/core/services/ai.service';
+import { AIService, countTokens } from '@src/core/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
 import { ContextManager } from '../utils/ContextManager';
 import { formatProviderError } from '@src/infrastructure/api/streamParser';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -459,9 +460,15 @@ export const useChatPipeline = ({
 
   const runChat = useCallback(
     async (prompt: string, images?: { name: string; mimeType: string; data: string }[]) => {
+      // Prompt sanitization (prevent null byte injection and normalize whitespace)
+      const sanitizedPrompt = prompt.replace(/\0/g, '').trim();
+
       const nyxModel = models['nyx'];
-      if ((!prompt.trim() && (!images || images.length === 0)) || !nyxModel) {
-        console.warn('[Chat Pipeline] Missing prompt or model:', { prompt: !!prompt, nyxModel });
+      if ((!sanitizedPrompt && (!images || images.length === 0)) || !nyxModel) {
+        console.warn('[Chat Pipeline] Missing prompt or model:', {
+          prompt: !!sanitizedPrompt,
+          nyxModel,
+        });
         return;
       }
 
@@ -521,7 +528,7 @@ export const useChatPipeline = ({
         // 1. Add user message
         const userMsg: ChatMessage = {
           role: 'user',
-          content: prompt,
+          content: sanitizedPrompt,
           timestamp: Date.now(),
           images,
         };
@@ -529,7 +536,7 @@ export const useChatPipeline = ({
         safeUpdateHistory((prev) => [...prev, userMsg]);
 
         // 2. Analyze prompt
-        const analysis = analyzePrompt(prompt, conversationStateRef.current);
+        const analysis = analyzePrompt(sanitizedPrompt, conversationStateRef.current);
         conversationStateRef.current = updateConversationState(
           conversationStateRef.current,
           analysis
@@ -553,6 +560,9 @@ export const useChatPipeline = ({
           5
         );
 
+        // Compress prompt to mitigate context overflows if it's too large
+        const compressedPrompt = AIService.compressPrompt(sanitizedPrompt, 50000);
+
         // 4. Initialize agent with snapshot (not live ref)
         const agent = new ChatAgentWithTools({
           modelId: nyxModel,
@@ -566,16 +576,75 @@ export const useChatPipeline = ({
         });
 
         // 5. Gather search context (non-blocking UI)
-        const searchContext = await gatherSearchContext(agent, prompt, analysis, controller.signal);
-
-        // 6. Stream response with timeout protection
-        const generator = agent.streamResponse(
-          prompt,
+        const searchContext = await gatherSearchContext(
+          agent,
+          compressedPrompt,
           analysis,
-          controller.signal,
-          searchContext,
-          images
-        ) as AsyncGenerator<any>;
+          controller.signal
+        );
+
+        // 6. Stream response with timeout protection and Execution Mode handling
+        const executionMode = useNyxStore.getState().executionMode || 'standard';
+        let generator: AsyncGenerator<any>;
+
+        if (executionMode === 'standard') {
+          generator = agent.streamResponse(
+            compressedPrompt,
+            analysis,
+            controller.signal,
+            searchContext,
+            images
+          ) as AsyncGenerator<any>;
+        } else {
+          // Adapter generator for parallel, ensemble, ab-test
+          generator = (async function* () {
+            yield { type: 'thinking', content: `Starting ${executionMode} execution...` };
+            try {
+              const baseOptions = { apiKey: nyxApiKey, settings: modelSettings };
+              let responseText = '';
+              let metadata: any = { latency: 0, tokens: 0, tps: 0 };
+
+              // We'll use nyxModel as primary, and optionally a fast model for the secondary config
+              const configs = [
+                { modelId: nyxModel, provider: nyxProvider },
+                { modelId: 'gemini-2.5-flash', provider: 'gemini' },
+              ];
+
+              if (executionMode === 'parallel') {
+                const results = await AIService.executeParallel(
+                  configs,
+                  compressedPrompt,
+                  baseOptions
+                );
+                responseText = results
+                  .map((r) => `### Response from ${r.model}:\n${r.text}`)
+                  .join('\n\n---\n\n');
+                metadata = results[0]?.metrics || metadata;
+              } else if (executionMode === 'ensemble') {
+                const synthesizer = { modelId: nyxModel, provider: nyxProvider };
+                const res = await AIService.executeEnsemble(
+                  configs,
+                  synthesizer,
+                  compressedPrompt,
+                  baseOptions
+                );
+                responseText = res.text;
+                metadata = res.metrics || metadata;
+              } else if (executionMode === 'ab-test') {
+                const variants = configs.map((c) => ({ weight: 0.5, config: c }));
+                const res = await AIService.executeABTest(compressedPrompt, variants, baseOptions);
+                responseText = `[A/B Test Chose: ${res.model}]\n\n${res.text}`;
+                metadata = res.metrics || metadata;
+              }
+
+              yield { type: 'text', content: responseText };
+              if (metadata) yield { type: 'metrics', metadata };
+              yield { type: 'done' };
+            } catch (err: any) {
+              yield { type: 'error', content: err.message };
+            }
+          })();
+        }
 
         // Wrap processStream with timeout
         let streamTimeoutHandle: NodeJS.Timeout | null = null;
@@ -639,14 +708,14 @@ export const useChatPipeline = ({
           if (logRollout && text) {
             logRollout(
               'chat',
-              prompt,
+              sanitizedPrompt,
               text,
               finalMetrics
                 ? [
                     {
                       name: 'chat_agent_inference',
                       type: 'llm_call',
-                      input: prompt,
+                      input: sanitizedPrompt,
                       output: text,
                       durationMs: finalMetrics.latency,
                       tokensUsed: finalMetrics.tokens,
@@ -663,7 +732,7 @@ export const useChatPipeline = ({
           // 10. Fire-and-forget memory commit
           if (text.trim()) {
             const memoryPromise = triggerMemoryCommit({
-              prompt,
+              prompt: sanitizedPrompt,
               response: text,
               provider: nyxProvider,
               modelId: nyxModel,

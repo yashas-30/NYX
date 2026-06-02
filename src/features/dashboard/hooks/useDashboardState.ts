@@ -1,6 +1,6 @@
 /**
  * @file src/hooks/useDashboardState.ts
- * @description Monolithic state hook refactored to manage state for CoderDashboard, registry, and settings.
+ * @description Monolithic state hook refactored to manage state for AppDashboard, registry, and settings.
  * NYX is the sole agent — no Claude agent switching.
  */
 
@@ -14,28 +14,43 @@ import { useProviderStatus } from './useProviderStatus';
 
 export const useDashboardState = (onExit?: () => void) => {
   const [activeMode, setActiveMode] = useState<'settings' | 'registry' | 'coder' | 'chat'>('coder');
-  const [modelSettings, setModelSettings] = useState(() => {
-    const saved = localStorage.getItem('nyx_model_settings');
+  const [chatSettings, setChatSettings] = useState(() => {
+    const saved = localStorage.getItem('nyx_chat_settings');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        return {
-          temperature: 0.7,
-          maxTokens: 16384,
-          topP: 0.95,
-          topK: 40,
-          gpuLayers: 99,
-          threads: 4,
-          contextSize: 2048,
-          batchSize: 512,
-          repeatPenalty: 1.1,
-          mirostat: 0,
-          ...parsed,
-        };
+        return JSON.parse(saved);
       } catch {}
     }
     return {
       temperature: 0.7,
+      maxTokens: 8192,
+      topP: 0.95,
+      topK: 40,
+      gpuLayers: 99,
+      threads: 4,
+      contextSize: 2048,
+      batchSize: 512,
+      repeatPenalty: 1.1,
+      mirostat: 0,
+    };
+  });
+
+  const [coderSettings, setCoderSettings] = useState(() => {
+    const saved = localStorage.getItem('nyx_coder_settings');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {}
+    }
+    // Fallback to legacy settings if present
+    const legacy = localStorage.getItem('nyx_model_settings');
+    if (legacy) {
+      try {
+        return JSON.parse(legacy);
+      } catch {}
+    }
+    return {
+      temperature: 0.2,
       maxTokens: 16384,
       topP: 0.95,
       topK: 40,
@@ -201,8 +216,12 @@ export const useDashboardState = (onExit?: () => void) => {
   }, [localModelsEnabled]);
 
   useEffect(() => {
-    localStorage.setItem('nyx_model_settings', JSON.stringify(modelSettings));
-  }, [modelSettings]);
+    localStorage.setItem('nyx_chat_settings', JSON.stringify(chatSettings));
+  }, [chatSettings]);
+
+  useEffect(() => {
+    localStorage.setItem('nyx_coder_settings', JSON.stringify(coderSettings));
+  }, [coderSettings]);
 
   const setModel = (mid: string) => {
     const targetKey = activeMode === 'chat' ? 'chat' : 'coder';
@@ -216,8 +235,10 @@ export const useDashboardState = (onExit?: () => void) => {
     // Top-level State
     activeMode,
     setActiveMode,
-    modelSettings,
-    setModelSettings,
+    chatSettings,
+    setChatSettings,
+    coderSettings,
+    setCoderSettings,
     onExit,
 
     // Coder states — NYX only

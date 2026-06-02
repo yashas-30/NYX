@@ -37,6 +37,7 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { ModelSelector } from '@src/shared/components/ModelSelector';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { ModelInfo } from '@src/types';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,6 +52,7 @@ export interface ChatMetrics {
   totalMessages: number;
   contextTokens: number;
   contextLimit: number;
+  estimatedCostUsd?: number;
 }
 
 export interface ChatHeaderProps {
@@ -363,6 +365,35 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   const privacyMode = useNyxStore((state) => state.privacyMode);
   const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
   const lastPrivacyToggle = useRef(0);
+  const [scraplingStatus, setScraplingStatus] = useState<
+    'checking' | 'running' | 'restarting' | 'offline'
+  >('checking');
+
+  // Poll scrapling status
+  useEffect(() => {
+    let active = true;
+    const checkScrapling = async () => {
+      try {
+        const res = await fetchWithAuth('/api/v1/admin/scrapling-status');
+        if (!active) return;
+        if (res.ok) {
+          const data = await res.json();
+          setScraplingStatus(data.status || 'offline');
+        } else {
+          setScraplingStatus('offline');
+        }
+      } catch {
+        if (!active) return;
+        setScraplingStatus('offline');
+      }
+    };
+    checkScrapling();
+    const interval = setInterval(checkScrapling, 30_000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Live timer during generation
   useEffect(() => {
@@ -549,6 +580,16 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               <Zap size={11} className="text-zinc-500" />
               <span>{metrics.tps} tok/s</span>
             </div>
+            {metrics.estimatedCostUsd !== undefined && metrics.estimatedCostUsd > 0 && (
+              <>
+                <div className="w-[1px] h-3 bg-white/[0.08]" />
+                <div className="flex items-center gap-1.5" title="Estimated Cost">
+                  <span className="text-emerald-400 font-medium">
+                    ${metrics.estimatedCostUsd.toFixed(5)}
+                  </span>
+                </div>
+              </>
+            )}
             <div className="w-[1px] h-3 bg-white/[0.08]" />
             <div className="flex items-center gap-1.5" title="Tokens generated">
               <HardDrive size={11} className="text-zinc-500" />
@@ -619,6 +660,26 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     <Unlock size={13} strokeWidth={1.8} />
                   )}
                 </motion.button>
+
+                {/* Scrapling Health Badge */}
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-800/40 border border-white/5 text-[9px] font-extrabold uppercase tracking-wider text-zinc-400 select-none cursor-pointer"
+                  title={`Scrapling Health: ${scraplingStatus === 'running' ? 'Running & Healthy' : scraplingStatus === 'restarting' ? 'Restarting...' : scraplingStatus === 'offline' ? 'Offline (using fallback)' : 'Checking Status...'}`}
+                  onClick={() => toast.info(`Scrapling status is: ${scraplingStatus}`)}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      scraplingStatus === 'running'
+                        ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                        : scraplingStatus === 'restarting'
+                          ? 'bg-yellow-400 animate-pulse shadow-[0_0_6px_#facc15]'
+                          : scraplingStatus === 'checking'
+                            ? 'bg-zinc-500'
+                            : 'bg-red-400 shadow-[0_0_6px_#f87171]'
+                    }`}
+                  />
+                  Search
+                </div>
 
                 {/* Share & Export */}
                 <ShareMenu onExport={onExportChat} title={sessionTitle} onShareChat={onShareChat} />

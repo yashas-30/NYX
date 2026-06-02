@@ -16,6 +16,7 @@ import { ChatPromptInput } from './ChatPromptInput';
 import { ChatSidebar } from './ChatSidebar';
 import { ChatSettings } from './ChatSettings';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
+import { useChatLogic } from '../hooks/useChatLogic';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,18 +37,11 @@ interface ChatPageProps {
   chatSessions: any;
 
   // Lifted state from parent:
-  activeAgent: 'nyx';
-  isLoading: boolean;
-  history: ChatMessage[];
-  metrics: { latency: number; tokens: number; tps: number };
   models: Record<'nyx', string>;
   setModel: (modelId: string) => void;
-  runChat: (prompt: string, images?: ChatImage[]) => void;
-  stopChat: () => void;
-  clearHistory: () => void;
-  suggestedPrompts: string[];
   onOpenLightning?: () => void;
   submitReward?: (id: string, reward: number) => void;
+  logRollout?: any;
 
   // Microsoft Lightning:
   lightningEnabled?: boolean;
@@ -108,23 +102,40 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   chatSessions,
 
   // Lifted props:
-  activeAgent,
-  isLoading,
-  history,
-  metrics: parentMetrics,
   models,
   setModel,
-  runChat: parentRunChat,
-  stopChat,
-  clearHistory: parentClearHistory,
-  suggestedPrompts,
   onOpenLightning,
   submitReward,
 
   lightningEnabled = true,
   lightningDirectives = [],
+  logRollout,
   ...rest
 }) => {
+  const {
+    activeAgent,
+    isLoading,
+    history,
+    metrics: parentMetrics,
+    runChat: parentRunChat,
+    stopChat,
+    clearHistory: parentClearHistory,
+    suggestedPrompts,
+    editMessage: handleEditMessage,
+    regenerateMessage: handleRegenerate,
+    branchFromMessage: handleBranch,
+  } = useChatLogic({
+    apiKeys,
+    modelSettings,
+    trackUsage,
+    models,
+    setModel,
+    chatSessions,
+    lightningEnabled,
+    lightningDirectives,
+    logRollout,
+    submitReward,
+  });
   const streaming = (rest as any).streaming;
   // --- Local input and attachment states ---
   const [prompt, setPrompt] = useState('');
@@ -196,67 +207,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         toast.error('Failed to copy');
       });
   }, []);
-
-  // --- Message actions (integrated directly with the store via chatSessions) ---
-  const handleEditMessage = useCallback(
-    (index: number, newContent: string) => {
-      if (!chatSessions?.activeSid) return;
-
-      // Get history up to this point and update the user prompt
-      const updatedHistory = history.slice(0, index + 1);
-      updatedHistory[index] = {
-        ...updatedHistory[index],
-        content: newContent,
-        status: undefined,
-        reasoning: undefined,
-        toolCalls: undefined,
-        citations: undefined,
-      };
-
-      chatSessions.updateSession(chatSessions.activeSid, updatedHistory);
-      parentRunChat(newContent);
-    },
-    [history, chatSessions, parentRunChat]
-  );
-
-  const handleRegenerate = useCallback(
-    (index: number) => {
-      if (!chatSessions?.activeSid) return;
-
-      // Truncate history to discard the assistant response
-      const truncatedHistory = history.slice(0, index);
-      chatSessions.updateSession(chatSessions.activeSid, truncatedHistory);
-
-      const lastUserMsg = [...truncatedHistory].reverse().find((m) => m.role === 'user');
-      if (lastUserMsg) {
-        const mappedImages = lastUserMsg.images
-          ?.map((img) => ({
-            name: img.name,
-            mimeType: img.mimeType || 'image/jpeg',
-            data: img.data || img.dataUrl || img.url || '',
-          }))
-          .filter((img) => !!img.data);
-        parentRunChat(lastUserMsg.content, mappedImages);
-      }
-    },
-    [history, chatSessions, parentRunChat]
-  );
-
-  const handleBranch = useCallback(
-    (index: number) => {
-      if (!chatSessions) return;
-
-      const branchedHistory = history.slice(0, index + 1).map((msg) => ({ ...msg }));
-      const newSid = chatSessions.createSession(branchedHistory);
-      if (newSid) {
-        chatSessions.switchSession(newSid);
-        toast.success('Branched conversation from this point');
-      } else {
-        toast.error('Failed to branch conversation');
-      }
-    },
-    [history, chatSessions]
-  );
 
   // --- Image attachment handlers ---
   const handleAttachFiles = useCallback((files: File[]) => {
@@ -388,7 +338,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       className="h-full w-full flex min-h-0 overflow-hidden bg-background relative"
     >
-      {/* Global sidebar is managed by CoderDashboard */}
+      {/* Global sidebar is managed by AppDashboard */}
 
       <ChatSettings isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 

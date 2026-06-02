@@ -1,6 +1,8 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './app/App.tsx';
+import { ErrorBoundary } from './core/components/ErrorBoundary.tsx';
+import './i18n.ts';
 import './index.css';
 
 // ── Modern CSS Color Space Polyfill for Framer Motion ──
@@ -325,7 +327,11 @@ function RootContainer() {
     );
   }
 
-  return <App />;
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
 }
 
 createRoot(document.getElementById('root')!).render(

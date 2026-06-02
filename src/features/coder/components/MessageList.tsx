@@ -17,6 +17,9 @@ import {
   Pin,
   Globe,
   Search,
+  Pencil,
+  RefreshCw,
+  GitBranch,
 } from 'lucide-react';
 import { ChatMessage, SubagentTask } from '@src/infrastructure/types';
 import ReactMarkdown from 'react-markdown';
@@ -308,6 +311,9 @@ interface MessageListProps {
   onSuggestedPromptClick?: (prompt: string) => void;
   subagentTasks?: SubagentTask[];
   submitReward?: (rolloutId: string, reward: number) => void;
+  onEditMessage?: (index: number, newContent: string) => void;
+  onRegenerate?: (index: number) => void;
+  onBranchFromMessage?: (index: number) => void;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -543,10 +549,140 @@ interface MessageBubbleProps {
   copiedId: string | null;
   subagentTasks?: SubagentTask[];
   submitReward?: (id: string, reward: number) => void;
+  onEdit?: (index: number, content: string) => void;
+  onRegenerate?: (index: number) => void;
+  onBranch?: (index: number) => void;
 }
 
+const MessageActions: React.FC<{
+  index: number;
+  content: string;
+  onEdit?: (index: number, content: string) => void;
+  onRegenerate?: (index: number) => void;
+  onBranch?: (index: number) => void;
+  onCopy: (text: string, id: string) => void;
+  copiedId: string | null;
+  msgId: string;
+  isUser: boolean;
+}> = React.memo(
+  ({ index, content, onEdit, onRegenerate, onBranch, onCopy, copiedId, msgId, isUser }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editValue, setEditValue] = useState(content);
+    const editRef = useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+      if (isEditing) {
+        editRef.current?.focus();
+        editRef.current?.setSelectionRange(editValue.length, editValue.length);
+      }
+    }, [isEditing]);
+
+    const handleEditSubmit = () => {
+      const trimmed = editValue.trim();
+      if (trimmed && trimmed !== content) {
+        onEdit?.(index, trimmed);
+      }
+      setIsEditing(false);
+    };
+
+    if (isEditing) {
+      return (
+        <div className="mt-2 space-y-2 w-full">
+          <textarea
+            ref={editRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.metaKey) handleEditSubmit();
+              if (e.key === 'Escape') setIsEditing(false);
+            }}
+            className="w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-xl p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleEditSubmit}
+              className="px-3 py-1.5 rounded-lg bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer"
+            >
+              Save & Submit
+            </button>
+            <button
+              onClick={() => setIsEditing(false)}
+              className="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 text-zinc-400 text-[11px] font-semibold hover:bg-white/[0.06] transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
+        <button
+          onClick={() => onCopy(content, msgId)}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+        >
+          {copiedId === msgId ? (
+            <>
+              <Check size={10} className="text-emerald-400" />
+              <span className="text-emerald-400">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy size={10} />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+
+        {isUser && onEdit && (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+          >
+            <Pencil size={10} />
+            <span>Edit</span>
+          </button>
+        )}
+
+        {!isUser && onRegenerate && (
+          <button
+            onClick={() => onRegenerate(index)}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+          >
+            <RefreshCw size={10} />
+            <span>Regenerate</span>
+          </button>
+        )}
+
+        {!isUser && onBranch && (
+          <button
+            onClick={() => onBranch(index)}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+          >
+            <GitBranch size={10} />
+            <span>Branch</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+);
+MessageActions.displayName = 'MessageActions';
+
 const MessageBubble = React.memo<MessageBubbleProps>(
-  ({ msg, index, activeAgent, onCopy, copiedId, subagentTasks, submitReward }) => {
+  ({
+    msg,
+    index,
+    activeAgent,
+    onCopy,
+    copiedId,
+    subagentTasks,
+    submitReward,
+    onEdit,
+    onRegenerate,
+    onBranch,
+  }) => {
     const isUser = msg.role === 'user';
     const isStreaming = msg.status === 'loading';
 
@@ -559,8 +695,19 @@ const MessageBubble = React.memo<MessageBubbleProps>(
       >
         {isUser ? (
           /* ── User bubble: flat right-aligned text ── */
-          <div className="max-w-[85%] sm:max-w-[75%] py-2 px-1 text-[13px] font-semibold leading-[1.75] text-zinc-200 select-text">
-            {msg.content}
+          <div className="flex flex-col items-end w-full max-w-[85%] sm:max-w-[75%]">
+            <div className="py-2 px-1 text-[13px] font-semibold leading-[1.75] text-zinc-200 select-text">
+              {msg.content}
+            </div>
+            <MessageActions
+              index={index}
+              content={msg.content}
+              onEdit={onEdit}
+              onCopy={onCopy}
+              copiedId={copiedId}
+              msgId={`msg-${index}`}
+              isUser={true}
+            />
           </div>
         ) : (
           /* ── Assistant: container-less, direct on canvas ── */
@@ -631,23 +778,17 @@ const MessageBubble = React.memo<MessageBubbleProps>(
 
                 {/* Footer: metrics + copy — fades in on hover */}
                 {!isStreaming && msg.content && (
-                  <div className="mt-3 flex items-center gap-3.5 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity duration-300">
-                    <button
-                      onClick={() => onCopy(msg.content, `msg-${index}`)}
-                      className="flex items-center gap-1 text-[9px] text-muted-foreground/30 hover:text-[#FF3366] transition-colors cursor-pointer uppercase font-black tracking-widest"
-                    >
-                      {copiedId === `msg-${index}` ? (
-                        <>
-                          <Check size={9} className="text-emerald-400" />
-                          <span className="text-emerald-400">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={9} />
-                          <span>Copy Code</span>
-                        </>
-                      )}
-                    </button>
+                  <div className="mt-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity duration-300">
+                    <MessageActions
+                      index={index}
+                      content={msg.content}
+                      onRegenerate={onRegenerate}
+                      onBranch={onBranch}
+                      onCopy={onCopy}
+                      copiedId={copiedId}
+                      msgId={`msg-${index}`}
+                      isUser={false}
+                    />
 
                     {msg.rolloutId && submitReward && (
                       <div className="flex items-center gap-2 border-l border-white/5 pl-3.5">
@@ -715,6 +856,9 @@ export const MessageList: React.FC<MessageListProps> = ({
   onSuggestedPromptClick,
   subagentTasks,
   submitReward,
+  onEditMessage,
+  onRegenerate,
+  onBranchFromMessage,
 }) => {
   const consoleRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -809,6 +953,9 @@ export const MessageList: React.FC<MessageListProps> = ({
                     copiedId={copiedId}
                     subagentTasks={subagentTasks}
                     submitReward={submitReward}
+                    onEdit={onEditMessage}
+                    onRegenerate={onRegenerate}
+                    onBranch={onBranchFromMessage}
                   />
                 </div>
               );

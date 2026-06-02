@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CoderDashboard } from '@src/features/dashboard';
+import { AppDashboard } from '@src/features/dashboard';
 import { Toaster } from 'sonner';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useTheme } from '@src/shared/context/ThemeContext';
@@ -67,7 +67,7 @@ function AppContent() {
         {window.location.pathname.startsWith('/share/') ? (
           <SharedChatView />
         ) : (
-          <CoderDashboard onExit={() => {}} />
+          <AppDashboard onExit={() => {}} />
         )}
       </ErrorBoundary>
 

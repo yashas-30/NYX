@@ -59,6 +59,15 @@ export async function executeTool(
       case 'write_file': {
         const fullPath = args.path.startsWith('/') ? args.path : `${workspacePath}/${args.path}`;
 
+        // Basic frontend path traversal check (backend also validates)
+        if (args.path.includes('..') || args.path.includes('\0')) {
+          return {
+            success: false,
+            result: null,
+            error: 'Invalid file path: Directory traversal forbidden.',
+          };
+        }
+
         // TODO: The frontend should theoretically pause and ask for confirmation.
         // For now, we will proceed. In the future, we will throw a specific error
         // or yield a confirmation event if overwrite is not explicitly permitted.
@@ -67,6 +76,28 @@ export async function executeTool(
       }
 
       case 'run_command': {
+        const commandStr = (args.command || '').trim();
+        const baseCommand = commandStr.split(' ')[0];
+
+        // Command execution whitelist
+        const allowedCommands = ['npm', 'npx', 'git', 'python', 'tsc', 'node', 'pip', 'cargo'];
+        if (!allowedCommands.includes(baseCommand)) {
+          return {
+            success: false,
+            result: null,
+            error: `Command execution blocked: '${baseCommand}' is not in the whitelist.`,
+          };
+        }
+
+        // Prevent chaining to run arbitrary unauthorized commands
+        if (/[;&|]/.test(commandStr)) {
+          return {
+            success: false,
+            result: null,
+            error: `Command execution blocked: Chaining (;, &, |) is forbidden.`,
+          };
+        }
+
         const result = await executeCommand(args.command, args.cwd || workspacePath, signal, 60000);
         return { success: true, result };
       }
@@ -86,6 +117,29 @@ export async function executeTool(
             topLevelFiles: files.slice(0, 20),
           },
         };
+      }
+
+      case 'run_code': {
+        const extMap: Record<string, string> = {
+          javascript: 'js',
+          typescript: 'ts',
+          python: 'py',
+          sh: 'sh',
+        };
+        const ext = extMap[args.language] || 'txt';
+        const tempFile = `${workspacePath}/.nyx_temp_code.${ext}`;
+        await writeFile(tempFile, args.code, true);
+
+        let cmd = '';
+        if (args.language === 'python') cmd = `python ${tempFile}`;
+        else if (args.language === 'javascript') cmd = `node ${tempFile}`;
+        else if (args.language === 'typescript') cmd = `npx tsx ${tempFile}`;
+        else if (args.language === 'sh') cmd = `bash ${tempFile}`;
+        else
+          return { success: false, result: null, error: `Unsupported language: ${args.language}` };
+
+        const result = await executeCommand(cmd, workspacePath, signal, 60000);
+        return { success: true, result };
       }
 
       case 'get_evolutionary_rules': {
