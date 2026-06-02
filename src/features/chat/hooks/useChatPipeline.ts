@@ -23,6 +23,7 @@ import {
 } from '@src/core/services/promptClassifier';
 import { ChatAgentWithTools } from '@src/core/agents/chatAgentWithTools';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
 import { countTokens } from '@src/core/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
 import { ContextManager } from '../utils/ContextManager';

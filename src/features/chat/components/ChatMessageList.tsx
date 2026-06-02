@@ -784,8 +784,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               <div className="flex items-center gap-2 py-2 px-3 rounded-xl bg-red-500/5 border border-red-500/10">
                 <AlertTriangle size={14} className="text-red-400 shrink-0" />
                 <p className="text-sm text-red-400/90 font-medium">
-                  {msg.content ||
-                    'Error: Generation failed. Please check your model settings or connection.'}
+                  Error: Generation failed. Please check your model settings or connection.
                 </p>
               </div>
             )}

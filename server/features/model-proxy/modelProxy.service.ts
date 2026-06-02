@@ -14,7 +14,7 @@ export class ModelProxyService {
   }
 
   async listModels(provider: string, apiKey?: string): Promise<string[]> {
-    if (provider !== 'gemini') {
+    if (provider !== 'gemini' && provider !== 'antigravity-sdk') {
       return [];
     }
 
@@ -39,7 +39,7 @@ export class ModelProxyService {
   }
 
   async getQuota(provider: string, apiKey?: string): Promise<any> {
-    if (provider !== 'gemini') {
+    if (provider !== 'gemini' && provider !== 'antigravity-sdk') {
       return {};
     }
 

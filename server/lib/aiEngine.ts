@@ -130,6 +130,9 @@ export class UnifiedEngine {
       case 'nyx-native':
         return this.streamNyxNative(model, processedMessages, settings, writeChunk, onDone);
 
+      case 'antigravity-sdk':
+        return this.streamAntigravitySdk(model, processedMessages, activeKey, writeChunk, onDone);
+
       default:
         throw new Error(`Unsupported provider: ${provider}`);
     }
@@ -196,6 +199,37 @@ export class UnifiedEngine {
     });
 
     if (!response.ok) throw new Error(`Gemini API Error: ${response.status}`);
+
+    await Gateway.processSSEStream(response, {
+      onChunk: (text) => write({ chunk: text }),
+      onDone: done,
+      onError: (err) => {
+        throw new Error(err);
+      },
+    });
+  }
+
+  /**
+   * Streams responses from the Python Antigravity SDK service.
+   */
+  private static async streamAntigravitySdk(
+    model: string,
+    messages: ChatMessage[],
+    apiKey: string,
+    write: (chunk: any) => void,
+    done: () => void
+  ): Promise<void> {
+    const port = process.env.ANTIGRAVITY_PORT || '3003';
+    const lastUserMessage = messages.filter((m) => m.role === 'user').pop();
+    const prompt = lastUserMessage ? lastUserMessage.content : '';
+
+    const response = await fetch(`http://127.0.0.1:${port}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, model, apiKey }),
+    });
+
+    if (!response.ok) throw new Error(`Antigravity SDK Error: ${response.status}`);
 
     await Gateway.processSSEStream(response, {
       onChunk: (text) => write({ chunk: text }),

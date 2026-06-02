@@ -70,6 +70,7 @@
     "idb-keyval": "^6.2.4",
     "js-tiktoken": "^1.0.21",
     "localforage": "^1.10.0",
+    "lottie-react": "^2.4.1",
     "lru-cache": "^11.5.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.40.0",

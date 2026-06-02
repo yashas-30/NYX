@@ -11,9 +11,10 @@ export const PROVIDER_LABELS: Record<string, string> = {
   terminal: 'Terminal',
   'nyx-native': 'NYX Native',
   'qwen-local': 'Qwen Local',
+  'antigravity-sdk': 'Antigravity SDK',
 };
 
-export const CLOUD_PROVIDERS: string[] = ['gemini'];
+export const CLOUD_PROVIDERS: string[] = ['gemini', 'antigravity-sdk'];
 
 export const LOCAL_PROVIDERS: string[] = ['nyx-native', 'qwen-local'];
 
@@ -180,7 +181,15 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
   } else if (lowerId.includes('gemini')) {
     caps.supportsVision = true;
     caps.supportsTools = true;
-    caps.contextWindow = 1048576;
+    if (lowerId.includes('3.1-pro')) {
+      caps.contextWindow = 2097152;
+    } else {
+      caps.contextWindow = 1048576;
+    }
+  } else if (lowerId.includes('gemma-4')) {
+    caps.supportsVision = false;
+    caps.supportsTools = true;
+    caps.contextWindow = 262144;
   } else if (lowerId.includes('llama-3.2')) {
     caps.supportsVision = lowerId.includes('vision');
     caps.supportsTools = true;

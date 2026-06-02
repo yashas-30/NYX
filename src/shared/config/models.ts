@@ -91,7 +91,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
 ];
 
 // Deduplicate by ID to prevent duplicate entries in the model selector
-const ALLOWED_PROVIDERS = ['gemini', 'nyx-native'];
+const ALLOWED_PROVIDERS = ['gemini', 'nyx-native', 'antigravity-sdk'];
 const _seen = new Set<string>();
 export const AVAILABLE_MODELS: ModelOption[] = RAW_AVAILABLE_MODELS.filter((m) =>
   ALLOWED_PROVIDERS.includes(m.provider)

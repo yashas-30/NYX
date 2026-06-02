@@ -60,6 +60,11 @@ export abstract class BaseAgent<TConfig extends BaseAgentConfig, TEvent> {
     this.tokenBudget = new TokenBudget(config.maxContextTokens || 128000);
   }
 
+  protected *emitThinking(message: string, chain: string[]): Generator<any> {
+    chain.push(message);
+    yield { type: 'thinking', content: message + '\n' };
+  }
+
   abort(): void {
     this.abortController?.abort();
     this.abortController = null;

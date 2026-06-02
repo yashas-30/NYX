@@ -139,6 +139,25 @@ export const useCoderLogic = ({
     [updateHistory]
   );
 
+  const { isLoading, runCoder, stopCoder, subagentTasks, agentMode, agentReasoning } =
+    useAgentPipeline({
+      models,
+      apiKeys,
+      agentPersonas,
+      modelSettings,
+      trackUsage,
+      history: localMessages,
+      updateHistory,
+      updateMetrics,
+      getSuggestions,
+      setSuggestedPrompts,
+      webSearchEnabled,
+      codebaseKnowledgeEnabled,
+      lightningEnabled,
+      lightningDirectives,
+      logRollout,
+    });
+
   const forkAndRun = useCallback(
     (index: number, newPrompt: string) => {
       const newHistory = messagesRef.current.slice(0, index);
@@ -161,25 +180,6 @@ export const useCoderLogic = ({
     },
     [chatSessions, runCoder]
   );
-
-  const { isLoading, runCoder, stopCoder, subagentTasks, agentMode, agentReasoning } =
-    useAgentPipeline({
-      models,
-      apiKeys,
-      agentPersonas,
-      modelSettings,
-      trackUsage,
-      history: localMessages,
-      updateHistory,
-      updateMetrics,
-      getSuggestions,
-      setSuggestedPrompts,
-      webSearchEnabled,
-      codebaseKnowledgeEnabled,
-      lightningEnabled,
-      lightningDirectives,
-      logRollout,
-    });
 
   useEffect(() => {
     if (activeSid && activeSid === createdSessionIdRef.current) {
