@@ -72,6 +72,8 @@ export const chatConversations = sqliteTable('chat_conversations', {
   title: text('title').notNull(),
   model: text('model').notNull(),
   folderId: text('folder_id').references(() => chatFolders.id, { onDelete: 'set null' }),
+  tags: text('tags'),
+  shareId: text('share_id').unique(),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 });
@@ -87,6 +89,8 @@ export const chatMessages = sqliteTable('chat_messages', {
   model: text('model').notNull(),
   isPinned: integer('is_pinned', { mode: 'boolean' }).default(false),
   timestamp: integer('timestamp').notNull(),
+  tokenUsage: text('token_usage'),
+  attachments: text('attachments'),
 });
 
 export const codeConversations = sqliteTable('code_conversations', {

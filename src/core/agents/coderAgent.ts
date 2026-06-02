@@ -155,7 +155,15 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
     const tasks: Promise<void>[] = [];
 
     // Codebase search with retry
-    if (tools.includes('codebase_search') && this.config.codebaseKnowledgeEnabled) {
+    const needsCodebase =
+      prompt.includes('@codebase') ||
+      analysis.intent === 'architecture' ||
+      analysis.intent === 'refactor';
+    if (
+      tools.includes('codebase_search') &&
+      this.config.codebaseKnowledgeEnabled &&
+      needsCodebase
+    ) {
       tasks.push(
         this.withRetry(
           () => this.searchCodebase(prompt, signal),

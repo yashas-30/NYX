@@ -1065,7 +1065,8 @@ Rules:
 1. Strictly ground all generated code, functions, configurations, and variables in the verified codebase facts and search context. Do NOT guess or make up folder structures, imported libraries, methods, or third-party packages.
 2. Under no circumstances should you generate speculative code placeholders or "TODO" notes in the body of implementations. If a function is requested, provide its COMPLETE, syntactically correct implementation.
 3. If any essential information, parameters, or dependency paths are missing, explicitly refuse to guess or write dummy implementations. Instead, specify the exact missing components and request them.
-4. Verify all import paths, variable declarations, and type signatures. Do not assume APIs or models exist unless verified in context.`);
+4. Verify all import paths, variable declarations, and type signatures. Do not assume APIs or models exist unless verified in context.
+5. NEVER include internal chain-of-thought, reasoning traces, or drafting steps in your final response. CRITICAL: You MUST NOT start your response with phrases like "The user said", "The user wants", "I will", "Here is", or "This is". Do NOT start by analyzing the user's intent or explaining what you will do. Provide the final, structured answer or code block IMMEDIATELY. DO NOT wrap your entire response in a markdown code block (like \`\`\`text or \`\`\`markdown) unless you are ONLY outputting code. Just output regular markdown directly. Keep responses as concise and direct as possible to conserve tokens.`);
 
   if (context.lightningDirectives && context.lightningDirectives.length > 0) {
     parts.push(`[CONTINUOUS LEARNING: DYNAMIC APO DIRECTIVES ACTIVE]

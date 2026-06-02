@@ -78,6 +78,13 @@ const tagContainerVariants = {
   },
 };
 
+interface PromptTemplate {
+  id: string;
+  name: string;
+  content: string;
+  type: string;
+}
+
 const tagItemVariants = {
   hidden: { opacity: 0, x: -10, scale: 0.95 },
   visible: {
@@ -167,7 +174,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
           const rawBase64 = event.target?.result as string;
           const base64Data = rawBase64.split(',')[1];
 
-          const res = await fetchWithAuth('/api/v1/chat/upload-image', {
+          const res = await fetchWithAuth('/api/v1/files/upload', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -193,19 +200,19 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                 data: data.data,
               },
             ]);
-            toast.success(`Image "${file.name}" attached successfully`);
+            toast.success(`File "${file.name}" attached successfully`);
           } else {
             throw new Error(data.error || 'Upload failed');
           }
         } catch (error: any) {
-          toast.error(`Image upload failed: ${error.message}`);
+          toast.error(`File upload failed: ${error.message}`);
         } finally {
           setIsUploadingImage(false);
         }
       };
       reader.readAsDataURL(file);
     } catch (error: any) {
-      toast.error(`Image reading failed: ${error.message}`);
+      toast.error(`File reading failed: ${error.message}`);
       setIsUploadingImage(false);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -573,6 +580,36 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
           transition={{ type: 'spring', stiffness: 380, damping: 30 }}
           className="relative w-full"
         >
+          {visibleTemplates.length > 0 && prompt.startsWith('/') && (
+            <div className="absolute bottom-[calc(100%+8px)] left-0 w-full max-h-60 overflow-y-auto bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 flex flex-col p-1.5 scrollbar-none">
+              <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2">
+                <Layers size={14} className="text-zinc-400" />
+                <span className="text-xs font-bold text-zinc-300">Prompt Templates</span>
+              </div>
+              <div className="flex flex-col gap-1 mt-1.5">
+                {visibleTemplates.map((t, idx) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      onPromptChange(t.content);
+                      setTimeout(() => textareaRef.current?.focus(), 0);
+                    }}
+                    onMouseEnter={() => setTemplateSelectedIndex(idx)}
+                    className={`flex flex-col text-left px-3 py-2 rounded-xl transition-all ${
+                      idx === templateSelectedIndex
+                        ? 'bg-white/10 text-white'
+                        : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span className="text-sm font-semibold">{t.name}</span>
+                    <span className="text-xs opacity-70 line-clamp-1">{t.content}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="w-full flex flex-col bg-zinc-900/60 backdrop-blur-xl border border-white/[0.04] focus-within:border-white/10 rounded-[24px] p-1.5 shadow-2xl">
             <motion.div
               variants={tagContainerVariants}
@@ -726,13 +763,12 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/5 text-[10px] font-bold text-zinc-300 transition-all select-none cursor-pointer disabled:opacity-50 shrink-0"
                 >
                   <ImageIcon className="w-3 h-3 text-zinc-400" />
-                  <span>{isUploadingImage ? 'Uploading...' : 'Attach Image'}</span>
+                  <span>{isUploadingImage ? 'Uploading...' : 'Attach File'}</span>
                 </motion.button>
                 <input
                   type="file"
                   ref={fileInputRef}
                   onChange={handleImageChange}
-                  accept="image/*"
                   className="hidden"
                 />
 
@@ -765,13 +801,9 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   onChange={(e) => {
                     onPromptChange(e.target.value);
                     adjustHeight();
+                    setTemplateSelectedIndex(0);
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSubmit(e);
-                    }
-                  }}
+                  onKeyDown={handleKeyDown}
                   placeholder="Ask anything..."
                   className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1.5 px-1 resize-none min-h-[36px] max-h-[220px] font-medium outline-none text-foreground/90 placeholder:text-zinc-600 focus:outline-none"
                   style={{ scrollbarWidth: 'none' }}

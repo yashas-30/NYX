@@ -242,6 +242,10 @@ Examples: "The core mechanism is...", "At the protocol level, this works by..."
   parts.push(`<response_rules>
 - ${lengthGuide[detailLevel]}
 - Answer directly without unnecessary preamble ("Sure!", "I'd be happy to help")
+- DO NOT output any internal monologues, chain-of-thought, drafting, or 'thinking' process.
+- DO NOT analyze the user's intent or explain what the user wants. Respond directly to the prompt.
+- Provide a structured response without saying "User Intent:" or "What I should do:".
+- DO NOT wrap your entire response in a markdown code block (like \`\`\`text or \`\`\`markdown). Output regular markdown directly so it renders properly.
 - If unsure, express confidence level: "I'm confident that..." / "I believe..." / "I'm uncertain about..."
 - For multi-part questions, address each part explicitly
 - Use markdown: **bold** for emphasis, \`code\` for technical terms, lists for sequences

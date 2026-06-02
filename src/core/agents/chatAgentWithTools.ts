@@ -1,157 +1,107 @@
-import { AIService } from '@src/core/services/ai.service';
 import { ChatMessage, StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from './baseAgent';
-import { NYX_TOOLS } from '../tools/nyxTools';
-import { executeTool } from '../tools/toolExecutor';
 
 export interface ChatAgentConfig extends BaseAgentConfig {
   updateHistory?: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
 }
 
-const MAX_ROUNDS = 10;
-
 export class ChatAgentWithTools extends BaseAgent<ChatAgentConfig, StreamEvent> {
   async *streamResponse(
     prompt: string,
     analysis: PromptAnalysis,
-    signal: AbortSignal
+    signal: AbortSignal,
+    searchContext?: string,
+    images?: File[]
   ): AsyncGenerator<StreamEvent> {
     const reasoningChain: string[] = [];
-    yield* this.emitThinking('Starting Tool Execution Loop...', reasoningChain);
+    yield* this.emitThinking('Connecting to backend agent service...', reasoningChain);
 
     let processedHistory = [...this.config.history];
     if (processedHistory.length > HISTORY_SLICE_SIZE) {
       processedHistory = processedHistory.slice(-HISTORY_SLICE_SIZE);
     }
 
-    const systemInstruction = `You are NYX Chat Agent.
-You have access to native tools. Use them to gather context or read files.
-Explain your thoughts and provide clear answers.`;
+    if (searchContext) {
+      processedHistory.push({
+        role: 'user',
+        content: `Web Search Context: ${searchContext}`,
+        timestamp: Date.now(),
+      });
+    }
 
-    let currentHistory = [...processedHistory];
+    // Pass everything to the new backend /api/v1/agents/chat endpoint
+    const response = await fetch('/api/v1/agents/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: this.config.modelId,
+        provider: this.config.provider,
+        prompt,
+        history: processedHistory,
+        apiKey: this.config.apiKey,
+        gatewayUrls: this.config.settings?.gatewayUrls,
+        images: images ? images.map((f: any) => f.name) : [], // simplified image handling
+      }),
+      signal,
+    });
 
-    for (let round = 0; round < MAX_ROUNDS; round++) {
-      if (signal.aborted) break;
-      yield* this.emitThinking(`Round ${round + 1} / ${MAX_ROUNDS}`, reasoningChain);
+    if (!response.ok) {
+      throw new Error(`Agent backend error: ${response.statusText}`);
+    }
 
-      let lastEmittedLength = 0;
-      const chunks: string[] = [];
-      let resolveStream: (() => void) | null = null;
-      let finished = false;
-      let streamError: any = null;
+    if (!response.body) {
+      throw new Error('No response body from backend');
+    }
 
-      const onStreamCallback = (event: any) => {
-        if (event && event.type === 'text') {
-          const delta = event.content.slice(lastEmittedLength);
-          if (delta) {
-            chunks.push(delta);
-            lastEmittedLength = event.content.length;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') {
+              yield* this.emitThinking('Task complete.', reasoningChain);
+              return;
+            }
+            try {
+              const parsed = JSON.parse(data);
+
+              if (parsed.error) {
+                throw new Error(parsed.error);
+              }
+
+              if (parsed.chunk) {
+                yield { type: 'text', content: parsed.chunk };
+              }
+              if (parsed.tool_call) {
+                yield { type: 'tool_call', content: 'Calling tool...', metadata: parsed.tool_call };
+              }
+              if (parsed.tool_result) {
+                yield {
+                  type: 'tool_result',
+                  content: 'Tool finished',
+                  metadata: parsed.tool_result,
+                };
+              }
+            } catch (err) {
+              // Ignore parse errors from partial JSON
+            }
           }
         }
-        if (resolveStream) resolveStream();
-      };
-
-      const runPromise = AIService.execute(
-        this.config.modelId,
-        this.config.provider,
-        round === 0 ? prompt : 'Please continue using tools or provide final response.',
-        this.config.apiKey,
-        systemInstruction,
-        { ...this.config.settings, temperature: 0.7 },
-        onStreamCallback,
-        signal,
-        {
-          history: currentHistory,
-          agentMode: 'chat',
-          tools: NYX_TOOLS,
-          streamEvents: true,
-        }
-      )
-        .then((result) => {
-          finished = true;
-          if (resolveStream) resolveStream();
-          return result;
-        })
-        .catch((err) => {
-          streamError = err;
-          finished = true;
-          if (resolveStream) resolveStream();
-        });
-
-      while (!finished || chunks.length > 0) {
-        if (signal.aborted) break;
-        if (chunks.length === 0) {
-          await new Promise<void>((resolve) => {
-            resolveStream = resolve;
-          });
-          resolveStream = null;
-        }
-
-        if (streamError) throw streamError;
-
-        while (chunks.length > 0) {
-          const content = chunks.shift()!;
-          yield { type: 'text', content };
-        }
       }
-
-      const response = await runPromise;
-      if (!response) throw new Error('No response from AIService');
-
-      if (response.text.length > lastEmittedLength) {
-        yield { type: 'text', content: response.text.slice(lastEmittedLength) };
-      }
-
-      if (response.toolCalls && response.toolCalls.length > 0) {
-        yield* this.emitThinking(`Executing ${response.toolCalls.length} tools...`, reasoningChain);
-
-        currentHistory.push({
-          role: 'assistant',
-          content: response.text || 'Calling tools...',
-          timestamp: Date.now(),
-        });
-
-        const toolResponses = [];
-        for (const call of response.toolCalls) {
-          yield { type: 'tool_call', content: `Running ${call.function.name}...`, metadata: call };
-
-          let args;
-          try {
-            args = JSON.parse(call.function.arguments);
-          } catch (e) {
-            args = call.function.arguments;
-          }
-
-          const result = await executeTool(
-            call.function.name,
-            args,
-            '', // No workspace path for chat generally
-            signal
-          );
-
-          yield {
-            type: 'tool_result',
-            content: `Completed ${call.function.name}`,
-            metadata: { id: call.id, result: result.success ? 'Success' : 'Failed' },
-          };
-
-          toolResponses.push({
-            id: call.id,
-            name: call.function.name,
-            response: result,
-          });
-        }
-
-        currentHistory.push({
-          role: 'user',
-          content: JSON.stringify({ functionResponses: toolResponses }),
-          timestamp: Date.now(),
-        });
-      } else {
-        yield* this.emitThinking('Task complete.', reasoningChain);
-        break;
-      }
+    } finally {
+      reader.releaseLock();
     }
   }
 }

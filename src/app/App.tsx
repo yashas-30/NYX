@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { CoderDashboard } from '@src/features/dashboard';
 import { Toaster } from 'sonner';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -64,7 +64,11 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 font-sans">
       <ErrorBoundary>
-        <CoderDashboard onExit={() => {}} />
+        {window.location.pathname.startsWith('/share/') ? (
+          <SharedChatView />
+        ) : (
+          <CoderDashboard onExit={() => {}} />
+        )}
       </ErrorBoundary>
 
       <Toaster
@@ -87,6 +91,77 @@ function AppContent() {
           },
         }}
       />
+    </div>
+  );
+}
+
+function SharedChatView() {
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const shareId = window.location.pathname.split('/').pop();
+    if (!shareId) {
+      setError('Invalid share URL');
+      return;
+    }
+
+    fetch(`/api/v1/conversations/share/${shareId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Shared conversation not found or expired');
+        return res.json();
+      })
+      .then((d) => setData(d))
+      .catch((e) => setError(e.message));
+  }, []);
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background text-foreground flex-col gap-4">
+        <h1 className="text-2xl text-red-500 font-bold">Error</h1>
+        <p>{error}</p>
+        <a href="/" className="text-primary hover:underline">
+          Return to App
+        </a>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen flex flex-col bg-background text-foreground max-w-4xl mx-auto border-x border-border">
+      <div className="p-4 border-b border-border flex justify-between items-center bg-card">
+        <div>
+          <h1 className="font-bold text-lg">{data.title || 'Shared Conversation'}</h1>
+          <p className="text-xs text-muted-foreground">
+            Shared on {new Date(data.sharedAt).toLocaleString()}
+          </p>
+        </div>
+        <a
+          href="/"
+          className="px-4 py-2 bg-primary text-primary-foreground text-sm rounded-md font-bold hover:bg-primary/90"
+        >
+          Open in NYX
+        </a>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {data.messages?.map((msg: any, i: number) => (
+          <div
+            key={i}
+            className={`p-4 rounded-lg ${msg.role === 'user' ? 'bg-primary/10 ml-12' : 'bg-muted mr-12'}`}
+          >
+            <div className="text-xs font-bold mb-2 uppercase opacity-50">{msg.role}</div>
+            <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

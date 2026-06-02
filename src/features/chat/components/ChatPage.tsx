@@ -336,6 +336,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     [history, currentModelId]
   );
 
+  // --- Share chat ---
+  const handleShareChat = useCallback(async (): Promise<string> => {
+    if (!chatSessions?.activeSid) throw new Error('No active session');
+    const res = await fetch(`/api/v1/conversations/${chatSessions.activeSid}/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) throw new Error('Failed to share chat');
+    const data = await res.json();
+    // Return the full URL to the frontend route for shared chats
+    return `${window.location.origin}/share/${data.shareId}`;
+  }, [chatSessions?.activeSid]);
+
   // --- Model selection switch with warnings ---
   const handleModelChange = useCallback(
     (modelId: string) => {
@@ -403,6 +416,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           gatewayUrls={gatewayUrls || {}}
           onAttachFiles={handleAttachFiles}
           onExportChat={handleExport}
+          onShareChat={handleShareChat}
           connectionStatus={connectionStatus}
           isNewChat={history.length === 0}
         />

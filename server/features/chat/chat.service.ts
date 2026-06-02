@@ -13,6 +13,7 @@ export interface ChatStreamParams {
   systemInstruction?: string;
   settings?: any;
   enableWebSearch?: boolean;
+  images?: { name: string; mimeType: string; data: string }[];
 }
 
 export class ChatService {
@@ -30,6 +31,7 @@ export class ChatService {
       systemInstruction,
       settings,
       enableWebSearch = true,
+      images = [],
     } = params;
 
     logger.info({ modelId, provider, enableWebSearch }, '[ChatService] Starting chat stream...');
@@ -78,7 +80,16 @@ export class ChatService {
       if (systemInstruction) {
         // Add system instruction if supported by history mapping (simplified for this example)
       }
-      contents.push({ role: 'user', parts: [{ text: finalPrompt }] });
+      const parts: any[] = [{ text: finalPrompt }];
+      for (const img of images) {
+        parts.push({
+          inlineData: {
+            mimeType: img.mimeType,
+            data: img.data,
+          },
+        });
+      }
+      contents.push({ role: 'user', parts });
 
       const res = await fetch(url, {
         method: 'POST',

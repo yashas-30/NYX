@@ -54,7 +54,7 @@ export const useCoderLogic = ({
   submitReward,
 }: CoderLogicProps) => {
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
-  const [codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled] = useState(true);
+  const [codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled] = useState(false);
 
   const { activeAgent, models, setModel, agentPersonas, setAgentPersonas } = useAgentState({
     models: propModels,

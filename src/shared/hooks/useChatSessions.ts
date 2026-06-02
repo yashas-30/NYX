@@ -8,6 +8,14 @@ export interface ChatSession {
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+  folderId?: string | null;
+  tags?: string | null;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: number;
 }
 
 const STORAGE_KEY = 'nyx-chat-sessions';
@@ -28,6 +36,7 @@ function deriveTitleFromMessages(messages: ChatMessage[]): string {
 export function useChatSessions(agentType?: 'chat' | 'coder') {
   const [regularSessions, setRegularSessions] = useState<ChatSession[]>([]);
   const [activeSid, setActiveSid] = useState<string | null>(null);
+  const [folders, setFolders] = useState<Folder[]>([]);
 
   // Helper to check if session matches the agentType
   const matchesAgentType = useCallback(
@@ -80,11 +89,23 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
                 return matching ? matching.id : prevSid;
               });
             }
-            return;
           }
         }
       } catch (e: any) {
         console.warn('[useChatSessions] Backend fetch failed, falling back to localStorage:', e);
+      }
+
+      // Load folders
+      try {
+        if (agentType === 'chat') {
+          const res = await fetchWithAuth('/api/v1/conversations/folders');
+          if (res.ok) {
+            const fetchedFolders = await res.json();
+            if (activeToken) setFolders(fetchedFolders);
+          }
+        }
+      } catch (e: any) {
+        console.warn('[useChatSessions] Folders fetch failed:', e);
       }
 
       // Fallback
@@ -230,15 +251,75 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
     setActiveSid(sid);
   }, []);
 
+  const createFolder = useCallback(async (name: string) => {
+    try {
+      const res = await fetchWithAuth('/api/v1/conversations/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFolders((prev) => [...prev, { id: data.id, name, createdAt: Date.now() }]);
+        return data.id;
+      }
+    } catch (e) {
+      console.error('[useChatSessions] Failed to create folder:', e);
+    }
+  }, []);
+
+  const deleteFolder = useCallback(async (id: string) => {
+    try {
+      const res = await fetchWithAuth(`/api/v1/conversations/folders/${id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setFolders((prev) => prev.filter((f) => f.id !== id));
+      }
+    } catch (e) {
+      console.error('[useChatSessions] Failed to delete folder:', e);
+    }
+  }, []);
+
+  const updateSessionMeta = useCallback(
+    (sid: string, meta: { folderId?: string | null; tags?: string | null }) => {
+      setRegularSessions((prev) =>
+        prev.map((s) => {
+          if (s.id === sid) {
+            const updated = { ...s, ...meta };
+            // Sync to backend
+            const url = agentType
+              ? `/api/v1/conversations?agentType=${agentType}`
+              : '/api/v1/conversations';
+            fetchWithAuth(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated),
+            }).catch((err) =>
+              console.warn('[useChatSessions] Failed to sync session meta update:', err)
+            );
+            return updated;
+          }
+          return s;
+        })
+      );
+    },
+    [agentType]
+  );
+
   const activeSession = sessions.find((s) => s.id === activeSid) ?? null;
 
   return {
     sessions,
+    folders,
     activeSid,
     activeSession,
     createSession,
     updateSession,
     deleteSession,
     switchSession,
+    createFolder,
+    deleteFolder,
+    updateSessionMeta,
   };
 }

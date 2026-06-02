@@ -76,6 +76,7 @@ export interface ChatHeaderProps {
   onExportChat?: (format: 'markdown' | 'json' | 'txt') => void;
   connectionStatus?: 'online' | 'offline' | 'degraded';
   isNewChat?: boolean;
+  onShareChat?: () => Promise<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,10 +227,11 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
   );
 };
 
-const ShareMenu: React.FC<{ onExport: ChatHeaderProps['onExportChat']; title: string }> = ({
-  onExport,
-  title,
-}) => {
+const ShareMenu: React.FC<{
+  onExport: ChatHeaderProps['onExportChat'];
+  title: string;
+  onShareChat?: () => Promise<string>;
+}> = ({ onExport, title, onShareChat }) => {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -244,7 +246,8 @@ const ShareMenu: React.FC<{ onExport: ChatHeaderProps['onExportChat']; title: st
 
   const handleCopyLink = async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      const url = onShareChat ? await onShareChat() : window.location.href;
+      await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       toast.success('Link copied to clipboard');
@@ -347,6 +350,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onExportChat,
   connectionStatus = 'online',
   isNewChat = false,
+  onShareChat,
 }) => {
   const [liveElapsed, setLiveElapsed] = useState(0);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -617,7 +621,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 </motion.button>
 
                 {/* Share & Export */}
-                <ShareMenu onExport={onExportChat} title={sessionTitle} />
+                <ShareMenu onExport={onExportChat} title={sessionTitle} onShareChat={onShareChat} />
 
                 {/* Clear */}
                 <motion.button

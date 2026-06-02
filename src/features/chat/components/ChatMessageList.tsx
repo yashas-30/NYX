@@ -736,11 +736,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               {msg.images && msg.images.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {msg.images.map((img, i) => (
-                    <ImageAttachment
-                      key={i}
-                      src={img.url || img.dataUrl || img.data || ''}
-                      alt={img.name}
-                    />
+                    <ImageAttachment key={i} src={img.url || img.data || ''} alt={img.name} />
                   ))}
                 </div>
               )}

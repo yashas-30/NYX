@@ -26,8 +26,8 @@ import { chatRouter } from './server/features/chat/chat.router.ts';
 import { healthRouter } from './server/features/system/health.router.ts';
 import { metricsRouter } from './server/features/system/metrics.router.ts';
 import { conversationsRouter } from './server/features/conversations/conversations.router.ts';
-import { cacheRouter } from './server/features/cache/cache.router.ts';
 import { workspaceRouter } from './server/features/workspace/workspace.router.ts';
+import { filesRouter } from './server/features/files/files.router.ts';
 import { workspaceWatcher } from './server/features/workspace/workspace.watcher.ts';
 /**
  * WRONG-3 / BAD-2 fix: modelProxyRouter proxies requests to multiple AI provider endpoints
@@ -36,6 +36,7 @@ import { workspaceWatcher } from './server/features/workspace/workspace.watcher.
  * zero-copy streaming. Both are intentionally kept as thin routing layers.
  */
 import { modelProxyRouter } from './server/features/model-proxy/modelProxy.router.ts';
+import { promptTemplatesRouter } from './server/features/prompt-templates/prompt-templates.router.ts';
 
 // Existing routes
 import { geminiRouter } from './server/features/ai-providers/gemini.router.ts';
@@ -393,9 +394,11 @@ async function startServer() {
   app.use('/api/v1', metricsRouter);
   app.use('/api/v1/conversations', conversationsRouter);
   app.use('/api/v1/chat', chatRouter);
+  app.use('/api/v1/files', filesRouter);
   app.use('/api/v1/cache', cacheRouter);
   app.use('/api/v1/workspace', workspaceRouter);
   app.use('/api/v1/models', modelProxyRouter);
+  app.use('/api/v1/prompt-templates', promptTemplatesRouter);
 
   app.use('/api/v1/gemini', providerRateLimiter('gemini'), geminiRouter);
   app.use('/api/v1/terminal', terminalRouter);

@@ -9,6 +9,7 @@ import {
   chatMessages,
   codeConversations,
   codeMessages,
+  chatFolders,
 } from '../../db/schema.ts';
 import { eq, desc, sql } from 'drizzle-orm';
 import { APP_STATE_DIR } from '../../lib/paths.ts';
@@ -30,6 +31,8 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   workspacePath?: string;
+  folderId?: string | null;
+  tags?: string | null;
 }
 
 const STORE_PATH = path.join(APP_STATE_DIR, 'conversations.json');
@@ -64,6 +67,8 @@ export const ConversationStore = {
           createdAt: conv.createdAt,
           updatedAt: conv.updatedAt,
           workspacePath: (conv as any).workspacePath || undefined,
+          folderId: (conv as any).folderId || null,
+          tags: (conv as any).tags || null,
           messages: msgs.map((m) => ({
             id: m.id,
             role: m.role as any,
@@ -98,6 +103,8 @@ export const ConversationStore = {
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
         workspacePath: (conv as any).workspacePath || undefined,
+        folderId: (conv as any).folderId || null,
+        tags: (conv as any).tags || null,
         messages: msgs.map((m) => ({
           id: m.id,
           role: m.role as any,
@@ -111,6 +118,57 @@ export const ConversationStore = {
       logger.error(`[ConversationStore] get failed for ${id}:`, err);
       return null;
     }
+  },
+
+  getByShareId(shareId: string): Conversation | null {
+    try {
+      const conv = db
+        .select()
+        .from(chatConversations)
+        .where(eq(chatConversations.shareId, shareId))
+        .get();
+      if (!conv) return null;
+      const msgs = db
+        .select()
+        .from(chatMessages)
+        .where(eq(chatMessages.conversationId, conv.id))
+        .orderBy(chatMessages.timestamp)
+        .all();
+      return {
+        id: conv.id,
+        title: conv.title,
+        model: conv.model,
+        createdAt: conv.createdAt,
+        updatedAt: conv.updatedAt,
+        messages: msgs.map((m) => ({
+          id: m.id,
+          role: m.role as any,
+          content: m.content,
+          model: m.model,
+          timestamp: m.timestamp,
+        })),
+      };
+    } catch (err: any) {
+      logger.error(`[ConversationStore] getByShareId failed for ${shareId}:`, err);
+      return null;
+    }
+  },
+
+  generateShareId(id: string, agentType: 'chat' | 'code' = 'chat'): string {
+    if (agentType === 'code') {
+      throw new Error('Sharing code conversations is not currently supported.');
+    }
+
+    // Check if it already has one
+    const existing = db.select().from(chatConversations).where(eq(chatConversations.id, id)).get();
+    if (existing && existing.shareId) {
+      return existing.shareId;
+    }
+
+    const shareId = `share_${Math.random().toString(36).substring(2, 15)}`;
+    db.update(chatConversations).set({ shareId }).where(eq(chatConversations.id, id)).run();
+
+    return shareId;
   },
 
   upsert(conv: Conversation, agentType: 'chat' | 'code' = 'chat'): void {
@@ -127,6 +185,9 @@ export const ConversationStore = {
         };
         if (agentType === 'code') {
           values.workspacePath = conv.workspacePath || null;
+        } else {
+          values.folderId = conv.folderId || null;
+          values.tags = conv.tags || null;
         }
 
         const setValues: any = {
@@ -136,6 +197,9 @@ export const ConversationStore = {
         };
         if (agentType === 'code') {
           setValues.workspacePath = conv.workspacePath || null;
+        } else {
+          setValues.folderId = conv.folderId || null;
+          setValues.tags = conv.tags || null;
         }
 
         tx.insert(conversationsTable)
@@ -188,6 +252,54 @@ export const ConversationStore = {
       db.delete(conversationsTable).run();
     } catch (err: any) {
       logger.error(`[ConversationStore] clear failed for ${agentType}:`, err);
+    }
+  },
+};
+
+export const FolderStore = {
+  list() {
+    try {
+      return db.select().from(chatFolders).orderBy(desc(chatFolders.createdAt)).all();
+    } catch (err: any) {
+      logger.error('[FolderStore] list failed:', err);
+      return [];
+    }
+  },
+
+  create(name: string) {
+    try {
+      const id = `folder_${Math.random().toString(36).substring(2, 15)}`;
+      db.insert(chatFolders)
+        .values({
+          id,
+          name,
+          createdAt: Date.now(),
+        })
+        .run();
+      return id;
+    } catch (err: any) {
+      logger.error('[FolderStore] create failed:', err);
+      return null;
+    }
+  },
+
+  update(id: string, name: string) {
+    try {
+      db.update(chatFolders).set({ name }).where(eq(chatFolders.id, id)).run();
+      return true;
+    } catch (err: any) {
+      logger.error(`[FolderStore] update failed for ${id}:`, err);
+      return false;
+    }
+  },
+
+  delete(id: string) {
+    try {
+      db.delete(chatFolders).where(eq(chatFolders.id, id)).run();
+      return true;
+    } catch (err: any) {
+      logger.error(`[FolderStore] delete failed for ${id}:`, err);
+      return false;
     }
   },
 };

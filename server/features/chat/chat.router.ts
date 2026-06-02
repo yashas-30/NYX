@@ -45,8 +45,16 @@ chatRouter.post('/upload-image', async (req, res) => {
 
 chatRouter.post('/stream', async (req, res) => {
   try {
-    const { prompt, history, provider, modelId, settings, systemInstruction, enableWebSearch } =
-      req.body;
+    const {
+      prompt,
+      history,
+      provider,
+      modelId,
+      settings,
+      systemInstruction,
+      enableWebSearch,
+      images,
+    } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: 'Missing prompt' });
     }
@@ -60,7 +68,7 @@ chatRouter.post('/stream', async (req, res) => {
     req.on('close', () => abortController.abort());
 
     await chatService.streamChat(
-      { prompt, history, provider, modelId, settings, systemInstruction, enableWebSearch },
+      { prompt, history, provider, modelId, settings, systemInstruction, enableWebSearch, images },
       abortController.signal,
       (chunk: string) => {
         try {

@@ -34,6 +34,7 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { analyzePrompt, optimizePromptText } from '@/shared/promptAnalyzer';
 import { AgentModeBadge } from './AgentModeBadge';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 interface PromptInputProps {
@@ -77,6 +78,13 @@ interface LocalInferenceSettings {
   topK: number;
   repeatPenalty: number;
   mirostat: 0 | 1 | 2;
+}
+
+interface PromptTemplate {
+  id: string;
+  name: string;
+  content: string;
+  type: string;
 }
 
 /* ── Staggered Entrance Variants for Granola Tags ───────────────────────── */
@@ -139,6 +147,24 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
+  const [templateSelectedIndex, setTemplateSelectedIndex] = useState(0);
+
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      try {
+        const response = await fetchWithAuth('/api/v1/prompt-templates');
+        if (response.ok) {
+          const data = await response.json();
+          setPromptTemplates(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch prompt templates', err);
+      }
+    };
+    fetchTemplates();
+  }, []);
 
   /* ── Detect local GGUF model ─────────────────────────────────────────── */
   const providerStr = String(currentModel?.provider ?? '');
@@ -309,6 +335,44 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       : localSettings.gpuLayers < 50
         ? 'text-[#FF3366]/70'
         : 'text-[#FF3366]';
+
+  const visibleTemplates = prompt.startsWith('/')
+    ? promptTemplates.filter(
+        (t) =>
+          t.name.toLowerCase().includes(prompt.slice(1).toLowerCase()) ||
+          t.content.toLowerCase().includes(prompt.slice(1).toLowerCase())
+      )
+    : [];
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (visibleTemplates.length > 0 && prompt.startsWith('/')) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setTemplateSelectedIndex((prev) => Math.min(prev + 1, visibleTemplates.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setTemplateSelectedIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const selected = visibleTemplates[templateSelectedIndex];
+        if (selected) {
+          onPromptChange(selected.content);
+          setTimeout(() => textareaRef.current?.focus(), 0);
+        }
+        return;
+      }
+    }
+
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      handleSubmit(e as any);
+    }
+  };
 
   return (
     <div className="shrink-0 w-full flex flex-col items-center px-4 pb-4 pt-2 bg-background z-30 gap-2">
@@ -785,6 +849,36 @@ export const PromptInput: React.FC<PromptInputProps> = ({
             }
           }}
         >
+          {visibleTemplates.length > 0 && prompt.startsWith('/') && (
+            <div className="absolute bottom-[calc(100%+8px)] left-0 w-full md:w-3/4 max-h-60 overflow-y-auto bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 flex flex-col p-1.5 scrollbar-none">
+              <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2">
+                <Layers size={14} className="text-zinc-400" />
+                <span className="text-xs font-bold text-zinc-300">Prompt Templates</span>
+              </div>
+              <div className="flex flex-col gap-1 mt-1.5">
+                {visibleTemplates.map((t, idx) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      onPromptChange(t.content);
+                      setTimeout(() => textareaRef.current?.focus(), 0);
+                    }}
+                    onMouseEnter={() => setTemplateSelectedIndex(idx)}
+                    className={`flex flex-col text-left px-3 py-2 rounded-xl transition-all ${
+                      idx === templateSelectedIndex
+                        ? 'bg-white/10 text-white'
+                        : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span className="text-sm font-semibold">{t.name}</span>
+                    <span className="text-xs opacity-70 line-clamp-1">{t.content}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Outer capsule wrapper */}
           <div
             className={`w-full flex flex-col bg-zinc-900/60 backdrop-blur-xl border rounded-[24px] p-1.5 shadow-2xl transition-all duration-300 ${
@@ -1145,14 +1239,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     onPromptChange(e.target.value);
                     adjustHeight();
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault();
-                      if (document.activeElement instanceof HTMLElement)
-                        document.activeElement.blur();
-                      handleSubmit(e);
-                    }
-                  }}
+                  onKeyDown={handleKeyDown}
                   placeholder="Type / for actions, Cmd+Enter to send..."
                   className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1.5 px-1 resize-none min-h-[36px] max-h-[220px] font-medium outline-none text-foreground/90 placeholder:text-zinc-600 focus:outline-none"
                   style={{ scrollbarWidth: 'none' }}

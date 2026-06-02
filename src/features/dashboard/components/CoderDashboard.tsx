@@ -28,6 +28,9 @@ import {
   ArrowLeft,
   ArrowRight,
   Library,
+  Folder,
+  FolderPlus,
+  MoreHorizontal,
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
@@ -96,7 +99,17 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
 
   // Select active sessions list depending on active page mode
   const activeSessions = activeMode === 'coder' ? coderSessions : chatSessions;
-  const { sessions, activeSid, deleteSession, switchSession, createSession } = activeSessions;
+  const {
+    sessions,
+    folders,
+    activeSid,
+    deleteSession,
+    switchSession,
+    createSession,
+    createFolder,
+    deleteFolder,
+    updateSessionMeta,
+  } = activeSessions;
 
   // Dedicated separate frontend state managers
   const chatState = useChatLogic({
@@ -246,18 +259,50 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
               </button>
             </div>
 
-            {/* Chat Session List */}
+            {/* Folders and Chat Session List */}
             <div className="flex-1 overflow-y-auto px-2 space-y-1.5 scrollbar-none pt-3">
+              <div className="flex items-center justify-between px-2.5 pb-1">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                  Chats
+                </span>
+                <button
+                  onClick={() => {
+                    const name = prompt('New Folder Name:');
+                    if (name) createFolder(name);
+                  }}
+                  className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer p-1"
+                  title="New Folder"
+                >
+                  <FolderPlus size={13} />
+                </button>
+              </div>
+
               <div className="space-y-0.5">
                 <AnimatePresence>
-                  {filteredSessions.length === 0 ? (
-                    <div className="text-left py-4 pl-4.5">
-                      <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">
-                        No conversations
-                      </p>
-                    </div>
-                  ) : (
-                    filteredSessions.map((session) => (
+                  {folders?.map((folder) => {
+                    const folderSessions = filteredSessions.filter((s) => s.folderId === folder.id);
+                    return (
+                      <FolderItem
+                        key={folder.id}
+                        folder={folder}
+                        sessions={folderSessions}
+                        activeSid={activeSid}
+                        onDeleteFolder={() => deleteFolder(folder.id)}
+                        onSelectSession={(id) => {
+                          switchSession(id);
+                          if (activeMode !== 'coder' && activeMode !== 'chat')
+                            setActiveMode('coder');
+                        }}
+                        onDeleteSession={deleteSession}
+                        updateSessionMeta={updateSessionMeta}
+                        allFolders={folders}
+                      />
+                    );
+                  })}
+
+                  {filteredSessions
+                    .filter((s) => !s.folderId)
+                    .map((session) => (
                       <SessionItem
                         key={session.id}
                         session={session}
@@ -269,8 +314,17 @@ export const CoderDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) =>
                           }
                         }}
                         onDelete={() => deleteSession(session.id)}
+                        folders={folders}
+                        onMoveToFolder={(folderId) => updateSessionMeta(session.id, { folderId })}
                       />
-                    ))
+                    ))}
+
+                  {filteredSessions.length === 0 && folders?.length === 0 && (
+                    <div className="text-left py-4 pl-4.5">
+                      <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">
+                        No conversations
+                      </p>
+                    </div>
                   )}
                 </AnimatePresence>
               </div>
@@ -400,12 +454,15 @@ const SideNavButton: React.FC<{
 
 /* ── Recent Chat Session Item ──────────────────────────────────────────── */
 const SessionItem: React.FC<{
-  session: { id: string; title: string; updatedAt: number };
+  session: { id: string; title: string; updatedAt: number; folderId?: string | null };
   isActive: boolean;
   onClick: () => void;
   onDelete: () => void;
-}> = ({ session, isActive, onClick, onDelete }) => {
+  folders?: { id: string; name: string }[];
+  onMoveToFolder?: (folderId: string | null) => void;
+}> = ({ session, isActive, onClick, onDelete, folders, onMoveToFolder }) => {
   const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const timeAgo = (timestamp: number) => {
     const diff = Date.now() - timestamp;
@@ -426,7 +483,10 @@ const SessionItem: React.FC<{
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setMenuOpen(false);
+      }}
       className={`group relative flex items-center justify-between px-3.5 py-1.5 rounded-md cursor-pointer transition-all ${
         isActive
           ? 'text-zinc-200 font-semibold bg-white/[0.03]'
@@ -438,7 +498,56 @@ const SessionItem: React.FC<{
         {session.title}
       </span>
 
-      <div className="flex items-center gap-2 shrink-0 select-none ml-2">
+      <div className="flex items-center gap-2 shrink-0 select-none ml-2 relative">
+        {(hovered || menuOpen) && onMoveToFolder && folders && folders.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(!menuOpen);
+              }}
+              className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-white/10 transition-all cursor-pointer"
+              title="Move to Folder"
+            >
+              <MoreHorizontal size={9} />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-900 border border-white/10 rounded-md shadow-lg py-1 z-50">
+                <div className="px-2 py-1 text-[9px] font-bold text-zinc-500 uppercase">
+                  Move to...
+                </div>
+                {session.folderId && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMoveToFolder(null);
+                      setMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-white/10"
+                  >
+                    Remove from Folder
+                  </button>
+                )}
+                {folders
+                  .filter((f) => f.id !== session.folderId)
+                  .map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMoveToFolder(f.id);
+                        setMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-white/10 truncate"
+                    >
+                      {f.name}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {hovered ? (
           <button
             onClick={(e) => {
@@ -459,5 +568,88 @@ const SessionItem: React.FC<{
         )}
       </div>
     </motion.div>
+  );
+};
+
+/* ── Folder Item ──────────────────────────────────────────── */
+const FolderItem: React.FC<{
+  folder: { id: string; name: string };
+  sessions: any[];
+  activeSid: string | null;
+  onDeleteFolder: () => void;
+  onSelectSession: (id: string) => void;
+  onDeleteSession: (id: string) => void;
+  updateSessionMeta: (id: string, meta: any) => void;
+  allFolders: { id: string; name: string }[];
+}> = ({
+  folder,
+  sessions,
+  activeSid,
+  onDeleteFolder,
+  onSelectSession,
+  onDeleteSession,
+  updateSessionMeta,
+  allFolders,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+
+  // Auto-open if active session is in this folder
+  React.useEffect(() => {
+    if (sessions.some((s) => s.id === activeSid)) setIsOpen(true);
+  }, [activeSid, sessions]);
+
+  return (
+    <div className="mb-1">
+      <motion.div
+        layout
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        className="group flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer hover:bg-white/[0.02] text-zinc-400 hover:text-zinc-200 transition-colors"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <div className="flex items-center gap-2">
+          <Folder size={12} className={isOpen ? 'text-[#FF3366]' : 'text-zinc-500'} />
+          <span className="text-[11px] font-semibold">{folder.name}</span>
+        </div>
+        {hovered && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteFolder();
+            }}
+            className="p-1 rounded bg-red-500/10 text-red-400/60 hover:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
+            title="Delete Folder"
+          >
+            <Trash2 size={9} />
+          </button>
+        )}
+      </motion.div>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden pl-3 border-l border-white/[0.04] ml-3 mt-0.5 space-y-0.5"
+          >
+            {sessions.map((session) => (
+              <SessionItem
+                key={session.id}
+                session={session}
+                isActive={session.id === activeSid}
+                onClick={() => onSelectSession(session.id)}
+                onDelete={() => onDeleteSession(session.id)}
+                folders={allFolders}
+                onMoveToFolder={(folderId) => updateSessionMeta(session.id, { folderId })}
+              />
+            ))}
+            {sessions.length === 0 && (
+              <div className="px-3 py-1.5 text-[9px] text-zinc-600">Empty</div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 };

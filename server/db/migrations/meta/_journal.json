@@ -22,6 +22,13 @@
       "when": 1780335839943,
       "tag": "0002_late_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1780401899469,
+      "tag": "0003_married_shocker",
+      "breakpoints": true
     }
   ]
 }
