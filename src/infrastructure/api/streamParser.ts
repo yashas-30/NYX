@@ -256,6 +256,23 @@ function extractContent(parsed: any): ExtractedContent {
     result.text = parsed.text;
   }
 
+  // Gemini function calls
+  const geminiFunctionCall = parsed.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+  if (geminiFunctionCall) {
+    result.toolCall = {
+      index: 0,
+      id: `${geminiFunctionCall.name}_${Date.now()}`,
+      type: 'function',
+      function: {
+        name: geminiFunctionCall.name,
+        arguments:
+          typeof geminiFunctionCall.args === 'string'
+            ? geminiFunctionCall.args
+            : JSON.stringify(geminiFunctionCall.args),
+      },
+    };
+  }
+
   // functionCall from backend
   if (parsed.functionCall) {
     result.toolCall = {
@@ -318,6 +335,7 @@ export async function parseSSEStream(
 
   let isThinking = false;
   let streamBuffer = '';
+  let lastGeminiText = '';
 
   const processStreamBuffer = (flush = false) => {
     while (streamBuffer.length > 0) {
@@ -472,8 +490,13 @@ export async function parseSSEStream(
 
         // Accumulate text with <think> tag support
         if (extracted.text) {
-          streamBuffer += extracted.text;
-          processStreamBuffer();
+          // Gemini sends full text each time, not deltas - extract only new text
+          const delta = extracted.text.slice(lastGeminiText.length);
+          if (delta) {
+            streamBuffer += delta;
+            processStreamBuffer();
+          }
+          lastGeminiText = extracted.text;
         }
 
         // Accumulate reasoning

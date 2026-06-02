@@ -157,7 +157,27 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
     contextWindow: 8192,
   };
 
-  if (lowerId.includes('gemini')) {
+  if (lowerId.includes('gemini-2.5-pro')) {
+    caps.supportsVision = true;
+    caps.supportsTools = true;
+    caps.contextWindow = 2097152; // 2M
+  } else if (lowerId.includes('gemini-2.5-flash')) {
+    caps.supportsVision = true;
+    caps.supportsTools = true;
+    caps.contextWindow = 1048576; // 1M
+  } else if (lowerId.includes('gemini-2.0-flash')) {
+    caps.supportsVision = true;
+    caps.supportsTools = true;
+    caps.contextWindow = 1048576;
+  } else if (lowerId.includes('gemini-1.5-pro')) {
+    caps.supportsVision = true;
+    caps.supportsTools = true;
+    caps.contextWindow = 2097152;
+  } else if (lowerId.includes('gemini-1.5-flash')) {
+    caps.supportsVision = true;
+    caps.supportsTools = true;
+    caps.contextWindow = 1048576;
+  } else if (lowerId.includes('gemini')) {
     caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576;

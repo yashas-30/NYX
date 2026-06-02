@@ -1,7 +1,7 @@
 /**
  * @file src/infrastructure/api/directClient.ts
  * @description Production-grade direct browser-to-Gemini API client with
- *   streaming SSE support, exponential retry logic, and timeouts.
+ * streaming SSE support, exponential retry logic, and timeouts.
  */
 
 import { AISettings } from './inferenceClient';
@@ -30,6 +30,8 @@ export interface DirectClientOptions {
     function: { name: string; description: string; parameters: object };
   }>;
   responseFormat?: 'text' | 'json' | { type: 'json_schema'; schema: object };
+  images?: Array<{ mimeType?: string; base64: string }>;
+  webSearch?: boolean;
 }
 
 export interface DirectClientResult {
@@ -170,21 +172,15 @@ async function parseError(response: Response): Promise<Error> {
 // Helper to resolve Gemini models
 function resolveRealGeminiModel(model: string): string {
   const modelMap: Record<string, string> = {
-    'gemma-4-31b-it': 'gemma-4-31b-it',
-    'gemma-4-27b-it': 'gemma-4-26b-a4b-it',
-    'gemini-3.5-flash': 'gemini-3.5-flash',
-    'gemini-3-flash': 'gemini-3-flash-preview',
-    'gemini-3.1-pro': 'gemini-3.1-pro-preview',
     'gemini-2.5-flash': 'gemini-2.5-flash',
+    'gemini-2.5-pro': 'gemini-2.5-pro',
+    'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
+    'gemini-2.0-flash': 'gemini-2.0-flash',
+    'gemini-1.5-pro': 'gemini-1.5-pro',
+    'gemini-1.5-flash': 'gemini-1.5-flash',
   };
   return modelMap[model] || model;
 }
-
-// ---------------------------------------------------------------------------
-// SSE Stream parser
-// ---------------------------------------------------------------------------
-
-// Removed local parseSSEStream generator in favor of streamParser.ts
 
 // ---------------------------------------------------------------------------
 // Main Gemini fetch function
@@ -216,23 +212,47 @@ export async function directFetch(
   const endpoint = isStream ? 'streamGenerateContent' : 'generateContent';
   const url = `${gatewayBase}/models/${realModel}:${endpoint}?key=${activeKey}${isStream ? '&alt=sse' : ''}`;
 
-  // Formulate contents in Gemini format
-  const contents = [];
+  // Build contents with image support
+  const contents: any[] = [];
   if (options.history && Array.isArray(options.history)) {
-    contents.push(
-      ...options.history.map((m) => ({
+    for (const m of options.history) {
+      const parts: any[] = [{ text: m.content }];
+      if (m.images && m.images.length > 0) {
+        for (const img of m.images) {
+          parts.push({
+            inlineData: {
+              mimeType: img.mimeType || 'image/png',
+              data: img.base64,
+            },
+          });
+        }
+      }
+      contents.push({
         role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      }))
-    );
+        parts,
+      });
+    }
   }
-  contents.push({ role: 'user', parts: [{ text: prompt }] });
+
+  // Add current prompt with images
+  const promptParts: any[] = [{ text: prompt }];
+  if (options.images && options.images.length > 0) {
+    for (const img of options.images) {
+      promptParts.push({
+        inlineData: {
+          mimeType: img.mimeType || 'image/png',
+          data: img.base64,
+        },
+      });
+    }
+  }
+  contents.push({ role: 'user', parts: promptParts });
 
   const requestBody: any = { contents };
 
+  // Fix: System instruction without role field
   if (options.systemInstruction) {
     requestBody.systemInstruction = {
-      role: 'system',
       parts: [{ text: options.systemInstruction }],
     };
   }
@@ -245,6 +265,47 @@ export async function directFetch(
       requestBody.generationConfig.topP = options.settings.topP;
     if (options.settings.maxTokens !== undefined)
       requestBody.generationConfig.maxOutputTokens = options.settings.maxTokens;
+  }
+
+  // Add tools if provided
+  if (options.tools && options.tools.length > 0) {
+    requestBody.tools = [
+      {
+        functionDeclarations: options.tools.map((t) => ({
+          name: t.function.name,
+          description: t.function.description,
+          parameters: t.function.parameters,
+        })),
+      },
+    ];
+  }
+
+  // Add safety settings for coding (disable aggressive filters)
+  requestBody.safetySettings = [
+    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+  ];
+
+  // Add Google Search grounding if enabled
+  if (options.webSearch) {
+    requestBody.tools = requestBody.tools || [];
+    requestBody.tools.push({
+      googleSearchRetrieval: {
+        dynamicRetrievalConfig: {
+          mode: 'MODE_DYNAMIC',
+          dynamicThreshold: 0.7,
+        },
+      },
+    });
+  }
+
+  // Add JSON schema response format if specified
+  if (options.responseFormat && typeof options.responseFormat === 'object') {
+    requestBody.generationConfig = requestBody.generationConfig || {};
+    requestBody.generationConfig.responseMimeType = 'application/json';
+    requestBody.generationConfig.responseSchema = options.responseFormat.schema;
   }
 
   const startTime = performance.now();
@@ -275,7 +336,7 @@ export async function directFetch(
         options.onStream?.({ type: 'reasoning', content: accumulated });
       },
       onToolCall: (delta, accumulated) => {
-        options.onStream?.({ type: 'tool_call', content: JSON.stringify(accumulated) }); // Simplified mapping
+        options.onStream?.({ type: 'tool_call', content: JSON.stringify(accumulated) });
       },
       onFinish: (reason) => {
         options.onStream?.({ type: 'finish', metadata: { finish_reason: reason } });

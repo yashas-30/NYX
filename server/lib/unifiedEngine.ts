@@ -48,26 +48,49 @@ export class UnifiedEngine {
     onComplete: () => void
   ) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+    // Fix: Extract system message and filter from contents
+    const systemMsg = messages.find((m) => m.role === 'system');
+    const contents = messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }));
+
+    const requestBody: any = {
+      contents,
+      generationConfig: {
+        temperature: settings?.temperature ?? 0.7,
+        maxOutputTokens: settings?.maxTokens ?? 4096,
+        topP: settings?.topP ?? 1.0,
+      },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+      ],
+    };
+
+    // Fix: Add system instruction properly
+    if (systemMsg) {
+      requestBody.systemInstruction = {
+        parts: [{ text: systemMsg.content }],
+      };
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: messages.map((m) => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }],
-        })),
-        generationConfig: {
-          temperature: settings?.temperature ?? 0.7,
-          maxOutputTokens: settings?.maxTokens ?? 4096,
-          topP: settings?.topP ?? 1.0,
-        },
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error('No response body');
     const decoder = new TextDecoder();
     let buffer = '';
+    let lastText = '';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -80,7 +103,14 @@ export class UnifiedEngine {
           try {
             const data = JSON.parse(line.slice(6));
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            if (text) onChunk({ chunk: text });
+            if (text) {
+              // Fix: Only emit the delta (new text since last chunk)
+              const delta = text.slice(lastText.length);
+              if (delta) {
+                onChunk({ chunk: delta });
+              }
+              lastText = text;
+            }
           } catch (e: any) {
             // ignore JSON parse errors for incomplete chunks
           }
@@ -97,7 +127,6 @@ export class UnifiedEngine {
     onChunk: (chunk: StreamChunk) => void,
     onComplete: () => void
   ) {
-    // Dynamic LLAMA_PORT would be resolved from env or state here
     const LLAMA_PORT = process.env.LLAMA_PORT || LOCAL_MODEL_PORT;
     const response = await fetch(`http://127.0.0.1:${LLAMA_PORT}/completion`, {
       method: 'POST',

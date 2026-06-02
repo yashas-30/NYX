@@ -318,8 +318,11 @@ export class AIService {
         /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|rate_limit|quota|overloaded|high demand|timeout|network|econnreset|enotfound/i.test(
           message
         );
+      const isNonRetryable = /SAFETY_GATE_BLOCKED|Invalid API key|401|403|unauthorized/i.test(
+        message
+      );
 
-      if (isCloud && isTransient && attempt <= 3 && !isAbort) {
+      if (isCloud && isTransient && attempt <= 3 && !isAbort && !isNonRetryable) {
         const delay = Math.pow(2, attempt - 1) * 1000 + Math.random() * 1000;
         console.warn(
           `[AIService] Retry ${attempt}/3 for ${provider} in ${delay.toFixed(0)}ms: ${message}`
