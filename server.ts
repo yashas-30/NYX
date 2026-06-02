@@ -28,6 +28,7 @@ import { metricsRouter } from './server/features/system/metrics.router.ts';
 import { conversationsRouter } from './server/features/conversations/conversations.router.ts';
 import { cacheRouter } from './server/features/cache/cache.router.ts';
 import { workspaceRouter } from './server/features/workspace/workspace.router.ts';
+import { workspaceWatcher } from './server/features/workspace/workspace.watcher.ts';
 /**
  * WRONG-3 / BAD-2 fix: modelProxyRouter proxies requests to multiple AI provider endpoints
  * through a single /api/models/* interface. fastifyProxyRouter bridges requests from
@@ -56,6 +57,9 @@ import {
   migrateSqliteStore,
 } from './server/features/conversations/conversations.service.ts';
 import { pluginRegistry } from './server/lib/pluginRegistry.ts';
+import { errorHandler } from './server/middleware/errorHandler.ts';
+import { setupOpenApi } from './server/docs/openapi.ts';
+import { startFastifyServer } from './server/fastify/fastify.server.ts';
 
 const execAsync = promisify(exec);
 
@@ -199,6 +203,11 @@ async function startServer() {
   spawnScrapling();
   spawnAntigravity();
 
+  // Start Fastify SSE Server
+  startFastifyServer(FASTIFY_PORT).catch((err) => {
+    logger.error({ err }, '[Fastify] Startup failed in server.ts');
+  });
+
   // BAD-6: Health-check loop — poll every 15 seconds, auto-restart on failure
   const scraplingHealthInterval = setInterval(async () => {
     try {
@@ -334,7 +343,7 @@ async function startServer() {
         'Connection',
         'Accept',
       ],
-      credentials: false,
+      credentials: true,
     })
   );
 
@@ -346,11 +355,11 @@ async function startServer() {
   ) => {
     const fullPath = req.originalUrl.split('?')[0].replace(/\/$/, '');
     const isPublic = new Set([
-      '/api/health',
-      '/api/vault/status',
-      '/api/vault/token',
-      '/api/auth/session',
-      '/api/admin/logs',
+      '/api/v1/health',
+      '/api/v1/vault/status',
+      '/api/v1/vault/token',
+      '/api/v1/auth/session',
+      '/api/v1/admin/logs',
     ]).has(fullPath);
 
     if (isPublic) return next();
@@ -362,7 +371,7 @@ async function startServer() {
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired session token' });
   };
 
-  app.use('/api', sessionValidationMiddleware);
+  app.use('/api/v1', sessionValidationMiddleware);
 
   const generalLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -370,29 +379,29 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false,
   });
-  app.use('/api', generalLimiter);
+  app.use('/api/v1', generalLimiter);
 
   // Mount routes
-  app.use('/api/vault', vaultRouter);
-  app.get('/api/auth/session', (req, res) => {
+  app.use('/api/v1/vault', vaultRouter);
+  app.get('/api/v1/auth/session', (req, res) => {
     const isStream = req.query.stream === 'true';
     res.json({ token: createSessionToken(isStream), expiresAt: Date.now() + 5 * 60 * 1000 });
   });
-  app.use('/api/admin', adminRouter);
-  app.use('/api', systemRouter);
-  app.use('/api', healthRouter);
-  app.use('/api', metricsRouter);
-  app.use('/api/conversations', conversationsRouter);
-  app.use('/api/chat', chatRouter);
-  app.use('/api/cache', cacheRouter);
-  app.use('/api/workspace', workspaceRouter);
-  app.use('/api/models', modelProxyRouter);
+  app.use('/api/v1/admin', adminRouter);
+  app.use('/api/v1', systemRouter);
+  app.use('/api/v1', healthRouter);
+  app.use('/api/v1', metricsRouter);
+  app.use('/api/v1/conversations', conversationsRouter);
+  app.use('/api/v1/chat', chatRouter);
+  app.use('/api/v1/cache', cacheRouter);
+  app.use('/api/v1/workspace', workspaceRouter);
+  app.use('/api/v1/models', modelProxyRouter);
 
-  app.use('/api/gemini', providerRateLimiter('gemini'), geminiRouter);
-  app.use('/api/terminal', terminalRouter);
-  app.use('/api/agents', agentsRouter);
-  app.use('/api/nyx/local-models', localModelsRouter);
-  app.use('/api/nyx', nyxRouter);
+  app.use('/api/v1/gemini', providerRateLimiter('gemini'), geminiRouter);
+  app.use('/api/v1/terminal', terminalRouter);
+  app.use('/api/v1/agents', agentsRouter);
+  app.use('/api/v1/nyx/local-models', localModelsRouter);
+  app.use('/api/v1/nyx', nyxRouter);
 
   if (isProd) {
     let distPath = path.join(_dirname, 'dist');
@@ -402,10 +411,16 @@ async function startServer() {
     logger.info(`[Server] Serving static assets from: ${distPath}`);
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Endpoint not found' });
+      if (req.path.startsWith('/api/v1'))
+        return res.status(404).json({ error: 'Endpoint not found' });
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Setup OpenAPI Docs route before global error handler
+  setupOpenApi(app);
+
+  app.use(errorHandler);
 
   const server = http.createServer(app);
   server.keepAliveTimeout = 75_000;
@@ -429,6 +444,21 @@ async function startServer() {
         wss.handleUpgrade(request, socket, head, (ws) => {
           wss.emit('connection', ws, request);
         });
+      } else if (pathname === '/ws/file-watcher') {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          workspaceWatcher.addClient(ws);
+        });
+      } else if (pathname === '/ws/downloads') {
+        import('./features/local-models/localModelManager.ts')
+          .then(({ LocalModelManager }) => {
+            wss.handleUpgrade(request, socket, head, (ws) => {
+              LocalModelManager.addClient(ws);
+            });
+          })
+          .catch((err) => {
+            logger.error({ err }, '[WebSocket] Failed to load localModelManager for WS');
+            socket.destroy();
+          });
       } else {
         socket.destroy();
       }
@@ -438,10 +468,14 @@ async function startServer() {
     }
   });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws: any) => {
     logger.info('[WebSocket] Client connected to session sync');
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
 
-    ws.on('message', (message) => {
+    ws.on('message', (message: any) => {
       try {
         const data = JSON.parse(message.toString());
         logger.info({ event: data.event }, '[WebSocket] Received event');
@@ -459,6 +493,18 @@ async function startServer() {
     ws.on('close', () => {
       logger.info('[WebSocket] Client disconnected');
     });
+  });
+
+  const interval = setInterval(() => {
+    wss.clients.forEach((ws: any) => {
+      if (ws.isAlive === false) return ws.terminate();
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, 30000);
+
+  wss.on('close', () => {
+    clearInterval(interval);
   });
 
   const shutdown = () => {

@@ -170,7 +170,7 @@ async function fetchQuotaRaw(
   }
 
   try {
-    const response = await fetchWithAuth('/api/models/quota', {
+    const response = await fetchWithAuth('/api/v1/models/quota', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

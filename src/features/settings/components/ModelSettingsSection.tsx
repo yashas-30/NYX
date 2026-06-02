@@ -47,7 +47,7 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
     localStorage.setItem('nyx_quant', quantId);
     setQuantSaving(true);
     try {
-      await fetchWithAuth('/api/nyx/local-models/settings', {
+      await fetchWithAuth('/api/v1/nyx/local-models/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quantization: quantId }),

@@ -19,7 +19,7 @@ interface CacheCleanProps {
 export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheStats }) => {
   const handleClearCache = async () => {
     try {
-      const res = await fetchWithAuth('/api/cache/clear', { method: 'POST' });
+      const res = await fetchWithAuth('/api/v1/cache/clear', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         await fetchCacheStats();

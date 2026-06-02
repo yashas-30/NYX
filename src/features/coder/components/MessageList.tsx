@@ -74,7 +74,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
     }
     setApplyStatus('writing');
     try {
-      const response = await fetchWithAuth('/api/nyx/write-file', {
+      const response = await fetchWithAuth('/api/v1/nyx/write-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath, content: code }),
@@ -102,7 +102,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
     setShowTerminal(true);
     setTerminalOutput('Executing command on local terminal...\n');
     try {
-      const response = await fetchWithAuth('/api/terminal/run', {
+      const response = await fetchWithAuth('/api/v1/terminal/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: code }),

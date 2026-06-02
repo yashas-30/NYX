@@ -92,12 +92,13 @@ vaultRouter.post('/import', vaultLimiter, (req, res) => {
 });
 
 vaultRouter.post('/validate', vaultLimiter, async (req, res) => {
-  const { provider, apiKey } = req.body;
-  if (!provider || !apiKey) {
-    return res.status(400).json({ error: 'Missing provider or apiKey in request body' });
+  const { provider, apiKey, key: keyField } = req.body;
+  const resolvedKey = apiKey || keyField;
+  if (!provider || !resolvedKey) {
+    return res.status(400).json({ error: 'Missing provider or key in request body' });
   }
 
-  const key = apiKey.trim();
+  const key = resolvedKey.trim();
 
   try {
     if (provider === 'gemini') {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const genericKeySchema = z.string().min(1).max(512).trim();
 
+// Vault store: accepts any string values (including empty strings for clearing keys)
 export const vaultStoreSchema = z.object({
   keys: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 100, {
     message: 'Keys object can contain at most 100 entries',

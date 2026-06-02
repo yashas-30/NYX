@@ -476,6 +476,35 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                 </div>
                               </div>
 
+                              {m.metadata && (
+                                <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-border/10">
+                                  <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
+                                      MMLU
+                                    </span>
+                                    <span className="text-[10px] font-mono font-bold text-foreground">
+                                      {m.metadata.mmluScore || '--'}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
+                                      HumanEval
+                                    </span>
+                                    <span className="text-[10px] font-mono font-bold text-foreground">
+                                      {m.metadata.humanEvalScore || '--'}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
+                                      MT-Bench
+                                    </span>
+                                    <span className="text-[10px] font-mono font-bold text-foreground">
+                                      {m.metadata.mtBenchScore || '--'}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Resource Compatibility Projections Box */}
                               {compat && (
                                 <div

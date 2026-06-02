@@ -63,12 +63,13 @@ const STREAM_TIMEOUT_MS = 120000;
 const MAX_RETRIES = 2;
 const BASE_RETRY_DELAY_MS = 1000;
 
-const PROVIDER_ENDPOINTS: Record<string, string> = {
-  gemini: '/api/gemini/stream',
-};
+const FASTIFY_URL = 'http://localhost:3001/api/models/stream';
 
 const API_KEY_PATTERNS: Record<string, (key: string) => boolean> = {
   gemini: (k) => k.length >= 30,
+  openai: (k) => k.startsWith('sk-'),
+  anthropic: (k) => k.startsWith('sk-ant-'),
+  pollinations: () => true, // no key required
 };
 
 // ---------------------------------------------------------------------------
@@ -264,26 +265,28 @@ async function handleProvider(
   signal: AbortSignal | undefined,
   options: InferenceOptions | undefined
 ): Promise<InferenceResult> {
-  const endpoint = PROVIDER_ENDPOINTS[provider];
-  if (!endpoint) {
-    throw new Error(`Unsupported provider: ${provider}`);
-  }
-
-  const payload = buildPayload(
+  const payload = {
     provider,
-    modelId,
-    prompt,
     apiKey,
-    settings,
-    systemInstruction,
-    options
-  );
+    request: {
+      model: modelId,
+      messages: [
+        ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
+        ...(options?.history?.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })) || []),
+        { role: 'user', content: prompt },
+      ],
+      temperature: settings.temperature,
+      max_tokens: settings.maxTokens,
+    },
+  };
   const startTime = Date.now();
 
   try {
-    // Try proxy endpoint first
     const response = await makeRequest(
-      endpoint,
+      FASTIFY_URL,
       payload,
       signal,
       onStream ? STREAM_TIMEOUT_MS : DEFAULT_TIMEOUT_MS

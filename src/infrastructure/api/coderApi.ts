@@ -218,7 +218,7 @@ export async function apiFetch(
 // ---------------------------------------------------------------------------
 
 export async function triggerCritic(payload: CriticPayload): Promise<void> {
-  await apiFetch('/api/nyx/critic', {
+  await apiFetch('/api/v1/nyx/critic', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -235,7 +235,7 @@ export async function fetchEvolutionaryRules(): Promise<string[]> {
     return rulesCache.rules;
   }
 
-  const res = await apiFetch('/api/nyx/rules');
+  const res = await apiFetch('/api/v1/nyx/rules');
   const data = await res.json();
 
   let rules: string[] = [];
@@ -252,7 +252,7 @@ export function invalidateRulesCache(): void {
 }
 
 export async function validateWorkspace(signal?: AbortSignal): Promise<ValidationResult> {
-  const res = await apiFetch('/api/nyx/validate', {
+  const res = await apiFetch('/api/v1/nyx/validate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
@@ -262,7 +262,7 @@ export async function validateWorkspace(signal?: AbortSignal): Promise<Validatio
 }
 
 export async function triggerMemoryCommit(payload: MemoryCommitPayload): Promise<void> {
-  await apiFetch('/api/nyx/memory/commit', {
+  await apiFetch('/api/v1/nyx/memory/commit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -278,7 +278,7 @@ export async function writeFile(
 ): Promise<FileWriteResult> {
   validateFilePath(filePath);
 
-  const res = await apiFetch('/api/nyx/write-file', {
+  const res = await apiFetch('/api/v1/nyx/write-file', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filePath, content, overwrite }),
@@ -300,7 +300,7 @@ export async function writeFiles(
 
   // If server supports batch endpoint, use it
   try {
-    const res = await apiFetch('/api/nyx/write-files', {
+    const res = await apiFetch('/api/v1/nyx/write-files', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ files }),
@@ -333,7 +333,7 @@ export async function writeFiles(
 export async function readFile(filePath: string, signal?: AbortSignal): Promise<string> {
   validateFilePath(filePath);
 
-  const res = await apiFetch('/api/nyx/read-file', {
+  const res = await apiFetch('/api/v1/nyx/read-file', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filePath }),
@@ -352,7 +352,7 @@ export async function listDirectory(
 ): Promise<Array<{ name: string; type: 'file' | 'directory'; size?: number }>> {
   validateFilePath(dirPath);
 
-  const res = await apiFetch('/api/nyx/list-dir', {
+  const res = await apiFetch('/api/v1/nyx/list-dir', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dirPath }),
@@ -378,7 +378,7 @@ export async function executeCommand(
     throw new Error(`SECURITY ERROR: Command '${parts[0]}' is not allowed`);
   }
 
-  const res = await apiFetch('/api/nyx/execute', {
+  const res = await apiFetch('/api/v1/nyx/execute', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ command, cwd }),
@@ -394,7 +394,7 @@ export async function executeCommand(
 
 export async function checkCoderApiHealth(): Promise<boolean> {
   try {
-    const res = await apiFetch('/api/nyx/health', {
+    const res = await apiFetch('/api/v1/nyx/health', {
       method: 'GET',
       timeout: 5000,
       noRetry: true,

@@ -87,7 +87,7 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
       'abort',
       () => {
         clearTimeout(timer);
-        reject(new Error('Aborted'));
+        reject(new DOMException('Aborted', 'AbortError'));
       },
       { once: true }
     );

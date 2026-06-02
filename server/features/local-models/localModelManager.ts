@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import https from 'https';
-import { IncomingMessage, ClientRequest } from 'http';
+import axios, { AxiosResponse } from 'axios';
+import { WebSocket } from 'ws';
 import os from 'os';
 import * as si from 'systeminformation';
 import logger from '../../lib/logger.ts';
@@ -621,9 +621,10 @@ if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
 
 // Active downloads map
 const activeDownloads = new Map<string, DownloadProgress>();
-// Active HTTP request handles (for pause/cancel)
-const activeRequests = new Map<string, ClientRequest>();
+// Active AbortControllers for pausing/canceling axios requests
+const activeControllers = new Map<string, AbortController>();
 let downloadStates: Record<string, 'idle' | 'downloading' | 'paused' | 'completed' | 'failed'> = {};
+const wsClients = new Set<WebSocket>();
 
 // Load states from disk if exists
 try {
@@ -659,6 +660,29 @@ function saveStates() {
 }
 
 export const LocalModelManager = {
+  addClient(ws: WebSocket) {
+    wsClients.add(ws);
+    ws.on('close', () => {
+      wsClients.delete(ws);
+    });
+    // Send initial state to the new client
+    const currentProgress = Array.from(activeDownloads.values());
+    if (currentProgress.length > 0) {
+      ws.send(JSON.stringify({ event: 'downloads_progress', data: currentProgress }));
+    }
+  },
+
+  broadcastProgress() {
+    if (wsClients.size === 0) return;
+    const progressData = Array.from(activeDownloads.values());
+    const message = JSON.stringify({ event: 'downloads_progress', data: progressData });
+    for (const client of wsClients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    }
+  },
+
   getModelsDir() {
     return MODELS_DIR;
   },
@@ -949,12 +973,14 @@ export const LocalModelManager = {
     downloadStates[modelId] = 'paused';
     saveStates();
 
-    // Now destroy the TCP connection — .part file is kept intact for resume
-    const req = activeRequests.get(modelId);
-    if (req) {
-      req.destroy();
-      activeRequests.delete(modelId);
+    // Now abort the axios request — .part file is kept intact for resume
+    const controller = activeControllers.get(modelId);
+    if (controller) {
+      controller.abort();
+      activeControllers.delete(modelId);
     }
+
+    this.broadcastProgress();
 
     logger.info({ modelId }, 'Download paused by user');
     return {
@@ -987,14 +1013,15 @@ export const LocalModelManager = {
     }
 
     // Now destroy active request
-    const req = activeRequests.get(modelId);
-    if (req) {
-      req.destroy();
-      activeRequests.delete(modelId);
+    const controller = activeControllers.get(modelId);
+    if (controller) {
+      controller.abort();
+      activeControllers.delete(modelId);
     }
 
     if (progress) {
       activeDownloads.delete(modelId);
+      this.broadcastProgress();
     }
 
     downloadStates[modelId] = 'idle';
@@ -1086,54 +1113,42 @@ export const LocalModelManager = {
         else resolve();
       };
 
-      const makeRequest = (currentUrl: string) => {
-        // If already paused/cancelled before the request fires, bail immediately
+      const makeRequest = async (currentUrl: string) => {
         if (progress.status === 'paused' || progress.status === 'failed') {
           done();
           return;
         }
 
-        const urlObj = new URL(currentUrl);
-        const headers: Record<string, string> = {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Accept: '*/*',
-          Connection: 'keep-alive',
-        };
+        const controller = new AbortController();
+        activeControllers.set(progress.modelId, controller);
 
-        if (existingBytes > 0) {
-          headers['Range'] = `bytes=${existingBytes}-`;
-        }
+        try {
+          const headers: Record<string, string> = {
+            'User-Agent': 'NYX-Downloader/1.0',
+            Accept: '*/*',
+          };
 
-        const req = https.get(urlObj, { headers }, (res: IncomingMessage) => {
-          // Handle redirects — consume response and follow
-          if (
-            res.statusCode === 301 ||
-            res.statusCode === 302 ||
-            res.statusCode === 307 ||
-            res.statusCode === 308
-          ) {
-            res.resume(); // drain and discard redirect body so socket is freed
-            let redirectUrl = res.headers.location;
-            if (redirectUrl) {
-              if (!redirectUrl.startsWith('http://') && !redirectUrl.startsWith('https://')) {
-                redirectUrl = new URL(redirectUrl, currentUrl).href;
-              }
-              activeRequests.delete(progress.modelId); // clear stale ref before new request
-              makeRequest(redirectUrl!);
-              return;
-            }
+          if (existingBytes > 0) {
+            headers['Range'] = `bytes=${existingBytes}-`;
           }
 
-          const isRangeSupported = res.statusCode === 206;
+          const response = await axios({
+            method: 'GET',
+            url: currentUrl,
+            responseType: 'stream',
+            headers,
+            signal: controller.signal,
+            maxRedirects: 5,
+          });
 
-          if (res.statusCode !== 200 && res.statusCode !== 206) {
-            res.resume();
-            done(new Error(`Server responded with status code: ${res.statusCode}`));
+          const isRangeSupported = response.status === 206;
+
+          if (response.status !== 200 && response.status !== 206) {
+            done(new Error(`Server responded with status code: ${response.status}`));
             return;
           }
 
-          const contentLength = parseInt(res.headers['content-length'] || '0', 10);
+          const contentLength = parseInt(response.headers['content-length'] || '0', 10);
 
           if (isRangeSupported) {
             totalBytes = contentLength + existingBytes;
@@ -1155,7 +1170,7 @@ export const LocalModelManager = {
 
           fileStream.on('error', (err) => done(err));
 
-          res.on('data', (chunk) => {
+          response.data.on('data', (chunk: Buffer) => {
             receivedBytes += chunk.length;
             progress.bytesDownloaded = receivedBytes;
 
@@ -1165,6 +1180,8 @@ export const LocalModelManager = {
 
             const now = Date.now();
             const elapsed = now - lastTime;
+
+            // Broadcast progress every 500ms
             if (elapsed >= 500) {
               const bytesDiff = receivedBytes - lastBytes;
               progress.speedMbps = parseFloat(
@@ -1172,15 +1189,16 @@ export const LocalModelManager = {
               );
               lastTime = now;
               lastBytes = receivedBytes;
+              LocalModelManager.broadcastProgress();
             }
           });
 
-          res.pipe(fileStream);
+          response.data.pipe(fileStream);
 
           fileStream.on('finish', () => {
             if (fileStream) {
               fileStream.close(() => {
-                activeRequests.delete(progress.modelId);
+                activeControllers.delete(progress.modelId);
                 // If paused/cancelled while finishing, leave the .part file intact
                 if (progress.status === 'paused' || progress.status === 'failed') {
                   done();
@@ -1195,31 +1213,21 @@ export const LocalModelManager = {
               });
             }
           });
-        });
 
-        // Register active request for pause/cancel
-        activeRequests.set(progress.modelId, req);
-
-        req.on('error', (err) => {
-          activeRequests.delete(progress.modelId);
-          if (fileStream) fileStream.destroy();
-          // Deliberate pause or cancel — resolve silently, .part file stays
-          if (progress.status === 'paused' || progress.status === 'failed') {
+          response.data.on('error', (err: any) => {
+            if (axios.isCancel(err)) {
+              done();
+            } else {
+              done(err);
+            }
+          });
+        } catch (err: any) {
+          if (axios.isCancel(err)) {
             done();
-            return;
+          } else {
+            done(err);
           }
-          done(err);
-        });
-
-        req.setTimeout(600000, () => {
-          req.destroy();
-          if (fileStream) fileStream.destroy();
-          if (progress.status === 'paused' || progress.status === 'failed') {
-            done();
-            return;
-          }
-          done(new Error('Download timeout reached. Connection lost.'));
-        });
+        }
       };
 
       makeRequest(url);

@@ -105,9 +105,12 @@ async function withRetry<T>(
     } catch (error: any) {
       lastError = error;
 
-      const isRetryable =
-        error.name === 'AbortError' ||
-        /429|503|timeout|network|econnreset|unavailable|rate.limit/i.test(error.message || '');
+      // Never retry on abort — propagate immediately
+      if (error.name === 'AbortError') throw error;
+
+      const isRetryable = /429|503|timeout|network|econnreset|unavailable|rate.limit/i.test(
+        error.message || ''
+      );
 
       if (!isRetryable || attempt > maxRetries) throw lastError;
 
@@ -393,7 +396,10 @@ export const useChatPipeline = ({
           }
         }
       } catch (err: any) {
-        console.error('[Chat Pipeline] Stream processing error:', err);
+        const isAbort = err?.name === 'AbortError' || signal.aborted;
+        if (!isAbort) {
+          console.error('[Chat Pipeline] Stream processing error:', err);
+        }
         throw err;
       }
 
@@ -475,7 +481,7 @@ export const useChatPipeline = ({
 
       // Quick health check for backend
       try {
-        const healthRes = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });
+        const healthRes = await fetch('/api/v1/health', { signal: AbortSignal.timeout(5000) });
         if (!healthRes.ok) {
           console.warn('[Chat Pipeline] Backend health check failed');
           toast.error('Backend server is not responding. Please ensure the server is running.');
@@ -685,7 +691,7 @@ export const useChatPipeline = ({
       } catch (error: any) {
         const isAborted = error?.name === 'AbortError' || controller.signal.aborted;
 
-        console.error('[Chat Pipeline] Error:', error);
+        if (!isAborted) console.error('[Chat Pipeline] Error:', error);
 
         // Show error toast to user immediately
         if (!isAborted) {

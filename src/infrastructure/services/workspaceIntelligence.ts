@@ -221,7 +221,7 @@ class ClaudeMdManager {
     }
 
     try {
-      const res = await fetchWithAuth('/api/nyx/claude-md-hierarchy', {
+      const res = await fetchWithAuth('/api/v1/nyx/claude-md-hierarchy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rootPath, currentFile }),
@@ -300,7 +300,7 @@ class MemorySystem {
 
   async loadFromServer(): Promise<void> {
     try {
-      const res = await fetchWithAuth('/api/nyx/memory-index', {
+      const res = await fetchWithAuth('/api/v1/nyx/memory-index', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -442,7 +442,7 @@ class KeywordIndex {
 
   async refresh(rootPath: string): Promise<void> {
     try {
-      const res = await fetchWithAuth('/api/nyx/keyword-index', {
+      const res = await fetchWithAuth('/api/v1/nyx/keyword-index', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rootPath }),
@@ -777,7 +777,7 @@ export class WorkspaceIntelligence {
     }
 
     try {
-      const response = await fetchWithAuth('/api/nyx/workspace-profile', {
+      const response = await fetchWithAuth('/api/v1/nyx/workspace-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

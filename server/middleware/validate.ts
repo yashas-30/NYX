@@ -1,30 +1,46 @@
-import logger from '../lib/logger.ts';
 import { Request, Response, NextFunction } from 'express';
-import { ZodSchema, ZodError } from 'zod';
+import { AnyZodObject, ZodError } from 'zod';
+import sanitizeHtml from 'sanitize-html';
 
-/**
- * Express middleware to validate request bodies against a Zod schema.
- */
-export const validate = (schema: ZodSchema) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+// Recursively sanitize strings in objects
+export const sanitizeData = (data: any): any => {
+  if (typeof data === 'string') {
+    return sanitizeHtml(data.trim(), {
+      allowedTags: [], // strip all tags
+      allowedAttributes: {},
+    });
+  }
+  if (Array.isArray(data)) {
+    return data.map(sanitizeData);
+  }
+  if (data !== null && typeof data === 'object') {
+    const sanitizedObj: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      sanitizedObj[key] = sanitizeData(value);
+    }
+    return sanitizedObj;
+  }
+  return data;
+};
+
+export const validate = (schema: AnyZodObject) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      req.body = schema.parse(req.body);
+      // First sanitize inputs
+      if (req.body) req.body = sanitizeData(req.body);
+      if (req.query) req.query = sanitizeData(req.query);
+      if (req.params) req.params = sanitizeData(req.params);
+
+      // Validate req.body directly against the schema
+      req.body = await schema.parseAsync(req.body);
+
       next();
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof ZodError) {
-        logger.warn(
-          `[Validation Failed on ${req.method} ${req.originalUrl}]:`,
-          JSON.stringify(error.issues, null, 2)
-        );
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: error.issues.map((err) => ({
-            path: err.path.join('.'),
-            message: err.message,
-          })),
-        });
+        next(error); // Pass to global error handler
+      } else {
+        next(error);
       }
-      next(error);
     }
   };
 };

@@ -61,7 +61,7 @@ function isTokenValid(): boolean {
 }
 
 async function fetchFreshToken(isStream = false): Promise<{ token: string; expiresAt: number }> {
-  const endpoint = isStream ? '/api/vault/token?stream=true' : '/api/vault/token';
+  const endpoint = isStream ? '/api/v1/vault/token?stream=true' : '/api/v1/vault/token';
   const res = await fetch(endpoint, {
     headers: { Accept: 'application/json' },
   });
@@ -385,7 +385,7 @@ export async function fetchWithAuth(
 
 export async function checkBackendHealth(url?: string): Promise<boolean> {
   // Health check goes through the Express API (proxied by Vite in dev)
-  const target = url || '/api/health';
+  const target = url || '/api/v1/health';
   try {
     const res = await fetch(target, { signal: createTimeoutSignal(5000) });
     return res.ok;

@@ -28,6 +28,8 @@ import { PromptInput } from './PromptInput';
 import { AgentPlanner } from './AgentPlanner';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useCoderLogic } from '../hooks/useCoderLogic';
+import { WorkspaceSidebar } from './WorkspaceSidebar';
+import { CodeEditor } from './CodeEditor';
 
 interface CoderPageProps {
   allModels: ModelDefinition[];
@@ -117,31 +119,43 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     'checking'
   );
 
-  // Real-time local Scrapling connectivity check
+  // Scrapling connectivity — routed through our backend to avoid ERR_CONNECTION_REFUSED
+  // spam when the optional Python sidecar isn't running. Uses exponential backoff
+  // (10s → 20s → 40s … up to 5 min) when offline.
   useEffect(() => {
     let active = true;
+    let intervalMs = 10_000;
+    let timerId: ReturnType<typeof setTimeout>;
+
     const checkScrapling = async () => {
       try {
-        const scraplingUrl = gatewayUrls?.scrapling || 'http://127.0.0.1:3012';
-        const res = await fetch(`${scraplingUrl}/health`);
+        const res = await fetch('/api/v1/admin/scrapling-status');
         if (!active) return;
         if (res.ok) {
-          setScraplingStatus('online');
+          const { status } = await res.json();
+          setScraplingStatus(status === 'running' ? 'online' : 'offline');
+          // Reset backoff when we get a real answer
+          intervalMs = 10_000;
         } else {
           setScraplingStatus('offline');
         }
       } catch {
         if (!active) return;
         setScraplingStatus('offline');
+        // Back off up to 5 minutes when the backend itself is unreachable
+        intervalMs = Math.min(intervalMs * 2, 300_000);
+      }
+      if (active) {
+        timerId = setTimeout(checkScrapling, intervalMs);
       }
     };
+
     checkScrapling();
-    const interval = setInterval(checkScrapling, 10000);
     return () => {
       active = false;
-      clearInterval(interval);
+      clearTimeout(timerId);
     };
-  }, [gatewayUrls]);
+  }, []);
 
   // Auto-launch VS Code when Coder page is opened with a workspace
   useEffect(() => {
@@ -473,6 +487,52 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        ) : workspacePath ? (
+          <div className="flex-1 w-full flex flex-row overflow-hidden bg-background">
+            <WorkspaceSidebar />
+            <div className="flex-1 flex flex-col min-w-0 border-r border-white/5">
+              <CodeEditor />
+            </div>
+            <div className="w-[400px] shrink-0 flex flex-col h-full bg-card">
+              <MessageList
+                history={history}
+                activeAgent={activeAgent}
+                isLoading={isLoading}
+                onCopy={copyToClipboard}
+                copiedId={copiedId}
+                suggestedPrompts={suggestedPrompts}
+                onSuggestedPromptClick={setPrompt}
+                subagentTasks={subagentTasks}
+                submitReward={submitReward}
+              />
+              <PromptInput
+                prompt={prompt}
+                onPromptChange={setPrompt}
+                onSubmit={handleSubmit}
+                isLoading={isLoading}
+                onStop={stopCoder}
+                currentModelId={currentModelId}
+                currentModel={currentModel}
+                allModels={allModels}
+                providerStatuses={providerStatuses}
+                gatewayUrls={gatewayUrls}
+                onModelSelect={setModel}
+                onClearHistory={clearHistory}
+                onModelSettingsChange={setModelSettings}
+                modelSettings={modelSettings}
+                suggestedPrompts={suggestedPrompts}
+                getCustomModelIcon={getCustomModelIcon}
+                webSearchEnabled={webSearchEnabled}
+                onWebSearchToggle={setWebSearchEnabled}
+                codebaseKnowledgeEnabled={codebaseKnowledgeEnabled}
+                onCodebaseKnowledgeToggle={setCodebaseKnowledgeEnabled}
+                mode="code"
+                alignDropdown="top"
+                agentMode={agentMode}
+                agentReasoning={agentReasoning}
+              />
+            </div>
           </div>
         ) : (
           <>

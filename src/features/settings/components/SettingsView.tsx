@@ -12,6 +12,9 @@ import {
   Settings as SettingsIcon,
   ChevronUp,
   ChevronDown,
+  Search,
+  User,
+  Palette,
 } from 'lucide-react';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -22,6 +25,11 @@ import { WorkspaceConfig } from './WorkspaceConfig';
 import { ModelSettingsSection } from './ModelSettingsSection';
 import { EvolutionaryRules } from './EvolutionaryRules';
 import { CacheClean } from './CacheClean';
+import { HotkeyManager } from './HotkeyManager';
+import { NetworkSettings } from './NetworkSettings';
+import { AuditLogView } from './AuditLogView';
+import { SettingsSyncService } from '../SettingsSyncService';
+import { AccessibilityChecker } from '../AccessibilityChecker';
 
 interface SettingsViewProps {
   apiKeys: Record<string, string>;
@@ -54,6 +62,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [keysInput, setKeysInput] = useState<Record<string, string>>({});
   const [workspacePath, setWorkspacePath] = useState<string>('');
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeProfile, setActiveProfile] = useState('default');
+  const [activeTheme, setActiveTheme] = useState('dark');
+
   const [selectedQuant, setSelectedQuant] = useState<QuantTierId>(() => {
     return (localStorage.getItem('nyx_quant') as QuantTierId) || 'Q5_K_M';
   });
@@ -76,7 +88,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fetchWorkspacePath = async () => {
     try {
-      const res = await fetchWithAuth('/api/workspace');
+      const res = await fetchWithAuth('/api/v1/workspace');
       if (res.ok) {
         const data = await res.json();
         setWorkspacePath(data.workspace);
@@ -88,7 +100,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fetchVaultStatus = async () => {
     try {
-      const res = await fetch('/api/vault/status');
+      const res = await fetch('/api/v1/vault/status');
       if (res.ok) {
         const data = await res.json();
         setVaultStatus(data);
@@ -100,7 +112,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fetchCacheStats = async () => {
     try {
-      const res = await fetchWithAuth('/api/cache/stats');
+      const res = await fetchWithAuth('/api/v1/cache/stats');
       if (res.ok) {
         const data = await res.json();
         setCacheStats(data);
@@ -112,7 +124,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fetchEvolvedRules = async () => {
     try {
-      const res = await fetchWithAuth('/api/nyx/rules');
+      const res = await fetchWithAuth('/api/v1/nyx/rules');
       if (res.ok) {
         const data = await res.json();
         setEvolvedRules(data.rules || data || []);
@@ -136,6 +148,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     });
   }, [vaultStatus, refreshProviderQuota]);
+
+  useEffect(() => {
+    AccessibilityChecker.runCheck(activeTheme);
+  }, [activeTheme]);
 
   const toggleExpanded = (providerId: string) => {
     setExpandedProvider(expandedProvider === providerId ? null : providerId);
@@ -171,6 +187,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </header>
 
+        {/* Global Settings Toolbar */}
+        <div className="px-6 py-4 border-b border-white/[0.04] bg-white/[0.01] flex flex-wrap items-center gap-4 shrink-0">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              size={14}
+            />
+            <input
+              type="text"
+              placeholder="Search settings..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-background border border-white/[0.05] rounded-xl pl-9 pr-4 py-2 text-xs text-foreground focus:outline-none focus:border-[#FF3366]/50 transition-colors"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-background border border-white/[0.05] rounded-xl px-3 py-1.5">
+              <User size={14} className="text-muted-foreground" />
+              <select
+                value={activeProfile}
+                onChange={(e) => setActiveProfile(e.target.value)}
+                className="bg-transparent text-xs text-foreground focus:outline-none appearance-none cursor-pointer"
+              >
+                <option value="default">Default Profile</option>
+                <option value="fast-coding">Fast Coding</option>
+                <option value="deep-research">Deep Research</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 bg-background border border-white/[0.05] rounded-xl px-3 py-1.5">
+              <Palette size={14} className="text-muted-foreground" />
+              <select
+                value={activeTheme}
+                onChange={(e) => setActiveTheme(e.target.value)}
+                className="bg-transparent text-xs text-foreground focus:outline-none appearance-none cursor-pointer"
+              >
+                <option value="dark">Dark Theme</option>
+                <option value="light">Light Theme</option>
+                <option value="high-contrast">High Contrast</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-6">
           <div className="max-w-xl mx-auto space-y-4 pb-12">
             <ApiKeyVault
@@ -196,7 +255,48 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <EvolutionaryRules evolvedRules={evolvedRules} setEvolvedRules={setEvolvedRules} />
 
+            <HotkeyManager />
+            <NetworkSettings />
+            <AuditLogView />
+
             <WorkspaceConfig workspacePath={workspacePath} setWorkspacePath={setWorkspacePath} />
+
+            {/* Cloud Sync & Backup Actions */}
+            <div className="mt-6 flex gap-3 pb-6">
+              <button
+                onClick={() => SettingsSyncService.exportSettings()}
+                className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-foreground text-xs font-bold hover:bg-white/10 transition-colors"
+              >
+                Export Settings
+              </button>
+              <button
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'application/json';
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                      const success = await SettingsSyncService.importSettings(file);
+                      if (success) toast.success('Settings imported successfully.');
+                    }
+                  };
+                  input.click();
+                }}
+                className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-foreground text-xs font-bold hover:bg-white/10 transition-colors"
+              >
+                Import Settings
+              </button>
+              <button
+                onClick={async () => {
+                  const success = await SettingsSyncService.importFromVSCode();
+                  if (success) toast.success('VS Code Settings imported successfully.');
+                }}
+                className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-foreground text-xs font-bold hover:bg-white/10 transition-colors"
+              >
+                Import from VS Code
+              </button>
+            </div>
 
             {/* Learning Hub: App Workflow & Free Keys Guide */}
             <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg">

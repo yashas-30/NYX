@@ -54,10 +54,24 @@ export const usageLogs = sqliteTable('usage_logs', {
 });
 
 // UGLY-7 & MISSING-3: Separated Chat & Coder tables + Cost Tracking table
+export const chatFolders = sqliteTable('chat_folders', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const promptTemplates = sqliteTable('prompt_templates', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  content: text('content').notNull(),
+  type: text('type').notNull(),
+});
+
 export const chatConversations = sqliteTable('chat_conversations', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   model: text('model').notNull(),
+  folderId: text('folder_id').references(() => chatFolders.id, { onDelete: 'set null' }),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 });
@@ -67,9 +81,11 @@ export const chatMessages = sqliteTable('chat_messages', {
   conversationId: text('conversation_id')
     .notNull()
     .references(() => chatConversations.id, { onDelete: 'cascade' }),
+  parentId: text('parent_id'),
   role: text('role').notNull(), // 'user' | 'assistant' | 'system'
   content: text('content').notNull(),
   model: text('model').notNull(),
+  isPinned: integer('is_pinned', { mode: 'boolean' }).default(false),
   timestamp: integer('timestamp').notNull(),
 });
 

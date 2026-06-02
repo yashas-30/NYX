@@ -15,6 +15,7 @@ import { SectionHeader } from './RegistryShared';
 import { ModelCard } from './ModelCard';
 import { LocalModelCard } from './LocalModelCard';
 import { DownloadModal } from './DownloadModal';
+import { ModelComparisonModal } from './ModelComparisonModal';
 
 interface ModelRegistryViewProps {
   models?: Record<'nyx', string>;
@@ -54,9 +55,17 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const [loadingCompatibility, setLoadingCompatibility] = useState(false);
   const [showCompatibleOnly, setShowCompatibleOnly] = useState(false);
 
+  // Comparison State
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [showCompareModal, setShowCompareModal] = useState(false);
+
+  const toggleCompare = useCallback((id: string) => {
+    setCompareIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, []);
+
   const fetchNativeModels = useCallback(async () => {
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models');
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models');
       if (res.ok) {
         const data = await res.json();
         if (data.models) setNativeModels(data.models);
@@ -72,7 +81,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const fetchCompatibility = useCallback(async () => {
     setLoadingCompatibility(true);
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/compatibility');
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/compatibility');
       if (res.ok) {
         const data = await res.json();
         setCompatibility(data);
@@ -87,9 +96,71 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   useEffect(() => {
     fetchNativeModels();
     fetchCompatibility();
-    const interval = setInterval(fetchNativeModels, 3000);
+    const interval = setInterval(fetchNativeModels, 10000);
     return () => clearInterval(interval);
   }, [fetchNativeModels, fetchCompatibility]);
+
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/downloads`;
+
+    let ws: WebSocket;
+    let reconnectTimer: NodeJS.Timeout;
+
+    const connect = () => {
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('[Registry] Download WebSocket connected');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'progress' && data.modelId) {
+            setNativeModels((prev) =>
+              prev.map((model) =>
+                model.id === data.modelId
+                  ? { ...model, progress: data.progress, status: data.progress.status }
+                  : model
+              )
+            );
+          } else if (data.type === 'status_update' && data.modelId) {
+            setNativeModels((prev) =>
+              prev.map((model) =>
+                model.id === data.modelId ? { ...model, status: data.status } : model
+              )
+            );
+            if (['completed', 'failed', 'idle'].includes(data.status)) {
+              fetchNativeModels(); // Sync state on completion or failure
+            }
+          }
+        } catch (e) {
+          console.error('[Registry] Failed to parse WS message:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('[Registry] Download WebSocket closed. Reconnecting in 3s...');
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = (err) => {
+        console.error('[Registry] Download WebSocket error:', err);
+      };
+    };
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        ws.onclose = null; // Prevent reconnect on unmount
+        ws.close();
+      }
+    };
+  }, [fetchNativeModels]);
 
   useEffect(() => {
     if (showDownloadModal) {
@@ -100,7 +171,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const handleAutoSetup = async () => {
     setActionInProgress('auto-setup');
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/auto-setup', {
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/auto-setup', {
         method: 'POST',
       });
       if (res.ok) {
@@ -136,9 +207,12 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
     setActionInProgress('download-all-compatible');
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/download-all-compatible', {
-        method: 'POST',
-      });
+      const res = await AIService.fetchWithAuth(
+        '/api/v1/nyx/local-models/download-all-compatible',
+        {
+          method: 'POST',
+        }
+      );
       if (res.ok) {
         const data = await res.json();
         toast.success(data.message || 'Bulk downloads initiated.');
@@ -183,7 +257,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
     setActionInProgress(urlStr);
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/download', {
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId: customUrl.trim() }),
@@ -207,7 +281,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const handleDownload = async (modelId: string) => {
     setActionInProgress(modelId);
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/download', {
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId }),
@@ -228,7 +302,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
   const handlePause = async (modelId: string) => {
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/pause', {
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/pause', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId }),
@@ -247,7 +321,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
   const handleResume = async (modelId: string) => {
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/resume', {
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId }),
@@ -266,7 +340,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
   const handleCancel = async (modelId: string) => {
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/cancel', {
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId }),
@@ -305,7 +379,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         ),
       };
 
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/run', {
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId, settings: validatedSettings }),
@@ -327,7 +401,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const handleStop = async (modelId: string) => {
     setActionInProgress(modelId);
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/stop', {
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -349,7 +423,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     if (!confirm(`Delete "${modelName}" from disk? This cannot be undone.`)) return;
     setActionInProgress(modelId);
     try {
-      const res = await AIService.fetchWithAuth('/api/nyx/local-models/delete', {
+      const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId }),
@@ -584,6 +658,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                         handleStop={handleStop}
                         handleDelete={handleDelete}
                         selectModel={selectModel}
+                        isComparing={compareIds.includes(m.id)}
+                        toggleCompare={() => toggleCompare(m.id)}
                       />
                     ))}
                   </div>
@@ -633,6 +709,38 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Sticky Compare Bar */}
+      {compareIds.length > 0 && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-card border border-[#FF3366]/40 shadow-2xl px-6 py-3 rounded-full flex items-center gap-4 z-50">
+          <span className="text-xs font-bold text-foreground">
+            {compareIds.length} model{compareIds.length > 1 ? 's' : ''} selected
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCompareIds([])}
+              className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-full hover:bg-white/5 transition-all"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setShowCompareModal(true)}
+              disabled={compareIds.length < 2}
+              className="text-[10px] uppercase font-bold tracking-wider bg-[#FF3366] text-black px-4 py-1.5 rounded-full hover:bg-[#FF3366]/90 transition-all disabled:opacity-50"
+            >
+              Compare Models
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      <ModelComparisonModal
+        show={showCompareModal}
+        onClose={() => setShowCompareModal(false)}
+        models={nativeModels.filter((m) => compareIds.includes(m.id))}
+        compatibility={compatibility}
+      />
 
       {/* Download Preset Modal */}
       <DownloadModal

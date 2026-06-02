@@ -26,7 +26,7 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
-  scrapling: 'http://127.0.0.1:3012',
+  scrapling: 'http://127.0.0.1:3002',
 };
 
 const getModelCountForProvider = (provider: string): number => {
@@ -80,7 +80,34 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     return gatewayUrls[provider] || DEFAULT_GATEWAY_URLS[provider] || '';
   };
 
+  const validateGeminiKey = async (key: string): Promise<boolean> => {
+    try {
+      const res = await fetchWithAuth('/api/v1/vault/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'gemini', key }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      return data.valid === true;
+    } catch {
+      return false;
+    }
+  };
+
   const handleSaveToVault = async () => {
+    // Validate Gemini key if it's being updated
+    const geminiKey = keysInput['gemini'];
+    if (geminiKey && geminiKey.trim().length > 0) {
+      toast.info('Validating Gemini API Key...');
+      const isValid = await validateGeminiKey(geminiKey);
+      if (!isValid) {
+        toast.error('Invalid Gemini API Key. Please check the key and try again.');
+        return;
+      }
+      toast.success('Gemini API Key validated successfully.');
+    }
+
     if (!rememberKeys) {
       // Save keys ephemerally to Zustand in-memory state
       for (const provider of Object.keys(keysInput)) {
@@ -95,7 +122,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     }
 
     try {
-      const res = await fetchWithAuth('/api/vault/store', {
+      const res = await fetchWithAuth('/api/v1/vault/store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keys: keysInput }),
@@ -121,7 +148,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   const handlePurgeVault = async () => {
     if (confirm('Delete all keys from server vault?')) {
       try {
-        const res = await fetchWithAuth('/api/vault/store', {
+        const res = await fetchWithAuth('/api/v1/vault/store', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keys: { gemini: '', scrapling: '', scrapling_url: '' } }),
@@ -286,7 +313,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                             onChange={(e) =>
                               setKeysInput((prev) => ({ ...prev, scrapling_url: e.target.value }))
                             }
-                            placeholder="http://127.0.0.1:3012"
+                            placeholder="http://127.0.0.1:3002"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();

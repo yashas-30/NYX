@@ -616,7 +616,7 @@ export class ToolExecutor {
       case 'read_file': {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
-        const res = await fetchWithAuth('/api/nyx/read-file', {
+        const res = await fetchWithAuth('/api/v1/nyx/read-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -634,7 +634,7 @@ export class ToolExecutor {
       case 'edit_file': {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
-        const res = await fetchWithAuth('/api/nyx/write-file', {
+        const res = await fetchWithAuth('/api/v1/nyx/write-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -652,7 +652,7 @@ export class ToolExecutor {
       case 'write_file': {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
-        const res = await fetchWithAuth('/api/nyx/write-file', {
+        const res = await fetchWithAuth('/api/v1/nyx/write-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -668,7 +668,7 @@ export class ToolExecutor {
       }
 
       case 'search_codebase': {
-        const res = await fetchWithAuth('/api/nyx/codebase-search', {
+        const res = await fetchWithAuth('/api/v1/nyx/codebase-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -685,7 +685,7 @@ export class ToolExecutor {
       case 'run_terminal': {
         validatePath(params.cwd);
         sanitizeCommand(params.command);
-        const res = await fetchWithAuth('/api/terminal/run', {
+        const res = await fetchWithAuth('/api/v1/terminal/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -707,7 +707,7 @@ export class ToolExecutor {
       }
 
       case 'web_search': {
-        const res = await fetchWithAuth('/api/nyx/search', {
+        const res = await fetchWithAuth('/api/v1/nyx/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -723,7 +723,7 @@ export class ToolExecutor {
 
       case 'list_directory': {
         validatePath(params.path);
-        const res = await fetchWithAuth('/api/nyx/list-directory', {
+        const res = await fetchWithAuth('/api/v1/nyx/list-directory', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -739,7 +739,7 @@ export class ToolExecutor {
 
       case 'git_diff': {
         validatePath(params.path);
-        const res = await fetchWithAuth('/api/nyx/git-diff', {
+        const res = await fetchWithAuth('/api/v1/nyx/git-diff', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -754,7 +754,7 @@ export class ToolExecutor {
       }
 
       case 'git_status': {
-        const res = await fetchWithAuth('/api/nyx/git-status', {
+        const res = await fetchWithAuth('/api/v1/nyx/git-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({}),
@@ -767,7 +767,7 @@ export class ToolExecutor {
 
       case 'view_image': {
         validatePath(params.path);
-        const res = await fetchWithAuth('/api/nyx/view-image', {
+        const res = await fetchWithAuth('/api/v1/nyx/view-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filePath: params.path }),

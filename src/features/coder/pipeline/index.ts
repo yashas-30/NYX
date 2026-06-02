@@ -141,7 +141,7 @@ export async function runMultiStagePipeline({
     command: string
   ): Promise<{ success: boolean; stdout: string; stderr: string; error?: string }> => {
     try {
-      const res = await fetchWithAuth('/api/terminal/run', {
+      const res = await fetchWithAuth('/api/v1/terminal/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command }),

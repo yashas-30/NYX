@@ -1236,7 +1236,7 @@ export const LANGUAGE_PROFILES: Record<string, LanguageProfile> = {
         error: 'Form submission does nothing (no response)',
         cause:
           "Missing `action` attribute or `method` attribute on the `<form>` element, or the submit button is `type='button'` instead of `type='submit'`.",
-        fix: "Set proper form attributes: `<form action='/api/submit' method='POST'>` and ensure the button is `<button type='submit'>Submit</button>`.",
+        fix: "Set proper form attributes: `<form action='/api/v1/submit' method='POST'>` and ensure the button is `<button type='submit'>Submit</button>`.",
       },
       {
         error: 'Access to fetch blocked by CORS policy',

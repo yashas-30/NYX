@@ -176,7 +176,7 @@ export class AIService {
     }
     this.pendingVaultStatusPromise = (async () => {
       try {
-        const response = await fetchWithAuth('/api/vault/status');
+        const response = await fetchWithAuth('/api/v1/vault/status');
         if (response.ok) {
           const data = await response.json();
           this.cachedVaultStatus = data;
@@ -387,7 +387,7 @@ export class AIService {
     // Cache check
     let cacheKey = '';
     try {
-      const cacheRes = await this.fetchWithAuth('/api/cache/get', {
+      const cacheRes = await this.fetchWithAuth('/api/v1/cache/get', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -465,7 +465,7 @@ export class AIService {
 
     // Cache write
     if (cacheKey && result.text) {
-      await this.fetchWithAuth('/api/cache/set', {
+      await this.fetchWithAuth('/api/v1/cache/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -503,7 +503,7 @@ export class AIService {
     } = config;
 
     try {
-      const response = await this.fetchWithAuth('/api/gemini/stream', {
+      const response = await this.fetchWithAuth('/api/v1/gemini/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Connection: 'keep-alive' },
         body: JSON.stringify({
@@ -568,7 +568,7 @@ export class AIService {
     } = config;
 
     const messages = this.buildMessages(prompt, systemInstruction, history);
-    const response = await this.fetchWithAuth('/api/nyx/local-models/chat', {
+    const response = await this.fetchWithAuth('/api/v1/nyx/local-models/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -722,7 +722,7 @@ export class AIService {
   ): Promise<'online' | 'offline' | 'no-key'> {
     if (provider === 'nyx-native' || provider === 'qwen-local') {
       try {
-        const res = await this.fetchWithAuth('/api/nyx/local-models/status');
+        const res = await this.fetchWithAuth('/api/v1/nyx/local-models/status');
         if (!res.ok) return 'offline';
         const data = await res.json();
         return data.activeModelId ? 'online' : 'offline';

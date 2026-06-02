@@ -300,6 +300,97 @@ export async function parseSSEStream(
 
   const startTime = performance.now();
 
+  let isThinking = false;
+  let streamBuffer = '';
+
+  const processStreamBuffer = (flush = false) => {
+    while (streamBuffer.length > 0) {
+      if (!isThinking) {
+        const startIdx = streamBuffer.indexOf('<think>');
+        if (startIdx !== -1) {
+          const before = streamBuffer.slice(0, startIdx);
+          if (before) {
+            resultText += before;
+            onChunk?.(before, resultText);
+          }
+          isThinking = true;
+          streamBuffer = streamBuffer.slice(startIdx + 7);
+          continue;
+        }
+
+        let partialIdx = -1;
+        if (!flush) {
+          const target = '<think>';
+          for (
+            let i = Math.max(0, streamBuffer.length - target.length);
+            i < streamBuffer.length;
+            i++
+          ) {
+            if (streamBuffer[i] === target[0] && target.startsWith(streamBuffer.slice(i))) {
+              partialIdx = i;
+              break;
+            }
+          }
+        }
+
+        if (partialIdx !== -1) {
+          const safePart = streamBuffer.slice(0, partialIdx);
+          if (safePart) {
+            resultText += safePart;
+            onChunk?.(safePart, resultText);
+          }
+          streamBuffer = streamBuffer.slice(partialIdx);
+          break;
+        } else {
+          resultText += streamBuffer;
+          onChunk?.(streamBuffer, resultText);
+          streamBuffer = '';
+        }
+      } else {
+        const endIdx = streamBuffer.indexOf('</think>');
+        if (endIdx !== -1) {
+          const reasoningDelta = streamBuffer.slice(0, endIdx);
+          if (reasoningDelta) {
+            resultReasoning += reasoningDelta;
+            onReasoning?.(reasoningDelta, resultReasoning);
+          }
+          isThinking = false;
+          streamBuffer = streamBuffer.slice(endIdx + 8);
+          continue;
+        }
+
+        let partialIdx = -1;
+        if (!flush) {
+          const target = '</think>';
+          for (
+            let i = Math.max(0, streamBuffer.length - target.length);
+            i < streamBuffer.length;
+            i++
+          ) {
+            if (streamBuffer[i] === target[0] && target.startsWith(streamBuffer.slice(i))) {
+              partialIdx = i;
+              break;
+            }
+          }
+        }
+
+        if (partialIdx !== -1) {
+          const safePart = streamBuffer.slice(0, partialIdx);
+          if (safePart) {
+            resultReasoning += safePart;
+            onReasoning?.(safePart, resultReasoning);
+          }
+          streamBuffer = streamBuffer.slice(partialIdx);
+          break;
+        } else {
+          resultReasoning += streamBuffer;
+          onReasoning?.(streamBuffer, resultReasoning);
+          streamBuffer = '';
+        }
+      }
+    }
+  };
+
   try {
     while (true) {
       // Check abort
@@ -322,6 +413,7 @@ export async function parseSSEStream(
 
         // Handle [DONE] sentinel
         if (sseLine.data === '[DONE]' || sseLine.data === '[done]') {
+          processStreamBuffer(true);
           finishReason = finishReason || 'stop';
           onFinish?.(finishReason);
           return {
@@ -362,10 +454,10 @@ export async function parseSSEStream(
           }
         }
 
-        // Accumulate text
+        // Accumulate text with <think> tag support
         if (extracted.text) {
-          resultText += extracted.text;
-          onChunk?.(extracted.text, resultText);
+          streamBuffer += extracted.text;
+          processStreamBuffer();
         }
 
         // Accumulate reasoning
@@ -421,8 +513,8 @@ export async function parseSSEStream(
           const extracted = extractContent(parsed);
 
           if (extracted.text) {
-            resultText += extracted.text;
-            onChunk?.(extracted.text, resultText);
+            streamBuffer += extracted.text;
+            processStreamBuffer();
           }
           if (extracted.reasoning) {
             resultReasoning += extracted.reasoning;
@@ -437,6 +529,7 @@ export async function parseSSEStream(
       }
     }
 
+    processStreamBuffer(true);
     finishReason = finishReason || 'stop';
     onFinish?.(finishReason);
 

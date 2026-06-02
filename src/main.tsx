@@ -206,7 +206,7 @@ async function getOrFetchSessionToken(): Promise<string> {
 
   inFlightTokenPromise = (async () => {
     try {
-      const res = await fetch('/api/auth/session');
+      const res = await fetch('/api/v1/auth/session');
       if (!res.ok) throw new Error(`Auth status ${res.status}`);
       const data = await res.json();
       cachedToken = data.token;
@@ -227,17 +227,17 @@ const originalFetch = window.fetch;
 window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   let urlStr = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
-  if (urlStr.startsWith('/api/') && backendBaseUrl) {
+  if (urlStr.startsWith('/api/v1/') && backendBaseUrl) {
     urlStr = `${backendBaseUrl}${urlStr}`;
     input = urlStr;
   }
 
   const isApiCall =
-    urlStr.includes('/api/') &&
-    !urlStr.includes('/api/auth/session') &&
-    !urlStr.includes('/api/vault/token') &&
-    !urlStr.includes('/api/health') &&
-    !urlStr.includes('/api/admin/logs');
+    urlStr.includes('/api/v1/') &&
+    !urlStr.includes('/api/v1/auth/session') &&
+    !urlStr.includes('/api/v1/vault/token') &&
+    !urlStr.includes('/api/v1/health') &&
+    !urlStr.includes('/api/v1/admin/logs');
 
   if (isApiCall) {
     try {
@@ -270,17 +270,19 @@ function RootContainer() {
       await initBackendUrl();
       while (mounted) {
         try {
-          const url = backendBaseUrl ? `${backendBaseUrl}/api/auth/session` : '/api/auth/session';
+          // Always use /api/v1/ — backendBaseUrl is just the host:port when Tauri resolves it
+          const base = backendBaseUrl || '';
+          const url = `${base}/api/v1/auth/session`;
           const res = await originalFetch(url, { headers: { Accept: 'application/json' } });
-          if (res.ok || res.status === 401 || res.status === 403) {
-            // Backend is up and responding (even if unauthorized)
+          // Any real HTTP response means the backend is alive
+          if (res.ok || res.status === 401 || res.status === 403 || res.status === 404) {
             if (mounted) setIsBackendReady(true);
             return;
           }
-        } catch (e: any) {
-          // Backend not up yet
+        } catch {
+          // Backend not up yet — keep waiting
         }
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 500));
       }
     };
     checkBackend();
@@ -317,7 +319,7 @@ function RootContainer() {
             }}
           ></div>
           <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-          <div>Waiting for backend to start (compiling Tauri)...</div>
+          <div>Starting NYX backend...</div>
         </div>
       </div>
     );

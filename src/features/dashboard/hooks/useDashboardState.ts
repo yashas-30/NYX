@@ -167,7 +167,7 @@ export const useDashboardState = (onExit?: () => void) => {
       return;
     }
     try {
-      const res = await fetchWithAuth('/api/nyx/local-models');
+      const res = await fetchWithAuth('/api/v1/nyx/local-models');
       if (res.ok) {
         const data = await res.json();
         if (data.models && Array.isArray(data.models)) {

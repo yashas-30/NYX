@@ -118,7 +118,7 @@ export class HybridModelRouter {
       return;
     }
     try {
-      const res = await fetchWithAuth('/api/nyx/local-models');
+      const res = await fetchWithAuth('/api/v1/nyx/local-models');
       if (!res.ok) return;
 
       const data = await res.json();
@@ -471,7 +471,7 @@ export class HybridModelRouter {
           const status = await checkStatusFn('nyx-native').catch(() => 'offline');
           if (status !== 'online') {
             console.log('[FallbackChain] Booting cold local model fallback...');
-            await fetchWithAuth('/api/nyx/local-models/run', {
+            await fetchWithAuth('/api/v1/nyx/local-models/run', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ modelId: current.id, settings: { contextSize: 4096 } }),
@@ -518,7 +518,7 @@ export class HybridModelRouter {
   // -------------------------------------------------------------------------
 
   private async warmModel(modelId: string): Promise<void> {
-    fetchWithAuth('/api/nyx/local-models/run', {
+    fetchWithAuth('/api/v1/nyx/local-models/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ modelId, settings: { contextSize: 4096 } }),
@@ -528,7 +528,7 @@ export class HybridModelRouter {
   private async handleOOM(modelId: string): Promise<void> {
     console.warn(`[HybridModelRouter] OOM for ${modelId} — stopping local models`);
     try {
-      await fetchWithAuth('/api/nyx/local-models/stop', { method: 'POST' });
+      await fetchWithAuth('/api/v1/nyx/local-models/stop', { method: 'POST' });
       // Clear hot models
       for (const [id, state] of this.localModelPool) {
         if (state.status === 'hot') {

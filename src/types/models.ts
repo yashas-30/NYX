@@ -49,4 +49,5 @@ export interface LocalModelPreset {
   featured?: boolean;
   status?: string;
   progress?: any;
+  metadata?: any;
 }

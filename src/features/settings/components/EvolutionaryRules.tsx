@@ -22,7 +22,7 @@ export const EvolutionaryRules: React.FC<EvolutionaryRulesProps> = ({
 }) => {
   const handleClearRules = async () => {
     try {
-      const res = await fetchWithAuth('/api/nyx/reset', { method: 'POST' });
+      const res = await fetchWithAuth('/api/v1/nyx/reset', { method: 'POST' });
       if (res.ok) {
         setEvolvedRules([]);
         toast.success('Successfully reset evolved memory!');

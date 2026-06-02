@@ -165,7 +165,7 @@ export const useNyxStore = create<NyxState>()(
 
       fetchWorkspacePath: async () => {
         try {
-          const res = await fetchWithAuth('/api/workspace');
+          const res = await fetchWithAuth('/api/v1/workspace');
           if (res.ok) {
             const data = await res.json();
             set({ workspacePath: data.workspace || '' });
@@ -182,7 +182,7 @@ export const useNyxStore = create<NyxState>()(
             const directory = await ipc.showOpenDirectory();
             if (directory) {
               // Post to API to set active workspace
-              const res = await fetchWithAuth('/api/workspace/select', {
+              const res = await fetchWithAuth('/api/v1/workspace/select', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path: directory }),
@@ -201,7 +201,7 @@ export const useNyxStore = create<NyxState>()(
 
       createWorkspace: async (path: string, name: string) => {
         try {
-          const res = await fetchWithAuth('/api/workspace/create', {
+          const res = await fetchWithAuth('/api/v1/workspace/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path, name }),
@@ -256,12 +256,14 @@ export const useNyxStore = create<NyxState>()(
             (typeof localStorage !== 'undefined' &&
               localStorage.getItem('nyx_local_models_enabled') === 'true');
           if (localEnabled) {
-            const nativeRes = await fetchWithAuth('/api/nyx/local-models/status').catch(() => null);
+            const nativeRes = await fetchWithAuth('/api/v1/nyx/local-models/status').catch(
+              () => null
+            );
             if (nativeRes && nativeRes.ok) {
               const data = await nativeRes.json();
               if (data.activeModelId) {
                 // Ping the model with a trivial request
-                const healthRes = await fetchWithAuth('/api/nyx/local-models/chat', {
+                const healthRes = await fetchWithAuth('/api/v1/nyx/local-models/chat', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -282,7 +284,7 @@ export const useNyxStore = create<NyxState>()(
           }
 
           // Check safeStorage vault configuration for cloud providers
-          const vaultRes = await fetch('/api/vault/status').catch(() => null);
+          const vaultRes = await fetch('/api/v1/vault/status').catch(() => null);
           const vaultStatus = vaultRes && vaultRes.ok ? await vaultRes.json() : {};
 
           for (const p of cloudProviders) {
@@ -291,7 +293,7 @@ export const useNyxStore = create<NyxState>()(
 
             if (hasVaultKey || hasMemoryKey) {
               try {
-                const validateRes = await fetchWithAuth('/api/vault/validate', {
+                const validateRes = await fetchWithAuth('/api/v1/vault/validate', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ provider: p, apiKey: get().apiKeys[p] || '' }),

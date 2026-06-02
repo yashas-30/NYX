@@ -100,7 +100,7 @@ export const ModelSelector: React.FC<Props> = ({
         return;
       }
       try {
-        const res = await AIService.fetchWithAuth('/api/nyx/local-models');
+        const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models');
         if (res.ok) {
           const data = await res.json();
           if (active && data.models && Array.isArray(data.models)) {

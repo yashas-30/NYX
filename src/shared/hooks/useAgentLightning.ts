@@ -228,7 +228,7 @@ export const useAgentLightning = () => {
 
         // Persist to backend
         import('@src/infrastructure/api/authFetch').then(({ fetchWithAuth }) => {
-          fetchWithAuth('/api/nyx/lightning/directives', {
+          fetchWithAuth('/api/v1/nyx/lightning/directives', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ directives: newState }),

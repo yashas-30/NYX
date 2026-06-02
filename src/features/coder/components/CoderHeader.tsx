@@ -56,7 +56,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
     let active = true;
     const checkScrapling = async () => {
       try {
-        const res = await fetchWithAuth('/api/admin/scrapling-status');
+        const res = await fetchWithAuth('/api/v1/admin/scrapling-status');
         if (!active) return;
         if (res.ok) {
           const data = await res.json();

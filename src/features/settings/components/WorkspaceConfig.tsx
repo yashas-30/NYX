@@ -15,7 +15,7 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
 }) => {
   const handleSelectWorkspace = async () => {
     try {
-      const res = await fetchWithAuth('/api/workspace/select', { method: 'POST' });
+      const res = await fetchWithAuth('/api/v1/workspace/select', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         if (data.workspace) {
@@ -36,7 +36,7 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
       const val = e.currentTarget.value.trim();
       if (val) {
         try {
-          const res = await fetchWithAuth('/api/workspace', {
+          const res = await fetchWithAuth('/api/v1/workspace', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path: val }),

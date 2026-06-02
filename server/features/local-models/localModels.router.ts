@@ -14,9 +14,26 @@ export const localModelsRouter = Router();
 const service = new LocalModelsService();
 
 // List presets and their installation status
-localModelsRouter.get('/', (_req, res) => {
+localModelsRouter.get('/', async (_req, res) => {
   try {
-    res.json(service.listModels());
+    const listData = service.listModels();
+
+    // Inject metadata (scores, etc.) into the models
+    const { modelMetadataService } = await import('./modelMetadata.service.ts');
+    const enrichedModels = await Promise.all(
+      listData.models.map(async (m: any) => {
+        const meta = await modelMetadataService.getMetadata(m.id, m.url);
+        return {
+          ...m,
+          metadata: meta,
+        };
+      })
+    );
+
+    res.json({
+      ...listData,
+      models: enrichedModels,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

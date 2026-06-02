@@ -54,7 +54,9 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
 
     async function loadSessions() {
       try {
-        const url = agentType ? `/api/conversations?agentType=${agentType}` : '/api/conversations';
+        const url = agentType
+          ? `/api/v1/conversations?agentType=${agentType}`
+          : '/api/v1/conversations';
         const res = await fetchWithAuth(url);
         if (res.ok) {
           const serverSessions = await res.json();
@@ -161,7 +163,9 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
       setActiveSid(id);
 
       // Sync to backend
-      const url = agentType ? `/api/conversations?agentType=${agentType}` : '/api/conversations';
+      const url = agentType
+        ? `/api/v1/conversations?agentType=${agentType}`
+        : '/api/v1/conversations';
       fetchWithAuth(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -188,8 +192,8 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
             };
             // Sync to backend
             const url = agentType
-              ? `/api/conversations?agentType=${agentType}`
-              : '/api/conversations';
+              ? `/api/v1/conversations?agentType=${agentType}`
+              : '/api/v1/conversations';
             fetchWithAuth(url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -213,8 +217,8 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
 
       // Sync to backend
       const url = agentType
-        ? `/api/conversations/${sid}?agentType=${agentType}`
-        : `/api/conversations/${sid}`;
+        ? `/api/v1/conversations/${sid}?agentType=${agentType}`
+        : `/api/v1/conversations/${sid}`;
       fetchWithAuth(url, {
         method: 'DELETE',
       }).catch((err) => console.warn('[useChatSessions] Failed to sync session deletion:', err));

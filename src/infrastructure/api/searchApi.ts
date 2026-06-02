@@ -39,7 +39,7 @@ export async function searchCodebase(
   signal?: AbortSignal,
   options?: { topK?: number; threshold?: number }
 ): Promise<SearchResult> {
-  const res = await apiFetch('/api/nyx/codebase-search', {
+  const res = await apiFetch('/api/v1/nyx/codebase-search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, ...options }),
@@ -53,7 +53,7 @@ export async function searchWeb(
   signal?: AbortSignal,
   options?: { topK?: number; recency?: 'day' | 'week' | 'month' | 'year' }
 ): Promise<WebSearchResult> {
-  const res = await apiFetch('/api/nyx/search', {
+  const res = await apiFetch('/api/v1/nyx/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, ...options }),

@@ -15,6 +15,13 @@
       "when": 1779989233339,
       "tag": "0001_split_chat_coder",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780335839943,
+      "tag": "0002_late_molten_man",
+      "breakpoints": true
     }
   ]
 }

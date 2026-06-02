@@ -28,7 +28,7 @@ export async function buildCodebaseContext(
 ): Promise<{ context: string; maxScore: number }> {
   if (!isCodebase) return { context: '', maxScore: 0 };
   try {
-    const response = await fetchWithAuth('/api/nyx/codebase-search', {
+    const response = await fetchWithAuth('/api/v1/nyx/codebase-search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: prompt }),
@@ -168,7 +168,7 @@ export async function buildWebSearchContext(
   );
 
   try {
-    const response = await fetchWithAuth('/api/nyx/search', {
+    const response = await fetchWithAuth('/api/v1/nyx/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: searchQuery }),

@@ -167,7 +167,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
           const rawBase64 = event.target?.result as string;
           const base64Data = rawBase64.split(',')[1];
 
-          const res = await fetchWithAuth('/api/chat/upload-image', {
+          const res = await fetchWithAuth('/api/v1/chat/upload-image', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
