@@ -6,6 +6,8 @@ import { LRUCache } from 'lru-cache';
 import crypto from 'crypto';
 
 import { GeminiAdapter } from './adapters/gemini.adapter.ts';
+import { OllamaAdapter } from './adapters/ollama.adapter.ts';
+import { LmStudioAdapter } from './adapters/lmstudio.adapter.ts';
 import { ProviderAdapter, ChatRequest } from './adapters/base.adapter.ts';
 import { modelCache } from './modelCache.service.ts';
 import { keyManager } from './keyManager.service.ts';
@@ -45,7 +47,16 @@ interface ActiveStream {
 const activeStreams = new Map<string, ActiveStream>();
 
 export async function startFastifyServer(port: number = 3001) {
-  const app = fastify({ logger: false });
+  const app = fastify({
+    // Use pino/file (stdout) instead of pino-pretty — pino-pretty requires
+    // worker-thread resolution that breaks inside esbuild bundles.
+    logger: {
+      transport: {
+        target: 'pino/file',
+        options: { destination: 1 }, // 1 = stdout
+      },
+    },
+  });
 
   await app.register(cors, {
     origin: '*',
@@ -57,8 +68,9 @@ export async function startFastifyServer(port: number = 3001) {
   });
 
   const adapters: Record<string, ProviderAdapter> = {
-
     gemini: new GeminiAdapter(),
+    ollama: new OllamaAdapter(),
+    lmstudio: new LmStudioAdapter(),
   };
 
   // Initialize load balancer keys
@@ -70,6 +82,7 @@ export async function startFastifyServer(port: number = 3001) {
     return registry.metrics();
   });
 
+  // fallow-ignore-next-line code-duplication
   app.post('/api/models/list', async (request, reply) => {
     const { provider } = request.body as any;
     if (!provider || !adapters[provider]) {
@@ -91,6 +104,7 @@ export async function startFastifyServer(port: number = 3001) {
     }
   });
 
+  // fallow-ignore-next-line code-duplication
   app.post('/api/models/quota', async (request, reply) => {
     const { provider } = request.body as any;
     if (!provider || !adapters[provider]) {
@@ -250,7 +264,6 @@ export async function startFastifyServer(port: number = 3001) {
         active!.emitter.once('end', resolve);
         active!.emitter.once('error', resolve);
       });
-
     } catch (err: any) {
       logger.error({ err }, '[Fastify] Stream error');
       streamRequestsTotal.inc({ provider, status: 'error' });

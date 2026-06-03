@@ -56,8 +56,41 @@ export const useStreamProcessor = ({
             });
             break;
 
+          case 'tool_call':
+            updateHistory((prev) => {
+              const h = [...prev];
+              const last = h[h.length - 1];
+              if (last?.role === 'assistant') {
+                const currentToolCalls = last.toolCalls || [];
+                last.toolCalls = [
+                  ...currentToolCalls,
+                  {
+                    id: chunk.metadata.id,
+                    name: chunk.metadata.function.name,
+                    arguments: chunk.metadata.function.arguments,
+                  } as any,
+                ];
+              }
+              return h;
+            });
+            break;
+
           case 'tool_result':
-            // No-op for now as per original code
+            updateHistory((prev) => {
+              const h = [...prev];
+              const last = h[h.length - 1];
+              if (last?.role === 'assistant' && last.toolCalls) {
+                const callIndex = last.toolCalls.findIndex((tc) => tc.id === chunk.metadata.id);
+                if (callIndex !== -1) {
+                  last.toolCalls[callIndex] = {
+                    ...last.toolCalls[callIndex],
+                    status: chunk.metadata.status || 'success',
+                    result: chunk.metadata.result || '',
+                  };
+                }
+              }
+              return h;
+            });
             break;
         }
       }

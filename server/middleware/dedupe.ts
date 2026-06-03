@@ -12,6 +12,29 @@ export const requestDedupeMiddleware = (
     return next();
   }
 
+  // Bypass deduplication for read-only queries or stream endpoints
+  const path = req.path;
+  const isBypass =
+    path.endsWith('/keyword-index') ||
+    path.endsWith('/claude-md-hierarchy') ||
+    path.endsWith('/memory-index') ||
+    path.endsWith('/codebase-search') ||
+    path.endsWith('/search') ||
+    path.endsWith('/read-file') ||
+    path.endsWith('/list-directory') ||
+    path.endsWith('/git-diff') ||
+    path.endsWith('/git-status') ||
+    path.endsWith('/validate') ||
+    path.endsWith('/workspace-profile') ||
+    path.endsWith('/suggestions') ||
+    path.endsWith('/stream') ||
+    path.endsWith('/coder') ||
+    path.endsWith('/chat');
+
+  if (isBypass) {
+    return next();
+  }
+
   // Use the idempotency key if provided, otherwise generate a hash of method + path + body
   const idempotencyKey = req.headers['idempotency-key'] as string;
   let cacheKey = '';
@@ -34,10 +57,12 @@ export const requestDedupeMiddleware = (
   // Mark this request as in-progress (10s TTL)
   dedupeCache.set(cacheKey, true, 10000);
 
-  // Clear the deduplication key once the request finishes so subsequent requests can proceed
-  res.on('finish', () => {
+  // Clear the deduplication key once the request finishes/closes so subsequent requests can proceed
+  const cleanup = () => {
     dedupeCache.delete(cacheKey);
-  });
+  };
+  res.on('finish', cleanup);
+  res.on('close', cleanup);
 
   next();
 };

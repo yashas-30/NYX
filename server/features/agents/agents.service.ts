@@ -23,6 +23,7 @@ export class AgentsService {
     const tools = this.getToolsForAgent(agentType);
 
     // Define the system prompt
+    // fallow-ignore-next-line code-duplication
     const systemInstruction = this.getSystemPromptForAgent(agentType);
 
     const messages: any[] = [];

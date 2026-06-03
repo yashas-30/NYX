@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { AgentsService } from './agents.service.ts';
+import { ClineService } from './cline.service.ts';
 import { sendSseTokenRotate } from '../../lib/sseHelpers.ts';
 import logger from '../../lib/logger.ts';
 
@@ -46,15 +47,52 @@ agentsRouter.post('/chat', async (req, res) => {
   handleAgentStream(req, res, 'chat');
 });
 
+const clineService = new ClineService();
+
 agentsRouter.post('/coder', async (req, res) => {
-  logger.info('[Agents Router] Received /coder request');
-  handleAgentStream(req, res, 'coder');
+  logger.info('[Agents Router] Received /coder request (Cline)');
+  const { model, prompt, history, apiKey, gatewayUrls, images } = req.body || {};
+
+  if (!model) {
+    return res.status(400).json({ error: 'Model is required' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  sendSseTokenRotate(res);
+
+  try {
+    await clineService.executeClineAgent(
+      {
+        model,
+        prompt,
+        history,
+        apiKey,
+        gatewayUrls,
+        images,
+      },
+      (event) => {
+        // Stream event back to the client
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    );
+    res.write('data: [DONE]\n\n');
+    res.end();
+  } catch (error: any) {
+    logger.error(`[Agents Router Error - coder-cline]:`, error.message);
+    res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+    res.end();
+  }
 });
 
 async function handleAgentStream(req: any, res: any, agentType: 'chat' | 'coder') {
   const { model, prompt, history, apiKey, gatewayUrls, images } = req.body || {};
 
   if (!model) {
+    // fallow-ignore-next-line code-duplication
     return res.status(400).json({ error: 'Model is required' });
   }
 

@@ -1,22 +1,7 @@
 import { ModelProvider } from './models';
-import { AIResponse } from './inference';
+import { AIResponse, ComplexityLevel, IntentType, CapabilityKey } from './shared';
 
-export type ComplexityLevel =
-  | 'trivial'
-  | 'simple'
-  | 'moderate'
-  | 'complex'
-  | 'very_complex'
-  | 'enterprise';
-export type IntentType =
-  | 'chat'
-  | 'code_generation'
-  | 'debugging'
-  | 'explanation'
-  | 'refactoring'
-  | 'testing'
-  | 'general_chat';
-export type CapabilityKey = 'chat' | 'coding' | 'reasoning' | 'vision';
+export type { ComplexityLevel, IntentType, CapabilityKey };
 
 export interface CodeAnalysis {
   complexity: any;
@@ -146,6 +131,8 @@ export interface ToolCall {
     name: string;
     arguments: string;
   };
+  status?: 'success' | 'running' | 'error' | 'pending';
+  result?: string;
 }
 
 export interface ChatMessage {
