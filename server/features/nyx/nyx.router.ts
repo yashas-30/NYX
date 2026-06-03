@@ -141,6 +141,57 @@ nyxRouter.post('/search', validate(nyxSearchSchema), async (req, res) => {
   }
 });
 
+// GET /api/nyx/search/history
+nyxRouter.get('/search/history', async (req, res) => {
+  try {
+    const { db } = await import('../../db/client.ts');
+    const { searchQueries, searchResults } = await import('../../db/schema.ts');
+    const { desc, eq } = await import('drizzle-orm');
+
+    const recentQueries = await db
+      .select()
+      .from(searchQueries)
+      .orderBy(desc(searchQueries.timestamp))
+      .limit(50);
+
+    const history = [];
+    for (const q of recentQueries) {
+      const results = await db
+        .select()
+        .from(searchResults)
+        .where(eq(searchResults.queryId, q.id))
+        .orderBy(searchResults.rank);
+      history.push({ ...q, results });
+    }
+
+    res.json({ success: true, history });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Web search history route failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/nyx/prompt-feedback
+nyxRouter.post('/prompt-feedback', async (req, res) => {
+  const { optimizationId, rating } = req.body;
+  if (!optimizationId || typeof rating !== 'number') {
+    return res.status(400).json({ error: 'Missing optimizationId or rating.' });
+  }
+  try {
+    const { db } = await import('../../db/client.ts');
+    const { promptOptimizations } = await import('../../db/schema.ts');
+    const { eq } = await import('drizzle-orm');
+    await db
+      .update(promptOptimizations)
+      .set({ rating })
+      .where(eq(promptOptimizations.id, optimizationId));
+    res.json({ success: true });
+  } catch (error: any) {
+    logger.error('[Nyx Router] Prompt feedback failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ── Filesystem Endpoints ───────────────────────────────────────────────────────
 
 // POST /api/nyx/write-file

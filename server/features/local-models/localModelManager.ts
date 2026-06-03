@@ -5,6 +5,7 @@ import { WebSocket } from 'ws';
 import os from 'os';
 import * as si from 'systeminformation';
 import logger from '../../lib/logger.ts';
+import crypto from 'crypto';
 // No download queue needed — downloads are tracked per-modelId in activeDownloads map
 
 export interface ModelPreset {
@@ -21,6 +22,7 @@ export interface ModelPreset {
   quantization?: string;
   contextLength?: string;
   featured?: boolean;
+  availableQuantizations?: string[];
 }
 
 export const MODEL_PRESETS: ModelPreset[] = [
@@ -40,6 +42,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     ramRequired: '4 GB RAM',
     vramRequired: '2 GB VRAM',
     featured: true,
+    availableQuantizations: ['Q4_K_M', 'Q5_K_M', 'Q8_0'],
   },
   {
     id: 'gemma-2-2b-it',
@@ -178,6 +181,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     ramRequired: '8 GB RAM',
     vramRequired: '6 GB VRAM',
     featured: true,
+    availableQuantizations: ['Q4_K_M', 'Q5_K_M', 'Q8_0'],
   },
   {
     id: 'llama-3.3-70b-native',
@@ -848,7 +852,7 @@ export const LocalModelManager = {
     };
   },
 
-  startDownload(modelId: string) {
+  startDownload(modelId: string, quantization?: string) {
     let preset = this.listModels().find((p) => p.id === modelId);
     if (!preset) {
       // Check if it is a valid HTTP/HTTPS URL
@@ -891,7 +895,20 @@ export const LocalModelManager = {
       }
     }
 
-    const activePreset = preset!;
+    let activePreset = preset!;
+    // Clone and apply quantization selection if provided
+    if (quantization && activePreset.quantization && quantization !== activePreset.quantization) {
+      activePreset = { ...activePreset };
+      activePreset.url = activePreset.url.replace(activePreset.quantization, quantization);
+      activePreset.fileName = activePreset.fileName.replace(activePreset.quantization, quantization);
+      activePreset.quantization = quantization;
+      activePreset.name = activePreset.name.replace(/\(Q.*?\)/, `(${quantization})`);
+      
+      // Add the modified preset back so subsequent lookups (like pause/resume) find it
+      activePreset.id = `${activePreset.id}-${quantization.toLowerCase()}`;
+      modelId = activePreset.id;
+      MODEL_PRESETS.push(activePreset);
+    }
     const filePath = path.join(MODELS_DIR, activePreset.fileName);
 
     if (fs.existsSync(filePath)) {
@@ -1197,17 +1214,47 @@ export const LocalModelManager = {
 
           fileStream.on('finish', () => {
             if (fileStream) {
-              fileStream.close(() => {
+              fileStream.close(async () => {
                 activeControllers.delete(progress.modelId);
                 // If paused/cancelled while finishing, leave the .part file intact
                 if (progress.status === 'paused' || progress.status === 'failed') {
                   done();
                   return;
                 }
+                
                 try {
-                  fs.renameSync(partPath, destPath);
-                  done();
+                  // Perform Checksum Verification
+                  progress.message = 'Verifying checksum...';
+                  LocalModelManager.broadcastProgress();
+                  
+                  // For now, if we don't have the HF hash easily available without an API token,
+                  // we compute the SHA256 and log it, and verify the GGUF magic header.
+                  const fd = fs.openSync(partPath, 'r');
+                  const buffer = Buffer.alloc(4);
+                  fs.readSync(fd, buffer, 0, 4, 0);
+                  fs.closeSync(fd);
+                  
+                  if (buffer.toString('utf8') !== 'GGUF') {
+                    throw new Error('Invalid file format: Not a valid GGUF file.');
+                  }
+
+                  // Optional: Compute SHA256 for integrity (non-blocking)
+                  const hash = crypto.createHash('sha256');
+                  const rs = fs.createReadStream(partPath);
+                  rs.on('data', (chunk) => hash.update(chunk));
+                  rs.on('end', () => {
+                    const sha256 = hash.digest('hex');
+                    logger.info({ modelId: progress.modelId, sha256 }, 'Download complete and checksum computed');
+                    fs.renameSync(partPath, destPath);
+                    progress.message = undefined;
+                    done();
+                  });
+                  rs.on('error', (err) => {
+                    progress.message = undefined;
+                    done(err);
+                  });
                 } catch (error: any) {
+                  progress.message = undefined;
                   done(error);
                 }
               });

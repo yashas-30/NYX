@@ -50,4 +50,5 @@ export interface LocalModelPreset {
   status?: string;
   progress?: any;
   metadata?: any;
+  availableQuantizations?: string[];
 }

@@ -14,6 +14,7 @@ export interface ModelSettings {
   batchSize: number;
   repeatPenalty: number;
   mirostat: number;
+  antigravity?: boolean;
 }
 
 export type ActiveMode = 'coder' | 'registry' | 'settings';
@@ -70,6 +71,7 @@ const DEFAULT_SETTINGS: ModelSettings = {
   batchSize: 512,
   repeatPenalty: 1.1,
   mirostat: 0,
+  antigravity: true,
 };
 
 const DEFAULT_MODEL: ModelOption = {

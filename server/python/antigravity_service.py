@@ -3,6 +3,8 @@ import uvicorn
 import argparse
 import json
 import asyncio
+import random
+import uuid
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -17,6 +19,55 @@ try:
     HAS_GENAI = True
 except ImportError:
     print("[Antigravity SDK] warning: google-genai package not found. AI preprocessing falls back to standard instructions.")
+
+OPTIMIZATION_TEMPLATES = {
+    "coding": [
+        {
+            "version": "v1-strict",
+            "instruction": (
+                "You are an expert prompt engineer specializing in coding tasks. "
+                "Rewrite the user's prompt to be explicit, modular, and optimized for an AI coding agent. "
+                "Include requirements for robust error handling, type safety, and clean architecture. "
+                "Return ONLY the rewritten prompt without conversational filler."
+            )
+        },
+        {
+            "version": "v2-creative",
+            "instruction": (
+                "You are an AI prompt optimizer for software engineering. "
+                "Expand the user's coding prompt by adding best practices, suggesting design patterns, "
+                "and structuring it into clear steps. "
+                "Return ONLY the rewritten prompt."
+            )
+        }
+    ],
+    "creative": [
+        {
+            "version": "v1-storyteller",
+            "instruction": (
+                "You are a prompt optimizer for creative writing. "
+                "Enhance the user's prompt by adding vivid details, character motivations, and sensory language. "
+                "Return ONLY the rewritten prompt."
+            )
+        }
+    ],
+    "general": [
+        {
+            "version": "v1-clarity",
+            "instruction": (
+                "You are a prompt optimizer. Rewrite the user's prompt to maximize clarity, logical structure, and detail. "
+                "Ensure the intent is unambiguous. Return ONLY the rewritten prompt."
+            )
+        },
+        {
+            "version": "v2-structured",
+            "instruction": (
+                "You are a prompt structurer. Convert the user's prompt into a bulleted list of precise instructions and constraints. "
+                "Return ONLY the rewritten prompt."
+            )
+        }
+    ]
+}
 
 @app.get("/health")
 def health():
@@ -36,8 +87,15 @@ async def preprocess(request: Request):
         data = await request.json()
         prompt = data.get("prompt", "")
         api_key = data.get("apiKey", "")
+        domain = data.get("domain", "general")
         
-        # Default fallback optimization prefix
+        if domain not in OPTIMIZATION_TEMPLATES:
+            domain = "general"
+
+        template = random.choice(OPTIMIZATION_TEMPLATES[domain])
+        version = template["version"]
+        instruction = template["instruction"] + f"\n\nUser Prompt: {prompt}"
+        
         optimized_prompt = f"Optimize and answer: {prompt}"
         
         if HAS_GENAI:
@@ -46,15 +104,6 @@ async def preprocess(request: Request):
                 try:
                     client = genai.Client(api_key=key)
                     
-                    instruction = (
-                        "You are a prompt optimization expert. Your task is to rewrite the user's prompt "
-                        "to be highly detailed, explicit, structured, and optimized for an AI coding agent. "
-                        "Incorporate technical details, specify standard coding practices (like error handling, type safety, modular design), "
-                        "and structure it clearly. Return ONLY the rewritten prompt. Do not add any conversational text or formatting outside the prompt itself.\n\n"
-                        f"User Prompt: {prompt}"
-                    )
-                    
-                    # Call async generator
                     response = await client.aio.models.generate_content(
                         model="gemini-1.5-flash",
                         contents=instruction
@@ -68,8 +117,12 @@ async def preprocess(request: Request):
         else:
             print("[Antigravity SDK Preprocess Warning] google-generativeai not installed. Falling back to default.")
             
-        print("[Antigravity SDK] Prompt preprocessed successfully.")
-        return {"prompt": optimized_prompt}
+        print(f"[Antigravity SDK] Prompt preprocessed successfully (domain: {domain}, version: {version}).")
+        return {
+            "prompt": optimized_prompt,
+            "domain": domain,
+            "version": version
+        }
     except Exception as e:
         print(f"[Antigravity SDK Preprocess Error] {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -83,8 +136,8 @@ async def generate_with_sdk(prompt: str, model: str, api_key: str):
 
         client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY", ""))
         
-        # Route to requested model (no longer hardcoding gemini-1.5-pro-latest unless empty/unspecified)
-        actual_model = model if model and model != "unknown" else "gemini-1.5-pro"
+        # Route to requested model, rely on actual model sent
+        actual_model = model if model and model != "unknown" else os.environ.get("DEFAULT_MODEL", "gemini-1.5-pro")
         print(f"[Antigravity] Routing for model: {actual_model}")
         
         # Send prefix

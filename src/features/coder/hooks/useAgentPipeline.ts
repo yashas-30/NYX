@@ -15,7 +15,6 @@ import {
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { toast } from '@src/shared/components/ui/sonner';
 import { formatProviderError } from '@src/infrastructure/api/streamParser';
-import { ChatAgentWithTools } from '@src/core/agents/chatAgentWithTools';
 import { CoderAgentWithTools } from '@src/core/agents/coderAgentWithTools';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { SubagentOrchestrator } from '../services/SubagentOrchestrator';
@@ -169,54 +168,43 @@ export const useAgentPipeline = ({
         }
 
         let agent: any;
-        if (route.agent === 'chat') {
-          agent = new ChatAgentWithTools({
-            modelId: nyxModel,
-            provider: nyxProvider,
-            apiKey: nyxApiKey,
-            settings: modelSettings,
-            history: historyRef.current,
-            webSearchEnabled,
-            maxSearchResults: 5,
-            maxContextLength: 8000,
-            updateHistory,
-          });
-        } else {
-          agent = new CoderAgentWithTools({
-            modelId: nyxModel,
-            provider: nyxProvider,
-            apiKey: nyxApiKey,
-            settings: modelSettings,
-            history: historyRef.current,
-            apiKeys,
-            webSearchEnabled,
-            codebaseKnowledgeEnabled,
-            trackUsage,
-            updateHistory,
-            updateMetrics,
-            getSuggestions,
-            setSuggestedPrompts,
-            originalPrompt: prompt,
-            triggerBackgroundCritic,
-            onSubagentTaskUpdate: (tasks) => {
-              setSubagentTasks(tasks);
-            },
-            lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
-            createOrchestrator: () => new SubagentOrchestrator(),
-            confirmTool: (toolName, args) => {
-              return new Promise<boolean>((resolve) => {
-                setPendingToolConfirm({
-                  toolName,
-                  args,
-                  resolve: (approved) => {
-                    setPendingToolConfirm(null);
-                    resolve(approved);
-                  },
-                });
+        
+        // Force CoderAgent for all tasks in the Coder Pipeline to prevent breaking if backend chat fails.
+        // The CoderAgent is capable of handling general chat and explanations internally.
+        agent = new CoderAgentWithTools({
+          modelId: nyxModel,
+          provider: nyxProvider,
+          apiKey: nyxApiKey,
+          settings: modelSettings,
+          history: historyRef.current,
+          apiKeys,
+          webSearchEnabled,
+          codebaseKnowledgeEnabled,
+          trackUsage,
+          updateHistory,
+          updateMetrics,
+          getSuggestions,
+          setSuggestedPrompts,
+          originalPrompt: prompt,
+          triggerBackgroundCritic,
+          onSubagentTaskUpdate: (tasks) => {
+            setSubagentTasks(tasks);
+          },
+          lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
+          createOrchestrator: () => new SubagentOrchestrator(),
+          confirmTool: (toolName, args) => {
+            return new Promise<boolean>((resolve) => {
+              setPendingToolConfirm({
+                toolName,
+                args,
+                resolve: (approved) => {
+                  setPendingToolConfirm(null);
+                  resolve(approved);
+                },
               });
-            },
-          });
-        }
+            });
+          },
+        });
 
         let finalMetrics: any = null;
         let lastStreamText = '';

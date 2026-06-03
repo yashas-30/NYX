@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Wrench, ChevronDown, ChevronRight, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { CodeDiffViewer } from './CodeDiffViewer';
 
 interface ToolCallCardProps {
   toolName: string;
@@ -55,6 +56,10 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
               >
                 {args || '{}'}
               </SyntaxHighlighter>
+
+              {['write_to_file', 'write_file', 'replace_file_content', 'multi_replace_file_content'].includes(toolName) && (
+                <CodeDiffViewer toolName={toolName} args={args} />
+              )}
 
               {result && (
                 <>

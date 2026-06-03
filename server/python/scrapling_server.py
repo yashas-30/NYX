@@ -3,6 +3,7 @@ import sys
 import os
 import json
 import argparse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import traceback
 import logging
@@ -68,37 +69,125 @@ class ScraplingHandler(BaseHTTPRequestHandler):
 
             query = req_body.get('query', '')
             limit = req_body.get('limit', 3)
+            engine = req_body.get('engine', 'duckduckgo')
+            search_type = req_body.get('type', 'text')
+            timeout_sec = int(req_body.get('timeout', 30))
+            site_filter = req_body.get('siteFilter', '')
+
             try:
                 limit = int(limit)
             except ValueError:
                 limit = 3
 
-            print(f"[Scrapling Server] Processing search query: '{query}' (limit: {limit})")
+            if site_filter:
+                query = f"site:{site_filter} {query}"
+
+            print(f"[Scrapling Server] Processing search query: '{query}' (engine: {engine}, type: {search_type}, limit: {limit})")
 
             results = []
             if query.strip():
                 try:
-                    # 1. Perform DuckDuckGo search to retrieve target URLs
-                    ddgs_results = []
-                    try:
-                        with DDGS() as ddgs:
-                            ddgs_results = list(ddgs.text(query, max_results=limit))
-                    except Exception as ddg_err:
-                        print(f"[Scrapling Server] DDG Search failed: {ddg_err}", file=sys.stderr)
+                    search_results_meta = []
+
+                    if engine == 'google':
+                        serper_api_key = os.environ.get('SERPER_API_KEY')
+                        if serper_api_key:
+                            print(f"[Scrapling Server] Using Serper API for Google search...")
+                            try:
+                                req_url = "https://google.serper.dev/search"
+                                if search_type == 'image':
+                                    req_url = "https://google.serper.dev/images"
+                                
+                                payload = json.dumps({
+                                    "q": query,
+                                    "num": limit
+                                }).encode('utf-8')
+                                
+                                req = urllib.request.Request(req_url, data=payload, headers={
+                                    'X-API-KEY': serper_api_key,
+                                    'Content-Type': 'application/json'
+                                })
+                                with urllib.request.urlopen(req) as response:
+                                    resp_body = response.read().decode('utf-8')
+                                    serper_data = json.loads(resp_body)
+                                    
+                                    if search_type == 'image':
+                                        images = serper_data.get('images', [])
+                                        for i, img in enumerate(images[:limit]):
+                                            search_results_meta.append({
+                                                'url': img.get('imageUrl'),
+                                                'title': img.get('title', 'Image'),
+                                                'snippet': img.get('snippet', ''),
+                                                'rank': i + 1,
+                                                'is_image': True
+                                            })
+                                    else:
+                                        organic = serper_data.get('organic', [])
+                                        for i, item in enumerate(organic[:limit]):
+                                            search_results_meta.append({
+                                                'url': item.get('link'),
+                                                'title': item.get('title', 'No Title'),
+                                                'snippet': item.get('snippet', ''),
+                                                'rank': item.get('position', i + 1),
+                                                'is_image': False
+                                            })
+                            except Exception as serper_err:
+                                print(f"[Scrapling Server] Serper API failed: {serper_err}", file=sys.stderr)
+                                engine = 'duckduckgo' # fallback
+                        else:
+                            print("[Scrapling Server] Warning: SERPER_API_KEY not found in env, falling back to DDG")
+                            engine = 'duckduckgo'
+
+                    if engine == 'duckduckgo':
+                        try:
+                            with DDGS() as ddgs:
+                                if search_type == 'image':
+                                    ddgs_res = list(ddgs.images(query, max_results=limit))
+                                    for i, item in enumerate(ddgs_res):
+                                        search_results_meta.append({
+                                            'url': item.get('image'),
+                                            'title': item.get('title', 'Image'),
+                                            'snippet': '',
+                                            'rank': i + 1,
+                                            'is_image': True
+                                        })
+                                else:
+                                    ddgs_res = list(ddgs.text(query, max_results=limit))
+                                    for i, item in enumerate(ddgs_res):
+                                        search_results_meta.append({
+                                            'url': item.get('href') or item.get('url'),
+                                            'title': item.get('title', 'No Title'),
+                                            'snippet': item.get('body', ''),
+                                            'rank': i + 1,
+                                            'is_image': False
+                                        })
+                        except Exception as ddg_err:
+                            print(f"[Scrapling Server] DDG Search failed: {ddg_err}", file=sys.stderr)
                     
                     # 2. Iterate and scrape each page using Scrapling
-                    for item in ddgs_results:
-                        url = item.get('href') or item.get('url')
-                        title = item.get('title', 'No Title')
-                        snippet = item.get('body', '')
+                    for item in search_results_meta:
+                        url = item['url']
+                        title = item['title']
+                        snippet = item['snippet']
+                        rank = item['rank']
+                        is_image = item.get('is_image')
                         
                         if not url:
+                            continue
+                            
+                        if is_image:
+                            results.append({
+                                "title": title,
+                                "url": url,
+                                "markdown": f"![{title}]({url})\n\n{snippet}",
+                                "rank": rank
+                            })
                             continue
                         
                         print(f"[Scrapling Server] Scraping URL via Scrapling: {url}")
                         try:
                             # Use Scrapling's Fetcher with chrome impersonation to bypass blocks
-                            resp = Fetcher.get(url, impersonate='chrome', timeout=10)
+                            resp = Fetcher.get(url, impersonate='chrome', timeout=timeout_sec)
                             html_content = resp.html_content
                             
                             # Convert fetched HTML to clean markdown
@@ -135,7 +224,8 @@ class ScraplingHandler(BaseHTTPRequestHandler):
                         results.append({
                             "title": title,
                             "url": url,
-                            "markdown": markdown_content
+                            "markdown": markdown_content,
+                            "rank": rank
                         })
                 except Exception as run_err:
                     print(f"[Scrapling Server] Search processing error: {run_err}", file=sys.stderr)

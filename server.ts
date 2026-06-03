@@ -20,41 +20,15 @@ import crypto from 'crypto';
 // Side-effect import to register apiAgent in the factory
 import './server/lib/apiAgent.ts'; // 🚀 Init global connection pooling
 
-// New extracted routes
-import { cacheRouter } from './server/features/cache/cache.router.ts';
-import { graphqlRouter } from './server/features/graphql/graphql.router.ts';
-import { uploadRouter } from './server/features/upload/upload.router.ts';
-import { vaultRouter } from './server/features/vault/vault.router.ts';
-import { adminRouter, setScraplingHealthState } from './server/features/admin/admin.router.ts';
-import { systemRouter } from './server/features/system/system.router.ts';
-import { chatRouter } from './server/features/chat/chat.router.ts';
-import { healthRouter } from './server/features/system/health.router.ts';
-import { metricsRouter } from './server/features/system/metrics.router.ts';
-import { conversationsRouter } from './server/features/conversations/conversations.router.ts';
-import { workspaceRouter } from './server/features/workspace/workspace.router.ts';
-import { filesRouter } from './server/features/files/files.router.ts';
-import { workspaceWatcher } from './server/features/workspace/workspace.watcher.ts';
-/**
- * WRONG-3 / BAD-2 fix: modelProxyRouter proxies requests to multiple AI provider endpoints
- * through a single /api/models/* interface. fastifyProxyRouter bridges requests from
- * the frontend to the Fastify SSE server (port 3001) for providers that require
- * zero-copy streaming. Both are intentionally kept as thin routing layers.
- */
-import { modelProxyRouter } from './server/features/model-proxy/modelProxy.router.ts';
-import { promptTemplatesRouter } from './server/features/prompt-templates/prompt-templates.router.ts';
-
-// Existing routes
-import { geminiRouter } from './server/features/ai-providers/gemini.router.ts';
-import { terminalRouter } from './server/features/terminal/terminal.router.ts';
-import { agentsRouter } from './server/features/agents/agents.router.ts';
-import { nyxRouter } from './server/features/nyx/nyx.router.ts';
-import { localModelsRouter } from './server/features/local-models/localModels.router.ts';
+import { setupRoutes } from './server/api/routes.ts';
 
 import { requestIdMiddleware } from './server/middleware/requestId.ts';
 import logger from './server/lib/logger.ts';
 import { safetyGateMiddleware } from './server/middleware/safetyGate.ts';
 import { providerRateLimiter } from './server/middleware/rateLimit.ts';
-import { createSessionToken, verifySessionToken } from './server/features/vault/vault.service.ts';
+import { createSessionToken, verifySessionToken, refreshSessionToken } from './server/features/vault/vault.service.ts';
+import { requestSignerMiddleware, getInternalSecret } from './server/middleware/requestSigner.ts';
+import { requestDedupeMiddleware } from './server/middleware/dedupe.ts';
 import { cleanupProcesses, registerProcess } from './server/lib/processRegistry.ts';
 import { CodebaseScanner } from './server/features/workspace/codebaseScanner.ts';
 import { runMigrations } from './server/db/migrator.ts';
@@ -198,7 +172,7 @@ async function startServer() {
       });
     } catch (error: any) {
       logger.error({ error: error.message }, '[Scrapling] Failed to spawn Scrapling local service');
-      setScraplingHealthState('offline');
+      // Assume offline for now, health checks handle recovery
     }
   }
 
@@ -256,14 +230,11 @@ async function startServer() {
       const res = await fetch(`http://127.0.0.1:${SCRAPLING_PORT}/health`, {
         signal: controller.signal,
       }).finally(() => clearTimeout(timeout));
-      if (res.ok) {
-        setScraplingHealthState('running');
-      } else {
+      if (!res.ok) {
         throw new Error(`Scrapling health check returned ${res.status}`);
       }
     } catch {
-      logger.warn('[Scrapling] Health check failed — restarting Scrapling service...');
-      setScraplingHealthState('restarting');
+      logger.warn('[Scrapling] Health check failed - restarting Scrapling service...');
       if (scraplingProc) {
         try {
           scraplingProc.kill('SIGTERM');
@@ -305,6 +276,34 @@ async function startServer() {
   const app = express();
   app.use(requestIdMiddleware);
 
+  function sanitizePayload(payload: any): any {
+    if (!payload) return payload;
+    if (typeof payload === 'string') {
+      try {
+        const parsed = JSON.parse(payload);
+        return JSON.stringify(sanitizePayload(parsed));
+      } catch {
+        return payload; // Not JSON or couldn't parse
+      }
+    }
+    if (typeof payload !== 'object') return payload;
+    
+    if (Array.isArray(payload)) {
+      return payload.map(sanitizePayload);
+    }
+    
+    const sanitized = { ...payload };
+    const sensitiveKeys = /key|password|secret|token|authorization/i;
+    for (const key of Object.keys(sanitized)) {
+      if (sensitiveKeys.test(key)) {
+        sanitized[key] = '[REDACTED]';
+      } else if (typeof sanitized[key] === 'object') {
+        sanitized[key] = sanitizePayload(sanitized[key]);
+      }
+    }
+    return sanitized;
+  }
+
   // Structured Logging with body capture
   app.use((req, res, next) => {
     const start = Date.now();
@@ -333,6 +332,11 @@ async function startServer() {
         resBody = Buffer.concat(chunks).toString('utf8');
       }
 
+      let finalResBody = resBody.length < 5000 ? resBody : '[Truncated]';
+      if (finalResBody !== '[Truncated]' && finalResBody.length > 0) {
+         finalResBody = sanitizePayload(finalResBody);
+      }
+
       logger.info(
         {
           requestId: req.requestId,
@@ -340,8 +344,8 @@ async function startServer() {
           path: req.path,
           statusCode: res.statusCode,
           latencyMs: Date.now() - start,
-          reqBody: req.body,
-          resBody: resBody.length < 5000 ? resBody : '[Truncated]',
+          reqBody: sanitizePayload(req.body),
+          resBody: finalResBody,
         },
         `Request finished: ${req.method} ${req.path}`
       );
@@ -355,9 +359,7 @@ async function startServer() {
       filter: (req, res) => {
         if (
           req.headers.accept === 'text/event-stream' ||
-          req.path.includes('/stream') ||
-          req.path.includes('/chat') ||
-          req.path.includes('/local-models')
+          req.path.includes('/stream')
         )
           return false;
         return compression.filter(req, res);
@@ -402,16 +404,40 @@ async function startServer() {
   app.use(express.json({ limit: '100kb' }));
   app.use(
     cors({
-      origin: [
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        'http://localhost:1420',
-        'http://127.0.0.1:1420',
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-        'tauri://localhost',
-        'nyx://localhost',
-      ],
+      origin: (origin, callback) => {
+          if (!origin) return callback(null, true);
+
+          if (!isProd) {
+            // Development origins
+            const devOrigins = [
+              'http://localhost:3000',
+              'http://127.0.0.1:3000',
+              'http://localhost:1420',
+              'http://127.0.0.1:1420',
+              'http://localhost:5173',
+              'http://127.0.0.1:5173',
+              'tauri://localhost',
+              'nyx://localhost',
+            ];
+            if (devOrigins.includes(origin)) return callback(null, true);
+            return callback(new Error('Not allowed by CORS'));
+          }
+
+          // Production origins
+          const allowedOriginsStr = process.env.ALLOWED_ORIGINS || '';
+          if (allowedOriginsStr) {
+            const allowedOrigins = allowedOriginsStr.split(',').map((o) => o.trim());
+            if (allowedOrigins.includes(origin)) {
+              return callback(null, true);
+            }
+          } else {
+            // Strict default in prod if not specified
+            if (origin === 'tauri://localhost' || origin === 'nyx://localhost') {
+               return callback(null, true);
+            }
+          }
+          callback(new Error('Not allowed by CORS'));
+        },
       methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
       allowedHeaders: [
         'Content-Type',
@@ -454,6 +480,8 @@ async function startServer() {
   };
 
   app.use('/api/v1', sessionValidationMiddleware);
+  app.use('/api/v1', requestSignerMiddleware);
+  app.use('/api/v1', requestDedupeMiddleware);
 
   const generalLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -463,37 +491,7 @@ async function startServer() {
   });
   app.use('/api/v1', generalLimiter);
 
-  // Mount routes
-  const v1Router = express.Router();
-  const v2Router = express.Router(); // Placeholder for migration path
-
-  v1Router.use('/vault', vaultRouter);
-  v1Router.get('/auth/session', (req, res) => {
-    const isStream = req.query.stream === 'true';
-    res.json({ token: createSessionToken(isStream), expiresAt: Date.now() + 5 * 60 * 1000 });
-  });
-  v1Router.use('/admin', adminRouter);
-  v1Router.use('/', systemRouter);
-  v1Router.use('/', healthRouter);
-  v1Router.use('/', metricsRouter);
-  v1Router.use('/conversations', conversationsRouter);
-  v1Router.use('/chat', chatRouter);
-  v1Router.use('/files', filesRouter);
-  v1Router.use('/cache', cacheRouter);
-  v1Router.use('/workspace', workspaceRouter);
-  v1Router.use('/models', modelProxyRouter);
-  v1Router.use('/prompt-templates', promptTemplatesRouter);
-
-  v1Router.use('/gemini', providerRateLimiter('gemini'), geminiRouter);
-  v1Router.use('/terminal', terminalRouter);
-  v1Router.use('/agents', agentsRouter);
-  v1Router.use('/nyx/local-models', localModelsRouter);
-  v1Router.use('/nyx', nyxRouter);
-  v1Router.use('/graphql', graphqlRouter);
-  v1Router.use('/upload', uploadRouter);
-
-  app.use('/api/v1', v1Router);
-  app.use('/api/v2', v2Router);
+  setupRoutes(app);
 
   if (isProd) {
     let distPath = path.join(_dirname, 'dist');

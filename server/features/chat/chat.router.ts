@@ -73,12 +73,14 @@ chatRouter.post('/stream', async (req, res) => {
       (chunk: string) => {
         try {
           res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+          if (typeof (res as any).flush === 'function') (res as any).flush();
         } catch (e) {
           logger.error('Error writing chunk to stream', e);
         }
       },
       () => {
         res.write('data: [DONE]\n\n');
+        if (typeof (res as any).flush === 'function') (res as any).flush();
         res.end();
       }
     );

@@ -79,7 +79,7 @@ export class AutoRouterService {
 
     for (const route of chain) {
       const apiKey = apiKeys[route.provider];
-      if (!apiKey && route.provider !== 'pollinations') {
+      if (!apiKey) {
         console.warn(`[AutoRouter] Skipping ${route.provider} due to missing API key`);
         continue;
       }

@@ -69,7 +69,6 @@ const API_KEY_PATTERNS: Record<string, (key: string) => boolean> = {
   gemini: (k) => k.length >= 30,
   openai: (k) => k.startsWith('sk-'),
   anthropic: (k) => k.startsWith('sk-ant-'),
-  pollinations: () => true, // no key required
 };
 
 // ---------------------------------------------------------------------------

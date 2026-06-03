@@ -9,14 +9,13 @@ import { AVAILABLE_MODELS } from '@shared/config/models';
 export const PROVIDER_LABELS: Record<string, string> = {
   gemini: 'Gemini',
   terminal: 'Terminal',
-  'nyx-native': 'NYX Native',
-  'qwen-local': 'Qwen Local',
+  'nyx-native': 'NYX Edge',
   'antigravity-sdk': 'Antigravity SDK',
 };
 
 export const CLOUD_PROVIDERS: string[] = ['gemini', 'antigravity-sdk'];
 
-export const LOCAL_PROVIDERS: string[] = ['nyx-native', 'qwen-local'];
+export const LOCAL_PROVIDERS: string[] = ['nyx-native'];
 
 const LOCAL_MODEL_IDS = new Set([
   'nyx-gemma-4-e2b-it',

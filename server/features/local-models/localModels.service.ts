@@ -121,8 +121,8 @@ export class LocalModelsService {
     };
   }
 
-  startDownload(modelId: string) {
-    return LocalModelManager.startDownload(modelId);
+  startDownload(modelId: string, quantization?: string) {
+    return LocalModelManager.startDownload(modelId, quantization);
   }
 
   getProgress(modelId: string) {
@@ -432,61 +432,51 @@ Please analyze the context and provide highly optimized, syntax-correct solution
 
     if (!response.ok) {
       const errorText = await response.text();
-      let errData: any = {};
-      try {
-        errData = JSON.parse(errorText);
-      } catch {
-        /* Ignore JSON parsing errors */
-      }
-
-      // If llama-server rejected because the prompt exceeds its context window,
-      // automatically restart the model with a larger context and retry the request once.
-      // Note: llama-server sends the error type in lowercase: "exceed_context_size_error"
-      if (
-        errData.type?.toLowerCase() === 'exceed_context_size_error' &&
-        typeof errData.n_prompt_tokens === 'number'
-      ) {
-        const needed = errData.n_prompt_tokens as number;
-        // 25% safety headroom + enough room for full generation
-        const fixedCtx = Math.min(
-          32768,
-          Math.ceil((needed * 1.25 + (max_tokens ?? 4096)) / 512) * 512
-        );
-        logger.warn(
-          `[Auto-Context] EXCEED_CONTEXT_SIZE_ERROR: prompt=${needed} tokens, ctx=${errData.n_ctx}. Restarting with ctx=${fixedCtx}...`
-        );
-        try {
-          await ModelWarmCache.getInstance().keepWarm(requestedModel, { contextSize: fixedCtx });
-          // Retry the request with the now-larger context window
-          const retryResponse = await fetch(targetUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: requestedModel,
-              messages: updatedMessages,
-              temperature: temperature ?? 0.7,
-              max_tokens: max_tokens ?? 4096,
-              stream: true,
-              agentMode,
-              webSearch,
-            }),
-            signal,
-          });
-          if (!retryResponse.ok) {
-            const retryErr = await retryResponse.text();
-            throw new Error(`llama-server error (retry): ${retryErr}`);
-          }
-          return retryResponse;
-        } catch (retryErr: any) {
-          throw new Error(`llama-server context retry failed: ${retryErr.message}`, {
-            cause: retryErr,
-          });
-        }
-      }
-
       throw new Error(`llama-server error: ${errorText}`);
     }
 
     return response;
+  }
+
+  // ==========================================
+  // OLLAMA MANAGEMENT
+  // ==========================================
+
+  public async listOllamaModels(): Promise<any> {
+    try {
+      const response = await fetch('http://127.0.0.1:11434/api/tags');
+      if (!response.ok) throw new Error('Ollama not running or returned error');
+      return await response.json();
+    } catch (error: any) {
+      throw new Error(`Failed to list Ollama models: ${error.message}`);
+    }
+  }
+
+  public async pullOllamaModel(modelName: string): Promise<any> {
+    try {
+      const response = await fetch('http://127.0.0.1:11434/api/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: modelName, stream: false })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return await response.json();
+    } catch (error: any) {
+      throw new Error(`Failed to pull Ollama model: ${error.message}`);
+    }
+  }
+
+  public async deleteOllamaModel(modelName: string): Promise<any> {
+    try {
+      const response = await fetch('http://127.0.0.1:11434/api/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: modelName })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return { success: true };
+    } catch (error: any) {
+      throw new Error(`Failed to delete Ollama model: ${error.message}`);
+    }
   }
 }

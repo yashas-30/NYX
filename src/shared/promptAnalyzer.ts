@@ -69,15 +69,33 @@ export function routeToAgent(analysis: any): { agent: string; reasoning: string 
 }
 
 export function isMissingDebugDetails(prompt: string, mode: string): boolean {
-  // Check if debug prompt has enough details
   if (mode !== 'debug') return false;
 
   const lower = prompt.toLowerCase();
-  const hasErrorLog = lower.includes('error') || lower.includes('stack') || lower.includes('trace');
-  const hasCode = lower.includes('```') || lower.includes('code');
+  
+  // Look for stack trace patterns like "at function (/path/to/file:line:col)"
+  const hasStackTrace = /at\s+.+\s+\(?.+:\d+:\d+\)?/i.test(prompt) || /Exception in thread/i.test(prompt) || /Traceback \(most recent call last\):/i.test(prompt);
+  
+  // Look for inline or block code
+  const hasCodeBlock = /```[\s\S]*?```/.test(prompt);
+  const hasInlineCode = /`[^`]+`/.test(prompt);
+  
+  // Look for file path / line number references
+  const hasFileRef = /[a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+:\d+/.test(prompt);
+  
+  const hasErrorLog = lower.includes('error') || lower.includes('exception') || lower.includes('failed');
   const hasDescription = prompt.length > 50;
 
-  return !(hasErrorLog || hasCode || hasDescription);
+  // A good debug prompt should have (Error context + Code/File context) OR a very detailed description.
+  // We'll consider it "missing details" if it lacks BOTH strong technical evidence (stack/code/file) AND a substantial description.
+  const hasTechnicalEvidence = hasStackTrace || hasCodeBlock || hasFileRef || hasInlineCode;
+  
+  // If it has technical evidence, it's good.
+  if (hasTechnicalEvidence) return false;
+  // If it lacks code/stack trace but is very descriptive and mentions an error, it might be a conceptual question.
+  if (hasDescription && hasErrorLog && prompt.length > 100) return false;
+
+  return true;
 }
 
 export const MISSING_DEBUG_DETAILS_RESPONSE = `I need more information to help you debug. Please provide:

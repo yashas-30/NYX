@@ -29,6 +29,20 @@
       "when": 1780401899469,
       "tag": "0003_married_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1780461663398,
+      "tag": "0004_robust_nocturne",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1780463467442,
+      "tag": "0005_heavy_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

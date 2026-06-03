@@ -367,7 +367,8 @@ export async function listDirectory(
 }
 
 /**
- * Execute terminal command with validation.
+ * Execute terminal command securely on the backend.
+ * Whitelisting and validation are performed by the backend TerminalService.
  */
 export async function executeCommand(
   command: string,
@@ -375,21 +376,29 @@ export async function executeCommand(
   signal?: AbortSignal,
   timeout?: number
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  // Command injection prevention (allowlist approach)
-  const ALLOWED_COMMANDS = ['git', 'npm', 'yarn', 'pnpm', 'node', 'python', 'ls', 'cat'];
-  const parts = command.trim().split(/\s+/);
-  if (!ALLOWED_COMMANDS.includes(parts[0])) {
-    throw new Error(`SECURITY ERROR: Command '${parts[0]}' is not allowed`);
+  try {
+    const res = await apiFetch('/api/v1/terminal/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, cwd }),
+      signal,
+      timeout: timeout || 60000,
+    });
+    const data = await res.json();
+    return { ...data, exitCode: 0 };
+  } catch (error: any) {
+    // Re-throw with appropriate format or extract stderr if present in response
+    let stderr = error.message;
+    if (error.response) {
+      try {
+        const body = await error.response.clone().json();
+        if (body.stderr) stderr = body.stderr;
+      } catch {
+        // ignore
+      }
+    }
+    throw new Error(stderr);
   }
-
-  const res = await apiFetch('/api/v1/nyx/execute', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command, cwd }),
-    signal,
-    timeout: timeout || 60000,
-  });
-  return res.json();
 }
 
 // ---------------------------------------------------------------------------

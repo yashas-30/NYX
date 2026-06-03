@@ -622,21 +622,24 @@ export const LocalModelRunner = {
     };
   },
 
-  async detectBackend(): Promise<'cuda' | 'vulkan'> {
+  async detectBackend(): Promise<'cuda' | 'vulkan' | 'metal'> {
+    if (process.platform === 'darwin') return 'metal';
     // We prefer Vulkan by default on Windows/Linux to avoid massive 620MB CUDA download and setup latency.
     // Vulkan delivers extremely high GPU acceleration (up to 78% of layers offloaded) with a 20x smaller
     // package (31MB) and zero complex driver dependencies, guaranteeing an instant and robust startup.
     return 'vulkan';
   },
 
-  async ensureBinaryInstalled(forceBackend?: 'cuda' | 'vulkan'): Promise<'cuda' | 'vulkan'> {
+  async ensureBinaryInstalled(forceBackend?: 'cuda' | 'vulkan' | 'metal'): Promise<'cuda' | 'vulkan' | 'metal'> {
     let backend = forceBackend || (await this.detectBackend());
     const versionFilePath = path.join(BIN_DIR, '.version');
 
     // Fetch latest release from GitHub API
     let CURRENT_VERSION = 'b9479'; // default fallback
     try {
-      const res = await fetch('https://api.github.com/repos/ggml-org/llama.cpp/releases/latest');
+      const res = await fetch('https://api.github.com/repos/ggml-org/llama.cpp/releases/latest', {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.tag_name) {
@@ -690,8 +693,46 @@ export const LocalModelRunner = {
       if (isWin) {
         const zip = new AdmZip(archivePath);
         zip.extractAllTo(BIN_DIR, true);
+        
+        // Ensure llama-server.exe is in the root of BIN_DIR
+        const findBinRecursive = (dir: string): string | null => {
+          const files = fs.readdirSync(dir);
+          for (const f of files) {
+            const p = path.join(dir, f);
+            if (fs.statSync(p).isDirectory()) {
+              const res = findBinRecursive(p);
+              if (res) return res;
+            } else if (f === 'llama-server.exe') {
+              return p;
+            }
+          }
+          return null;
+        };
+        const actualBinPath = findBinRecursive(BIN_DIR);
+        if (actualBinPath && actualBinPath !== path.join(BIN_DIR, 'llama-server.exe')) {
+          fs.renameSync(actualBinPath, path.join(BIN_DIR, 'llama-server.exe'));
+        }
       } else {
         await tar.x({ file: archivePath, cwd: BIN_DIR });
+        
+        // Find llama-server recursively
+        const findBinRecursive = (dir: string): string | null => {
+          const files = fs.readdirSync(dir);
+          for (const f of files) {
+            const p = path.join(dir, f);
+            if (fs.statSync(p).isDirectory()) {
+              const res = findBinRecursive(p);
+              if (res) return res;
+            } else if (f === 'llama-server') {
+              return p;
+            }
+          }
+          return null;
+        };
+        const actualBinPath = findBinRecursive(BIN_DIR);
+        if (actualBinPath && actualBinPath !== path.join(BIN_DIR, 'llama-server')) {
+          fs.renameSync(actualBinPath, path.join(BIN_DIR, 'llama-server'));
+        }
         fs.chmodSync(path.join(BIN_DIR, 'llama-server'), 0o755);
       }
 
@@ -921,7 +962,7 @@ export const LocalModelRunner = {
 
     let gpuLayers = 99;
     let localSettings = settings;
-    let usedBackend: 'cuda' | 'vulkan' = 'vulkan';
+    let usedBackend: 'cuda' | 'vulkan' | 'metal' = 'vulkan';
 
     try {
       // Choose backend based on fallback stage
@@ -1099,6 +1140,11 @@ export const LocalModelRunner = {
         '--mlock', // --mlock prevents swapping (locks RAM on Windows/Unix)
       ];
 
+      if (localSettings?.loraPath && fs.existsSync(localSettings.loraPath)) {
+        logger.info(`[LoRA] Attaching LoRA adapter: ${localSettings.loraPath}`);
+        args.push('--lora', localSettings.loraPath);
+      }
+
       // Enable optimizations if GPU offloading is active
       if (gpuLayers > 0) {
         // Flash attention: only supported on CUDA backend, not Vulkan. Never pass --flash-attn on Vulkan.
@@ -1174,7 +1220,9 @@ export const LocalModelRunner = {
         VK_LOG_LEVEL: 'none',
       };
 
-      if (optimalDevice) {
+      if (usedBackend === 'metal') {
+         logger.info(`[GPU Optimizer] Running on Metal Backend natively`);
+      } else if (optimalDevice) {
         args.push('--device', optimalDevice.name);
         logger.info(
           `[GPU Optimizer] Forcing llama-server to run on optimal device: ${optimalDevice.name} (Index ${optimalDevice.index})`

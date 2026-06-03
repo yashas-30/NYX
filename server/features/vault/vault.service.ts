@@ -81,63 +81,99 @@ export function saveKeys(keys: Record<string, string>): void {
   }
 }
 
-// Session store in-memory
-interface SessionInfo {
-  expiresAt: number;
-  isStreamNonce: boolean;
-}
+import { db } from '../../db/client.ts';
+import { sessions } from '../../db/schema.ts';
+import { eq, lt } from 'drizzle-orm';
 
-const sessionStore = new Map<string, SessionInfo>();
-
-// Clean expired sessions periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, info] of sessionStore.entries()) {
-    if (now > info.expiresAt) {
-      sessionStore.delete(token);
-    }
-  }
-}, 60000).unref();
-
+// Session store using SQLite
 function pruneExpiredSessions(): void {
-  const now = Date.now();
-  for (const [token, info] of sessionStore.entries()) {
-    if (now > info.expiresAt) {
-      sessionStore.delete(token);
-    }
+  try {
+    const now = Date.now();
+    db.delete(sessions).where(lt(sessions.expiresAt, now)).run();
+  } catch (error) {
+    logger.error({ error }, '[SessionStore] Failed to prune expired sessions');
   }
 }
+
+// Prune expired sessions every 10 minutes
+setInterval(pruneExpiredSessions, 10 * 60 * 1000).unref();
 
 // Generate a new temporary session token or streaming nonce
 export function createSessionToken(isStreamNonce = false): string {
-  pruneExpiredSessions();
   const token = crypto.randomUUID();
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const ttl = 5 * 60 * 1000; // 5 minutes
-  sessionStore.set(token, {
-    expiresAt: Date.now() + ttl,
-    isStreamNonce,
-  });
+  
+  try {
+    db.insert(sessions).values({
+      id: crypto.randomUUID(),
+      tokenHash,
+      isStreamNonce,
+      expiresAt: Date.now() + ttl,
+      createdAt: Date.now()
+    }).run();
+  } catch (error) {
+    logger.error({ error }, '[SessionStore] Failed to create session');
+  }
+  
   return token;
 }
 
 // Verify a session token and optionally consume if it's a stream nonce
 export function verifySessionToken(token: string | undefined): boolean {
-  pruneExpiredSessions();
   if (!token) return false;
-  const info = sessionStore.get(token);
-  if (!info) return false;
+  
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  
+  try {
+    const session = db.select().from(sessions).where(eq(sessions.tokenHash, tokenHash)).get();
+    
+    if (!session) return false;
 
-  if (Date.now() > info.expiresAt) {
-    sessionStore.delete(token);
+    if (Date.now() > session.expiresAt) {
+      db.delete(sessions).where(eq(sessions.id, session.id)).run();
+      return false;
+    }
+
+    if (session.isStreamNonce) {
+      // Single-use for SSE streaming, invalidate immediately
+      db.delete(sessions).where(eq(sessions.id, session.id)).run();
+    }
+
+    return true;
+  } catch (error) {
+    logger.error({ error }, '[SessionStore] Failed to verify session token');
     return false;
   }
+}
 
-  if (info.isStreamNonce) {
-    // Single-use for SSE streaming, invalidate immediately
-    sessionStore.delete(token);
+// Refresh an existing session token
+export function refreshSessionToken(token: string | undefined): boolean {
+  if (!token) return false;
+  
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  
+  try {
+    const session = db.select().from(sessions).where(eq(sessions.tokenHash, tokenHash)).get();
+    
+    if (!session || session.isStreamNonce) return false;
+
+    if (Date.now() > session.expiresAt) {
+      db.delete(sessions).where(eq(sessions.id, session.id)).run();
+      return false;
+    }
+
+    // Extend by 5 minutes
+    db.update(sessions)
+      .set({ expiresAt: Date.now() + 5 * 60 * 1000 })
+      .where(eq(sessions.id, session.id))
+      .run();
+
+    return true;
+  } catch (error) {
+    logger.error({ error }, '[SessionStore] Failed to refresh session token');
+    return false;
   }
-
-  return true;
 }
 
 // Get configure statuses of keys

@@ -326,8 +326,14 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
   citations,
 }) => {
   let processedContent = content;
+  
+  // Transform <think> tags into a custom code block for rendering
+  processedContent = processedContent.replace(/<think>([\s\S]*?)<\/think>/gi, (match, thinkContent) => {
+    return `\n\`\`\`think\n${thinkContent.trim()}\n\`\`\`\n`;
+  });
+
   if (citations && citations.length > 0) {
-    processedContent = content.replace(/\[(\d+)\]/g, (match, id) => {
+    processedContent = processedContent.replace(/\[(\d+)\]/g, (match, id) => {
       const cite = citations.find((c) => c.id === id);
       if (cite) {
         return `[${match}](#cite-${id})`;
@@ -346,6 +352,18 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
             const match = /language-(\w+)/.exec(className || '');
             const isBlock =
               !!match || (typeof children === 'string' && (children as string).includes('\n'));
+              
+            if (match && match[1] === 'think') {
+              return (
+                <div className="my-3 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-400 italic text-sm shadow-inner">
+                  <div className="flex items-center gap-2 mb-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                     ✨ NYX Reasoning
+                  </div>
+                  <div className="whitespace-pre-wrap">{String(children).replace(/\n$/, '')}</div>
+                </div>
+              );
+            }
+
             if (isBlock) {
               return (
                 <CodeBlock

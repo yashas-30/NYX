@@ -76,30 +76,16 @@ export async function executeTool(
       }
 
       case 'run_command': {
-        const commandStr = (args.command || '').trim();
-        const baseCommand = commandStr.split(' ')[0];
-
-        // Command execution whitelist
-        const allowedCommands = ['npm', 'npx', 'git', 'python', 'tsc', 'node', 'pip', 'cargo'];
-        if (!allowedCommands.includes(baseCommand)) {
+        try {
+          const result = await executeCommand(args.command || '', args.cwd || workspacePath, signal, 60000);
+          return { success: true, result };
+        } catch (error: any) {
           return {
             success: false,
             result: null,
-            error: `Command execution blocked: '${baseCommand}' is not in the whitelist.`,
+            error: error.message || 'Command execution failed',
           };
         }
-
-        // Prevent chaining to run arbitrary unauthorized commands
-        if (/[;&|]/.test(commandStr)) {
-          return {
-            success: false,
-            result: null,
-            error: `Command execution blocked: Chaining (;, &, |) is forbidden.`,
-          };
-        }
-
-        const result = await executeCommand(args.command, args.cwd || workspacePath, signal, 60000);
-        return { success: true, result };
       }
 
       case 'validate_code': {

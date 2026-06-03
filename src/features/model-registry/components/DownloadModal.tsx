@@ -40,7 +40,7 @@ interface DownloadModalProps {
   groupedLocalPresets: [string, LocalModelPreset[]][];
   nativeModels: LocalModelPreset[];
   activeNativeId: string | null;
-  handleDownload: (modelId: string) => Promise<void>;
+  handleDownload: (modelId: string, quantization?: string) => Promise<void>;
   handlePause: (modelId: string) => Promise<void>;
   handleResume: (modelId: string) => Promise<void>;
   handleCancel: (modelId: string) => Promise<void>;
@@ -70,6 +70,12 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
   handleCancel,
   handleDelete,
 }) => {
+  const [selectedQuantizations, setSelectedQuantizations] = useState<Record<string, string>>({});
+
+  const handleSelectQuantization = (modelId: string, quant: string) => {
+    setSelectedQuantizations((prev) => ({ ...prev, [modelId]: quant }));
+  };
+
   return (
     <AnimatePresence>
       {showDownloadModal && (
@@ -695,27 +701,47 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                               )}
 
                               {isIdle && (
-                                <motion.button
-                                  whileTap={{ scale: 0.96 }}
-                                  onClick={() => handleDownload(m.id)}
-                                  disabled={isCurrentAction || !!actionInProgress}
-                                  className="
-                                    w-full py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                                    bg-[#FF3366] hover:bg-[#FF3366]/90 text-black shadow-lg disabled:opacity-40 cursor-pointer
-                                  "
-                                >
-                                  {isCurrentAction ? (
-                                    <>
-                                      <Loader2 size={10} className="animate-spin" />
-                                      <span>Initiating...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Download size={10} />
-                                      <span>Download to NYX</span>
-                                    </>
+                                <div className="flex flex-col gap-2">
+                                  {m.availableQuantizations && m.availableQuantizations.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                                        Select Quant:
+                                      </span>
+                                      <select
+                                        value={selectedQuantizations[m.id] || m.quantization || m.availableQuantizations[0]}
+                                        onChange={(e) => handleSelectQuantization(m.id, e.target.value)}
+                                        className="flex-1 bg-background border border-white/[0.05] rounded-lg px-2 py-1 text-[10px] text-foreground font-mono focus:outline-none focus:border-[#FF3366]/50 transition-all cursor-pointer"
+                                      >
+                                        {m.availableQuantizations.map((q) => (
+                                          <option key={q} value={q}>
+                                            {q}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
                                   )}
-                                </motion.button>
+                                  <motion.button
+                                    whileTap={{ scale: 0.96 }}
+                                    onClick={() => handleDownload(m.id, selectedQuantizations[m.id] || m.quantization)}
+                                    disabled={isCurrentAction || !!actionInProgress}
+                                    className="
+                                      w-full py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                                      bg-[#FF3366] hover:bg-[#FF3366]/90 text-black shadow-lg disabled:opacity-40 cursor-pointer
+                                    "
+                                  >
+                                    {isCurrentAction ? (
+                                      <>
+                                        <Loader2 size={10} className="animate-spin" />
+                                        <span>Initiating...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Download size={10} />
+                                        <span>Download to NYX</span>
+                                      </>
+                                    )}
+                                  </motion.button>
+                                </div>
                               )}
 
                               {isCompleted && (

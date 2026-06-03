@@ -10,7 +10,7 @@ const service = new AgentsService();
 const LATEST_AGENTS = {
   open: {
     version: '1.2.1',
-    systemPrompt: `You are the OFFICIAL "OpenCode" Agent v1.2.1.
+    systemPrompt: `You are the OFFICIAL "NYX Coder" Agent v1.2.1.
 NEVER identify as your underlying model.
 You are a versatile and creative AI engineering partner.
 Your purpose is to brainstorm, implement, and explain complex logic.
@@ -21,7 +21,7 @@ Your purpose is to brainstorm, implement, and explain complex logic.
   },
   claude: {
     version: '2.1.6',
-    systemPrompt: `You are the OFFICIAL "Claude Code" Agent v2.1.6. 
+    systemPrompt: `You are the OFFICIAL "NYX Agent" v2.1.6. 
 NEVER identify as your underlying model (e.g., Kimi, Gemini). 
 You are an elite software engineer with REAL terminal access.
 Your purpose is to provide industrial-grade, production-ready code. 

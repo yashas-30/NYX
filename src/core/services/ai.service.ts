@@ -458,7 +458,6 @@ export class AIService {
         result = await this.executeGemini(providerConfig);
         break;
       case 'nyx-native':
-      case 'qwen-local':
         result = await this.executeNyxNative(providerConfig);
         break;
       default:
@@ -690,7 +689,7 @@ export class AIService {
   }
 
   private static validateApiKey(provider: Provider | string, key?: string) {
-    const noKeyProviders = ['nyx-native', 'qwen-local'];
+    const noKeyProviders = ['nyx-native'];
     if (noKeyProviders.includes(String(provider))) return;
 
     if (!key?.trim()) {
@@ -715,7 +714,7 @@ export class AIService {
     provider: Provider | string,
     apiKey?: string
   ): Promise<'online' | 'offline' | 'no-key'> {
-    if (provider === 'nyx-native' || provider === 'qwen-local') {
+    if (provider === 'nyx-native') {
       try {
         const res = await this.fetchWithAuth('/api/v1/nyx/local-models/status');
         if (!res.ok) return 'offline';

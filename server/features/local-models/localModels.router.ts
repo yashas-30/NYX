@@ -22,7 +22,7 @@ localModelsRouter.get('/', async (_req, res) => {
     const { modelMetadataService } = await import('./modelMetadata.service.ts');
     const enrichedModels = await Promise.all(
       listData.models.map(async (m: any) => {
-        const meta = await modelMetadataService.getMetadata(m.id, m.url);
+        const meta = await modelMetadataService.getMetadata(m.id, m.url, m.fileName);
         return {
           ...m,
           metadata: meta,
@@ -68,12 +68,12 @@ localModelsRouter.post('/download-all-compatible', async (_req, res) => {
 
 // Start GGUF model download
 localModelsRouter.post('/download', validate(localModelDownloadSchema), (req, res) => {
-  const { modelId } = req.body;
+  const { modelId, quantization } = req.body;
   if (!modelId) {
     return res.status(400).json({ error: 'Missing modelId in request body.' });
   }
   try {
-    res.json(service.startDownload(modelId));
+    res.json(service.startDownload(modelId, quantization));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -205,6 +205,7 @@ localModelsRouter.post('/chat', validate(localModelChatSchema), async (req, res)
         const { done, value } = await reader.read();
         if (done) break;
         res.write(value);
+        if (typeof (res as any).flush === 'function') (res as any).flush();
       }
     }
     res.end();
@@ -214,6 +215,7 @@ localModelsRouter.post('/chat', validate(localModelChatSchema), async (req, res)
       // Headers already sent (streaming started) — write an SSE error event and close
       try {
         res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+        if (typeof (res as any).flush === 'function') (res as any).flush();
         res.end();
       } catch {
         /* socket already closed */
@@ -221,5 +223,37 @@ localModelsRouter.post('/chat', validate(localModelChatSchema), async (req, res)
     } else {
       res.status(500).json({ error: `Connection to local model runner failed: ${error.message}` });
     }
+  }
+});
+
+// ==========================================
+// OLLAMA ROUTES
+// ==========================================
+
+localModelsRouter.get('/ollama/models', async (_req, res) => {
+  try {
+    res.json(await service.listOllamaModels());
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+localModelsRouter.post('/ollama/pull', async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Missing name' });
+  try {
+    res.json(await service.pullOllamaModel(name));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+localModelsRouter.delete('/ollama/models/:name', async (req, res) => {
+  const { name } = req.params;
+  if (!name) return res.status(400).json({ error: 'Missing name' });
+  try {
+    res.json(await service.deleteOllamaModel(name));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });

@@ -76,6 +76,13 @@ export class UnifiedEngine {
             provider === 'gemini' ? apiKey : undefined
           );
 
+          let domain = 'general';
+          if (originalPrompt.includes('```') || originalPrompt.includes('function') || originalPrompt.includes('class')) {
+            domain = 'coding';
+          } else if (originalPrompt.toLowerCase().includes('story') || originalPrompt.toLowerCase().includes('creative')) {
+            domain = 'creative';
+          }
+
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
@@ -85,6 +92,7 @@ export class UnifiedEngine {
             body: JSON.stringify({
               prompt: originalPrompt,
               apiKey: activeGeminiKey,
+              domain
             }),
             signal: controller.signal,
           });
@@ -100,7 +108,27 @@ export class UnifiedEngine {
                   ...processedMessages[lastUserIdx],
                   content: data.prompt,
                 };
-                console.log('[Antigravity Middleware] Optimized prompt successfully.');
+
+                try {
+                  const { db } = await import('../db/client.ts');
+                  const { promptOptimizations } = await import('../db/schema.ts');
+                  const { randomUUID } = await import('crypto');
+
+                  const optimizationId = randomUUID();
+                  await db.insert(promptOptimizations).values({
+                    id: optimizationId,
+                    originalPrompt,
+                    optimizedPrompt: data.prompt,
+                    domain: data.domain || domain,
+                    version: data.version || 'unknown',
+                    timestamp: Date.now(),
+                  });
+
+                  console.log(`[Antigravity Middleware] Optimized prompt successfully (ID: ${optimizationId}).`);
+                  writeChunk({ chunk: `\n\n<!-- ANTIGRAVITY_META:${optimizationId} -->\n\n` });
+                } catch (dbErr) {
+                  console.error('[Antigravity Middleware] Failed to log optimization:', dbErr);
+                }
               }
             }
           }

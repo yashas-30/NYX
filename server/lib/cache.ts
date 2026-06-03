@@ -293,3 +293,48 @@ export class CacheServer {
     }
   }
 }
+
+export class TTLCache<V> {
+  private cache = new Map<string, { value: V; expiresAt: number }>();
+  private defaultTTLMs: number;
+
+  constructor(defaultTTLMs: number = 60000) {
+    this.defaultTTLMs = defaultTTLMs;
+  }
+
+  set(key: string, value: V, ttlMs?: number) {
+    const expiresAt = Date.now() + (ttlMs || this.defaultTTLMs);
+    this.cache.set(key, { value, expiresAt });
+  }
+
+  get(key: string): V | undefined {
+    const item = this.cache.get(key);
+    if (!item) return undefined;
+
+    if (Date.now() > item.expiresAt) {
+      this.cache.delete(key);
+      return undefined;
+    }
+
+    return item.value;
+  }
+
+  has(key: string): boolean {
+    return this.get(key) !== undefined;
+  }
+
+  delete(key: string) {
+    this.cache.delete(key);
+  }
+
+  cleanup() {
+    const now = Date.now();
+    for (const [key, item] of this.cache.entries()) {
+      if (now > item.expiresAt) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+export const dedupeCache = new TTLCache<boolean>(10000); // 10s default TTL

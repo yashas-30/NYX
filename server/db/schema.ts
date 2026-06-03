@@ -138,6 +138,15 @@ export const asyncJobs = sqliteTable('async_jobs', {
   updatedAt: integer('updated_at').notNull(),
 });
 
+// Session Management
+export const sessions = sqliteTable('sessions', {
+  id: text('id').primaryKey(), // Usually UUID
+  tokenHash: text('token_hash').notNull().unique(), // Store SHA-256 hash of the token for security
+  isStreamNonce: integer('is_stream_nonce', { mode: 'boolean' }).default(false).notNull(),
+  expiresAt: integer('expires_at').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
 // New Relations
 export const chatConversationsRelations = relations(chatConversations, ({ many }) => ({
   messages: many(chatMessages),
@@ -160,3 +169,45 @@ export const codeMessagesRelations = relations(codeMessages, ({ one }) => ({
     references: [codeConversations.id],
   }),
 }));
+
+// Search Integration
+export const searchQueries = sqliteTable('search_queries', {
+  id: text('id').primaryKey(),
+  query: text('query').notNull(),
+  engine: text('engine').notNull(),
+  type: text('type').default('text').notNull(),
+  timestamp: integer('timestamp').notNull(),
+});
+
+export const searchResults = sqliteTable('search_results', {
+  id: text('id').primaryKey(),
+  queryId: text('query_id')
+    .notNull()
+    .references(() => searchQueries.id, { onDelete: 'cascade' }),
+  url: text('url').notNull(),
+  title: text('title').notNull(),
+  markdown: text('markdown').notNull(),
+  rank: integer('rank').notNull(),
+});
+
+export const searchQueriesRelations = relations(searchQueries, ({ many }) => ({
+  results: many(searchResults),
+}));
+
+export const searchResultsRelations = relations(searchResults, ({ one }) => ({
+  query: one(searchQueries, {
+    fields: [searchResults.queryId],
+    references: [searchQueries.id],
+  }),
+}));
+
+// Antigravity SDK - Prompt Optimizations
+export const promptOptimizations = sqliteTable('prompt_optimizations', {
+  id: text('id').primaryKey(),
+  originalPrompt: text('original_prompt').notNull(),
+  optimizedPrompt: text('optimized_prompt').notNull(),
+  domain: text('domain').notNull(),
+  version: text('version').notNull(),
+  rating: integer('rating'), // 1 for thumbs up, -1 for thumbs down, null for unrated
+  timestamp: integer('timestamp').notNull(),
+});

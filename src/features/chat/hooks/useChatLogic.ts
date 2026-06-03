@@ -253,10 +253,49 @@ export const useChatLogic = ({
   const [tokensUsed, setTokensUsed] = useState(0);
 
   // --- Web search (disabled by default to prevent Scrapling timeout) ---
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
 
   // --- Abort controller for current generation ---
   const abortCtrlRef = useRef<AbortController | null>(null);
+
+  // --- WebSocket Real-time Collaboration ---
+  useEffect(() => {
+    if (!chatSessions?.activeSid) return;
+
+    let ws: WebSocket;
+    let reconnectTimeout: NodeJS.Timeout;
+
+    const connect = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/session-sync?sessionId=${chatSessions.activeSid}`;
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'history_update' && data.messages) {
+            if (!areMessagesEqual(data.messages, historyRef.current)) {
+              dispatch({ type: 'SET', messages: data.messages });
+            }
+          }
+        } catch (e) {
+          console.error('[ChatLogic] WebSocket error:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        reconnectTimeout = setTimeout(connect, 3000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimeout);
+      ws?.close();
+    };
+  }, [chatSessions?.activeSid]);
 
   // -------------------------------------------------------------------------
   // Session synchronization
@@ -451,12 +490,7 @@ export const useChatLogic = ({
         return;
       }
 
-      if (historyRef.current.length >= 1000) {
-        toast.warning(
-          'Maximum message limit (1000) reached. Consider starting a new conversation.'
-        );
-        return;
-      }
+
 
       const estimatedInput = Math.ceil(prompt.length / 4) + (images?.length || 0) * 512;
       const contextTokens = estimateContextTokens(historyRef.current);

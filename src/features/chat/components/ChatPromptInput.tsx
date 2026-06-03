@@ -28,6 +28,7 @@ import { ModelDefinition } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 import { analyzePrompt, optimizePromptText } from '@/shared/promptAnalyzer';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { PromptTemplateManager } from './PromptTemplateManager';
 
 interface ChatPromptInputProps {
   prompt: string;
@@ -797,6 +798,12 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   <ImageIcon className="w-3 h-3 text-zinc-400" />
                   <span>{isUploadingImage ? 'Uploading...' : 'Attach File'}</span>
                 </motion.button>
+                <div className="flex items-center gap-1">
+                  <PromptTemplateManager onSelectTemplate={(content) => {
+                    onPromptChange(content);
+                    setTimeout(() => textareaRef.current?.focus(), 0);
+                  }} />
+                </div>
                 <input
                   type="file"
                   ref={fileInputRef}

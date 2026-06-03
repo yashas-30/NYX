@@ -1,5 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { gguf } from '@huggingface/gguf';
+import { MODELS_DIR } from '../../lib/paths.ts';
+import fsSync from 'fs';
 
 export interface ModelMetadata {
   modelId: string;
@@ -9,6 +12,7 @@ export interface ModelMetadata {
   lastUpdated?: string;
   sha256?: string;
   tags?: string[];
+  ggufMetadata?: any;
 }
 
 export class ModelMetadataService {
@@ -26,7 +30,7 @@ export class ModelMetadataService {
 
   // In a real production scenario, this would query the Hugging Face API or OpenLLM Leaderboard datasets.
   // For NYX, we'll simulate the metadata fetch for popular models.
-  public async getMetadata(modelId: string, url?: string): Promise<ModelMetadata> {
+  public async getMetadata(modelId: string, url?: string, fileName?: string): Promise<ModelMetadata> {
     if (this.cache.has(modelId)) {
       return this.cache.get(modelId)!;
     }
@@ -36,6 +40,24 @@ export class ModelMetadataService {
       lastUpdated: new Date().toISOString(),
       tags: ['gguf', 'local'],
     };
+
+    if (fileName) {
+      const filePath = path.join(MODELS_DIR, fileName);
+      if (fsSync.existsSync(filePath)) {
+        try {
+          const { metadata: parsedMeta } = await gguf(filePath, { allowMissingTensorData: true });
+          metadata.ggufMetadata = {
+            architecture: parsedMeta['general.architecture'],
+            contextLength: parsedMeta['llama.context_length'] || parsedMeta[`${parsedMeta['general.architecture']}.context_length`],
+            parameterCount: parsedMeta['general.parameter_count'],
+            quantizationVersion: parsedMeta['general.quantization_version'],
+            fileType: parsedMeta['general.file_type']
+          };
+        } catch (e) {
+          // ignore parsing error
+        }
+      }
+    }
 
     // Simulated Leaderboard scores based on model name heuristic
     const lowerId = modelId.toLowerCase();

@@ -32,6 +32,7 @@ export const localModelStartSchema = z.object({
 
 export const localModelDownloadSchema = z.object({
   modelId: z.string().min(1).max(512),
+  quantization: z.string().optional(),
 });
 
 export const localModelDeleteSchema = z.object({

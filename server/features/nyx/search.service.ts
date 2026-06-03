@@ -4,6 +4,9 @@ import { loadKeys } from '../vault/vault.service.ts';
 import fetch from 'node-fetch'; // assuming fetch is globally available or imported
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
+import { db } from '../../db/client.ts';
+import { searchQueries, searchResults } from '../../db/schema.ts';
 
 interface SearchCacheEntry {
   results: any[];
@@ -195,18 +198,13 @@ export class SearchService {
     const query = await this.extractQueryWithLLM(rawQuery);
     logger.info(`[Web Search] Optimized Query: "${query}" (Original: "${rawQuery}")`);
 
-    // Check TTL cache
+    // Check TTL cache (in-memory)
     const cacheKey = `${query}_${shouldSummarize}`;
     const cached = this.searchCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       logger.info(`[Web Search] Cache hit for: "${cacheKey}"`);
       return cached.results;
     }
-
-    const keys = loadKeys();
-    const serpapiKey = keys['SERPAPI_KEY'] || process.env.SERPAPI_KEY || '';
-    const braveApiKey = keys['BRAVE_API_KEY'] || process.env.BRAVE_API_KEY || '';
-    const bingApiKey = keys['BING_API_KEY'] || process.env.BING_API_KEY || '';
 
     let results: Array<{
       title: string;
@@ -217,87 +215,44 @@ export class SearchService {
     }> = [];
 
     try {
-      if (serpapiKey) {
-        logger.info('[Web Search] Using SerpAPI primary backend...');
-        const response = await fetch(
-          `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${serpapiKey}`
-        );
-        if (response.ok) {
-          const data: any = await response.json();
-          results = (data.organic_results || []).map((r: any) => ({
-            title: r.title || '',
-            link: r.link || '',
-            snippet: r.snippet || '',
-            score: this.scoreCredibility(r.link || ''),
-          }));
-        } else {
-          throw new Error('SerpAPI failed');
-        }
-      } else {
-        throw new Error('No SerpAPI key, falling back');
+      const scraplingPort = process.env.SCRAPLING_PORT || '3002';
+      logger.info('[Web Search] Calling Scrapling server...');
+      
+      const response = await fetch(`http://127.0.0.1:${scraplingPort}/v1/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: query,
+          limit: 5,
+          engine: 'google',
+          type: 'text',
+          timeout: 30
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Scrapling returned ${response.status}`);
       }
-    } catch (e1) {
-      try {
-        if (braveApiKey) {
-          logger.info('[Web Search] Fallback to Brave API...');
-          const response = await fetch(
-            `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}`,
-            { headers: { Accept: 'application/json', 'X-Subscription-Token': braveApiKey } }
-          );
-          if (response.ok) {
-            const data: any = await response.json();
-            results = (data.web?.results || []).map((r: any) => ({
-              title: r.title || '',
-              link: r.url || '',
-              snippet: r.description || '',
-              score: this.scoreCredibility(r.url || ''),
-            }));
-          } else {
-            throw new Error('Brave API failed');
-          }
-        } else {
-          throw new Error('No Brave key');
-        }
-      } catch (e2) {
-        logger.info('[Web Search] Fallback to DuckDuckGo Scraper...');
-        const response = await fetch(
-          `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-          {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-            },
-          }
-        );
-        if (response.ok) {
-          const html = await response.text();
-          const blocks = html.split(/class="[^"]*result__body[^"]*"/);
-          for (let i = 1; i < blocks.length; i++) {
-            const titleMatch = /class="result__a"[^>]*>([\s\S]*?)<\/a>/.exec(blocks[i]);
-            const snippetMatch = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/.exec(blocks[i]);
-            if (titleMatch) {
-              const title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
-              let link =
-                (/href="([^"]+)"/.exec(titleMatch[0]) || /href="([^"]+)"/.exec(blocks[i]))?.[1] ||
-                '';
-              if (link.includes('uddg='))
-                link = decodeURIComponent(link.split('uddg=')[1]?.split('&')[0] || link);
-              if (link.startsWith('//')) link = 'https:' + link;
-              const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, '').trim() : '';
-              results.push({ title, link, snippet, score: this.scoreCredibility(link) });
-            }
-          }
-        }
-      }
+
+      const data: any = await response.json();
+      const pythonResults = data.results || [];
+      
+      results = pythonResults.map((r: any) => ({
+        title: r.title || '',
+        link: r.url || '',
+        snippet: r.markdown ? r.markdown.substring(0, 300) + '...' : '',
+        content: r.markdown || '',
+        score: r.rank ? (10 - r.rank) : 0, // Invert rank to score
+      }));
+
+    } catch (e) {
+      logger.error(`[Web Search] Scrapling failed: ${e}`);
+      return [];
     }
 
-    // Sort by credibility score and limit to top 5
-    results.sort((a, b) => b.score - a.score);
-    results = results.slice(0, 5);
-
-    // Extract full content for top 2 results via crawl4ai
-    for (let i = 0; i < Math.min(2, results.length); i++) {
-      let content = await this.fetchContentWithCrawl4AI(results[i].link);
+    // Process and summarize content
+    for (let i = 0; i < results.length; i++) {
+      let content = results[i].content || '';
       if (content && content.trim().length > 100) {
         if (shouldSummarize) {
           content = await this.summarizeWithLLM(content, query);
@@ -309,12 +264,39 @@ export class SearchService {
       }
     }
 
-    // Save to TTL cache
+    // Save to TTL cache (in-memory)
     this.searchCache.set(cacheKey, {
       results,
       expiresAt: Date.now() + this.getQueryTTL(query),
     });
     this.saveCacheToDisk();
+
+    // Persist to database for history
+    try {
+      const queryId = randomUUID();
+      await db.insert(searchQueries).values({
+        id: queryId,
+        query: rawQuery,
+        engine: 'google/scrapling',
+        type: 'text',
+        timestamp: Date.now(),
+      });
+
+      if (results.length > 0) {
+        await db.insert(searchResults).values(
+          results.map((r, index) => ({
+            id: randomUUID(),
+            queryId,
+            url: r.link,
+            title: r.title,
+            markdown: r.content || r.snippet,
+            rank: index + 1,
+          }))
+        );
+      }
+    } catch (dbErr) {
+      logger.error(`[Web Search] Failed to persist search history: ${dbErr}`);
+    }
 
     return results;
   }

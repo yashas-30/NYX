@@ -32,6 +32,8 @@ import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useCoderLogic } from '../hooks/useCoderLogic';
 import { WorkspaceSidebar } from './WorkspaceSidebar';
 import { CodeEditor } from './CodeEditor';
+import { InlineREPL } from './InlineREPL';
+import { GitIntegrationPanel } from './GitIntegrationPanel';
 
 interface CoderPageProps {
   allModels: ModelDefinition[];
@@ -120,6 +122,8 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   const workspacePath = useNyxStore((s) => s.workspacePath);
   const selectWorkspace = useNyxStore((s) => s.selectWorkspace);
   const createWorkspace = useNyxStore((s) => s.createWorkspace);
+  const [showRepl, setShowRepl] = useState(false);
+  const [showGit, setShowGit] = useState(false);
   const [scrolledToBottom, setScrolledToBottom] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -560,9 +564,40 @@ export const CoderPage: React.FC<CoderPageProps> = ({
             </div>
           ) : workspacePath ? (
             <div className="flex-1 w-full flex flex-row overflow-hidden bg-background">
-              <WorkspaceSidebar />
-              <div className="flex-1 flex flex-col min-w-0 border-r border-white/5">
-                <CodeEditor />
+              <div className="w-64 flex flex-col border-r border-white/5 bg-card">
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <WorkspaceSidebar />
+                </div>
+                {showGit && (
+                  <div className="h-[250px] shrink-0 border-t border-white/5 bg-[#111622]">
+                    <GitIntegrationPanel />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 flex flex-col min-w-0 border-r border-white/5 relative">
+                <div className="absolute top-2 left-2 z-10 flex items-center gap-2">
+                  <button 
+                    onClick={() => setShowGit(!showGit)} 
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors ${showGit ? 'bg-[#FF3366] text-black' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}
+                  >
+                    Git
+                  </button>
+                  <button 
+                    onClick={() => setShowRepl(!showRepl)} 
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors ${showRepl ? 'bg-cyan-500 text-black' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}
+                  >
+                    Terminal REPL
+                  </button>
+                </div>
+                
+                <div className="flex-1 min-h-0 pt-10">
+                  <CodeEditor />
+                </div>
+                {showRepl && (
+                  <div className="h-1/3 min-h-[250px] shrink-0 border-t border-white/5 bg-black">
+                    <InlineREPL onClose={() => setShowRepl(false)} />
+                  </div>
+                )}
               </div>
               <div className="w-[400px] shrink-0 flex flex-col h-full bg-card">
                 <ErrorBoundary

@@ -17,7 +17,7 @@ interface LocalModelCardProps {
   activeNativeId: string | null;
   compatibility: any;
   actionInProgress: string | null;
-  handleDownload: (modelId: string) => Promise<void>;
+  handleDownload: (modelId: string, quantization?: string) => Promise<void>;
   handlePause: (modelId: string) => Promise<void>;
   handleResume: (modelId: string) => Promise<void>;
   handleCancel: (modelId: string) => Promise<void>;
@@ -57,6 +57,8 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
     totalBytes: 0,
   };
   const isCurrentAction = actionInProgress === m.id;
+
+  const [selectedQuant, setSelectedQuant] = React.useState(m.quantization || 'Q4_K_M');
 
   // Retrieve compatibility projection details from state
   const compat = compatibility?.presetsCompatibility?.find((c: any) => c.modelId === m.id);
@@ -186,31 +188,53 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
         </div>
 
         {m.metadata && (
-          <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-border/10">
-            <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
-              <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
-                MMLU
-              </span>
-              <span className="text-[10px] font-mono font-bold text-foreground">
-                {m.metadata.mmluScore || '--'}
-              </span>
+          <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-border/10">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
+                <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
+                  MMLU
+                </span>
+                <span className="text-[10px] font-mono font-bold text-foreground">
+                  {m.metadata.mmluScore || '--'}
+                </span>
+              </div>
+              <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
+                <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
+                  HumanEval
+                </span>
+                <span className="text-[10px] font-mono font-bold text-foreground">
+                  {m.metadata.humanEvalScore || '--'}
+                </span>
+              </div>
+              <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
+                <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
+                  MT-Bench
+                </span>
+                <span className="text-[10px] font-mono font-bold text-foreground">
+                  {m.metadata.mtBenchScore || '--'}
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
-              <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
-                HumanEval
-              </span>
-              <span className="text-[10px] font-mono font-bold text-foreground">
-                {m.metadata.humanEvalScore || '--'}
-              </span>
-            </div>
-            <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
-              <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
-                MT-Bench
-              </span>
-              <span className="text-[10px] font-mono font-bold text-foreground">
-                {m.metadata.mtBenchScore || '--'}
-              </span>
-            </div>
+            {m.metadata.ggufMetadata && (
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <div className="flex flex-col items-center p-1.5 rounded-lg bg-[#FF3366]/5 border border-[#FF3366]/10">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-[#FF3366]">
+                    Architecture
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-foreground">
+                    {m.metadata.ggufMetadata.architecture || '--'}
+                  </span>
+                </div>
+                <div className="flex flex-col items-center p-1.5 rounded-lg bg-[#FF3366]/5 border border-[#FF3366]/10">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-[#FF3366]">
+                    Context
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-foreground">
+                    {m.metadata.ggufMetadata.contextLength ? `${m.metadata.ggufMetadata.contextLength / 1024}k` : '--'}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -367,27 +391,41 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
 
         <div className="flex flex-col gap-1.5 mt-1">
           {isIdle && (
-            <motion.button
-              whileTap={{ scale: 0.96 }}
-              onClick={() => handleDownload(m.id)}
-              disabled={isCurrentAction || !!actionInProgress}
-              className="
-                w-full py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                bg-[#FF3366] hover:bg-[#FF3366]/90 text-black shadow-lg disabled:opacity-40 cursor-pointer
-              "
-            >
-              {isCurrentAction ? (
-                <>
-                  <Loader2 size={10} className="animate-spin" />
-                  <span>Initiating...</span>
-                </>
-              ) : (
-                <>
-                  <Download size={10} />
-                  <span>Download Direct to NYX</span>
-                </>
-              )}
-            </motion.button>
+            <div className="flex gap-2">
+              <select
+                value={selectedQuant}
+                onChange={(e) => setSelectedQuant(e.target.value)}
+                disabled={isCurrentAction || !!actionInProgress}
+                className="bg-black/20 text-[#FF3366] text-[10px] font-bold tracking-wider rounded-xl border border-white/[0.04] px-2 outline-none cursor-pointer w-24"
+              >
+                <option value="Q2_K">Q2_K</option>
+                <option value="Q4_K_M">Q4_K_M</option>
+                <option value="Q5_K_M">Q5_K_M</option>
+                <option value="Q6_K">Q6_K</option>
+                <option value="Q8_0">Q8_0</option>
+              </select>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                onClick={() => handleDownload(m.id, selectedQuant)}
+                disabled={isCurrentAction || !!actionInProgress}
+                className="
+                  flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                  bg-[#FF3366] hover:bg-[#FF3366]/90 text-black shadow-lg disabled:opacity-40 cursor-pointer
+                "
+              >
+                {isCurrentAction ? (
+                  <>
+                    <Loader2 size={10} className="animate-spin" />
+                    <span>Initiating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download size={10} />
+                    <span>Download Direct to NYX</span>
+                  </>
+                )}
+              </motion.button>
+            </div>
           )}
 
           {isCompleted && !isResident && (

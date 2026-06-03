@@ -427,15 +427,19 @@ export const useChatPipeline = ({
       setState((s) => ({ ...s, isSearching: true }));
 
       try {
-        const searchPromise = withRetry(
-          () => agent.gatherContext(prompt, signal),
-          maxRetries,
-          (attempt, delay) => {
-            console.log(`[Chat Pipeline] Search retry ${attempt} in ${delay}ms`);
-          }
-        );
+        const searchPromise = new Promise<string>((resolve) => {
+          const worker = new Worker(new URL('../workers/searchWorker.ts', import.meta.url), { type: 'module' });
+          worker.onmessage = (e) => {
+            resolve(e.data.context || '');
+            worker.terminate();
+          };
+          worker.onerror = () => {
+            resolve('');
+            worker.terminate();
+          };
+          worker.postMessage({ prompt });
+        });
 
-        // Timeout after 10 seconds max (instead of 30) to prevent hanging
         const timeoutPromise = new Promise<string>((_, reject) =>
           setTimeout(() => reject(new Error('Web search timed out')), 10000)
         );
@@ -604,10 +608,8 @@ export const useChatPipeline = ({
               let responseText = '';
               let metadata: any = { latency: 0, tokens: 0, tps: 0 };
 
-              // We'll use nyxModel as primary, and optionally a fast model for the secondary config
               const configs = [
-                { modelId: nyxModel, provider: nyxProvider },
-                { modelId: 'gemini-2.5-flash', provider: 'gemini' },
+                { modelId: nyxModel, provider: nyxProvider }
               ];
 
               if (executionMode === 'parallel') {
@@ -729,27 +731,26 @@ export const useChatPipeline = ({
           // 9. Update suggestions
           getSuggestions(historySnapshotRef.current);
 
-          // 10. Fire-and-forget memory commit
+          // 10. Memory commit with retry
           if (text.trim()) {
-            const memoryPromise = triggerMemoryCommit({
-              prompt: sanitizedPrompt,
-              response: text,
-              provider: nyxProvider,
-              modelId: nyxModel,
-              agentType: 'chat',
-            });
+            const memoryPromise = withRetry(
+              () => triggerMemoryCommit({
+                prompt: sanitizedPrompt,
+                response: text,
+                provider: nyxProvider,
+                modelId: nyxModel,
+                agentType: 'chat',
+              }),
+              3,
+              (attempt, delay) => console.log(`[Chat Pipeline] Memory commit retry ${attempt} in ${delay}ms`)
+            );
 
-            // Don't await — but catch errors
-            memoryPromise.catch((err) => {
-              console.warn('[Chat Pipeline] Memory commit failed:', err);
-            });
-
-            // Set timeout to prevent hanging if component unmounts
-            const memoryTimeout = setTimeout(() => {
-              console.warn('[Chat Pipeline] Memory commit timeout');
-            }, 30000);
-
-            memoryPromise.finally(() => clearTimeout(memoryTimeout));
+            memoryPromise
+              .then(() => toast.success('Memory committed successfully', { position: 'bottom-right' }))
+              .catch((err) => {
+                console.warn('[Chat Pipeline] Memory commit failed:', err);
+                toast.error('Failed to commit memory after retries.', { position: 'bottom-right' });
+              });
           }
 
           setState((s) => ({ ...s, finishReason: finishReason as any }));
@@ -785,10 +786,7 @@ export const useChatPipeline = ({
                 partialContent ||
                 (isAborted
                   ? 'Generation stopped.'
-                  : formatProviderError(
-                      error.message ||
-                        'Error: Generation failed. Please check your model settings or connection.'
-                    )),
+                  : 'The model did not respond.'),
               metrics: {
                 ...(last.metrics || {}),
                 finishReason: isAborted ? 'stopped' : 'error',

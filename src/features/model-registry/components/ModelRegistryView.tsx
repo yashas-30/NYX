@@ -96,8 +96,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   useEffect(() => {
     fetchNativeModels();
     fetchCompatibility();
-    const interval = setInterval(fetchNativeModels, 10000);
-    return () => clearInterval(interval);
+    // Polling removed in favor of WebSocket events below
   }, [fetchNativeModels, fetchCompatibility]);
 
   useEffect(() => {
@@ -278,13 +277,13 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     }
   };
 
-  const handleDownload = async (modelId: string) => {
+  const handleDownload = async (modelId: string, quantization?: string) => {
     setActionInProgress(modelId);
     try {
       const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId }),
+        body: JSON.stringify({ modelId, quantization }),
       });
       if (res.ok) {
         toast.success('Download started directly within NYX.');
@@ -611,6 +610,36 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     <span>Browse &amp; Download</span>
                   </motion.button>
                 </div>
+
+                {/* VRAM / RAM Real-time Visualization */}
+                {compatibility?.specs && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 bg-black/20 p-3 rounded-xl border border-white/[0.03]">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider">
+                        <span className="flex items-center gap-1 text-muted-foreground"><Zap size={10} className="text-[#FF3366]"/> VRAM Utilization</span>
+                        <span className="text-foreground">{compatibility.specs.totalVramGB - compatibility.specs.freeVramGB} / {compatibility.specs.totalVramGB} GB</span>
+                      </div>
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-[#FF3366] transition-all duration-500" 
+                          style={{ width: `${Math.max(0, Math.min(100, ((compatibility.specs.totalVramGB - compatibility.specs.freeVramGB) / compatibility.specs.totalVramGB) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider">
+                        <span className="flex items-center gap-1 text-muted-foreground"><HardDrive size={10} className="text-blue-400"/> RAM Utilization</span>
+                        <span className="text-foreground">{compatibility.specs.totalRamGB - compatibility.specs.freeRamGB} / {compatibility.specs.totalRamGB} GB</span>
+                      </div>
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-blue-500 transition-all duration-500" 
+                          style={{ width: `${Math.max(0, Math.min(100, ((compatibility.specs.totalRamGB - compatibility.specs.freeRamGB) / compatibility.specs.totalRamGB) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </SectionHeader>
 
               {/* Only show downloaded or actively-downloading models in the library */}

@@ -4,9 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import promClient from 'prom-client';
 import { LRUCache } from 'lru-cache';
 import crypto from 'crypto';
-import { OpenAIAdapter } from './adapters/openai.adapter.ts';
-import { PollinationsAdapter } from './adapters/pollinations.adapter.ts';
-import { AnthropicAdapter } from './adapters/anthropic.adapter.ts';
+
 import { GeminiAdapter } from './adapters/gemini.adapter.ts';
 import { ProviderAdapter, ChatRequest } from './adapters/base.adapter.ts';
 import { modelCache } from './modelCache.service.ts';
@@ -35,6 +33,17 @@ function generateCacheKey(provider: string, model: string, prompt: any): string 
   return `${provider}:${model}:${hash}`;
 }
 
+import { EventEmitter } from 'events';
+
+interface ActiveStream {
+  history: string[];
+  emitter: EventEmitter;
+  isDone: boolean;
+  error?: string;
+}
+
+const activeStreams = new Map<string, ActiveStream>();
+
 export async function startFastifyServer(port: number = 3001) {
   const app = fastify({ logger: false });
 
@@ -48,9 +57,7 @@ export async function startFastifyServer(port: number = 3001) {
   });
 
   const adapters: Record<string, ProviderAdapter> = {
-    openai: new OpenAIAdapter(),
-    pollinations: new PollinationsAdapter(),
-    anthropic: new AnthropicAdapter(),
+
     gemini: new GeminiAdapter(),
   };
 
@@ -149,29 +156,109 @@ export async function startFastifyServer(port: number = 3001) {
 
     try {
       const adapter = adapters[provider];
-      const stream = executeWithRetry(adapter, chatReq, provider);
+      const cacheKey = generateCacheKey(provider, chatReq.model, chatReq.messages);
+      let active = activeStreams.get(cacheKey);
 
-      for await (const chunk of stream) {
-        if (request.raw.aborted) break;
-        // Normalize to OpenAI format
-        const eventData = JSON.stringify({
-          choices: [
-            {
-              delta: { content: chunk },
-            },
-          ],
-        });
-        reply.raw.write(`data: ${eventData}\n\n`);
+      if (!active) {
+        active = {
+          history: [],
+          emitter: new EventEmitter(),
+          isDone: false,
+        };
+        // Increase max listeners if many clients connect
+        active.emitter.setMaxListeners(50);
+        activeStreams.set(cacheKey, active);
+
+        // Start background generation
+        (async () => {
+          try {
+            const stream = executeWithRetry(adapter, chatReq, provider);
+            for await (const chunk of stream) {
+              active!.history.push(chunk);
+              active!.emitter.emit('data', chunk);
+            }
+            active!.isDone = true;
+            active!.emitter.emit('end');
+          } catch (err: any) {
+            active!.error = err.message;
+            active!.emitter.emit('error', err);
+          } finally {
+            setTimeout(() => activeStreams.delete(cacheKey), 5000);
+          }
+        })();
       }
-      reply.raw.write('data: [DONE]\n\n');
-      streamRequestsTotal.inc({ provider, status: 'success' });
+
+      // Send already buffered history
+      for (const chunk of active.history) {
+        if (request.raw.aborted) return;
+        const eventData = JSON.stringify({ choices: [{ delta: { content: chunk } }] });
+        reply.raw.write(`data: ${eventData}\n\n`);
+        if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
+      }
+
+      if (active.error) {
+        throw new Error(active.error);
+      } else if (active.isDone) {
+        reply.raw.write('data: [DONE]\n\n');
+        if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
+        reply.raw.end();
+        streamRequestsTotal.inc({ provider, status: 'success' });
+        return;
+      }
+
+      // Subscribe to live events
+      const onData = (chunk: string) => {
+        if (request.raw.aborted) return;
+        const eventData = JSON.stringify({ choices: [{ delta: { content: chunk } }] });
+        reply.raw.write(`data: ${eventData}\n\n`);
+        if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
+      };
+
+      const onEnd = () => {
+        if (request.raw.aborted) return;
+        reply.raw.write('data: [DONE]\n\n');
+        if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
+        reply.raw.end();
+        streamRequestsTotal.inc({ provider, status: 'success' });
+      };
+
+      const onError = (err: any) => {
+        if (request.raw.aborted) return;
+        const errorData = JSON.stringify({ error: { message: err.message } });
+        reply.raw.write(`data: ${errorData}\n\n`);
+        if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
+        reply.raw.end();
+        streamRequestsTotal.inc({ provider, status: 'error' });
+      };
+
+      active.emitter.on('data', onData);
+      active.emitter.once('end', onEnd);
+      active.emitter.once('error', onError);
+
+      // Clean up listeners on disconnect
+      request.raw.on('close', () => {
+        if (active) {
+          active.emitter.off('data', onData);
+          active.emitter.off('end', onEnd);
+          active.emitter.off('error', onError);
+        }
+      });
+
+      // Keep the request open until the stream finishes
+      await new Promise<void>((resolve) => {
+        request.raw.on('close', resolve);
+        active!.emitter.once('end', resolve);
+        active!.emitter.once('error', resolve);
+      });
+
     } catch (err: any) {
       logger.error({ err }, '[Fastify] Stream error');
       streamRequestsTotal.inc({ provider, status: 'error' });
-      const errorData = JSON.stringify({ error: { message: err.message } });
-      reply.raw.write(`data: ${errorData}\n\n`);
-    } finally {
-      reply.raw.end();
+      if (!reply.raw.writableEnded) {
+        const errorData = JSON.stringify({ error: { message: err.message } });
+        reply.raw.write(`data: ${errorData}\n\n`);
+        reply.raw.end();
+      }
     }
   });
 
