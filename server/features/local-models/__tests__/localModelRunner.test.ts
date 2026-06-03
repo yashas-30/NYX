@@ -63,6 +63,6 @@ describe('LocalModelRunner Layer Math Optimizer', () => {
 
     expect(result.hasGPU).toBe(true);
     expect(result.gpuLayers).toBe(result.totalLayers);
-    expect(result.message).toContain('100%');
+    expect(result.message).toContain('Loaded all');
   });
 });
