@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GitBranch, GitCommit, GitPullRequest, RefreshCw } from 'lucide-react';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
-interface GitIntegrationPanelProps { }
-
-export const GitIntegrationPanel: React.FC<GitIntegrationPanelProps> = () => {
+export const GitIntegrationPanel: React.FC = () => {
   const [branch, setBranch] = useState('loading...');
   const [status, setStatus] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -48,7 +46,9 @@ export const GitIntegrationPanel: React.FC<GitIntegrationPanelProps> = () => {
       await fetchWithAuth('/api/v1/terminal/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: `git add . && git commit -m "${commitMessage.replace(/"/g, '\\"')}"` }),
+        body: JSON.stringify({
+          command: `git add . && git commit -m "${commitMessage.replace(/"/g, '\\"')}"`,
+        }),
       });
       setCommitMessage('');
       await fetchGitStatus();
@@ -66,7 +66,10 @@ export const GitIntegrationPanel: React.FC<GitIntegrationPanelProps> = () => {
           <GitBranch size={12} className="text-[#FF3366]" />
           <span>Git Management</span>
         </div>
-        <button onClick={fetchGitStatus} className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-cyan-400">
+        <button
+          onClick={fetchGitStatus}
+          className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-cyan-400"
+        >
           <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
         </button>
       </div>
@@ -78,13 +81,18 @@ export const GitIntegrationPanel: React.FC<GitIntegrationPanelProps> = () => {
         </div>
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Changes</div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">
+            Changes
+          </div>
           {status.length === 0 ? (
             <div className="text-zinc-600 italic text-xs">No changes detected</div>
           ) : (
             <div className="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar">
               {status.map((file, i) => (
-                <div key={i} className="flex items-center gap-2 font-mono text-[10px] text-zinc-400">
+                <div
+                  key={i}
+                  className="flex items-center gap-2 font-mono text-[10px] text-zinc-400"
+                >
                   <span className="text-[#FF3366]">{file.substring(0, 2)}</span>
                   <span>{file.substring(3)}</span>
                 </div>
