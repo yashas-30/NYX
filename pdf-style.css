@@ -1,0 +1,43 @@
+body {
+    font-family: 'Segoe UI', -apple-system, sans-serif;
+    color: #1a1a1a;
+    line-height: 1.7;
+    background-color: #ffffff;
+}
+h1, h2, h3 {
+    color: #0f172a;
+    padding-bottom: 8px;
+}
+h1 {
+    font-size: 2.4em;
+    color: #0ea5e9;
+    border-bottom: 3px solid #0ea5e9;
+    margin-bottom: 24px;
+}
+h2 {
+    font-size: 1.6em;
+    margin-top: 36px;
+    border-bottom: 2px solid #e2e8f0;
+}
+h3 {
+    font-size: 1.3em;
+    color: #334155;
+    margin-top: 24px;
+}
+ul, ol {
+    margin-left: 20px;
+}
+li {
+    margin-bottom: 8px;
+}
+code {
+    background-color: #f1f5f9;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-family: Consolas, monospace;
+    font-size: 0.9em;
+    color: #ec4899;
+}
+strong {
+    color: #0f172a;
+}

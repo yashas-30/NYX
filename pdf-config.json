@@ -1,0 +1,8 @@
+{
+  "stylesheet": ["pdf-style.css"],
+  "pdf_options": {
+    "format": "A4",
+    "margin": "25mm",
+    "printBackground": true
+  }
+}

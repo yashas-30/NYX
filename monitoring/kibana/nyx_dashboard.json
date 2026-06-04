@@ -1,0 +1,50 @@
+[
+  {
+    "id": "nyx-health-dashboard",
+    "type": "dashboard",
+    "attributes": {
+      "title": "NYX System Health Monitoring Dashboard",
+      "description": "Comprehensive monitoring of NYX system metrics, resources, cache state, and model details.",
+      "panelsJSON": "[]",
+      "optionsJSON": "{\"useMargins\":true}",
+      "version": "8.0.0"
+    },
+    "references": [
+      {
+        "name": "nyx-index-pattern",
+        "type": "index-pattern",
+        "id": "nyx-metrics-*"
+      }
+    ]
+  },
+  {
+    "id": "nyx-system-health-visualization",
+    "type": "visualization",
+    "attributes": {
+      "title": "System Health Status (Overall)",
+      "visState": "{\"title\":\"Overall Health\",\"type\":\"metric\",\"params\":{\"percentageMode\":false,\"useRanges\":true,\"colorSchema\":\"Green to Red\",\"metricColorMode\":\"background\",\"colorsRange\":[{\"from\":0,\"to\":0.49,\"color\":\"#D36086\"},{\"from\":0.5,\"to\":0.99,\"color\":\"#F1C40F\"},{\"from\":1,\"to\":1,\"color\":\"#2ECC71\"}],\"metric\":{\"accessor\":0,\"format\":{\"id\":\"number\"}}},\"aggs\":[{\"id\":\"1\",\"enabled\":true,\"type\":\"max\",\"schema\":\"metric\",\"params\":{\"field\":\"nyx_system_health_status\"}}]}",
+      "uiStateJSON": "{}",
+      "description": "Indicates overall system health from metrics: 1=healthy, 0.5=degraded, 0=offline"
+    }
+  },
+  {
+    "id": "nyx-cpu-memory-telemetry",
+    "type": "visualization",
+    "attributes": {
+      "title": "CPU and Memory Telemetry over Time",
+      "visState": "{\"title\":\"Resources\",\"type\":\"line\",\"params\":{\"type\":\"line\",\"grid\":{\"categoryLines\":false},\"categoryAxes\":[{\"id\":\"CategoryAxis-1\",\"type\":\"category\",\"position\":\"bottom\",\"show\":true,\"style\":{},\"scale\":{\"type\":\"linear\"},\"labels\":{\"show\":true,\"truncate\":100},\"title\":{}}],\"valueAxes\":[{\"id\":\"ValueAxis-1\",\"name\":\"LeftAxis-1\",\"type\":\"value\",\"position\":\"left\",\"show\":true,\"style\":{},\"scale\":{\"type\":\"linear\",\"mode\":\"normal\"},\"labels\":{\"show\":true},\"title\":{\"text\":\"Value\"}}]},\"aggs\":[{\"id\":\"1\",\"enabled\":true,\"type\":\"avg\",\"schema\":\"metric\",\"params\":{\"field\":\"nyx_process_cpu_user_seconds_total\"}},{\"id\":\"2\",\"enabled\":true,\"type\":\"avg\",\"schema\":\"metric\",\"params\":{\"field\":\"nyx_process_resident_memory_bytes\"}},{\"id\":\"3\",\"enabled\":true,\"type\":\"date_histogram\",\"schema\":\"segment\",\"params\":{\"field\":\"@timestamp\",\"interval\":\"auto\",\"min_doc_count\":1,\"extended_bounds\":{}}}]}",
+      "uiStateJSON": "{}",
+      "description": "Tracks User CPU seconds and resident memory size in bytes"
+    }
+  },
+  {
+    "id": "nyx-cache-hit-rate-vis",
+    "type": "visualization",
+    "attributes": {
+      "title": "Cache Hit Rate Gauge",
+      "visState": "{\"title\":\"Cache Hit Rate\",\"type\":\"gauge\",\"params\":{\"gauge\":{\"vertical\":false,\"colorsRange\":[{\"from\":0,\"to\":50,\"color\":\"#D36086\"},{\"from\":50,\"to\":80,\"color\":\"#F1C40F\"},{\"from\":80,\"to\":100,\"color\":\"#2ECC71\"}],\"style\":{\"bgWidth\":0.9,\"fontSize\":40}},\"type\":\"gauge\"},\"aggs\":[{\"id\":\"1\",\"enabled\":true,\"type\":\"avg\",\"schema\":\"metric\",\"params\":{\"field\":\"nyx_cache_hit_rate\"}}]}",
+      "uiStateJSON": "{}",
+      "description": "Visualizes NYX backend cache hit rate"
+    }
+  }
+]

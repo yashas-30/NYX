@@ -1,0 +1,160 @@
+{
+  "title": "NYX System Health & Metrics Dashboard",
+  "description": "Telemetry and monitoring dashboard for NYX local services, memory telemetry, cache states, and active model execution.",
+  "layout_type": "ordered",
+  "widgets": [
+    {
+      "id": 10001,
+      "definition": {
+        "title": "Overall System Health",
+        "type": "query_value",
+        "requests": [
+          {
+            "q": "avg:nyx.system_health_status{*}.as_count()",
+            "aggregator": "last",
+            "conditional_formats": [
+              {
+                "comparator": "<",
+                "value": 0.5,
+                "palette": "red"
+              },
+              {
+                "comparator": "<",
+                "value": 1.0,
+                "palette": "yellow"
+              },
+              {
+                "comparator": ">=",
+                "value": 1.0,
+                "palette": "green"
+              }
+            ]
+          }
+        ],
+        "autoscale": true,
+        "precision": 2
+      }
+    },
+    {
+      "id": 10002,
+      "definition": {
+        "title": "CPU and Memory Telemetry",
+        "type": "timeseries",
+        "requests": [
+          {
+            "q": "avg:nyx.process_cpu_seconds_total{*}.as_rate()",
+            "style": {
+              "palette": "cool",
+              "line_type": "solid",
+              "line_width": "normal"
+            },
+            "display_type": "line"
+          },
+          {
+            "q": "avg:nyx.process_resident_memory_bytes{*}/1048576",
+            "style": {
+              "palette": "warm",
+              "line_type": "solid",
+              "line_width": "normal"
+            },
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "label": "CPU Rate / Memory (MB)",
+          "scale": "linear",
+          "min": "auto",
+          "max": "auto"
+        }
+      }
+    },
+    {
+      "id": 10003,
+      "definition": {
+        "title": "Event Loop Lag",
+        "type": "timeseries",
+        "requests": [
+          {
+            "q": "avg:nyx.nodejs_eventloop_lag_seconds{*}.as_count() * 1000",
+            "style": {
+              "palette": "purple",
+              "line_type": "solid",
+              "line_width": "normal"
+            },
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "label": "Lag (ms)",
+          "scale": "linear"
+        }
+      }
+    },
+    {
+      "id": 10004,
+      "definition": {
+        "title": "Cache Hit Rate",
+        "type": "query_value",
+        "requests": [
+          {
+            "q": "avg:nyx.cache_hit_rate{*}.as_count() * 100",
+            "aggregator": "last",
+            "conditional_formats": [
+              {
+                "comparator": "<",
+                "value": 50,
+                "palette": "red"
+              },
+              {
+                "comparator": "<",
+                "value": 80,
+                "palette": "yellow"
+              },
+              {
+                "comparator": ">=",
+                "value": 80,
+                "palette": "green"
+              }
+            ]
+          }
+        ],
+        "autoscale": true,
+        "precision": 1
+      }
+    },
+    {
+      "id": 10005,
+      "definition": {
+        "title": "Cache Elements & Sizes",
+        "type": "timeseries",
+        "requests": [
+          {
+            "q": "avg:nyx.cache_items_total{*}",
+            "display_type": "line"
+          },
+          {
+            "q": "avg:nyx.cache_size_bytes{*}",
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "label": "Count / Bytes"
+        }
+      }
+    },
+    {
+      "id": 10006,
+      "definition": {
+        "title": "Dependencies Online Status",
+        "type": "timeseries",
+        "requests": [
+          {
+            "q": "avg:nyx.dependency_health_status{*} by {dependency}",
+            "display_type": "line"
+          }
+        ]
+      }
+    }
+  ],
+  "template_variables": []
+}
