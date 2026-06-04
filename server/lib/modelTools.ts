@@ -2,7 +2,11 @@ import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 
+import { fileURLToPath } from 'url';
+
 const execAsync = promisify(exec);
+const _dirname =
+  typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
 export class ModelTools {
   /**
@@ -58,7 +62,7 @@ export class ModelTools {
     onProgress: (log: string) => void
   ): Promise<void> {
     return new Promise((resolve, reject) => {
-      const scriptPath = path.resolve(__dirname, '../../python/train.py');
+      const scriptPath = path.resolve(_dirname, '../../python/train.py');
       console.log(`[ModelTools] Starting full LoRA training using PyTorch at ${scriptPath}...`);
 
       const train = spawn('python', [

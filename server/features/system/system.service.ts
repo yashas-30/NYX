@@ -7,6 +7,8 @@ import { CacheServer } from '../../lib/cache.ts';
 import { LocalModelRunner } from '../local-models/localModelRunner.ts';
 import logger from '../../lib/logger.ts';
 import { LOCAL_MODEL_PORT } from '../../../src/config/ports.ts';
+import { db } from '../../db/client.ts';
+import { sql } from 'drizzle-orm';
 
 interface VRAMResult {
   vram: number;
@@ -143,6 +145,14 @@ export class SystemService {
       checks.dependencies.llamaServer = r.ok ? 'ok' : 'degraded';
     } catch (error: any) {
       checks.dependencies.llamaServer = 'down';
+    }
+
+    // 1.5 Check Database health
+    try {
+      await db.get(sql`SELECT 1`);
+      checks.dependencies.database = 'ok';
+    } catch (error: any) {
+      checks.dependencies.database = 'down';
     }
 
     // 2. Check docker health

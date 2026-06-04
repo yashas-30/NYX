@@ -43,6 +43,34 @@
       "when": 1780463467442,
       "tag": "0005_heavy_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1780506650266,
+      "tag": "0006_early_rictor",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1780548616156,
+      "tag": "0007_reflective_morph",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1780549397127,
+      "tag": "0008_hot_silk_fever",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1780553920065,
+      "tag": "0009_tearful_the_stranger",
+      "breakpoints": true
     }
   ]
 }

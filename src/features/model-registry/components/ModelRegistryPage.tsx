@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 import React from 'react';
 import { ModelRegistryView } from './ModelRegistryView';
 

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 export const isProd = process.env.NODE_ENV === 'production' || process.env.IS_PACKAGED === 'true';
 
 // Helper to locate the project workspace root in development
+// fallow-ignore-next-line code-duplication
 function findProjectRoot(): string {
   if (process.env.NYX_WORKSPACE_ROOT) {
     return path.resolve(process.env.NYX_WORKSPACE_ROOT);

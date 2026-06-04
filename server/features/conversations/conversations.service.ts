@@ -57,6 +57,7 @@ export const ConversationStore = {
         const msgs = db
           .select()
           .from(messagesTable)
+          // fallow-ignore-next-line code-duplication
           .where(eq(messagesTable.conversationId, conv.id))
           .orderBy(messagesTable.timestamp)
           .all();
@@ -93,6 +94,7 @@ export const ConversationStore = {
       const msgs = db
         .select()
         .from(messagesTable)
+        // fallow-ignore-next-line code-duplication
         .where(eq(messagesTable.conversationId, id))
         .orderBy(messagesTable.timestamp)
         .all();

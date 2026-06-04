@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Key, ChevronUp, ChevronDown, Network, Trash2, Eye, EyeOff } from 'lucide-react';
@@ -85,7 +86,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
       const res = await fetchWithAuth('/api/v1/vault/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'gemini', key }),
+        body: JSON.stringify({ provider: 'gemini', key, geminiUrl: getGatewayUrl('gemini') }),
       });
       if (!res.ok) return false;
       const data = await res.json();
@@ -169,7 +170,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   return (
     <div className="space-y-4">
       {/* Remember Keys Opt-in */}
-      <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.04] flex items-center justify-between gap-4 select-none">
+      <div className="p-4 rounded-2xl bg-secondary/40 border border-border flex items-center justify-between gap-4 select-none">
         <div className="flex-1">
           <p className="text-[10px] font-black uppercase tracking-[0.1em] text-foreground/80">
             Remember Keys on this Device
@@ -193,7 +194,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
             }}
             className="sr-only peer"
           />
-          <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-400 after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#FF3366] peer-checked:after:bg-zinc-950" />
+          <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-400 after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent peer-checked:after:bg-zinc-950" />
         </label>
       </div>
 
@@ -206,10 +207,10 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
           return (
             <div
               key={p.id}
-              className="group p-3.5 rounded-2xl bg-card border border-white/[0.04] hover:border-[#FF3366]/30 transition-all duration-300 shadow-sm hover:shadow-md"
+              className="group p-3.5 rounded-2xl bg-card border border-border hover:border-accent/30 transition-all duration-300 shadow-sm hover:shadow-md"
             >
               <div className="flex items-start gap-3">
-                <div className="w-7 h-7 shrink-0 rounded-[10px] flex items-center justify-center text-[10px] font-black uppercase bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/20">
+                <div className="w-7 h-7 shrink-0 rounded-[10px] flex items-center justify-center text-[10px] font-black uppercase bg-accent/10 text-accent border border-accent/20">
                   {p.name[0]}
                 </div>
 
@@ -220,7 +221,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                         {p.name}
                       </p>
                       {hasKey && (
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-1.5 py-0.5 rounded-full border border-[#FF3366]/20">
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-accent bg-accent/10 px-1.5 py-0.5 rounded-full border border-accent/20">
                           {vaultStatus[p.id] ? 'Vault Locked' : 'In Memory'}
                         </span>
                       )}
@@ -229,17 +230,17 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                       {providerUsage && hasKey && (
                         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] font-bold">
                           {providerUsage.totalUSD !== undefined && (
-                            <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-white/10">
-                              <span className="text-[9px] font-black uppercase tracking-widest text-[#FF3366]/75">
+                            <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-border">
+                              <span className="text-[9px] font-black uppercase tracking-widest text-accent/75">
                                 USD
                               </span>
-                              <span className="text-[10px] font-mono text-[#FF3366] font-bold tracking-tight">
+                              <span className="text-[10px] font-mono text-accent font-bold tracking-tight">
                                 $
                                 {(providerUsage.totalUSD - (providerUsage.usedUSD || 0)).toFixed(2)}
                               </span>
                             </div>
                           )}
-                          <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-white/10">
+                          <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-border">
                             <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/75">
                               USED
                             </span>
@@ -247,7 +248,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                               {(providerUsage.used / 1000).toFixed(1)}K
                             </span>
                           </div>
-                          <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-white/10">
+                          <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-border">
                             <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/75">
                               REM
                             </span>
@@ -291,7 +292,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                                   e.currentTarget.blur();
                                 }
                               }}
-                              className="w-full bg-background border border-white/[0.04] rounded-xl pl-3.5 pr-10 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#FF3366]/50 shadow-inner"
+                              className="w-full bg-background border border-border rounded-xl pl-3.5 pr-10 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-accent/50 shadow-inner"
                             />
                             <button
                               type="button"
@@ -320,7 +321,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                                 e.currentTarget.blur();
                               }
                             }}
-                            className="flex-1 bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#FF3366]/50 shadow-inner"
+                            className="flex-1 bg-background border border-border rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-accent/50 shadow-inner"
                           />
                         </div>
                       </div>
@@ -339,7 +340,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                               e.currentTarget.blur();
                             }
                           }}
-                          className="w-full bg-background border border-white/[0.04] rounded-xl pl-3.5 pr-10 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#FF3366]/50 shadow-inner"
+                          className="w-full bg-background border border-border rounded-xl pl-3.5 pr-10 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-accent/50 shadow-inner"
                         />
                         <button
                           type="button"
@@ -357,8 +358,8 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                         onClick={() => toggleExpanded(p.id)}
                         className={`p-2 rounded-xl border transition-all cursor-pointer ${
                           isExpanded
-                            ? 'bg-[#FF3366]/10 border-[#FF3366]/40 text-[#FF3366]'
-                            : 'bg-white/5 border-white/10 text-muted-foreground/40 hover:text-foreground'
+                            ? 'bg-accent/10 border-accent/40 text-accent'
+                            : 'bg-secondary border-border text-muted-foreground/40 hover:text-foreground'
                         }`}
                       >
                         <ChevronDown
@@ -377,10 +378,10 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="mt-3 pt-3 border-t border-white/10 overflow-hidden"
+                    className="mt-3 pt-3 border-t border-border overflow-hidden"
                   >
                     <div className="flex items-center gap-2 mb-2.5">
-                      <Key size={10} className="text-[#FF3366]/60" />
+                      <Key size={10} className="text-accent/60" />
                       <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">
                         {p.modelCount} Models Available
                       </span>
@@ -391,13 +392,13 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                         .map((m) => (
                           <span
                             key={m.id}
-                            className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#FF3366]/5 text-[#FF3366]/80 border border-[#FF3366]/10"
+                            className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-accent/5 text-accent/80 border border-accent/10"
                           >
                             {m.name.length > 25 ? m.name.slice(0, 25) + '...' : m.name}
                           </span>
                         ))}
                       {p.modelCount > 20 && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/5 text-muted-foreground/80 border border-white/5">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground/80 border border-border">
                           +{p.modelCount - 20} more
                         </span>
                       )}
@@ -410,10 +411,10 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  className="mt-3 pt-3 border-t border-white/10"
+                  className="mt-3 pt-3 border-t border-border"
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <Network size={10} className="text-[#FF3366]/60" />
+                    <Network size={10} className="text-accent/60" />
                     <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">
                       Gateway URL
                     </span>
@@ -429,7 +430,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                         e.currentTarget.blur();
                       }
                     }}
-                    className="w-full bg-background border border-white/[0.04] rounded-xl px-3.5 py-2 text-[10px] font-mono text-muted-foreground/85 focus:border-[#FF3366]/50 focus:text-foreground transition-all outline-none"
+                    className="w-full bg-background border border-border rounded-xl px-3.5 py-2 text-[10px] font-mono text-muted-foreground/85 focus:border-accent/50 focus:text-foreground transition-all outline-none"
                   />
                 </motion.div>
               )}
@@ -442,7 +443,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={handleSaveToVault}
-          className="w-full mt-2 py-2.5 rounded-xl bg-[#FF3366] hover:bg-[#FF3366]/90 text-black text-[11px] font-bold uppercase tracking-[0.2em] transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+          className="w-full mt-2 py-2.5 rounded-xl bg-accent hover:bg-accent/90 text-white text-[11px] font-bold uppercase tracking-[0.2em] transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-95"
         >
           {rememberKeys ? 'Save to Secure Device Vault' : 'Apply Ephemerally (In-Memory Only)'}
         </motion.button>

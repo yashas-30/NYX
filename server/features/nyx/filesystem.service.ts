@@ -2,9 +2,44 @@ import logger from '../../lib/logger.ts';
 import fs from 'fs';
 import path from 'path';
 import { getWorkspaceRoot } from '../../lib/paths.ts';
+import { db } from '../../db/client.ts';
+import { userPreferences, pendingFileWrites } from '../../db/schema.ts';
+import { eq, and } from 'drizzle-orm';
+import crypto from 'crypto';
+import { minimatch } from 'minimatch';
+import { AuditLog } from '../../lib/auditLog.ts';
 
 export class FilesystemService {
-  async writeFile(filePath: string, content: string, overwrite?: boolean) {
+  private getNyxIgnorePatterns(): string[] {
+    const workspaceRoot = getWorkspaceRoot();
+    const ignorePath = path.join(workspaceRoot, '.nyxignore');
+    const patterns = ['node_modules/**', '.env', '.git/**', 'dist/**', '*.key', '*.pem'];
+    if (fs.existsSync(ignorePath)) {
+      try {
+        const content = fs.readFileSync(ignorePath, 'utf8');
+        const customPatterns = content
+          .split('\n')
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0 && !p.startsWith('#'));
+        patterns.push(...customPatterns);
+      } catch (err) {
+        logger.error('[Filesystem] Failed to read .nyxignore:', err);
+      }
+    }
+    return patterns;
+  }
+
+  private isNyxIgnored(filePath: string): boolean {
+    const patterns = this.getNyxIgnorePatterns();
+    for (const pattern of patterns) {
+      if (minimatch(filePath, pattern, { dot: true, matchBase: true })) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async writeFile(filePath: string, content: string, overwrite?: boolean, agentRunId?: string) {
     const workspaceRoot = getWorkspaceRoot();
 
     // Normalize both paths for case-insensitive Windows comparison
@@ -15,6 +50,18 @@ export class FilesystemService {
       throw new Error('Directory traversal forbidden.');
     }
     const fullPath = normalizedFull;
+
+    // Check nyxignore (using relative path with forward slashes for minimatch)
+    const posixRelative = relative.split(path.sep).join('/');
+    if (this.isNyxIgnored(posixRelative)) {
+      await AuditLog.log({
+        category: 'file_write_attempt',
+        event: { path: filePath, error: 'Blocked by .nyxignore' },
+        status: 'blocked',
+        agentRunId,
+      });
+      throw new Error(`File access forbidden by .nyxignore: ${filePath}`);
+    }
 
     // Symlink protection
     if (fs.existsSync(fullPath)) {
@@ -56,7 +103,56 @@ export class FilesystemService {
           path: filePath,
         };
       }
+    }
 
+    // Check auto-approve setting
+    let autoApprove = false;
+    try {
+      const pref = await db
+        .select()
+        .from(userPreferences)
+        .where(
+          and(
+            eq(userPreferences.userId, 'default'),
+            eq(userPreferences.key, 'auto_approve_file_writes')
+          )
+        )
+        .get();
+      if (pref && pref.value === 'true') {
+        autoApprove = true;
+      }
+    } catch (err) {
+      logger.error('[Filesystem] Failed to query user preferences for auto-approve', err);
+    }
+
+    if (!autoApprove && agentRunId) {
+      // Queue the file write
+      try {
+        const id = crypto.randomUUID();
+        await db.insert(pendingFileWrites).values({
+          id,
+          agentRunId,
+          filePath: posixRelative,
+          content,
+          status: 'pending',
+          createdAt: Date.now(),
+        });
+
+        await AuditLog.log({
+          category: 'file_write_attempt',
+          event: { path: filePath, message: 'Queued for review' },
+          status: 'success',
+          agentRunId,
+        });
+
+        return { queued: true, path: filePath, id };
+      } catch (err: any) {
+        throw new Error(`Failed to queue file write: ${err.message}`);
+      }
+    }
+
+    // Direct write (Auto-approved or manual)
+    if (fs.existsSync(fullPath)) {
       // Perform a clean backing backup before write
       const backupsDir = path.join(workspaceRoot, '.nyx-backups');
       if (!fs.existsSync(backupsDir)) {
@@ -85,6 +181,14 @@ export class FilesystemService {
     // Write file
     await fs.promises.writeFile(fullPath, content, 'utf8');
     logger.info(`[File System] Successfully wrote file to: ${fullPath}`);
+
+    await AuditLog.log({
+      category: 'file_write_attempt',
+      event: { path: filePath, autoApproved: autoApprove },
+      status: 'success',
+      agentRunId,
+    });
+
     return { success: true, path: fullPath };
   }
 
@@ -96,6 +200,11 @@ export class FilesystemService {
 
     if (relative.startsWith('..') || path.isAbsolute(relative)) {
       throw new Error('Directory traversal forbidden.');
+    }
+
+    const posixRelative = relative.split(path.sep).join('/');
+    if (this.isNyxIgnored(posixRelative)) {
+      throw new Error(`File access forbidden by .nyxignore: ${filePath}`);
     }
 
     if (!fs.existsSync(normalizedFull)) {
@@ -133,23 +242,34 @@ export class FilesystemService {
       throw new Error('Directory not found.');
     }
 
-    const files = fs.readdirSync(targetDir).map((name) => {
-      const fullPath = path.join(targetDir, name);
-      try {
-        const stats = fs.statSync(fullPath);
-        return {
-          name,
-          isDir: stats.isDirectory(),
-          size: stats.size,
-        };
-      } catch {
-        return {
-          name,
-          isDir: false,
-          size: 0,
-        };
-      }
-    });
+    const files = fs
+      .readdirSync(targetDir)
+      .map((name) => {
+        const fullPath = path.join(targetDir, name);
+        const relPath = path.relative(normalizedRoot, fullPath);
+        const posixRelative = relPath.split(path.sep).join('/');
+
+        // Do not return ignored files
+        if (this.isNyxIgnored(posixRelative)) {
+          return null;
+        }
+
+        try {
+          const stats = fs.statSync(fullPath);
+          return {
+            name,
+            isDir: stats.isDirectory(),
+            size: stats.size,
+          };
+        } catch {
+          return {
+            name,
+            isDir: false,
+            size: 0,
+          };
+        }
+      })
+      .filter(Boolean); // Remove nulls
 
     return files;
   }

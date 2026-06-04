@@ -279,8 +279,13 @@ export async function fetchWithAuth(
       if (response.status === 401) {
         logRequest(method, targetUrl, 401, latency, 'Token expired');
 
+        const originalToken = token;
         // Only one retry attempt, with fresh token under mutex
         const retryToken = await tokenMutex.runExclusive(async () => {
+          // Check if another request already refreshed the token while we were waiting for the lock
+          if (sessionToken && sessionToken !== originalToken && isTokenValid()) {
+            return sessionToken;
+          }
           // Force refresh
           sessionToken = null;
           tokenExpiresAt = 0;

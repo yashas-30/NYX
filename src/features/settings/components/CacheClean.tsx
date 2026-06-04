@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 import React from 'react';
 import { motion } from 'motion/react';
 import { Trash2 } from 'lucide-react';
@@ -35,25 +36,25 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
   const totalCalls = cacheStats.hits + cacheStats.misses;
 
   return (
-    <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
-      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity" />
+    <div className="mt-6 group p-5 rounded-3xl bg-card border border-border hover:border-accent/25 transition-all duration-300 relative overflow-hidden shadow-lg">
+      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-accent/20 via-accent/10 to-accent/20 opacity-70 group-hover:opacity-100 transition-opacity" />
 
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-accent">
             CACHE STORAGE MANAGER
           </p>
           <h3 className="text-xs font-bold text-foreground mt-0.5">
             Persistent Query Acceleration
           </h3>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-2 py-0.5 rounded-full border border-[#FF3366]/20">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
           Active Server
         </span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        <div className="bg-background/60 border border-white/[0.04] rounded-2xl p-3 flex flex-col justify-between">
+        <div className="bg-background/60 border border-border rounded-2xl p-3 flex flex-col justify-between">
           <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">
             CACHED QUERIES
           </span>
@@ -61,7 +62,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
             {cacheStats.itemCount}
           </span>
         </div>
-        <div className="bg-background/60 border border-white/[0.04] rounded-2xl p-3 flex flex-col justify-between">
+        <div className="bg-background/60 border border-border rounded-2xl p-3 flex flex-col justify-between">
           <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">
             STORAGE USED
           </span>
@@ -71,11 +72,11 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
               : `${(cacheStats.totalSizeBytes / 1024).toFixed(1)} KB`}
           </span>
         </div>
-        <div className="bg-background/60 border border-white/[0.04] rounded-2xl p-3 flex flex-col justify-between">
+        <div className="bg-background/60 border border-border rounded-2xl p-3 flex flex-col justify-between">
           <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">
             HIT EFFICIENCY
           </span>
-          <span className="text-[15px] font-black font-mono text-[#FF3366] mt-1.5">
+          <span className="text-[15px] font-black font-mono text-accent mt-1.5">
             {totalCalls > 0 ? `${((cacheStats.hits / totalCalls) * 100).toFixed(1)}%` : '0.0%'}
           </span>
         </div>
@@ -90,7 +91,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
         </div>
         <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-[#FF3366] to-emerald-500 rounded-full transition-all duration-500"
+            className="h-full bg-gradient-to-r from-accent to-emerald-500 rounded-full transition-all duration-500"
             style={{
               width:
                 totalCalls > 0 ? `${Math.min(100, (cacheStats.hits / totalCalls) * 100)}%` : '0%',
@@ -108,7 +109,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
           whileTap={cacheStats.itemCount === 0 ? {} : { scale: 0.95 }}
           onClick={handleClearCache}
           disabled={cacheStats.itemCount === 0}
-          className={`px-4.5 py-2.5 rounded-xl border text-[11px] font-bold uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
+          className={`px-4 py-2.5 rounded-xl border text-[11px] font-bold uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
             cacheStats.itemCount === 0
               ? 'bg-white/5 border-white/5 text-muted-foreground/30 cursor-not-allowed'
               : 'bg-red-500/5 border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white hover:border-red-500 cursor-pointer shadow-sm'

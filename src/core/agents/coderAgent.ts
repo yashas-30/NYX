@@ -144,7 +144,12 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
     signal: AbortSignal,
     onProgress: (msg: string) => void
   ): Promise<{ codebase?: string; webSearch?: string; rules?: string[] }> {
-    const context: { codebase?: string; webSearch?: string; rules?: string[] } = {};
+    const context: {
+      codebase?: string;
+      webSearch?: string;
+      rules?: string[];
+      rawWebSearchResults?: any[];
+    } = {};
 
     const budgets = this.tokenBudget.distribute({
       codebase: 6000,
@@ -157,7 +162,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
     // Codebase search with retry
     const needsCodebase =
       prompt.includes('@codebase') ||
-      analysis.intent === 'architecture' ||
+      analysis.intent === 'architecture_design' ||
       analysis.intent === 'refactor';
     if (
       tools.includes('codebase_search') &&
@@ -246,6 +251,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
         yield {
           type: 'citation',
           content: '',
+          // fallow-ignore-next-line code-duplication
           metadata: {
             id: String(i + 1),
             url: r.url || r.link,
@@ -329,6 +335,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
       { ...this.config.settings, temperature },
       onStreamCallback,
       signal,
+      // fallow-ignore-next-line code-duplication
       {
         history: processedHistory,
         agentMode: 'coder',
@@ -654,7 +661,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
 
   // ── Thinking Emission ─────────────────────────────────────────────────────
 
-  private async *emitThinking(content: string, chain: string[]): AsyncGenerator<CoderStreamEvent> {
+  protected *emitThinking(content: string, chain: string[]): Generator<CoderStreamEvent> {
     chain.push(content);
     if (this.config.showReasoning !== false) {
       yield { type: 'thinking', content, metadata: { step: chain.length } };
@@ -674,7 +681,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
         return 0.2; // Balanced
       case 'explain_code':
         return 0.4; // More natural language variety
-      case 'architecture':
+      case 'architecture_design':
         return 0.3; // Some creativity needed
       default:
         return 0.15;
@@ -729,6 +736,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
   private extractFileBlocks(
     text: string
   ): Array<{ path: string; language: string; content: string }> {
+    // fallow-ignore-next-line code-duplication
     const files: Array<{ path: string; language: string; content: string }> = [];
 
     // Prevent regex evaluation hanging on massive strings
@@ -756,6 +764,7 @@ export class CoderAgent extends BaseAgent<CoderAgentConfig, CoderStreamEvent> {
   private extractMarkdownCodeBlocks(
     text: string
   ): Array<{ language: string | null; content: string; filename?: string }> {
+    // fallow-ignore-next-line code-duplication
     const blocks: Array<{ language: string | null; content: string; filename?: string }> = [];
 
     // Prevent regex evaluation hanging on massive strings

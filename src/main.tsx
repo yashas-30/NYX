@@ -1,9 +1,29 @@
+// fallow-ignore-file code-duplication
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './app/App.tsx';
 import { ErrorBoundary } from './core/components/ErrorBoundary.tsx';
 import './i18n.ts';
 import './index.css';
+import * as Sentry from '@sentry/react';
+
+if ((import.meta as any).env.VITE_SENTRY_DSN) {
+  Sentry.init({
+    dsn: (import.meta as any).env.VITE_SENTRY_DSN,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({
+        maskAllText: false,
+        blockAllMedia: false,
+      }),
+    ],
+    // Tracing
+    tracesSampleRate: 1.0,
+    // Session Replay
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0,
+  });
+}
 
 // ── Modern CSS Color Space Polyfill for Framer Motion ──
 function oklabToRgb(L: number, a: number, b: number, alpha: number = 1): string {

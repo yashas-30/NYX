@@ -6,8 +6,11 @@ import os from 'os';
 import * as si from 'systeminformation';
 import logger from '../../lib/logger.ts';
 import crypto from 'crypto';
+import { exec } from 'child_process';
+
 // No download queue needed — downloads are tracked per-modelId in activeDownloads map
 
+// fallow-ignore-next-line code-duplication
 export interface ModelPreset {
   id: string;
   name: string;
@@ -899,11 +902,14 @@ export const LocalModelManager = {
     // Clone and apply quantization selection if provided
     if (quantization && activePreset.quantization && quantization !== activePreset.quantization) {
       activePreset = { ...activePreset };
-      activePreset.url = activePreset.url.replace(activePreset.quantization, quantization);
-      activePreset.fileName = activePreset.fileName.replace(activePreset.quantization, quantization);
+      activePreset.url = activePreset.url.replace(activePreset.quantization!, quantization);
+      activePreset.fileName = activePreset.fileName.replace(
+        activePreset.quantization!,
+        quantization
+      );
       activePreset.quantization = quantization;
       activePreset.name = activePreset.name.replace(/\(Q.*?\)/, `(${quantization})`);
-      
+
       // Add the modified preset back so subsequent lookups (like pause/resume) find it
       activePreset.id = `${activePreset.id}-${quantization.toLowerCase()}`;
       modelId = activePreset.id;
@@ -1165,7 +1171,11 @@ export const LocalModelManager = {
             return;
           }
 
-          const contentLength = parseInt(response.headers['content-length'] || '0', 10);
+          const contentLengthStr = response.headers['content-length'];
+          const contentLength = parseInt(
+            typeof contentLengthStr === 'string' ? contentLengthStr : '0',
+            10
+          );
 
           if (isRangeSupported) {
             totalBytes = contentLength + existingBytes;
@@ -1221,19 +1231,19 @@ export const LocalModelManager = {
                   done();
                   return;
                 }
-                
+
                 try {
                   // Perform Checksum Verification
                   progress.message = 'Verifying checksum...';
                   LocalModelManager.broadcastProgress();
-                  
+
                   // For now, if we don't have the HF hash easily available without an API token,
                   // we compute the SHA256 and log it, and verify the GGUF magic header.
                   const fd = fs.openSync(partPath, 'r');
                   const buffer = Buffer.alloc(4);
                   fs.readSync(fd, buffer, 0, 4, 0);
                   fs.closeSync(fd);
-                  
+
                   if (buffer.toString('utf8') !== 'GGUF') {
                     throw new Error('Invalid file format: Not a valid GGUF file.');
                   }
@@ -1244,7 +1254,10 @@ export const LocalModelManager = {
                   rs.on('data', (chunk) => hash.update(chunk));
                   rs.on('end', () => {
                     const sha256 = hash.digest('hex');
-                    logger.info({ modelId: progress.modelId, sha256 }, 'Download complete and checksum computed');
+                    logger.info(
+                      { modelId: progress.modelId, sha256 },
+                      'Download complete and checksum computed'
+                    );
                     fs.renameSync(partPath, destPath);
                     progress.message = undefined;
                     done();
@@ -1376,7 +1389,6 @@ export const LocalModelManager = {
               resolve(0);
               return;
             }
-            const { exec } = require('child_process');
             exec(commands[idx], (error: any, stdout: string) => {
               if (error) {
                 tryExec(idx + 1);

@@ -16,6 +16,7 @@ export class LocalModelManager {
   static async findAvailablePort(startPort: number = 8080): Promise<number> {
     return new Promise((resolve, reject) => {
       const server = net.createServer();
+      // fallow-ignore-next-line code-duplication
       server.listen(startPort, () => {
         const port = (server.address() as net.AddressInfo).port;
         server.close(() => resolve(port));

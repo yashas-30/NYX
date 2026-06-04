@@ -110,7 +110,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 26, stiffness: 220 }}
+            transition={{ ease: [0.32, 0.72, 0, 1], duration: 0.3 }}
             className="fixed top-0 right-0 h-full w-full max-w-[420px] z-[1001] bg-[#0A0D12]/95 border-l border-white/[0.08] shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-2xl flex flex-col text-zinc-100 font-sans"
           >
             {/* Panel Header */}

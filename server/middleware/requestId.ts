@@ -1,19 +1,17 @@
-import { Request, Response, NextFunction } from 'express';
+import { FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'crypto';
 
-export function requestIdMiddleware(req: Request, res: Response, next: NextFunction) {
-  let requestId = req.headers['x-request-id'];
+export async function requestIdMiddleware(request: FastifyRequest, reply: FastifyReply) {
+  let requestId = request.headers['x-request-id'];
 
   if (!requestId || typeof requestId !== 'string') {
     requestId = crypto.randomUUID();
-    req.headers['x-request-id'] = requestId;
+    request.headers['x-request-id'] = requestId;
   }
 
   // Set correlation ID on request object for downstream usage
-  req.requestId = requestId;
+  (request as any).requestId = requestId;
 
   // Echo requestId in response headers
-  res.setHeader('x-request-id', requestId);
-
-  next();
+  reply.header('x-request-id', requestId);
 }

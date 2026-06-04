@@ -15,6 +15,7 @@ import { rmSync } from 'fs';
 import { resolve } from 'path';
 import { resolveContext, readProjects, writeProjects, CONTEXTS_DIR } from './shared.mjs';
 
+// fallow-ignore-next-line code-duplication
 const arg = process.argv[2];
 const cwd = process.env.PWD || process.cwd();
 

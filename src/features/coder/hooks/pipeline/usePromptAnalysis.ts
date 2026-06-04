@@ -1,6 +1,9 @@
 import { useState, useCallback } from 'react';
 import { analyzePrompt, routeToAgent } from '@src/core/services/promptClassifier';
-import { isMissingDebugDetails, MISSING_DEBUG_DETAILS_RESPONSE } from '@/shared/promptAnalyzer';
+import {
+  isMissingDebugDetails,
+  MISSING_DEBUG_DETAILS_RESPONSE,
+} from '../../../../../shared/promptAnalyzer';
 import { ChatMessage } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 
@@ -21,6 +24,7 @@ export const usePromptAnalysis = ({
   const analyzeAndRoute = useCallback(
     (prompt: string) => {
       // Step 1: Analyze prompt
+      // fallow-ignore-next-line code-duplication
       const analysis = analyzePrompt(prompt);
       const route = routeToAgent(analysis);
 

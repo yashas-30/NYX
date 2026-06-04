@@ -132,6 +132,7 @@ export const useDashboardState = (onExit?: () => void) => {
     const loadSecureKeys = async () => {
       if (typeof window !== 'undefined' && (window as any).nyxIPC) {
         const ipc = (window as any).nyxIPC;
+        // fallow-ignore-next-line code-duplication
         try {
           const listRes = await ipc.invoke('vault:list-keys');
           if (listRes.success && Array.isArray(listRes.data)) {
@@ -185,6 +186,7 @@ export const useDashboardState = (onExit?: () => void) => {
       const res = await fetchWithAuth('/api/v1/nyx/local-models');
       if (res.ok) {
         const data = await res.json();
+        // fallow-ignore-next-line code-duplication
         if (data.models && Array.isArray(data.models)) {
           const completed = data.models
             .filter((m: any) => m.status === 'completed' || m.status === 'downloading')

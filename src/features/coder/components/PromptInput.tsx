@@ -64,7 +64,7 @@ interface PromptInputProps {
   onCodebaseKnowledgeToggle: (enabled: boolean) => void;
   mode?: 'chat' | 'code';
   alignDropdown?: 'top' | 'bottom';
-  agentMode?: 'chat' | 'coder' | null;
+  agentMode?: 'chat' | 'coder' | 'architect' | null;
   agentReasoning?: string;
 }
 
@@ -333,8 +333,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     localSettings.gpuLayers === 0
       ? 'text-zinc-400'
       : localSettings.gpuLayers < 50
-        ? 'text-[#FF3366]/70'
-        : 'text-[#FF3366]';
+        ? 'text-accent/70'
+        : 'text-accent';
 
   const visibleTemplates = prompt.startsWith('/')
     ? promptTemplates.filter(
@@ -398,7 +398,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
                     </span>
                     <Bot className="w-3.5 h-3.5 text-primary" />
-                    <span className="font-extrabold text-[10px] uppercase tracking-widest bg-gradient-to-r from-primary via-cyan-400 to-cyan-300 bg-clip-text text-transparent">
+                    <span className="font-extrabold text-[10px] uppercase tracking-widest text-primary">
                       NYX Hardware Analyzer
                     </span>
                   </div>
@@ -412,7 +412,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/45 text-[9px] font-black uppercase tracking-widest text-primary transition-all"
                   >
-                    <Zap className="w-3 h-3 text-[#FF3366] fill-[#FF3366] animate-pulse" />
+                    <Zap className="w-3 h-3 text-accent fill-accent animate-pulse" />
                     Auto-Optimize Spec
                   </motion.button>
                 </div>
@@ -503,16 +503,16 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 className="absolute bottom-full mb-3 left-0 right-0 z-[500] bg-card border border-white/[0.04] p-1 rounded-3xl shadow-2xl overflow-hidden"
               >
                 <div className="w-full bg-card/98 border border-white/[0.04] rounded-[calc(1.5rem-4px)] overflow-hidden">
-                  <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/[0.05]">
+                  <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
                     <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-xl bg-[#FF3366]/10 border border-[#FF3366]/20 flex items-center justify-center">
-                        <SlidersHorizontal size={13} className="text-[#FF3366]" />
+                      <div className="w-7 h-7 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center">
+                        <SlidersHorizontal size={13} className="text-accent" />
                       </div>
                       <div>
                         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-foreground/85">
                           Local Inference
                         </p>
-                        <p className="text-[8px] text-[#FF3366]/80 font-semibold uppercase tracking-wider mt-0.5">
+                        <p className="text-[8px] text-accent/80 font-semibold uppercase tracking-wider mt-0.5">
                           {currentModel?.name || 'GGUF Model'} · settings
                         </p>
                       </div>
@@ -592,7 +592,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                         type="button"
                         onClick={resetLocalSettings}
                         title="Reset to defaults"
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-[#FF3366] hover:bg-[#FF3366]/8 border border-transparent hover:border-[#FF3366]/15 transition-all"
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-accent hover:bg-accent/8 border border-transparent hover:border-accent/15 transition-all"
                       >
                         <RotateCcw size={9} />
                         Reset
@@ -618,9 +618,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                           <SectionLabel
                             icon={<MemoryStick size={9} />}
                             label="GPU / VRAM"
-                            color="text-[#FF3366]"
+                            color="text-accent"
                           />
-                          <div className="mt-3 p-3.5 rounded-2xl bg-[#FF3366]/[0.04] border border-[#FF3366]/10 space-y-2.5">
+                          <div className="mt-3 p-3.5 rounded-2xl bg-accent/[0.04] border border-accent/10 space-y-2.5">
                             <div className="flex items-center justify-between">
                               <span className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wider">
                                 GPU Layers (ngl)
@@ -643,7 +643,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               step={1}
                               value={localSettings.gpuLayers}
                               onChange={(e) => updateLocal('gpuLayers', Number(e.target.value))}
-                              className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#FF3366] bg-white/8"
+                              className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-accent bg-white/8"
                             />
                             <div className="flex justify-between">
                               <span className="text-[7px] text-muted-foreground/25">CPU Only</span>
@@ -766,7 +766,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               max={2}
                               step={0.05}
                               display={(v) => (v ?? 1.1).toFixed(2)}
-                              accent="accent-[#FF3366]"
+                              accent="accent-accent"
                               onChange={(v) => updateLocal('repeatPenalty', v)}
                               isFloat
                             />
@@ -796,7 +796,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                                     onClick={() => updateLocal('mirostat', v)}
                                     className={`flex-1 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider transition-all ${
                                       localSettings.mirostat === v
-                                        ? 'bg-[#FF3366]/15 text-[#FF3366] border border-[#FF3366]/30'
+                                        ? 'bg-accent/15 text-accent border border-accent/30'
                                         : 'bg-white/4 text-muted-foreground/35 border border-white/6 hover:bg-white/8 hover:text-muted-foreground/60'
                                     }`}
                                   >
@@ -881,10 +881,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
           {/* Outer capsule wrapper */}
           <div
-            className={`w-full flex flex-col bg-zinc-900/60 backdrop-blur-xl border rounded-[24px] p-1.5 shadow-2xl transition-all duration-300 ${
+            className={`w-full flex flex-col bg-card/60 backdrop-blur-xl border rounded-[24px] p-1.5 shadow-2xl transition-all duration-300 ${
               isDragging
-                ? 'border-[#FF3366] shadow-[0_0_24px_rgba(34,211,238,0.2)] bg-[#FF3366]/5'
-                : 'border-white/[0.04] focus-within:border-white/10'
+                ? 'border-accent shadow-[0_0_24px_rgba(var(--accent-rgb),0.2)] bg-accent/5'
+                : 'border-border focus-within:border-border/80'
             }`}
           >
             {/* Top row of interactive feature pills (tags) - Staggered mount animations */}
@@ -1014,10 +1014,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
             </motion.div>
 
             <div
-              className={`w-full bg-[#121214] border rounded-[16px] p-3 mt-1.5 flex flex-col gap-2 relative shadow-inner transition-all duration-300 ${
+              className={`w-full bg-background border rounded-[16px] p-3 mt-1.5 flex flex-col gap-2 relative shadow-inner transition-all duration-300 ${
                 isFocused
-                  ? 'border-[#FF3366]/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02),0_0_16px_rgba(34,211,238,0.06)]'
-                  : 'border-white/[0.02]'
+                  ? 'border-accent/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02),0_0_16px_rgba(var(--accent-rgb),0.06)]'
+                  : 'border-border/50'
               }`}
             >
               {/* Slash Command Menu */}
@@ -1079,8 +1079,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 )}
               </AnimatePresence>
               {isDragging && (
-                <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-[2px] rounded-[16px] flex items-center justify-center z-50 border border-dashed border-[#FF3366]/30 pointer-events-none">
-                  <span className="text-xs font-black uppercase tracking-widest text-[#FF3366] animate-pulse flex items-center gap-2">
+                <div className="absolute inset-0 bg-background/80 backdrop-blur-[2px] rounded-[16px] flex items-center justify-center z-50 border border-dashed border-accent/30 pointer-events-none">
+                  <span className="text-xs font-black uppercase tracking-widest text-accent animate-pulse flex items-center gap-2">
                     <Paperclip size={12} /> Drop to attach file
                   </span>
                 </div>
@@ -1093,11 +1093,11 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     initial={{ opacity: 0, scale: 0.9, y: -4 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                    className="flex items-center justify-between gap-2 px-3 py-1.5 bg-zinc-800/40 border border-white/[0.04] rounded-xl self-start mx-1"
+                    className="flex items-center justify-between gap-2 px-3 py-1.5 bg-secondary/40 border border-border rounded-xl self-start mx-1"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <Paperclip className="w-3 h-3 text-[#FF3366] shrink-0" />
-                      <span className="text-[10px] font-mono text-zinc-300 truncate max-w-[200px]">
+                      <Paperclip className="w-3 h-3 text-accent shrink-0" />
+                      <span className="text-[10px] font-mono text-foreground truncate max-w-[200px]">
                         {selectedFile.name}
                       </span>
                       <span className="text-[8px] text-zinc-500 shrink-0">
@@ -1168,14 +1168,14 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   <motion.button
                     whileHover={{
                       scale: canSubmit ? 1.05 : 1,
-                      boxShadow: canSubmit ? '0 0 10px rgba(255, 51, 102, 0.25)' : 'none',
+                      boxShadow: canSubmit ? '0 0 10px rgba(var(--accent-rgb), 0.25)' : 'none',
                     }}
                     whileTap={{ scale: canSubmit ? 0.95 : 1 }}
                     type="submit"
                     disabled={!canSubmit}
                     className={`h-7 w-7 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
                       canSubmit
-                        ? 'bg-[#FF3366] text-black border-[#FF3366] font-bold'
+                        ? 'bg-accent text-white border-accent font-bold'
                         : 'bg-white/5 border-transparent text-zinc-700 cursor-not-allowed'
                     }`}
                   >
@@ -1219,8 +1219,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     }}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
                       showSettings
-                        ? 'bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/30'
-                        : 'bg-white/[0.03] border border-white/5 text-zinc-400 hover:text-white'
+                        ? 'bg-accent/10 text-accent border border-accent/30'
+                        : 'bg-secondary/30 border border-border text-zinc-400 hover:text-white'
                     }`}
                   >
                     <SlidersHorizontal size={9} />

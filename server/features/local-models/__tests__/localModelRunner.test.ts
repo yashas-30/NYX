@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LocalModelRunner } from '../localModelRunner.ts';
 import { LocalModelManager } from '../localModelManager.ts';
+import { HardwareDetector } from '../hardwareDetector.ts';
 
 // Mock local model manager registry
 vi.mock('../localModelManager.ts', () => ({
@@ -24,9 +25,9 @@ describe('LocalModelRunner Layer Math Optimizer', () => {
   });
 
   it('assigns 0 GPU layers when no GPU is detected', async () => {
-    // Mock detectGPUs and getFreeVram
-    vi.spyOn(LocalModelRunner as any, 'detectGPUs').mockResolvedValue([]);
-    vi.spyOn(LocalModelRunner as any, 'getFreeVram').mockResolvedValue(0);
+    // Mock detectGPUs and getFreeVram on HardwareDetector
+    vi.spyOn(HardwareDetector, 'detectGPUs').mockResolvedValue([]);
+    vi.spyOn(HardwareDetector, 'getFreeVram').mockResolvedValue(0);
 
     const result = await LocalModelRunner.calculateOptimalLayers('nyx-gemma-4-e2b-it', 2048);
 
@@ -41,8 +42,8 @@ describe('LocalModelRunner Layer Math Optimizer', () => {
     const mockGPUs = [
       { vendor: 'NVIDIA', model: 'GeForce GTX 1650', vramBytes: 1500 * 1024 * 1024, index: 0 },
     ];
-    vi.spyOn(LocalModelRunner as any, 'detectGPUs').mockResolvedValue(mockGPUs);
-    vi.spyOn(LocalModelRunner as any, 'getFreeVram').mockResolvedValue(1500 * 1024 * 1024);
+    vi.spyOn(HardwareDetector, 'detectGPUs').mockResolvedValue(mockGPUs);
+    vi.spyOn(HardwareDetector, 'getFreeVram').mockResolvedValue(1500 * 1024 * 1024);
 
     const result = await LocalModelRunner.calculateOptimalLayers('nyx-gemma-4-e2b-it', 2048);
 
@@ -56,8 +57,8 @@ describe('LocalModelRunner Layer Math Optimizer', () => {
     const mockGPUs = [
       { vendor: 'NVIDIA', model: 'GeForce RTX 4080', vramBytes: 16 * 1024 * 1024 * 1024, index: 0 },
     ];
-    vi.spyOn(LocalModelRunner as any, 'detectGPUs').mockResolvedValue(mockGPUs);
-    vi.spyOn(LocalModelRunner as any, 'getFreeVram').mockResolvedValue(16 * 1024 * 1024 * 1024);
+    vi.spyOn(HardwareDetector, 'detectGPUs').mockResolvedValue(mockGPUs);
+    vi.spyOn(HardwareDetector, 'getFreeVram').mockResolvedValue(16 * 1024 * 1024 * 1024);
 
     const result = await LocalModelRunner.calculateOptimalLayers('nyx-gemma-4-e2b-it', 2048);
 

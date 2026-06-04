@@ -631,6 +631,7 @@ export class ToolExecutor {
         return data.content;
       }
 
+      // fallow-ignore-next-line code-duplication
       case 'edit_file': {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
@@ -649,6 +650,7 @@ export class ToolExecutor {
         return `Successfully edited file: ${params.path}`;
       }
 
+      // fallow-ignore-next-line code-duplication
       case 'write_file': {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);

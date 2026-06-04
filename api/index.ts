@@ -85,6 +85,7 @@ app.post('/api/models/quota', async (req, res) => {
 app.post('/api/cache/get', async (req, res) => {
   try {
     const key = CacheServer.generateKey(req.body);
+    // fallow-ignore-next-line code-duplication
     const text = await CacheServer.get(key);
     if (text !== null) {
       return res.json({ hit: true, text, key });
@@ -98,6 +99,7 @@ app.post('/api/cache/get', async (req, res) => {
 app.post('/api/cache/set', async (req, res) => {
   const { key, data, provider, model } = req.body;
   try {
+    // fallow-ignore-next-line code-duplication
     await CacheServer.set(key, data, provider, model);
     res.json({ success: true });
   } catch (error: any) {

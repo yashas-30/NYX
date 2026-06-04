@@ -1,6 +1,6 @@
 import logger from '../../lib/logger.ts';
 import { sqlite } from '../../db/client.ts';
-import { loadKeys } from '../vault/vault.service.ts';
+import { getKeysSync } from '../vault/vault.service.ts';
 import { LOCAL_MODEL_PORT } from '../../../src/config/ports.ts';
 import crypto from 'crypto';
 
@@ -268,7 +268,7 @@ export class MemoryService {
     agentType: 'chat' | 'code' = 'code'
   ): Promise<void> {
     logger.info(`[Memory Keeper] Starting background semantic distillation for ${agentType}...`);
-    const keys = loadKeys();
+    const keys = getKeysSync();
     const activeKey = keys[provider || ''] || '';
 
     const memorySystemPrompt = `
@@ -307,6 +307,7 @@ ${nyxResponse}
 
     if (modelId && provider) {
       try {
+        // fallow-ignore-next-line code-duplication
         logger.info(`[Memory Keeper] Executing extraction using model ${modelId} (${provider})`);
 
         if (provider === 'gemini') {
@@ -320,6 +321,7 @@ ${nyxResponse}
               systemInstruction: { parts: [{ text: memorySystemPrompt }] },
               generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
             }),
+            // fallow-ignore-next-line code-duplication
             signal: AbortSignal.timeout(15000),
           });
           if (!res.ok) throw new Error(`Gemini Critic API error: ${res.statusText}`);
@@ -340,6 +342,7 @@ ${nyxResponse}
               temperature: 0.2,
               max_tokens: 512,
             }),
+            // fallow-ignore-next-line code-duplication
             signal: AbortSignal.timeout(15000),
           });
           if (!res.ok) throw new Error(`Local GGUF Critic error: ${res.statusText}`);

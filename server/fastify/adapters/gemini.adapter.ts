@@ -32,6 +32,7 @@ export class GeminiAdapter implements ProviderAdapter {
       parts: [{ text: m.content }],
     }));
 
+    // fallow-ignore-next-line code-duplication
     const payload: any = {
       contents,
       generationConfig: {

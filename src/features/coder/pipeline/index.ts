@@ -227,6 +227,7 @@ export async function runMultiStagePipeline({
 
     const finalElapsed = Date.now() - startTime;
     const finalTokens = result.metrics.tokens;
+    // fallow-ignore-next-line code-duplication
     const finalTps = finalElapsed > 0 ? Math.round(finalTokens / (finalElapsed / 1000)) : 0;
     const finalMetrics = { latency: finalElapsed, tokens: finalTokens, tps: finalTps };
 
@@ -338,6 +339,7 @@ export async function runMultiStagePipeline({
   // Commit final output
   const finalElapsed = Date.now() - startTime;
   const finalTokens = countTokens(finalSummaryOutput);
+  // fallow-ignore-next-line code-duplication
   const finalTps = finalElapsed > 0 ? Math.round(finalTokens / (finalElapsed / 1000)) : 0;
   const finalMetrics = { latency: finalElapsed, tokens: finalTokens, tps: finalTps };
 

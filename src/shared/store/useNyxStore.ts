@@ -234,6 +234,7 @@ export const useNyxStore = create<NyxState>()(
 
         const ipc = (window as any).nyxIPC;
         if (ipc && typeof ipc.invoke === 'function') {
+          // fallow-ignore-next-line code-duplication
           try {
             const listRes = await ipc.invoke('vault:list-keys');
             if (listRes.success && Array.isArray(listRes.data)) {

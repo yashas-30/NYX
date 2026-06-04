@@ -40,7 +40,7 @@ export class ChatAgentWithTools extends BaseAgent<ChatAgentConfig, StreamEvent> 
         prompt,
         history: processedHistory,
         apiKey: this.config.apiKey,
-        gatewayUrls: this.config.settings?.gatewayUrls,
+        gatewayUrls: (this.config.settings as any)?.gatewayUrls,
         settings: this.config.settings,
         images: images || [],
       }),
@@ -51,6 +51,7 @@ export class ChatAgentWithTools extends BaseAgent<ChatAgentConfig, StreamEvent> 
       throw new Error(`Agent backend error: ${response.statusText}`);
     }
 
+    // fallow-ignore-next-line code-duplication
     if (!response.body) {
       throw new Error('No response body from backend');
     }

@@ -65,6 +65,19 @@ const logger: any = pino(
         return { level: label };
       },
     },
+    redact: {
+      paths: [
+        'req.headers.authorization',
+        'req.body.apiKey',
+        'request.headers.authorization',
+        'request.body.apiKey',
+        'apiKey',
+        'authorization',
+        'secret',
+        'password',
+      ],
+      censor: '[REDACTED]',
+    },
   },
   logStream
 );

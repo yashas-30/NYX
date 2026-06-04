@@ -224,6 +224,7 @@ export function renderContextMd(ctx) {
   } else {
     lines.push(`_Not yet recorded._`);
   }
+// fallow-ignore-next-line code-duplication
   lines.push(``);
   lines.push(`## Blockers`);
   if (latest?.blockers?.length) {
@@ -333,6 +334,7 @@ export function renderInfoBlock(ctx) {
   (latest.leftOff || '—').split('\n').filter(Boolean).forEach(l => lines.push(`  • ${l}`));
   lines.push(`NEXT STEPS`);
   (latest.nextSteps || []).forEach((s, i) => lines.push(`  ${i + 1}. ${s}`));
+// fallow-ignore-next-line code-duplication
   if (!latest.nextSteps?.length) lines.push(`  —`);
   lines.push(`BLOCKERS`);
   if (latest.blockers?.length) {

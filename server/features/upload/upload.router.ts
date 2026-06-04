@@ -1,7 +1,7 @@
-import { Router } from 'express';
-import multer from 'multer';
+import { FastifyInstance } from 'fastify';
 import path from 'path';
 import fs from 'fs';
+import { pipeline } from 'stream/promises';
 import { fileURLToPath } from 'url';
 
 const _dirname =
@@ -12,32 +12,26 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, UPLOADS_DIR);
-  },
-  filename: function (req, file, cb) {
+export async function uploadRouter(fastify: FastifyInstance) {
+  fastify.post('/', async (request, reply) => {
+    const data = await request.file();
+    if (!data) {
+      return reply.code(400).send({ error: 'No file uploaded' });
+    }
+
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  },
-});
+    const ext = path.extname(data.filename);
+    const basename = path.basename(data.filename, ext);
+    const newFilename = `${basename}-${uniqueSuffix}${ext}`;
+    const filepath = path.join(UPLOADS_DIR, newFilename);
 
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for files
-});
+    await pipeline(data.file, fs.createWriteStream(filepath));
 
-export const uploadRouter = Router();
-
-uploadRouter.post('/', upload.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
-  }
-
-  res.json({
-    message: 'File uploaded successfully',
-    filename: req.file.filename,
-    path: `/uploads/${req.file.filename}`,
-    size: req.file.size,
+    return reply.send({
+      message: 'File uploaded successfully',
+      filename: newFilename,
+      path: `/uploads/${newFilename}`,
+      // size might not be available accurately until streaming is complete, but it's optional
+    });
   });
-});
+}

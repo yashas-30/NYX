@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { FastifyRequest, FastifyReply } from 'fastify';
 import logger from '../lib/logger.ts';
 
 interface RateLimitStore {
@@ -18,9 +18,9 @@ const PROVIDER_LIMITS: Record<string, number> = {
 export function providerRateLimiter(provider: string) {
   const limit = PROVIDER_LIMITS[provider] || 60;
 
-  return (req: Request, res: Response, next: NextFunction) => {
-    const authHeader = req.headers.authorization || '';
-    const key = `${provider}:${authHeader || req.ip || 'anonymous'}`;
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const authHeader = request.headers.authorization || '';
+    const key = `${provider}:${authHeader || request.ip || 'anonymous'}`;
 
     const now = Date.now();
     let store = stores.get(key);
@@ -35,15 +35,15 @@ export function providerRateLimiter(provider: string) {
     if (store.timestamps.length >= limit) {
       const oldestTs = store.timestamps[0];
       const resetTimeSec = Math.ceil((windowMs - (now - oldestTs)) / 1000);
-      res.setHeader('Retry-After', String(resetTimeSec));
+      reply.header('Retry-After', String(resetTimeSec));
       logger.warn({ key, limit }, `Rate limit exceeded for provider ${provider}`);
-      return res.status(429).json({
+      reply.code(429).send({
         error: `Rate limit exceeded for provider ${provider}. Maximum is ${limit} requests per minute.`,
         retryAfterSeconds: resetTimeSec,
       });
+      return reply; // stop further execution in hook
     }
 
     store.timestamps.push(now);
-    next();
   };
 }

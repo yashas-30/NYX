@@ -1,5 +1,5 @@
 import logger from '../../lib/logger.ts';
-import { Router } from 'express';
+import { FastifyInstance } from 'fastify';
 import { validate } from '../../middleware/validate.ts';
 import {
   writeFileSchema,
@@ -15,539 +15,567 @@ import { GitService } from './git.service.ts';
 import { WorkspaceService } from './workspace.service.ts';
 import { MemoryService } from './memory.service.ts';
 
-export const nyxRouter = Router();
+export async function nyxRouter(fastify: FastifyInstance) {
+  const agentService = new AgentService();
+  const searchService = new SearchService();
+  const filesystemService = new FilesystemService();
+  const gitService = new GitService();
+  const workspaceService = new WorkspaceService();
 
-const agentService = new AgentService();
-const searchService = new SearchService();
-const filesystemService = new FilesystemService();
-const gitService = new GitService();
-const workspaceService = new WorkspaceService();
+  // ── Agent/Critic Endpoints ─────────────────────────────────────────────────────
 
-// ── Agent/Critic Endpoints ─────────────────────────────────────────────────────
-
-// POST /api/nyx/subagent-status
-nyxRouter.post('/subagent-status', (req, res) => {
-  try {
-    const token = req.headers['x-nyx-session-token'] as string | undefined;
-    if (!token) {
-      return res.status(401).json({ error: 'Missing x-nyx-session-token header' });
-    }
-    const { tasks } = req.body as { tasks?: unknown[] };
-    if (!Array.isArray(tasks)) {
-      return res.status(400).json({ error: 'tasks must be an array' });
-    }
-    agentService.setSubagentStatus(token, tasks);
-    res.json({ success: true });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    res.status(500).json({ error: msg });
-  }
-});
-
-// GET /api/nyx/subagent-status
-nyxRouter.get('/subagent-status', (req, res) => {
-  try {
-    const token = req.headers['x-nyx-session-token'] as string | undefined;
-    if (!token) {
-      return res.status(401).json({ error: 'Missing x-nyx-session-token header' });
-    }
-    const tasks = agentService.getSubagentStatus(token);
-    res.json({ success: true, tasks });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    res.status(500).json({ error: msg });
-  }
-});
-
-// GET /api/nyx/rules
-nyxRouter.get('/rules', (_req, res) => {
-  try {
-    const rules = agentService.getRules();
-    res.json({ success: true, rules });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Failed to fetch rules:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/reset
-nyxRouter.post('/reset', (req, res) => {
-  if (req.body?.confirm !== true) {
-    return res.status(400).json({ error: 'Must pass { confirm: true } to reset rules.' });
-  }
-  try {
-    agentService.resetRules();
-    res.json({ success: true });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Failed to reset rules:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/critic
-nyxRouter.post('/critic', validate(nyxCriticSchema), (req, res) => {
-  const { prompt, response, modelId, provider } = req.body;
-  if (!prompt || !response) {
-    return res.status(400).json({ error: 'Missing prompt or response for critic.' });
-  }
-  res.json({ success: true, processing: true });
-  setImmediate(async () => {
+  // POST /api/nyx/subagent-status
+  // fallow-ignore-next-line code-duplication
+  fastify.post('/subagent-status', (request, reply) => {
     try {
-      await agentService.runBackgroundCritic(prompt, response, modelId, provider);
-    } catch (criticError: any) {
-      logger.error('[Nyx Critic Layer Error]:', criticError);
+      const token = request.headers['x-nyx-session-token'] as string | undefined;
+      if (!token) {
+        return reply.code(401).send({ error: 'Missing x-nyx-session-token header' });
+      }
+      const { tasks } = request.body as { tasks?: unknown[] };
+      if (!Array.isArray(tasks)) {
+        return reply.code(400).send({ error: 'tasks must be an array' });
+      }
+      agentService.setSubagentStatus(token, tasks);
+      // fallow-ignore-next-line code-duplication
+      reply.send({ success: true });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      reply.code(500).send({ error: msg });
     }
   });
-});
 
-// ── Search Endpoints ───────────────────────────────────────────────────────────
-
-// GET /api/nyx/search/backends
-nyxRouter.get('/search/backends', (_req, res) => {
-  try {
-    res.json({ success: true, ...searchService.getSearchBackends() });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/codebase-search
-nyxRouter.post('/codebase-search', validate(codebaseSearchSchema), async (req, res) => {
-  const { query } = req.body;
-  if (!query) {
-    return res.status(400).json({ error: 'Missing query parameters for codebase search.' });
-  }
-  try {
-    const result = await searchService.codebaseSearch(query);
-    res.json({ success: true, ...result });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Codebase search failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/search
-nyxRouter.post('/search', validate(nyxSearchSchema), async (req, res) => {
-  const { query } = req.body;
-  if (!query) {
-    return res.status(400).json({ error: 'Missing query parameters for search.' });
-  }
-  try {
-    const results = await searchService.performWebSearch(query);
-    res.json({ success: true, results });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Web search route handler failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET /api/nyx/search/history
-nyxRouter.get('/search/history', async (req, res) => {
-  try {
-    const { db } = await import('../../db/client.ts');
-    const { searchQueries, searchResults } = await import('../../db/schema.ts');
-    const { desc, eq } = await import('drizzle-orm');
-
-    const recentQueries = await db
-      .select()
-      .from(searchQueries)
-      .orderBy(desc(searchQueries.timestamp))
-      .limit(50);
-
-    const history = [];
-    for (const q of recentQueries) {
-      const results = await db
-        .select()
-        .from(searchResults)
-        .where(eq(searchResults.queryId, q.id))
-        .orderBy(searchResults.rank);
-      history.push({ ...q, results });
+  // GET /api/nyx/subagent-status
+  // fallow-ignore-next-line code-duplication
+  fastify.get('/subagent-status', (request, reply) => {
+    try {
+      const token = request.headers['x-nyx-session-token'] as string | undefined;
+      if (!token) {
+        return reply.code(401).send({ error: 'Missing x-nyx-session-token header' });
+      }
+      const tasks = agentService.getSubagentStatus(token);
+      // fallow-ignore-next-line code-duplication
+      reply.send({ success: true, tasks });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      reply.code(500).send({ error: msg });
     }
+  });
 
-    res.json({ success: true, history });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Web search history route failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/prompt-feedback
-nyxRouter.post('/prompt-feedback', async (req, res) => {
-  const { optimizationId, rating } = req.body;
-  if (!optimizationId || typeof rating !== 'number') {
-    return res.status(400).json({ error: 'Missing optimizationId or rating.' });
-  }
-  try {
-    const { db } = await import('../../db/client.ts');
-    const { promptOptimizations } = await import('../../db/schema.ts');
-    const { eq } = await import('drizzle-orm');
-    await db
-      .update(promptOptimizations)
-      .set({ rating })
-      .where(eq(promptOptimizations.id, optimizationId));
-    res.json({ success: true });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Prompt feedback failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ── Filesystem Endpoints ───────────────────────────────────────────────────────
-
-// POST /api/nyx/write-file
-nyxRouter.post('/write-file', validate(writeFileSchema), async (req, res) => {
-  const { filePath, content, overwrite } = req.body;
-  try {
-    const result = await filesystemService.writeFile(filePath, content, overwrite);
-    if (result.conflict) {
-      return res.status(409).json(result);
+  // GET /api/nyx/rules
+  fastify.get('/rules', (_req, reply) => {
+    try {
+      const rules = agentService.getRules();
+      reply.send({ success: true, rules });
+    } catch (error: any) {
+      logger.error('[Nyx Router] Failed to fetch rules:', error);
+      reply.code(500).send({ error: error.message });
     }
-    res.json(result);
-  } catch (error: any) {
-    logger.error('[File System Error]:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
+  });
 
-// POST /api/nyx/read-file
-nyxRouter.post('/read-file', async (req, res) => {
-  try {
-    const { filePath, startLine, endLine } = req.body as {
-      filePath: string;
-      startLine?: number;
-      endLine?: number;
-    };
-    if (!filePath) {
-      return res.status(400).json({ error: 'filePath is required' });
+  // POST /api/nyx/reset
+  fastify.post('/reset', (request, reply) => {
+    if ((request.body as any)?.confirm !== true) {
+      return reply.code(400).send({ error: 'Must pass { confirm: true } to reset rules.' });
     }
-    const content = await filesystemService.readFile(filePath, startLine, endLine);
-    res.json({ success: true, content });
-  } catch (error: any) {
-    logger.error('[Nyx Router] read-file failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/list-directory
-nyxRouter.post('/list-directory', async (req, res) => {
-  try {
-    const { dirPath } = req.body as { dirPath?: string };
-    const files = filesystemService.listDirectory(dirPath);
-    res.json({ success: true, files });
-  } catch (error: any) {
-    logger.error('[Nyx Router] list-directory failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ── Git Endpoints ──────────────────────────────────────────────────────────────
-
-// POST /api/nyx/git-diff
-nyxRouter.post('/git-diff', async (req, res) => {
-  try {
-    const { filePath } = req.body as { filePath?: string };
-    const diff = await gitService.getDiff(filePath);
-    res.json({ success: true, diff });
-  } catch (error: any) {
-    logger.error('[Nyx Router] git-diff failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/git-status
-nyxRouter.post('/git-status', async (req, res) => {
-  try {
-    const status = await gitService.getStatus();
-    res.json({ success: true, status });
-  } catch (error: any) {
-    logger.error('[Nyx Router] git-status failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ── Intelligence Endpoints ───────────────────────────────────────────────────────
-
-// POST /api/nyx/claude-md-hierarchy
-nyxRouter.post('/claude-md-hierarchy', async (req, res) => {
-  try {
-    const { rootPath, currentFile } = req.body as { rootPath?: string; currentFile?: string };
-    if (!rootPath) {
-      return res.status(400).json({ error: 'rootPath is required' });
+    try {
+      agentService.resetRules();
+      reply.send({ success: true });
+    } catch (error: any) {
+      logger.error('[Nyx Router] Failed to reset rules:', error);
+      reply.code(500).send({ error: error.message });
     }
-    const fs = await import('fs');
-    const path = await import('path');
+  });
 
-    const files: any[] = [];
-    const targetNames = ['CLAUDE.md', 'GEMINI.md', 'AGENTS.md', 'DESIGN.md', '.claude.md'];
-
-    // 1. Scan root directory
-    for (const name of targetNames) {
-      const fullPath = path.join(rootPath, name);
-      if (fs.existsSync(fullPath)) {
-        const stats = fs.statSync(fullPath);
-        if (stats.isFile()) {
-          const content = fs.readFileSync(fullPath, 'utf8');
-          files.push({
-            path: name,
-            level: name === 'CLAUDE.md' ? 'global' : 'project',
-            content,
-            lastModified: stats.mtime.toISOString(),
-          });
+  // POST /api/nyx/critic
+  fastify.post(
+    '/critic',
+    {
+      preHandler: [validate(nyxCriticSchema)],
+    },
+    (request, reply) => {
+      const { prompt, response, modelId, provider } = request.body as any;
+      if (!prompt || !response) {
+        return reply.code(400).send({ error: 'Missing prompt or response for critic.' });
+      }
+      reply.send({ success: true, processing: true });
+      setImmediate(async () => {
+        try {
+          await agentService.runBackgroundCritic(prompt, response, modelId, provider);
+        } catch (criticError: any) {
+          logger.error('[Nyx Critic Layer Error]:', criticError);
         }
+      });
+    }
+  );
+
+  // ── Search Endpoints ───────────────────────────────────────────────────────────
+
+  // GET /api/nyx/search/backends
+  fastify.get('/search/backends', (_req, reply) => {
+    try {
+      reply.send({ success: true, ...searchService.getSearchBackends() });
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/codebase-search
+  fastify.post(
+    '/codebase-search',
+    {
+      preHandler: [validate(codebaseSearchSchema)],
+    },
+    async (request, reply) => {
+      const { query } = request.body as any;
+      if (!query) {
+        return reply.code(400).send({ error: 'Missing query parameters for codebase search.' });
+      }
+      try {
+        const result = await searchService.codebaseSearch(query);
+        reply.send({ success: true, ...result });
+      } catch (error: any) {
+        logger.error('[Nyx Router] Codebase search failed:', error);
+        reply.code(500).send({ error: error.message });
       }
     }
+  );
 
-    // 2. Scan subdirectories up to the currentFile if provided
-    if (currentFile && currentFile.startsWith(rootPath)) {
-      let currentDir = path.dirname(currentFile);
-      // Traverse up to rootPath
-      while (currentDir.length >= rootPath.length && currentDir !== rootPath) {
-        for (const name of targetNames) {
-          const fullPath = path.join(currentDir, name);
-          if (fs.existsSync(fullPath)) {
-            const stats = fs.statSync(fullPath);
-            if (stats.isFile()) {
-              const content = fs.readFileSync(fullPath, 'utf8');
-              const relPath = path.relative(rootPath, fullPath).replace(/\\/g, '/');
-              files.push({
-                path: relPath,
-                level: 'directory',
-                content,
-                lastModified: stats.mtime.toISOString(),
-              });
+  // POST /api/nyx/search
+  fastify.post(
+    '/search',
+    {
+      preHandler: [validate(nyxSearchSchema)],
+    },
+    async (request, reply) => {
+      const { query } = request.body as any;
+      if (!query) {
+        return reply.code(400).send({ error: 'Missing query parameters for search.' });
+      }
+      try {
+        const results = await searchService.performWebSearch(query);
+        reply.send({ success: true, results });
+      } catch (error: any) {
+        logger.error('[Nyx Router] Web search route handler failed:', error);
+        reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  // GET /api/nyx/search/history
+  fastify.get('/search/history', async (request, reply) => {
+    try {
+      const { db } = await import('../../db/client.ts');
+      const { searchQueries, searchResults } = await import('../../db/schema.ts');
+      const { desc, eq } = await import('drizzle-orm');
+
+      const recentQueries = await db
+        .select()
+        .from(searchQueries)
+        .orderBy(desc(searchQueries.timestamp))
+        .limit(50);
+
+      const history = [];
+      for (const q of recentQueries) {
+        const results = await db
+          .select()
+          .from(searchResults)
+          .where(eq(searchResults.queryId, q.id))
+          .orderBy(searchResults.rank);
+        history.push({ ...q, results });
+      }
+
+      reply.send({ success: true, history });
+    } catch (error: any) {
+      logger.error('[Nyx Router] Web search history route failed:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/prompt-feedback
+  fastify.post('/prompt-feedback', async (request, reply) => {
+    const { optimizationId, rating } = request.body as any;
+    if (!optimizationId || typeof rating !== 'number') {
+      return reply.code(400).send({ error: 'Missing optimizationId or rating.' });
+    }
+    try {
+      const { db } = await import('../../db/client.ts');
+      const { promptOptimizations } = await import('../../db/schema.ts');
+      const { eq } = await import('drizzle-orm');
+      await db
+        .update(promptOptimizations)
+        .set({ rating })
+        .where(eq(promptOptimizations.id, optimizationId));
+      reply.send({ success: true });
+    } catch (error: any) {
+      logger.error('[Nyx Router] Prompt feedback failed:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // ── Filesystem Endpoints ───────────────────────────────────────────────────────
+
+  // POST /api/nyx/write-file
+  fastify.post(
+    '/write-file',
+    {
+      preHandler: [validate(writeFileSchema)],
+    },
+    async (request, reply) => {
+      const { filePath, content, overwrite } = request.body as any;
+      try {
+        const result = await filesystemService.writeFile(filePath, content, overwrite);
+        if (result.conflict) {
+          return reply.code(409).send(result);
+        }
+        reply.send(result);
+      } catch (error: any) {
+        logger.error('[File System Error]:', error.message);
+        reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  // POST /api/nyx/read-file
+  fastify.post('/read-file', async (request, reply) => {
+    try {
+      const { filePath, startLine, endLine } = request.body as {
+        filePath: string;
+        startLine?: number;
+        endLine?: number;
+      };
+      if (!filePath) {
+        return reply.code(400).send({ error: 'filePath is required' });
+      }
+      const content = await filesystemService.readFile(filePath, startLine, endLine);
+      reply.send({ success: true, content });
+    } catch (error: any) {
+      logger.error('[Nyx Router] read-file failed:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/list-directory
+  fastify.post('/list-directory', async (request, reply) => {
+    try {
+      const { dirPath } = request.body as { dirPath?: string };
+      const files = filesystemService.listDirectory(dirPath);
+      reply.send({ success: true, files });
+    } catch (error: any) {
+      logger.error('[Nyx Router] list-directory failed:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // ── Git Endpoints ──────────────────────────────────────────────────────────────
+
+  // POST /api/nyx/git-diff
+  fastify.post('/git-diff', async (request, reply) => {
+    try {
+      const { filePath } = request.body as { filePath?: string };
+      const diff = await gitService.getDiff(filePath);
+      reply.send({ success: true, diff });
+    } catch (error: any) {
+      logger.error('[Nyx Router] git-diff failed:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/git-status
+  fastify.post('/git-status', async (request, reply) => {
+    try {
+      const status = await gitService.getStatus();
+      reply.send({ success: true, status });
+    } catch (error: any) {
+      logger.error('[Nyx Router] git-status failed:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // ── Intelligence Endpoints ───────────────────────────────────────────────────────
+
+  // POST /api/nyx/claude-md-hierarchy
+  fastify.post('/claude-md-hierarchy', async (request, reply) => {
+    try {
+      const { rootPath, currentFile } = request.body as { rootPath?: string; currentFile?: string };
+      if (!rootPath) {
+        return reply.code(400).send({ error: 'rootPath is required' });
+      }
+      const fs = await import('fs');
+      const path = await import('path');
+
+      const files: any[] = [];
+      const targetNames = ['CLAUDE.md', 'GEMINI.md', 'AGENTS.md', 'DESIGN.md', '.claude.md'];
+
+      // 1. Scan root directory
+      for (const name of targetNames) {
+        const fullPath = path.join(rootPath, name);
+        if (fs.existsSync(fullPath)) {
+          const stats = fs.statSync(fullPath);
+          if (stats.isFile()) {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            files.push({
+              path: name,
+              level: name === 'CLAUDE.md' ? 'global' : 'project',
+              content,
+              lastModified: stats.mtime.toISOString(),
+            });
+          }
+        }
+      }
+
+      // 2. Scan subdirectories up to the currentFile if provided
+      if (currentFile && currentFile.startsWith(rootPath)) {
+        let currentDir = path.dirname(currentFile);
+        // Traverse up to rootPath
+        while (currentDir.length >= rootPath.length && currentDir !== rootPath) {
+          for (const name of targetNames) {
+            const fullPath = path.join(currentDir, name);
+            if (fs.existsSync(fullPath)) {
+              const stats = fs.statSync(fullPath);
+              if (stats.isFile()) {
+                const content = fs.readFileSync(fullPath, 'utf8');
+                const relPath = path.relative(rootPath, fullPath).replace(/\\/g, '/');
+                files.push({
+                  path: relPath,
+                  level: 'directory',
+                  content,
+                  lastModified: stats.mtime.toISOString(),
+                });
+              }
+            }
+          }
+          const parentDir = path.dirname(currentDir);
+          if (parentDir === currentDir) break;
+          currentDir = parentDir;
+        }
+      }
+
+      reply.send({ files });
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/memory-index
+  fastify.post('/memory-index', async (request, reply) => {
+    try {
+      const codeMemories = MemoryService.getMemories('code');
+      const chatMemories = MemoryService.getMemories('chat');
+      const allMemories = [...codeMemories, ...chatMemories];
+      const mapped = allMemories.map((m) => {
+        let type: 'user' | 'feedback' | 'project' | 'reference' = 'project';
+        if (m.category === 'user_preference') type = 'user';
+        else if (m.category === 'project_fact') type = 'project';
+        else if (m.category === 'decision') type = 'reference';
+        else if (m.category === 'summary') type = 'feedback';
+        return {
+          id: m.id,
+          type,
+          content: m.content,
+          timestamp: new Date(m.timestamp).toISOString(),
+          tags: [m.category, m.agentType || 'code'].filter(Boolean) as string[],
+          sourceFile: undefined,
+        };
+      });
+      reply.send({ entries: mapped });
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/keyword-index
+  fastify.post('/keyword-index', async (request, reply) => {
+    try {
+      const { rootPath } = request.body as { rootPath?: string };
+      if (!rootPath) {
+        return reply.code(400).send({ error: 'rootPath is required' });
+      }
+      const fs = await import('fs');
+      const path = await import('path');
+
+      const snippets: any[] = [];
+      const EXCLUDE_DIRS = new Set([
+        'node_modules',
+        '.git',
+        '.nyx-cache',
+        '.stitch',
+        '.agents',
+        '.antigravitycli',
+        '.claude',
+        '.vscode',
+        'dist',
+        'dist-server',
+        'dist-desktop',
+        'public',
+        'graphify-out',
+        'scratch',
+      ]);
+      const ALLOWED_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs']);
+
+      function scanDir(dir: string) {
+        if (!fs.existsSync(dir)) return;
+        const list = fs.readdirSync(dir);
+        for (const file of list) {
+          const fullPath = path.join(dir, file);
+          const relPath = path.relative(rootPath!, fullPath).replace(/\\/g, '/');
+          const stat = fs.statSync(fullPath);
+          if (stat.isDirectory()) {
+            if (!EXCLUDE_DIRS.has(file)) {
+              scanDir(fullPath);
+            }
+          } else {
+            const ext = path.extname(file).toLowerCase();
+            if (ALLOWED_EXTENSIONS.has(ext)) {
+              parseFile(fullPath, relPath);
             }
           }
         }
-        const parentDir = path.dirname(currentDir);
-        if (parentDir === currentDir) break;
-        currentDir = parentDir;
       }
-    }
 
-    res.json({ files });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/memory-index
-nyxRouter.post('/memory-index', async (req, res) => {
-  try {
-    const codeMemories = MemoryService.getMemories('code');
-    const chatMemories = MemoryService.getMemories('chat');
-    const allMemories = [...codeMemories, ...chatMemories];
-    const mapped = allMemories.map((m) => {
-      let type: 'user' | 'feedback' | 'project' | 'reference' = 'project';
-      if (m.category === 'user_preference') type = 'user';
-      else if (m.category === 'project_fact') type = 'project';
-      else if (m.category === 'decision') type = 'reference';
-      else if (m.category === 'summary') type = 'feedback';
-      return {
-        id: m.id,
-        type,
-        content: m.content,
-        timestamp: new Date(m.timestamp).toISOString(),
-        tags: [m.category, m.agentType || 'code'].filter(Boolean) as string[],
-        sourceFile: undefined,
-      };
-    });
-    res.json({ entries: mapped });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/keyword-index
-nyxRouter.post('/keyword-index', async (req, res) => {
-  try {
-    const { rootPath } = req.body as { rootPath?: string };
-    if (!rootPath) {
-      return res.status(400).json({ error: 'rootPath is required' });
-    }
-    const fs = await import('fs');
-    const path = await import('path');
-
-    const snippets: any[] = [];
-    const EXCLUDE_DIRS = new Set([
-      'node_modules',
-      '.git',
-      '.nyx-cache',
-      '.stitch',
-      '.agents',
-      '.antigravitycli',
-      '.claude',
-      '.vscode',
-      'dist',
-      'dist-server',
-      'dist-desktop',
-      'public',
-      'graphify-out',
-      'scratch',
-    ]);
-    const ALLOWED_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs']);
-
-    function scanDir(dir: string) {
-      if (!fs.existsSync(dir)) return;
-      const list = fs.readdirSync(dir);
-      for (const file of list) {
-        const fullPath = path.join(dir, file);
-        const relPath = path.relative(rootPath!, fullPath).replace(/\\/g, '/');
-        const stat = fs.statSync(fullPath);
-        if (stat.isDirectory()) {
-          if (!EXCLUDE_DIRS.has(file)) {
-            scanDir(fullPath);
+      function parseFile(filePath: string, relPath: string) {
+        try {
+          const content = fs.readFileSync(filePath, 'utf8');
+          const lines = content.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            let match = line.match(/(?:export\s+)?class\s+(\w+)/);
+            if (match) {
+              snippets.push(createSnippet(relPath, match[1], 'class', i + 1, lines));
+              continue;
+            }
+            match = line.match(/(?:export\s+)?function\s+(\w+)/);
+            if (match) {
+              snippets.push(createSnippet(relPath, match[1], 'function', i + 1, lines));
+              continue;
+            }
+            match = line.match(/(?:export\s+)?interface\s+(\w+)/);
+            if (match) {
+              snippets.push(createSnippet(relPath, match[1], 'interface', i + 1, lines));
+              continue;
+            }
+            match = line.match(/(?:export\s+)?type\s+(\w+)\s*=/);
+            if (match) {
+              snippets.push(createSnippet(relPath, match[1], 'type', i + 1, lines));
+              continue;
+            }
           }
-        } else {
-          const ext = path.extname(file).toLowerCase();
-          if (ALLOWED_EXTENSIONS.has(ext)) {
-            parseFile(fullPath, relPath);
-          }
-        }
+        } catch {}
       }
-    }
 
-    function parseFile(filePath: string, relPath: string) {
-      try {
-        const content = fs.readFileSync(filePath, 'utf8');
-        const lines = content.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          let match = line.match(/(?:export\s+)?class\s+(\w+)/);
-          if (match) {
-            snippets.push(createSnippet(relPath, match[1], 'class', i + 1, lines));
-            continue;
-          }
-          match = line.match(/(?:export\s+)?function\s+(\w+)/);
-          if (match) {
-            snippets.push(createSnippet(relPath, match[1], 'function', i + 1, lines));
-            continue;
-          }
-          match = line.match(/(?:export\s+)?interface\s+(\w+)/);
-          if (match) {
-            snippets.push(createSnippet(relPath, match[1], 'interface', i + 1, lines));
-            continue;
-          }
-          match = line.match(/(?:export\s+)?type\s+(\w+)\s*=/);
-          if (match) {
-            snippets.push(createSnippet(relPath, match[1], 'type', i + 1, lines));
-            continue;
-          }
-        }
-      } catch {}
-    }
+      function createSnippet(
+        relPath: string,
+        name: string,
+        type: string,
+        lineNum: number,
+        lines: string[]
+      ) {
+        const startLine = Math.max(1, lineNum - 1);
+        const endLine = Math.min(lines.length, lineNum + 8);
+        const snippetContent = lines.slice(startLine - 1, endLine).join('\n');
+        return {
+          id: `sem_${relPath.replace(/\//g, '_')}_${lineNum}`,
+          filePath: relPath,
+          content: snippetContent,
+          startLine,
+          endLine,
+          metadata: {
+            type,
+            name,
+            signature: lines[lineNum - 1].trim(),
+            dependencies: [],
+          },
+        };
+      }
 
-    function createSnippet(
-      relPath: string,
-      name: string,
-      type: string,
-      lineNum: number,
-      lines: string[]
-    ) {
-      const startLine = Math.max(1, lineNum - 1);
-      const endLine = Math.min(lines.length, lineNum + 8);
-      const snippetContent = lines.slice(startLine - 1, endLine).join('\n');
-      return {
-        id: `sem_${relPath.replace(/\//g, '_')}_${lineNum}`,
-        filePath: relPath,
-        content: snippetContent,
-        startLine,
-        endLine,
-        metadata: {
-          type,
-          name,
-          signature: lines[lineNum - 1].trim(),
-          dependencies: [],
-        },
-      };
-    }
-
-    scanDir(rootPath);
-    res.json({ snippets: snippets.slice(0, 500) });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ── Workspace Endpoints ────────────────────────────────────────────────────────
-
-// GET /api/nyx/workspace-profile
-nyxRouter.get('/workspace-profile', async (req, res) => {
-  try {
-    const profile = await workspaceService.getProfile();
-    res.json({ success: true, profile });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Failed to fetch workspace profile:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/workspace-profile
-nyxRouter.post('/workspace-profile', async (req, res) => {
-  try {
-    const { openFiles } = req.body as { openFiles?: string[] };
-    if (openFiles && Array.isArray(openFiles)) {
-      workspaceService.trackOpenFiles(openFiles);
-    }
-    const profile = await workspaceService.getProfile();
-    res.json({ success: true, profile });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Failed to update/fetch workspace profile:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/validate
-nyxRouter.post('/validate', async (req, res) => {
-  try {
-    const result = await workspaceService.validateWorkspace();
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET /api/nyx/memory
-nyxRouter.get('/memory', async (req, res) => {
-  try {
-    const agentType = (req.query.agentType as 'chat' | 'code') || 'code';
-    res.json({ success: true, memories: MemoryService.getMemories(agentType) });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Failed to fetch memories:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/nyx/memory/commit
-nyxRouter.post('/memory/commit', (req, res) => {
-  const { prompt, response, modelId, provider, agentType } = req.body;
-  if (!prompt || !response) {
-    return res.status(400).json({ error: 'Missing prompt or response.' });
-  }
-  res.json({ success: true, processing: true });
-  setImmediate(async () => {
-    try {
-      const targetAgentType = agentType || 'code';
-      await MemoryService.runBackgroundMemoryKeeper(
-        prompt,
-        response,
-        modelId,
-        provider,
-        targetAgentType
-      );
-    } catch (memoryError: any) {
-      logger.error('[Nyx Memory Keeper Layer Error]:', memoryError);
+      scanDir(rootPath);
+      reply.send({ snippets: snippets.slice(0, 500) });
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
     }
   });
-});
 
-// POST /api/nyx/memory/reset
-nyxRouter.post('/memory/reset', async (req, res) => {
-  try {
-    const agentType = req.query.agentType as 'chat' | 'code' | undefined;
-    MemoryService.resetMemories(agentType);
-    res.json({ success: true });
-  } catch (error: any) {
-    logger.error('[Nyx Router] Failed to reset memories:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  // ── Workspace Endpoints ────────────────────────────────────────────────────────
+
+  // GET /api/nyx/workspace-profile
+  fastify.get('/workspace-profile', async (request, reply) => {
+    try {
+      const profile = await workspaceService.getProfile();
+      reply.send({ success: true, profile });
+    } catch (error: any) {
+      logger.error('[Nyx Router] Failed to fetch workspace profile:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/workspace-profile
+  fastify.post('/workspace-profile', async (request, reply) => {
+    try {
+      const { openFiles } = request.body as { openFiles?: string[] };
+      if (openFiles && Array.isArray(openFiles)) {
+        workspaceService.trackOpenFiles(openFiles);
+      }
+      const profile = await workspaceService.getProfile();
+      reply.send({ success: true, profile });
+    } catch (error: any) {
+      logger.error('[Nyx Router] Failed to update/fetch workspace profile:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/validate
+  fastify.post('/validate', async (request, reply) => {
+    try {
+      const result = await workspaceService.validateWorkspace();
+      reply.send(result);
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // GET /api/nyx/memory
+  fastify.get('/memory', async (request, reply) => {
+    try {
+      const agentType = ((request.query as any).agentType as 'chat' | 'code') || 'code';
+      reply.send({ success: true, memories: MemoryService.getMemories(agentType) });
+    } catch (error: any) {
+      logger.error('[Nyx Router] Failed to fetch memories:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/memory/commit
+  fastify.post('/memory/commit', (request, reply) => {
+    const { prompt, response, modelId, provider, agentType } = request.body as any;
+    if (!prompt || !response) {
+      return reply.code(400).send({ error: 'Missing prompt or response.' });
+    }
+    reply.send({ success: true, processing: true });
+    setImmediate(async () => {
+      try {
+        const targetAgentType = agentType || 'code';
+        await MemoryService.runBackgroundMemoryKeeper(
+          prompt,
+          response,
+          modelId,
+          provider,
+          targetAgentType
+        );
+      } catch (memoryError: any) {
+        logger.error('[Nyx Memory Keeper Layer Error]:', memoryError);
+      }
+    });
+  });
+
+  // POST /api/nyx/memory/reset
+  fastify.post('/memory/reset', async (request, reply) => {
+    try {
+      const agentType = (request.query as any).agentType as 'chat' | 'code' | undefined;
+      MemoryService.resetMemories(agentType);
+      reply.send({ success: true });
+    } catch (error: any) {
+      logger.error('[Nyx Router] Failed to reset memories:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+}

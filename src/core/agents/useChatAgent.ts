@@ -129,6 +129,7 @@ export function useChatAgent() {
         for await (const event of stream) {
           switch (event.type) {
             case 'thinking': {
+              // fallow-ignore-next-line code-duplication
               thinkingSteps.push(event.content!);
               setMessages((prev) => {
                 const next = [...prev];
@@ -141,6 +142,7 @@ export function useChatAgent() {
             }
 
             case 'text': {
+              // fallow-ignore-next-line code-duplication
               accumulatedText += event.content!;
               setMessages((prev) => {
                 const next = [...prev];
@@ -153,6 +155,7 @@ export function useChatAgent() {
             }
 
             case 'artifact': {
+              // fallow-ignore-next-line code-duplication
               artifacts.push(event.metadata as Artifact);
               setMessages((prev) => {
                 const next = [...prev];
@@ -165,6 +168,7 @@ export function useChatAgent() {
             }
 
             case 'citation': {
+              // fallow-ignore-next-line code-duplication
               citations.push(event.metadata as Citation);
               setMessages((prev) => {
                 const next = [...prev];

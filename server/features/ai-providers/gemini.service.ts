@@ -18,6 +18,7 @@ export class GeminiService {
     onChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
+    // fallow-ignore-next-line code-duplication
     const {
       model,
       prompt,

@@ -1,21 +1,11 @@
-import { LocalModelRunner } from './localModelRunner.ts';
 import os from 'os';
+import type { OptimizationProfile } from './modelTypes.ts';
 
-export interface OptimizationProfile {
-  taskType: 'chat' | 'code' | 'analysis';
-  gpuLayers: number;
-  contextSize: number;
-  batchSize: number;
-  threads: number;
-  quantization: 'Q2_K' | 'Q3_K_M' | 'Q4_K_M' | 'Q5_K_M' | 'Q6_K' | 'Q8_0';
-  useFlashAttn: boolean;
-  kvCacheQuant: 'f16' | 'q8_0' | 'q4_0';
-  speculativeDecoding: boolean;
-  draftModelPath?: string;
-  tensorSplit?: number[];
-  backend: 'cuda' | 'vulkan' | 'cpu';
-  estimatedTokensPerSecond: number;
-}
+import { detectGPUs, calculateOptimalLayers, detectBackend } from './hardwareDetector.ts';
+
+// Re-export for backward compatibility — callers that import OptimizationProfile
+// from this module continue to work without changes.
+export type { OptimizationProfile } from './modelTypes.ts';
 
 export class ModelOptimizer {
   async generateProfile(
@@ -23,18 +13,14 @@ export class ModelOptimizer {
     taskType: 'chat' | 'code' | 'analysis',
     priority: 'speed' | 'quality' | 'balanced' = 'balanced'
   ): Promise<OptimizationProfile> {
-    const gpus = await LocalModelRunner.detectGPUs();
+    const gpus = await detectGPUs();
     const totalRam = os.totalmem();
     const cpuCores = os.cpus().length;
 
     // Base calculations from existing code
-    const optimal = await LocalModelRunner.calculateOptimalLayers(
-      modelId,
-      this.getContextSize(taskType, totalRam)
-    );
+    const optimal = await calculateOptimalLayers(modelId, this.getContextSize(taskType, totalRam));
 
-    const backendType =
-      gpus.length > 0 ? ((await LocalModelRunner.detectBackend()) as 'cuda' | 'vulkan') : 'cpu';
+    const backendType = gpus.length > 0 ? ((await detectBackend()) as 'cuda' | 'vulkan') : 'cpu';
 
     // Task-specific adjustments
     const profile: OptimizationProfile = {

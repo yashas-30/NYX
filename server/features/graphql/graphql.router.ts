@@ -1,11 +1,10 @@
-import { Router } from 'express';
-import { graphqlHTTP } from 'express-graphql';
+import { FastifyInstance } from 'fastify';
+import mercurius from 'mercurius';
 import { buildSchema } from 'graphql';
 
-export const graphqlRouter = Router();
-
-// Boilerplate GraphQL schema
-const schema = buildSchema(`
+export async function graphqlRouter(fastify: FastifyInstance) {
+  // Boilerplate GraphQL schema
+  const schema = `
   type Query {
     hello: String
     conversations: [Conversation]
@@ -15,23 +14,23 @@ const schema = buildSchema(`
     id: String
     title: String
   }
-`);
+`;
 
-const root = {
-  hello: () => {
-    return 'Hello from NYX GraphQL!';
-  },
-  conversations: () => {
-    // Boilerplate resolver, would connect to conversation.service
-    return [{ id: '1', title: 'Example Conversation' }];
-  },
-};
+  const resolvers = {
+    Query: {
+      hello: () => {
+        return 'Hello from NYX GraphQL!';
+      },
+      conversations: () => {
+        // Boilerplate resolver, would connect to conversation.service
+        return [{ id: '1', title: 'Example Conversation' }];
+      },
+    },
+  };
 
-graphqlRouter.use(
-  '/',
-  graphqlHTTP({
-    schema: schema,
-    rootValue: root,
+  fastify.register(mercurius, {
+    schema,
+    resolvers,
     graphiql: true, // Enable GraphiQL UI
-  })
-);
+  });
+}

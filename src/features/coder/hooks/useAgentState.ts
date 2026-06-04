@@ -16,6 +16,7 @@ export const useAgentState = ({
   models: propModels,
   setModel: propSetModel,
 }: AgentStateProps = {}) => {
+  // fallow-ignore-next-line code-duplication
   const [localModels, setLocalModels] = useState<Record<'nyx', string>>({
     nyx: '',
   });

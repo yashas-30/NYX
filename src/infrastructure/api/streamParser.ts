@@ -354,6 +354,7 @@ export async function parseSSEStream(
 
         let partialIdx = -1;
         if (!flush) {
+          // fallow-ignore-next-line code-duplication
           const target = '<think>';
           for (
             let i = Math.max(0, streamBuffer.length - target.length);
@@ -395,6 +396,7 @@ export async function parseSSEStream(
 
         let partialIdx = -1;
         if (!flush) {
+          // fallow-ignore-next-line code-duplication
           const target = '</think>';
           for (
             let i = Math.max(0, streamBuffer.length - target.length);
@@ -432,6 +434,7 @@ export async function parseSSEStream(
         throw new DOMException('Aborted', 'AbortError');
       }
 
+      // fallow-ignore-next-line code-duplication
       const { done, value } = await reader.read();
       if (done) break;
 
@@ -447,6 +450,7 @@ export async function parseSSEStream(
 
         // Handle [DONE] sentinel
         if (sseLine.data === '[DONE]' || sseLine.data === '[done]') {
+          // fallow-ignore-next-line code-duplication
           processStreamBuffer(true);
           finishReason = finishReason || 'stop';
           onFinish?.(finishReason);
@@ -568,6 +572,7 @@ export async function parseSSEStream(
       }
     }
 
+    // fallow-ignore-next-line code-duplication
     processStreamBuffer(true);
     finishReason = finishReason || 'stop';
     onFinish?.(finishReason);

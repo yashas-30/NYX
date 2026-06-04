@@ -10,16 +10,25 @@ export const conversations = sqliteTable('conversations', {
   updatedAt: integer('updated_at').notNull(),
 });
 
-export const messages = sqliteTable('messages', {
-  id: text('id').primaryKey(),
-  conversationId: text('conversation_id')
-    .notNull()
-    .references(() => conversations.id, { onDelete: 'cascade' }),
-  role: text('role').notNull(), // 'user' | 'assistant' | 'system'
-  content: text('content').notNull(),
-  model: text('model').notNull(),
-  timestamp: integer('timestamp').notNull(),
-});
+export const messages = sqliteTable(
+  'messages',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(), // 'user' | 'assistant' | 'system'
+    content: text('content').notNull(),
+    model: text('model').notNull(),
+    timestamp: integer('timestamp').notNull(),
+  },
+  (table) => ({
+    conversationTimestampIdx: index('idx_messages_conversation_timestamp').on(
+      table.conversationId,
+      table.timestamp
+    ),
+  })
+);
 
 export const conversationsRelations = relations(conversations, ({ many }) => ({
   messages: many(messages),
@@ -210,4 +219,93 @@ export const promptOptimizations = sqliteTable('prompt_optimizations', {
   version: text('version').notNull(),
   rating: integer('rating'), // 1 for thumbs up, -1 for thumbs down, null for unrated
   timestamp: integer('timestamp').notNull(),
+});
+
+import { index } from 'drizzle-orm/sqlite-core';
+
+export const agentRuns = sqliteTable(
+  'agent_runs',
+  {
+    id: text('id').primaryKey(),
+    agentType: text('agent_type').notNull(),
+    task: text('task').notNull(),
+    status: text('status').notNull(), // 'running', 'completed', 'failed'
+    startedAt: integer('started_at').notNull(),
+    completedAt: integer('completed_at'),
+    tokensUsed: integer('tokens_used'),
+    cost: real('cost'),
+    error: text('error'),
+  },
+  (table) => ({
+    statusStartedIdx: index('idx_agent_runs_status_started').on(table.status, table.startedAt),
+  })
+);
+
+export const toolExecutions = sqliteTable(
+  'tool_executions',
+  {
+    id: text('id').primaryKey(),
+    agentRunId: text('agent_run_id')
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: 'cascade' }),
+    toolName: text('tool_name').notNull(),
+    input: text('input').notNull(),
+    output: text('output'),
+    durationMs: integer('duration_ms'),
+    success: integer('success', { mode: 'boolean' }),
+  },
+  (table) => ({
+    agentRunIdx: index('idx_tool_executions_run_id').on(table.agentRunId),
+  })
+);
+
+export const fileChanges = sqliteTable('file_changes', {
+  id: text('id').primaryKey(),
+  agentRunId: text('agent_run_id')
+    .notNull()
+    .references(() => agentRuns.id, { onDelete: 'cascade' }),
+  filePath: text('file_path').notNull(),
+  operation: text('operation').notNull(), // 'create', 'update', 'delete'
+  diff: text('diff'),
+  appliedAt: integer('applied_at').notNull(),
+});
+
+export const pendingFileWrites = sqliteTable('pending_file_writes', {
+  id: text('id').primaryKey(),
+  agentRunId: text('agent_run_id')
+    .notNull()
+    .references(() => agentRuns.id, { onDelete: 'cascade' }),
+  filePath: text('file_path').notNull(),
+  content: text('content').notNull(),
+  diff: text('diff'),
+  status: text('status').notNull(), // 'pending', 'approved', 'rejected'
+  createdAt: integer('created_at').notNull(),
+});
+
+export const userPreferences = sqliteTable('user_preferences', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const auditLogs = sqliteTable('audit_logs', {
+  id: text('id').primaryKey(),
+  category: text('category').notNull(), // 'api_key_usage', 'file_write_attempt', 'terminal_command', 'authentication'
+  event: text('event').notNull(), // JSON string representing event details
+  status: text('status').notNull(), // 'success', 'failure', 'blocked'
+  agentRunId: text('agent_run_id'), // Optional, if performed by an agent
+  timestamp: integer('timestamp').notNull(),
+});
+
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  username: text('username').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  salt: text('salt').notNull(),
+  mfaSecret: text('mfa_secret'),
+  mfaEnabled: integer('mfa_enabled', { mode: 'boolean' }).default(false).notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
 });

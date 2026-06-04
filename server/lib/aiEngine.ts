@@ -77,9 +77,16 @@ export class UnifiedEngine {
           );
 
           let domain = 'general';
-          if (originalPrompt.includes('```') || originalPrompt.includes('function') || originalPrompt.includes('class')) {
+          if (
+            originalPrompt.includes('```') ||
+            originalPrompt.includes('function') ||
+            originalPrompt.includes('class')
+          ) {
             domain = 'coding';
-          } else if (originalPrompt.toLowerCase().includes('story') || originalPrompt.toLowerCase().includes('creative')) {
+          } else if (
+            originalPrompt.toLowerCase().includes('story') ||
+            originalPrompt.toLowerCase().includes('creative')
+          ) {
             domain = 'creative';
           }
 
@@ -92,7 +99,7 @@ export class UnifiedEngine {
             body: JSON.stringify({
               prompt: originalPrompt,
               apiKey: activeGeminiKey,
-              domain
+              domain,
             }),
             signal: controller.signal,
           });
@@ -124,7 +131,9 @@ export class UnifiedEngine {
                     timestamp: Date.now(),
                   });
 
-                  console.log(`[Antigravity Middleware] Optimized prompt successfully (ID: ${optimizationId}).`);
+                  console.log(
+                    `[Antigravity Middleware] Optimized prompt successfully (ID: ${optimizationId}).`
+                  );
                   writeChunk({ chunk: `\n\n<!-- ANTIGRAVITY_META:${optimizationId} -->\n\n` });
                 } catch (dbErr) {
                   console.error('[Antigravity Middleware] Failed to log optimization:', dbErr);
@@ -211,6 +220,7 @@ export class UnifiedEngine {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      // fallow-ignore-next-line code-duplication
       body: JSON.stringify({
         contents,
         systemInstruction: systemInstruction
@@ -254,6 +264,7 @@ export class UnifiedEngine {
     const response = await fetch(`http://127.0.0.1:${port}/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      // fallow-ignore-next-line code-duplication
       body: JSON.stringify({ prompt, model, apiKey }),
     });
 

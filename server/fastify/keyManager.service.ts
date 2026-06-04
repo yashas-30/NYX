@@ -1,6 +1,6 @@
 import logger from '../lib/logger.ts';
 import crypto from 'crypto';
-import { loadKeys } from '../features/vault/vault.service.ts';
+import { getKeysSync } from '../features/vault/vault.service.ts';
 
 interface KeyMetadata {
   id: string; // Hash of the key to uniquely identify it without storing plaintext
@@ -20,17 +20,26 @@ export class KeyManagerService {
     const envVar = `${provider.toUpperCase()}_API_KEYS`;
     const envKeysStr = process.env[envVar] || process.env[`${provider.toUpperCase()}_API_KEY`];
     let keys: string[] = [];
-    
+
     if (envKeysStr) {
-      keys = envKeysStr.split(',').map((k) => k.trim()).filter(Boolean);
+      keys = envKeysStr
+        .split(',')
+        .map((k) => k.trim())
+        .filter(Boolean);
     }
 
     // 2. Fetch keys from Vault
     try {
-      const vaultKeys = loadKeys();
-      const vaultKeyStr = vaultKeys[`${provider}_api_keys`] || vaultKeys[`${provider.toUpperCase()}_API_KEY`] || vaultKeys[`${provider}_api_key`];
+      const vaultKeys = getKeysSync();
+      const vaultKeyStr =
+        vaultKeys[`${provider}_api_keys`] ||
+        vaultKeys[`${provider.toUpperCase()}_API_KEY`] ||
+        vaultKeys[`${provider}_api_key`];
       if (vaultKeyStr) {
-        const vKeys = vaultKeyStr.split(',').map((k) => k.trim()).filter(Boolean);
+        const vKeys = vaultKeyStr
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean);
         keys = [...keys, ...vKeys];
       }
     } catch (err) {
@@ -47,7 +56,7 @@ export class KeyManagerService {
     const currentMetadata = this.providerKeyMetadata.get(provider) || [];
     const newMetadata: KeyMetadata[] = keys.map((k) => {
       const id = crypto.createHash('sha256').update(k).digest('hex');
-      const existing = currentMetadata.find(m => m.id === id);
+      const existing = currentMetadata.find((m) => m.id === id);
       return existing || { id, isRateLimited: false };
     });
 

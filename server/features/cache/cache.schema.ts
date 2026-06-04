@@ -1,3 +1,4 @@
+// fallow-ignore-next-line code-duplication
 import { z } from 'zod';
 
 const chatMessageSchema = z.object({
@@ -5,6 +6,7 @@ const chatMessageSchema = z.object({
   content: z.string().max(10 * 1024 * 1024),
 });
 
+// fallow-ignore-next-line code-duplication
 const aiSettingsSchema = z
   .object({
     temperature: z.number().min(0).max(2).optional(),

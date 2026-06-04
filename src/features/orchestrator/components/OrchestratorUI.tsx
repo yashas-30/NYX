@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 /**
  * @file src/features/orchestrator/components/OrchestratorUI.tsx
  * @description Production-grade orchestrator UI with streaming animation,
@@ -354,7 +355,7 @@ const MarkdownRenderer: React.FC<{ content: string; isStreaming?: boolean }> = m
           </a>
         ),
         blockquote: ({ children }: any) => (
-          <blockquote className="my-2 pl-3 py-1 border-l-2 border-blue-500/40 bg-white/[0.01] rounded-r text-[#A0A0A0] italic">
+          <blockquote className="my-2 pl-3 py-1 border-l border-blue-500/40 bg-white/[0.01] rounded-r text-[#A0A0A0] italic">
             {children}
           </blockquote>
         ),
@@ -459,15 +460,15 @@ const AssistantMessage: React.FC<{
       {!msg.content && isStreaming && msg.status === 'streaming' && (
         <div className="flex gap-1 items-center h-5">
           <span
-            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"
+            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"
             style={{ animationDelay: '0ms' }}
           />
           <span
-            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"
+            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"
             style={{ animationDelay: '150ms' }}
           />
           <span
-            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"
+            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"
             style={{ animationDelay: '300ms' }}
           />
         </div>

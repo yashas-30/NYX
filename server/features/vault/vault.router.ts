@@ -1,5 +1,5 @@
-import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import logger from '../../lib/logger.ts';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   loadKeys,
   saveKeys,
@@ -12,156 +12,241 @@ import {
 import { validate } from '../../middleware/validate.ts';
 import { vaultStoreSchema } from './vault.schema.ts';
 
-export const vaultRouter = Router();
-
-const tokenLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many token requests, please try again later.' },
-});
-
-const vaultLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  message: { error: 'Too many vault operations, please try again later.' },
-});
-
-vaultRouter.post('/store', validate(vaultStoreSchema), vaultLimiter, (req, res) => {
-  const { keys } = req.body;
-  try {
-    const currentKeys = loadKeys();
-    const updatedKeys = { ...currentKeys, ...keys };
-    saveKeys(updatedKeys);
-    res.json({ status: 'ok' });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-const handleGetToken = (req: any, res: any) => {
-  const isStream = req.query.stream === 'true';
-  const token = createSessionToken(isStream);
-  res.json({ token, expiresAt: Date.now() + 5 * 60 * 1000 });
-};
-
-vaultRouter.get('/token', tokenLimiter, handleGetToken);
-vaultRouter.get('/status', (req, res) => {
-  res.json(getVaultStatus());
-});
-
-vaultRouter.get('/keys', vaultLimiter, (req, res) => {
-  try {
-    const keys = loadKeys();
-    res.json({ keys });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-vaultRouter.post('/backup', vaultLimiter, (req, res) => {
-  try {
-    const backupPath = backupVault();
-    res.json({ status: 'ok', path: backupPath });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-vaultRouter.post('/export', vaultLimiter, (req, res) => {
-  try {
-    const data = exportVault();
-    res.json({ status: 'ok', data });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-vaultRouter.post('/import', vaultLimiter, (req, res) => {
-  const { data } = req.body;
-  if (!data || typeof data !== 'string') {
-    return res.status(400).json({ error: 'Missing or invalid encrypted vault data in body' });
-  }
-  try {
-    importVault(data);
-    res.json({ status: 'ok' });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-vaultRouter.post('/validate', vaultLimiter, async (req, res) => {
-  const { provider, apiKey, key: keyField } = req.body;
-  const resolvedKey = apiKey || keyField;
-  if (!provider || !resolvedKey) {
-    return res.status(400).json({ error: 'Missing provider or key in request body' });
-  }
-
-  const key = resolvedKey.trim();
-
-  try {
-    if (provider === 'gemini') {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`
-      );
-      if (response.ok) {
-        return res.json({ valid: true });
-      } else {
-        const errData = await response.json().catch(() => ({}));
-        return res
-          .status(400)
-          .json({ valid: false, error: errData.error?.message || 'Invalid API Key' });
+export async function vaultRouter(fastify: FastifyInstance) {
+  fastify.post(
+    '/store',
+    {
+      preHandler: [validate(vaultStoreSchema)],
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '15 minutes',
+        },
+      },
+    },
+    async (request, reply) => {
+      const { keys } = request.body as any;
+      try {
+        const currentKeys = await loadKeys();
+        const updatedKeys = { ...currentKeys, ...keys };
+        await saveKeys(updatedKeys);
+        reply.send({ status: 'ok' });
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
       }
     }
+  );
 
-    if (provider === 'scrapling') {
-      const scraplingPort = process.env.SCRAPLING_PORT || '3002';
-      const url = (req.body.scraplingUrl || `http://localhost:${scraplingPort}`).trim();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (key) {
-        headers['Authorization'] = `Bearer ${key}`;
+  const handleGetToken = (request: FastifyRequest, reply: FastifyReply) => {
+    const isStream = (request.query as any).stream === 'true';
+    const token = createSessionToken(isStream);
+    reply.send({ token, expiresAt: Date.now() + 5 * 60 * 1000 });
+  };
+
+  fastify.get(
+    '/token',
+    {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: '15 minutes',
+        },
+      },
+    },
+    handleGetToken
+  );
+
+  fastify.get('/status', async (request, reply) => {
+    reply.send(await getVaultStatus());
+  });
+
+  fastify.get(
+    '/keys',
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '15 minutes',
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const keys = await loadKeys();
+        reply.send({ keys });
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
       }
+    }
+  );
+
+  fastify.post(
+    '/backup',
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '15 minutes',
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const backupPath = await backupVault();
+        reply.send({ status: 'ok', path: backupPath });
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  fastify.post(
+    '/export',
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '15 minutes',
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const data = await exportVault();
+        reply.send({ status: 'ok', data });
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  fastify.post(
+    '/import',
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '15 minutes',
+        },
+      },
+    },
+    async (request, reply) => {
+      const { data } = request.body as any;
+      if (!data || typeof data !== 'string') {
+        return reply.code(400).send({ error: 'Missing or invalid encrypted vault data in body' });
+      }
+      try {
+        await importVault(data);
+        reply.send({ status: 'ok' });
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  fastify.post(
+    '/validate',
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '15 minutes',
+        },
+      },
+    },
+    async (request, reply) => {
+      const { provider, apiKey, key: keyField } = request.body as any;
+      let resolvedKey = apiKey || keyField;
+
+      if (!resolvedKey && provider) {
+        try {
+          const keys = await loadKeys();
+          resolvedKey = keys[provider];
+        } catch (e) {
+          logger.error('[Vault Validate] Failed to load keys from vault:', e);
+        }
+      }
+
+      if (!provider || !resolvedKey) {
+        return reply.code(400).send({ error: 'Missing provider or key in request body' });
+      }
+
+      const key = resolvedKey.trim();
 
       try {
-        const response = await fetch(`${url}/v1/search`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ query: 'test', limit: 1 }),
-          signal: AbortSignal.timeout(5000),
-        });
-
-        if (response.ok || response.status === 400) {
-          return res.json({ valid: true });
-        }
-
-        // Try fallback to health check
-        const healthResponse = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
-        if (healthResponse.ok) {
-          return res.json({ valid: true });
-        }
-        return res
-          .status(400)
-          .json({ valid: false, error: `Scrapling service returned status ${response.status}` });
-      } catch (error: any) {
-        // Double check health fallback
-        try {
-          const healthResponse = await fetch(`${url}/health`, {
-            signal: AbortSignal.timeout(3000),
-          });
-          if (healthResponse.ok) {
-            return res.json({ valid: true });
+        if (provider === 'gemini') {
+          const baseUrl = (
+            (request.body as any).geminiUrl || 'https://generativelanguage.googleapis.com/v1beta'
+          )
+            .trim()
+            .replace(/\/$/, '');
+          const response = await fetch(`${baseUrl}/models?key=${key}`);
+          if (response.ok) {
+            return reply.send({ valid: true });
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            return reply
+              .code(400)
+              .send({ valid: false, error: errData.error?.message || 'Invalid API Key' });
           }
-        } catch {}
-        return res.status(400).json({
-          valid: false,
-          error: `Scrapling service unreachable at ${url}: ${error.message}`,
-        });
+        }
+
+        if (provider === 'scrapling') {
+          const scraplingPort = process.env.SCRAPLING_PORT || '3002';
+          const url = (
+            (request.body as any).scraplingUrl || `http://localhost:${scraplingPort}`
+          ).trim();
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (key) {
+            headers['Authorization'] = `Bearer ${key}`;
+          }
+
+          try {
+            const response = await fetch(`${url}/v1/search`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ query: 'test', limit: 1 }),
+              signal: AbortSignal.timeout(5000),
+            });
+
+            if (response.ok || response.status === 400) {
+              return reply.send({ valid: true });
+            }
+
+            const healthResponse = await fetch(`${url}/health`, {
+              signal: AbortSignal.timeout(3000),
+            });
+            if (healthResponse.ok) {
+              return reply.send({ valid: true });
+            }
+            return reply
+              .code(400)
+              .send({
+                valid: false,
+                error: `Scrapling service returned status ${response.status}`,
+              });
+          } catch (error: any) {
+            try {
+              const healthResponse = await fetch(`${url}/health`, {
+                signal: AbortSignal.timeout(3000),
+              });
+              if (healthResponse.ok) {
+                return reply.send({ valid: true });
+              }
+            } catch {}
+            return reply.code(400).send({
+              valid: false,
+              error: `Scrapling service unreachable at ${url}: ${error.message}`,
+            });
+          }
+        }
+
+        return reply
+          .code(400)
+          .send({ error: `Validation not supported for provider: ${provider}` });
+      } catch (error: any) {
+        return reply.code(500).send({ error: `Connection failed: ${error.message}` });
       }
     }
-
-    return res.status(400).json({ error: `Validation not supported for provider: ${provider}` });
-  } catch (error: any) {
-    return res.status(500).json({ error: `Connection failed: ${error.message}` });
-  }
-});
+  );
+}

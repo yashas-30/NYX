@@ -1,6 +1,4 @@
-import fastify from 'fastify';
-import cors from '@fastify/cors';
-import rateLimit from '@fastify/rate-limit';
+import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import promClient from 'prom-client';
 import { LRUCache } from 'lru-cache';
 import crypto from 'crypto';
@@ -13,7 +11,6 @@ import { modelCache } from './modelCache.service.ts';
 import { keyManager } from './keyManager.service.ts';
 import { webhookService } from './webhook.service.ts';
 import logger from '../lib/logger.ts';
-import { fileURLToPath } from 'url';
 
 const registry = new promClient.Registry();
 promClient.collectDefaultMetrics({ register: registry });
@@ -46,27 +43,7 @@ interface ActiveStream {
 
 const activeStreams = new Map<string, ActiveStream>();
 
-export async function startFastifyServer(port: number = 3001) {
-  const app = fastify({
-    // Use pino/file (stdout) instead of pino-pretty — pino-pretty requires
-    // worker-thread resolution that breaks inside esbuild bundles.
-    logger: {
-      transport: {
-        target: 'pino/file',
-        options: { destination: 1 }, // 1 = stdout
-      },
-    },
-  });
-
-  await app.register(cors, {
-    origin: '*',
-  });
-
-  await app.register(rateLimit, {
-    max: 1000,
-    timeWindow: '1 minute',
-  });
-
+export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   const adapters: Record<string, ProviderAdapter> = {
     gemini: new GeminiAdapter(),
     ollama: new OllamaAdapter(),
@@ -339,33 +316,4 @@ export async function startFastifyServer(port: number = 3001) {
       return reply.code(500).send({ error: err.message });
     }
   });
-
-  try {
-    await app.listen({ port, host: '127.0.0.1' });
-    logger.info(`[Fastify] Backend Server listening on port ${port}`);
-  } catch (err) {
-    logger.error({ err }, '[Fastify] Failed to start server');
-    process.exit(1);
-  }
-}
-
-// Ensure the fastify instance is not accidentally started multiple times
-// by checking if this file is the main entry point
-let isMain = false;
-try {
-  if (typeof process !== 'undefined' && process.argv[1]) {
-    const filePath = fileURLToPath(import.meta.url);
-    if (process.argv[1] === filePath) {
-      isMain = true;
-    }
-  }
-} catch (e) {
-  // CommonJS fallback if import.meta.url is not available
-  if (require.main === module) {
-    isMain = true;
-  }
-}
-
-if (isMain) {
-  startFastifyServer().catch(console.error);
-}
+};

@@ -1,15 +1,16 @@
-import { Router } from 'express';
+import { FastifyInstance } from 'fastify';
 import { SystemService } from './system.service.ts';
 
-export const systemRouter = Router();
-const service = new SystemService();
+export async function systemRouter(fastify: FastifyInstance) {
+  const service = new SystemService();
 
-systemRouter.get('/system', async (req, res) => {
-  const modelId = req.query.modelId as string;
-  try {
-    const specs = await service.getSystemSpecs(modelId);
-    res.json(specs);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  fastify.get('/system', async (request, reply) => {
+    const modelId = (request.query as any).modelId as string;
+    try {
+      const specs = await service.getSystemSpecs(modelId);
+      reply.send(specs);
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+}

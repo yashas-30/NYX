@@ -1,12 +1,12 @@
-import { Response } from 'express';
+import { FastifyReply } from 'fastify';
 import { createSessionToken } from '../features/vault/vault.service.ts';
 
 /**
  * Sends a cryptographically fresh rotated session token as SSE metadata.
  * Should be called immediately after flushing event-stream headers.
  */
-export function sendSseTokenRotate(res: Response): void {
+export function sendSseTokenRotate(res: FastifyReply): void {
   const newToken = createSessionToken(false);
   const sseMetadata = `event: metadata\ndata: ${JSON.stringify({ tokenRotate: newToken })}\n\n`;
-  res.write(sseMetadata, 'utf8');
+  res.raw.write(sseMetadata, 'utf8');
 }

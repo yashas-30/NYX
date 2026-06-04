@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 import React, { useMemo, useEffect, useRef } from 'react';
 import {
   Search,

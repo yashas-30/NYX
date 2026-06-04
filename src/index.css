@@ -1,7 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@fontsource-variable/geist";
+
 
 /* ── Apple HIG Design Tokens ─────────────────────────────────── */
 :root {
@@ -88,7 +88,7 @@
 }
 
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Sora", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
   
   --ease-out: var(--ease-apple);
@@ -127,7 +127,7 @@
   * {
     border-color: var(--border);
     outline-color: var(--ring);
-    transition-property: background-color, border-color, color, fill, stroke, box-shadow, opacity, transform, backdrop-filter;
+    transition-property: background-color, border-color, color, fill, stroke, box-shadow, outline-color;
     transition-timing-function: var(--ease-apple);
     transition-duration: var(--duration-normal);
   }
@@ -361,7 +361,7 @@
 }
 
 .markdown-body blockquote {
-  border-left: 3px solid var(--primary);
+  border-left: 1px solid var(--primary);
   margin: 0.5em 0;
   padding: 0.25em 0.75em;
   opacity: 0.8;
@@ -602,3 +602,17 @@
 .nyx-dot-4 { animation-delay: 0.36s; }
 .nyx-dot-5 { animation-delay: 0.48s; }
 .nyx-dot-6 { animation-delay: 0.6s; }
+
+/* ── Active visual scale-on-press feedback ──────────────────── */
+button:active,
+[role="button"]:active,
+.active-scale:active {
+  transform: scale(0.97) !important;
+}
+
+button,
+[role="button"],
+.active-scale {
+  transition: transform 120ms ease-out !important;
+}
+

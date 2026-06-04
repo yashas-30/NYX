@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 import React from 'react';
 import { motion } from 'motion/react';
 import {
@@ -72,17 +73,17 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
         group relative p-4 rounded-2xl border border-solid flex flex-col justify-between gap-3 overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300
         ${
           isResident
-            ? 'bg-card border-[#FF3366]/45 shadow-[0_0_20px_rgba(34,211,238,0.08)]'
+            ? 'bg-card border-accent/40 shadow-[0_0_20px_rgba(var(--accent-rgb),0.08)]'
             : !meetsRam
-              ? 'bg-card border-red-500/10 opacity-70 hover:opacity-100 hover:border-red-500/25 transition-all'
-              : 'bg-card border border-white/[0.04] hover:border-[#FF3366]/30 hover:bg-[#4A5059]'
+              ? 'bg-card border-destructive/10 opacity-70 hover:opacity-100 hover:border-destructive/25 transition-all'
+              : 'bg-card border-border hover:border-accent/30 hover:bg-secondary/35'
         }
       `}
     >
       <div>
         {/* Presets badges */}
         <div className="flex items-center justify-between mb-2">
-          <span className="inline-block text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/20">
+          <span className="inline-block text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
             NYX Native
           </span>
           <div className="flex items-center gap-1.5">
@@ -90,11 +91,11 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <span
                 className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0 ${
                   !meetsRam
-                    ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                    ? 'bg-destructive/10 text-destructive border-destructive/20'
                     : compat.speedClass === 'fast'
                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                       : compat.speedClass === 'moderate'
-                        ? 'bg-amber-500/10 text-[#FF3366] border-amber-500/20'
+                        ? 'bg-amber-500/10 text-accent border-amber-500/20'
                         : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
                 }`}
               >
@@ -119,7 +120,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               </span>
             )}
             {isDownloading && (
-              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/20 animate-pulse">
+              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20 animate-pulse">
                 Downloading
               </span>
             )}
@@ -137,8 +138,8 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 }}
                 className={`ml-1 flex items-center justify-center w-5 h-5 rounded-md border transition-all ${
                   isComparing
-                    ? 'bg-[#FF3366] border-[#FF3366] text-black'
-                    : 'bg-white/5 border-white/20 text-transparent hover:border-white/40 hover:text-white/20'
+                    ? 'bg-accent border-accent text-accent-foreground'
+                    : 'bg-secondary/40 border-border text-transparent hover:border-accent/40 hover:text-accent/20'
                 }`}
                 title="Select for comparison"
               >
@@ -159,7 +160,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
           </div>
         </div>
 
-        <h4 className="text-[12px] font-black tracking-tight text-foreground group-hover:text-[#FF3366] transition-colors">
+        <h4 className="text-[12px] font-black tracking-tight text-foreground group-hover:text-accent transition-colors">
           {m.name}
         </h4>
         <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed font-medium mt-1">
@@ -180,7 +181,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
             <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">
               RAM / VRAM Required
             </span>
-            <span className="text-[10px] font-mono font-extrabold text-[#FF3366]/90">
+            <span className="text-[10px] font-mono font-extrabold text-accent/90">
               {m.vramRequired ? `${m.vramRequired} + ` : ''}
               {m.ramRequired}
             </span>
@@ -190,7 +191,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
         {m.metadata && (
           <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-border/10">
             <div className="grid grid-cols-3 gap-2">
-              <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
+              <div className="flex flex-col items-center p-1.5 rounded-lg bg-secondary/20">
                 <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
                   MMLU
                 </span>
@@ -198,7 +199,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                   {m.metadata.mmluScore || '--'}
                 </span>
               </div>
-              <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
+              <div className="flex flex-col items-center p-1.5 rounded-lg bg-secondary/20">
                 <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
                   HumanEval
                 </span>
@@ -206,7 +207,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                   {m.metadata.humanEvalScore || '--'}
                 </span>
               </div>
-              <div className="flex flex-col items-center p-1.5 rounded-lg bg-white/[0.02]">
+              <div className="flex flex-col items-center p-1.5 rounded-lg bg-secondary/20">
                 <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
                   MT-Bench
                 </span>
@@ -217,20 +218,22 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
             </div>
             {m.metadata.ggufMetadata && (
               <div className="grid grid-cols-2 gap-2 mt-1">
-                <div className="flex flex-col items-center p-1.5 rounded-lg bg-[#FF3366]/5 border border-[#FF3366]/10">
-                  <span className="text-[8px] font-black uppercase tracking-widest text-[#FF3366]">
+                <div className="flex flex-col items-center p-1.5 rounded-lg bg-accent/5 border border-accent/10">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-accent">
                     Architecture
                   </span>
                   <span className="text-[10px] font-mono font-bold text-foreground">
                     {m.metadata.ggufMetadata.architecture || '--'}
                   </span>
                 </div>
-                <div className="flex flex-col items-center p-1.5 rounded-lg bg-[#FF3366]/5 border border-[#FF3366]/10">
-                  <span className="text-[8px] font-black uppercase tracking-widest text-[#FF3366]">
+                <div className="flex flex-col items-center p-1.5 rounded-lg bg-accent/5 border border-accent/10">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-accent">
                     Context
                   </span>
                   <span className="text-[10px] font-mono font-bold text-foreground">
-                    {m.metadata.ggufMetadata.contextLength ? `${m.metadata.ggufMetadata.contextLength / 1024}k` : '--'}
+                    {m.metadata.ggufMetadata.contextLength
+                      ? `${m.metadata.ggufMetadata.contextLength / 1024}k`
+                      : '--'}
                   </span>
                 </div>
               </div>
@@ -243,24 +246,24 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
           <div
             className={`mt-2.5 p-2 rounded-xl border text-[9px] ${
               !meetsRam
-                ? 'bg-red-500/5 border-red-500/10 text-red-400'
+                ? 'bg-destructive/5 border-destructive/10 text-destructive'
                 : compat.speedClass === 'fast'
-                  ? 'bg-emerald-500/5 border-emerald-500/10 text-zinc-300'
+                  ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-600 dark:text-emerald-300'
                   : compat.speedClass === 'moderate'
-                    ? 'bg-[#FF3366]/5 border-[#FF3366]/10 text-zinc-300'
-                    : 'bg-zinc-500/5 border-white/[0.03] text-zinc-400'
+                    ? 'bg-accent/5 border-accent/10 text-accent/90'
+                    : 'bg-zinc-500/5 border-border text-zinc-400'
             }`}
           >
-            <div className="flex items-center justify-between font-bold uppercase tracking-wider pb-1 mb-1 border-b border-white/[0.04] text-[8px]">
+            <div className="flex items-center justify-between font-bold uppercase tracking-wider pb-1 mb-1 border-b border-border text-[8px]">
               <span>Hardware projection</span>
               <span
                 className={
                   !meetsRam
-                    ? 'text-red-400'
+                    ? 'text-destructive'
                     : compat.speedClass === 'fast'
                       ? 'text-emerald-400'
                       : compat.speedClass === 'moderate'
-                        ? 'text-[#FF3366]'
+                        ? 'text-accent'
                         : 'text-zinc-500'
                 }
               >
@@ -283,9 +286,9 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <span>{progress.progressPercentage}% Completed</span>
               <span>{progress.speedMbps > 0 ? `${progress.speedMbps} MB/s` : 'Connecting...'}</span>
             </div>
-            <div className="w-full h-1 rounded-full bg-black/20 dark:bg-white/5 overflow-hidden">
+            <div className="w-full h-1 rounded-full bg-secondary overflow-hidden">
               <motion.div
-                className="h-full bg-gradient-to-r from-[#FF3366] to-[#FF3366]/80"
+                className="h-full bg-accent"
                 style={{ width: `${progress.progressPercentage}%` }}
                 initial={{ width: '0%' }}
                 animate={{ width: `${progress.progressPercentage}%` }}
@@ -313,7 +316,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={() => handleCancel(m.id)}
-                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-red-500/8 hover:bg-red-500/18 text-red-400/70 hover:text-red-400 border border-red-500/15 hover:border-red-500/30 transition-all cursor-pointer"
+                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 transition-all cursor-pointer"
               >
                 <svg
                   width="9"
@@ -342,9 +345,9 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                   : ''}
               </span>
             </div>
-            <div className="w-full h-1 rounded-full bg-black/20 dark:bg-white/5 overflow-hidden">
+            <div className="w-full h-1 rounded-full bg-secondary overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-amber-400 to-amber-400/60"
+                className="h-full bg-amber-400"
                 style={{ width: `${progress.progressPercentage}%` }}
               />
             </div>
@@ -353,7 +356,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={() => handleResume(m.id)}
-                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-[#FF3366]/10 hover:bg-[#FF3366]/20 text-[#FF3366] border border-[#FF3366]/20 hover:border-[#FF3366]/40 transition-all cursor-pointer"
+                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 hover:border-accent/40 transition-all cursor-pointer"
               >
                 <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor">
                   <polygon points="2,1 9,5 2,9" />
@@ -363,7 +366,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={() => handleCancel(m.id)}
-                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-red-500/8 hover:bg-red-500/18 text-red-400/70 hover:text-red-400 border border-red-500/15 hover:border-red-500/30 transition-all cursor-pointer"
+                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 transition-all cursor-pointer"
               >
                 <svg
                   width="9"
@@ -383,7 +386,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
         )}
 
         {m.status === 'failed' && (
-          <div className="p-2 mb-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[10px] font-semibold text-red-400 flex items-start gap-1.5">
+          <div className="p-2 mb-2 rounded-lg bg-destructive/10 border border-destructive/20 text-[10px] font-semibold text-destructive flex items-start gap-1.5">
             <AlertCircle size={10} className="shrink-0 mt-0.5" />
             <span>{progress.error || 'Download failed. Please check network connections.'}</span>
           </div>
@@ -396,7 +399,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 value={selectedQuant}
                 onChange={(e) => setSelectedQuant(e.target.value)}
                 disabled={isCurrentAction || !!actionInProgress}
-                className="bg-black/20 text-[#FF3366] text-[10px] font-bold tracking-wider rounded-xl border border-white/[0.04] px-2 outline-none cursor-pointer w-24"
+                className="bg-secondary text-accent text-[10px] font-bold tracking-wider rounded-xl border border-border px-2 outline-none cursor-pointer w-24"
               >
                 <option value="Q2_K">Q2_K</option>
                 <option value="Q4_K_M">Q4_K_M</option>
@@ -410,7 +413,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 disabled={isCurrentAction || !!actionInProgress}
                 className="
                   flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                  bg-[#FF3366] hover:bg-[#FF3366]/90 text-black shadow-lg disabled:opacity-40 cursor-pointer
+                  bg-accent hover:bg-accent/90 text-accent-foreground shadow-lg disabled:opacity-40 cursor-pointer
                 "
               >
                 {isCurrentAction ? (
@@ -460,7 +463,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 disabled={isCurrentAction || !!actionInProgress}
                 className="
                   flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                  bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 disabled:opacity-40 cursor-pointer
+                  bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 disabled:opacity-40 cursor-pointer
                 "
               >
                 {isCurrentAction ? (
@@ -484,7 +487,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 }}
                 className="
                   flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                  bg-[#FF3366] hover:bg-[#FF3366]/90 text-black shadow-lg cursor-pointer
+                  bg-accent hover:bg-accent/90 text-accent-foreground shadow-lg cursor-pointer
                 "
               >
                 <TerminalIcon size={10} />
@@ -501,7 +504,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               disabled={isCurrentAction || !!actionInProgress}
               className="
                 w-full py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all mt-1
-                bg-red-500/8 hover:bg-red-500/15 text-red-400/70 hover:text-red-400 border border-red-500/10 hover:border-red-500/25 disabled:opacity-40 cursor-pointer
+                bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 disabled:opacity-40 cursor-pointer
               "
             >
               <Trash2 size={9} />

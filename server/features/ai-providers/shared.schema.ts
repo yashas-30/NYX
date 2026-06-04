@@ -20,6 +20,7 @@ export const chatMessageSchema = z.object({
     .optional(),
 });
 
+// fallow-ignore-next-line code-duplication
 export const aiSettingsSchema = z
   .object({
     temperature: z.number().min(0).max(2).optional(),

@@ -8,6 +8,7 @@ interface BackgroundTasksProps {
 }
 
 export const useBackgroundTasks = ({ models, apiKeys }: BackgroundTasksProps) => {
+  // fallow-ignore-next-line code-duplication
   const triggerBackgroundCritic = useCallback(
     async (prompt: string, responseText: string, complexity?: string) => {
       // Skip critic for trivial/simple prompts — saves tokens and reduces noise

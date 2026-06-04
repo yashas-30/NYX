@@ -489,6 +489,7 @@ Please identify the compile/syntax/import issue, generate the corrected complete
         else if (char === '\\') escape = true;
         else if (char === '"') inString = false;
       } else {
+        // fallow-ignore-next-line code-duplication
         if (char === '"') {
           inString = true;
         } else if (char === '{' || char === '[') {

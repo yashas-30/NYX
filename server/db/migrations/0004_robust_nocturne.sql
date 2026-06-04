@@ -1,4 +1,4 @@
-CREATE TABLE `async_jobs` (
+CREATE TABLE IF NOT EXISTS `async_jobs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`provider` text NOT NULL,
 	`model` text NOT NULL,
@@ -11,7 +11,7 @@ CREATE TABLE `async_jobs` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `sessions` (
+CREATE TABLE IF NOT EXISTS `sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`token_hash` text NOT NULL,
 	`is_stream_nonce` integer DEFAULT false NOT NULL,
@@ -19,4 +19,4 @@ CREATE TABLE `sessions` (
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `sessions_token_hash_unique` ON `sessions` (`token_hash`);
+CREATE UNIQUE INDEX IF NOT EXISTS `sessions_token_hash_unique` ON `sessions` (`token_hash`);

@@ -203,28 +203,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             />
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-background border border-white/[0.05] rounded-xl px-3 py-1.5">
+            <div className="flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-1.5">
               <User size={14} className="text-muted-foreground" />
               <select
                 value={activeProfile}
                 onChange={(e) => setActiveProfile(e.target.value)}
                 className="bg-transparent text-xs text-foreground focus:outline-none appearance-none cursor-pointer"
               >
-                <option value="default">Default Profile</option>
-                <option value="fast-coding">Fast Coding</option>
-                <option value="deep-research">Deep Research</option>
+                <option value="default" className="bg-card">
+                  Default Profile
+                </option>
+                <option value="fast-coding" className="bg-card">
+                  Fast Coding
+                </option>
+                <option value="deep-research" className="bg-card">
+                  Deep Research
+                </option>
               </select>
             </div>
-            <div className="flex items-center gap-2 bg-background border border-white/[0.05] rounded-xl px-3 py-1.5">
+            <div className="flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-1.5">
               <Palette size={14} className="text-muted-foreground" />
               <select
                 value={activeTheme}
                 onChange={(e) => setActiveTheme(e.target.value)}
                 className="bg-transparent text-xs text-foreground focus:outline-none appearance-none cursor-pointer"
               >
-                <option value="dark">Dark Theme</option>
-                <option value="light">Light Theme</option>
-                <option value="high-contrast">High Contrast</option>
+                <option value="dark" className="bg-card">
+                  Dark Theme
+                </option>
+                <option value="light" className="bg-card">
+                  Light Theme
+                </option>
+                <option value="high-contrast" className="bg-card">
+                  High Contrast
+                </option>
               </select>
             </div>
           </div>
@@ -265,7 +277,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="mt-6 flex gap-3 pb-6">
               <button
                 onClick={() => SettingsSyncService.exportSettings()}
-                className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-foreground text-xs font-bold hover:bg-white/10 transition-colors"
+                className="flex-1 py-2 rounded-xl bg-secondary border border-border text-foreground text-xs font-bold hover:bg-secondary/80 transition-colors"
               >
                 Export Settings
               </button>
@@ -283,7 +295,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   };
                   input.click();
                 }}
-                className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-foreground text-xs font-bold hover:bg-white/10 transition-colors"
+                className="flex-1 py-2 rounded-xl bg-secondary border border-border text-foreground text-xs font-bold hover:bg-secondary/80 transition-colors"
               >
                 Import Settings
               </button>
@@ -292,19 +304,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   const success = await SettingsSyncService.importFromVSCode();
                   if (success) toast.success('VS Code Settings imported successfully.');
                 }}
-                className="flex-1 py-2 rounded-xl bg-white/5 border border-white/10 text-foreground text-xs font-bold hover:bg-white/10 transition-colors"
+                className="flex-1 py-2 rounded-xl bg-secondary border border-border text-foreground text-xs font-bold hover:bg-secondary/80 transition-colors"
               >
                 Import from VS Code
               </button>
             </div>
 
             {/* Learning Hub: App Workflow & Free Keys Guide */}
-            <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
-              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity" />
+            <div className="mt-6 group p-5 rounded-3xl bg-card border border-border hover:border-accent/40 transition-all duration-300 relative overflow-hidden shadow-lg">
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-accent/20 via-accent/10 to-accent/20 opacity-70 group-hover:opacity-100 transition-opacity" />
 
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-border pb-3">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-accent">
                     LEARNING & CREDENTIALS HUB
                   </p>
                   <h3 className="text-xs font-bold text-foreground mt-0.5">
@@ -312,12 +324,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </h3>
                 </div>
 
-                <div className="flex bg-white/5 dark:bg-zinc-900/40 p-0.5 rounded-full border border-white/5">
+                <div className="flex bg-secondary p-0.5 rounded-full border border-border">
                   <button
                     onClick={() => setActiveGuideTab('workflow')}
                     className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                       activeGuideTab === 'workflow'
-                        ? 'bg-[#FF3366] text-black shadow-sm'
+                        ? 'bg-accent text-white shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -327,7 +339,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     onClick={() => setActiveGuideTab('keys')}
                     className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                       activeGuideTab === 'keys'
-                        ? 'bg-[#FF3366] text-black shadow-sm'
+                        ? 'bg-accent text-white shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -338,86 +350,86 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               {activeGuideTab === 'workflow' ? (
                 <div className="space-y-3 animate-in fade-in duration-300">
-                  <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
                     NYX runs on a high-speed, dual-server framework designed for side-by-side LLM
                     comparisons, prompt engineering, and offline local development. Here is how your
                     requests are routed:
                   </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-white/[0.01] border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-white/[0.03] transition-colors">
+                    <div className="bg-background/40 border border-border rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-background/60 transition-colors">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-[#FF3366]/10 text-[#FF3366]">
+                        <div className="p-1 rounded-lg bg-accent/10 text-accent">
                           <Zap size={12} />
                         </div>
                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
                           1. Pipeline
                         </h4>
                       </div>
-                      <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
                         Vite frontend connects to the local Express gateway (Port 3010). Streaming
                         requests proxy directly to a Fastify stream engine (Port 3011).
                       </p>
                     </div>
 
-                    <div className="bg-white/[0.01] border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-white/[0.03] transition-colors">
+                    <div className="bg-background/40 border border-border rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-background/60 transition-colors">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-[#FF3366]/10 text-[#FF3366]">
+                        <div className="p-1 rounded-lg bg-accent/10 text-accent">
                           <Cpu size={12} />
                         </div>
                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
                           2. Sockets
                         </h4>
                       </div>
-                      <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
                         Fastify disables TCP buffering (Nagle's Algorithm), utilizes pre-warmed DNS
                         lookups, and leverages persistent socket connection pooling.
                       </p>
                     </div>
 
-                    <div className="bg-white/[0.01] border border-white/10 rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-white/[0.03] transition-colors">
+                    <div className="bg-background/40 border border-border rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-background/60 transition-colors">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-[#FF3366]/10 text-[#FF3366]">
+                        <div className="p-1 rounded-lg bg-accent/10 text-accent">
                           <Database size={12} />
                         </div>
                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
                           3. Cache
                         </h4>
                       </div>
-                      <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
                         Every request maps to a SHA-256 signature capturing prompt, model
                         parameters, and settings. Cached answers load instantly from disk.
                       </p>
                     </div>
                   </div>
 
-                  <div className="bg-background/60 border border-white/[0.04] rounded-2xl p-3.5 flex flex-col gap-2">
+                  <div className="bg-background border border-border rounded-2xl p-3.5 flex flex-col gap-2">
                     <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
                       Features Walkthrough
                     </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[10px] text-muted-foreground/90">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[10px] text-muted-foreground">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-[#FF3366] shrink-0" />
+                        <div className="w-1 h-1 rounded-full bg-accent shrink-0" />
                         <span>
                           <strong>Compare Workspace</strong>: Benchmark model outputs side-by-side.
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-[#FF3366] shrink-0" />
+                        <div className="w-1 h-1 rounded-full bg-accent shrink-0" />
                         <span>
                           <strong>Performance Evaluation</strong>: Evaluate reasoning, response
                           depth, & code.
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-[#FF3366] shrink-0" />
+                        <div className="w-1 h-1 rounded-full bg-accent shrink-0" />
                         <span>
                           <strong>Agent Workspace</strong>: Specialized editor with multiline code
                           playground.
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-[#FF3366] shrink-0" />
+                        <div className="w-1 h-1 rounded-full bg-accent shrink-0" />
                         <span>
                           <strong>Model Registry</strong>: Manage model configurations & discover
                           local instances.
@@ -428,14 +440,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               ) : (
                 <div className="space-y-3 animate-in fade-in duration-300">
-                  <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
                     Acquire free developer API keys to start using NYX at zero cost. Follow the
                     step-by-step instructions below for each provider:
                   </p>
 
                   <div className="space-y-2">
                     {/* Google Gemini Key */}
-                    <div className="border border-white/10 rounded-xl overflow-hidden bg-white/[0.01] hover:bg-white/[0.03] transition-all">
+                    <div className="border border-border rounded-xl overflow-hidden bg-background/40 hover:bg-background/60 transition-all">
                       <button
                         onClick={() =>
                           setExpandedGuideProvider(
@@ -445,7 +457,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         className="w-full px-3 py-2 flex items-center justify-between text-left cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 rounded-full bg-[#FF3366]/10 text-[#FF3366] flex items-center justify-center text-[10px] font-black">
+                          <div className="w-4 h-4 rounded-full bg-accent/10 text-accent flex items-center justify-center text-[10px] font-black">
                             G
                           </div>
                           <span className="text-[10px] font-bold text-foreground">
@@ -463,7 +475,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </button>
 
                       {expandedGuideProvider === 'gemini' && (
-                        <div className="px-3 pb-3 pt-1 border-t border-white/10 text-[11px] text-muted-foreground/90 space-y-2 leading-relaxed">
+                        <div className="px-3 pb-3 pt-1 border-t border-border text-[11px] text-muted-foreground space-y-2 leading-relaxed">
                           <p>
                             Google offers robust free tiers for Google Gemini keys directly within
                             Google AI Studio, granting developers massive rate limits at no cost.
@@ -475,7 +487,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 href="https://aistudio.google.com/"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-[#FF3366] hover:underline font-bold inline-flex items-center gap-0.5"
+                                className="text-accent hover:underline font-bold inline-flex items-center gap-0.5"
                               >
                                 Google AI Studio Console <ExternalLink size={8} />
                               </a>

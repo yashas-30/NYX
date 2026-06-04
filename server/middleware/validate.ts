@@ -1,5 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
-import { AnyZodObject, ZodError } from 'zod';
+import { FastifyRequest, FastifyReply } from 'fastify';
+import { ZodObject, ZodError } from 'zod';
 import sanitizeHtml from 'sanitize-html';
 
 // Recursively sanitize strings in objects
@@ -23,24 +23,14 @@ export const sanitizeData = (data: any): any => {
   return data;
 };
 
-export const validate = (schema: AnyZodObject) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      // First sanitize inputs
-      if (req.body) req.body = sanitizeData(req.body);
-      if (req.query) req.query = sanitizeData(req.query);
-      if (req.params) req.params = sanitizeData(req.params);
+export const validate = (schema: ZodObject<any>) => {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    // First sanitize inputs
+    if (request.body) request.body = sanitizeData(request.body);
+    if (request.query) request.query = sanitizeData(request.query);
+    if (request.params) request.params = sanitizeData(request.params);
 
-      // Validate req.body directly against the schema
-      req.body = await schema.parseAsync(req.body);
-
-      next();
-    } catch (error) {
-      if (error instanceof ZodError) {
-        next(error); // Pass to global error handler
-      } else {
-        next(error);
-      }
-    }
+    // Validate req.body directly against the schema
+    request.body = await schema.parseAsync(request.body);
   };
 };

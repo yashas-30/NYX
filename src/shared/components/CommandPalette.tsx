@@ -298,6 +298,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0 }}
             onClick={() => {
               setOpen(false);
               setQuery('');
@@ -310,7 +311,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             initial={{ opacity: 0, scale: 0.97, y: -8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -8 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
+            transition={{ duration: 0 }}
             className="w-full max-w-lg overflow-hidden rounded-2xl bg-zinc-950 border border-white/[0.08] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] flex flex-col relative"
           >
             {/* Input Bar */}

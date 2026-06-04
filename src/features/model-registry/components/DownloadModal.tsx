@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -102,12 +103,12 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
               y: 15,
               transition: { duration: 0.18, ease: 'easeOut' },
             }}
-            className="relative w-full max-w-4xl bg-card border border-white/[0.04] rounded-3xl shadow-[0_30px_70px_rgba(0,0,0,0.6)] flex flex-col max-h-[90vh] overflow-hidden cursor-default z-[610]"
+            className="relative w-full max-w-4xl bg-card border border-border rounded-3xl shadow-[0_30px_70px_rgba(0,0,0,0.6)] flex flex-col max-h-[90vh] overflow-hidden cursor-default z-[610]"
           >
             {/* Modal Header */}
-            <div className="p-4 px-6 border-b border-white/[0.06] bg-white/[0.02] flex items-center justify-between shrink-0">
+            <div className="p-4 px-6 border-b border-border bg-muted/20 flex items-center justify-between shrink-0">
               <div>
-                <h3 className="text-xs font-black tracking-[0.25em] text-[#FF3366] uppercase">
+                <h3 className="text-xs font-black tracking-[0.25em] text-accent uppercase">
                   Local Model Directory
                 </h3>
                 <p className="text-[11px] font-medium text-muted-foreground/80 uppercase tracking-widest mt-0.5">
@@ -117,28 +118,28 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
               <motion.button
                 whileTap={{ scale: 0.9 }}
                 onClick={() => setShowDownloadModal(false)}
-                className="p-1.5 rounded-xl text-muted-foreground/45 hover:text-foreground hover:bg-white/5 transition-all cursor-pointer"
+                className="p-1.5 rounded-xl text-muted-foreground/45 hover:text-foreground hover:bg-muted transition-all cursor-pointer"
               >
                 <X size={14} />
               </motion.button>
             </div>
 
             {/* Custom GGUF URL Download Input */}
-            <div className="px-6 py-3.5 border-b border-white/[0.06] bg-white/[0.01] flex flex-col sm:flex-row items-center gap-3 shrink-0">
+            <div className="px-6 py-3.5 border-b border-border bg-muted/10 flex flex-col sm:flex-row items-center gap-3 shrink-0">
               <div className="w-full sm:flex-1 relative">
                 <input
                   type="text"
                   placeholder="Paste HuggingFace GGUF direct URL (e.g., https://huggingface.co/.../*.gguf)..."
                   value={customUrl}
                   onChange={(e) => setCustomUrl(e.target.value)}
-                  className="w-full bg-background border border-border rounded-xl px-4 py-2 text-[10px] text-foreground focus:outline-none focus:border-[#FF3366]/50 transition-all placeholder:text-muted-foreground/35"
+                  className="w-full bg-background border border-border rounded-xl px-4 py-2 text-[10px] text-foreground focus:outline-none focus:border-accent/50 transition-all placeholder:text-muted-foreground/35"
                 />
               </div>
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={handleCustomUrlDownload}
                 disabled={actionInProgress !== null}
-                className="w-full sm:w-auto px-5 py-2 rounded-xl bg-[#FF3366] hover:bg-[#FF3366]/90 disabled:opacity-50 text-black text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-lg shrink-0"
+                className="w-full sm:w-auto px-5 py-2 rounded-xl bg-accent hover:bg-accent/90 disabled:opacity-50 text-white text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-lg shrink-0"
               >
                 Download URL
               </motion.button>
@@ -148,22 +149,22 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
               {/* ── DEVICE HARDWARE & RECOMMENDATION CORE PANEL ── */}
               {compatibility && compatibility.specs && (
-                <div className="relative p-5 rounded-3xl bg-card border border-white/[0.05] backdrop-blur-lg overflow-hidden shadow-2xl space-y-4">
+                <div className="relative p-5 rounded-3xl bg-card border border-border backdrop-blur-lg overflow-hidden shadow-2xl space-y-4">
                   {/* Glowing highlight */}
-                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#FF3366]/20 to-transparent" />
+                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-accent/20 to-transparent" />
 
                   {/* Header */}
-                  <div className="flex items-center justify-between pb-3 border-b border-white/[0.04]">
+                  <div className="flex items-center justify-between pb-3 border-b border-border">
                     <div className="flex items-center gap-2">
-                      <Activity size={14} className="text-[#FF3366] animate-pulse" />
-                      <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">
+                      <Activity size={14} className="text-accent animate-pulse" />
+                      <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-accent">
                         Hardware Spec Profile
                       </h4>
                     </div>
                     <button
                       onClick={fetchCompatibility}
                       disabled={loadingCompatibility}
-                      className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/5 border border-white/5 hover:border-[#FF3366]/30 hover:bg-[#FF3366]/10 text-[9px] font-bold text-muted-foreground hover:text-foreground transition-all cursor-pointer disabled:opacity-40"
+                      className="flex items-center gap-1 px-3 py-1 rounded-full bg-secondary border border-border hover:border-accent/30 hover:bg-accent/10 text-[9px] font-bold text-muted-foreground hover:text-foreground transition-all cursor-pointer disabled:opacity-40"
                     >
                       <RefreshCw size={8} className={loadingCompatibility ? 'animate-spin' : ''} />
                       <span>Rescan Specs</span>
@@ -173,7 +174,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                   {/* Hardware Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {/* CPU Stat Card */}
-                    <div className="p-3.5 rounded-2xl bg-background border border-border space-y-1 hover:border-white/10 transition-colors">
+                    <div className="p-3.5 rounded-2xl bg-background border border-border space-y-1 hover:border-border/80 transition-colors">
                       <div className="flex items-center gap-1.5 text-zinc-500">
                         <Cpu size={12} />
                         <span className="text-[8px] font-black uppercase tracking-wider">
@@ -183,13 +184,13 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                       <p className="text-[11px] font-extrabold text-foreground truncate">
                         {compatibility.specs.cpuModel}
                       </p>
-                      <p className="text-[9px] font-mono text-[#FF3366]/80 font-bold uppercase tracking-wider">
+                      <p className="text-[9px] font-mono text-accent/80 font-bold uppercase tracking-wider">
                         {compatibility.specs.logicalCores} Logical Cores
                       </p>
                     </div>
 
                     {/* System RAM Card */}
-                    <div className="p-3.5 rounded-2xl bg-background border border-border space-y-1 hover:border-white/10 transition-colors">
+                    <div className="p-3.5 rounded-2xl bg-background border border-border space-y-1 hover:border-border/80 transition-colors">
                       <div className="flex items-center gap-1.5 text-zinc-500">
                         <HardDrive size={12} />
                         <span className="text-[8px] font-black uppercase tracking-wider">
@@ -199,13 +200,13 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                       <p className="text-[11px] font-extrabold text-foreground">
                         {compatibility.specs.totalRamGB} GB System RAM
                       </p>
-                      <p className="text-[9px] font-mono text-[#FF3366]/80 font-bold uppercase tracking-wider">
+                      <p className="text-[9px] font-mono text-accent/80 font-bold uppercase tracking-wider">
                         Estimated Llama Overhead: ~0.5 GB
                       </p>
                     </div>
 
                     {/* GPU/VRAM Card */}
-                    <div className="p-3.5 rounded-2xl bg-background border border-border space-y-1 hover:border-white/10 transition-colors">
+                    <div className="p-3.5 rounded-2xl bg-background border border-border space-y-1 hover:border-border/80 transition-colors">
                       <div className="flex items-center gap-1.5 text-zinc-500">
                         <Zap size={12} />
                         <span className="text-[8px] font-black uppercase tracking-wider">
@@ -215,7 +216,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                       <p className="text-[11px] font-extrabold text-foreground truncate">
                         {compatibility.specs.gpus?.[0]?.model || 'Integrated Graphics'}
                       </p>
-                      <p className="text-[9px] font-mono text-[#FF3366]/80 font-bold uppercase tracking-wider">
+                      <p className="text-[9px] font-mono text-accent/80 font-bold uppercase tracking-wider">
                         {compatibility.specs.maxVramGB > 0
                           ? `${compatibility.specs.maxVramGB} GB Dedicated VRAM`
                           : 'No dedicated VRAM detected'}
@@ -232,17 +233,17 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                     );
 
                     return (
-                      <div className="p-4 rounded-2xl bg-gradient-to-r from-[#FF3366]/10 via-[#FF3366]/5 to-transparent border border-[#FF3366]/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="p-4 rounded-2xl bg-gradient-to-r from-accent/10 via-accent/5 to-transparent border border-accent/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-1.5">
-                            <Sparkles size={12} className="text-[#FF3366] animate-pulse" />
-                            <span className="text-[9px] font-black uppercase tracking-wider text-[#FF3366]">
+                            <Sparkles size={12} className="text-accent animate-pulse" />
+                            <span className="text-[9px] font-black uppercase tracking-wider text-accent">
                               AI Setup Optimization Engine
                             </span>
                           </div>
                           <h5 className="text-[12px] font-black text-foreground">
                             Recommended:{' '}
-                            <span className="text-[#FF3366]">{recModel?.name || recId}</span>
+                            <span className="text-accent">{recModel?.name || recId}</span>
                           </h5>
                           <p className="text-[10px] text-muted-foreground leading-relaxed max-w-xl font-medium">
                             {recCompat
@@ -256,7 +257,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                             whileTap={{ scale: 0.96 }}
                             onClick={handleAutoSetup}
                             disabled={actionInProgress !== null}
-                            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#FF3366] hover:bg-[#FF3366]/90 text-black text-[10px] font-black uppercase tracking-wider cursor-pointer shadow-lg disabled:opacity-40"
+                            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-accent hover:bg-accent/90 text-white text-[10px] font-black uppercase tracking-wider cursor-pointer shadow-lg disabled:opacity-40"
                           >
                             {actionInProgress === 'auto-setup' ? (
                               <>
@@ -275,7 +276,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                             whileTap={{ scale: 0.96 }}
                             onClick={handleDownloadAllCompatible}
                             disabled={actionInProgress !== null}
-                            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/15 text-muted-foreground hover:text-foreground text-[10px] font-black uppercase tracking-wider cursor-pointer transition-all disabled:opacity-40"
+                            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-secondary hover:bg-secondary/80 border border-border text-muted-foreground hover:text-foreground text-[10px] font-black uppercase tracking-wider cursor-pointer transition-all disabled:opacity-40"
                           >
                             {actionInProgress === 'download-all-compatible' ? (
                               <>
@@ -294,7 +295,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
               )}
 
               {/* ── TOOLBAR FILTER CONTROLS ── */}
-              <div className="flex items-center justify-between pb-3 border-b border-white/[0.04]">
+              <div className="flex items-center justify-between pb-3 border-b border-border">
                 <div className="flex items-center gap-2 text-zinc-500">
                   <Layers size={11} />
                   <span className="text-[9px] font-black uppercase tracking-[0.2em]">
@@ -302,7 +303,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-4 bg-background/60 p-1 px-3 border border-white/[0.04] rounded-full shadow-inner">
+                <div className="flex items-center gap-4 bg-background/60 p-1 px-3 border border-border rounded-full shadow-inner">
                   <span className="text-[9.5px] font-bold text-zinc-500 uppercase tracking-tight">
                     Show Compatible Only
                   </span>
@@ -310,7 +311,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                     onClick={() => setShowCompatibleOnly(!showCompatibleOnly)}
                     className={`
                       relative w-8 h-4 rounded-full transition-all duration-300 p-0.5 cursor-pointer
-                      ${showCompatibleOnly ? 'bg-[#FF3366]' : 'bg-zinc-800'}
+                      ${showCompatibleOnly ? 'bg-accent' : 'bg-secondary'}
                     `}
                   >
                     <div
@@ -340,10 +341,10 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                   <div key={provider} className="space-y-4">
                     {/* Provider divider */}
                     <div className="flex items-center gap-3">
-                      <span className="text-[11px] font-black uppercase tracking-[0.3em] text-[#FF3366] shrink-0">
+                      <span className="text-[11px] font-black uppercase tracking-[0.3em] text-accent shrink-0">
                         {getProviderLabel(provider)}
                       </span>
-                      <div className="h-px flex-1 bg-gradient-to-r from-[#FF3366]/30 to-transparent" />
+                      <div className="h-px flex-1 bg-gradient-to-r from-accent/30 to-transparent" />
                     </div>
 
                     {/* Presets responsive grid */}
@@ -378,12 +379,12 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                               group relative p-3.5 rounded-2xl border border-solid flex flex-col justify-between gap-3 overflow-hidden shadow-sm
                               ${
                                 isResident
-                                  ? 'bg-[#4A5059] border-[#FF3366]/45 shadow-[0_0_20px_rgba(255, 51, 102,0.08)]'
+                                  ? 'bg-secondary border-accent shadow-[0_0_20px_rgba(255,51,102,0.08)]'
                                   : isRecommended
-                                    ? 'bg-[#4A5059]/90 border-[#FF3366]/25 shadow-[0_0_15px_rgba(255, 51, 102,0.04)]'
+                                    ? 'bg-secondary/90 border-accent/40 shadow-[0_0_15px_rgba(255,51,102,0.04)]'
                                     : !meetsRam
-                                      ? 'bg-[#111622] border-red-500/10 opacity-60 hover:opacity-100 hover:border-red-500/25 transition-all duration-300'
-                                      : 'bg-[#111622] border border-white/[0.04] hover:border-[#FF3366]/30 hover:bg-[#4A5059]'
+                                      ? 'bg-muted/10 border-destructive/10 opacity-60 hover:opacity-100 hover:border-destructive/25 transition-all duration-300'
+                                      : 'bg-muted/20 border border-border hover:border-accent/30 hover:bg-secondary'
                               }
                             `}
                           >
@@ -391,16 +392,16 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {isRecommended && (
-                                    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FF3366] text-black shadow-inner">
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent text-white shadow-inner">
                                       <Sparkles size={7} /> Recommended
                                     </span>
                                   )}
                                   {m.featured && !isRecommended && (
-                                    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/20">
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
                                       <Zap size={7} /> Featured
                                     </span>
                                   )}
-                                  <span className="inline-block text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/20">
+                                  <span className="inline-block text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
                                     GGUF
                                   </span>
                                 </div>
@@ -418,7 +419,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                     </span>
                                   )}
                                   {isDownloading && (
-                                    <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/20 animate-pulse">
+                                    <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20 animate-pulse">
                                       Downloading
                                     </span>
                                   )}
@@ -430,7 +431,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                 </div>
                               </div>
 
-                              <h5 className="text-[12px] font-bold leading-tight tracking-tight text-foreground group-hover:text-[#FF3366] transition-colors flex items-center gap-1.5">
+                              <h5 className="text-[12px] font-bold leading-tight tracking-tight text-foreground group-hover:text-accent transition-colors flex items-center gap-1.5">
                                 <span>{m.name}</span>
                               </h5>
                               <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed font-medium mt-1">
@@ -475,7 +476,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                   <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">
                                     Required Memory specs
                                   </span>
-                                  <span className="text-[10px] font-mono font-bold text-[#FF3366]/90">
+                                  <span className="text-[10px] font-mono font-bold text-accent/90">
                                     {m.vramRequired ? `${m.vramRequired} + ` : ''}
                                     {m.ramRequired}
                                   </span>
@@ -520,11 +521,11 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                       : compat.speedClass === 'fast'
                                         ? 'bg-emerald-500/5 border-emerald-500/10'
                                         : compat.speedClass === 'moderate'
-                                          ? 'bg-[#FF3366]/5 border-[#FF3366]/10'
-                                          : 'bg-zinc-500/5 border-white/[0.03]'
+                                          ? 'bg-accent/5 border-accent/10'
+                                          : 'bg-zinc-500/5 border-border/30'
                                   }`}
                                 >
-                                  <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.04]">
+                                  <div className="flex items-center justify-between pb-1.5 border-b border-border/30">
                                     <div className="flex items-center gap-1">
                                       <Activity
                                         size={9}
@@ -534,7 +535,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                             : compat.speedClass === 'fast'
                                               ? 'text-emerald-400'
                                               : compat.speedClass === 'moderate'
-                                                ? 'text-[#FF3366]'
+                                                ? 'text-accent'
                                                 : 'text-zinc-500'
                                         }
                                       />
@@ -549,8 +550,8 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                           : compat.speedClass === 'fast'
                                             ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/10'
                                             : compat.speedClass === 'moderate'
-                                              ? 'bg-[#FF3366]/15 text-[#FF3366] border border-[#FF3366]/10'
-                                              : 'bg-zinc-800 text-zinc-400 border border-white/[0.03]'
+                                              ? 'bg-accent/15 text-accent border border-accent/10'
+                                              : 'bg-zinc-855 text-zinc-400 border border-border/30'
                                       }`}
                                     >
                                       {!meetsRam
@@ -579,7 +580,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                     </div>
                                     <div>
                                       Est. VRAM:{' '}
-                                      <span className="font-bold text-[#FF3366] font-mono">
+                                      <span className="font-bold text-accent font-mono">
                                         {compat.estimatedVramUsageGB} GB
                                       </span>
                                     </div>
@@ -605,7 +606,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                   </div>
                                   <div className="w-full h-1 rounded-full bg-black/40 overflow-hidden">
                                     <motion.div
-                                      className="h-full bg-gradient-to-r from-[#FF3366] to-[#FF3366]/80"
+                                      className="h-full bg-gradient-to-r from-accent to-accent/80"
                                       style={{ width: `${progress.progressPercentage}%` }}
                                       initial={{ width: '0%' }}
                                       animate={{ width: `${progress.progressPercentage}%` }}
@@ -668,7 +669,7 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
                                     <motion.button
                                       whileTap={{ scale: 0.96 }}
                                       onClick={() => handleResume(m.id)}
-                                      className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-[#FF3366]/10 hover:bg-[#FF3366]/20 text-[#FF3366] border border-[#FF3366]/20 hover:border-[#FF3366]/40 transition-all cursor-pointer"
+                                      className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 hover:border-accent/40 transition-all cursor-pointer"
                                     >
                                       <svg
                                         width="9"
@@ -702,31 +703,43 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({
 
                               {isIdle && (
                                 <div className="flex flex-col gap-2">
-                                  {m.availableQuantizations && m.availableQuantizations.length > 0 && (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                                        Select Quant:
-                                      </span>
-                                      <select
-                                        value={selectedQuantizations[m.id] || m.quantization || m.availableQuantizations[0]}
-                                        onChange={(e) => handleSelectQuantization(m.id, e.target.value)}
-                                        className="flex-1 bg-background border border-white/[0.05] rounded-lg px-2 py-1 text-[10px] text-foreground font-mono focus:outline-none focus:border-[#FF3366]/50 transition-all cursor-pointer"
-                                      >
-                                        {m.availableQuantizations.map((q) => (
-                                          <option key={q} value={q}>
-                                            {q}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  )}
+                                  {m.availableQuantizations &&
+                                    m.availableQuantizations.length > 0 && (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                                          Select Quant:
+                                        </span>
+                                        <select
+                                          value={
+                                            selectedQuantizations[m.id] ||
+                                            m.quantization ||
+                                            m.availableQuantizations[0]
+                                          }
+                                          onChange={(e) =>
+                                            handleSelectQuantization(m.id, e.target.value)
+                                          }
+                                          className="flex-1 bg-background border border-border rounded-lg px-2 py-1 text-[10px] text-foreground font-mono focus:outline-none focus:border-accent/50 transition-all cursor-pointer"
+                                        >
+                                          {m.availableQuantizations.map((q) => (
+                                            <option key={q} value={q}>
+                                              {q}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
                                   <motion.button
                                     whileTap={{ scale: 0.96 }}
-                                    onClick={() => handleDownload(m.id, selectedQuantizations[m.id] || m.quantization)}
+                                    onClick={() =>
+                                      handleDownload(
+                                        m.id,
+                                        selectedQuantizations[m.id] || m.quantization
+                                      )
+                                    }
                                     disabled={isCurrentAction || !!actionInProgress}
                                     className="
                                       w-full py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                                      bg-[#FF3366] hover:bg-[#FF3366]/90 text-black shadow-lg disabled:opacity-40 cursor-pointer
+                                      bg-accent hover:bg-accent/90 text-white shadow-lg disabled:opacity-40 cursor-pointer
                                     "
                                   >
                                     {isCurrentAction ? (

@@ -38,5 +38,11 @@ export function runMigrations() {
     logger.info('[DB] Database migrations completed successfully.');
   } catch (error: any) {
     logger.error('[DB] Failed to run database migrations:', error);
+    throw error;
   }
+}
+
+// Run migrations directly if this file is executed
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('migrator.ts')) {
+  runMigrations();
 }

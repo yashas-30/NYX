@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Gateway } from '../gateway.ts';
-import { loadKeys } from '../../features/vault/vault.service.ts';
+import { getKeysSync } from '../../features/vault/vault.service.ts';
 
-// Mock vault.service loadKeys
+// Mock vault.service getKeysSync
 vi.mock('../../features/vault/vault.service.ts', () => ({
-  loadKeys: vi.fn(),
+  getKeysSync: vi.fn(),
   verifySessionToken: vi.fn(),
 }));
 
@@ -21,14 +21,14 @@ describe('Gateway Auth & Router', () => {
 
     it('falls back to keyVault if user key is missing or invalid', () => {
       const mockKeys = { gemini: 'vault-stored-key' };
-      vi.mocked(loadKeys).mockReturnValue(mockKeys);
+      vi.mocked(getKeysSync).mockReturnValue(mockKeys);
 
       const result = Gateway.getActiveKey('gemini', undefined);
       expect(result).toBe('vault-stored-key');
     });
 
     it('falls back to environment keys if both user and vault keys are absent', () => {
-      vi.mocked(loadKeys).mockReturnValue({});
+      vi.mocked(getKeysSync).mockReturnValue({});
       const result = Gateway.getActiveKey('gemini', undefined);
       expect(typeof result).toBe('string');
     });
@@ -40,14 +40,14 @@ describe('Gateway Auth & Router', () => {
     });
 
     it('demands keys for gemini when not configured', () => {
-      vi.mocked(loadKeys).mockReturnValue({});
+      vi.mocked(getKeysSync).mockReturnValue({});
       const auth = Gateway.validateAuth('gemini', 'gemini-1.5-pro', undefined);
       expect(auth.valid).toBe(false);
       expect(auth.error).toContain('No API key detected for gemini');
     });
 
     it('permits gemini when key is configured', () => {
-      vi.mocked(loadKeys).mockReturnValue({ gemini: 'some-key' });
+      vi.mocked(getKeysSync).mockReturnValue({ gemini: 'some-key' });
       const auth = Gateway.validateAuth('gemini', 'gemini-1.5-pro', undefined);
       expect(auth.valid).toBe(true);
     });

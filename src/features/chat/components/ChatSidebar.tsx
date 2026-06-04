@@ -29,15 +29,15 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
   return (
     <div
-      className="w-[240px] h-full bg-[#09090B] border-r border-[rgba(255,255,255,0.06)] flex flex-col flex-shrink-0 transition-all duration-300"
+      className="w-[240px] h-full bg-secondary/30 border-r border-border flex flex-col flex-shrink-0 transition-all duration-300"
       aria-label="Chat Sidebar"
       role="complementary"
     >
-      <div className="p-4 border-b border-[rgba(255,255,255,0.06)] flex items-center justify-between">
+      <div className="p-4 border-b border-border flex items-center justify-between">
         <button
           onClick={onNewSession}
           aria-label={t('new_chat', 'New Chat')}
-          className="flex-1 flex items-center justify-center gap-2 bg-[#FF3366]/10 text-[#FF3366] hover:bg-[#FF3366]/20 transition-colors py-2 rounded text-[13px] font-medium border border-[#FF3366]/20 mr-2"
+          className="flex-1 flex items-center justify-center gap-2 bg-accent/10 text-accent hover:bg-accent/20 transition-colors py-2 rounded-lg text-[13px] font-medium border border-accent/20 mr-2"
         >
           <Plus className="w-4 h-4" />
           {t('new_chat', 'New Chat')}
@@ -45,7 +45,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         <button
           onClick={onClose}
           aria-label="Close Sidebar"
-          className="p-2 text-[#4A5059] hover:text-[#F8FAFC] transition-colors rounded"
+          className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg"
         >
           <PanelLeftClose className="w-4 h-4" />
         </button>
@@ -56,18 +56,20 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
           <div
             key={session.id}
             onClick={() => onSelectSession(session.id)}
-            className="group flex flex-col p-2 rounded hover:bg-[#18181B] cursor-pointer transition-colors border border-transparent hover:border-[rgba(255,255,255,0.06)] relative"
+            className="group flex flex-col p-2 rounded-lg hover:bg-muted/40 cursor-pointer transition-colors border border-transparent hover:border-border relative"
           >
             <div className="flex items-center gap-2">
-              <MessageSquare className="w-3.5 h-3.5 text-[#4A5059] group-hover:text-[#FF3366]" />
-              <span className="text-[13px] text-[#dde4e5] group-hover:text-[#F8FAFC] truncate font-medium">
+              <MessageSquare className="w-3.5 h-3.5 text-muted-foreground group-hover:text-accent" />
+              <span className="text-[13px] text-foreground/90 group-hover:text-foreground truncate font-medium">
                 {session.title}
               </span>
             </div>
-            <span className="text-[11px] text-[#4A5059] ml-5.5 mt-0.5">{session.date}</span>
+            <span className="text-[11px] text-muted-foreground ml-[22px] mt-0.5">
+              {session.date}
+            </span>
             <button
               aria-label={`Delete session ${session.title}`}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 opacity-0 group-hover:opacity-100 hover:text-[#ffb4ab] text-[#4A5059] transition-all"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 opacity-0 group-hover:opacity-100 hover:text-destructive text-muted-foreground transition-all"
               onClick={(e) => {
                 e.stopPropagation();
                 // handle delete

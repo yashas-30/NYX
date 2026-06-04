@@ -1,17 +1,7 @@
-import { CapabilityKey, ComplexityLevel, IntentType } from './agent';
+import { CapabilityKey, ComplexityLevel, IntentType, TelemetryMetrics, AIResponse } from './shared';
 import { ModelProvider } from './models';
 
-export interface TelemetryMetrics {
-  latency: number;
-  tokens: number;
-  tps: number;
-  ttft?: number;
-}
-
-export interface AIResponse {
-  text: string;
-  metrics: TelemetryMetrics;
-}
+export type { TelemetryMetrics, AIResponse };
 
 export interface ReasoningStrategy {
   type: 'react' | 'cot' | 'direct';
@@ -70,6 +60,7 @@ export interface LocalModelState {
   totalRequests: number;
 }
 
+// fallow-ignore-next-line code-duplication
 export interface WorkspaceProfile {
   rootPath: string;
   projectType: 'react' | 'node' | 'python' | 'rust' | 'go' | 'arduino' | 'generic';

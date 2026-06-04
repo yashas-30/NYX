@@ -1,4 +1,4 @@
-CREATE TABLE `search_queries` (
+CREATE TABLE IF NOT EXISTS `search_queries` (
 	`id` text PRIMARY KEY NOT NULL,
 	`query` text NOT NULL,
 	`engine` text NOT NULL,
@@ -6,7 +6,7 @@ CREATE TABLE `search_queries` (
 	`timestamp` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `search_results` (
+CREATE TABLE IF NOT EXISTS `search_results` (
 	`id` text PRIMARY KEY NOT NULL,
 	`query_id` text NOT NULL,
 	`url` text NOT NULL,

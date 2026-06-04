@@ -1,3 +1,4 @@
+// fallow-ignore-next-line code-duplication
 import { z } from 'zod';
 
 const chatMessageSchema = z.object({

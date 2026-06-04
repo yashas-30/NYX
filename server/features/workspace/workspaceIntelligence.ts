@@ -12,6 +12,7 @@ import { getWorkspaceRoot } from '../../lib/paths.ts';
 
 const execAsync = promisify(exec);
 
+// fallow-ignore-next-line code-duplication
 export interface WorkspaceProfile {
   rootPath: string;
   projectType: 'react' | 'node' | 'python' | 'rust' | 'go' | 'arduino' | 'generic';

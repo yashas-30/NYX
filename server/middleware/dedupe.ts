@@ -1,19 +1,15 @@
-import express from 'express';
+import { FastifyRequest, FastifyReply } from 'fastify';
 import logger from '../lib/logger.ts';
 import { dedupeCache } from '../lib/cache.ts';
 
-export const requestDedupeMiddleware = (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction
-) => {
+export const requestDedupeMiddleware = async (request: FastifyRequest, reply: FastifyReply) => {
   // Only deduplicate POST/PUT/PATCH/DELETE
-  if (['GET', 'OPTIONS', 'HEAD'].includes(req.method)) {
-    return next();
+  if (['GET', 'OPTIONS', 'HEAD'].includes(request.method)) {
+    return;
   }
 
   // Bypass deduplication for read-only queries or stream endpoints
-  const path = req.path;
+  const path = request.url.split('?')[0];
   const isBypass =
     path.endsWith('/keyword-index') ||
     path.endsWith('/claude-md-hierarchy') ||
@@ -32,26 +28,28 @@ export const requestDedupeMiddleware = (
     path.endsWith('/chat');
 
   if (isBypass) {
-    return next();
+    return;
   }
 
   // Use the idempotency key if provided, otherwise generate a hash of method + path + body
-  const idempotencyKey = req.headers['idempotency-key'] as string;
+  const idempotencyKey = request.headers['idempotency-key'] as string;
   let cacheKey = '';
 
   if (idempotencyKey) {
     cacheKey = `idempotency:${idempotencyKey}`;
   } else {
     // Generate a fallback key
-    // Note: In a production app, it's safer to only dedupe when idempotency-key is explicitly provided.
-    // However, if we want strict deduplication of identical requests in a short window:
-    const bodyStr = req.body && Object.keys(req.body).length > 0 ? JSON.stringify(req.body) : '';
-    cacheKey = `dedupe:${req.method}:${req.path}:${bodyStr}`;
+    const bodyStr =
+      request.body && Object.keys(request.body as any).length > 0
+        ? JSON.stringify(request.body)
+        : '';
+    cacheKey = `dedupe:${request.method}:${path}:${bodyStr}`;
   }
 
   if (dedupeCache.has(cacheKey)) {
     logger.warn({ cacheKey }, 'Duplicate request detected and rejected');
-    return res.status(409).json({ error: 'Duplicate request detected. Please wait.' });
+    reply.code(409).send({ error: 'Duplicate request detected. Please wait.' });
+    return reply; // Return reply to signal hook should stop
   }
 
   // Mark this request as in-progress (10s TTL)
@@ -61,8 +59,6 @@ export const requestDedupeMiddleware = (
   const cleanup = () => {
     dedupeCache.delete(cacheKey);
   };
-  res.on('finish', cleanup);
-  res.on('close', cleanup);
-
-  next();
+  reply.raw.on('finish', cleanup);
+  reply.raw.on('close', cleanup);
 };

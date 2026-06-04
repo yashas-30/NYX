@@ -27,14 +27,14 @@ export const ModelCard: React.FC<ModelCardProps> = ({
     <motion.div
       whileHover={{ y: -2, scale: 1.01 }}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-      className="group relative p-3 rounded-2xl border border-solid flex flex-col gap-2.5 transform-gpu transition-all duration-500 overflow-hidden shadow-sm bg-card border-white/[0.04] hover:border-[#FF3366]/30 hover:bg-[#4A5059]"
+      className="group relative p-3 rounded-2xl border border-solid flex flex-col gap-2.5 transform-gpu transition-all duration-500 overflow-hidden shadow-sm bg-card border-border hover:border-accent/30 hover:bg-secondary/30"
       style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
     >
       {/* Provider badge + status */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <span className="inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FF3366]/10 text-[#FF3366] border border-[#FF3366]/20">
+            <span className="inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
               {providerLabel}
             </span>
             {status && (
@@ -54,7 +54,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
               </span>
             )}
           </div>
-          <h4 className="text-[12px] font-bold truncate leading-tight tracking-tight text-foreground group-hover:text-[#FF3366] transition-colors">
+          <h4 className="text-[12px] font-bold truncate leading-tight tracking-tight text-foreground group-hover:text-accent transition-colors">
             {name}
           </h4>
         </div>
@@ -91,10 +91,10 @@ export const ModelCard: React.FC<ModelCardProps> = ({
           {usage && hasKey && (
             <>
               <div className="flex flex-col">
-                <span className="text-[9px] font-black uppercase tracking-widest text-[#FF3366]/75">
+                <span className="text-[9px] font-black uppercase tracking-widest text-accent/75">
                   Used
                 </span>
-                <span className="text-[10px] font-mono font-bold text-[#FF3366]/80">
+                <span className="text-[10px] font-mono font-bold text-accent/80">
                   {(usage.used / 1000).toFixed(1)}k
                 </span>
               </div>

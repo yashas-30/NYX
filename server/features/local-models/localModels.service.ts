@@ -305,7 +305,7 @@ export class LocalModelsService {
 
       // 3. Formulate the dynamic system prompt
       systemPrompt = `You are NYX, a professional and highly capable AI software engineering assistant.
-Always identify yourself as NYX. Never claim to be OpenAI, ChatGPT, Anthropic, or any other entity.
+Always identify yourself as NYX. Never claim to be any other entity.
 Your tone is highly professional, direct, clear, objective, and authoritative—identical to Google Gemini. Avoid friendly fluff, excessive greetings, or marketing language like "premium". Focus on providing highly structured, precise, clean, and complete code solutions.
  
 Current Date: ${dateStr}
@@ -457,7 +457,7 @@ Please analyze the context and provide highly optimized, syntax-correct solution
       const response = await fetch('http://127.0.0.1:11434/api/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: modelName, stream: false })
+        body: JSON.stringify({ name: modelName, stream: false }),
       });
       if (!response.ok) throw new Error(await response.text());
       return await response.json();
@@ -471,7 +471,7 @@ Please analyze the context and provide highly optimized, syntax-correct solution
       const response = await fetch('http://127.0.0.1:11434/api/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: modelName })
+        body: JSON.stringify({ name: modelName }),
       });
       if (!response.ok) throw new Error(await response.text());
       return { success: true };

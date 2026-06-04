@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 /**
  * @file src/features/chat/components/ChatMessageList.tsx
  * @description Production-grade message list with reasoning display,
@@ -111,12 +112,12 @@ const ToolCallCard: React.FC<{
           ? 'bg-red-500/5 border-red-500/20'
           : isRunning
             ? 'bg-sky-500/5 border-sky-500/20'
-            : 'bg-white/[0.02] border-white/5'
+            : 'bg-card border-border'
       }`}
     >
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-white/[0.02] transition-colors"
+        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-muted/40 transition-colors"
       >
         {isRunning ? (
           <Loader2 size={13} className="text-sky-400 animate-spin shrink-0" />
@@ -125,7 +126,7 @@ const ToolCallCard: React.FC<{
         ) : (
           <Wrench size={13} className="text-emerald-400 shrink-0" />
         )}
-        <span className="text-[11px] font-semibold text-zinc-300 truncate">
+        <span className="text-[11px] font-semibold text-foreground/90 truncate">
           {tool.function.name}
         </span>
         <span
@@ -140,9 +141,9 @@ const ToolCallCard: React.FC<{
           {status}
         </span>
         {expanded ? (
-          <ChevronDown size={12} className="text-zinc-500 shrink-0" />
+          <ChevronDown size={12} className="text-muted-foreground shrink-0" />
         ) : (
-          <ChevronRight size={12} className="text-zinc-500 shrink-0" />
+          <ChevronRight size={12} className="text-muted-foreground shrink-0" />
         )}
       </button>
 
@@ -155,9 +156,9 @@ const ToolCallCard: React.FC<{
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="px-3.5 pb-3 pt-1 border-t border-white/5">
-              <div className="text-[10px] text-zinc-500 font-mono mb-1.5">Arguments:</div>
-              <pre className="text-[11px] font-mono text-zinc-300 bg-black/20 rounded-lg p-2.5 overflow-x-auto">
+            <div className="px-3.5 pb-3 pt-1 border-t border-border">
+              <div className="text-[10px] text-muted-foreground font-mono mb-1.5">Arguments:</div>
+              <pre className="text-[11px] font-mono text-foreground/90 bg-muted/50 rounded-lg p-2.5 overflow-x-auto">
                 {JSON.stringify(JSON.parse(tool.function.arguments || '{}'), null, 2)}
               </pre>
             </div>
@@ -186,12 +187,12 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
   const lang = language || 'text';
 
   return (
-    <div className="relative group/code my-4 rounded-2xl border border-white/[0.04] bg-[#0d1117] overflow-hidden shadow-xl text-left">
+    <div className="relative group/code my-4 rounded-2xl border border-border bg-muted overflow-hidden shadow-xl text-left">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-white/[0.04]">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-muted/50 border-b border-border">
         <div className="flex items-center gap-2">
           <Terminal size={11} className="text-[#58a6ff]" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
             {lang}
           </span>
         </div>
@@ -199,7 +200,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.95 }}
           onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.04] border border-white/5 text-[9px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 hover:border-white/10 transition-all cursor-pointer"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card border border-border text-[9px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground hover:border-border transition-all cursor-pointer"
         >
           {copied ? (
             <>
@@ -258,7 +259,7 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
       className="my-2 relative group/image"
     >
       <div
-        className={`relative rounded-xl overflow-hidden border border-white/5 bg-zinc-900/50 cursor-zoom-in transition-all ${
+        className={`relative rounded-xl overflow-hidden border border-border bg-muted/50 cursor-zoom-in transition-all ${
           expanded
             ? 'fixed inset-4 z-50 flex items-center justify-center bg-black/80'
             : 'inline-block max-w-sm'
@@ -267,7 +268,7 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
       >
         {!loaded && (
           <div className="w-32 h-32 flex items-center justify-center">
-            <ImageIcon size={20} className="text-zinc-600 animate-pulse" />
+            <ImageIcon size={20} className="text-muted-foreground/50 animate-pulse" />
           </div>
         )}
         <img
@@ -336,7 +337,7 @@ const MarkdownContent: React.FC<{
 
         return (
           <code
-            className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-[#FF3366] text-[11px] font-mono font-semibold"
+            className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-[#FF3366] text-[11px] font-mono font-semibold"
             {...props}
           >
             {children}
@@ -344,7 +345,7 @@ const MarkdownContent: React.FC<{
         );
       },
       h1: ({ children }: any) => (
-        <h1 className="text-base font-black tracking-tight text-foreground mt-5 mb-2 pb-2 border-b border-white/10">
+        <h1 className="text-base font-black tracking-tight text-foreground mt-5 mb-2 pb-2 border-b border-border">
           {children}
         </h1>
       ),
@@ -374,13 +375,11 @@ const MarkdownContent: React.FC<{
       ),
       em: ({ children }: any) => <em className="italic text-[#FF3366]/80">{children}</em>,
       blockquote: ({ children }: any) => (
-        <blockquote className="my-2 pl-3 py-1 border-l-2 border-[#FF3366]/45 bg-white/[0.01] rounded-r-lg text-sm text-foreground/65 italic">
+        <blockquote className="my-2 pl-3 py-1 border-l border-[#FF3366]/45 bg-muted/20 rounded-r-lg text-sm text-foreground/65 italic">
           {children}
         </blockquote>
       ),
-      hr: () => (
-        <div className="my-4 h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-      ),
+      hr: () => <div className="my-4 h-px w-full bg-border" />,
       a: ({ href, children }: any) => {
         if (href?.startsWith('#cite-')) {
           const id = href.replace('#cite-', '');
@@ -416,14 +415,14 @@ const MarkdownContent: React.FC<{
           <table className="w-full text-sm border-collapse">{children}</table>
         </div>
       ),
-      thead: ({ children }: any) => <thead className="bg-white/[0.02]">{children}</thead>,
+      thead: ({ children }: any) => <thead className="bg-muted/50">{children}</thead>,
       th: ({ children }: any) => (
-        <th className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-400 border-b border-white/10">
+        <th className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border">
           {children}
         </th>
       ),
       td: ({ children }: any) => (
-        <td className="px-3 py-2 text-zinc-300 border-b border-white/[0.04]">{children}</td>
+        <td className="px-3 py-2 text-foreground/80 border-b border-border">{children}</td>
       ),
     }),
     []
@@ -498,7 +497,7 @@ const MessageActions: React.FC<{
               if (e.key === 'Enter' && e.metaKey) handleEditSubmit();
               if (e.key === 'Escape') setIsEditing(false);
             }}
-            className="w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-xl p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
+            className="w-full min-h-[80px] bg-card border border-border rounded-xl p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
           />
           <div className="flex items-center gap-2">
             <button
@@ -509,7 +508,7 @@ const MessageActions: React.FC<{
             </button>
             <button
               onClick={() => setIsEditing(false)}
-              className="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 text-zinc-400 text-[11px] font-semibold hover:bg-white/[0.06] transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-lg bg-muted border border-border text-muted-foreground text-[11px] font-semibold hover:bg-muted/80 transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -522,7 +521,7 @@ const MessageActions: React.FC<{
       <div className="mt-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
         <button
           onClick={() => onCopy(content, msgId)}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-[#FF3366] hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
         >
           {copiedId === msgId ? (
             <>
@@ -540,7 +539,7 @@ const MessageActions: React.FC<{
         {isUser && onEdit && (
           <button
             onClick={() => setIsEditing(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-[#FF3366] hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
           >
             <Pencil size={10} />
             <span>Edit</span>
@@ -550,7 +549,7 @@ const MessageActions: React.FC<{
         {!isUser && onRegenerate && (
           <button
             onClick={() => onRegenerate(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-[#FF3366] hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
             title={`Regenerate with ${activeModel || 'current model'}`}
           >
             <RefreshCw size={10} />
@@ -561,7 +560,7 @@ const MessageActions: React.FC<{
         {!isUser && onBranch && (
           <button
             onClick={() => onBranch(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-[#FF3366] hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
           >
             <GitBranch size={10} />
             <span>Branch</span>
@@ -595,15 +594,15 @@ const FeedbackButtons: React.FC<{
   if (!msg.rolloutId || !submitReward) return null;
 
   return (
-    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-white/5">
-      <span className="text-[8.5px] text-zinc-600 font-bold uppercase tracking-wider select-none">
+    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
+      <span className="text-[8.5px] text-muted-foreground font-bold uppercase tracking-wider select-none">
         Helpful?
       </span>
       <button
         onClick={() => handleReward(1)}
         disabled={reward !== undefined}
         className={`p-1 rounded transition-colors cursor-pointer ${
-          reward === 1 ? 'text-emerald-400' : 'text-zinc-500 hover:text-emerald-400'
+          reward === 1 ? 'text-emerald-400' : 'text-muted-foreground hover:text-emerald-400'
         } ${reward !== undefined ? 'opacity-50 cursor-default' : ''}`}
       >
         <ThumbsUp size={11} />
@@ -612,7 +611,7 @@ const FeedbackButtons: React.FC<{
         onClick={() => handleReward(0)}
         disabled={reward !== undefined}
         className={`p-1 rounded transition-colors cursor-pointer ${
-          reward === 0 ? 'text-red-400' : 'text-zinc-500 hover:text-red-400'
+          reward === 0 ? 'text-red-400' : 'text-muted-foreground hover:text-red-400'
         } ${reward !== undefined ? 'opacity-50 cursor-default' : ''}`}
       >
         <ThumbsDown size={11} />
@@ -646,14 +645,14 @@ const ArtifactCard: React.FC<{ artifact: any }> = memo(({ artifact }) => {
     <motion.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      className="my-3 rounded-xl border border-[#FF3366]/20 bg-[#FF3366]/[0.02] overflow-hidden"
+      className="my-3 rounded-xl border border-border bg-card overflow-hidden"
     >
       <div
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-[#FF3366]/[0.05] transition-colors"
+        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-muted/40 transition-colors"
       >
         <FileText size={13} className="text-[#FF3366] shrink-0" />
-        <span className="text-[11px] font-semibold text-[#FF3366]/90 truncate flex-1">
+        <span className="text-[11px] font-semibold text-foreground/90 truncate flex-1">
           {artifact.title || 'Generated Artifact'}
         </span>
         <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider ml-auto shrink-0 bg-[#FF3366]/10 text-[#FF3366]">
@@ -667,9 +666,9 @@ const ArtifactCard: React.FC<{ artifact: any }> = memo(({ artifact }) => {
           <Download size={12} className="text-[#FF3366]" />
         </button>
         {expanded ? (
-          <ChevronDown size={12} className="text-zinc-500 shrink-0 ml-1" />
+          <ChevronDown size={12} className="text-muted-foreground shrink-0 ml-1" />
         ) : (
-          <ChevronRight size={12} className="text-zinc-500 shrink-0 ml-1" />
+          <ChevronRight size={12} className="text-muted-foreground shrink-0 ml-1" />
         )}
       </div>
 
@@ -682,11 +681,11 @@ const ArtifactCard: React.FC<{ artifact: any }> = memo(({ artifact }) => {
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="border-t border-[#FF3366]/10 bg-black/40">
+            <div className="border-t border-border bg-muted/20">
               {artifact.type === 'code' ? (
                 <CodeBlock language={artifact.language} code={artifact.content} />
               ) : (
-                <div className="p-4 text-[12px] text-zinc-300 whitespace-pre-wrap font-mono">
+                <div className="p-4 text-[12px] text-foreground/90 whitespace-pre-wrap font-mono">
                   {artifact.content}
                 </div>
               )}
@@ -729,8 +728,8 @@ const MessageBubble = React.memo<MessageBubbleProps>(
       >
         {isUser ? (
           <div className="max-w-[85%] sm:max-w-[75%]">
-            <div className="py-3.5 px-5 bg-zinc-900/40 border border-white/[0.04] rounded-2xl shadow-sm hover:border-white/[0.08] transition-all">
-              <div className="text-[14px] font-normal leading-relaxed text-zinc-200 select-text whitespace-pre-wrap">
+            <div className="py-3.5 px-5 bg-muted/50 border border-border rounded-2xl shadow-sm hover:bg-muted/70 transition-all">
+              <div className="text-[14px] font-normal leading-relaxed text-foreground select-text whitespace-pre-wrap">
                 {msg.content}
               </div>
               {msg.images && msg.images.length > 0 && (
@@ -759,7 +758,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               (msg.toolCalls && msg.toolCalls.length > 0) ||
               msg.status === 'loading') && (
               <div className="flex items-center gap-2.5 mb-3 select-none">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#22d3ee]/20 to-[#FF3366]/20 border border-white/10 flex items-center justify-center shadow-inner">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#22d3ee]/20 to-[#FF3366]/20 border border-border flex items-center justify-center shadow-inner">
                   <Logo size={14} />
                 </div>
                 <div className="flex items-baseline gap-2">
@@ -767,7 +766,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     NYX
                   </span>
                   {activeModel && (
-                    <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-wider">
+                    <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
                       {activeModel}
                     </span>
                   )}
@@ -787,8 +786,8 @@ const MessageBubble = React.memo<MessageBubbleProps>(
 
             {/* Stopped state */}
             {msg.status === 'stopped' && (
-              <p className="text-sm text-zinc-500 py-1 italic flex items-center gap-2">
-                <Square size={10} className="text-zinc-600" />
+              <p className="text-sm text-muted-foreground py-1 italic flex items-center gap-2">
+                <Square size={10} className="text-muted-foreground" />
                 Generation stopped by user.
               </p>
             )}
@@ -800,7 +799,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               (!msg.toolCalls || msg.toolCalls.length === 0) && (
                 <div className="flex items-center gap-2.5 py-1 select-none">
                   <NyxLoader size={14} className="text-[#22d3ee] shrink-0" />
-                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-[0.2em]">
+                  <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.2em]">
                     Formulating response...
                   </span>
                 </div>
@@ -851,8 +850,8 @@ const MessageBubble = React.memo<MessageBubbleProps>(
 
                 {/* Citations */}
                 {msg.citations && msg.citations.length > 0 && (
-                  <div className="mt-3 pt-2 border-t border-white/5">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5 flex items-center gap-1.5">
+                  <div className="mt-3 pt-2 border-t border-border">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
                       <Search size={10} />
                       Sources
                     </div>
@@ -864,7 +863,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           href={cite.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-[10px] text-muted-foreground hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
                         >
                           <Globe size={9} />
                           <span className="truncate max-w-[200px]">
@@ -902,7 +901,9 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               (!msg.toolCalls || msg.toolCalls.length === 0) &&
               msg.status !== 'loading' &&
               msg.status !== 'error' && (
-                <div className="text-zinc-500 text-xs italic py-1">Empty response from model.</div>
+                <div className="text-muted-foreground text-xs italic py-1">
+                  Empty response from model.
+                </div>
               )}
           </div>
         )}
@@ -981,12 +982,12 @@ const EmptyState: React.FC<{
             key={idx}
             whileHover={{
               scale: 1.01,
-              backgroundColor: 'rgba(255, 51, 102, 0.05)',
-              borderColor: 'rgba(255, 51, 102, 0.2)',
+              backgroundColor: 'var(--muted)',
+              borderColor: 'var(--border)',
             }}
             whileTap={{ scale: 0.99 }}
             onClick={() => onSuggestedPromptClick?.(p)}
-            className="p-4 text-[11px] font-bold text-left rounded-2xl bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
+            className="p-4 text-[11px] font-bold text-left rounded-2xl bg-card border border-border text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
           >
             <span>{p}</span>
             <span className="text-[10px] text-[#FF3366]/70 font-extrabold ml-2">➔</span>

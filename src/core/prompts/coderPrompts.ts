@@ -1061,6 +1061,7 @@ Rules:
     parts.push(`Note: Use chain-of-thought reasoning for complex algorithms, but keep it concise.`);
   }
 
+  // fallow-ignore-next-line code-duplication
   parts.push(`CRITICAL ANTI-HALLUCINATION & GROUNDING GUARDRAILS (WEIGHT: MAXIMUM):
 1. Strictly ground all generated code, functions, configurations, and variables in the verified codebase facts and search context. Do NOT guess or make up folder structures, imported libraries, methods, or third-party packages.
 2. Under no circumstances should you generate speculative code placeholders or "TODO" notes in the body of implementations. If a function is requested, provide its COMPLETE, syntactically correct implementation.

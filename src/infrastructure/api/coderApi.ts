@@ -67,6 +67,7 @@ export interface FileWriteResult {
 // Utilities
 // ---------------------------------------------------------------------------
 
+// fallow-ignore-next-line code-duplication
 function createTimeoutSignal(ms: number): AbortSignal {
   const ctrl = new AbortController();
   setTimeout(() => ctrl.abort(), ms);

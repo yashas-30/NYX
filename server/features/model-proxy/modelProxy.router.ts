@@ -1,33 +1,48 @@
-import { Router } from 'express';
+import { FastifyInstance } from 'fastify';
 import { validate } from '../../middleware/validate.ts';
 import { modelQuerySchema } from './modelProxy.schema.ts';
 import { ModelProxyService } from './modelProxy.service.ts';
 
-export const modelProxyRouter = Router();
-const service = new ModelProxyService();
+export async function modelProxyRouter(fastify: FastifyInstance) {
+  const service = new ModelProxyService();
 
-modelProxyRouter.post('/list', validate(modelQuerySchema), async (req, res) => {
-  const { provider, apiKey } = req.body;
-  if (apiKey && !service.validateKey(provider, apiKey)) {
-    return res.status(400).json({ error: 'Invalid API key format for provider: ' + provider });
-  }
-  try {
-    const models = await service.listModels(provider, apiKey);
-    res.json({ models });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  fastify.post(
+    '/list',
+    {
+      preHandler: [validate(modelQuerySchema)],
+    },
+    async (request, reply) => {
+      // fallow-ignore-next-line code-duplication
+      const { provider, apiKey } = request.body as any;
+      if (apiKey && !service.validateKey(provider, apiKey)) {
+        return reply.code(400).send({ error: 'Invalid API key format for provider: ' + provider });
+      }
+      try {
+        const models = await service.listModels(provider, apiKey);
+        reply.send({ models });
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
+      }
+    }
+  );
 
-modelProxyRouter.post('/quota', validate(modelQuerySchema), async (req, res) => {
-  const { provider, apiKey } = req.body;
-  if (apiKey && !service.validateKey(provider, apiKey)) {
-    return res.status(400).json({ error: 'Invalid API key format for provider: ' + provider });
-  }
-  try {
-    const quota = await service.getQuota(provider, apiKey);
-    res.json(quota);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  fastify.post(
+    '/quota',
+    {
+      preHandler: [validate(modelQuerySchema)],
+    },
+    async (request, reply) => {
+      // fallow-ignore-next-line code-duplication
+      const { provider, apiKey } = request.body as any;
+      if (apiKey && !service.validateKey(provider, apiKey)) {
+        return reply.code(400).send({ error: 'Invalid API key format for provider: ' + provider });
+      }
+      try {
+        const quota = await service.getQuota(provider, apiKey);
+        reply.send(quota);
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+}

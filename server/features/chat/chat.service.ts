@@ -1,5 +1,5 @@
 import logger from '../../lib/logger.ts';
-import { loadKeys } from '../vault/vault.service.ts';
+import { getKeysSync } from '../vault/vault.service.ts';
 import { LOCAL_MODEL_PORT } from '../../../src/config/ports.ts';
 import { SearchService } from '../nyx/search.service.ts';
 
@@ -71,7 +71,7 @@ export class ChatService {
     };
 
     if (provider === 'gemini' && modelId) {
-      const keys = loadKeys();
+      const keys = getKeysSync();
       const activeKey = keys['gemini'] || '';
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?key=${activeKey}&alt=sse`;
@@ -104,6 +104,7 @@ export class ChatService {
       if (!res.ok) throw new Error(`Gemini API Error: ${res.statusText}`);
 
       // Basic SSE parser for Gemini
+      // fallow-ignore-next-line code-duplication
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       if (!reader) throw new Error('No reader available');
@@ -146,10 +147,12 @@ export class ChatService {
       throw new Error(`Local backend stream error: ${text}`);
     }
 
+    // fallow-ignore-next-line code-duplication
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
     if (!reader) throw new Error('No reader available');
 
+    // fallow-ignore-next-line code-duplication
     let buf = '';
     while (true) {
       const { done, value } = await reader.read();

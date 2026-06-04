@@ -1,51 +1,58 @@
-import { Router } from 'express';
+import { FastifyInstance } from 'fastify';
 import { validate } from '../../middleware/validate.ts';
 import { CacheService } from './cache.service.ts';
 import { cacheSetSchema } from './cache.schema.ts';
 
-export const cacheRouter = Router();
-const service = new CacheService();
+export async function cacheRouter(fastify: FastifyInstance) {
+  const service = new CacheService();
 
-cacheRouter.post('/get', async (req, res) => {
-  try {
-    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
-      return res.status(400).json({ error: 'Invalid payload: request body must be an object' });
+  fastify.post('/get', async (request, reply) => {
+    try {
+      if (
+        !(request.body as any) ||
+        typeof (request.body as any) !== 'object' ||
+        Array.isArray(request.body as any)
+      ) {
+        return reply.code(400).send({ error: 'Invalid payload: request body must be an object' });
+      }
+      const key = service.generateKey(request.body as any);
+      // fallow-ignore-next-line code-duplication
+      const text = await service.get(key);
+      if (text !== null) {
+        return reply.send({ hit: true, text, key });
+      }
+      return reply.send({ hit: false, key });
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
     }
-    const key = service.generateKey(req.body);
-    const text = await service.get(key);
-    if (text !== null) {
-      return res.json({ hit: true, text, key });
+  });
+
+  fastify.post('/set', { preHandler: [validate(cacheSetSchema)] }, async (request, reply) => {
+    const { key, data, provider, model } = request.body as any;
+    try {
+      // fallow-ignore-next-line code-duplication
+      await service.set(key, data, provider, model);
+      reply.send({ success: true });
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
     }
-    return res.json({ hit: false, key });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  });
 
-cacheRouter.post('/set', validate(cacheSetSchema), async (req, res) => {
-  const { key, data, provider, model } = req.body;
-  try {
-    await service.set(key, data, provider, model);
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  fastify.get('/stats', (_req, reply) => {
+    try {
+      const stats = service.getStats();
+      reply.send(stats);
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
 
-cacheRouter.get('/stats', (_req, res) => {
-  try {
-    const stats = service.getStats();
-    res.json(stats);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-cacheRouter.post('/clear', (_req, res) => {
-  try {
-    const result = service.clear();
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  fastify.post('/clear', (_req, reply) => {
+    try {
+      const result = service.clear();
+      reply.send(result);
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+}

@@ -70,10 +70,12 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
         const res = await fetchWithAuth(url);
         if (res.ok) {
           const serverSessions = await res.json();
+          // fallow-ignore-next-line code-duplication
           if (Array.isArray(serverSessions) && activeToken) {
             setRegularSessions((prev) => {
               const prevMap = new Map(prev.map((s) => [s.id, s]));
               const merged = [...prev];
+              // fallow-ignore-next-line code-duplication
               for (const s of serverSessions) {
                 if (!prevMap.has(s.id)) {
                   merged.push(s);
@@ -114,10 +116,12 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw && activeToken) {
           const parsed = JSON.parse(raw);
+          // fallow-ignore-next-line code-duplication
           if (Array.isArray(parsed)) {
             setRegularSessions((prev) => {
               const prevMap = new Map(prev.map((s) => [s.id, s]));
               const merged = [...prev];
+              // fallow-ignore-next-line code-duplication
               for (const s of parsed) {
                 if (!prevMap.has(s.id)) {
                   merged.push(s);

@@ -1,23 +1,11 @@
 import crypto from 'crypto';
-import express from 'express';
+import { FastifyRequest, FastifyReply } from 'fastify';
 import logger from '../lib/logger.ts';
+import { getRequestSignerSecrets } from '../features/vault/vault.service.ts';
 
-let internalSecret: string | null = null;
-
-export function getInternalSecret(): string {
-  if (!internalSecret) {
-    internalSecret = crypto.randomBytes(32).toString('hex');
-  }
-  return internalSecret;
-}
-
-export const requestSignerMiddleware = (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction
-) => {
+export const requestSignerMiddleware = async (request: FastifyRequest, reply: FastifyReply) => {
   // Skip signing check for public/health routes
-  const fullPath = req.originalUrl.split('?')[0].replace(/\/$/, '');
+  const fullPath = request.url.split('?')[0].replace(/\/$/, '');
   const isPublic = new Set([
     '/api/v1/health',
     '/api/v1/vault/status',
@@ -28,53 +16,81 @@ export const requestSignerMiddleware = (
     '/api/v1/metrics',
   ]).has(fullPath);
 
-  if (isPublic) return next();
+  if (isPublic) return;
 
   // Only verify mutations (POST, PUT, DELETE, PATCH)
-  if (['GET', 'OPTIONS', 'HEAD'].includes(req.method)) {
-    return next();
+  if (['GET', 'OPTIONS', 'HEAD'].includes(request.method)) {
+    return;
   }
 
-  const signature = req.headers['x-nyx-signature'] as string;
-  const timestampStr = req.headers['x-nyx-timestamp'] as string;
+  const signature = request.headers['x-nyx-signature'] as string;
+  const timestampStr = request.headers['x-nyx-timestamp'] as string;
 
   if (!signature || !timestampStr) {
-    logger.warn('[RequestSigner] Missing signature or timestamp');
-    return res.status(401).json({ error: 'Missing request signature' });
+    if (process.env.ENFORCE_REQUEST_SIGNATURE === 'true') {
+      logger.warn('[RequestSigner] Missing signature or timestamp');
+      reply.code(401).send({ error: 'Missing request signature' });
+      return reply;
+    }
+    return;
   }
 
   const timestamp = parseInt(timestampStr, 10);
   if (isNaN(timestamp)) {
-    return res.status(400).json({ error: 'Invalid timestamp' });
+    reply.code(400).send({ error: 'Invalid timestamp' });
+    return reply;
   }
 
   // Prevent replay attacks (5 minute window)
   const now = Date.now();
   if (Math.abs(now - timestamp) > 5 * 60 * 1000) {
     logger.warn('[RequestSigner] Request expired or clock skewed');
-    return res.status(401).json({ error: 'Request expired' });
+    reply.code(401).send({ error: 'Request expired' });
+    return reply;
   }
 
-  const secret = getInternalSecret();
-  
-  // Hash the body + timestamp + path
-  const payload = `${req.method}:${fullPath}:${timestamp}:${
-    req.body && Object.keys(req.body).length > 0 ? JSON.stringify(req.body) : ''
-  }`;
-  
-  const expectedSignature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const secrets = await getRequestSignerSecrets();
 
-  // Use timingSafeEqual to prevent timing attacks
+  // Hash the body + timestamp + path
+  const payload = `${request.method}:${fullPath}:${timestamp}:${
+    request.body && Object.keys(request.body as any).length > 0 ? JSON.stringify(request.body) : ''
+  }`;
+
+  const expectedSignatureCurrent = crypto
+    .createHmac('sha256', secrets.current)
+    .update(payload)
+    .digest('hex');
+  const expectedSignaturePrevious = secrets.previous
+    ? crypto.createHmac('sha256', secrets.previous).update(payload).digest('hex')
+    : null;
+
   try {
     const sigBuffer = Buffer.from(signature, 'hex');
-    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
-    if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
+    const expectedCurrentBuffer = Buffer.from(expectedSignatureCurrent, 'hex');
+    let isValid = false;
+
+    if (
+      sigBuffer.length === expectedCurrentBuffer.length &&
+      crypto.timingSafeEqual(sigBuffer, expectedCurrentBuffer)
+    ) {
+      isValid = true;
+    } else if (expectedSignaturePrevious) {
+      const expectedPreviousBuffer = Buffer.from(expectedSignaturePrevious, 'hex');
+      if (
+        sigBuffer.length === expectedPreviousBuffer.length &&
+        crypto.timingSafeEqual(sigBuffer, expectedPreviousBuffer)
+      ) {
+        isValid = true;
+      }
+    }
+
+    if (!isValid) {
       logger.warn('[RequestSigner] Invalid signature mismatch');
-      return res.status(401).json({ error: 'Invalid request signature' });
+      reply.code(401).send({ error: 'Invalid request signature' });
+      return reply;
     }
   } catch (e) {
-    return res.status(401).json({ error: 'Invalid request signature format' });
+    reply.code(401).send({ error: 'Invalid request signature format' });
+    return reply;
   }
-
-  next();
 };

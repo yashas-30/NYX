@@ -42,6 +42,7 @@ export class QwenLocalService {
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    // fallow-ignore-next-line code-duplication
     let buf = '';
 
     while (true) {

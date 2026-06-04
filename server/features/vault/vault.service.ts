@@ -2,11 +2,17 @@ import logger from '../../lib/logger.ts';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-
+import keytar from 'keytar';
+import { db } from '../../db/client.ts';
+import { sessions } from '../../db/schema.ts';
+import { eq, lt } from 'drizzle-orm';
 import { VAULT_DIR, APP_STATE_DIR } from '../../lib/paths.ts';
-const VAULT_FILE = path.join(VAULT_DIR, 'vault.enc');
 
-// Derive 32-byte key for AES-256-GCM
+const VAULT_FILE = path.join(VAULT_DIR, 'vault.enc');
+const KEYTAR_SERVICE = 'NYX_VAULT';
+const KEYTAR_ACCOUNT_API = 'api_keys';
+const KEYTAR_ACCOUNT_SIGNER = 'request_signer';
+
 function getMasterKey(): Buffer {
   const masterKey = process.env.NYX_MASTER_KEY;
   if (!masterKey) {
@@ -25,7 +31,6 @@ function getMasterKey(): Buffer {
   return crypto.createHash('sha256').update(masterKey).digest();
 }
 
-// Encrypt string using AES-256-GCM
 export function encryptText(text: string): string {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', getMasterKey(), iv);
@@ -35,7 +40,6 @@ export function encryptText(text: string): string {
   return `${iv.toString('hex')}:${tag}:${encrypted}`;
 }
 
-// Decrypt string using AES-256-GCM
 export function decryptText(encryptedText: string): string {
   const parts = encryptedText.split(':');
   if (parts.length !== 3) {
@@ -51,39 +55,120 @@ export function decryptText(encryptedText: string): string {
   return decrypted;
 }
 
-// Load decrypted keys from disk
-export function loadKeys(): Record<string, string> {
+let cachedKeys: Record<string, string> | null = null;
+
+export function getKeysSync(): Record<string, string> {
+  if (cachedKeys) return cachedKeys;
+  if (!fs.existsSync(VAULT_FILE)) return {};
+  try {
+    const encryptedData = fs.readFileSync(VAULT_FILE, 'utf8');
+    const decryptedJson = decryptText(encryptedData);
+    cachedKeys = JSON.parse(decryptedJson);
+    return cachedKeys!;
+  } catch {
+    return {};
+  }
+}
+
+export async function loadKeys(): Promise<Record<string, string>> {
+  try {
+    const stored = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_API);
+    if (stored) {
+      cachedKeys = JSON.parse(stored);
+      return cachedKeys!;
+    }
+  } catch (err: any) {
+    logger.warn('[KeyVault] Keytar load failed, falling back to file vault:', err.message);
+  }
+
   if (!fs.existsSync(VAULT_FILE)) {
     return {};
   }
   try {
     const encryptedData = fs.readFileSync(VAULT_FILE, 'utf8');
     const decryptedJson = decryptText(encryptedData);
-    return JSON.parse(decryptedJson);
+    cachedKeys = JSON.parse(decryptedJson);
+    return cachedKeys!;
   } catch (error: any) {
     logger.error('[KeyVault] Failed to decrypt vault keys:', error.message);
     return {};
   }
 }
 
-// Save encrypted keys to disk
-export function saveKeys(keys: Record<string, string>): void {
+export async function saveKeys(keys: Record<string, string>): Promise<void> {
+  cachedKeys = keys;
+  const jsonStr = JSON.stringify(keys);
+  try {
+    await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_API, jsonStr);
+  } catch (err: any) {
+    logger.warn('[KeyVault] Keytar save failed, falling back to file vault:', err.message);
+  }
+
+  // Always save to file vault as fallback for CI/CD environments
   try {
     if (!fs.existsSync(VAULT_DIR)) {
       fs.mkdirSync(VAULT_DIR, { recursive: true });
     }
-    const jsonStr = JSON.stringify(keys);
     const encryptedData = encryptText(jsonStr);
     fs.writeFileSync(VAULT_FILE, encryptedData, 'utf8');
   } catch (error: any) {
-    logger.error('[KeyVault] Failed to save keys to vault:', error.message);
-    throw new Error(`Vault save failed: ${error.message}`);
+    logger.error('[KeyVault] Failed to save keys to vault file:', error.message);
   }
 }
 
-import { db } from '../../db/client.ts';
-import { sessions } from '../../db/schema.ts';
-import { eq, lt } from 'drizzle-orm';
+// Request Signer Storage
+export interface SignerSecrets {
+  current: string;
+  previous?: string;
+  rotatedAt: number;
+}
+
+export async function getRequestSignerSecrets(): Promise<SignerSecrets> {
+  let data: SignerSecrets | null = null;
+  try {
+    const stored = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_SIGNER);
+    if (stored) data = JSON.parse(stored);
+  } catch (err) {}
+
+  if (!data) {
+    // Generate initial secret
+    data = {
+      current: crypto.randomBytes(32).toString('hex'),
+      rotatedAt: Date.now(),
+    };
+    try {
+      await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_SIGNER, JSON.stringify(data));
+    } catch (err) {}
+  }
+
+  // Auto rotate if older than 24h
+  if (Date.now() - data.rotatedAt > 24 * 60 * 60 * 1000) {
+    data = await rotateRequestSignerSecret();
+  }
+
+  return data;
+}
+
+export async function rotateRequestSignerSecret(): Promise<SignerSecrets> {
+  let data: SignerSecrets | null = null;
+  try {
+    const stored = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_SIGNER);
+    if (stored) data = JSON.parse(stored);
+  } catch (err) {}
+
+  const newSecret = crypto.randomBytes(32).toString('hex');
+  const newData: SignerSecrets = {
+    current: newSecret,
+    previous: data?.current,
+    rotatedAt: Date.now(),
+  };
+
+  try {
+    await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_SIGNER, JSON.stringify(newData));
+  } catch (err) {}
+
+  return newData;
+}
 
 // Session store using SQLite
 function pruneExpiredSessions(): void {
@@ -95,39 +180,38 @@ function pruneExpiredSessions(): void {
   }
 }
 
-// Prune expired sessions every 10 minutes
 setInterval(pruneExpiredSessions, 10 * 60 * 1000).unref();
 
-// Generate a new temporary session token or streaming nonce
 export function createSessionToken(isStreamNonce = false): string {
   const token = crypto.randomUUID();
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const ttl = 5 * 60 * 1000; // 5 minutes
-  
+
   try {
-    db.insert(sessions).values({
-      id: crypto.randomUUID(),
-      tokenHash,
-      isStreamNonce,
-      expiresAt: Date.now() + ttl,
-      createdAt: Date.now()
-    }).run();
+    db.insert(sessions)
+      .values({
+        id: crypto.randomUUID(),
+        tokenHash,
+        isStreamNonce,
+        expiresAt: Date.now() + ttl,
+        createdAt: Date.now(),
+      })
+      .run();
   } catch (error) {
     logger.error({ error }, '[SessionStore] Failed to create session');
   }
-  
+
   return token;
 }
 
-// Verify a session token and optionally consume if it's a stream nonce
 export function verifySessionToken(token: string | undefined): boolean {
   if (!token) return false;
-  
+
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  
+
   try {
     const session = db.select().from(sessions).where(eq(sessions.tokenHash, tokenHash)).get();
-    
+
     if (!session) return false;
 
     if (Date.now() > session.expiresAt) {
@@ -136,7 +220,6 @@ export function verifySessionToken(token: string | undefined): boolean {
     }
 
     if (session.isStreamNonce) {
-      // Single-use for SSE streaming, invalidate immediately
       db.delete(sessions).where(eq(sessions.id, session.id)).run();
     }
 
@@ -147,28 +230,20 @@ export function verifySessionToken(token: string | undefined): boolean {
   }
 }
 
-// Refresh an existing session token
 export function refreshSessionToken(token: string | undefined): boolean {
   if (!token) return false;
-  
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  
   try {
     const session = db.select().from(sessions).where(eq(sessions.tokenHash, tokenHash)).get();
-    
     if (!session || session.isStreamNonce) return false;
-
     if (Date.now() > session.expiresAt) {
       db.delete(sessions).where(eq(sessions.id, session.id)).run();
       return false;
     }
-
-    // Extend by 5 minutes
     db.update(sessions)
       .set({ expiresAt: Date.now() + 5 * 60 * 1000 })
       .where(eq(sessions.id, session.id))
       .run();
-
     return true;
   } catch (error) {
     logger.error({ error }, '[SessionStore] Failed to refresh session token');
@@ -176,9 +251,8 @@ export function refreshSessionToken(token: string | undefined): boolean {
   }
 }
 
-// Get configure statuses of keys
-export function getVaultStatus(): Record<string, boolean> {
-  const keys = loadKeys();
+export async function getVaultStatus(): Promise<Record<string, boolean>> {
+  const keys = await loadKeys();
   return {
     gemini: !!(keys.gemini && keys.gemini.trim().length > 0),
     scrapling: !!(
@@ -188,18 +262,18 @@ export function getVaultStatus(): Record<string, boolean> {
   };
 }
 
-export function exportVault(): string {
-  const keys = loadKeys();
+export async function exportVault(): Promise<string> {
+  const keys = await loadKeys();
   return encryptText(JSON.stringify(keys));
 }
 
-export function importVault(encryptedData: string): void {
+export async function importVault(encryptedData: string): Promise<void> {
   const decrypted = decryptText(encryptedData);
   const keys = JSON.parse(decrypted);
-  saveKeys(keys);
+  await saveKeys(keys);
 }
 
-export function backupVault(): string {
+export async function backupVault(): Promise<string> {
   const backupDir = path.join(APP_STATE_DIR, '.nyx-backups');
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
@@ -210,18 +284,14 @@ export function backupVault(): string {
   if (fs.existsSync(VAULT_FILE)) {
     fs.copyFileSync(VAULT_FILE, backupPath);
   } else {
-    // If no vault exists yet, write empty encrypted file
     fs.writeFileSync(backupPath, encryptText(JSON.stringify({})), 'utf8');
   }
 
-  // Keep up to 10 backups
   try {
     const backups = fs
       .readdirSync(backupDir)
       .filter((f) => f.startsWith('vault-') && f.endsWith('.enc'))
       .sort();
-
-    // Sort ascends, so oldest are at the beginning
     if (backups.length > 10) {
       const toRemoveCount = backups.length - 10;
       for (let i = 0; i < toRemoveCount; i++) {

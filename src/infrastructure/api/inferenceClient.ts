@@ -10,16 +10,8 @@ import { isTransientError, formatProviderError } from './streamParser';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface AISettings {
-  temperature?: number;
-  maxTokens?: number;
-  topP?: number;
-  topK?: number;
-  frequencyPenalty?: number;
-  presencePenalty?: number;
-  antigravity?: boolean;
-  responseFormat?: 'text' | 'json' | { type: 'json_schema'; schema: object };
-}
+import { AISettings } from './types';
+export type { AISettings };
 
 export interface InferenceOptions {
   history?: Array<{ role: string; content: string; images?: string[] }>;
@@ -65,16 +57,16 @@ const BASE_RETRY_DELAY_MS = 1000;
 
 const FASTIFY_URL = 'http://localhost:3001/api/models/stream';
 
+// fallow-ignore-next-line code-duplication
 const API_KEY_PATTERNS: Record<string, (key: string) => boolean> = {
   gemini: (k) => k.length >= 30,
-  openai: (k) => k.startsWith('sk-'),
-  anthropic: (k) => k.startsWith('sk-ant-'),
 };
 
 // ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
 
+// fallow-ignore-next-line code-duplication
 function createTimeoutSignal(ms: number): AbortSignal {
   const ctrl = new AbortController();
   setTimeout(() => ctrl.abort(), ms);
@@ -127,6 +119,7 @@ function validateApiKey(provider: string, apiKey?: string): void {
 async function* parseSSEStream(response: Response): AsyncGenerator<StreamChunk> {
   if (!response.body) return;
 
+  // fallow-ignore-next-line code-duplication
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -153,7 +146,7 @@ async function* parseSSEStream(response: Response): AsyncGenerator<StreamChunk> 
         try {
           const parsed = JSON.parse(dataStr);
 
-          // OpenAI-compatible format
+          // Standard JSON format (e.g., local models via LM Studio/Ollama)
           const delta = parsed.choices?.[0]?.delta;
           if (delta?.content) {
             yield { type: 'text', content: delta.content };

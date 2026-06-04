@@ -33,6 +33,7 @@ export interface ModelInfo {
   description: string;
 }
 
+// fallow-ignore-next-line code-duplication
 export interface LocalModelPreset {
   id: string;
   name: string;

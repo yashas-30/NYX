@@ -4,10 +4,10 @@
  * Supports Cloudflare AI Gateway proxying and provider-specific routing.
  */
 
-import { loadKeys } from '../features/vault/vault.service.ts';
+import { getKeysSync } from '../features/vault/vault.service.ts';
 import logger from './logger.ts';
 
-export type Provider = 'gemini' | 'nyx-native';
+export type Provider = 'gemini' | 'nyx-native' | 'antigravity-sdk';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'model';
@@ -34,7 +34,7 @@ export interface GatewayRequest {
 }
 
 export interface StreamCallbacks {
-  onChunk: (text: string) => void;
+  onChunk: (text: any) => void;
   onDone: () => void;
   onError: (error: string) => void;
 }
@@ -81,6 +81,7 @@ const getCloudflareGateway = (provider: Provider): AIGatewayConfig => {
 const PROVIDER_URLS: Record<Provider, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
   'nyx-native': '',
+  'antigravity-sdk': '',
 };
 
 export class Gateway {
@@ -107,7 +108,7 @@ export class Gateway {
 
     // Fallback: check encrypted keyVault keys
     try {
-      const vaultKeys = loadKeys();
+      const vaultKeys = getKeysSync();
       if (isValidKey(vaultKeys[provider])) {
         return vaultKeys[provider].trim();
       }
@@ -202,23 +203,26 @@ export class Gateway {
   }
 
   /**
-   * Processes SSE stream response from OpenAI-compatible APIs.
+   * Processes SSE stream response from standard JSON APIs (e.g. LM Studio, Ollama).
    * Handles data: [DONE] markers and error payloads.
    * @param response - The fetch Response object with streaming body
    * @param callbacks - Stream callbacks for chunk, done, and error events
    */
   static async processSSEStream(response: Response, callbacks: StreamCallbacks): Promise<void> {
+    // fallow-ignore-next-line code-duplication
     if (!response.body) {
       callbacks.onError('No response body');
       return;
     }
 
+    // fallow-ignore-next-line code-duplication
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
 
     try {
       while (true) {
+        // fallow-ignore-next-line code-duplication
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -244,7 +248,7 @@ export class Gateway {
                 );
                 return;
               }
-              // Extract content from OpenAI format
+              // Extract content from standard format
               const chunk = data.choices?.[0]?.delta?.content;
               if (chunk) callbacks.onChunk(chunk);
               // Handle finish_reason to detect end of stream

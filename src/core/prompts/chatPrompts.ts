@@ -313,6 +313,7 @@ To use a tool, respond with:
 
   // ── Safety & Refusals ─────────────────────────────────────────────────────
 
+  // fallow-ignore-next-line code-duplication
   parts.push(`<safety>
 Refuse requests involving:
 - Illegal activities, violence, self-harm

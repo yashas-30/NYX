@@ -38,6 +38,8 @@ import { ModelSelector } from '@src/shared/components/ModelSelector';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { ModelInfo } from '@src/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { useScraplingStatus } from '@src/shared/hooks/useScraplingStatus';
+import { useLiveTimer } from '@src/shared/hooks/useLiveTimer';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -92,16 +94,7 @@ const CONTEXT_CRITICAL_THRESHOLD = 0.95;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatLatency(ms: number): string {
-  if (ms <= 0) return '—';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms >= 60000) {
-    const mins = Math.floor(ms / 60000);
-    const secs = ((ms % 60000) / 1000).toFixed(1);
-    return `${mins}m ${secs}s`;
-  }
-  return `${(ms / 1000).toFixed(1)}s`;
-}
+import { formatLatency } from '@src/shared/utils/format';
 
 function formatTokens(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -131,7 +124,7 @@ const ContextBar: React.FC<{ used: number; limit: number }> = ({ used, limit }) 
       className="flex items-center gap-2 group cursor-help"
       title={`${formatTokens(used)} / ${formatTokens(limit)} tokens`}
     >
-      <div className="w-16 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+      <div className="w-16 h-1.5 rounded-full bg-muted/60 overflow-hidden">
         <motion.div
           className={`h-full rounded-full ${isCritical ? 'bg-red-500' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'}`}
           initial={{ width: 0 }}
@@ -140,7 +133,7 @@ const ContextBar: React.FC<{ used: number; limit: number }> = ({ used, limit }) 
         />
       </div>
       <span
-        className={`text-[10px] font-mono ${isCritical ? 'text-red-400' : isWarning ? 'text-amber-400' : 'text-zinc-600'} group-hover:text-zinc-400 transition-colors`}
+        className={`text-[10px] font-mono ${isCritical ? 'text-red-400' : isWarning ? 'text-amber-400' : 'text-muted-foreground/80'} group-hover:text-muted-foreground transition-colors`}
       >
         {Math.round(ratio * 100)}%
       </span>
@@ -159,7 +152,7 @@ const ConnectionDot: React.FC<{ status: ChatHeaderProps['connectionStatus'] }> =
   return (
     <div className="flex items-center gap-1.5" title={labels[status || 'online']}>
       <span className={`w-1.5 h-1.5 rounded-full ${colors[status || 'online']}`} />
-      <span className="text-[10px] text-zinc-600 hidden lg:inline">
+      <span className="text-[10px] text-muted-foreground hidden lg:inline">
         {labels[status || 'online']}
       </span>
     </div>
@@ -197,7 +190,7 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
         }}
       />
       <motion.button
-        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+        whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
         whileTap={{ scale: 0.94 }}
         onClick={() => inputRef.current?.click()}
         onDragOver={(e) => {
@@ -209,8 +202,8 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
         disabled={disabled}
         className={`p-2 rounded-xl border transition-all cursor-pointer relative ${
           dragOver
-            ? 'bg-sky-500/10 border-sky-500/30 text-sky-400'
-            : 'text-zinc-500 hover:text-white border-transparent hover:border-white/5'
+            ? 'bg-accent/10 border-accent/30 text-accent'
+            : 'text-muted-foreground hover:text-foreground border-transparent hover:border-border'
         } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
         title="Attach files (or drag & drop)"
       >
@@ -219,9 +212,9 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="absolute inset-0 rounded-xl border-2 border-dashed border-sky-400/50 bg-sky-500/5 flex items-center justify-center"
+            className="absolute inset-0 rounded-xl border-2 border-dashed border-accent/50 bg-accent/5 flex items-center justify-center"
           >
-            <span className="text-[10px] text-sky-400 font-medium">Drop files</span>
+            <span className="text-[10px] text-accent font-medium">Drop files</span>
           </motion.div>
         )}
       </motion.button>
@@ -261,10 +254,10 @@ const ShareMenu: React.FC<{
   return (
     <div ref={ref} className="relative">
       <motion.button
-        whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+        whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
         whileTap={{ scale: 0.94 }}
         onClick={() => setOpen(!open)}
-        className="p-2 rounded-xl text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer"
+        className="p-2 rounded-xl text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer"
         title="Share & Export"
       >
         <Share2 size={13} strokeWidth={1.8} />
@@ -276,30 +269,32 @@ const ShareMenu: React.FC<{
             initial={{ opacity: 0, y: -4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            className="absolute top-full right-0 mt-1 w-56 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50"
+            className="absolute top-full right-0 mt-1 w-56 bg-popover/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl overflow-hidden z-50"
           >
-            <div className="px-3 py-2 border-b border-white/5">
-              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+            <div className="px-3 py-2 border-b border-border">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                 Share
               </span>
             </div>
 
             <button
               onClick={handleCopyLink}
-              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/[0.04] transition-colors text-left"
+              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted transition-colors text-left"
             >
               {copied ? (
                 <Check size={13} className="text-emerald-400" />
               ) : (
-                <Share2 size={13} className="text-zinc-500" />
+                <Share2 size={13} className="text-muted-foreground" />
               )}
-              <span className="text-[12px] text-zinc-300">{copied ? 'Copied!' : 'Copy link'}</span>
+              <span className="text-[12px] text-foreground/80">
+                {copied ? 'Copied!' : 'Copy link'}
+              </span>
             </button>
 
             {onExport && (
               <>
-                <div className="px-3 py-1.5 border-t border-white/5">
-                  <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                <div className="px-3 py-1.5 border-t border-border">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                     Export
                   </span>
                 </div>
@@ -310,10 +305,10 @@ const ShareMenu: React.FC<{
                       onExport(fmt);
                       setOpen(false);
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-white/[0.04] transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted transition-colors text-left"
                   >
-                    <FileText size={13} className="text-zinc-500" />
-                    <span className="text-[12px] text-zinc-300 capitalize">{fmt}</span>
+                    <FileText size={13} className="text-muted-foreground" />
+                    <span className="text-[12px] text-foreground/80 capitalize">{fmt}</span>
                   </button>
                 ))}
               </>
@@ -354,7 +349,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   isNewChat = false,
   onShareChat,
 }) => {
-  const [liveElapsed, setLiveElapsed] = useState(0);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState(sessionTitle);
   const [showModelSelector, setShowModelSelector] = useState(false);
@@ -365,46 +359,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   const privacyMode = useNyxStore((state) => state.privacyMode);
   const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
   const lastPrivacyToggle = useRef(0);
-  const [scraplingStatus, setScraplingStatus] = useState<
-    'checking' | 'running' | 'restarting' | 'offline'
-  >('checking');
-
-  // Poll scrapling status
-  useEffect(() => {
-    let active = true;
-    const checkScrapling = async () => {
-      try {
-        const res = await fetchWithAuth('/api/v1/admin/scrapling-status');
-        if (!active) return;
-        if (res.ok) {
-          const data = await res.json();
-          setScraplingStatus(data.status || 'offline');
-        } else {
-          setScraplingStatus('offline');
-        }
-      } catch {
-        if (!active) return;
-        setScraplingStatus('offline');
-      }
-    };
-    checkScrapling();
-    const interval = setInterval(checkScrapling, 30_000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-  // Live timer during generation
-  useEffect(() => {
-    if (isLoading) {
-      const start = Date.now();
-      setLiveElapsed(0);
-      const interval = setInterval(() => setLiveElapsed(Date.now() - start), 50);
-      return () => clearInterval(interval);
-    }
-    setLiveElapsed(0);
-  }, [isLoading]);
+  const scraplingStatus = useScraplingStatus();
+  const liveElapsed = useLiveTimer(isLoading);
 
   // Focus title input when editing
   useEffect(() => {
@@ -440,17 +396,17 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   };
 
   return (
-    <header className="flex flex-col shrink-0 select-none bg-background border-b border-white/[0.03]">
+    <header className="flex flex-col shrink-0 select-none bg-background border-b border-border">
       {/* Main header row */}
       <div className="flex items-center justify-between px-4 py-2.5">
         {/* Left zone: Sidebar toggle + Model selector */}
         <div className="flex items-center gap-2 min-w-0">
           {onToggleSidebar && (
             <motion.button
-              whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+              whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
               whileTap={{ scale: 0.95 }}
               onClick={onToggleSidebar}
-              className="p-1.5 rounded-lg text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer shrink-0"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer shrink-0"
               title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
             >
               {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
@@ -459,7 +415,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
           <div className="hidden sm:block relative">
             <motion.button
-              whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.05)' }}
+              whileHover={{ scale: 1.02, backgroundColor: 'var(--input)' }}
               whileTap={{ scale: 0.98 }}
               type="button"
               onClick={(e) => {
@@ -469,12 +425,12 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               disabled={isLoading}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all select-none ${
                 showModelSelector
-                  ? 'bg-white/[0.04] border-white/10'
-                  : 'bg-transparent border-transparent hover:border-white/5 text-zinc-400 hover:text-white'
+                  ? 'bg-muted border-border'
+                  : 'bg-transparent border-transparent hover:border-border text-muted-foreground hover:text-foreground'
               } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             >
               {currentModel ? getCustomModelIcon(currentModel) : <Bot className="w-3.5 h-3.5" />}
-              <span className="truncate max-w-[150px] text-[11px] font-semibold text-zinc-300">
+              <span className="truncate max-w-[150px] text-[11px] font-semibold text-foreground/90">
                 {currentModel?.name || 'Select model'}
               </span>
               <ChevronDown
@@ -539,13 +495,13 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     }
                   }}
                   onBlur={handleTitleSubmit}
-                  className="text-[13px] font-semibold text-foreground/85 bg-white/[0.04] border border-white/10 rounded-lg px-2.5 py-1 outline-none focus:border-white/20 w-48 sm:w-64"
+                  className="text-[13px] font-semibold text-foreground/85 bg-muted/50 border border-border rounded-lg px-2.5 py-1 outline-none focus:border-primary/30 w-48 sm:w-64"
                   maxLength={60}
                 />
               </motion.div>
             ) : (
               <motion.button
-                whileHover={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+                whileHover={{ backgroundColor: 'var(--input)' }}
                 onClick={() => {
                   setEditTitle(sessionTitle);
                   setIsEditingTitle(true);
@@ -556,7 +512,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 <span className="text-[13px] font-semibold text-foreground/85 translate-y-[-0.5px] truncate max-w-[140px] sm:max-w-[200px]">
                   {sessionTitle}
                 </span>
-                <ChevronDown size={11} className="text-zinc-500 opacity-60 mt-0.5" />
+                <ChevronDown size={11} className="text-muted-foreground opacity-60 mt-0.5" />
               </motion.button>
             )}
 
@@ -570,19 +526,19 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         {/* Right zone: Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Response metrics */}
-          <div className="hidden md:flex items-center gap-3 px-3 py-1 bg-white/[0.02] border border-white/[0.04] rounded-xl text-zinc-500 font-mono text-[10px] mr-1">
+          <div className="hidden md:flex items-center gap-3 px-3 py-1 bg-muted/30 border border-border rounded-xl text-muted-foreground font-mono text-[10px] mr-1">
             <div className="flex items-center gap-1.5" title="Response latency">
-              <Wifi size={11} className="text-zinc-500" />
+              <Wifi size={11} className="text-muted-foreground" />
               <span>{displayLatency > 0 ? formatLatency(displayLatency) : '0ms'}</span>
             </div>
-            <div className="w-[1px] h-3 bg-white/[0.08]" />
+            <div className="w-[1px] h-3 bg-border" />
             <div className="flex items-center gap-1.5" title="Tokens per second">
-              <Zap size={11} className="text-zinc-500" />
+              <Zap size={11} className="text-muted-foreground" />
               <span>{metrics.tps} tok/s</span>
             </div>
             {metrics.estimatedCostUsd !== undefined && metrics.estimatedCostUsd > 0 && (
               <>
-                <div className="w-[1px] h-3 bg-white/[0.08]" />
+                <div className="w-[1px] h-3 bg-border" />
                 <div className="flex items-center gap-1.5" title="Estimated Cost">
                   <span className="text-emerald-400 font-medium">
                     ${metrics.estimatedCostUsd.toFixed(5)}
@@ -590,9 +546,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 </div>
               </>
             )}
-            <div className="w-[1px] h-3 bg-white/[0.08]" />
+            <div className="w-[1px] h-3 bg-border" />
             <div className="flex items-center gap-1.5" title="Tokens generated">
-              <HardDrive size={11} className="text-zinc-500" />
+              <HardDrive size={11} className="text-muted-foreground" />
               <span>{formatTokens(metrics.tokens)} tok</span>
             </div>
           </div>
@@ -643,14 +599,14 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 <motion.button
                   whileHover={{
                     scale: 1.05,
-                    backgroundColor: privacyMode ? 'rgba(239,68,68,0.1)' : 'rgba(34,211,238,0.05)',
+                    backgroundColor: privacyMode ? 'rgba(239,68,68,0.1)' : 'var(--input)',
                   }}
                   whileTap={{ scale: 0.94 }}
                   onClick={handlePrivacyToggle}
                   className={`p-2 rounded-xl border transition-all cursor-pointer ${
                     privacyMode
                       ? 'text-red-400 bg-red-500/10 border-red-500/20'
-                      : 'text-zinc-500 hover:text-white border-transparent hover:border-white/5'
+                      : 'text-muted-foreground hover:text-foreground border-transparent hover:border-border'
                   }`}
                   title={privacyMode ? 'Privacy Mode On' : 'Privacy Mode Off'}
                 >
@@ -663,7 +619,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
                 {/* Scrapling Health Badge */}
                 <div
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-800/40 border border-white/5 text-[9px] font-extrabold uppercase tracking-wider text-zinc-400 select-none cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-muted/40 border border-border text-[9px] font-extrabold uppercase tracking-wider text-muted-foreground select-none cursor-pointer"
                   title={`Scrapling Health: ${scraplingStatus === 'running' ? 'Running & Healthy' : scraplingStatus === 'restarting' ? 'Restarting...' : scraplingStatus === 'offline' ? 'Offline (using fallback)' : 'Checking Status...'}`}
                   onClick={() => toast.info(`Scrapling status is: ${scraplingStatus}`)}
                 >
@@ -674,7 +630,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                         : scraplingStatus === 'restarting'
                           ? 'bg-yellow-400 animate-pulse shadow-[0_0_6px_#facc15]'
                           : scraplingStatus === 'checking'
-                            ? 'bg-zinc-500'
+                            ? 'bg-muted-foreground/50'
                             : 'bg-red-400 shadow-[0_0_6px_#f87171]'
                     }`}
                   />
@@ -693,7 +649,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   }}
                   whileTap={{ scale: 0.94 }}
                   onClick={onClear}
-                  className="p-2 rounded-xl text-zinc-500 hover:text-red-400 border border-transparent hover:border-white/5 transition-all cursor-pointer"
+                  className="p-2 rounded-xl text-muted-foreground hover:text-destructive border border-transparent hover:border-border transition-all cursor-pointer"
                   title="Clear chat"
                 >
                   <Trash2 size={13} strokeWidth={1.8} />
@@ -702,10 +658,10 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 {/* More menu (mobile model selector + shortcuts) */}
                 <div className="sm:hidden relative">
                   <motion.button
-                    whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                    whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
                     whileTap={{ scale: 0.94 }}
                     onClick={() => setShowShortcuts(!showShortcuts)}
-                    className="p-2 rounded-xl text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer"
+                    className="p-2 rounded-xl text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer"
                   >
                     <MoreHorizontal size={13} />
                   </motion.button>
@@ -716,20 +672,22 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
-                        className="absolute top-full right-0 mt-1 w-48 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 p-2"
+                        className="absolute top-full right-0 mt-1 w-48 bg-popover border border-border rounded-xl shadow-2xl overflow-hidden z-50 p-2"
                       >
-                        <div className="text-[10px] text-zinc-500 px-2 py-1 uppercase tracking-wider">
+                        <div className="text-[10px] text-muted-foreground px-2 py-1 uppercase tracking-wider">
                           Shortcuts
                         </div>
                         <div className="flex items-center justify-between px-2 py-1">
-                          <span className="text-[11px] text-zinc-400">New chat</span>
-                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-zinc-500 font-mono">
+                          <span className="text-[11px] text-muted-foreground font-medium">
+                            New chat
+                          </span>
+                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
                             ⌘K
                           </kbd>
                         </div>
                         <div className="flex items-center justify-between px-2 py-1">
-                          <span className="text-[11px] text-zinc-400">Stop gen</span>
-                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-zinc-500 font-mono">
+                          <span className="text-[11px] text-muted-foreground">Stop gen</span>
+                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
                             Esc
                           </kbd>
                         </div>

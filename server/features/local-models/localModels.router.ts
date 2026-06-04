@@ -1,5 +1,5 @@
 import logger from '../../lib/logger.ts';
-import { Router } from 'express';
+import { FastifyInstance } from 'fastify';
 import { validate } from '../../middleware/validate.ts';
 import { sendSseTokenRotate } from '../../lib/sseHelpers.ts';
 import { LocalModelsService } from './localModels.service.ts';
@@ -10,250 +10,279 @@ import {
   localModelChatSchema,
 } from './localModels.schema.ts';
 
-export const localModelsRouter = Router();
-const service = new LocalModelsService();
+export async function localModelsRouter(fastify: FastifyInstance) {
+  const service = new LocalModelsService();
 
-// List presets and their installation status
-localModelsRouter.get('/', async (_req, res) => {
-  try {
-    const listData = service.listModels();
+  // List presets and their installation status
+  fastify.get('/', async (_req, reply) => {
+    try {
+      const listData = service.listModels();
 
-    // Inject metadata (scores, etc.) into the models
-    const { modelMetadataService } = await import('./modelMetadata.service.ts');
-    const enrichedModels = await Promise.all(
-      listData.models.map(async (m: any) => {
-        const meta = await modelMetadataService.getMetadata(m.id, m.url, m.fileName);
-        return {
-          ...m,
-          metadata: meta,
-        };
-      })
-    );
+      // Inject metadata (scores, etc.) into the models
+      const { modelMetadataService } = await import('./modelMetadata.service.ts');
+      const enrichedModels = await Promise.all(
+        listData.models.map(async (m: any) => {
+          const meta = await modelMetadataService.getMetadata(m.id, m.url, m.fileName);
+          return {
+            ...m,
+            metadata: meta,
+          };
+        })
+      );
 
-    res.json({
-      ...listData,
-      models: enrichedModels,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Detect hardware compatibility and suggest model presets
-localModelsRouter.get('/compatibility', async (_req, res) => {
-  try {
-    res.json(await service.getDeviceCompatibility());
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Auto-select optimal model for device specs and start downloading
-localModelsRouter.post('/auto-setup', async (_req, res) => {
-  try {
-    res.json(await service.autoSetup());
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Auto-detect and download all compatible models for the device specs
-localModelsRouter.post('/download-all-compatible', async (_req, res) => {
-  try {
-    res.json(await service.downloadAllCompatible());
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Start GGUF model download
-localModelsRouter.post('/download', validate(localModelDownloadSchema), (req, res) => {
-  const { modelId, quantization } = req.body;
-  if (!modelId) {
-    return res.status(400).json({ error: 'Missing modelId in request body.' });
-  }
-  try {
-    res.json(service.startDownload(modelId, quantization));
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Poll download progress
-localModelsRouter.get('/download-progress', (req, res) => {
-  const { modelId } = req.query;
-  if (!modelId || typeof modelId !== 'string') {
-    return res.status(400).json({ error: 'Missing or invalid modelId query parameter.' });
-  }
-  try {
-    res.json(service.getProgress(modelId));
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Pause an active download (keeps .part file for resume)
-localModelsRouter.post('/pause', (req, res) => {
-  const { modelId } = req.body;
-  if (!modelId) {
-    return res.status(400).json({ error: 'Missing modelId in request body.' });
-  }
-  try {
-    res.json(service.pauseDownload(modelId));
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Resume a paused download from where it left off
-localModelsRouter.post('/resume', (req, res) => {
-  const { modelId } = req.body;
-  if (!modelId) {
-    return res.status(400).json({ error: 'Missing modelId in request body.' });
-  }
-  try {
-    res.json(service.resumeDownload(modelId));
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Cancel a download and delete the partial file
-localModelsRouter.post('/cancel', (req, res) => {
-  const { modelId } = req.body;
-  if (!modelId) {
-    return res.status(400).json({ error: 'Missing modelId in request body.' });
-  }
-  try {
-    res.json(service.cancelDownload(modelId));
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Run a model natively via llama-server
-localModelsRouter.post('/run', validate(localModelStartSchema), async (req, res) => {
-  const { modelId, settings } = req.body;
-  if (!modelId) {
-    return res.status(400).json({ error: 'Missing modelId in request body.' });
-  }
-  try {
-    res.json(await service.runModel(modelId, settings));
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Stop the native runner and evict model from memory
-localModelsRouter.post('/stop', async (_req, res) => {
-  try {
-    res.json(await service.stopModel());
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Delete a downloaded GGUF model from disk
-localModelsRouter.delete('/delete', validate(localModelDeleteSchema), (req, res) => {
-  const { modelId } = req.body;
-  if (!modelId) {
-    return res.status(400).json({ error: 'Missing modelId in request body.' });
-  }
-  try {
-    res.json(service.deleteModel(modelId));
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get current runner startup status
-localModelsRouter.get('/status', (_req, res) => {
-  try {
-    res.json(service.getStartStatus());
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Proxy streaming chat completion to llama-server port
-localModelsRouter.post('/chat', validate(localModelChatSchema), async (req, res) => {
-  const model = req.body.model;
-  const { messages, temperature, max_tokens, agentMode, webSearch } = req.body;
-  if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: 'Invalid or missing messages in request body.' });
-  }
-
-  try {
-    const response = await service.chat({
-      model,
-      messages,
-      temperature,
-      max_tokens,
-      agentMode,
-      webSearch,
-    });
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-    sendSseTokenRotate(res);
-
-    if (response.body) {
-      const reader = response.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
-        if (typeof (res as any).flush === 'function') (res as any).flush();
-      }
+      reply.send({
+        ...listData,
+        models: enrichedModels,
+      });
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
     }
-    res.end();
-  } catch (error: any) {
-    logger.error('[Local runner proxy error]:', error.message);
-    if (res.headersSent) {
-      // Headers already sent (streaming started) — write an SSE error event and close
+  });
+
+  // Detect hardware compatibility and suggest model presets
+  fastify.get('/compatibility', async (_req, reply) => {
+    try {
+      reply.send(await service.getDeviceCompatibility());
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // Auto-select optimal model for device specs and start downloading
+  fastify.post('/auto-setup', async (_req, reply) => {
+    try {
+      reply.send(await service.autoSetup());
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // Auto-detect and download all compatible models for the device specs
+  fastify.post('/download-all-compatible', async (_req, reply) => {
+    try {
+      reply.send(await service.downloadAllCompatible());
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // Start GGUF model download
+  fastify.post(
+    '/download',
+    {
+      preHandler: [validate(localModelDownloadSchema)],
+    },
+    (request, reply) => {
+      const { modelId, quantization } = request.body as any;
+      if (!modelId) {
+        return reply.code(400).send({ error: 'Missing modelId in request body.' });
+      }
       try {
-        res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
-        if (typeof (res as any).flush === 'function') (res as any).flush();
-        res.end();
-      } catch {
-        /* socket already closed */
+        reply.send(service.startDownload(modelId, quantization));
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
       }
-    } else {
-      res.status(500).json({ error: `Connection to local model runner failed: ${error.message}` });
     }
-  }
-});
+  );
 
-// ==========================================
-// OLLAMA ROUTES
-// ==========================================
+  // Poll download progress
+  fastify.get('/download-progress', (request, reply) => {
+    const { modelId } = request.query as any;
+    if (!modelId || typeof modelId !== 'string') {
+      return reply.code(400).send({ error: 'Missing or invalid modelId query parameter.' });
+    }
+    try {
+      reply.send(service.getProgress(modelId));
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
 
-localModelsRouter.get('/ollama/models', async (_req, res) => {
-  try {
-    res.json(await service.listOllamaModels());
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  // Pause an active download (keeps .part file for resume)
+  // fallow-ignore-next-line code-duplication
+  fastify.post('/pause', (request, reply) => {
+    const { modelId } = request.body as any;
+    if (!modelId) {
+      return reply.code(400).send({ error: 'Missing modelId in request body.' });
+    }
+    try {
+      reply.send(service.pauseDownload(modelId));
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
 
-localModelsRouter.post('/ollama/pull', async (req, res) => {
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ error: 'Missing name' });
-  try {
-    res.json(await service.pullOllamaModel(name));
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  // Resume a paused download from where it left off
+  // fallow-ignore-next-line code-duplication
+  fastify.post('/resume', (request, reply) => {
+    const { modelId } = request.body as any;
+    if (!modelId) {
+      return reply.code(400).send({ error: 'Missing modelId in request body.' });
+    }
+    try {
+      reply.send(service.resumeDownload(modelId));
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
 
-localModelsRouter.delete('/ollama/models/:name', async (req, res) => {
-  const { name } = req.params;
-  if (!name) return res.status(400).json({ error: 'Missing name' });
-  try {
-    res.json(await service.deleteOllamaModel(name));
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  // Cancel a download and delete the partial file
+  // fallow-ignore-next-line code-duplication
+  fastify.post('/cancel', (request, reply) => {
+    const { modelId } = request.body as any;
+    if (!modelId) {
+      return reply.code(400).send({ error: 'Missing modelId in request body.' });
+    }
+    try {
+      reply.send(service.cancelDownload(modelId));
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // Run a model natively via llama-server
+  fastify.post(
+    '/run',
+    {
+      preHandler: [validate(localModelStartSchema)],
+    },
+    async (request, reply) => {
+      const { modelId, settings } = request.body as any;
+      if (!modelId) {
+        return reply.code(400).send({ error: 'Missing modelId in request body.' });
+      }
+      try {
+        reply.send(await service.runModel(modelId, settings));
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  // Stop the native runner and evict model from memory
+  fastify.post('/stop', async (_req, reply) => {
+    try {
+      reply.send(await service.stopModel());
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // Delete a downloaded GGUF model from disk
+  // fallow-ignore-next-line code-duplication
+  fastify.delete(
+    '/delete',
+    {
+      preHandler: [validate(localModelDeleteSchema)],
+    },
+    (request, reply) => {
+      const { modelId } = request.body as any;
+      if (!modelId) {
+        return reply.code(400).send({ error: 'Missing modelId in request body.' });
+      }
+      try {
+        reply.send(service.deleteModel(modelId));
+      } catch (error: any) {
+        reply.code(500).send({ error: error.message });
+      }
+    }
+  );
+
+  // Get current runner startup status
+  fastify.get('/status', (_req, reply) => {
+    try {
+      reply.send(service.getStartStatus());
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // Proxy streaming chat completion to llama-server port
+  fastify.post(
+    '/chat',
+    {
+      preHandler: [validate(localModelChatSchema)],
+    },
+    async (request, reply) => {
+      const model = (request.body as any).model;
+      const { messages, temperature, max_tokens, agentMode, webSearch } = request.body as any;
+      if (!messages || !Array.isArray(messages)) {
+        return reply.code(400).send({ error: 'Invalid or missing messages in request body.' });
+      }
+
+      try {
+        const response = await service.chat({
+          model,
+          messages,
+          temperature,
+          max_tokens,
+          agentMode,
+          webSearch,
+        });
+
+        reply.header('Content-Type', 'text/event-stream');
+        reply.header('Cache-Control', 'no-cache');
+        reply.header('Connection', 'keep-alive');
+        reply.raw.flushHeaders();
+        sendSseTokenRotate(reply.raw as any);
+
+        if (response.body) {
+          const reader = response.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            reply.raw.write(value);
+          }
+        }
+        reply.raw.end();
+      } catch (error: any) {
+        logger.error('[Local runner proxy error]:', error.message);
+        if (reply.raw.headersSent) {
+          // Headers already sent (streaming started) — write an SSE error event and close
+          try {
+            reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+            reply.raw.end();
+          } catch {
+            /* socket already closed */
+          }
+        } else {
+          reply
+            .code(500)
+            .send({ error: `Connection to local model runner failed: ${error.message}` });
+        }
+      }
+    }
+  );
+
+  // ==========================================
+  // OLLAMA ROUTES
+  // ==========================================
+
+  fastify.get('/ollama/models', async (_req, reply) => {
+    try {
+      reply.send(await service.listOllamaModels());
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  fastify.post('/ollama/pull', async (request, reply) => {
+    const { name } = request.body as any;
+    if (!name) return reply.code(400).send({ error: 'Missing name' });
+    try {
+      reply.send(await service.pullOllamaModel(name));
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  fastify.delete('/ollama/models/:name', async (request, reply) => {
+    const { name } = request.params as any;
+    if (!name) return reply.code(400).send({ error: 'Missing name' });
+    try {
+      reply.send(await service.deleteOllamaModel(name));
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+}

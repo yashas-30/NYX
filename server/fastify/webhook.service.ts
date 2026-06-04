@@ -4,6 +4,34 @@ import { asyncJobs } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
 import logger from '../lib/logger.ts';
 import { ProviderAdapter, ChatRequest } from './adapters/base.adapter.ts';
+import { Queue, Worker } from 'bullmq';
+
+const redisConnection = {
+  host: process.env.REDIS_HOST || '127.0.0.1',
+  port: parseInt(process.env.REDIS_PORT || '6379'),
+  maxRetriesPerRequest: null,
+  enableOfflineQueue: false,
+};
+export const asyncJobQueue = new Queue('async-jobs', { connection: redisConnection });
+
+asyncJobQueue.on('error', (err) => {
+  // Catch redis connection errors silently if redis is not running
+});
+
+// Worker is defined but left to reconnect smoothly if redis is absent
+export const asyncJobWorker = new Worker(
+  'async-jobs',
+  async (job) => {
+    const { jobId, provider, chatReq, apiKey } = job.data;
+    // Implementation of background job logic via BullMQ goes here when the adapter is available
+    console.log('Processing job from BullMQ', jobId);
+  },
+  { connection: redisConnection }
+);
+
+asyncJobWorker.on('error', (err) => {
+  // Catch redis connection errors silently if redis is not running
+});
 
 export class WebhookService {
   /**

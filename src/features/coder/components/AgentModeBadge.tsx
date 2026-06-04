@@ -2,7 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface AgentModeBadgeProps {
-  mode: 'chat' | 'coder' | null;
+  mode: 'chat' | 'coder' | 'architect' | null;
   reasoning: string;
   isLoading: boolean;
 }
@@ -22,6 +22,11 @@ export const AgentModeBadge: React.FC<AgentModeBadgeProps> = ({ mode, reasoning,
           <>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-emerald-400 font-medium">Chat</span>
+          </>
+        ) : mode === 'architect' ? (
+          <>
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+            <span className="text-purple-400 font-medium">Architect</span>
           </>
         ) : (
           <>

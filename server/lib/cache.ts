@@ -72,7 +72,6 @@ export class CacheServer {
       settings: body.settings || {},
     });
     const hashInput = JSON.stringify(sortedInput);
-
     return crypto.createHash('sha256').update(hashInput).digest('hex');
   }
 

@@ -188,6 +188,7 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
         const r = rawResults[i];
         yield {
           type: 'citation',
+          // fallow-ignore-next-line code-duplication
           metadata: {
             id: String(i + 1),
             url: r.url || r.link,
@@ -423,6 +424,7 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
         else if (char === '\\') escape = true;
         else if (char === '"') inString = false;
       } else {
+        // fallow-ignore-next-line code-duplication
         if (char === '"') inString = true;
         else if (char === '{' || char === '[') {
           if (depth === 0) startIndex = i;

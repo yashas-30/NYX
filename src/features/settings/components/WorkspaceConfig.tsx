@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 import React from 'react';
 import { motion } from 'motion/react';
 import { Globe } from 'lucide-react';
@@ -58,27 +59,27 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
   };
 
   return (
-    <div className="mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg">
-      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity" />
+    <div className="mt-6 group p-5 rounded-3xl bg-card border border-border hover:border-accent/25 transition-all duration-300 relative overflow-hidden shadow-lg">
+      <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-accent/20 via-accent/10 to-accent/20 opacity-70 group-hover:opacity-100 transition-opacity" />
 
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]">
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-accent">
             WORKSPACE CONFIGURATOR
           </p>
           <h3 className="text-xs font-bold text-foreground mt-0.5">Codebase Scanning Scope</h3>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-2 py-0.5 rounded-full border border-[#FF3366]/20">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
           File Index Target
         </span>
       </div>
 
       <div className="space-y-3">
-        <div className="p-3 border border-white/10 rounded-xl bg-white/[0.01]">
+        <div className="p-3 border border-border rounded-xl bg-secondary/10">
           <div className="flex justify-between items-center mb-1 text-[9px] font-black uppercase tracking-wider text-muted-foreground/80">
             <span>Active Scanning Directory</span>
           </div>
-          <div className="text-[11px] font-mono text-foreground/90 select-all break-all bg-black/30 border border-white/5 rounded-lg p-2.5 leading-normal">
+          <div className="text-[11px] font-mono text-foreground/90 select-all break-all bg-secondary/40 border border-border rounded-lg p-2.5 leading-normal">
             {workspacePath || 'Loading...'}
           </div>
         </div>
@@ -87,7 +88,7 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={handleSelectWorkspace}
-            className="flex-1 py-2 px-4 rounded-xl bg-[#FF3366] hover:bg-[#FF3366]/90 text-black text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+            className="flex-1 py-2 px-4 rounded-xl bg-accent hover:bg-accent/90 text-white text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
           >
             <Globe size={12} />
             Select Directory
@@ -97,7 +98,7 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
             type="text"
             placeholder="Or paste absolute directory path..."
             onKeyDown={handleInputWorkspace}
-            className="flex-[2] bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-[#FF3366]/50 shadow-inner"
+            className="flex-[2] bg-background border border-border rounded-xl px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-accent/50 shadow-inner"
           />
         </div>
 

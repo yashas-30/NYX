@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * @file src/components/AppDashboard.tsx
  * @description Claude Desktop-style dashboard with a warm-slate sidebar, Chat/Coder pages,

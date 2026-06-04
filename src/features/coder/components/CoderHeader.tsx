@@ -19,6 +19,8 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { useScraplingStatus } from '@src/shared/hooks/useScraplingStatus';
+import { useLiveTimer } from '@src/shared/hooks/useLiveTimer';
 
 interface CoderHeaderProps {
   activeMode?: 'coder' | 'registry' | 'settings';
@@ -38,16 +40,7 @@ interface CoderHeaderProps {
   onMessageSearchChange?: (query: string) => void;
 }
 
-function formatLatency(ms: number): string {
-  if (ms <= 0) return '—';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms >= 60000) {
-    const mins = Math.floor(ms / 60000);
-    const secs = ((ms % 60000) / 1000).toFixed(1);
-    return `${mins}m ${secs}s`;
-  }
-  return `${(ms / 1000).toFixed(1)}s`;
-}
+import { formatLatency } from '@src/shared/utils/format';
 
 export const CoderHeader: React.FC<CoderHeaderProps> = ({
   metrics,
@@ -63,51 +56,11 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
   messageSearchQuery = '',
   onMessageSearchChange,
 }) => {
-  const [liveElapsed, setLiveElapsed] = useState(0);
   const privacyMode = useNyxStore((state) => state.privacyMode);
   const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
   const [showExport, setShowExport] = useState(false);
-  const [scraplingStatus, setScraplingStatus] = useState<
-    'checking' | 'running' | 'restarting' | 'offline'
-  >('checking');
-
-  useEffect(() => {
-    let active = true;
-    const checkScrapling = async () => {
-      try {
-        const res = await fetchWithAuth('/api/v1/admin/scrapling-status');
-        if (!active) return;
-        if (res.ok) {
-          const data = await res.json();
-          setScraplingStatus(data.status || 'offline');
-        } else {
-          setScraplingStatus('offline');
-        }
-      } catch {
-        if (!active) return;
-        setScraplingStatus('offline');
-      }
-    };
-    checkScrapling();
-    const interval = setInterval(checkScrapling, 30_000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isLoading) {
-      const start = Date.now();
-      setLiveElapsed(0);
-      const interval = setInterval(() => {
-        setLiveElapsed(Date.now() - start);
-      }, 50);
-      return () => clearInterval(interval);
-    } else {
-      setLiveElapsed(0);
-    }
-  }, [isLoading]);
+  const scraplingStatus = useScraplingStatus();
+  const liveElapsed = useLiveTimer(isLoading);
 
   const displayLatency = isLoading ? liveElapsed : metrics.latency;
   const latencyText = formatLatency(displayLatency);

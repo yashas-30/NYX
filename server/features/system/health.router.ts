@@ -1,14 +1,28 @@
-import { Router } from 'express';
+import { FastifyInstance } from 'fastify';
 import { SystemService } from './system.service.ts';
 
-export const healthRouter = Router();
-const service = new SystemService();
+export async function healthRouter(fastify: FastifyInstance) {
+  const service = new SystemService();
 
-healthRouter.get('/health', async (req, res) => {
-  try {
-    const { overall, checks } = await service.getHealth();
-    res.status(overall === 'ok' || overall === 'degraded' ? 200 : 503).json(checks);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  fastify.get('/health', async (request, reply) => {
+    try {
+      const { overall, checks } = await service.getHealth();
+      reply.code(200).send({ status: 'ok', uptime: process.uptime(), version: '3.0.0', ...checks });
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  fastify.get('/ready', async (request, reply) => {
+    try {
+      const { overall, checks } = await service.getHealth();
+      if (overall === 'down') {
+        reply.code(503).send(checks);
+      } else {
+        reply.code(200).send(checks);
+      }
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+}

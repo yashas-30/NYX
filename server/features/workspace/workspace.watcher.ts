@@ -1,11 +1,11 @@
-import chokidar from 'chokidar';
+import chokidar, { FSWatcher } from 'chokidar';
 import { WebSocket } from 'ws';
 import logger from '../../lib/logger.ts';
 import path from 'path';
 
 export class WorkspaceWatcher {
   private static instance: WorkspaceWatcher;
-  private watcher: chokidar.FSWatcher | null = null;
+  private watcher: FSWatcher | null = null;
   private clients: Set<WebSocket> = new Set();
   private currentPath: string | null = null;
 
@@ -52,19 +52,19 @@ export class WorkspaceWatcher {
     });
 
     this.watcher
-      .on('add', (filePath) =>
+      .on('add', (filePath: string) =>
         this.broadcast({ type: 'file_added', path: this.getRelative(filePath) })
       )
-      .on('unlink', (filePath) =>
+      .on('unlink', (filePath: string) =>
         this.broadcast({ type: 'file_removed', path: this.getRelative(filePath) })
       )
-      .on('addDir', (dirPath) =>
+      .on('addDir', (dirPath: string) =>
         this.broadcast({ type: 'dir_added', path: this.getRelative(dirPath) })
       )
-      .on('unlinkDir', (dirPath) =>
+      .on('unlinkDir', (dirPath: string) =>
         this.broadcast({ type: 'dir_removed', path: this.getRelative(dirPath) })
       )
-      .on('change', (filePath) =>
+      .on('change', (filePath: string) =>
         this.broadcast({ type: 'file_changed', path: this.getRelative(filePath) })
       );
 

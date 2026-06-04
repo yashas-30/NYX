@@ -1,169 +1,181 @@
-import { Router } from 'express';
+import { FastifyInstance } from 'fastify';
 import { TerminalService } from './terminal.service.ts';
 import { sendSseTokenRotate } from '../../lib/sseHelpers.ts';
 import { validate } from '../../middleware/validate.ts';
 import { terminalRunSchema, terminalPromptSchema } from './terminal.schema.ts';
 
-export const terminalRouter = Router();
+export async function terminalRouter(fastify: FastifyInstance) {
+  fastify.post(
+    '/run',
+    {
+      preHandler: [validate(terminalRunSchema)],
+    },
+    async (request, reply) => {
+      const { command, cwd } = request.body as any;
+      if (!command) {
+        return reply.code(400).send({ error: 'Command is required' });
+      }
 
-terminalRouter.post('/run', validate(terminalRunSchema), async (req, res) => {
-  const { command, cwd } = req.body;
-  if (!command) {
-    return res.status(400).json({ error: 'Command is required' });
-  }
+      const { child, error } = await TerminalService.spawn(command, cwd);
+      if (error) {
+        return reply.code(400).send({ error });
+      }
 
-  const { child, error } = await TerminalService.spawn(command, cwd);
-  if (error) {
-    return res.status(400).json({ error });
-  }
+      if (!child) {
+        return reply.code(500).send({ error: 'Failed to initialize sandboxed process' });
+      }
 
-  if (!child) {
-    return res.status(500).json({ error: 'Failed to initialize sandboxed process' });
-  }
+      let stdout = '';
+      let stderr = '';
 
-  let stdout = '';
-  let stderr = '';
+      child.stdout?.on('data', (data) => {
+        stdout += data.toString();
+      });
 
-  child.stdout?.on('data', (data) => {
-    stdout += data.toString();
-  });
+      child.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
 
-  child.stderr?.on('data', (data) => {
-    stderr += data.toString();
-  });
+      child.on('close', (code) => {
+        if (code === 0) {
+          reply.send({ stdout, stderr });
+        } else {
+          reply.code(500).send({
+            error: `Process exited with code ${code}`,
+            stdout,
+            stderr,
+          });
+        }
+      });
 
-  child.on('close', (code) => {
-    if (code === 0) {
-      res.json({ stdout, stderr });
-    } else {
-      res.status(500).json({
-        error: `Process exited with code ${code}`,
-        stdout,
-        stderr,
+      child.on('error', (err) => {
+        reply.code(500).send({
+          error: `Process error: ${err.message}`,
+          stdout,
+          stderr,
+        });
       });
     }
+  );
+
+  fastify.post(
+    '/prompt',
+    {
+      preHandler: [validate(terminalPromptSchema)],
+    },
+    (request, reply) => {
+      const { nodeId, prompt, cwd } = request.body as any;
+      const command = prompt;
+      if (!command) {
+        return reply.code(400).send({ error: 'Command/prompt is required' });
+      }
+
+      const execId = TerminalService.registerPrompt(nodeId, command, cwd);
+      reply.send({ status: 'started', execId });
+    }
+  );
+
+  fastify.get('/poll', (request, reply) => {
+    const nodeId = (request.query as any).nodeId as string;
+    if (!nodeId) {
+      return reply.code(400).send({ error: 'nodeId is required' });
+    }
+
+    const task = TerminalService.getLegacy(nodeId);
+    if (!task) {
+      return reply.code(404).send({ error: 'No terminal task found for this nodeId' });
+    }
+
+    if (task.isFinished) {
+      reply.send({ status: 'success', output: task.output });
+    } else {
+      reply.send({ status: 'running' });
+    }
   });
 
-  child.on('error', (err) => {
-    res.status(500).json({
-      error: `Process error: ${err.message}`,
-      stdout,
-      stderr,
+  fastify.get('/stream', async (request, reply) => {
+    reply.header('Content-Type', 'text/event-stream');
+    reply.header('Cache-Control', 'no-cache');
+    reply.header('Connection', 'keep-alive');
+    reply.raw.flushHeaders();
+    sendSseTokenRotate(reply.raw as any);
+
+    const execId = (request.query as any).execId as string;
+
+    let command = '';
+    let cwd: string | undefined = undefined;
+
+    if (execId) {
+      const pending = TerminalService.getPending(execId);
+      if (!pending) {
+        reply.raw.write(
+          `event: error\ndata: ${JSON.stringify({ message: 'Execution session not found' })}\n\n`
+        );
+        return reply.raw.end();
+      }
+      command = pending.command;
+      cwd = pending.cwd;
+    } else {
+      reply.raw.write(
+        `event: error\ndata: ${JSON.stringify({ message: 'execId parameter is required' })}\n\n`
+      );
+      return reply.raw.end();
+    }
+
+    const startTime = Date.now();
+    const { child, error } = await TerminalService.spawn(command, cwd);
+
+    if (error) {
+      reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: error })}\n\n`);
+      return reply.raw.end();
+    }
+
+    if (!child) {
+      reply.raw.write(
+        `event: error\ndata: ${JSON.stringify({ message: 'Failed to initialize sandboxed process' })}\n\n`
+      );
+      return reply.raw.end();
+    }
+
+    // Stream stdout
+    child.stdout?.on('data', (chunk) => {
+      const lines = chunk.toString().split('\n');
+      for (const line of lines) {
+        if (line !== '') {
+          reply.raw.write(`event: stdout\ndata: ${line}\n\n`);
+        }
+      }
+    });
+
+    // Stream stderr
+    child.stderr?.on('data', (chunk) => {
+      const lines = chunk.toString().split('\n');
+      for (const line of lines) {
+        if (line !== '') {
+          reply.raw.write(`event: stderr\ndata: ${line}\n\n`);
+        }
+      }
+    });
+
+    // Handle exit/close
+    child.on('close', (code) => {
+      const executionTimeMs = Date.now() - startTime;
+      reply.raw.write(`event: exit\ndata: ${JSON.stringify({ code, executionTimeMs })}\n\n`);
+      reply.raw.end();
+    });
+
+    child.on('error', (err) => {
+      reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
+      reply.raw.end();
+    });
+
+    // If client disconnects, kill the child process to save resources
+    request.raw.on('close', () => {
+      if (!child.killed) {
+        try {
+          child.kill();
+        } catch {}
+      }
     });
   });
-});
-
-terminalRouter.post('/prompt', validate(terminalPromptSchema), (req, res) => {
-  const { nodeId, prompt, cwd } = req.body;
-  const command = prompt;
-  if (!command) {
-    return res.status(400).json({ error: 'Command/prompt is required' });
-  }
-
-  const execId = TerminalService.registerPrompt(nodeId, command, cwd);
-  res.json({ status: 'started', execId });
-});
-
-terminalRouter.get('/poll', (req, res) => {
-  const nodeId = req.query.nodeId as string;
-  if (!nodeId) {
-    return res.status(400).json({ error: 'nodeId is required' });
-  }
-
-  const task = TerminalService.getLegacy(nodeId);
-  if (!task) {
-    return res.status(404).json({ error: 'No terminal task found for this nodeId' });
-  }
-
-  if (task.isFinished) {
-    res.json({ status: 'success', output: task.output });
-  } else {
-    res.json({ status: 'running' });
-  }
-});
-
-terminalRouter.get('/stream', async (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-  sendSseTokenRotate(res);
-
-  const execId = req.query.execId as string;
-
-  let command = '';
-  let cwd: string | undefined = undefined;
-
-  if (execId) {
-    const pending = TerminalService.getPending(execId);
-    if (!pending) {
-      res.write(
-        `event: error\ndata: ${JSON.stringify({ message: 'Execution session not found' })}\n\n`
-      );
-      return res.end();
-    }
-    command = pending.command;
-    cwd = pending.cwd;
-  } else {
-    res.write(
-      `event: error\ndata: ${JSON.stringify({ message: 'execId parameter is required' })}\n\n`
-    );
-    return res.end();
-  }
-
-  const startTime = Date.now();
-  const { child, error } = await TerminalService.spawn(command, cwd);
-
-  if (error) {
-    res.write(`event: error\ndata: ${JSON.stringify({ message: error })}\n\n`);
-    return res.end();
-  }
-
-  if (!child) {
-    res.write(
-      `event: error\ndata: ${JSON.stringify({ message: 'Failed to initialize sandboxed process' })}\n\n`
-    );
-    return res.end();
-  }
-
-  // Stream stdout
-  child.stdout?.on('data', (chunk) => {
-    const lines = chunk.toString().split('\n');
-    for (const line of lines) {
-      if (line !== '') {
-        res.write(`event: stdout\ndata: ${line}\n\n`);
-      }
-    }
-  });
-
-  // Stream stderr
-  child.stderr?.on('data', (chunk) => {
-    const lines = chunk.toString().split('\n');
-    for (const line of lines) {
-      if (line !== '') {
-        res.write(`event: stderr\ndata: ${line}\n\n`);
-      }
-    }
-  });
-
-  // Handle exit/close
-  child.on('close', (code) => {
-    const executionTimeMs = Date.now() - startTime;
-    res.write(`event: exit\ndata: ${JSON.stringify({ code, executionTimeMs })}\n\n`);
-    res.end();
-  });
-
-  child.on('error', (err) => {
-    res.write(`event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
-    res.end();
-  });
-
-  // If client disconnects, kill the child process to save resources
-  req.on('close', () => {
-    if (!child.killed) {
-      try {
-        child.kill();
-      } catch {}
-    }
-  });
-});
+}

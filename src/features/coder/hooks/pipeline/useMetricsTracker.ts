@@ -11,6 +11,7 @@ export const useMetricsTracker = ({ updateHistory, updateMetrics }: MetricsTrack
 
   const processChunkMetrics = useCallback(
     (meta: any) => {
+      // fallow-ignore-next-line code-duplication
       const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;
       const latency = meta.latencyMs || meta.latency || 0;
       const tps = meta.tokensPerSecond || meta.tps || (latency > 0 ? tokens / (latency / 1000) : 0);

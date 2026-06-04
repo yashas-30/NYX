@@ -1,6 +1,7 @@
 import { OpenAPIRegistry, OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi';
-import swaggerUi from 'swagger-ui-express';
-import { Application, Request, Response } from 'express';
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUi from '@fastify/swagger-ui';
+import { FastifyInstance } from 'fastify';
 
 export const registry = new OpenAPIRegistry();
 
@@ -18,14 +19,26 @@ export function generateOpenApiDocument() {
   });
 }
 
-export function setupOpenApi(app: Application) {
-  app.get('/api/v1/docs/swagger.json', (req: Request, res: Response) => {
-    res.setHeader('Content-Type', 'application/json');
-    res.send(generateOpenApiDocument());
+export async function setupOpenApi(app: FastifyInstance) {
+  await app.register(fastifySwagger, {
+    mode: 'static',
+    specification: {
+      document: generateOpenApiDocument() as any,
+    },
   });
 
-  app.use('/api/v1/docs', swaggerUi.serve, (req: Request, res: Response, next) => {
-    const swaggerDoc = generateOpenApiDocument();
-    swaggerUi.setup(swaggerDoc)(req, res, next);
+  await app.register(fastifySwaggerUi, {
+    routePrefix: '/api/v1/docs',
+    uiConfig: {
+      docExpansion: 'list',
+      deepLinking: false,
+    },
+    staticCSP: true,
+    transformStaticCSP: (header) => header,
+  });
+
+  app.get('/api/v1/docs/swagger.json', async (request, reply) => {
+    reply.header('Content-Type', 'application/json');
+    return generateOpenApiDocument();
   });
 }

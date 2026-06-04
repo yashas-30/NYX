@@ -1,7 +1,7 @@
 import logger from '../../lib/logger.ts';
 import { CodebaseScanner } from '../workspace/codebaseScanner.ts';
-import { loadKeys } from '../vault/vault.service.ts';
-import fetch from 'node-fetch'; // assuming fetch is globally available or imported
+import { getKeysSync } from '../vault/vault.service.ts';
+// fetch is available globally in Node.js 18+ — no import needed
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -63,7 +63,7 @@ export class SearchService {
   }
 
   getSearchBackends() {
-    const keys = loadKeys();
+    const keys = getKeysSync();
     return {
       activeBackend: keys['SERPAPI_KEY'] ? 'SerpAPI' : 'DuckDuckGo',
       backends: {
@@ -85,7 +85,7 @@ export class SearchService {
   }
 
   private async extractQueryWithLLM(rawQuery: string): Promise<string> {
-    const keys = loadKeys();
+    const keys = getKeysSync();
     const apiKey = keys['GEMINI_API_KEY'] || process.env.GEMINI_API_KEY;
     if (!apiKey) return rawQuery; // fallback to raw
 
@@ -120,7 +120,7 @@ export class SearchService {
   }
 
   private async summarizeWithLLM(content: string, query: string): Promise<string> {
-    const keys = loadKeys();
+    const keys = getKeysSync();
     const apiKey = keys['GEMINI_API_KEY'] || process.env.GEMINI_API_KEY;
     if (!apiKey || content.trim().length < 500) return content;
 
@@ -217,7 +217,7 @@ export class SearchService {
     try {
       const scraplingPort = process.env.SCRAPLING_PORT || '3002';
       logger.info('[Web Search] Calling Scrapling server...');
-      
+
       const response = await fetch(`http://127.0.0.1:${scraplingPort}/v1/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -226,7 +226,7 @@ export class SearchService {
           limit: 5,
           engine: 'google',
           type: 'text',
-          timeout: 30
+          timeout: 30,
         }),
       });
 
@@ -236,15 +236,14 @@ export class SearchService {
 
       const data: any = await response.json();
       const pythonResults = data.results || [];
-      
+
       results = pythonResults.map((r: any) => ({
         title: r.title || '',
         link: r.url || '',
         snippet: r.markdown ? r.markdown.substring(0, 300) + '...' : '',
         content: r.markdown || '',
-        score: r.rank ? (10 - r.rank) : 0, // Invert rank to score
+        score: r.rank ? 10 - r.rank : 0, // Invert rank to score
       }));
-
     } catch (e) {
       logger.error(`[Web Search] Scrapling failed: ${e}`);
       return [];
