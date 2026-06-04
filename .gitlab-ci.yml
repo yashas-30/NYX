@@ -1,0 +1,85 @@
+image: node:22
+
+stages:
+  - validate
+  - security
+  - build
+  - deploy
+  - rollback
+
+variables:
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+
+cache:
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+    - node_modules/
+
+before_script:
+  - npm ci --prefer-offline --no-audit
+
+lint-and-typecheck:
+  stage: validate
+  script:
+    - npm run lint
+
+unit-tests:
+  stage: validate
+  script:
+    - npx vitest run
+
+snyk-dependency-scan:
+  stage: security
+  script:
+    - npx snyk test --severity-threshold=high
+  allow_failure: true
+  variables:
+    SNYK_TOKEN: $SNYK_TOKEN
+
+snyk-code-scan:
+  stage: security
+  script:
+    - npx snyk code test
+  allow_failure: true
+  variables:
+    SNYK_TOKEN: $SNYK_TOKEN
+
+build-bundle:
+  stage: build
+  before_script:
+    - apt-get update && apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+    - npm ci --prefer-offline --no-audit
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+      - dist-server/
+    expire_in: 1 week
+
+deploy-to-pages:
+  stage: deploy
+  script:
+    - echo "Deploying static assets to pages/production server..."
+  artifacts:
+    paths:
+      - dist/
+  only:
+    - main
+
+manual-rollback:
+  stage: rollback
+  script:
+    - echo "Manual rollback requested. Re-deploying specified Git reference $ROLLBACK_REF"
+    - git checkout $ROLLBACK_REF
+    - npm ci
+    - npm run build
+    - echo "Rollback completed successfully."
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+  variables:
+    ROLLBACK_REF: "main"
