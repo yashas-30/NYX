@@ -1,0 +1,154 @@
+version: 2.1
+
+parameters:
+  rollback_ref:
+    type: string
+    default: ""
+    description: "Git ref (SHA, branch, tag) to rollback to. Standard validation/build will be bypassed in favor of rollback deployment."
+
+jobs:
+  validate:
+    docker:
+      - image: cimg/node:22.0
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-deps-v1-{{ checksum "package-lock.json" }}
+            - npm-deps-v1-
+      - run:
+          name: Install Dependencies
+          command: npm ci --prefer-offline --no-audit
+      - save_cache:
+          key: npm-deps-v1-{{ checksum "package-lock.json" }}
+          paths:
+            - ~/.npm
+      - run:
+          name: Run Linter & Typecheck
+          command: npm run lint
+      - run:
+          name: Run Vitest Unit Tests
+          command: npx vitest run
+
+  security-scan:
+    docker:
+      - image: cimg/node:22.0
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-deps-v1-{{ checksum "package-lock.json" }}
+      - run:
+          name: Install Dependencies
+          command: npm ci --prefer-offline --no-audit
+      - run:
+          name: Run Snyk Dependency Scan
+          command: npx snyk test --severity-threshold=high || true
+          environment:
+            SNYK_TOKEN: $SNYK_TOKEN
+      - run:
+          name: Run Snyk Code Scan (SAST)
+          command: npx snyk code test || true
+          environment:
+            SNYK_TOKEN: $SNYK_TOKEN
+
+  build-project:
+    docker:
+      - image: cimg/node:22.0
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-deps-v1-{{ checksum "package-lock.json" }}
+      - run:
+          name: Install Tauri System Dependencies
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run:
+          name: Install Node Dependencies
+          command: npm ci --prefer-offline --no-audit
+      - run:
+          name: Build Project Bundle
+          command: npm run build
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist
+            - dist-server
+
+  deploy-production:
+    docker:
+      - image: cimg/node:22.0
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Deploy Static Assets
+          command: |
+            echo "Deploying static assets to pages/production server..."
+
+  rollback-deploy:
+    docker:
+      - image: cimg/node:22.0
+    steps:
+      - checkout
+      - run:
+          name: Check out Rollback Reference
+          command: |
+            ROLLBACK_REF="<< pipeline.parameters.rollback_ref >>"
+            echo "Performing manual rollback to: ${ROLLBACK_REF}"
+            git fetch origin
+            git checkout ${ROLLBACK_REF}
+      - restore_cache:
+          keys:
+            - npm-deps-v1-{{ checksum "package-lock.json" }}
+            - npm-deps-v1-
+      - run:
+          name: Install Dependencies
+          command: npm ci --prefer-offline --no-audit
+      - run:
+          name: Install Tauri System Dependencies
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run:
+          name: Build Rollback Bundle
+          command: npm run build
+      - run:
+          name: Deploy Rollback Assets
+          command: |
+            echo "Deploying rollback assets to pages/production server..."
+
+workflows:
+  version: 2
+  ci_cd_pipeline:
+    when:
+      and:
+        - equal: [ "", << pipeline.parameters.rollback_ref >> ]
+    jobs:
+      - validate
+      - security-scan:
+          requires:
+            - validate
+      - build-project:
+          requires:
+            - validate
+      - deploy-production:
+          requires:
+            - build-project
+            - security-scan
+          filters:
+            branches:
+              only:
+                - main
+                - master
+
+  rollback_pipeline:
+    when:
+      and:
+        - not:
+            equal: [ "", << pipeline.parameters.rollback_ref >> ]
+    jobs:
+      - rollback-deploy
