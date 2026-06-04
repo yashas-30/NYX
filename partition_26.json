@@ -1,0 +1,146 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/core/agents/chatAgent.ts",
+        "start_line": 191,
+        "end_line": 200,
+        "start_col": 10,
+        "end_col": 5,
+        "fragment": "metadata: {\r\n            id: String(i + 1),\r\n            url: r.url || r.link,\r\n            title: r.title,\r\n            snippet: r.snippet,\r\n            source: r.source || new URL(r.url || r.link || 'https://unknown').hostname,\r\n          },\r\n        };\r\n      }\r\n    }"
+      },
+      {
+        "file": "src/core/agents/coderAgent.ts",
+        "start_line": 249,
+        "end_line": 258,
+        "start_col": 10,
+        "end_col": 5,
+        "fragment": "metadata: {\r\n            id: String(i + 1),\r\n            url: r.url || r.link,\r\n            title: r.title,\r\n            snippet: r.snippet,\r\n            source: r.source || new URL(r.url || r.link || 'https://unknown').hostname,\r\n          },\r\n        };\r\n      }\r\n    }"
+      }
+    ],
+    "token_count": 53,
+    "line_count": 10,
+    "fingerprint": "dup:f71ea2e0",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (10 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/core/agents/chatAgent.ts",
+        "start_line": 426,
+        "end_line": 449,
+        "start_col": 8,
+        "end_col": 11,
+        "fragment": "if (char === '\"') inString = true;\r\n        else if (char === '{' || char === '[') {\r\n          if (depth === 0) startIndex = i;\r\n          depth++;\r\n        } else if (char === '}' || char === ']') {\r\n          depth--;\r\n          if (depth === 0 && startIndex !== -1) {\r\n            const possibleJson = textWithoutBlocks.slice(startIndex, i + 1);\r\n            if (possibleJson.length > 100) {\r\n              try {\r\n                const parsed = JSON.parse(possibleJson);\r\n                if (parsed && typeof parsed === 'object') {\r\n                  artifacts.push({\r\n                    id: generateId(),\r\n                    type: 'json',\r\n                    title: 'Inline JSON',\r\n                    content: possibleJson,\r\n                    language: 'json',\r\n                  });\r\n                }\r\n              } catch {}\r\n            }\r\n            startIndex = -1;\r\n          }"
+      },
+      {
+        "file": "src/features/coder/services/SubagentOrchestrator.ts",
+        "start_line": 492,
+        "end_line": 504,
+        "start_col": 8,
+        "end_col": 11,
+        "fragment": "if (char === '\"') {\r\n          inString = true;\r\n        } else if (char === '{' || char === '[') {\r\n          if (depth === 0) startIndex = i;\r\n          depth++;\r\n        } else if (char === '}' || char === ']') {\r\n          depth--;\r\n          if (depth === 0 && startIndex !== -1) {\r\n            try {\r\n              addParsed(JSON.parse(text.slice(startIndex, i + 1)));\r\n            } catch {}\r\n            startIndex = -1;\r\n          }"
+      }
+    ],
+    "token_count": 53,
+    "line_count": 24,
+    "fingerprint": "dup:37193922",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (24 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/core/agents/coderAgent.ts",
+        "start_line": 332,
+        "end_line": 347,
+        "start_col": 6,
+        "end_col": 8,
+        "fragment": "{\r\n        history: processedHistory,\r\n        agentMode: 'coder',\r\n        webSearch: this.config.webSearchEnabled,\r\n      }\r\n    )\r\n      .then((result) => {\r\n        finished = true;\r\n        if (resolveStream) resolveStream();\r\n        return result;\r\n      })\r\n      .catch((err) => {\r\n        streamError = err;\r\n        finished = true;\r\n        if (resolveStream) resolveStream();\r\n      })"
+      },
+      {
+        "file": "src/core/agents/coderAgentWithTools.ts",
+        "start_line": 88,
+        "end_line": 104,
+        "start_col": 8,
+        "end_col": 10,
+        "fragment": "{\r\n          history: currentHistory,\r\n          agentMode: 'coder',\r\n          tools: availableTools,\r\n          streamEvents: true,\r\n        }\r\n      )\r\n        .then((result) => {\r\n          finished = true;\r\n          if (resolveStream) resolveStream();\r\n          return result;\r\n        })\r\n        .catch((err) => {\r\n          streamError = err;\r\n          finished = true;\r\n          if (resolveStream) resolveStream();\r\n        })"
+      }
+    ],
+    "token_count": 56,
+    "line_count": 17,
+    "fingerprint": "dup:01b1cdcf",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (17 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/core/agents/coderAgent.ts",
+        "start_line": 732,
+        "end_line": 743,
+        "start_col": 10,
+        "end_col": 39,
+        "fragment": "files: Array<{ path: string; language: string; content: string }> = [];\r\n\r\n    // Prevent regex evaluation hanging on massive strings\r\n    const MAX_PARSE_LENGTH = 100000;\r\n    if (text.length > MAX_PARSE_LENGTH) {\r\n      text = text.slice(0, MAX_PARSE_LENGTH);\r\n    }\r\n\r\n    const regex = /===\\s*FILE:\\s*([^\\n\\r]+?)\\s*===[\\r\\n]+```(\\w*)[\\r\\n]+([\\s\\S]*?)```/g;\r\n    let match;\r\n    while ((match = regex.exec(text)) !== null) {\r\n      const filePath = match[1].trim();"
+      },
+      {
+        "file": "src/core/agents/coderAgent.ts",
+        "start_line": 759,
+        "end_line": 770,
+        "start_col": 10,
+        "end_col": 40,
+        "fragment": "blocks: Array<{ language: string | null; content: string; filename?: string }> = [];\r\n\r\n    // Prevent regex evaluation hanging on massive strings\r\n    const MAX_PARSE_LENGTH = 100000;\r\n    if (text.length > MAX_PARSE_LENGTH) {\r\n      text = text.slice(0, MAX_PARSE_LENGTH);\r\n    }\r\n\r\n    const regex = /```(\\w*)\\n([\\s\\S]*?)```/g;\r\n    let match;\r\n    while ((match = regex.exec(text)) !== null) {\r\n      const language = match[1] || null;"
+      }
+    ],
+    "token_count": 54,
+    "line_count": 12,
+    "fingerprint": "dup:b14e8ec7",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (12 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

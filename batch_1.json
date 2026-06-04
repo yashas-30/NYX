@@ -1,0 +1,1118 @@
+[
+  {
+    "instances": [
+      {
+        "file": ".github/skills/ck/commands/shared.mjs",
+        "start_line": 227,
+        "end_line": 233,
+        "start_col": 2,
+        "end_col": 3,
+        "fragment": "lines.push(``);\r\n  lines.push(`## Blockers`);\r\n  if (latest?.blockers?.length) {\r\n    latest.blockers.forEach(b => lines.push(`- ${b}`));\r\n  } else {\r\n    lines.push(`- None`);\r\n  }"
+      },
+      {
+        "file": ".github/skills/ck/commands/shared.mjs",
+        "start_line": 336,
+        "end_line": 342,
+        "start_col": 33,
+        "end_col": 3,
+        "fragment": "lines.push(`  —`);\r\n  lines.push(`BLOCKERS`);\r\n  if (latest.blockers?.length) {\r\n    latest.blockers.forEach(b => lines.push(`  • ${b}`));\r\n  } else {\r\n    lines.push(`  • None`);\r\n  }"
+      }
+    ],
+    "token_count": 61,
+    "line_count": 7,
+    "fingerprint": "dup:b34bddc7",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (7 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/features/agents/agents.router.ts",
+        "start_line": 58,
+        "end_line": 66,
+        "start_col": 4,
+        "end_col": 26,
+        "fragment": "return res.status(400).json({ error: 'Model is required' });\r\n  }\r\n\r\n  res.setHeader('Content-Type', 'text/event-stream');\r\n  res.setHeader('Cache-Control', 'no-cache');\r\n  res.setHeader('Connection', 'keep-alive');\r\n  res.setHeader('X-Accel-Buffering', 'no');\r\n  res.flushHeaders();\r\n  sendSseTokenRotate(res);"
+      },
+      {
+        "file": "server/features/ai-providers/gemini.router.ts",
+        "start_line": 39,
+        "end_line": 48,
+        "start_col": 4,
+        "end_col": 26,
+        "fragment": "return res.status(400).json({ error: 'Model is required' });\r\n  }\r\n\r\n  // Set event-stream headers immediately\r\n  res.setHeader('Content-Type', 'text/event-stream');\r\n  res.setHeader('Cache-Control', 'no-cache');\r\n  res.setHeader('Connection', 'keep-alive');\r\n  res.setHeader('X-Accel-Buffering', 'no');\r\n  res.flushHeaders();\r\n  sendSseTokenRotate(res);"
+      }
+    ],
+    "token_count": 70,
+    "line_count": 10,
+    "fingerprint": "dup:51812b5c",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (10 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/features/conversations/conversations.service.ts",
+        "start_line": 60,
+        "end_line": 80,
+        "start_col": 55,
+        "end_col": 9,
+        "fragment": "id))\r\n          .orderBy(messagesTable.timestamp)\r\n          .all();\r\n        return {\r\n          id: conv.id,\r\n          title: conv.title,\r\n          model: conv.model,\r\n          createdAt: conv.createdAt,\r\n          updatedAt: conv.updatedAt,\r\n          workspacePath: (conv as any).workspacePath || undefined,\r\n          folderId: (conv as any).folderId || null,\r\n          tags: (conv as any).tags || null,\r\n          messages: msgs.map((m) => ({\r\n            id: m.id,\r\n            role: m.role as any,\r\n            content: m.content,\r\n            model: m.model,\r\n            timestamp: m.timestamp,\r\n            toolCalls: (m as any).toolCalls || undefined,\r\n          })),\r\n        }"
+      },
+      {
+        "file": "server/features/conversations/conversations.service.ts",
+        "start_line": 96,
+        "end_line": 116,
+        "start_col": 48,
+        "end_col": 7,
+        "fragment": "id))\r\n        .orderBy(messagesTable.timestamp)\r\n        .all();\r\n      return {\r\n        id: conv.id,\r\n        title: conv.title,\r\n        model: conv.model,\r\n        createdAt: conv.createdAt,\r\n        updatedAt: conv.updatedAt,\r\n        workspacePath: (conv as any).workspacePath || undefined,\r\n        folderId: (conv as any).folderId || null,\r\n        tags: (conv as any).tags || null,\r\n        messages: msgs.map((m) => ({\r\n          id: m.id,\r\n          role: m.role as any,\r\n          content: m.content,\r\n          model: m.model,\r\n          timestamp: m.timestamp,\r\n          toolCalls: (m as any).toolCalls || undefined,\r\n        })),\r\n      }"
+      }
+    ],
+    "token_count": 111,
+    "line_count": 21,
+    "fingerprint": "dup:1cc35550",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (21 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/features/nyx/agent.service.ts",
+        "start_line": 85,
+        "end_line": 97,
+        "start_col": 8,
+        "end_col": 49,
+        "fragment": "logger.info(\n          `[Background Critic] Executing meta-critic using selected model ${modelId} (${provider})`\n        );\n\n        if (provider === 'gemini') {\n          const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${activeKey}`;\n          const contents = [{ role: 'user', parts: [{ text: conversationPayload }] }];\n          const res = await fetch(url, {\n            method: 'POST',\n            headers: { 'Content-Type': 'application/json' },\n            body: JSON.stringify({\n              contents,\n              systemInstruction: { parts: [{ text"
+      },
+      {
+        "file": "server/features/nyx/memory.service.ts",
+        "start_line": 310,
+        "end_line": 320,
+        "start_col": 8,
+        "end_col": 49,
+        "fragment": "logger.info(`[Memory Keeper] Executing extraction using model ${modelId} (${provider})`);\n\n        if (provider === 'gemini') {\n          const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${activeKey}`;\n          const contents = [{ role: 'user', parts: [{ text: conversationPayload }] }];\n          const res = await fetch(url, {\n            method: 'POST',\n            headers: { 'Content-Type': 'application/json' },\n            body: JSON.stringify({\n              contents,\n              systemInstruction: { parts: [{ text"
+      }
+    ],
+    "token_count": 71,
+    "line_count": 13,
+    "fingerprint": "dup:0d82181f",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (13 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/features/nyx/agent.service.ts",
+        "start_line": 99,
+        "end_line": 112,
+        "start_col": 13,
+        "end_col": 41,
+        "fragment": "),\n          });\n          if (!res.ok) throw new Error(`Gemini Critic API error: ${res.statusText}`);\n          const data: any = await res.json();\n          responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';\n        } else if (provider === 'nyx-native') {\n          const llamaPort = process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString();\n          const res = await fetch(`http://127.0.0.1:${llamaPort}/v1/chat/completions`, {\n            method: 'POST',\n            headers: { 'Content-Type': 'application/json' },\n            body: JSON.stringify({\n              model: modelId,\n              messages: [\n                { role: 'system', content"
+      },
+      {
+        "file": "server/features/nyx/memory.service.ts",
+        "start_line": 323,
+        "end_line": 336,
+        "start_col": 45,
+        "end_col": 41,
+        "fragment": "),\n          });\n          if (!res.ok) throw new Error(`Gemini Critic API error: ${res.statusText}`);\n          const data: any = await res.json();\n          responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';\n        } else if (provider === 'nyx-native') {\n          const llamaPort = process.env.LLAMA_PORT || LOCAL_MODEL_PORT.toString();\n          const res = await fetch(`http://127.0.0.1:${llamaPort}/v1/chat/completions`, {\n            method: 'POST',\n            headers: { 'Content-Type': 'application/json' },\n            body: JSON.stringify({\n              model: modelId,\n              messages: [\n                { role: 'system', content"
+      }
+    ],
+    "token_count": 108,
+    "line_count": 14,
+    "fingerprint": "dup:43565d33",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (14 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/features/nyx/agent.service.ts",
+        "start_line": 118,
+        "end_line": 125,
+        "start_col": 13,
+        "end_col": 9,
+        "fragment": "),\n          });\n          if (!res.ok) throw new Error(`Local GGUF Critic error: ${res.statusText}`);\n          const data: any = await res.json();\n          responseText = data.choices?.[0]?.message?.content || '';\n        } else {\n          throw new Error(`Unsupported provider for critic: ${provider}`);\n        }"
+      },
+      {
+        "file": "server/features/nyx/memory.service.ts",
+        "start_line": 343,
+        "end_line": 350,
+        "start_col": 45,
+        "end_col": 9,
+        "fragment": "),\n          });\n          if (!res.ok) throw new Error(`Local GGUF Critic error: ${res.statusText}`);\n          const data: any = await res.json();\n          responseText = data.choices?.[0]?.message?.content || '';\n        } else {\n          throw new Error(`Unsupported provider for memory keeper: ${provider}`);\n        }"
+      }
+    ],
+    "token_count": 60,
+    "line_count": 8,
+    "fingerprint": "dup:3a538206",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (8 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/features/nyx/agent.service.ts",
+        "start_line": 130,
+        "end_line": 144,
+        "start_col": 12,
+        "end_col": 13,
+        "fragment": "const analysis = JSON.parse(jsonMatch[0]);\n            const hasImprovement =\n              analysis.rule &&\n              !analysis.rule.toLowerCase().includes('no improvement needed') &&\n              !analysis.rule.toLowerCase().includes('none');\n            if (hasImprovement) {\n              RulesDb.addRule(analysis.metric, analysis.critique, analysis.rule);\n              logger.info(\n                `[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`\n              );\n            } else {\n              logger.info(\n                '[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.'\n              );\n            }"
+      },
+      {
+        "file": "server/features/nyx/agent.service.ts",
+        "start_line": 189,
+        "end_line": 203,
+        "start_col": 6,
+        "end_col": 7,
+        "fragment": "const analysis = JSON.parse(jsonMatch[0]);\n      const hasImprovement =\n        analysis.rule &&\n        !analysis.rule.toLowerCase().includes('no improvement needed') &&\n        !analysis.rule.toLowerCase().includes('none');\n      if (hasImprovement) {\n        RulesDb.addRule(analysis.metric, analysis.critique, analysis.rule);\n        logger.info(\n          `[Background Critic] Evolution successful! Learned new rule for ${analysis.metric}.`\n        );\n      } else {\n        logger.info(\n          '[Background Critic] Interaction evaluated as fully correct. No new adjustments necessary.'\n        );\n      }"
+      }
+    ],
+    "token_count": 97,
+    "line_count": 15,
+    "fingerprint": "dup:e324916b",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (15 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/lib/aiEngine.ts",
+        "start_line": 214,
+        "end_line": 237,
+        "start_col": 27,
+        "end_col": 7,
+        "fragment": "{\r\n        contents,\r\n        systemInstruction: systemInstruction\r\n          ? { parts: [{ text: systemInstruction + '\\n\\n' + ABSTENTION_INSTRUCTION }] }\r\n          : { parts: [{ text: ABSTENTION_INSTRUCTION }] },\r\n        generationConfig: {\r\n          temperature: settings?.temperature ?? 0.1, // Near-greedy for code accuracy\r\n          maxOutputTokens: settings?.maxTokens,\r\n          topP: settings?.topP ?? 0.9,\r\n          topK: settings?.topK ?? 20,\r\n        },\r\n        tools: tools,\r\n      }),\r\n    });\r\n\r\n    if (!response.ok) throw new Error(`Gemini API Error: ${response.status}`);\r\n\r\n    await Gateway.processSSEStream(response, {\r\n      onChunk: (text) => write({ chunk: text }),\r\n      onDone: done,\r\n      onError: (err) => {\r\n        throw new Error(err);\r\n      },\r\n    });"
+      },
+      {
+        "file": "server/lib/aiEngine.ts",
+        "start_line": 257,
+        "end_line": 268,
+        "start_col": 27,
+        "end_col": 7,
+        "fragment": "{ prompt, model, apiKey }),\r\n    });\r\n\r\n    if (!response.ok) throw new Error(`Antigravity SDK Error: ${response.status}`);\r\n\r\n    await Gateway.processSSEStream(response, {\r\n      onChunk: (text) => write({ chunk: text }),\r\n      onDone: done,\r\n      onError: (err) => {\r\n        throw new Error(err);\r\n      },\r\n    });"
+      }
+    ],
+    "token_count": 68,
+    "line_count": 24,
+    "fingerprint": "dup:96513ce6",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (24 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/core/agents/chatAgent.ts",
+        "start_line": 191,
+        "end_line": 200,
+        "start_col": 10,
+        "end_col": 5,
+        "fragment": "metadata: {\r\n            id: String(i + 1),\r\n            url: r.url || r.link,\r\n            title: r.title,\r\n            snippet: r.snippet,\r\n            source: r.source || new URL(r.url || r.link || 'https://unknown').hostname,\r\n          },\r\n        };\r\n      }\r\n    }"
+      },
+      {
+        "file": "src/core/agents/coderAgent.ts",
+        "start_line": 249,
+        "end_line": 258,
+        "start_col": 10,
+        "end_col": 5,
+        "fragment": "metadata: {\r\n            id: String(i + 1),\r\n            url: r.url || r.link,\r\n            title: r.title,\r\n            snippet: r.snippet,\r\n            source: r.source || new URL(r.url || r.link || 'https://unknown').hostname,\r\n          },\r\n        };\r\n      }\r\n    }"
+      }
+    ],
+    "token_count": 53,
+    "line_count": 10,
+    "fingerprint": "dup:f71ea2e0",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (10 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/core/agents/chatAgent.ts",
+        "start_line": 426,
+        "end_line": 449,
+        "start_col": 8,
+        "end_col": 11,
+        "fragment": "if (char === '\"') inString = true;\r\n        else if (char === '{' || char === '[') {\r\n          if (depth === 0) startIndex = i;\r\n          depth++;\r\n        } else if (char === '}' || char === ']') {\r\n          depth--;\r\n          if (depth === 0 && startIndex !== -1) {\r\n            const possibleJson = textWithoutBlocks.slice(startIndex, i + 1);\r\n            if (possibleJson.length > 100) {\r\n              try {\r\n                const parsed = JSON.parse(possibleJson);\r\n                if (parsed && typeof parsed === 'object') {\r\n                  artifacts.push({\r\n                    id: generateId(),\r\n                    type: 'json',\r\n                    title: 'Inline JSON',\r\n                    content: possibleJson,\r\n                    language: 'json',\r\n                  });\r\n                }\r\n              } catch {}\r\n            }\r\n            startIndex = -1;\r\n          }"
+      },
+      {
+        "file": "src/features/coder/services/SubagentOrchestrator.ts",
+        "start_line": 492,
+        "end_line": 504,
+        "start_col": 8,
+        "end_col": 11,
+        "fragment": "if (char === '\"') {\r\n          inString = true;\r\n        } else if (char === '{' || char === '[') {\r\n          if (depth === 0) startIndex = i;\r\n          depth++;\r\n        } else if (char === '}' || char === ']') {\r\n          depth--;\r\n          if (depth === 0 && startIndex !== -1) {\r\n            try {\r\n              addParsed(JSON.parse(text.slice(startIndex, i + 1)));\r\n            } catch {}\r\n            startIndex = -1;\r\n          }"
+      }
+    ],
+    "token_count": 53,
+    "line_count": 24,
+    "fingerprint": "dup:37193922",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (24 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/core/agents/coderAgent.ts",
+        "start_line": 332,
+        "end_line": 347,
+        "start_col": 6,
+        "end_col": 8,
+        "fragment": "{\r\n        history: processedHistory,\r\n        agentMode: 'coder',\r\n        webSearch: this.config.webSearchEnabled,\r\n      }\r\n    )\r\n      .then((result) => {\r\n        finished = true;\r\n        if (resolveStream) resolveStream();\r\n        return result;\r\n      })\r\n      .catch((err) => {\r\n        streamError = err;\r\n        finished = true;\r\n        if (resolveStream) resolveStream();\r\n      })"
+      },
+      {
+        "file": "src/core/agents/coderAgentWithTools.ts",
+        "start_line": 88,
+        "end_line": 104,
+        "start_col": 8,
+        "end_col": 10,
+        "fragment": "{\r\n          history: currentHistory,\r\n          agentMode: 'coder',\r\n          tools: availableTools,\r\n          streamEvents: true,\r\n        }\r\n      )\r\n        .then((result) => {\r\n          finished = true;\r\n          if (resolveStream) resolveStream();\r\n          return result;\r\n        })\r\n        .catch((err) => {\r\n          streamError = err;\r\n          finished = true;\r\n          if (resolveStream) resolveStream();\r\n        })"
+      }
+    ],
+    "token_count": 56,
+    "line_count": 17,
+    "fingerprint": "dup:01b1cdcf",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (17 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/core/agents/coderAgent.ts",
+        "start_line": 732,
+        "end_line": 743,
+        "start_col": 10,
+        "end_col": 39,
+        "fragment": "files: Array<{ path: string; language: string; content: string }> = [];\r\n\r\n    // Prevent regex evaluation hanging on massive strings\r\n    const MAX_PARSE_LENGTH = 100000;\r\n    if (text.length > MAX_PARSE_LENGTH) {\r\n      text = text.slice(0, MAX_PARSE_LENGTH);\r\n    }\r\n\r\n    const regex = /===\\s*FILE:\\s*([^\\n\\r]+?)\\s*===[\\r\\n]+```(\\w*)[\\r\\n]+([\\s\\S]*?)```/g;\r\n    let match;\r\n    while ((match = regex.exec(text)) !== null) {\r\n      const filePath = match[1].trim();"
+      },
+      {
+        "file": "src/core/agents/coderAgent.ts",
+        "start_line": 759,
+        "end_line": 770,
+        "start_col": 10,
+        "end_col": 40,
+        "fragment": "blocks: Array<{ language: string | null; content: string; filename?: string }> = [];\r\n\r\n    // Prevent regex evaluation hanging on massive strings\r\n    const MAX_PARSE_LENGTH = 100000;\r\n    if (text.length > MAX_PARSE_LENGTH) {\r\n      text = text.slice(0, MAX_PARSE_LENGTH);\r\n    }\r\n\r\n    const regex = /```(\\w*)\\n([\\s\\S]*?)```/g;\r\n    let match;\r\n    while ((match = regex.exec(text)) !== null) {\r\n      const language = match[1] || null;"
+      }
+    ],
+    "token_count": 54,
+    "line_count": 12,
+    "fingerprint": "dup:b14e8ec7",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (12 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 170,
+        "end_line": 182,
+        "start_col": 0,
+        "end_col": 47,
+        "fragment": "ToolCallCard.displayName = 'ToolCallCard';\r\n\r\n// ---------------------------------------------------------------------------\r\n// Code Block with Syntax Highlighting\r\n// ---------------------------------------------------------------------------\r\n\r\nconst CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {\r\n  const [copied, setCopied] = useState(false);\r\n\r\n  const handleCopy = useCallback(() => {\r\n    navigator.clipboard.writeText(code).then(() => {\r\n      setCopied(true);\r\n      setTimeout(() => setCopied(false), 2000);"
+      },
+      {
+        "file": "src/features/orchestrator/components/OrchestratorUI.tsx",
+        "start_line": 252,
+        "end_line": 260,
+        "start_col": 0,
+        "end_col": 47,
+        "fragment": "ArtifactCard.displayName = 'ArtifactCard';\r\n\r\nconst CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {\r\n  const [copied, setCopied] = useState(false);\r\n\r\n  const handleCopy = useCallback(() => {\r\n    navigator.clipboard.writeText(code).then(() => {\r\n      setCopied(true);\r\n      setTimeout(() => setCopied(false), 2000);"
+      }
+    ],
+    "token_count": 73,
+    "line_count": 13,
+    "fingerprint": "dup:53415a0f",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (13 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 177,
+        "end_line": 186,
+        "start_col": 44,
+        "end_col": 34,
+        "fragment": ");\r\n\r\n  const handleCopy = useCallback(() => {\r\n    navigator.clipboard.writeText(code).then(() => {\r\n      setCopied(true);\r\n      setTimeout(() => setCopied(false), 2000);\r\n    });\r\n  }, [code]);\r\n\r\n  const lang = language || 'text';"
+      },
+      {
+        "file": "src/features/coder/components/MessageList.tsx",
+        "start_line": 70,
+        "end_line": 107,
+        "start_col": 11,
+        "end_col": 4,
+        "fragment": ");\r\n\r\n  const handleCopy = useCallback(() => {\r\n    navigator.clipboard.writeText(code).then(() => {\r\n      setCopied(true);\r\n      setTimeout(() => setCopied(false), 2000);\r\n    });\r\n  }, [code]);\r\n\r\n  const handleApplyFile = async () => {\r\n    if (!filePath.trim()) {\r\n      toast.error('File path is required');\r\n      return;\r\n    }\r\n    setApplyStatus('writing');\r\n    try {\r\n      const response = await fetchWithAuth('/api/v1/nyx/write-file', {\r\n        method: 'POST',\r\n        headers: { 'Content-Type': 'application/json' },\r\n        body: JSON.stringify({ filePath, content: code }),\r\n      });\r\n      if (response.ok) {\r\n        setApplyStatus('success');\r\n        toast.success(`Successfully applied file to workspace: ${filePath}`);\r\n        setTimeout(() => {\r\n          setApplyStatus('idle');\r\n          setShowApplyPanel(false);\r\n        }, 2000);\r\n      } else {\r\n        const err = await response.json();\r\n        throw new Error(err.error || 'Failed to write file');\r\n      }\r\n    } catch (error: any) {\r\n      setApplyStatus('error');\r\n      setErrorMsg(error.message);\r\n      toast.error(`Failed to apply file: ${error.message}`);\r\n    }\r\n  };"
+      }
+    ],
+    "token_count": 59,
+    "line_count": 38,
+    "fingerprint": "dup:762d6c49",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (38 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 318,
+        "end_line": 325,
+        "start_col": 30,
+        "end_col": 3,
+        "fragment": ".replace(/\\[(\\d+)\\]/g, (match, id) => {\r\n      const cite = citations.find((c) => c.id === id);\r\n      if (cite) {\r\n        return `[${match}](#cite-${id})`;\r\n      }\r\n      return match;\r\n    });\r\n  }"
+      },
+      {
+        "file": "src/features/coder/components/MessageList.tsx",
+        "start_line": 336,
+        "end_line": 343,
+        "start_col": 39,
+        "end_col": 3,
+        "fragment": ".replace(/\\[(\\d+)\\]/g, (match, id) => {\r\n      const cite = citations.find((c) => c.id === id);\r\n      if (cite) {\r\n        return `[${match}](#cite-${id})`;\r\n      }\r\n      return match;\r\n    });\r\n  }"
+      }
+    ],
+    "token_count": 52,
+    "line_count": 8,
+    "fingerprint": "dup:f38abd88",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (8 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 327,
+        "end_line": 339,
+        "start_col": 2,
+        "end_col": 21,
+        "fragment": "const components = useMemo(\r\n    () => ({\r\n      code({ className, children, ...props }: any) {\r\n        const match = /language-(\\w+)/.exec(className || '');\r\n        const code = String(children).replace(/\\n$/, '');\r\n\r\n        if (match || code.includes('\\n')) {\r\n          return <CodeBlock language={match?.[1] || 'text'} code={code} />;\r\n        }\r\n\r\n        return (\r\n          <code\r\n            className"
+      },
+      {
+        "file": "src/features/orchestrator/components/OrchestratorUI.tsx",
+        "start_line": 305,
+        "end_line": 315,
+        "start_col": 4,
+        "end_col": 23,
+        "fragment": "const components = useMemo(\r\n      () => ({\r\n        code({ className, children, ...props }: any) {\r\n          const match = /language-(\\w+)/.exec(className || '');\r\n          const code = String(children).replace(/\\n$/, '');\r\n          if (match || code.includes('\\n')) {\r\n            return <CodeBlock language={match?.[1] || 'text'} code={code} />;\r\n          }\r\n          return (\r\n            <code\r\n              className"
+      }
+    ],
+    "token_count": 87,
+    "line_count": 13,
+    "fingerprint": "dup:fcea31e1",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (13 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 471,
+        "end_line": 492,
+        "start_col": 4,
+        "end_col": 22,
+        "fragment": "const [isEditing, setIsEditing] = useState(false);\r\n    const [editValue, setEditValue] = useState(content);\r\n    const editRef = useRef<HTMLTextAreaElement>(null);\r\n\r\n    useEffect(() => {\r\n      if (isEditing) {\r\n        editRef.current?.focus();\r\n        editRef.current?.setSelectionRange(editValue.length, editValue.length);\r\n      }\r\n    }, [isEditing]);\r\n\r\n    const handleEditSubmit = () => {\r\n      const trimmed = editValue.trim();\r\n      if (trimmed && trimmed !== content) {\r\n        onEdit?.(index, trimmed);\r\n      }\r\n      setIsEditing(false);\r\n    };\r\n\r\n    if (isEditing) {\r\n      return (\r\n        <div className"
+      },
+      {
+        "file": "src/features/coder/components/MessageList.tsx",
+        "start_line": 587,
+        "end_line": 608,
+        "start_col": 4,
+        "end_col": 22,
+        "fragment": "const [isEditing, setIsEditing] = useState(false);\r\n    const [editValue, setEditValue] = useState(content);\r\n    const editRef = useRef<HTMLTextAreaElement>(null);\r\n\r\n    useEffect(() => {\r\n      if (isEditing) {\r\n        editRef.current?.focus();\r\n        editRef.current?.setSelectionRange(editValue.length, editValue.length);\r\n      }\r\n    }, [isEditing]);\r\n\r\n    const handleEditSubmit = () => {\r\n      const trimmed = editValue.trim();\r\n      if (trimmed && trimmed !== content) {\r\n        onEdit?.(index, trimmed);\r\n      }\r\n      setIsEditing(false);\r\n    };\r\n\r\n    if (isEditing) {\r\n      return (\r\n        <div className"
+      }
+    ],
+    "token_count": 120,
+    "line_count": 22,
+    "fingerprint": "dup:13af1bc2",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (22 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 492,
+        "end_line": 553,
+        "start_col": 8,
+        "end_col": 201,
+        "fragment": "<div className=\"mt-2 space-y-2\">\r\n          <textarea\r\n            ref={editRef}\r\n            value={editValue}\r\n            onChange={(e) => setEditValue(e.target.value)}\r\n            onKeyDown={(e) => {\r\n              if (e.key === 'Enter' && e.metaKey) handleEditSubmit();\r\n              if (e.key === 'Escape') setIsEditing(false);\r\n            }}\r\n            className=\"w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-xl p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30\"\r\n          />\r\n          <div className=\"flex items-center gap-2\">\r\n            <button\r\n              onClick={handleEditSubmit}\r\n              className=\"px-3 py-1.5 rounded-lg bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer\"\r\n            >\r\n              Save & Submit\r\n            </button>\r\n            <button\r\n              onClick={() => setIsEditing(false)}\r\n              className=\"px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 text-zinc-400 text-[11px] font-semibold hover:bg-white/[0.06] transition-colors cursor-pointer\"\r\n            >\r\n              Cancel\r\n            </button>\r\n          </div>\r\n        </div>\r\n      );\r\n    }\r\n\r\n    return (\r\n      <div className=\"mt-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200\">\r\n        <button\r\n          onClick={() => onCopy(content, msgId)}\r\n          className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\"\r\n        >\r\n          {copiedId === msgId ? (\r\n            <>\r\n              <Check size={10} className=\"text-emerald-400\" />\r\n              <span className=\"text-emerald-400\">Copied</span>\r\n            </>\r\n          ) : (\r\n            <>\r\n              <Copy size={10} />\r\n              <span>Copy</span>\r\n            </>\r\n          )}\r\n        </button>\r\n\r\n        {isUser && onEdit && (\r\n          <button\r\n            onClick={() => setIsEditing(true)}\r\n            className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\"\r\n          >\r\n            <Pencil size={10} />\r\n            <span>Edit</span>\r\n          </button>\r\n        )}\r\n\r\n        {!isUser && onRegenerate && (\r\n          <button\r\n            onClick={() => onRegenerate(index)}\r\n            className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\""
+      },
+      {
+        "file": "src/features/coder/components/MessageList.tsx",
+        "start_line": 608,
+        "end_line": 669,
+        "start_col": 8,
+        "end_col": 201,
+        "fragment": "<div className=\"mt-2 space-y-2 w-full\">\r\n          <textarea\r\n            ref={editRef}\r\n            value={editValue}\r\n            onChange={(e) => setEditValue(e.target.value)}\r\n            onKeyDown={(e) => {\r\n              if (e.key === 'Enter' && e.metaKey) handleEditSubmit();\r\n              if (e.key === 'Escape') setIsEditing(false);\r\n            }}\r\n            className=\"w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-xl p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30\"\r\n          />\r\n          <div className=\"flex items-center gap-2\">\r\n            <button\r\n              onClick={handleEditSubmit}\r\n              className=\"px-3 py-1.5 rounded-lg bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer\"\r\n            >\r\n              Save & Submit\r\n            </button>\r\n            <button\r\n              onClick={() => setIsEditing(false)}\r\n              className=\"px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 text-zinc-400 text-[11px] font-semibold hover:bg-white/[0.06] transition-colors cursor-pointer\"\r\n            >\r\n              Cancel\r\n            </button>\r\n          </div>\r\n        </div>\r\n      );\r\n    }\r\n\r\n    return (\r\n      <div className=\"mt-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200\">\r\n        <button\r\n          onClick={() => onCopy(content, msgId)}\r\n          className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\"\r\n        >\r\n          {copiedId === msgId ? (\r\n            <>\r\n              <Check size={10} className=\"text-emerald-400\" />\r\n              <span className=\"text-emerald-400\">Copied</span>\r\n            </>\r\n          ) : (\r\n            <>\r\n              <Copy size={10} />\r\n              <span>Copy</span>\r\n            </>\r\n          )}\r\n        </button>\r\n\r\n        {isUser && onEdit && (\r\n          <button\r\n            onClick={() => setIsEditing(true)}\r\n            className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\"\r\n          >\r\n            <Pencil size={10} />\r\n            <span>Edit</span>\r\n          </button>\r\n        )}\r\n\r\n        {!isUser && onRegenerate && (\r\n          <button\r\n            onClick={() => onRegenerate(index)}\r\n            className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\""
+      }
+    ],
+    "token_count": 213,
+    "line_count": 62,
+    "fingerprint": "dup:ac425b53",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (62 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 551,
+        "end_line": 622,
+        "start_col": 10,
+        "end_col": 3,
+        "fragment": "<button\r\n            onClick={() => onRegenerate(index)}\r\n            className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\"\r\n            title={`Regenerate with ${activeModel || 'current model'}`}\r\n          >\r\n            <RefreshCw size={10} />\r\n            <span>Regenerate</span>\r\n          </button>\r\n        )}\r\n\r\n        {!isUser && onBranch && (\r\n          <button\r\n            onClick={() => onBranch(index)}\r\n            className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\"\r\n          >\r\n            <GitBranch size={10} />\r\n            <span>Branch</span>\r\n          </button>\r\n        )}\r\n      </div>\r\n    );\r\n  }\r\n);\r\nMessageActions.displayName = 'MessageActions';\r\n\r\n// ---------------------------------------------------------------------------\r\n// Feedback Buttons\r\n// ---------------------------------------------------------------------------\r\n\r\nconst FeedbackButtons: React.FC<{\r\n  msg: ChatMessage;\r\n  submitReward?: (id: string, reward: number) => void;\r\n}> = memo(({ msg, submitReward }) => {\r\n  const [reward, setReward] = useState<number | undefined>(msg.reward ?? undefined);\r\n\r\n  const handleReward = (value: number) => {\r\n    if (!msg.rolloutId || reward !== undefined) return;\r\n    setReward(value);\r\n    submitReward?.(msg.rolloutId, value);\r\n    toast.info(value === 1 ? 'Thanks for the feedback!' : \"Feedback noted. We'll improve.\", {\r\n      icon: value === 1 ? <ThumbsUp size={14} /> : <ThumbsDown size={14} />,\r\n    });\r\n  };\r\n\r\n  if (!msg.rolloutId || !submitReward) return null;\r\n\r\n  return (\r\n    <div className=\"flex items-center gap-2 mt-2 pt-2 border-t border-white/5\">\r\n      <span className=\"text-[8.5px] text-zinc-600 font-bold uppercase tracking-wider select-none\">\r\n        Helpful?\r\n      </span>\r\n      <button\r\n        onClick={() => handleReward(1)}\r\n        disabled={reward !== undefined}\r\n        className={`p-1 rounded transition-colors cursor-pointer ${\r\n          reward === 1 ? 'text-emerald-400' : 'text-zinc-500 hover:text-emerald-400'\r\n        } ${reward !== undefined ? 'opacity-50 cursor-default' : ''}`}\r\n      >\r\n        <ThumbsUp size={11} />\r\n      </button>\r\n      <button\r\n        onClick={() => handleReward(0)}\r\n        disabled={reward !== undefined}\r\n        className={`p-1 rounded transition-colors cursor-pointer ${\r\n          reward === 0 ? 'text-red-400' : 'text-zinc-500 hover:text-red-400'\r\n        } ${reward !== undefined ? 'opacity-50 cursor-default' : ''}`}\r\n      >\r\n        <ThumbsDown size={11} />\r\n      </button>\r\n    </div>\r\n  );\r\n});"
+      },
+      {
+        "file": "src/features/coder/components/MessageList.tsx",
+        "start_line": 667,
+        "end_line": 859,
+        "start_col": 10,
+        "end_col": 2,
+        "fragment": "<button\r\n            onClick={() => onRegenerate(index)}\r\n            className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\"\r\n          >\r\n            <RefreshCw size={10} />\r\n            <span>Regenerate</span>\r\n          </button>\r\n        )}\r\n\r\n        {!isUser && onBranch && (\r\n          <button\r\n            onClick={() => onBranch(index)}\r\n            className=\"flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider\"\r\n          >\r\n            <GitBranch size={10} />\r\n            <span>Branch</span>\r\n          </button>\r\n        )}\r\n      </div>\r\n    );\r\n  }\r\n);\r\nMessageActions.displayName = 'MessageActions';\r\n\r\nconst MessageBubble = React.memo<MessageBubbleProps>(\r\n  ({\r\n    msg,\r\n    index,\r\n    activeAgent,\r\n    onCopy,\r\n    copiedId,\r\n    subagentTasks,\r\n    submitReward,\r\n    onEdit,\r\n    onRegenerate,\r\n    onBranch,\r\n  }) => {\r\n    const isUser = msg.role === 'user';\r\n    const isStreaming = msg.status === 'loading';\r\n\r\n    return (\r\n      <motion.div\r\n        initial={{ opacity: 0, y: 8 }}\r\n        animate={{ opacity: 1, y: 0 }}\r\n        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}\r\n        className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} group`}\r\n      >\r\n        {isUser ? (\r\n          /* ── User bubble: flat right-aligned text ── */\r\n          <div className=\"flex flex-col items-end w-full max-w-[85%] sm:max-w-[75%]\">\r\n            <div className=\"py-2 px-1 text-[13px] font-semibold leading-[1.75] text-zinc-200 select-text\">\r\n              {msg.content}\r\n            </div>\r\n            <MessageActions\r\n              index={index}\r\n              content={msg.content}\r\n              onEdit={onEdit}\r\n              onCopy={onCopy}\r\n              copiedId={copiedId}\r\n              msgId={`msg-${index}`}\r\n              isUser={true}\r\n            />\r\n          </div>\r\n        ) : (\r\n          /* ── Assistant: container-less, direct on canvas ── */\r\n          <div className=\"flex-1 min-w-0\">\r\n            {msg.status === 'error' ? (\r\n              <p className=\"text-sm text-red-400/90 py-1 font-semibold uppercase tracking-wide\">\r\n                {msg.content ||\r\n                  'Error: Generation failed. Please check your model settings or connection.'}\r\n              </p>\r\n            ) : msg.status === 'stopped' ? (\r\n              <p className=\"text-sm text-zinc-500 py-1 italic\">Generation stopped.</p>\r\n            ) : msg.status === 'loading' && !msg.content ? (\r\n              <div className=\"flex items-center gap-2.5 py-2 select-none\">\r\n                <NyxLoader size={14} className=\"text-primary shrink-0\" />\r\n                <span className=\"text-[10.5px] text-zinc-400 font-black uppercase tracking-[0.2em] leading-none\">\r\n                  NYX is active...\r\n                </span>\r\n              </div>\r\n            ) : msg.content ? (\r\n              <>\r\n                {/* Tool Calls */}\r\n                {msg.toolCalls && msg.toolCalls.length > 0 && (\r\n                  <div className=\"mb-3\">\r\n                    {msg.toolCalls.map((tc, idx) => (\r\n                      <ToolCallCard\r\n                        key={tc.id || idx}\r\n                        toolName={tc.name}\r\n                        args={tc.args || (tc as any).arguments}\r\n                        result={tc.result}\r\n                        status={tc.status || 'success'}\r\n                      />\r\n                    ))}\r\n                  </div>\r\n                )}\r\n\r\n                <MarkdownContent\r\n                  content={msg.content}\r\n                  isStreaming={isStreaming}\r\n                  citations={msg.citations}\r\n                />\r\n\r\n                {/* Citations */}\r\n                {msg.citations && msg.citations.length > 0 && (\r\n                  <div className=\"mt-3 pt-2 border-t border-white/5\">\r\n                    <div className=\"text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5 flex items-center gap-1.5\">\r\n                      <Search size={10} />\r\n                      Sources\r\n                    </div>\r\n                    <div className=\"flex flex-wrap gap-2\">\r\n                      {msg.citations.map((cite, i) => (\r\n                        <a\r\n                          key={i}\r\n                          id={`cite-${cite.id}`}\r\n                          href={cite.url}\r\n                          target=\"_blank\"\r\n                          rel=\"noopener noreferrer\"\r\n                          className=\"inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all\"\r\n                        >\r\n                          <Globe size={9} />\r\n                          <span className=\"truncate max-w-[200px]\">\r\n                            {cite.source || cite.title || cite.url}\r\n                          </span>\r\n                        </a>\r\n                      ))}\r\n                    </div>\r\n                  </div>\r\n                )}\r\n\r\n                {/* Footer: metrics + copy — fades in on hover */}\r\n                {!isStreaming && msg.content && (\r\n                  <div className=\"mt-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity duration-300\">\r\n                    <MessageActions\r\n                      index={index}\r\n                      content={msg.content}\r\n                      onRegenerate={onRegenerate}\r\n                      onBranch={onBranch}\r\n                      onCopy={onCopy}\r\n                      copiedId={copiedId}\r\n                      msgId={`msg-${index}`}\r\n                      isUser={false}\r\n                    />\r\n\r\n                    {msg.rolloutId && submitReward && (\r\n                      <div className=\"flex items-center gap-2 border-l border-white/5 pl-3.5\">\r\n                        <span className=\"text-[8.5px] text-zinc-600 font-bold uppercase tracking-wider select-none\">\r\n                          Helpful?\r\n                        </span>\r\n                        <button\r\n                          onClick={() => {\r\n                            submitReward(msg.rolloutId!, 1.0);\r\n                            msg.reward = 1.0;\r\n                            toast.success(\r\n                              'Thank you for your feedback! Evolving optimizations in background.'\r\n                            );\r\n                          }}\r\n                          className={`p-1 rounded text-zinc-500 hover:text-emerald-400 transition-colors cursor-pointer ${\r\n                            msg.reward === 1.0 ? 'text-emerald-400' : ''\r\n                          }`}\r\n                          title=\"Yes, accurate and helpful (+1.0 reward)\"\r\n                        >\r\n                          <ThumbsUp size={11} />\r\n                        </button>\r\n                        <button\r\n                          onClick={() => {\r\n                            submitReward(msg.rolloutId!, 0.0);\r\n                            msg.reward = 0.0;\r\n                            toast.error(\r\n                              'Feedback logged. Running simulated background optimization pass...'\r\n                            );\r\n                          }}\r\n                          className={`p-1 rounded text-zinc-500 hover:text-red-400 transition-colors cursor-pointer ${\r\n                            msg.reward === 0.0 ? 'text-red-400' : ''\r\n                          }`}\r\n                          title=\"No, hallucinated or inaccurate (0.0 reward)\"\r\n                        >\r\n                          <ThumbsDown size={11} />\r\n                        </button>\r\n                      </div>\r\n                    )}\r\n                  </div>\r\n                )}\r\n              </>\r\n            ) : (\r\n              <div className=\"text-zinc-500 text-xs italic\">Empty response from model.</div>\r\n            )}\r\n          </div>\r\n        )}\r\n      </motion.div>\r\n    );\r\n  }\r\n);"
+      }
+    ],
+    "token_count": 62,
+    "line_count": 193,
+    "fingerprint": "dup:bb098765",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (193 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 849,
+        "end_line": 895,
+        "start_col": 18,
+        "end_col": 17,
+        "fragment": "</div>\r\n                )}\r\n\r\n                {/* Citations */}\r\n                {msg.citations && msg.citations.length > 0 && (\r\n                  <div className=\"mt-3 pt-2 border-t border-white/5\">\r\n                    <div className=\"text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5 flex items-center gap-1.5\">\r\n                      <Search size={10} />\r\n                      Sources\r\n                    </div>\r\n                    <div className=\"flex flex-wrap gap-2\">\r\n                      {msg.citations.map((cite, i) => (\r\n                        <a\r\n                          key={i}\r\n                          id={`cite-${cite.id}`}\r\n                          href={cite.url}\r\n                          target=\"_blank\"\r\n                          rel=\"noopener noreferrer\"\r\n                          className=\"inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all\"\r\n                        >\r\n                          <Globe size={9} />\r\n                          <span className=\"truncate max-w-[200px]\">\r\n                            {cite.source || cite.title || cite.url}\r\n                          </span>\r\n                        </a>\r\n                      ))}\r\n                    </div>\r\n                  </div>\r\n                )}\r\n\r\n                {/* Actions */}\r\n                {!isStreaming && (\r\n                  <>\r\n                    <MessageActions\r\n                      index={index}\r\n                      content={msg.content}\r\n                      onCopy={onCopy}\r\n                      copiedId={copiedId}\r\n                      msgId={msgId}\r\n                      isUser={false}\r\n                      onRegenerate={onRegenerate}\r\n                      onBranch={onBranch}\r\n                      activeModel={activeModel}\r\n                    />\r\n                    <FeedbackButtons msg={msg} submitReward={submitReward} />\r\n                  </>\r\n                )"
+      },
+      {
+        "file": "src/features/coder/components/MessageList.tsx",
+        "start_line": 764,
+        "end_line": 798,
+        "start_col": 16,
+        "end_col": 44,
+        "fragment": "<MarkdownContent\r\n                  content={msg.content}\r\n                  isStreaming={isStreaming}\r\n                  citations={msg.citations}\r\n                />\r\n\r\n                {/* Citations */}\r\n                {msg.citations && msg.citations.length > 0 && (\r\n                  <div className=\"mt-3 pt-2 border-t border-white/5\">\r\n                    <div className=\"text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5 flex items-center gap-1.5\">\r\n                      <Search size={10} />\r\n                      Sources\r\n                    </div>\r\n                    <div className=\"flex flex-wrap gap-2\">\r\n                      {msg.citations.map((cite, i) => (\r\n                        <a\r\n                          key={i}\r\n                          id={`cite-${cite.id}`}\r\n                          href={cite.url}\r\n                          target=\"_blank\"\r\n                          rel=\"noopener noreferrer\"\r\n                          className=\"inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all\"\r\n                        >\r\n                          <Globe size={9} />\r\n                          <span className=\"truncate max-w-[200px]\">\r\n                            {cite.source || cite.title || cite.url}\r\n                          </span>\r\n                        </a>\r\n                      ))}\r\n                    </div>\r\n                  </div>\r\n                )}\r\n\r\n                {/* Footer: metrics + copy — fades in on hover */}\r\n                {!isStreaming && msg.content"
+      }
+    ],
+    "token_count": 110,
+    "line_count": 47,
+    "fingerprint": "dup:39c63819",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (47 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 922,
+        "end_line": 960,
+        "start_col": 31,
+        "end_col": 15,
+        "fragment": "onSuggestedPromptClick }) => (\r\n  <motion.div\r\n    initial={{ opacity: 0, y: 15 }}\r\n    animate={{ opacity: 1, y: 0 }}\r\n    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}\r\n    className=\"flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden\"\r\n  >\r\n    <div className=\"absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-full blur-[90px] pointer-events-none select-none -z-10 animate-pulse\" />\r\n\r\n    <motion.div\r\n      initial={{ opacity: 0 }}\r\n      animate={{ opacity: 1 }}\r\n      transition={{ delay: 0.15, duration: 0.6 }}\r\n      className=\"relative cursor-default flex items-center justify-center\"\r\n    >\r\n      <motion.div\r\n        animate={{ y: [0, -8, 0] }}\r\n        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}\r\n        className=\"relative flex items-center justify-center transform-gpu\"\r\n      >\r\n        <div className=\"absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-full blur-[45px] pointer-events-none select-none transform-gpu\" />\r\n        <Logo\r\n          size={90}\r\n          className=\"relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default\"\r\n        />\r\n      </motion.div>\r\n    </motion.div>\r\n\r\n    <div className=\"space-y-2 max-w-sm\">\r\n      <motion.h1\r\n        initial={{ opacity: 0, y: 8 }}\r\n        animate={{ opacity: 1, y: 0 }}\r\n        transition={{ delay: 0.3, duration: 0.5 }}\r\n        className=\"text-[20px] font-black tracking-tight text-foreground/80 leading-tight\"\r\n      >\r\n        Chat with{' '}\r\n        <span className=\"font-black text-foreground\">\r\n          NY<span className=\"text-[#FF3366]\">X</span>\r\n        </span>"
+      },
+      {
+        "file": "src/features/coder/components/MessageList.tsx",
+        "start_line": 477,
+        "end_line": 520,
+        "start_col": 31,
+        "end_col": 15,
+        "fragment": "onSuggestedPromptClick }) => (\r\n  <motion.div\r\n    initial={{ opacity: 0, y: 15 }}\r\n    animate={{ opacity: 1, y: 0 }}\r\n    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}\r\n    className=\"flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden\"\r\n  >\r\n    {/* Background warm aesthetic glow */}\r\n    <div className=\"absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-full blur-[90px] pointer-events-none select-none -z-10 animate-pulse\" />\r\n\r\n    {/* Elegant bird logo with entrance and floating animations split to prevent Lottie measurement glitch */}\r\n    <motion.div\r\n      initial={{ opacity: 0 }}\r\n      animate={{ opacity: 1 }}\r\n      transition={{ delay: 0.15, duration: 0.6 }}\r\n      className=\"relative cursor-default flex items-center justify-center\"\r\n    >\r\n      <motion.div\r\n        animate={{ y: [0, -8, 0] }}\r\n        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}\r\n        className=\"relative flex items-center justify-center transform-gpu\"\r\n      >\r\n        {/* Premium static hardware-accelerated logo glow */}\r\n        <div className=\"absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-full blur-[45px] pointer-events-none select-none transform-gpu\" />\r\n\r\n        <Logo\r\n          size={90}\r\n          className=\"relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default\"\r\n        />\r\n      </motion.div>\r\n    </motion.div>\r\n\r\n    {/* Typography Hierarchy */}\r\n    <div className=\"space-y-2 max-w-sm\">\r\n      <motion.h1\r\n        initial={{ opacity: 0, y: 8 }}\r\n        animate={{ opacity: 1, y: 0 }}\r\n        transition={{ delay: 0.3, duration: 0.5 }}\r\n        className=\"text-[20px] font-black tracking-tight text-foreground/80 leading-tight\"\r\n      >\r\n        How can{' '}\r\n        <span className=\"font-black text-foreground\">\r\n          NY<span className=\"text-[#FF3366]\">X</span>\r\n        </span>"
+      }
+    ],
+    "token_count": 156,
+    "line_count": 44,
+    "fingerprint": "dup:b0acd5f1",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (44 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 961,
+        "end_line": 998,
+        "start_col": 6,
+        "end_col": 1,
+        "fragment": "</motion.h1>\r\n      <motion.p\r\n        initial={{ opacity: 0, y: 8 }}\r\n        animate={{ opacity: 1, y: 0 }}\r\n        transition={{ delay: 0.4, duration: 0.5 }}\r\n        className=\"text-[10px] uppercase tracking-[0.25em] font-black text-muted-foreground/45 leading-relaxed\"\r\n      >\r\n        Conversational assistant page\r\n      </motion.p>\r\n    </div>\r\n\r\n    {suggestedPrompts && suggestedPrompts.length > 0 && (\r\n      <motion.div\r\n        initial={{ opacity: 0, y: 10 }}\r\n        animate={{ opacity: 1, y: 0 }}\r\n        transition={{ delay: 0.5, duration: 0.5 }}\r\n        className=\"grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl w-full mt-4\"\r\n      >\r\n        {suggestedPrompts.slice(0, 4).map((p, idx) => (\r\n          <motion.button\r\n            key={idx}\r\n            whileHover={{\r\n              scale: 1.01,\r\n              backgroundColor: 'rgba(255, 51, 102, 0.05)',\r\n              borderColor: 'rgba(255, 51, 102, 0.2)',\r\n            }}\r\n            whileTap={{ scale: 0.99 }}\r\n            onClick={() => onSuggestedPromptClick?.(p)}\r\n            className=\"p-4 text-[11px] font-bold text-left rounded-2xl bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm\"\r\n          >\r\n            <span>{p}</span>\r\n            <span className=\"text-[10px] text-[#FF3366]/70 font-extrabold ml-2\">➔</span>\r\n          </motion.button>\r\n        ))}\r\n      </motion.div>\r\n    )}\r\n  </motion.div>\r\n)"
+      },
+      {
+        "file": "src/features/coder/components/MessageList.tsx",
+        "start_line": 522,
+        "end_line": 560,
+        "start_col": 6,
+        "end_col": 1,
+        "fragment": "</motion.h1>\r\n      <motion.p\r\n        initial={{ opacity: 0, y: 8 }}\r\n        animate={{ opacity: 1, y: 0 }}\r\n        transition={{ delay: 0.4, duration: 0.5 }}\r\n        className=\"text-[10px] uppercase tracking-[0.25em] font-black text-muted-foreground/45 leading-relaxed\"\r\n      >\r\n        Native Local Intelligence & Cloud Swarm\r\n      </motion.p>\r\n    </div>\r\n\r\n    {/* Suggested Prompts Grid */}\r\n    {suggestedPrompts && suggestedPrompts.length > 0 && (\r\n      <motion.div\r\n        initial={{ opacity: 0, y: 10 }}\r\n        animate={{ opacity: 1, y: 0 }}\r\n        transition={{ delay: 0.5, duration: 0.5 }}\r\n        className=\"grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl w-full mt-4\"\r\n      >\r\n        {suggestedPrompts.slice(0, 4).map((p, idx) => (\r\n          <motion.button\r\n            key={idx}\r\n            whileHover={{\r\n              scale: 1.01,\r\n              backgroundColor: 'rgba(255, 51, 102, 0.05)',\r\n              borderColor: 'rgba(255, 51, 102, 0.2)',\r\n            }}\r\n            whileTap={{ scale: 0.99 }}\r\n            onClick={() => onSuggestedPromptClick?.(p)}\r\n            className=\"p-4 text-[11px] font-bold text-left rounded-2xl bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm\"\r\n          >\r\n            <span>{p}</span>\r\n            <span className=\"text-[10px] text-[#FF3366]/70 font-extrabold ml-2\">➔</span>\r\n          </motion.button>\r\n        ))}\r\n      </motion.div>\r\n    )}\r\n  </motion.div>\r\n)"
+      }
+    ],
+    "token_count": 157,
+    "line_count": 39,
+    "fingerprint": "dup:55f76fc0",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (39 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatMessageList.tsx",
+        "start_line": 1163,
+        "end_line": 1179,
+        "start_col": 18,
+        "end_col": 21,
+        "fragment": "</div>\r\n                </div>\r\n              );\r\n            })}\r\n          </div>\r\n        )}\r\n      </div>\r\n\r\n      {/* Jump to bottom button */}\r\n      <AnimatePresence>\r\n        {showJumpToBottom && (\r\n          <motion.button\r\n            initial={{ opacity: 0, scale: 0.85, y: 12 }}\r\n            animate={{ opacity: 1, scale: 1, y: 0 }}\r\n            exit={{ opacity: 0, scale: 0.85, y: 12 }}\r\n            onClick={jumpToBottom}\r\n            className"
+      },
+      {
+        "file": "src/features/coder/components/MessageList.tsx",
+        "start_line": 966,
+        "end_line": 993,
+        "start_col": 18,
+        "end_col": 21,
+        "fragment": "<MessageBubble\r\n                    msg={msg}\r\n                    index={virtualItem.index}\r\n                    activeAgent={activeAgent}\r\n                    onCopy={onCopy}\r\n                    copiedId={copiedId}\r\n                    subagentTasks={subagentTasks}\r\n                    submitReward={submitReward}\r\n                    onEdit={onEditMessage}\r\n                    onRegenerate={onRegenerate}\r\n                    onBranch={onBranchFromMessage}\r\n                  />\r\n                </div>\r\n              );\r\n            })}\r\n          </div>\r\n        )}\r\n      </div>\r\n\r\n      {/* Jump to bottom button */}\r\n      <AnimatePresence>\r\n        {showJumpToBottom && (\r\n          <motion.button\r\n            initial={{ opacity: 0, scale: 0.85, y: 12 }}\r\n            animate={{ opacity: 1, scale: 1, y: 0 }}\r\n            exit={{ opacity: 0, scale: 0.85, y: 12 }}\r\n            onClick={jumpToBottom}\r\n            className"
+      }
+    ],
+    "token_count": 50,
+    "line_count": 28,
+    "fingerprint": "dup:9b9ed7a7",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (28 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatPage.tsx",
+        "start_line": 198,
+        "end_line": 204,
+        "start_col": 8,
+        "end_col": 22,
+        "fragment": "copyToClipboard = useCallback((text: string, id: string) => {\r\n    navigator.clipboard\r\n      .writeText(text)\r\n      .then(() => {\r\n        setCopiedId(id);\r\n        setTimeout(() => setCopiedId(null), 2000);\r\n        toast.success("
+      },
+      {
+        "file": "src/features/orchestrator/components/OrchestratorUI.tsx",
+        "start_line": 588,
+        "end_line": 592,
+        "start_col": 8,
+        "end_col": 20,
+        "fragment": "handleCopy = useCallback((text: string, id: string) => {\r\n    navigator.clipboard.writeText(text).then(() => {\r\n      setCopiedId(id);\r\n      setTimeout(() => setCopiedId(null), 2000);\r\n      toast.success("
+      }
+    ],
+    "token_count": 57,
+    "line_count": 7,
+    "fingerprint": "dup:59e74e76",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (7 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/orchestrator/components/OrchestratorUI.tsx",
+        "start_line": 117,
+        "end_line": 133,
+        "start_col": 12,
+        "end_col": 33,
+        "fragment": "<span className=\"w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse ml-1\" />\r\n          )}\r\n          <span className=\"ml-auto\">\r\n            {expanded ? (\r\n              <ChevronDown size={12} className=\"text-[#555]\" />\r\n            ) : (\r\n              <ChevronRight size={12} className=\"text-[#555]\" />\r\n            )}\r\n          </span>\r\n        </button>\r\n\r\n        <AnimatePresence>\r\n          {expanded && (\r\n            <motion.div\r\n              initial={{ height: 0 }}\r\n              animate={{ height: 'auto' }}\r\n              exit={{ height: 0 }"
+      },
+      {
+        "file": "src/features/orchestrator/components/OrchestratorUI.tsx",
+        "start_line": 187,
+        "end_line": 202,
+        "start_col": 36,
+        "end_col": 31,
+        "fragment": "<AlertCircle size={12} className=\"text-red-400 ml-auto\" />}\r\n        <span className=\"ml-auto\">\r\n          {expanded ? (\r\n            <ChevronDown size={12} className=\"text-[#555]\" />\r\n          ) : (\r\n            <ChevronRight size={12} className=\"text-[#555]\" />\r\n          )}\r\n        </span>\r\n      </button>\r\n\r\n      <AnimatePresence>\r\n        {expanded && (\r\n          <motion.div\r\n            initial={{ height: 0 }}\r\n            animate={{ height: 'auto' }}\r\n            exit={{ height: 0 }"
+      }
+    ],
+    "token_count": 52,
+    "line_count": 17,
+    "fingerprint": "dup:75457812",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (17 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatPage.tsx",
+        "start_line": 25,
+        "end_line": 33,
+        "start_col": 24,
+        "end_col": 57,
+        "fragment": "{\r\n  allModels: ModelDefinition[];\r\n  apiKeys: Record<string, string>;\r\n  modelSettings: any;\r\n  trackUsage: (provider: string, tokens: number) => void;\r\n  setModelSettings: (settings: any) => void;\r\n  providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;\r\n  gatewayUrls?: Record<string, string>;\r\n  activeMode?: 'chat' | 'coder' | 'registry' | 'settings'"
+      },
+      {
+        "file": "src/features/coder/components/CoderPage.tsx",
+        "start_line": 38,
+        "end_line": 46,
+        "start_col": 25,
+        "end_col": 48,
+        "fragment": "{\r\n  allModels: ModelDefinition[];\r\n  apiKeys: Record<string, string>;\r\n  modelSettings: any;\r\n  trackUsage: (provider: string, tokens: number) => void;\r\n  setModelSettings: (settings: any) => void;\r\n  providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;\r\n  gatewayUrls?: Record<string, string>;\r\n  activeMode?: 'coder' | 'registry' | 'settings'"
+      }
+    ],
+    "token_count": 50,
+    "line_count": 9,
+    "fingerprint": "dup:3de38b9c",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (9 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatPage.tsx",
+        "start_line": 144,
+        "end_line": 167,
+        "start_col": 8,
+        "end_col": 16,
+        "fragment": "[settingsOpen, setSettingsOpen] = useState(false);\r\n\r\n  // --- Model resolution ---\r\n  const currentModelId = models['nyx'];\r\n\r\n  const mergedModels = useMemo(() => {\r\n    const seenIds = new Set<string>();\r\n    return allModels.filter((m) => {\r\n      if (seenIds.has(m.id)) return false;\r\n      seenIds.add(m.id);\r\n      return true;\r\n    });\r\n  }, [allModels]);\r\n\r\n  const currentModel = useMemo(() => {\r\n    if (!currentModelId) return null;\r\n    return mergedModels.find((m) => m.id === currentModelId) || null;\r\n  }, [currentModelId, mergedModels]);\r\n\r\n  // --- Context window token estimation ---\r\n  const contextTokens = useMemo(() => {\r\n    const totalChars = history.reduce((acc, msg) => acc + (msg.content?.length || 0), 0);\r\n    return Math.round(totalChars / 4);\r\n  }, [history]);"
+      },
+      {
+        "file": "src/features/coder/components/CoderPage.tsx",
+        "start_line": 197,
+        "end_line": 224,
+        "start_col": 8,
+        "end_col": 50,
+        "fragment": "[isCreatingProject, setIsCreatingProject] = useState(false);\r\n\r\n  const currentModelId = models['nyx'];\r\n\r\n  const mergedModels = useMemo(() => {\r\n    const seenIds = new Set();\r\n    return allModels.filter((m) => {\r\n      if (seenIds.has(m.id)) return false;\r\n      seenIds.add(m.id);\r\n      return true;\r\n    });\r\n  }, [allModels]);\r\n\r\n  const currentModel = useMemo(() => {\r\n    if (!currentModelId) return null;\r\n    return mergedModels.find((m) => m.id === currentModelId) || null;\r\n  }, [currentModelId, mergedModels]);\r\n\r\n  const badgeStatus = useMemo(() => {\r\n    if (isLoading) return 'loading';\r\n    if (!currentModel) return 'no_key';\r\n    const provider = currentModel.provider;\r\n    const status = providerStatuses[provider];\r\n    if (status === 'online') return 'success';\r\n    if (status === 'offline') return 'offline';\r\n    if (status === 'no-key') return 'no_key';\r\n    return 'success';\r\n  }, [isLoading, currentModel, providerStatuses]);"
+      }
+    ],
+    "token_count": 122,
+    "line_count": 28,
+    "fingerprint": "dup:fcf8431a",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (28 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/coder/components/CoderPage.tsx",
+        "start_line": 612,
+        "end_line": 650,
+        "start_col": 20,
+        "end_col": 18,
+        "fragment": "activeAgent={activeAgent}\r\n                    isLoading={isLoading}\r\n                    onCopy={copyToClipboard}\r\n                    copiedId={copiedId}\r\n                    suggestedPrompts={suggestedPrompts}\r\n                    onSuggestedPromptClick={setPrompt}\r\n                    subagentTasks={subagentTasks}\r\n                    submitReward={submitReward}\r\n                    onEditMessage={editMessage}\r\n                    onRegenerate={regenerateMessage}\r\n                    onBranchFromMessage={(idx) => forkAndRun(idx, history[idx]?.content || '')}\r\n                  />\r\n                </ErrorBoundary>\r\n                <PromptInput\r\n                  prompt={prompt}\r\n                  onPromptChange={setPrompt}\r\n                  onSubmit={handleSubmit}\r\n                  isLoading={isLoading}\r\n                  onStop={stopCoder}\r\n                  currentModelId={currentModelId}\r\n                  currentModel={currentModel}\r\n                  allModels={allModels}\r\n                  providerStatuses={providerStatuses}\r\n                  gatewayUrls={gatewayUrls}\r\n                  onModelSelect={setModel}\r\n                  onClearHistory={clearHistory}\r\n                  onModelSettingsChange={setModelSettings}\r\n                  modelSettings={modelSettings}\r\n                  suggestedPrompts={suggestedPrompts}\r\n                  getCustomModelIcon={getCustomModelIcon}\r\n                  webSearchEnabled={webSearchEnabled}\r\n                  onWebSearchToggle={setWebSearchEnabled}\r\n                  codebaseKnowledgeEnabled={codebaseKnowledgeEnabled}\r\n                  onCodebaseKnowledgeToggle={setCodebaseKnowledgeEnabled}\r\n                  mode=\"code\"\r\n                  alignDropdown=\"top\"\r\n                  agentMode={agentMode}\r\n                  agentReasoning={agentReasoning}\r\n                />"
+      },
+      {
+        "file": "src/features/coder/components/CoderPage.tsx",
+        "start_line": 664,
+        "end_line": 703,
+        "start_col": 18,
+        "end_col": 16,
+        "fragment": "activeAgent={activeAgent}\r\n                  isLoading={isLoading}\r\n                  onCopy={copyToClipboard}\r\n                  copiedId={copiedId}\r\n                  suggestedPrompts={suggestedPrompts}\r\n                  onSuggestedPromptClick={setPrompt}\r\n                  subagentTasks={subagentTasks}\r\n                  submitReward={submitReward}\r\n                  onEditMessage={editMessage}\r\n                  onRegenerate={regenerateMessage}\r\n                  onBranchFromMessage={(idx) => forkAndRun(idx, history[idx]?.content || '')}\r\n                />\r\n              </ErrorBoundary>\r\n\r\n              <PromptInput\r\n                prompt={prompt}\r\n                onPromptChange={setPrompt}\r\n                onSubmit={handleSubmit}\r\n                isLoading={isLoading}\r\n                onStop={stopCoder}\r\n                currentModelId={currentModelId}\r\n                currentModel={currentModel}\r\n                allModels={allModels}\r\n                providerStatuses={providerStatuses}\r\n                gatewayUrls={gatewayUrls}\r\n                onModelSelect={setModel}\r\n                onClearHistory={clearHistory}\r\n                onModelSettingsChange={setModelSettings}\r\n                modelSettings={modelSettings}\r\n                suggestedPrompts={suggestedPrompts}\r\n                getCustomModelIcon={getCustomModelIcon}\r\n                webSearchEnabled={webSearchEnabled}\r\n                onWebSearchToggle={setWebSearchEnabled}\r\n                codebaseKnowledgeEnabled={codebaseKnowledgeEnabled}\r\n                onCodebaseKnowledgeToggle={setCodebaseKnowledgeEnabled}\r\n                mode=\"code\"\r\n                alignDropdown=\"top\"\r\n                agentMode={agentMode}\r\n                agentReasoning={agentReasoning}\r\n              />"
+      }
+    ],
+    "token_count": 97,
+    "line_count": 40,
+    "fingerprint": "dup:debae2ec",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (40 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/dashboard/hooks/useDashboardState.ts",
+        "start_line": 135,
+        "end_line": 144,
+        "start_col": 8,
+        "end_col": 13,
+        "fragment": "try {\r\n          const listRes = await ipc.invoke('vault:list-keys');\r\n          if (listRes.success && Array.isArray(listRes.data)) {\r\n            const keys: Record<string, string> = {};\r\n            for (const provider of listRes.data) {\r\n              const getRes = await ipc.invoke('vault:get-key', { provider });\r\n              if (getRes.success && getRes.data) {\r\n                keys[provider] = getRes.data;\r\n              }\r\n            }"
+      },
+      {
+        "file": "src/shared/store/useNyxStore.ts",
+        "start_line": 237,
+        "end_line": 246,
+        "start_col": 10,
+        "end_col": 15,
+        "fragment": "try {\r\n            const listRes = await ipc.invoke('vault:list-keys');\r\n            if (listRes.success && Array.isArray(listRes.data)) {\r\n              const keys: Record<string, string> = {};\r\n              for (const provider of listRes.data) {\r\n                const getRes = await ipc.invoke('vault:get-key', { provider });\r\n                if (getRes.success && getRes.data) {\r\n                  keys[provider] = getRes.data;\r\n                }\r\n              }"
+      }
+    ],
+    "token_count": 87,
+    "line_count": 10,
+    "fingerprint": "dup:bf5e04b3",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (10 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/dashboard/hooks/useDashboardState.ts",
+        "start_line": 188,
+        "end_line": 208,
+        "start_col": 12,
+        "end_col": 20,
+        "fragment": "data.models && Array.isArray(data.models)) {\r\n          const completed = data.models\r\n            .filter((m: any) => m.status === 'completed' || m.status === 'downloading')\r\n            .map((m: any) => ({\r\n              id: m.id,\r\n              name: m.name,\r\n              provider: 'nyx-native',\r\n              description: m.description || `Local GGUF model (${m.size || ''})`,\r\n              specs: {\r\n                contextWindow: m.contextLength || '8K',\r\n                trainingData: 'N/A',\r\n                maxOutput: 'N/A',\r\n                modality: 'Text',\r\n              },\r\n              status: m.status,\r\n            }));\r\n          setLocalLibraryModels(completed);\r\n        }\r\n      }\r\n    } catch (err: any) {\r\n      console.error("
+      },
+      {
+        "file": "src/shared/components/ModelSelector.tsx",
+        "start_line": 109,
+        "end_line": 129,
+        "start_col": 24,
+        "end_col": 22,
+        "fragment": "data.models && Array.isArray(data.models)) {\r\n            const completed = data.models\r\n              .filter((m: any) => m.status === 'completed' || m.status === 'downloading')\r\n              .map((m: any) => ({\r\n                id: m.id,\r\n                name: m.name,\r\n                provider: 'nyx-native',\r\n                description: m.description || `Local GGUF model (${m.size || ''})`,\r\n                specs: {\r\n                  contextWindow: m.contextLength || '8K',\r\n                  trainingData: 'N/A',\r\n                  maxOutput: 'N/A',\r\n                  modality: 'Text',\r\n                },\r\n                status: m.status,\r\n              }));\r\n            setLocalLibraryModels(completed);\r\n          }\r\n        }\r\n      } catch (err: any) {\r\n        console.error("
+      }
+    ],
+    "token_count": 121,
+    "line_count": 21,
+    "fingerprint": "dup:c97e739d",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (21 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/settings/components/CacheClean.tsx",
+        "start_line": 35,
+        "end_line": 55,
+        "start_col": 8,
+        "end_col": 20,
+        "fragment": "totalCalls = cacheStats.hits + cacheStats.misses;\r\n\r\n  return (\r\n    <div className=\"mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg\">\r\n      <div className=\"absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity\" />\r\n\r\n      <div className=\"flex items-center justify-between mb-4\">\r\n        <div>\r\n          <p className=\"text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]\">\r\n            CACHE STORAGE MANAGER\r\n          </p>\r\n          <h3 className=\"text-xs font-bold text-foreground mt-0.5\">\r\n            Persistent Query Acceleration\r\n          </h3>\r\n        </div>\r\n        <span className=\"text-[10px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-2 py-0.5 rounded-full border border-[#FF3366]/20\">\r\n          Active Server\r\n        </span>\r\n      </div>\r\n\r\n      <div className"
+      },
+      {
+        "file": "src/features/settings/components/WorkspaceConfig.tsx",
+        "start_line": 33,
+        "end_line": 76,
+        "start_col": 8,
+        "end_col": 20,
+        "fragment": "handleInputWorkspace = async (e: React.KeyboardEvent<HTMLInputElement>) => {\r\n    if (e.key === 'Enter') {\r\n      e.preventDefault();\r\n      const val = e.currentTarget.value.trim();\r\n      if (val) {\r\n        try {\r\n          const res = await fetchWithAuth('/api/v1/workspace', {\r\n            method: 'POST',\r\n            headers: { 'Content-Type': 'application/json' },\r\n            body: JSON.stringify({ path: val }),\r\n          });\r\n          if (res.ok) {\r\n            const data = await res.json();\r\n            setWorkspacePath(data.workspace);\r\n            toast.success(`Workspace updated to: ${data.workspace}`);\r\n            e.currentTarget.value = '';\r\n          } else {\r\n            const err = await res.json();\r\n            toast.error(`Error: ${err.error}`);\r\n          }\r\n        } catch (error: any) {\r\n          toast.error(`Failed to update workspace: ${error.message}`);\r\n        }\r\n      }\r\n    }\r\n  };\r\n\r\n  return (\r\n    <div className=\"mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg\">\r\n      <div className=\"absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity\" />\r\n\r\n      <div className=\"flex items-center justify-between mb-4\">\r\n        <div>\r\n          <p className=\"text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]\">\r\n            WORKSPACE CONFIGURATOR\r\n          </p>\r\n          <h3 className=\"text-xs font-bold text-foreground mt-0.5\">Codebase Scanning Scope</h3>\r\n        </div>\r\n        <span className=\"text-[10px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-2 py-0.5 rounded-full border border-[#FF3366]/20\">\r\n          File Index Target\r\n        </span>\r\n      </div>\r\n\r\n      <div className"
+      }
+    ],
+    "token_count": 53,
+    "line_count": 44,
+    "fingerprint": "dup:c52440d4",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (44 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

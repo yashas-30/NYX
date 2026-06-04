@@ -1,0 +1,378 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 39,
+        "end_line": 46,
+        "start_col": 2,
+        "end_col": 51,
+        "fragment": "apiKeys: Record<string, string>;\r\n  modelSettings: AISettings;\r\n  trackUsage: (provider: string, tokens: number) => void;\r\n  history: ChatMessage[];\r\n  updateHistory: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;\r\n  updateMetrics: (metrics: TelemetryMetrics) => void;\r\n  getSuggestions: (history: ChatMessage[]) => void;\r\n  setSuggestedPrompts: (prompts: string[]) => void;"
+      },
+      {
+        "file": "src/features/coder/hooks/useAgentPipeline.ts",
+        "start_line": 28,
+        "end_line": 35,
+        "start_col": 2,
+        "end_col": 51,
+        "fragment": "agentPersonas: Record<'nyx', AgentPersona>;\r\n  modelSettings: AISettings;\r\n  trackUsage: (provider: string, tokens: number) => void;\r\n  history: ChatMessage[];\r\n  updateHistory: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;\r\n  updateMetrics: (metrics: TelemetryMetrics) => void;\r\n  getSuggestions: (history: ChatMessage[]) => void;\r\n  setSuggestedPrompts: (prompts: string[]) => void;"
+      }
+    ],
+    "token_count": 56,
+    "line_count": 8,
+    "fingerprint": "dup:289af3c7",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (8 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 239,
+        "end_line": 246,
+        "start_col": 14,
+        "end_col": 27,
+        "fragment": "accumulatedText += delta;\r\n\r\n              safeUpdateHistory((prev) => {\r\n                const next = [...prev];\r\n                const last = next[next.length - 1];\r\n                if (last?.role === 'assistant') {\r\n                  next[next.length - 1] = {\r\n                    ...last"
+      },
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 263,
+        "end_line": 270,
+        "start_col": 14,
+        "end_col": 27,
+        "fragment": "accumulatedReasoning += delta;\r\n\r\n              safeUpdateHistory((prev) => {\r\n                const next = [...prev];\r\n                const last = next[next.length - 1];\r\n                if (last?.role === 'assistant') {\r\n                  next[next.length - 1] = {\r\n                    ...last"
+      }
+    ],
+    "token_count": 52,
+    "line_count": 8,
+    "fingerprint": "dup:17a1925b",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (8 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 239,
+        "end_line": 247,
+        "start_col": 14,
+        "end_col": 27,
+        "fragment": "accumulatedText += delta;\r\n\r\n              safeUpdateHistory((prev) => {\r\n                const next = [...prev];\r\n                const last = next[next.length - 1];\r\n                if (last?.role === 'assistant') {\r\n                  next[next.length - 1] = {\r\n                    ...last,\r\n                    content"
+      },
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 683,
+        "end_line": 694,
+        "start_col": 16,
+        "end_col": 23,
+        "fragment": "enrichedMetrics = {\r\n            ...finalMetrics,\r\n            finishReason,\r\n          };\r\n\r\n          safeUpdateHistory((prev) => {\r\n            const next = [...prev];\r\n            const last = next[next.length - 1];\r\n            if (last?.role === 'assistant') {\r\n              next[next.length - 1] = {\r\n                ...last,\r\n                content"
+      }
+    ],
+    "token_count": 51,
+    "line_count": 12,
+    "fingerprint": "dup:4cee906b",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (12 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 303,
+        "end_line": 309,
+        "start_col": 60,
+        "end_col": 27,
+        "fragment": ");\r\n              safeUpdateHistory((prev) => {\r\n                const next = [...prev];\r\n                const last = next[next.length - 1];\r\n                if (last?.role === 'assistant') {\r\n                  next[next.length - 1] = {\r\n                    ...last"
+      },
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 326,
+        "end_line": 332,
+        "start_col": 35,
+        "end_col": 29,
+        "fragment": ");\r\n                safeUpdateHistory((prev) => {\r\n                  const next = [...prev];\r\n                  const last = next[next.length - 1];\r\n                  if (last?.role === 'assistant') {\r\n                    next[next.length - 1] = {\r\n                      ...last"
+      },
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 345,
+        "end_line": 351,
+        "start_col": 39,
+        "end_col": 29,
+        "fragment": ");\r\n                safeUpdateHistory((prev) => {\r\n                  const next = [...prev];\r\n                  const last = next[next.length - 1];\r\n                  if (last?.role === 'assistant') {\r\n                    next[next.length - 1] = {\r\n                      ...last"
+      }
+    ],
+    "token_count": 52,
+    "line_count": 7,
+    "fingerprint": "dup:aa1f2c8d",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (7 lines, 3 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 367,
+        "end_line": 381,
+        "start_col": 14,
+        "end_col": 45,
+        "fragment": "if (chunk.metadata) {\r\n                const meta = chunk.metadata as any;\r\n                const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;\r\n                const latency = meta.latencyMs || meta.latency || 0;\r\n                const tps =\r\n                  meta.tokensPerSecond || meta.tps || (latency > 0 ? tokens / (latency / 1000) : 0);\r\n\r\n                const mappedMetrics: TelemetryMetrics = {\r\n                  latency,\r\n                  tokens,\r\n                  tps,\r\n                  ttft: meta.ttft,\r\n                };\r\n\r\n                finalMetrics = mappedMetrics;"
+      },
+      {
+        "file": "src/features/coder/hooks/useAgentPipeline.ts",
+        "start_line": 255,
+        "end_line": 269,
+        "start_col": 14,
+        "end_col": 45,
+        "fragment": "if (chunk.metadata) {\r\n                const meta = chunk.metadata as any;\r\n                const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;\r\n                const latency = meta.latencyMs || meta.latency || 0;\r\n                const tps =\r\n                  meta.tokensPerSecond || meta.tps || (latency > 0 ? tokens / (latency / 1000) : 0);\r\n\r\n                const mappedMetrics: TelemetryMetrics = {\r\n                  latency,\r\n                  tokens,\r\n                  tps,\r\n                  ttft: meta.ttft,\r\n                };\r\n\r\n                finalMetrics = mappedMetrics;"
+      }
+    ],
+    "token_count": 89,
+    "line_count": 15,
+    "fingerprint": "dup:899506a6",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (15 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/hooks/useChatPipeline.ts",
+        "start_line": 369,
+        "end_line": 379,
+        "start_col": 16,
+        "end_col": 17,
+        "fragment": "const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;\r\n                const latency = meta.latencyMs || meta.latency || 0;\r\n                const tps =\r\n                  meta.tokensPerSecond || meta.tps || (latency > 0 ? tokens / (latency / 1000) : 0);\r\n\r\n                const mappedMetrics: TelemetryMetrics = {\r\n                  latency,\r\n                  tokens,\r\n                  tps,\r\n                  ttft: meta.ttft,\r\n                }"
+      },
+      {
+        "file": "src/features/coder/hooks/pipeline/useMetricsTracker.ts",
+        "start_line": 14,
+        "end_line": 23,
+        "start_col": 6,
+        "end_col": 7,
+        "fragment": "const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;\r\n      const latency = meta.latencyMs || meta.latency || 0;\r\n      const tps = meta.tokensPerSecond || meta.tps || (latency > 0 ? tokens / (latency / 1000) : 0);\r\n\r\n      const mappedMetrics: TelemetryMetrics = {\r\n        latency,\r\n        tokens,\r\n        tps,\r\n        ttft: meta.ttft,\r\n      }"
+      },
+      {
+        "file": "src/features/coder/hooks/useAgentPipeline.ts",
+        "start_line": 257,
+        "end_line": 267,
+        "start_col": 16,
+        "end_col": 17,
+        "fragment": "const tokens = meta.totalTokens || meta.tokens || meta.total_tokens || 0;\r\n                const latency = meta.latencyMs || meta.latency || 0;\r\n                const tps =\r\n                  meta.tokensPerSecond || meta.tps || (latency > 0 ? tokens / (latency / 1000) : 0);\r\n\r\n                const mappedMetrics: TelemetryMetrics = {\r\n                  latency,\r\n                  tokens,\r\n                  tps,\r\n                  ttft: meta.ttft,\r\n                }"
+      }
+    ],
+    "token_count": 69,
+    "line_count": 11,
+    "fingerprint": "dup:82edba0d",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (11 lines, 3 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/coder/hooks/pipeline/useBackgroundTasks.ts",
+        "start_line": 11,
+        "end_line": 45,
+        "start_col": 2,
+        "end_col": 22,
+        "fragment": "const triggerBackgroundCritic = useCallback(\r\n    async (prompt: string, responseText: string, complexity?: string) => {\r\n      // Skip critic for trivial/simple prompts — saves tokens and reduces noise\r\n      const trivialComplexities = ['trivial', 'simple'];\r\n      if (complexity && trivialComplexities.includes(complexity)) {\r\n        console.debug(\r\n          '[BackgroundCritic] Skipping critic for low-complexity prompt (complexity:',\r\n          complexity,\r\n          ')'\r\n        );\r\n        return;\r\n      }\r\n      // Also skip very short responses (< 200 chars) — likely single-line completions\r\n      if (responseText.trim().length < 200) {\r\n        console.debug(\r\n          '[BackgroundCritic] Skipping critic — response too short for meaningful evaluation'\r\n        );\r\n        return;\r\n      }\r\n\r\n      const nyxModel = models['nyx'];\r\n      if (!nyxModel) return;\r\n      const activeProvider = detectProvider(nyxModel);\r\n      const apiKey = getEffectiveApiKey(activeProvider, apiKeys) || '';\r\n\r\n      try {\r\n        await triggerCritic({\r\n          prompt,\r\n          response: responseText,\r\n          apiKey,\r\n          provider: activeProvider,\r\n          modelId: nyxModel,\r\n        });\r\n      } catch (err: any) {\r\n        console.error("
+      },
+      {
+        "file": "src/features/coder/hooks/useAgentPipeline.ts",
+        "start_line": 79,
+        "end_line": 113,
+        "start_col": 2,
+        "end_col": 22,
+        "fragment": "const triggerBackgroundCritic = useCallback(\r\n    async (prompt: string, responseText: string, complexity?: string) => {\r\n      // UGLY-3 fix: Skip critic for trivial/simple prompts — saves tokens and reduces noise\r\n      const trivialComplexities = ['trivial', 'simple'];\r\n      if (complexity && trivialComplexities.includes(complexity)) {\r\n        console.debug(\r\n          '[BackgroundCritic] Skipping critic for low-complexity prompt (complexity:',\r\n          complexity,\r\n          ')'\r\n        );\r\n        return;\r\n      }\r\n      // Also skip very short responses (< 200 chars) — likely single-line completions\r\n      if (responseText.trim().length < 200) {\r\n        console.debug(\r\n          '[BackgroundCritic] Skipping critic — response too short for meaningful evaluation'\r\n        );\r\n        return;\r\n      }\r\n\r\n      const nyxModel = models['nyx'];\r\n      if (!nyxModel) return;\r\n      const activeProvider = detectProvider(nyxModel);\r\n      const apiKey = getEffectiveApiKey(activeProvider, apiKeys) || '';\r\n\r\n      try {\r\n        await triggerCritic({\r\n          prompt,\r\n          response: responseText,\r\n          apiKey,\r\n          provider: activeProvider,\r\n          modelId: nyxModel,\r\n        });\r\n      } catch (err: any) {\r\n        console.error("
+      }
+    ],
+    "token_count": 148,
+    "line_count": 35,
+    "fingerprint": "dup:27d33c88",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (35 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/coder/hooks/pipeline/usePromptAnalysis.ts",
+        "start_line": 24,
+        "end_line": 43,
+        "start_col": 6,
+        "end_col": 28,
+        "fragment": "const analysis = analyzePrompt(prompt);\r\n      const route = routeToAgent(analysis);\r\n\r\n      // Step 2: Show routing decision to user\r\n      setAgentMode(route.agent);\r\n      setAgentReasoning(route.reasoning);\r\n\r\n      // Step 3: Check for missing debug details\r\n      if (analysis.intent === 'code_debug' && isMissingDebugDetails(prompt, 'debug')) {\r\n        updateHistory((prev) => [\r\n          ...prev,\r\n          {\r\n            role: 'assistant',\r\n            content: MISSING_DEBUG_DETAILS_RESPONSE,\r\n            timestamp: Date.now(),\r\n            status: 'success',\r\n          },\r\n        ]);\r\n        toast.error('Please provide your code or error logs');\r\n        setIsLoading(false);"
+      },
+      {
+        "file": "src/features/coder/hooks/useAgentPipeline.ts",
+        "start_line": 146,
+        "end_line": 165,
+        "start_col": 8,
+        "end_col": 30,
+        "fragment": "const analysis = analyzePrompt(prompt);\r\n        const route = routeToAgent(analysis);\r\n\r\n        // Step 2: Show routing decision to user\r\n        setAgentMode(route.agent);\r\n        setAgentReasoning(route.reasoning);\r\n\r\n        // Step 3: Execute Coder Agent pipeline\r\n        if (analysis.intent === 'code_debug' && isMissingDebugDetails(prompt, 'debug')) {\r\n          updateHistory((prev) => [\r\n            ...prev,\r\n            {\r\n              role: 'assistant',\r\n              content: MISSING_DEBUG_DETAILS_RESPONSE,\r\n              timestamp: Date.now(),\r\n              status: 'success',\r\n            },\r\n          ]);\r\n          toast.error('Please provide your code or error logs');\r\n          setIsLoading(false);"
+      }
+    ],
+    "token_count": 95,
+    "line_count": 20,
+    "fingerprint": "dup:bdbe61ab",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (20 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/coder/hooks/pipeline/useStreamProcessor.ts",
+        "start_line": 19,
+        "end_line": 32,
+        "start_col": 6,
+        "end_col": 27,
+        "fragment": "for await (const chunk of agentStream) {\r\n        switch (chunk.type) {\r\n          case 'thinking':\r\n            updateHistory((prev) => {\r\n              const h = [...prev];\r\n              const last = h[h.length - 1];\r\n              if (last?.role === 'assistant') {\r\n                last.content = `_${chunk.content}_`;\r\n              }\r\n              return h;\r\n            });\r\n            break;\r\n\r\n          case 'file_write'"
+      },
+      {
+        "file": "src/features/coder/hooks/useAgentPipeline.ts",
+        "start_line": 217,
+        "end_line": 234,
+        "start_col": 8,
+        "end_col": 29,
+        "fragment": "for await (const chunk of agent.streamResponse(\r\n          prompt,\r\n          analysis,\r\n          route,\r\n          controller.signal\r\n        )) {\r\n          switch (chunk.type) {\r\n            case 'thinking':\r\n              updateHistory((prev) => {\r\n                const h = [...prev];\r\n                const last = h[h.length - 1];\r\n                if (last?.role === 'assistant') {\r\n                  last.content = `_${chunk.content}_`;\r\n                }\r\n                return h;\r\n              });\r\n              break;\r\n            case 'file_write'"
+      }
+    ],
+    "token_count": 66,
+    "line_count": 18,
+    "fingerprint": "dup:253c490b",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (18 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/coder/hooks/pipeline/useStreamProcessor.ts",
+        "start_line": 49,
+        "end_line": 56,
+        "start_col": 12,
+        "end_col": 15,
+        "fragment": "updateHistory((prev) => {\r\n              const h = [...prev];\r\n              const last = h[h.length - 1];\r\n              if (last?.role === 'assistant') {\r\n                last.content = chunk.content || '';\r\n              }\r\n              return h;\r\n            });"
+      },
+      {
+        "file": "src/features/coder/hooks/useAgentPipeline.ts",
+        "start_line": 283,
+        "end_line": 290,
+        "start_col": 16,
+        "end_col": 19,
+        "fragment": "updateHistory((prev) => {\r\n                  const h = [...prev];\r\n                  const last = h[h.length - 1];\r\n                  if (last?.role === 'assistant') {\r\n                    last.content = chunk.content || '';\r\n                  }\r\n                  return h;\r\n                });"
+      }
+    ],
+    "token_count": 53,
+    "line_count": 8,
+    "fingerprint": "dup:b1e0f52a",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (8 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

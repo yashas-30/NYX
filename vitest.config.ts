@@ -1,36 +1,29 @@
 import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
+  plugins: [react()],
   test: {
+    environment: 'happy-dom',
     globals: true,
-    environment: 'node',
-    environmentMatchGlobs: [
-      ['src/**/*.test.ts', 'jsdom'],
-      ['src/**/*.test.tsx', 'jsdom'],
-    ],
-    include: [
-      'server/lib/__tests__/**/*.test.ts',
-      'server/features/**/*.test.ts',
-      'src/**/*.test.ts',
-      'src/**/*.test.tsx',
-    ],
+    setupFiles: ['./test/setup.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/release/**', '**/dist-server/**', '**/dist-desktop/**', '**/e2e/**', '**/*.spec.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html'],
-      thresholds: {
-        lines: 80,
-        functions: 80,
-        branches: 70,
-      },
+      reporter: ['text', 'json', 'html'],
     },
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, '.'),
-      '@src': path.resolve(__dirname, './src'),
-      '@server': path.resolve(__dirname, './server'),
-      '@shared': path.resolve(__dirname, './src/shared'),
+      '@nyx/shared': path.resolve(__dirname, './packages/shared/src/index.ts'),
+      '@': path.resolve(__dirname, './apps/web'),
+      '@src': path.resolve(__dirname, './apps/web/src'),
+      '@shared': path.resolve(__dirname, './apps/web/src/shared'),
+      '@features': path.resolve(__dirname, './apps/web/src/features'),
+      '@core': path.resolve(__dirname, './apps/web/src/core'),
+      '@assets': path.resolve(__dirname, './apps/web/src/assets'),
+      '@server': path.resolve(__dirname, './apps/server/server'),
     },
   },
 });

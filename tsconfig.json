@@ -37,15 +37,13 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
+  "files": [],
   "exclude": ["node_modules", "dist", "scratch", ".nyx-cache", ".nyx-models"],
-  "include": [
-    "src/**/*",
-    "electron/**/*",
-    "server/**/*",
-    "shared/**/*",
-    "electron.vite.config.ts",
-    "vite.config.ts",
-    "server.ts"
+  "include": [],
+  "references": [
+    { "path": "./apps/server" },
+    { "path": "./apps/web" },
+    { "path": "./packages/shared" }
   ],
   "watchOptions": {
     "excludeDirectories": [

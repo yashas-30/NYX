@@ -1,0 +1,11 @@
+{
+  "extends": "../../packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@server/*": ["./server/*"],
+      "@nyx/shared": ["../../packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["server.ts", "server/**/*", "drizzle.config.ts"]
+}

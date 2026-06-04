@@ -1,0 +1,98 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/features/orchestrator/hooks/useOrchestrator.ts",
+        "start_line": 343,
+        "end_line": 350,
+        "start_col": 37,
+        "end_col": 36,
+        "fragment": ");\r\n\r\n              setState((prev) => {\r\n                const msgs = [...prev.messages];\r\n                const lastIdx = msgs.findIndex((m) => m.id === assistantId);\r\n                if (lastIdx !== -1) {\r\n                  msgs[lastIdx] = {\r\n                    ...msgs[lastIdx]"
+      },
+      {
+        "file": "src/features/orchestrator/hooks/useOrchestrator.ts",
+        "start_line": 425,
+        "end_line": 431,
+        "start_col": 37,
+        "end_col": 52,
+        "fragment": ");\r\n\r\n              setState((prev) => {\r\n                const msgs = [...prev.messages];\r\n                const lastIdx = msgs.findIndex((m) => m.id === assistantId);\r\n                if (lastIdx !== -1) {\r\n                  msgs[lastIdx] = { ...msgs[lastIdx]"
+      },
+      {
+        "file": "src/features/orchestrator/hooks/useOrchestrator.ts",
+        "start_line": 445,
+        "end_line": 451,
+        "start_col": 37,
+        "end_col": 52,
+        "fragment": ");\r\n\r\n              setState((prev) => {\r\n                const msgs = [...prev.messages];\r\n                const lastIdx = msgs.findIndex((m) => m.id === assistantId);\r\n                if (lastIdx !== -1) {\r\n                  msgs[lastIdx] = { ...msgs[lastIdx]"
+      }
+    ],
+    "token_count": 62,
+    "line_count": 8,
+    "fingerprint": "dup:31685e57",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (8 lines, 3 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/orchestrator/hooks/useOrchestrator.ts",
+        "start_line": 343,
+        "end_line": 350,
+        "start_col": 14,
+        "end_col": 36,
+        "fragment": "thinkingSteps.push(step);\r\n\r\n              setState((prev) => {\r\n                const msgs = [...prev.messages];\r\n                const lastIdx = msgs.findIndex((m) => m.id === assistantId);\r\n                if (lastIdx !== -1) {\r\n                  msgs[lastIdx] = {\r\n                    ...msgs[lastIdx]"
+      },
+      {
+        "file": "src/features/orchestrator/hooks/useOrchestrator.ts",
+        "start_line": 360,
+        "end_line": 365,
+        "start_col": 14,
+        "end_col": 52,
+        "fragment": "fullText += event.content as string;\r\n              setState((prev) => {\r\n                const msgs = [...prev.messages];\r\n                const lastIdx = msgs.findIndex((m) => m.id === assistantId);\r\n                if (lastIdx !== -1) {\r\n                  msgs[lastIdx] = { ...msgs[lastIdx]"
+      },
+      {
+        "file": "src/features/orchestrator/hooks/useOrchestrator.ts",
+        "start_line": 425,
+        "end_line": 431,
+        "start_col": 14,
+        "end_col": 52,
+        "fragment": "artifacts.push(artifact);\r\n\r\n              setState((prev) => {\r\n                const msgs = [...prev.messages];\r\n                const lastIdx = msgs.findIndex((m) => m.id === assistantId);\r\n                if (lastIdx !== -1) {\r\n                  msgs[lastIdx] = { ...msgs[lastIdx]"
+      },
+      {
+        "file": "src/features/orchestrator/hooks/useOrchestrator.ts",
+        "start_line": 445,
+        "end_line": 451,
+        "start_col": 14,
+        "end_col": 52,
+        "fragment": "citations.push(citation);\r\n\r\n              setState((prev) => {\r\n                const msgs = [...prev.messages];\r\n                const lastIdx = msgs.findIndex((m) => m.id === assistantId);\r\n                if (lastIdx !== -1) {\r\n                  msgs[lastIdx] = { ...msgs[lastIdx]"
+      }
+    ],
+    "token_count": 60,
+    "line_count": 8,
+    "fingerprint": "dup:1243be63",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (8 lines, 4 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

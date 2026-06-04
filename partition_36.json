@@ -1,0 +1,74 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/features/dashboard/hooks/useDashboardState.ts",
+        "start_line": 135,
+        "end_line": 144,
+        "start_col": 8,
+        "end_col": 13,
+        "fragment": "try {\r\n          const listRes = await ipc.invoke('vault:list-keys');\r\n          if (listRes.success && Array.isArray(listRes.data)) {\r\n            const keys: Record<string, string> = {};\r\n            for (const provider of listRes.data) {\r\n              const getRes = await ipc.invoke('vault:get-key', { provider });\r\n              if (getRes.success && getRes.data) {\r\n                keys[provider] = getRes.data;\r\n              }\r\n            }"
+      },
+      {
+        "file": "src/shared/store/useNyxStore.ts",
+        "start_line": 237,
+        "end_line": 246,
+        "start_col": 10,
+        "end_col": 15,
+        "fragment": "try {\r\n            const listRes = await ipc.invoke('vault:list-keys');\r\n            if (listRes.success && Array.isArray(listRes.data)) {\r\n              const keys: Record<string, string> = {};\r\n              for (const provider of listRes.data) {\r\n                const getRes = await ipc.invoke('vault:get-key', { provider });\r\n                if (getRes.success && getRes.data) {\r\n                  keys[provider] = getRes.data;\r\n                }\r\n              }"
+      }
+    ],
+    "token_count": 87,
+    "line_count": 10,
+    "fingerprint": "dup:bf5e04b3",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (10 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/dashboard/hooks/useDashboardState.ts",
+        "start_line": 188,
+        "end_line": 208,
+        "start_col": 12,
+        "end_col": 20,
+        "fragment": "data.models && Array.isArray(data.models)) {\r\n          const completed = data.models\r\n            .filter((m: any) => m.status === 'completed' || m.status === 'downloading')\r\n            .map((m: any) => ({\r\n              id: m.id,\r\n              name: m.name,\r\n              provider: 'nyx-native',\r\n              description: m.description || `Local GGUF model (${m.size || ''})`,\r\n              specs: {\r\n                contextWindow: m.contextLength || '8K',\r\n                trainingData: 'N/A',\r\n                maxOutput: 'N/A',\r\n                modality: 'Text',\r\n              },\r\n              status: m.status,\r\n            }));\r\n          setLocalLibraryModels(completed);\r\n        }\r\n      }\r\n    } catch (err: any) {\r\n      console.error("
+      },
+      {
+        "file": "src/shared/components/ModelSelector.tsx",
+        "start_line": 109,
+        "end_line": 129,
+        "start_col": 24,
+        "end_col": 22,
+        "fragment": "data.models && Array.isArray(data.models)) {\r\n            const completed = data.models\r\n              .filter((m: any) => m.status === 'completed' || m.status === 'downloading')\r\n              .map((m: any) => ({\r\n                id: m.id,\r\n                name: m.name,\r\n                provider: 'nyx-native',\r\n                description: m.description || `Local GGUF model (${m.size || ''})`,\r\n                specs: {\r\n                  contextWindow: m.contextLength || '8K',\r\n                  trainingData: 'N/A',\r\n                  maxOutput: 'N/A',\r\n                  modality: 'Text',\r\n                },\r\n                status: m.status,\r\n              }));\r\n            setLocalLibraryModels(completed);\r\n          }\r\n        }\r\n      } catch (err: any) {\r\n        console.error("
+      }
+    ],
+    "token_count": 121,
+    "line_count": 21,
+    "fingerprint": "dup:c97e739d",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (21 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

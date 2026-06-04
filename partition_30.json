@@ -1,0 +1,74 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatHeader.tsx",
+        "start_line": 95,
+        "end_line": 103,
+        "start_col": 0,
+        "end_col": 34,
+        "fragment": "function formatLatency(ms: number): string {\r\n  if (ms <= 0) return '—';\r\n  if (ms < 1000) return `${ms}ms`;\r\n  if (ms >= 60000) {\r\n    const mins = Math.floor(ms / 60000);\r\n    const secs = ((ms % 60000) / 1000).toFixed(1);\r\n    return `${mins}m ${secs}s`;\r\n  }\r\n  return `${(ms / 1000).toFixed(1)"
+      },
+      {
+        "file": "src/features/coder/components/CoderHeader.tsx",
+        "start_line": 41,
+        "end_line": 49,
+        "start_col": 0,
+        "end_col": 34,
+        "fragment": "function formatLatency(ms: number): string {\r\n  if (ms <= 0) return '—';\r\n  if (ms < 1000) return `${ms}ms`;\r\n  if (ms >= 60000) {\r\n    const mins = Math.floor(ms / 60000);\r\n    const secs = ((ms % 60000) / 1000).toFixed(1);\r\n    return `${mins}m ${secs}s`;\r\n  }\r\n  return `${(ms / 1000).toFixed(1)"
+      }
+    ],
+    "token_count": 80,
+    "line_count": 9,
+    "fingerprint": "dup:80aa373c",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (9 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "src/features/chat/components/ChatHeader.tsx",
+        "start_line": 367,
+        "end_line": 405,
+        "start_col": 36,
+        "end_col": 5,
+        "fragment": ");\r\n  const [scraplingStatus, setScraplingStatus] = useState<\r\n    'checking' | 'running' | 'restarting' | 'offline'\r\n  >('checking');\r\n\r\n  // Poll scrapling status\r\n  useEffect(() => {\r\n    let active = true;\r\n    const checkScrapling = async () => {\r\n      try {\r\n        const res = await fetchWithAuth('/api/v1/admin/scrapling-status');\r\n        if (!active) return;\r\n        if (res.ok) {\r\n          const data = await res.json();\r\n          setScraplingStatus(data.status || 'offline');\r\n        } else {\r\n          setScraplingStatus('offline');\r\n        }\r\n      } catch {\r\n        if (!active) return;\r\n        setScraplingStatus('offline');\r\n      }\r\n    };\r\n    checkScrapling();\r\n    const interval = setInterval(checkScrapling, 30_000);\r\n    return () => {\r\n      active = false;\r\n      clearInterval(interval);\r\n    };\r\n  }, []);\r\n\r\n  // Live timer during generation\r\n  useEffect(() => {\r\n    if (isLoading) {\r\n      const start = Date.now();\r\n      setLiveElapsed(0);\r\n      const interval = setInterval(() => setLiveElapsed(Date.now() - start), 50);\r\n      return () => clearInterval(interval);\r\n    }"
+      },
+      {
+        "file": "src/features/coder/components/CoderHeader.tsx",
+        "start_line": 69,
+        "end_line": 107,
+        "start_col": 52,
+        "end_col": 5,
+        "fragment": ");\r\n  const [scraplingStatus, setScraplingStatus] = useState<\r\n    'checking' | 'running' | 'restarting' | 'offline'\r\n  >('checking');\r\n\r\n  useEffect(() => {\r\n    let active = true;\r\n    const checkScrapling = async () => {\r\n      try {\r\n        const res = await fetchWithAuth('/api/v1/admin/scrapling-status');\r\n        if (!active) return;\r\n        if (res.ok) {\r\n          const data = await res.json();\r\n          setScraplingStatus(data.status || 'offline');\r\n        } else {\r\n          setScraplingStatus('offline');\r\n        }\r\n      } catch {\r\n        if (!active) return;\r\n        setScraplingStatus('offline');\r\n      }\r\n    };\r\n    checkScrapling();\r\n    const interval = setInterval(checkScrapling, 30_000);\r\n    return () => {\r\n      active = false;\r\n      clearInterval(interval);\r\n    };\r\n  }, []);\r\n\r\n  useEffect(() => {\r\n    if (isLoading) {\r\n      const start = Date.now();\r\n      setLiveElapsed(0);\r\n      const interval = setInterval(() => {\r\n        setLiveElapsed(Date.now() - start);\r\n      }, 50);\r\n      return () => clearInterval(interval);\r\n    }"
+      }
+    ],
+    "token_count": 198,
+    "line_count": 39,
+    "fingerprint": "dup:44f60186",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (39 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

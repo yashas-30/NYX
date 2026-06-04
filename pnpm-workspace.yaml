@@ -1,0 +1,14 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  '@google/genai': true
+  '@swc/core': true
+  better-sqlite3: true
+  esbuild: true
+  keytar: true
+  msgpackr-extract: true
+  msw: true
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true

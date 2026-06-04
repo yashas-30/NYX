@@ -7,6 +7,7 @@ test('has title', async ({ page }) => {
 
 test('sidebar renders correctly', async ({ page }) => {
   await page.goto('/');
-  const sidebar = page.locator('nav');
+  const sidebar = page.locator('aside');
+  await sidebar.waitFor({ state: 'visible', timeout: 30000 });
   await expect(sidebar).toBeVisible();
 });

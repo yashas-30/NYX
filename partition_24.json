@@ -1,0 +1,118 @@
+[
+  {
+    "instances": [
+      {
+        "file": "server/lib/unifiedEngine.ts",
+        "start_line": 93,
+        "end_line": 104,
+        "start_col": 8,
+        "end_col": 50,
+        "fragment": "accumulatedText = '';\r\n\r\n    while (true) {\r\n      const { done, value } = await reader.read();\r\n      if (done) break;\r\n      buffer += decoder.decode(value, { stream: true });\r\n      const lines = buffer.split('\\n');\r\n      buffer = lines.pop() || '';\r\n      for (const line of lines) {\r\n        if (line.startsWith('data: ')) {\r\n          try {\r\n            const data = JSON.parse(line.slice(6))"
+      },
+      {
+        "file": "server/lib/unifiedEngine.ts",
+        "start_line": 256,
+        "end_line": 267,
+        "start_col": 8,
+        "end_col": 50,
+        "fragment": "buffer = '';\r\n\r\n    while (true) {\r\n      const { done, value } = await reader.read();\r\n      if (done) break;\r\n      buffer += decoder.decode(value, { stream: true });\r\n      const lines = buffer.split('\\n');\r\n      buffer = lines.pop() || '';\r\n      for (const line of lines) {\r\n        if (line.startsWith('data: ')) {\r\n          try {\r\n            const data = JSON.parse(line.slice(6))"
+      }
+    ],
+    "token_count": 100,
+    "line_count": 12,
+    "fingerprint": "dup:1a92b324",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (12 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/lib/unifiedEngine.ts",
+        "start_line": 168,
+        "end_line": 182,
+        "start_col": 10,
+        "end_col": 37,
+        "fragment": "stream: true,\r\n        }),\r\n      });\r\n      const reader = response.body?.getReader();\r\n      if (!reader) throw new Error('No response body');\r\n      const decoder = new TextDecoder();\r\n      let buffer = '';\r\n      while (true) {\r\n        const { done, value } = await reader.read();\r\n        if (done) break;\r\n        buffer += decoder.decode(value, { stream: true });\r\n        const lines = buffer.split('\\n');\r\n        buffer = lines.pop() || '';\r\n        for (const line of lines) {\r\n          if (!line.trim()) continue;"
+      },
+      {
+        "file": "server/lib/unifiedEngine.ts",
+        "start_line": 204,
+        "end_line": 226,
+        "start_col": 10,
+        "end_col": 11,
+        "fragment": "stream: true,\r\n        }),\r\n      });\r\n      const reader = response.body?.getReader();\r\n      if (!reader) throw new Error('No response body');\r\n      const decoder = new TextDecoder();\r\n      let buffer = '';\r\n      while (true) {\r\n        const { done, value } = await reader.read();\r\n        if (done) break;\r\n        buffer += decoder.decode(value, { stream: true });\r\n        const lines = buffer.split('\\n');\r\n        buffer = lines.pop() || '';\r\n        for (const line of lines) {\r\n          if (line.startsWith('data: ')) {\r\n            const jsonStr = line.slice(6).trim();\r\n            if (jsonStr === '[DONE]') continue;\r\n            try {\r\n              const data = JSON.parse(jsonStr);\r\n              const content = data.choices?.[0]?.delta?.content;\r\n              if (content) onChunk({ chunk: content });\r\n            } catch {}\r\n          }"
+      },
+      {
+        "file": "server/lib/unifiedEngine.ts",
+        "start_line": 249,
+        "end_line": 270,
+        "start_col": 8,
+        "end_col": 9,
+        "fragment": "stream: true,\r\n      }),\r\n    });\r\n\r\n    const reader = response.body?.getReader();\r\n    if (!reader) throw new Error('No response body');\r\n    const decoder = new TextDecoder();\r\n    let buffer = '';\r\n\r\n    while (true) {\r\n      const { done, value } = await reader.read();\r\n      if (done) break;\r\n      buffer += decoder.decode(value, { stream: true });\r\n      const lines = buffer.split('\\n');\r\n      buffer = lines.pop() || '';\r\n      for (const line of lines) {\r\n        if (line.startsWith('data: ')) {\r\n          try {\r\n            const data = JSON.parse(line.slice(6));\r\n            if (data.content) onChunk({ chunk: data.content });\r\n          } catch (e) {}\r\n        }"
+      }
+    ],
+    "token_count": 114,
+    "line_count": 23,
+    "fingerprint": "dup:a05778ee",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (23 lines, 3 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/lib/unifiedEngine.ts",
+        "start_line": 204,
+        "end_line": 226,
+        "start_col": 10,
+        "end_col": 11,
+        "fragment": "stream: true,\r\n        }),\r\n      });\r\n      const reader = response.body?.getReader();\r\n      if (!reader) throw new Error('No response body');\r\n      const decoder = new TextDecoder();\r\n      let buffer = '';\r\n      while (true) {\r\n        const { done, value } = await reader.read();\r\n        if (done) break;\r\n        buffer += decoder.decode(value, { stream: true });\r\n        const lines = buffer.split('\\n');\r\n        buffer = lines.pop() || '';\r\n        for (const line of lines) {\r\n          if (line.startsWith('data: ')) {\r\n            const jsonStr = line.slice(6).trim();\r\n            if (jsonStr === '[DONE]') continue;\r\n            try {\r\n              const data = JSON.parse(jsonStr);\r\n              const content = data.choices?.[0]?.delta?.content;\r\n              if (content) onChunk({ chunk: content });\r\n            } catch {}\r\n          }"
+      },
+      {
+        "file": "server/lib/unifiedEngine.ts",
+        "start_line": 249,
+        "end_line": 270,
+        "start_col": 8,
+        "end_col": 9,
+        "fragment": "stream: true,\r\n      }),\r\n    });\r\n\r\n    const reader = response.body?.getReader();\r\n    if (!reader) throw new Error('No response body');\r\n    const decoder = new TextDecoder();\r\n    let buffer = '';\r\n\r\n    while (true) {\r\n      const { done, value } = await reader.read();\r\n      if (done) break;\r\n      buffer += decoder.decode(value, { stream: true });\r\n      const lines = buffer.split('\\n');\r\n      buffer = lines.pop() || '';\r\n      for (const line of lines) {\r\n        if (line.startsWith('data: ')) {\r\n          try {\r\n            const data = JSON.parse(line.slice(6));\r\n            if (data.content) onChunk({ chunk: data.content });\r\n          } catch (e) {}\r\n        }"
+      }
+    ],
+    "token_count": 123,
+    "line_count": 23,
+    "fingerprint": "dup:1ce15bc5",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (23 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/features/coder/pipeline/index.ts",
+        "start_line": 229,
+        "end_line": 238,
+        "start_col": 10,
+        "end_col": 53,
+        "fragment": "finalTokens = result.metrics.tokens;\r\n    const finalTps = finalElapsed > 0 ? Math.round(finalTokens / (finalElapsed / 1000)) : 0;\r\n    const finalMetrics = { latency: finalElapsed, tokens: finalTokens, tps: finalTps };\r\n\r\n    updateHistory((prev) => {\r\n      const h = [...prev];\r\n      const last = h[h.length - 1];\r\n      if (last && last.role === 'assistant') {\r\n        last.status = 'success';\r\n        last.content = accumulatedOutput + resultText"
+      },
+      {
+        "file": "src/features/coder/pipeline/index.ts",
+        "start_line": 340,
+        "end_line": 349,
+        "start_col": 8,
+        "end_col": 39,
+        "fragment": "finalTokens = countTokens(finalSummaryOutput);\r\n  const finalTps = finalElapsed > 0 ? Math.round(finalTokens / (finalElapsed / 1000)) : 0;\r\n  const finalMetrics = { latency: finalElapsed, tokens: finalTokens, tps: finalTps };\r\n\r\n  updateHistory((prev) => {\r\n    const h = [...prev];\r\n    const last = h[h.length - 1];\r\n    if (last && last.role === 'assistant') {\r\n      last.status = 'success';\r\n      last.content = finalSummaryOutput"
+      }
+    ],
+    "token_count": 83,
+    "line_count": 10,
+    "fingerprint": "dup:34659d38",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (10 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

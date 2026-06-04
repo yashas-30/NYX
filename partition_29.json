@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/core/services/ai.service.ts",
+        "start_line": 207,
+        "end_line": 216,
+        "start_col": 22,
+        "end_col": 27,
+        "fragment": "(\r\n    modelId: string,\r\n    provider: Provider | string,\r\n    prompt: string,\r\n    apiKey?: string,\r\n    systemInstruction?: string,\r\n    settings?: AISettings,\r\n    onStream?: (event: any) => void,\r\n    signal?: AbortSignal,\r\n    options: ExecuteOptions"
+      },
+      {
+        "file": "src/core/services/ai.service.ts",
+        "start_line": 853,
+        "end_line": 862,
+        "start_col": 38,
+        "end_col": 28,
+        "fragment": "(\r\n    modelId: string,\r\n    provider: Provider | string,\r\n    prompt: string,\r\n    apiKey?: string,\r\n    systemInstruction?: string,\r\n    settings?: AISettings,\r\n    onStream?: (event: any) => void,\r\n    signal?: AbortSignal,\r\n    options?: ExecuteOptions"
+      }
+    ],
+    "token_count": 54,
+    "line_count": 10,
+    "fingerprint": "dup:e95e7a77",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (10 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "server/lib/logger.ts",
+        "start_line": 10,
+        "end_line": 24,
+        "start_col": 27,
+        "end_col": 22,
+        "fragment": ": string {\n  if (process.env.NYX_WORKSPACE_ROOT) {\n    return path.resolve(process.env.NYX_WORKSPACE_ROOT);\n  }\n  let dir =\n    typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));\n  for (let i = 0; i < 5; i++) {\n    if (fs.existsSync(path.join(dir, 'package.json'))) {\n      return dir;\n    }\n    const parent = path.dirname(dir);\n    if (parent === dir) break;\n    dir = parent;\n  }\n  return process.cwd()"
+      },
+      {
+        "file": "server/lib/paths.ts",
+        "start_line": 12,
+        "end_line": 26,
+        "start_col": 26,
+        "end_col": 22,
+        "fragment": ": string {\n  if (process.env.NYX_WORKSPACE_ROOT) {\n    return path.resolve(process.env.NYX_WORKSPACE_ROOT);\n  }\n  let dir =\n    typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));\n  for (let i = 0; i < 5; i++) {\n    if (fs.existsSync(path.join(dir, 'package.json'))) {\n      return dir;\n    }\n    const parent = path.dirname(dir);\n    if (parent === dir) break;\n    dir = parent;\n  }\n  return process.cwd()"
+      }
+    ],
+    "token_count": 114,
+    "line_count": 15,
+    "fingerprint": "dup:16e6c2ae",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (15 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

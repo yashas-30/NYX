@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/features/settings/components/CacheClean.tsx",
+        "start_line": 35,
+        "end_line": 55,
+        "start_col": 8,
+        "end_col": 20,
+        "fragment": "totalCalls = cacheStats.hits + cacheStats.misses;\r\n\r\n  return (\r\n    <div className=\"mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg\">\r\n      <div className=\"absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity\" />\r\n\r\n      <div className=\"flex items-center justify-between mb-4\">\r\n        <div>\r\n          <p className=\"text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]\">\r\n            CACHE STORAGE MANAGER\r\n          </p>\r\n          <h3 className=\"text-xs font-bold text-foreground mt-0.5\">\r\n            Persistent Query Acceleration\r\n          </h3>\r\n        </div>\r\n        <span className=\"text-[10px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-2 py-0.5 rounded-full border border-[#FF3366]/20\">\r\n          Active Server\r\n        </span>\r\n      </div>\r\n\r\n      <div className"
+      },
+      {
+        "file": "src/features/settings/components/WorkspaceConfig.tsx",
+        "start_line": 33,
+        "end_line": 76,
+        "start_col": 8,
+        "end_col": 20,
+        "fragment": "handleInputWorkspace = async (e: React.KeyboardEvent<HTMLInputElement>) => {\r\n    if (e.key === 'Enter') {\r\n      e.preventDefault();\r\n      const val = e.currentTarget.value.trim();\r\n      if (val) {\r\n        try {\r\n          const res = await fetchWithAuth('/api/v1/workspace', {\r\n            method: 'POST',\r\n            headers: { 'Content-Type': 'application/json' },\r\n            body: JSON.stringify({ path: val }),\r\n          });\r\n          if (res.ok) {\r\n            const data = await res.json();\r\n            setWorkspacePath(data.workspace);\r\n            toast.success(`Workspace updated to: ${data.workspace}`);\r\n            e.currentTarget.value = '';\r\n          } else {\r\n            const err = await res.json();\r\n            toast.error(`Error: ${err.error}`);\r\n          }\r\n        } catch (error: any) {\r\n          toast.error(`Failed to update workspace: ${error.message}`);\r\n        }\r\n      }\r\n    }\r\n  };\r\n\r\n  return (\r\n    <div className=\"mt-6 group p-5 rounded-3xl bg-card border border-white/[0.04] hover:border-[#FF3366]/25 transition-all duration-300 relative overflow-hidden shadow-lg\">\r\n      <div className=\"absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#FF3366]/20 via-[#FF3366]/10 to-[#FF3366]/20 opacity-70 group-hover:opacity-100 transition-opacity\" />\r\n\r\n      <div className=\"flex items-center justify-between mb-4\">\r\n        <div>\r\n          <p className=\"text-[10px] font-black uppercase tracking-[0.25em] text-[#FF3366]\">\r\n            WORKSPACE CONFIGURATOR\r\n          </p>\r\n          <h3 className=\"text-xs font-bold text-foreground mt-0.5\">Codebase Scanning Scope</h3>\r\n        </div>\r\n        <span className=\"text-[10px] font-bold uppercase tracking-widest text-[#FF3366] bg-[#FF3366]/10 px-2 py-0.5 rounded-full border border-[#FF3366]/20\">\r\n          File Index Target\r\n        </span>\r\n      </div>\r\n\r\n      <div className"
+      }
+    ],
+    "token_count": 53,
+    "line_count": 44,
+    "fingerprint": "dup:c52440d4",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (44 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

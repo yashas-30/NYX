@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "server/features/nyx/filesystem.service.ts",
+        "start_line": 8,
+        "end_line": 16,
+        "start_col": 4,
+        "end_col": 5,
+        "fragment": "const workspaceRoot = getWorkspaceRoot();\n\n    // Normalize both paths for case-insensitive Windows comparison\n    const normalizedFull = path.resolve(workspaceRoot, filePath);\n    const normalizedRoot = path.resolve(workspaceRoot);\n    const relative = path.relative(normalizedRoot, normalizedFull);\n    if (relative.startsWith('..') || path.isAbsolute(relative)) {\n      throw new Error('Directory traversal forbidden.');\n    }"
+      },
+      {
+        "file": "server/features/nyx/filesystem.service.ts",
+        "start_line": 92,
+        "end_line": 99,
+        "start_col": 4,
+        "end_col": 5,
+        "fragment": "const workspaceRoot = getWorkspaceRoot();\n    const normalizedFull = path.resolve(workspaceRoot, filePath);\n    const normalizedRoot = path.resolve(workspaceRoot);\n    const relative = path.relative(normalizedRoot, normalizedFull);\n\n    if (relative.startsWith('..') || path.isAbsolute(relative)) {\n      throw new Error('Directory traversal forbidden.');\n    }"
+      }
+    ],
+    "token_count": 71,
+    "line_count": 9,
+    "fingerprint": "dup:063cc67c",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (9 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

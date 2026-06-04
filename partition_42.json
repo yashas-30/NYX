@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/infrastructure/services/toolSystem.ts",
+        "start_line": 634,
+        "end_line": 643,
+        "start_col": 24,
+        "end_col": 21,
+        "fragment": "{\r\n        validatePath(params.path);\r\n        WorkspaceIntelligence.trackOpenFile(params.path);\r\n        const res = await fetchWithAuth('/api/v1/nyx/write-file', {\r\n          method: 'POST',\r\n          headers: { 'Content-Type': 'application/json' },\r\n          body: JSON.stringify({\r\n            filePath: params.path,\r\n            content: params.content,\r\n            overwrite"
+      },
+      {
+        "file": "src/infrastructure/services/toolSystem.ts",
+        "start_line": 652,
+        "end_line": 661,
+        "start_col": 25,
+        "end_col": 21,
+        "fragment": "{\r\n        validatePath(params.path);\r\n        WorkspaceIntelligence.trackOpenFile(params.path);\r\n        const res = await fetchWithAuth('/api/v1/nyx/write-file', {\r\n          method: 'POST',\r\n          headers: { 'Content-Type': 'application/json' },\r\n          body: JSON.stringify({\r\n            filePath: params.path,\r\n            content: params.content,\r\n            overwrite"
+      }
+    ],
+    "token_count": 50,
+    "line_count": 10,
+    "fingerprint": "dup:2a7f6cb7",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (10 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

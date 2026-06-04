@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "server/features/conversations/conversations.router.ts",
+        "start_line": 35,
+        "end_line": 43,
+        "start_col": 53,
+        "end_col": 20,
+        "fragment": ");\r\n    if (!ok) return res.status(404).json({ error: 'Folder not found' });\r\n    res.json({ ok: true });\r\n  } catch (error: any) {\r\n    res.status(500).json({ error: error.message });\r\n  }\r\n});\r\n\r\nconversationsRouter."
+      },
+      {
+        "file": "server/features/conversations/conversations.router.ts",
+        "start_line": 45,
+        "end_line": 53,
+        "start_col": 47,
+        "end_col": 20,
+        "fragment": ");\r\n    if (!ok) return res.status(404).json({ error: 'Folder not found' });\r\n    res.json({ ok: true });\r\n  } catch (error: any) {\r\n    res.status(500).json({ error: error.message });\r\n  }\r\n});\r\n\r\nconversationsRouter."
+      }
+    ],
+    "token_count": 67,
+    "line_count": 9,
+    "fingerprint": "dup:621b7693",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (9 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

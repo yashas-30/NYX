@@ -29,7 +29,9 @@ jobs:
         run: npm ci
 
       - name: Execute Strict Typecheck & Linter
-        run: npm run lint
+        run: |
+          npm run lint
+          npm run typecheck
 
       - name: Run Vitest Unit Tests
         run: npx vitest run

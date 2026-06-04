@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/features/settings/components/ApiKeyVault.tsx",
+        "start_line": 111,
+        "end_line": 119,
+        "start_col": 4,
+        "end_col": 20,
+        "fragment": "if (!rememberKeys) {\r\n      // Save keys ephemerally to Zustand in-memory state\r\n      for (const provider of Object.keys(keysInput)) {\r\n        const val = keysInput[provider];\r\n        if (val !== undefined && val.trim().length > 0) {\r\n          await updateApiKey(provider, val);\r\n        }\r\n      }\r\n      toast.success("
+      },
+      {
+        "file": "src/features/settings/components/ApiKeyVault.tsx",
+        "start_line": 130,
+        "end_line": 137,
+        "start_col": 6,
+        "end_col": 22,
+        "fragment": "if (res.ok) {\r\n        for (const provider of Object.keys(keysInput)) {\r\n          const val = keysInput[provider];\r\n          if (val !== undefined && val.trim().length > 0) {\r\n            await updateApiKey(provider, val);\r\n          }\r\n        }\r\n        toast.success("
+      }
+    ],
+    "token_count": 57,
+    "line_count": 9,
+    "fingerprint": "dup:d8d3bc6e",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (9 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

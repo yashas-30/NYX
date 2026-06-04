@@ -1,0 +1,146 @@
+[
+  {
+    "instances": [
+      {
+        "file": "server/fastify/adapters/gemini.adapter.ts",
+        "start_line": 35,
+        "end_line": 67,
+        "start_col": 25,
+        "end_col": 24,
+        "fragment": "{\r\n      contents,\r\n      generationConfig: {\r\n        temperature: request.temperature ?? 0.7,\r\n      },\r\n    };\r\n\r\n    const res = await fetch(url, {\r\n      method: 'POST',\r\n      headers: {\r\n        'Content-Type': 'application/json',\r\n      },\r\n      body: JSON.stringify(payload),\r\n    });\r\n\r\n    if (!res.ok) {\r\n      throw new Error(`Gemini API Error ${res.status}: ${res.statusText}`);\r\n    }\r\n\r\n    const reader = res.body!.getReader();\r\n    const decoder = new TextDecoder('utf-8');\r\n\r\n    try {\r\n      while (true) {\r\n        const { done, value } = await reader.read();\r\n        if (done) break;\r\n        const chunk = decoder.decode(value, { stream: true });\r\n\r\n        const lines = chunk.split('\\n');\r\n        for (const line of lines) {\r\n          if (line.startsWith('data: ')) {\r\n            const dataStr = line.replace('data: ', '').trim();\r\n            if (!dataStr"
+      },
+      {
+        "file": "server/fastify/adapters/ollama.adapter.ts",
+        "start_line": 26,
+        "end_line": 59,
+        "start_col": 20,
+        "end_col": 24,
+        "fragment": "{\n      model,\n      messages: request.messages,\n      stream: true,\n      temperature: request.temperature ?? 0.7,\n      max_tokens: request.max_tokens,\n    };\n\n    const res = await fetch(url, {\n      method: 'POST',\n      headers: {\n        'Content-Type': 'application/json',\n      },\n      body: JSON.stringify(payload),\n    });\n\n    if (!res.ok) {\n      throw new Error(`Ollama API Error ${res.status}: ${res.statusText}. Ensure Ollama is running.`);\n    }\n\n    const reader = res.body!.getReader();\n    const decoder = new TextDecoder('utf-8');\n\n    try {\n      while (true) {\n        const { done, value } = await reader.read();\n        if (done) break;\n        const chunk = decoder.decode(value, { stream: true });\n\n        const lines = chunk.split('\\n');\n        for (const line of lines) {\n          if (line.startsWith('data: ')) {\n            const dataStr = line.replace('data: ', '').trim();\n            if (!dataStr"
+      }
+    ],
+    "token_count": 165,
+    "line_count": 34,
+    "fingerprint": "dup:02fecceb",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (34 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/fastify/adapters/lmstudio.adapter.ts",
+        "start_line": 12,
+        "end_line": 23,
+        "start_col": 39,
+        "end_col": 40,
+        "fragment": "`lmstudio/${m.id}`);\n    } catch {\n      return [];\n    }\n  }\n\n  async getQuota(apiKey?: string): Promise<any> {\n    return { status: 'ok', type: 'local_unlimited' };\n  }\n\n  async *streamChat(request: ChatRequest, apiKey?: string): AsyncGenerator<string, void, unknown> {\n    const model = request.model.replace("
+      },
+      {
+        "file": "server/fastify/adapters/ollama.adapter.ts",
+        "start_line": 11,
+        "end_line": 22,
+        "start_col": 41,
+        "end_col": 40,
+        "fragment": "`ollama/${m.name}`);\n    } catch {\n      return [];\n    }\n  }\n\n  async getQuota(apiKey?: string): Promise<any> {\n    return { status: 'ok', type: 'local_unlimited' };\n  }\n\n  async *streamChat(request: ChatRequest, apiKey?: string): AsyncGenerator<string, void, unknown> {\n    const model = request.model.replace("
+      }
+    ],
+    "token_count": 59,
+    "line_count": 12,
+    "fingerprint": "dup:c28bc254",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (12 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/fastify/adapters/lmstudio.adapter.ts",
+        "start_line": 25,
+        "end_line": 44,
+        "start_col": 10,
+        "end_col": 74,
+        "fragment": "url = `http://127.0.0.1:${port}/v1/chat/completions`;\n\n    const payload = {\n      model,\n      messages: request.messages,\n      stream: true,\n      temperature: request.temperature ?? 0.7,\n      max_tokens: request.max_tokens,\n    };\n\n    const res = await fetch(url, {\n      method: 'POST',\n      headers: {\n        'Content-Type': 'application/json',\n      },\n      body: JSON.stringify(payload),\n    });\n\n    if (!res.ok) {\n      throw new Error(`LM Studio API Error ${res.status}: ${res.statusText"
+      },
+      {
+        "file": "server/fastify/adapters/ollama.adapter.ts",
+        "start_line": 24,
+        "end_line": 43,
+        "start_col": 10,
+        "end_col": 71,
+        "fragment": "url = 'http://127.0.0.1:11434/v1/chat/completions';\n\n    const payload = {\n      model,\n      messages: request.messages,\n      stream: true,\n      temperature: request.temperature ?? 0.7,\n      max_tokens: request.max_tokens,\n    };\n\n    const res = await fetch(url, {\n      method: 'POST',\n      headers: {\n        'Content-Type': 'application/json',\n      },\n      body: JSON.stringify(payload),\n    });\n\n    if (!res.ok) {\n      throw new Error(`Ollama API Error ${res.status}: ${res.statusText"
+      }
+    ],
+    "token_count": 72,
+    "line_count": 20,
+    "fingerprint": "dup:b431db3f",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (20 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/fastify/adapters/lmstudio.adapter.ts",
+        "start_line": 44,
+        "end_line": 76,
+        "start_col": 129,
+        "end_col": 5,
+        "fragment": ");\n    }\n\n    const reader = res.body!.getReader();\n    const decoder = new TextDecoder('utf-8');\n\n    try {\n      while (true) {\n        const { done, value } = await reader.read();\n        if (done) break;\n        const chunk = decoder.decode(value, { stream: true });\n\n        const lines = chunk.split('\\n');\n        for (const line of lines) {\n          if (line.startsWith('data: ')) {\n            const dataStr = line.replace('data: ', '').trim();\n            if (!dataStr || dataStr === '[DONE]') continue;\n\n            try {\n              const data = JSON.parse(dataStr);\n              const content = data.choices?.[0]?.delta?.content;\n              if (content) {\n                yield content;\n              }\n            } catch (err) {\n              // ignore parse errors for partial chunks\n            }\n          }\n        }\n      }\n    } finally {\n      reader.releaseLock();\n    }"
+      },
+      {
+        "file": "server/fastify/adapters/ollama.adapter.ts",
+        "start_line": 43,
+        "end_line": 75,
+        "start_col": 100,
+        "end_col": 5,
+        "fragment": ");\n    }\n\n    const reader = res.body!.getReader();\n    const decoder = new TextDecoder('utf-8');\n\n    try {\n      while (true) {\n        const { done, value } = await reader.read();\n        if (done) break;\n        const chunk = decoder.decode(value, { stream: true });\n\n        const lines = chunk.split('\\n');\n        for (const line of lines) {\n          if (line.startsWith('data: ')) {\n            const dataStr = line.replace('data: ', '').trim();\n            if (!dataStr || dataStr === '[DONE]') continue;\n\n            try {\n              const data = JSON.parse(dataStr);\n              const content = data.choices?.[0]?.delta?.content;\n              if (content) {\n                yield content;\n              }\n            } catch (err) {\n              // ignore parse errors for partial chunks\n            }\n          }\n        }\n      }\n    } finally {\n      reader.releaseLock();\n    }"
+      }
+    ],
+    "token_count": 176,
+    "line_count": 33,
+    "fingerprint": "dup:91ba99c6",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (33 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

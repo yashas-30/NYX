@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "src/main.tsx",
+        "start_line": 48,
+        "end_line": 55,
+        "start_col": 33,
+        "end_col": 66,
+        "fragment": ")) {\r\n    const match = trimmed.match(/oklab\\(([^)]+)\\)/);\r\n    if (match) {\r\n      const parts = match[1].split('/');\r\n      const coords = parts[0].trim().split(/\\s+/).map(parseVal);\r\n      const alpha = parts[1] ? parseVal(parts[1].trim()) : 1;\r\n      if (coords.length === 3 && !coords.some(isNaN)) {\r\n        return oklabToRgb(coords[0], coords[1], coords[2], alpha);"
+      },
+      {
+        "file": "src/main.tsx",
+        "start_line": 60,
+        "end_line": 67,
+        "start_col": 33,
+        "end_col": 66,
+        "fragment": ")) {\r\n    const match = trimmed.match(/oklch\\(([^)]+)\\)/);\r\n    if (match) {\r\n      const parts = match[1].split('/');\r\n      const coords = parts[0].trim().split(/\\s+/).map(parseVal);\r\n      const alpha = parts[1] ? parseVal(parts[1].trim()) : 1;\r\n      if (coords.length === 3 && !coords.some(isNaN)) {\r\n        return oklchToRgb(coords[0], coords[1], coords[2], alpha);"
+      }
+    ],
+    "token_count": 100,
+    "line_count": 8,
+    "fingerprint": "dup:5852b3ca",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (8 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

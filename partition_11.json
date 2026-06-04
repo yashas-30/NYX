@@ -1,0 +1,38 @@
+[
+  {
+    "instances": [
+      {
+        "file": "server/features/conversations/conversations.service.ts",
+        "start_line": 60,
+        "end_line": 80,
+        "start_col": 55,
+        "end_col": 9,
+        "fragment": "id))\r\n          .orderBy(messagesTable.timestamp)\r\n          .all();\r\n        return {\r\n          id: conv.id,\r\n          title: conv.title,\r\n          model: conv.model,\r\n          createdAt: conv.createdAt,\r\n          updatedAt: conv.updatedAt,\r\n          workspacePath: (conv as any).workspacePath || undefined,\r\n          folderId: (conv as any).folderId || null,\r\n          tags: (conv as any).tags || null,\r\n          messages: msgs.map((m) => ({\r\n            id: m.id,\r\n            role: m.role as any,\r\n            content: m.content,\r\n            model: m.model,\r\n            timestamp: m.timestamp,\r\n            toolCalls: (m as any).toolCalls || undefined,\r\n          })),\r\n        }"
+      },
+      {
+        "file": "server/features/conversations/conversations.service.ts",
+        "start_line": 96,
+        "end_line": 116,
+        "start_col": 48,
+        "end_col": 7,
+        "fragment": "id))\r\n        .orderBy(messagesTable.timestamp)\r\n        .all();\r\n      return {\r\n        id: conv.id,\r\n        title: conv.title,\r\n        model: conv.model,\r\n        createdAt: conv.createdAt,\r\n        updatedAt: conv.updatedAt,\r\n        workspacePath: (conv as any).workspacePath || undefined,\r\n        folderId: (conv as any).folderId || null,\r\n        tags: (conv as any).tags || null,\r\n        messages: msgs.map((m) => ({\r\n          id: m.id,\r\n          role: m.role as any,\r\n          content: m.content,\r\n          model: m.model,\r\n          timestamp: m.timestamp,\r\n          toolCalls: (m as any).toolCalls || undefined,\r\n        })),\r\n      }"
+      }
+    ],
+    "token_count": 111,
+    "line_count": 21,
+    "fingerprint": "dup:1cc35550",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (21 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

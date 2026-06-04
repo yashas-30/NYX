@@ -1,0 +1,74 @@
+[
+  {
+    "instances": [
+      {
+        "file": "server/features/nyx/nyx.router.ts",
+        "start_line": 29,
+        "end_line": 35,
+        "start_col": 14,
+        "end_col": 17,
+        "fragment": "('/subagent-status', (req, res) => {\r\n  try {\r\n    const token = req.headers['x-nyx-session-token'] as string | undefined;\r\n    if (!token) {\r\n      return res.status(401).json({ error: 'Missing x-nyx-session-token header' });\r\n    }\r\n    const { tasks"
+      },
+      {
+        "file": "server/features/nyx/nyx.router.ts",
+        "start_line": 48,
+        "end_line": 54,
+        "start_col": 13,
+        "end_col": 15,
+        "fragment": "('/subagent-status', (req, res) => {\r\n  try {\r\n    const token = req.headers['x-nyx-session-token'] as string | undefined;\r\n    if (!token) {\r\n      return res.status(401).json({ error: 'Missing x-nyx-session-token header' });\r\n    }\r\n    const tasks"
+      }
+    ],
+    "token_count": 53,
+    "line_count": 7,
+    "fingerprint": "dup:4b891505",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (7 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/features/nyx/nyx.router.ts",
+        "start_line": 40,
+        "end_line": 48,
+        "start_col": 13,
+        "end_col": 14,
+        "fragment": "{ success: true });\r\n  } catch (e: unknown) {\r\n    const msg = e instanceof Error ? e.message : String(e);\r\n    res.status(500).json({ error: msg });\r\n  }\r\n});\r\n\r\n// GET /api/nyx/subagent-status\r\nnyxRouter.get("
+      },
+      {
+        "file": "server/features/nyx/nyx.router.ts",
+        "start_line": 55,
+        "end_line": 63,
+        "start_col": 13,
+        "end_col": 14,
+        "fragment": "{ success: true, tasks });\r\n  } catch (e: unknown) {\r\n    const msg = e instanceof Error ? e.message : String(e);\r\n    res.status(500).json({ error: msg });\r\n  }\r\n});\r\n\r\n// GET /api/nyx/rules\r\nnyxRouter.get("
+      }
+    ],
+    "token_count": 52,
+    "line_count": 9,
+    "fingerprint": "dup:208959d7",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (9 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]

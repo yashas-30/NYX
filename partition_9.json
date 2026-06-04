@@ -1,0 +1,74 @@
+[
+  {
+    "instances": [
+      {
+        "file": "server/features/chat/chat.service.ts",
+        "start_line": 107,
+        "end_line": 128,
+        "start_col": 6,
+        "end_col": 11,
+        "fragment": "const reader = res.body?.getReader();\r\n      const decoder = new TextDecoder();\r\n      if (!reader) throw new Error('No reader available');\r\n\r\n      let buf = '';\r\n      while (true) {\r\n        const { done, value } = await reader.read();\r\n        if (done) break;\r\n        buf += decoder.decode(value, { stream: true });\r\n\r\n        const lines = buf.split('\\n');\r\n        buf = lines.pop() ?? '';\r\n        for (const line of lines) {\r\n          if (line.startsWith('data: ')) {\r\n            const dataStr = line.slice(6).trim();\r\n            if (dataStr === '[DONE]') continue;\r\n            try {\r\n              const data = JSON.parse(dataStr);\r\n              const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;\r\n              if (text) onChunk(text);\r\n            } catch (e) {}\r\n          }"
+      },
+      {
+        "file": "server/features/chat/chat.service.ts",
+        "start_line": 149,
+        "end_line": 161,
+        "start_col": 4,
+        "end_col": 35,
+        "fragment": "const reader = res.body?.getReader();\r\n    const decoder = new TextDecoder();\r\n    if (!reader) throw new Error('No reader available');\r\n\r\n    let buf = '';\r\n    while (true) {\r\n      const { done, value } = await reader.read();\r\n      if (done) break;\r\n      buf += decoder.decode(value, { stream: true });\r\n      const lines = buf.split('\\n');\r\n      buf = lines.pop() ?? '';\r\n      for (const line of lines) {\r\n        if (!line.trim()) continue;"
+      }
+    ],
+    "token_count": 105,
+    "line_count": 22,
+    "fingerprint": "dup:14d1e9bb",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (22 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  },
+  {
+    "instances": [
+      {
+        "file": "server/features/chat/chat.service.ts",
+        "start_line": 153,
+        "end_line": 165,
+        "start_col": 4,
+        "end_col": 40,
+        "fragment": "let buf = '';\r\n    while (true) {\r\n      const { done, value } = await reader.read();\r\n      if (done) break;\r\n      buf += decoder.decode(value, { stream: true });\r\n      const lines = buf.split('\\n');\r\n      buf = lines.pop() ?? '';\r\n      for (const line of lines) {\r\n        if (!line.trim()) continue;\r\n        onChunk(line + '\\n');\r\n      }\r\n    }\r\n    if (buf.trim()) onChunk(buf + '\\n');"
+      },
+      {
+        "file": "server/features/local-models/qwenLocal.service.ts",
+        "start_line": 45,
+        "end_line": 63,
+        "start_col": 4,
+        "end_col": 5,
+        "fragment": "let buf = '';\n\n    while (true) {\n      const { done, value } = await reader.read();\n      if (done) break;\n\n      buf += decoder.decode(value, { stream: true });\n      const lines = buf.split('\\n');\n      buf = lines.pop() ?? '';\n\n      for (const line of lines) {\n        if (!line.trim()) continue;\n        onChunk(line + '\\n');\n      }\n    }\n\n    if (buf.trim()) {\n      onChunk(buf + '\\n');\n    }"
+      }
+    ],
+    "token_count": 101,
+    "line_count": 19,
+    "fingerprint": "dup:6b73059a",
+    "actions": [
+      {
+        "type": "extract-shared",
+        "auto_fixable": false,
+        "description": "Extract duplicated code (19 lines, 2 instances) into a shared function"
+      },
+      {
+        "type": "suppress-line",
+        "auto_fixable": false,
+        "description": "Suppress with an inline comment above the duplicated code",
+        "comment": "// fallow-ignore-next-line code-duplication"
+      }
+    ]
+  }
+]
