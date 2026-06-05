@@ -44,7 +44,7 @@ export class KeyManagerService {
         keys = [...keys, ...vKeys];
       }
     } catch (err) {
-      logger.warn(`[KeyManager] Failed to load keys from vault for ${provider}`);
+      logger.debug(`[KeyManager] Failed to load keys from vault for ${provider}`);
     }
 
     // Deduplicate

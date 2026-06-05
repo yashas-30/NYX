@@ -135,7 +135,7 @@ export function spawnBackgroundServices() {
       const proc = spawn(pythonPath, [scraplingScriptPath, '--port', String(SCRAPLING_PORT)], {
         cwd: path.dirname(scraplingScriptPath),
         detached: false,
-        stdio: ['ignore', 'inherit', 'inherit'],
+        stdio: ['pipe', 'inherit', 'inherit'],
       });
       registerProcess(proc);
       setScraplingHealthState('running');
@@ -168,7 +168,7 @@ export function spawnBackgroundServices() {
       const proc = spawn(pythonPath, [antigravityScriptPath, '--port', String(ANTIGRAVITY_PORT)], {
         cwd: path.dirname(antigravityScriptPath),
         detached: false,
-        stdio: ['ignore', 'inherit', 'inherit'],
+        stdio: ['pipe', 'inherit', 'inherit'],
       });
       registerProcess(proc);
       antigravityProc = proc;
