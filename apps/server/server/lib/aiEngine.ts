@@ -5,6 +5,9 @@
 
 import { Gateway, Provider, ChatMessage, AISettings } from './gateway.js';
 import { env } from '../config/env.js';
+import { SmartRouter } from './router.js';
+import { loadKeys } from '../features/vault/vault.service.js';
+import { compressPrompt } from '../features/prompts/compression.js';
 
 export type { Provider, ChatMessage, AISettings } from './gateway.js';
 
@@ -52,7 +55,33 @@ export class UnifiedEngine {
     writeChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
-    const { provider, model, messages, settings, apiKey, customGatewayUrls, tools } = req;
+    let { provider, model, messages, settings, apiKey, customGatewayUrls, tools } = req;
+
+    const router = new SmartRouter();
+    const apiKeys = await loadKeys();
+
+    if (apiKey) {
+      apiKeys[provider] = apiKey;
+    }
+
+    if (provider !== 'nyx-native' && provider !== 'antigravity-sdk') {
+      try {
+        const prompt = messages[messages.length - 1]?.content || '';
+        const decision = await router.route(prompt, {
+          primary: { provider: provider as any, id: model, name: model, description: '' },
+          fallbacks: [
+            { provider: 'openrouter' as any, id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: '' },
+            { provider: 'gemini', id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: '' }
+          ]
+        }, apiKeys);
+
+        provider = decision.provider;
+        model = decision.modelId;
+        apiKey = decision.apiKey;
+      } catch (err: any) {
+        console.warn('[SmartRouter] Routing failed, falling back to original request:', err.message);
+      }
+    }
 
     // 1. Auth validation
     const authResult = Gateway.validateAuth(provider, model, apiKey);
@@ -60,7 +89,7 @@ export class UnifiedEngine {
       throw new Error(authResult.error);
     }
 
-    const activeKey = Gateway.getActiveKey(provider, apiKey);
+    const activeKey = apiKey || Gateway.getActiveKey(provider, apiKey);
 
     // Prompt pre-processing middleware using Antigravity service
     let processedMessages = messages;
@@ -107,7 +136,7 @@ export class UnifiedEngine {
           clearTimeout(timeoutId);
 
           if (preprocessRes.ok) {
-            const data = await preprocessRes.json();
+            const data: any = await preprocessRes.json();
             if (data && typeof data.prompt === 'string') {
               const lastUserIdx = messages.lastIndexOf(lastUserMessage);
               if (lastUserIdx >= 0) {
@@ -150,6 +179,22 @@ export class UnifiedEngine {
         }
       }
     }
+
+    // Apply Abstention Training
+    processedMessages = injectAbstentionInstruction(processedMessages);
+
+    // Apply Prompt Compression
+    // Set maxTokens to a safe limit, e.g., 64,000 tokens
+    const MAX_TOKENS = 64000;
+    processedMessages = processedMessages.map(m => {
+      if (m.role === 'user') {
+        return {
+          ...m,
+          content: compressPrompt(m.content, MAX_TOKENS)
+        };
+      }
+      return m;
+    });
 
     // 2. Route to provider-specific handler
     switch (provider) {

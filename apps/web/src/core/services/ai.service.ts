@@ -205,7 +205,93 @@ export class AIService {
   // -------------------------------------------------------------------------
   // Main execution entry point
   // -------------------------------------------------------------------------
+  
+  private static classifyError(error: any, provider: string) {
+    const message = error?.message || String(error);
+    const isTransient = /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|rate_limit|quota|overloaded|high demand|timeout|network|econnreset|enotfound/i.test(message);
+    const isNonRetryable = /SAFETY_GATE_BLOCKED|Invalid API key|401|403|unauthorized/i.test(message);
+    
+    return {
+      retryable: isTransient && !isNonRetryable,
+      retryAfterMs: isTransient ? 2000 : 0
+    };
+  }
+
+  static async executeWithFallback(
+    primaryModel: string,
+    primaryProvider: Provider | string,
+    prompt: string,
+    apiKey?: string,
+    systemInstruction?: string,
+    settings?: AISettings,
+    onStream?: (event: any) => void,
+    signal?: AbortSignal,
+    options: ExecuteOptions & { apiKeys?: Record<string, string> } = {}
+  ): Promise<EnhancedAIResponse> {
+    const fallbackChain = [
+      { model: primaryModel, provider: primaryProvider, key: apiKey },
+      { model: 'openrouter/free', provider: 'openrouter' as Provider, key: options.apiKeys?.['openrouter'] || '' },
+      { model: 'pollinations/openai', provider: 'pollinations' as Provider, key: '' },
+    ];
+
+    let lastError: any;
+
+    for (const attempt of fallbackChain) {
+      try {
+        const result = await this.execute(
+          attempt.model,
+          attempt.provider,
+          prompt,
+          attempt.key,
+          systemInstruction,
+          settings,
+          onStream,
+          signal,
+          options
+        );
+
+        // Track which model actually served the request
+        if (attempt.model !== primaryModel) {
+          console.log(`[Fallback] Used ${attempt.provider}/${attempt.model} instead of ${primaryProvider}/${primaryModel}`);
+        }
+
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        const errorInfo = this.classifyError(error, String(attempt.provider));
+
+        // Don't retry non-retryable errors
+        if (!errorInfo.retryable) break;
+
+        // Wait before next attempt
+        if (errorInfo.retryAfterMs) {
+          await new Promise(r => setTimeout(r, errorInfo.retryAfterMs));
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
   // fallow-ignore-next-line code-duplication
+  static async executeMultimodal(
+    modelId: string,
+    provider: Provider,
+    message: any,
+    apiKey?: string,
+    settings?: AISettings
+  ): Promise<EnhancedAIResponse> {
+    // Wrapper around executeWithFallback for multimodal
+    const prompt = Array.isArray(message) ? message : [message];
+    return this.executeWithFallback(
+      modelId,
+      provider,
+      prompt,
+      settings,
+      { apiKeys: apiKey ? { [provider]: apiKey } : {} }
+    );
+  }
+
   static async execute(
     modelId: string,
     provider: Provider | string,

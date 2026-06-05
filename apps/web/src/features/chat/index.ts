@@ -6,3 +6,4 @@
 export { ChatPage } from './components/ChatPage';
 export { useChatLogic } from './hooks/useChatLogic';
 export { useChatPipeline } from './hooks/useChatPipeline';
+export { useChatSessions } from './hooks/useChatSessions';

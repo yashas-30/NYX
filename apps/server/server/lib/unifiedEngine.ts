@@ -1,5 +1,7 @@
 import { LOCAL_MODEL_PORT } from '@nyx/shared';
 import { env } from '../config/env.js';
+import { Gateway } from './gateway.js';
+import logger from './logger.js';
 
 export interface ModelSettings {
   temperature?: number;
@@ -17,12 +19,40 @@ export interface StreamChunk {
 export interface ExecuteOptions {
   provider: string;
   model: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{ role: string; content: string; images?: any[] }>;
   settings?: ModelSettings;
   apiKey?: string;
 }
 
+// Circuit Breaker & Coalescing State
+const circuitBreakers: Record<string, { failures: number; nextTry: number }> = {};
+const activeRequests: Record<string, Promise<void>> = {};
+
 export class UnifiedEngine {
+  private static checkCircuit(provider: string): void {
+    const cb = circuitBreakers[provider];
+    if (cb && cb.failures >= 3 && Date.now() < cb.nextTry) {
+      throw new Error(`Circuit breaker active for ${provider}. Retry after ${new Date(cb.nextTry).toISOString()}`);
+    }
+  }
+
+  private static recordFailure(provider: string): void {
+    if (!circuitBreakers[provider]) {
+      circuitBreakers[provider] = { failures: 0, nextTry: 0 };
+    }
+    circuitBreakers[provider].failures++;
+    if (circuitBreakers[provider].failures >= 3) {
+      circuitBreakers[provider].nextTry = Date.now() + 30000; // 30s timeout
+    }
+  }
+
+  private static recordSuccess(provider: string): void {
+    if (circuitBreakers[provider]) {
+      circuitBreakers[provider].failures = 0;
+      circuitBreakers[provider].nextTry = 0;
+    }
+  }
+
   static async executeStream(
     options: ExecuteOptions,
     onChunk: (chunk: StreamChunk) => void,
@@ -30,14 +60,40 @@ export class UnifiedEngine {
   ): Promise<void> {
     const { provider, model, messages, settings, apiKey } = options;
 
-    switch (provider) {
-      case 'gemini':
-        return this.streamGemini(model, messages, apiKey || '', settings, onChunk, onComplete);
-      case 'nyx-native':
-        return this.streamLocal(model, messages, settings, onChunk, onComplete);
-      default:
-        throw new Error(`Unsupported provider: ${provider}`);
+    this.checkCircuit(provider);
+
+    // Request Coalescing (prevent duplicate identical requests simultaneously)
+    const requestKey = `${provider}:${model}:${JSON.stringify(messages)}`;
+    if (activeRequests[requestKey]) {
+      logger.info({ requestKey }, 'Coalescing identical request');
+      return activeRequests[requestKey];
     }
+
+    const promise = (async () => {
+      try {
+        switch (provider) {
+          case 'gemini':
+            await this.streamGemini(model, messages, apiKey || '', settings, onChunk, onComplete);
+            break;
+          case 'nyx-native':
+            await this.streamLocal(model, messages, settings, onChunk, onComplete);
+            break;
+          default:
+            throw new Error(`Unsupported provider: ${provider}`);
+        }
+        this.recordSuccess(provider);
+      } catch (error: any) {
+        this.recordFailure(provider);
+        onChunk({ error: error.message });
+        onComplete();
+        throw error;
+      } finally {
+        delete activeRequests[requestKey];
+      }
+    })();
+
+    activeRequests[requestKey] = promise;
+    return promise;
   }
 
   private static async streamGemini(
@@ -48,19 +104,20 @@ export class UnifiedEngine {
     onChunk: (chunk: StreamChunk) => void,
     onComplete: () => void
   ) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+    const { url } = Gateway.buildUrl('gemini', `/models/${model}:streamGenerateContent?alt=sse`);
+    
+    const authResult = Gateway.validateAuth('gemini', model, apiKey);
+    if (!authResult.valid) {
+      throw new Error(authResult.error);
+    }
+    
+    const activeKey = Gateway.getActiveKey('gemini', apiKey);
+    const finalUrl = `${url}&key=${activeKey}`;
 
-    // Fix: Extract system message and filter from contents
-    const systemMsg = messages.find((m) => m.role === 'system');
-    const contents = messages
-      .filter((m) => m.role !== 'system')
-      .map((m) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      }));
+    const formatted = Gateway.formatMessages(messages, 'gemini');
 
     const requestBody: any = {
-      contents,
+      contents: formatted.contents,
       generationConfig: {
         temperature: settings?.temperature ?? 0.7,
         maxOutputTokens: settings?.maxTokens ?? 4096,
@@ -74,51 +131,41 @@ export class UnifiedEngine {
       ],
     };
 
-    // Fix: Add system instruction properly
-    if (systemMsg) {
+    if (formatted.systemInstruction) {
       requestBody.systemInstruction = {
-        parts: [{ text: systemMsg.content }],
+        parts: [{ text: formatted.systemInstruction }],
       };
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 60000); // 60s timeout
 
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('No response body');
-    const decoder = new TextDecoder();
-    let buffer = '';
-    // fallow-ignore-next-line code-duplication
-    let accumulatedText = '';
+    try {
+      const response = await fetch(finalUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: abortController.signal
+      });
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            if (text) {
-              accumulatedText += text;
-              const delta = text;
-              if (delta) {
-                onChunk({ chunk: delta });
-              }
-            }
-          } catch (e: any) {
-            // ignore JSON parse errors for incomplete chunks
-          }
-        }
+      if (!response.ok) {
+        throw new Error(`Gemini API Error: ${response.status} ${response.statusText}`);
       }
+
+      await Gateway.processSSEStream(response, {
+        onChunk: (data: any) => {
+          if (typeof data === 'string') {
+            onChunk({ chunk: data });
+          } else if (data.functionCall) {
+            onChunk({ chunk: JSON.stringify(data.functionCall) });
+          }
+        },
+        onDone: onComplete,
+        onError: (err) => { throw new Error(err); }
+      });
+    } finally {
+      clearTimeout(timeoutId);
     }
-    onComplete();
   }
 
   private static async checkOllama(model: string): Promise<boolean> {
@@ -154,131 +201,98 @@ export class UnifiedEngine {
     onChunk: (chunk: StreamChunk) => void,
     onComplete: () => void
   ) {
-    // 1. Check Ollama
-    if (await this.checkOllama(model)) {
-      const response = await fetch('http://127.0.0.1:11434/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages,
-          options: {
-            temperature: settings?.temperature ?? 0.7,
-            num_predict: settings?.maxTokens ?? 4096,
-            top_p: settings?.topP ?? 1.0,
-          },
-          // fallow-ignore-next-line code-duplication
-          stream: true,
-        }),
-      });
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response body');
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const data = JSON.parse(line);
-            if (data.message?.content) onChunk({ chunk: data.message.content });
-          } catch {}
-        }
-      }
-      onComplete();
-      return;
-    }
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 60000);
 
-    // 2. Check LM Studio
-    if (await this.checkLMStudio(model)) {
-      const response = await fetch('http://127.0.0.1:1234/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: settings?.temperature ?? 0.7,
-          max_tokens: settings?.maxTokens ?? 4096,
-          top_p: settings?.topP ?? 1.0,
-          // fallow-ignore-next-line code-duplication
-          // fallow-ignore-next-line code-duplication
-          stream: true,
-        }),
-      });
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response body');
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const jsonStr = line.slice(6).trim();
-            if (jsonStr === '[DONE]') continue;
-            try {
-              const data = JSON.parse(jsonStr);
-              const content = data.choices?.[0]?.delta?.content;
-              if (content) onChunk({ chunk: content });
-            } catch {}
-          }
-        }
-      }
-      onComplete();
-      return;
-    }
-
-    // 3. Fallback to our own llama-server
-    let LLAMA_PORT = env.LLAMA_PORT || LOCAL_MODEL_PORT;
     try {
-      const runner = await import('../../server/features/local-models/localModelRunner.js');
-      if (runner && (runner as any).getLlamaPort) {
-        LLAMA_PORT = (runner as any).getLlamaPort();
+      // 1. Check Ollama
+      if (await this.checkOllama(model)) {
+        const response = await fetch('http://127.0.0.1:11434/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages,
+            options: {
+              temperature: settings?.temperature ?? 0.7,
+              num_predict: settings?.maxTokens ?? 4096,
+              top_p: settings?.topP ?? 1.0,
+            },
+            stream: true,
+          }),
+          signal: abortController.signal
+        });
+        
+        await Gateway.processSSEStream(response, {
+          onChunk: (data: any) => {
+            if (typeof data === 'string') onChunk({ chunk: data });
+            else if (data.message?.content) onChunk({ chunk: data.message.content });
+          },
+          onDone: onComplete,
+          onError: (err) => { throw new Error(err); }
+        });
+        return;
       }
-    } catch (e) {}
 
-    const response = await fetch(`http://127.0.0.1:${LLAMA_PORT}/completion`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: this.formatPrompt(messages),
-        temperature: settings?.temperature ?? 0.7,
-        n_predict: settings?.maxTokens ?? 4096,
-        // fallow-ignore-next-line code-duplication
-        // fallow-ignore-next-line code-duplication
-        stream: true,
-      }),
-    });
+      // 2. Check LM Studio
+      if (await this.checkLMStudio(model)) {
+        const response = await fetch('http://127.0.0.1:1234/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: settings?.temperature ?? 0.7,
+            max_tokens: settings?.maxTokens ?? 4096,
+            top_p: settings?.topP ?? 1.0,
+            stream: true,
+          }),
+          signal: abortController.signal
+        });
+        
+        await Gateway.processSSEStream(response, {
+          onChunk: (data: any) => {
+            if (typeof data === 'string') onChunk({ chunk: data });
+            else if (data.choices?.[0]?.delta?.content) onChunk({ chunk: data.choices[0].delta.content });
+          },
+          onDone: onComplete,
+          onError: (err) => { throw new Error(err); }
+        });
+        return;
+      }
 
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('No response body');
-    const decoder = new TextDecoder();
-    // fallow-ignore-next-line code-duplication
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.content) onChunk({ chunk: data.content });
-          } catch (e) {}
+      // 3. Fallback to our own llama-server
+      let LLAMA_PORT = env.LLAMA_PORT || LOCAL_MODEL_PORT;
+      try {
+        const runner = await import('../../server/features/local-models/localModelRunner.js');
+        if (runner && (runner as any).getLlamaPort) {
+          LLAMA_PORT = (runner as any).getLlamaPort();
         }
-      }
+      } catch (e) {}
+
+      const response = await fetch(`http://127.0.0.1:${LLAMA_PORT}/completion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: this.formatPrompt(messages),
+          temperature: settings?.temperature ?? 0.7,
+          n_predict: settings?.maxTokens ?? 4096,
+          stream: true,
+        }),
+        signal: abortController.signal
+      });
+
+      await Gateway.processSSEStream(response, {
+        onChunk: (data: any) => {
+          if (typeof data === 'string') onChunk({ chunk: data });
+          else if (data.content) onChunk({ chunk: data.content });
+        },
+        onDone: onComplete,
+        onError: (err) => { throw new Error(err); }
+      });
+    } finally {
+      clearTimeout(timeoutId);
     }
-    onComplete();
   }
 
   private static formatPrompt(messages: any[]): string {

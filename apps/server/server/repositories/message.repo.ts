@@ -35,6 +35,7 @@ export class MessageRepository {
     latencyMs?: number;
     tokens?: number;
     tps?: number;
+    timestamp?: Date;
   }): Promise<void> {
     await db.insert(this.table).values({
       id: message.id,
@@ -45,7 +46,7 @@ export class MessageRepository {
       latencyMs: message.latencyMs || null,
       tokens: message.tokens || null,
       tps: message.tps || null,
-      timestamp: new Date(),
+      timestamp: message.timestamp || new Date(),
     });
   }
 

@@ -5,10 +5,7 @@ import * as Sentry from '@sentry/node';
 
 // Initialize Sentry before anything else
 if (env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: env.SENTRY_DSN,
-    environment: env.NODE_ENV,
-  });
+  Sentry.init({ dsn: env.SENTRY_DSN, environment: env.NODE_ENV });
 }
 
 import './server/lib/apiAgent.js'; // Init global connection pooling
@@ -20,23 +17,26 @@ import {
   registerShutdownHandlers,
 } from './server/lib/bootstrap.js';
 import { buildFastifyServer } from './server/lib/fastifyConfig.js';
-import { buildExpressProxy } from './server/lib/expressProxy.js';
+import { initializeWebSocket } from './server/websocket/index.js';
+
+const PORT = env.PORT || 3010;
 
 async function startServer() {
   await initializeDatabaseAndPlugins();
   await runDependencyHealthChecks();
   const { clearHealthChecks } = spawnBackgroundServices();
 
-  // Initialize Fastify on 3001
-  const fastifyApp = await buildFastifyServer();
-  await fastifyApp.listen({ port: 3001, host: '127.0.0.1' });
-  logger.info('🚀 Fastify API Server running on http://localhost:3001');
+  // Build Fastify (registers all plugins, routes — but does NOT listen yet)
+  const app = await buildFastifyServer();
 
-  // Initialize Express Proxy on 3000
-  const expressServer = buildExpressProxy();
+  // Attach Socket.IO BEFORE listen() — addHook must be in setup phase
+  initializeWebSocket(app);
 
-  // Register graceful shutdown and error handlers
-  registerShutdownHandlers(fastifyApp, expressServer, clearHealthChecks);
+  // Single server, single port — Vite proxies /api and /ws directly here
+  await app.listen({ port: PORT, host: '127.0.0.1' });
+  logger.info(`🚀 NYX Server running on http://localhost:${PORT}`);
+
+  registerShutdownHandlers(app, clearHealthChecks);
 }
 
 startServer().catch((err) => {

@@ -7,8 +7,8 @@ interface ModelRegistryPageProps {
   selectModel?: (modelId: string) => void;
   apiKeys: Record<string, string>;
   providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;
-  activeMode?: 'coder' | 'registry' | 'settings';
-  setActiveMode?: (mode: 'coder' | 'registry' | 'settings') => void;
+  activeMode?: 'coder' | 'registry' | 'settings' | 'compare';
+  setActiveMode?: (mode: 'coder' | 'registry' | 'settings' | 'compare') => void;
   sidebarOpen?: boolean;
 }
 

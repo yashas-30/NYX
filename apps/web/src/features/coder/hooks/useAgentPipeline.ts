@@ -116,7 +116,7 @@ export const useAgentPipeline = ({
    * Main execution handler that routes the prompt dynamically.
    */
   const runCoder = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, images?: Array<{ name: string; dataUrl: string; mimeType?: string }>) => {
       const nyxModel = models['nyx'];
       if (!prompt.trim() || !nyxModel) return;
       const nyxProvider = detectProvider(nyxModel);
@@ -127,7 +127,17 @@ export const useAgentPipeline = ({
       controllerRef.current = controller;
 
       // Append user message
-      const userMsg: ChatMessage = { role: 'user', content: prompt, timestamp: Date.now() };
+      const userMsg: ChatMessage = { 
+        role: 'user', 
+        content: prompt, 
+        timestamp: Date.now(),
+        images: images?.map(img => ({
+          name: img.name,
+          mimeType: img.mimeType,
+          data: img.dataUrl.split(',')[1] || img.dataUrl, // Strip base64 prefix if needed or store as is
+          url: img.dataUrl
+        }))
+      };
       updateHistory((prev) => [...prev, userMsg]);
 
       setIsLoading(true);
@@ -147,131 +157,172 @@ export const useAgentPipeline = ({
         const { analysis, route } = analysisResult;
 
         const streamResponseFromServer = async function* (signal: AbortSignal) {
-          const response = await fetchWithAuth('/api/v1/agents/coder', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: nyxModel,
-              prompt,
-              history: historyRef.current,
-              apiKey: nyxApiKey,
-              gatewayUrls: (modelSettings as any)?.gatewayUrls,
-            }),
-            signal,
-          });
-
-          if (!response.ok) {
-            const errText = await response.text().catch(() => '');
-            throw new Error(errText || `Server returned ${response.status}`);
-          }
-
-          if (!response.body) {
-            throw new Error('No response body from server');
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
           let accumulatedText = '';
-          const startTime = Date.now();
+          const maxRetries = 3;
+          let retryCount = 0;
+          let isComplete = false;
 
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n\n');
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || !trimmed.startsWith('data: ')) continue;
-                const data = trimmed.slice(6).trim();
-
-                if (data === '[DONE]') {
-                  return;
-                }
-
-                try {
-                  const event = JSON.parse(data);
-
-                  if (event.error) {
-                    throw new Error(event.error);
-                  }
-
-                  switch (event.type) {
-                    case 'run-started':
-                    case 'turn-started':
-                      yield {
-                        type: 'thinking',
-                        content: 'NYX Coder Agent is reasoning...\n',
-                      };
-                      break;
-
-                    case 'assistant-text-delta':
-                      if (event.text) {
-                        accumulatedText += event.text;
-                        yield {
-                          type: 'text',
-                          content: accumulatedText,
-                        };
-                      }
-                      break;
-
-                    case 'tool-started':
-                      if (event.toolCall) {
-                        yield {
-                          type: 'tool_call',
-                          metadata: {
-                            id: event.toolCall.toolCallId,
-                            function: {
-                              name: event.toolCall.toolName,
-                              arguments: JSON.stringify(event.toolCall.input),
-                            },
-                          },
-                        };
-                      }
-                      break;
-
-                    case 'tool-finished':
-                      if (event.toolCall && event.message?.content?.[0]) {
-                        const tcOutput = event.message.content[0].output || '';
-                        yield {
-                          type: 'tool_result',
-                          metadata: {
-                            id: event.toolCall.toolCallId,
-                            status: 'success',
-                            result:
-                              typeof tcOutput === 'object' ? JSON.stringify(tcOutput) : tcOutput,
-                          },
-                        };
-                      }
-                      break;
-
-                    case 'usage-updated':
-                      if (event.snapshot?.usage) {
-                        const usage = event.snapshot.usage;
-                        yield {
-                          type: 'text',
-                          content: accumulatedText,
-                          metadata: {
-                            totalTokens: usage.inputTokens + usage.outputTokens,
-                            latencyMs: Date.now() - startTime,
-                          },
-                        };
-                      }
-                      break;
-                  }
-                } catch (parseErr) {
-                  // Ignore JSON parse errors for chunk boundaries
-                }
+          while (!isComplete && retryCount <= maxRetries) {
+            try {
+              const currentHistory = [...historyRef.current];
+              if (accumulatedText) {
+                currentHistory.push({
+                  role: 'assistant',
+                  content: accumulatedText,
+                  timestamp: Date.now()
+                });
               }
+
+              const response = await fetchWithAuth('/api/v1/agents/coder', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: nyxModel,
+                  prompt: accumulatedText ? 'Continue generating exactly where you left off.' : prompt,
+                  history: currentHistory,
+                  apiKey: nyxApiKey,
+                  gatewayUrls: (modelSettings as any)?.gatewayUrls,
+                }),
+                signal,
+              });
+
+              if (!response.ok) {
+                const errText = await response.text().catch(() => '');
+                throw new Error(errText || `Server returned ${response.status}`);
+              }
+
+              if (!response.body) {
+                throw new Error('No response body from server');
+              }
+
+              const reader = response.body.getReader();
+              const decoder = new TextDecoder();
+              let buffer = '';
+              const startTime = Date.now();
+
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) {
+                    // Stream ended. If we didn't receive [DONE], it might have dropped.
+                    break;
+                  }
+
+                  buffer += decoder.decode(value, { stream: true });
+                  const lines = buffer.split('\n\n');
+                  buffer = lines.pop() || '';
+
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || !trimmed.startsWith('data: ')) continue;
+                    const data = trimmed.slice(6).trim();
+
+                    if (data === '[DONE]') {
+                      isComplete = true;
+                      return;
+                    }
+
+                    try {
+                      const event = JSON.parse(data);
+
+                      if (event.error) {
+                        throw new Error(event.error);
+                      }
+
+                      switch (event.type) {
+                        case 'run-started':
+                        case 'turn-started':
+                          if (!accumulatedText) {
+                            yield {
+                              type: 'thinking',
+                              content: 'NYX Coder Agent is reasoning...\n',
+                            };
+                          }
+                          break;
+
+                        case 'assistant-text-delta':
+                          if (event.text) {
+                            accumulatedText += event.text;
+                            yield {
+                              type: 'text',
+                              content: accumulatedText,
+                            };
+                          }
+                          break;
+
+                        case 'tool-started':
+                          if (event.toolCall) {
+                            yield {
+                              type: 'tool_call',
+                              metadata: {
+                                id: event.toolCall.toolCallId,
+                                function: {
+                                  name: event.toolCall.toolName,
+                                  arguments: JSON.stringify(event.toolCall.input),
+                                },
+                              },
+                            };
+                          }
+                          break;
+
+                        case 'tool-finished':
+                          if (event.toolCall && event.message?.content?.[0]) {
+                            const tcOutput = event.message.content[0].output || '';
+                            yield {
+                              type: 'tool_result',
+                              metadata: {
+                                id: event.toolCall.toolCallId,
+                                status: 'success',
+                                result:
+                                  typeof tcOutput === 'object' ? JSON.stringify(tcOutput) : tcOutput,
+                              },
+                            };
+                          }
+                          break;
+
+                        case 'usage-updated':
+                          if (event.snapshot?.usage) {
+                            const usage = event.snapshot.usage;
+                            yield {
+                              type: 'text',
+                              content: accumulatedText,
+                              metadata: {
+                                totalTokens: usage.inputTokens + usage.outputTokens,
+                                latencyMs: Date.now() - startTime,
+                              },
+                            };
+                          }
+                          break;
+                      }
+                    } catch (parseErr) {
+                      // Ignore JSON parse errors for chunk boundaries
+                    }
+                  }
+                }
+              } finally {
+                reader.releaseLock();
+              }
+              
+              if (!isComplete && !signal.aborted) {
+                throw new Error('Stream ended without [DONE] marker');
+              }
+            } catch (err: any) {
+              if (signal.aborted) {
+                isComplete = true;
+                return;
+              }
+              
+              const isNonRetryable = /SAFETY_GATE_BLOCKED|401|403|unauthorized/i.test(err.message || '');
+              if (isNonRetryable || retryCount >= maxRetries) {
+                throw err;
+              }
+              
+              retryCount++;
+              console.warn(`[useAgentPipeline] Stream interrupted, retrying (${retryCount}/${maxRetries})...`);
+              await new Promise(r => setTimeout(r, 1000 * retryCount)); // Exponential-ish backoff
             }
-          } finally {
-            reader.releaseLock();
           }
         };
 

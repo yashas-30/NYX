@@ -44,8 +44,8 @@ interface CoderPageProps {
   setModelSettings: (settings: any) => void;
   providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;
   gatewayUrls?: Record<string, string>;
-  activeMode?: 'coder' | 'registry' | 'settings';
-  setActiveMode?: (mode: 'coder' | 'registry' | 'settings') => void;
+  activeMode?: 'coder' | 'registry' | 'settings' | 'compare';
+  setActiveMode?: (mode: 'coder' | 'registry' | 'settings' | 'compare') => void;
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
   chatSessions: any;
@@ -108,18 +108,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     agentMode,
     agentReasoning,
     pendingToolConfirm,
-  } = useCoderLogic({
-    apiKeys,
-    modelSettings,
-    trackUsage,
-    models,
-    setModel,
-    chatSessions,
-    lightningEnabled,
-    lightningDirectives,
-    logRollout,
-    submitReward,
-  });
+  } = useCoderLogic();
 
   const workspacePath = useNyxStore((s) => s.workspacePath);
   const selectWorkspace = useNyxStore((s) => s.selectWorkspace);
@@ -230,13 +219,13 @@ export const CoderPage: React.FC<CoderPageProps> = ({
   );
 
   const handleSubmit = useCallback(
-    (finalPrompt: string) => {
+    (finalPrompt: string, images?: Array<{ name: string; dataUrl: string; mimeType?: string }>) => {
       if (!finalPrompt.trim() || isLoading) return;
       if (!currentModelId) {
         toast.error('Please select a model first');
         return;
       }
-      runCoder(finalPrompt);
+      runCoder(finalPrompt, images);
       setPrompt('');
     },
     [isLoading, currentModelId, runCoder]

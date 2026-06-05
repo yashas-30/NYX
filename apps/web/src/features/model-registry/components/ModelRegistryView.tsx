@@ -518,9 +518,9 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
             </h2>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full lg:w-auto">
             {/* Search */}
-            <div className="relative group">
+            <div className="relative group w-full sm:w-auto">
               <Search
                 size={12}
                 strokeWidth={1.5}
@@ -540,7 +540,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 className="
                   bg-background border border-border rounded-full
                   text-[11px] font-medium text-foreground
-                  pl-8 pr-3 py-1.5 w-40 sm:w-48
+                  pl-8 pr-3 py-1.5 w-full sm:w-48
                   outline-none focus:border-[#FF3366]/30
                   transition-all placeholder:text-muted-foreground/20 shadow-sm
                 "
@@ -548,13 +548,13 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
             </div>
 
             {/* Filter tabs */}
-            <div className="flex gap-1 bg-background p-1 rounded-full border border-border shadow-sm">
+            <div className="flex gap-1 bg-background p-1 rounded-full border border-border shadow-sm shrink-0 w-full sm:w-auto overflow-x-auto scrollbar-none">
               {(['nyx', 'cloud'] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
                   className={`
-                    px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-tight transition-all
+                    flex-1 sm:flex-none px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-tight transition-all text-center
                     ${
                       filter === f
                         ? 'bg-[#FF3366] text-black shadow-sm'
@@ -769,21 +769,21 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
       {/* Sticky Compare Bar */}
       {compareIds.length > 0 && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-card border border-accent/40 shadow-2xl px-6 py-3 rounded-full flex items-center gap-4 z-50">
-          <span className="text-xs font-bold text-foreground">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md sm:w-auto bg-card border border-accent/40 shadow-2xl px-6 py-3 rounded-2xl sm:rounded-full flex flex-col sm:flex-row items-center gap-3 sm:gap-4 z-50">
+          <span className="text-xs font-bold text-foreground text-center">
             {compareIds.length} model{compareIds.length > 1 ? 's' : ''} selected
           </span>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full sm:w-auto">
             <button
               onClick={() => setCompareIds([])}
-              className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-full hover:bg-muted transition-all"
+              className="flex-1 sm:flex-none text-[10px] uppercase font-bold tracking-wider text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-full hover:bg-muted transition-all"
             >
               Clear
             </button>
             <button
               onClick={() => setShowCompareModal(true)}
               disabled={compareIds.length < 2}
-              className="text-[10px] uppercase font-bold tracking-wider bg-[#FF3366] text-black px-4 py-1.5 rounded-full hover:bg-[#FF3366]/90 transition-all disabled:opacity-50"
+              className="flex-1 sm:flex-none text-[10px] uppercase font-bold tracking-wider bg-[#FF3366] text-black px-4 py-1.5 rounded-full hover:bg-[#FF3366]/90 transition-all disabled:opacity-50"
             >
               Compare Models
             </button>

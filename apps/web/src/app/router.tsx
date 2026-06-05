@@ -12,6 +12,7 @@ const ChatView = lazy(() => import('@src/views/ChatView'));
 const ModelRegistryView = lazy(() => import('@src/views/ModelRegistryView'));
 const SettingsView = lazy(() => import('@src/views/SettingsView'));
 const ModelComparisonView = lazy(() => import('@src/views/ModelComparisonView'));
+const WorkspaceCanvas = lazy(() => import('@src/components/workspace/Canvas').then(m => ({ default: m.InfiniteCanvas })));
 
 const LoadingFallback = () => (
   <div className="flex items-center justify-center h-full bg-[#0B0E14]">
@@ -40,8 +41,8 @@ export interface ChatSessionHookResult {
 }
 
 interface AppRouterProps {
-  activeMode: 'chat' | 'coder' | 'registry' | 'settings' | 'compare';
-  setActiveMode: (mode: 'chat' | 'coder' | 'registry' | 'settings' | 'compare') => void;
+  activeMode: 'chat' | 'coder' | 'registry' | 'settings' | 'compare' | 'workspace';
+  setActiveMode: (mode: 'chat' | 'coder' | 'registry' | 'settings' | 'compare' | 'workspace') => void;
   apiKeys: Record<string, string>;
   chatSettings: ModelSettings;
   setChatSettings: (settings: ModelSettings) => void;
@@ -188,6 +189,14 @@ export function AppRouter({
         element={
           <LazyRoute name="ModelComparisonView">
             <ModelComparisonView />
+          </LazyRoute>
+        }
+      />
+      <Route
+        path="/workspace"
+        element={
+          <LazyRoute name="WorkspaceCanvas">
+            <WorkspaceCanvas />
           </LazyRoute>
         }
       />

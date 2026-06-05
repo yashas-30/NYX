@@ -98,7 +98,11 @@ export class CacheServer {
       }
 
       await CacheRepository.set(key, data, provider, model, ttlMs);
-      await CacheRepository.evictOldestIfNeeded(MAX_ITEMS);
+      
+      // Async I/O: Run eviction without blocking the response
+      CacheRepository.evictOldestIfNeeded(MAX_ITEMS).catch(err => 
+        logger.error('[CacheServer] Async eviction failed:', err.message)
+      );
     } catch (error: any) {
       logger.error('[CacheServer] Failed to write cache:', error.message);
     }
@@ -148,13 +152,25 @@ export class CacheServer {
 export class TTLCache<V> {
   private cache = new Map<string, { value: V; expiresAt: number }>();
   private defaultTTLMs: number;
+  private maxSize: number;
 
-  constructor(defaultTTLMs: number = 60000) {
+  constructor(defaultTTLMs: number = 60000, maxSize: number = 1000) {
     this.defaultTTLMs = defaultTTLMs;
+    this.maxSize = maxSize;
   }
 
   set(key: string, value: V, ttlMs?: number) {
+    if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
+      // LRU Eviction: Map guarantees keys are returned in insertion order
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
+      }
+    }
+    
     const expiresAt = Date.now() + (ttlMs || this.defaultTTLMs);
+    // Delete first to enforce insertion order (LRU)
+    this.cache.delete(key);
     this.cache.set(key, { value, expiresAt });
   }
 
@@ -166,6 +182,10 @@ export class TTLCache<V> {
       this.cache.delete(key);
       return undefined;
     }
+
+    // Refresh LRU order
+    this.cache.delete(key);
+    this.cache.set(key, item);
 
     return item.value;
   }

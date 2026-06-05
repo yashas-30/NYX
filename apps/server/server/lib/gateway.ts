@@ -190,126 +190,103 @@ export class Gateway {
   }
 
   /**
-   * Processes SSE stream response from standard JSON APIs (e.g. LM Studio, Ollama).
+   * Processes SSE stream response with robust chunk boundary and multiline parsing.
    * Handles data: [DONE] markers and error payloads.
    * @param response - The fetch Response object with streaming body
    * @param callbacks - Stream callbacks for chunk, done, and error events
    */
   static async processSSEStream(response: Response, callbacks: StreamCallbacks): Promise<void> {
-    // fallow-ignore-next-line code-duplication
     if (!response.body) {
       callbacks.onError('No response body');
       return;
     }
 
-    // fallow-ignore-next-line code-duplication
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
 
     try {
       while (true) {
-        // fallow-ignore-next-line code-duplication
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        
+        let start = 0;
+        let eventData: string[] = [];
 
-        for (const line of lines) {
-          const clean = line.trim();
-          if (clean === 'data: [DONE]' || clean === 'data: [done]') {
-            callbacks.onDone();
-            return;
-          }
-          if (!clean.startsWith('data: ')) {
-            // Handle lines without data: prefix
-            try {
-              const data = JSON.parse(clean);
-              if (data.error) {
-                callbacks.onError(
-                  typeof data.error === 'object'
-                    ? data.error.message || JSON.stringify(data.error)
-                    : data.error
-                );
-                return;
-              }
-              // Extract content from standard format
-              const chunk = data.choices?.[0]?.delta?.content;
-              if (chunk) callbacks.onChunk(chunk);
-              // Handle finish_reason to detect end of stream
-              if (
-                data.choices?.[0]?.finish_reason === 'stop' ||
-                data.choices?.[0]?.finish_reason === 'length'
-              ) {
+        while (start < buffer.length) {
+          const end = buffer.indexOf('\n', start);
+          if (end === -1) break;
+
+          const line = buffer.substring(start, end).replace(/\r$/, '');
+          start = end + 1;
+
+          if (line === '') {
+            // End of an event
+            if (eventData.length > 0) {
+              const fullData = eventData.join('\n');
+              eventData = [];
+              
+              if (fullData === '[DONE]' || fullData === '[done]') {
                 callbacks.onDone();
                 return;
               }
-            } catch {
-              // Skip non-JSON lines
+
+              // Process JSON chunk
+              try {
+                const data = JSON.parse(fullData);
+
+                if (data.error) {
+                  const msg = typeof data.error === 'object' ? data.error.message || JSON.stringify(data.error) : data.error;
+                  callbacks.onError(msg);
+                  return;
+                }
+
+                // Standard formats
+                let chunk = data.choices?.[0]?.delta?.content;
+                if (!chunk) chunk = data.choices?.[0]?.delta?.message?.content;
+                if (!chunk) chunk = data.choices?.[0]?.message?.content;
+                // Gemini format
+                if (!chunk && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                  chunk = data.candidates[0].content.parts[0].text;
+                }
+
+                let functionCall = data.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+
+                if (chunk) {
+                  callbacks.onChunk(chunk);
+                }
+                if (functionCall) {
+                  callbacks.onChunk({ functionCall });
+                }
+
+                const finishReason = data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason;
+                if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'STOP') {
+                  callbacks.onDone();
+                  return;
+                }
+              } catch {
+                // Ignore parsing errors for partial/malformed chunks
+              }
             }
-            continue;
-          }
-
-          try {
-            const data = JSON.parse(clean.slice(6));
-
-            if (data.error) {
-              const msg =
-                typeof data.error === 'object'
-                  ? data.error.message || JSON.stringify(data.error)
-                  : data.error;
-              callbacks.onError(msg);
-              return;
-            }
-
-            // Handle multiple content delta formats
-            let chunk = data.choices?.[0]?.delta?.content;
-
-            // Fallback: check for content in message.delta
-            if (!chunk && data.choices?.[0]?.delta?.message?.content) {
-              chunk = data.choices[0].delta.message.content;
-            }
-
-            // Fallback: check for content.message (non-delta format)
-            if (!chunk && data.choices?.[0]?.message?.content) {
-              chunk = data.choices[0].message.content;
-            }
-
-            // Fallback: check for Gemini format
-            if (!chunk && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-              chunk = data.candidates[0].content.parts[0].text;
-            }
-
-            let functionCall = data.candidates?.[0]?.content?.parts?.[0]?.functionCall;
-
-            if (chunk) {
-              callbacks.onChunk(chunk);
-            }
-            if (functionCall) {
-              callbacks.onChunk({ functionCall });
-            }
-
-            // Handle finish_reason to detect end of stream
-            const finishReason =
-              data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason;
-
-            if (
-              finishReason === 'stop' ||
-              finishReason === 'length' ||
-              finishReason === 'STOP' // Gemini format
-            ) {
-              callbacks.onDone();
-              return;
-            }
-          } catch {
-            // Silent catch for partial chunks
+          } else if (line.startsWith('data:')) {
+            const dataStr = line.substring(5).replace(/^ /, ''); // Remove at most one leading space per spec
+            eventData.push(dataStr);
+          } else if (line.startsWith('error:')) {
+             callbacks.onError(line.substring(6).trimStart());
+             return;
           }
         }
+        
+        buffer = buffer.substring(start);
       }
       callbacks.onDone();
     } catch (error: any) {
+      if (error.name === 'AbortError') {
+        callbacks.onDone();
+        return;
+      }
       logger.error({ err: error }, '[Gateway.processSSEStream] Stream error');
       callbacks.onError(error.message || 'Stream processing failed');
     }

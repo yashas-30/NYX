@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
 import { useModelStore } from '@src/core/stores/useModelStore';
 import { ArrowLeft, Plus, X, BarChart3, ShieldCheck } from 'lucide-react';
+import { ModelComparisonInteractive } from '@src/components/comparison/ModelComparison';
 
 export default function ModelComparisonView() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -187,6 +188,11 @@ export default function ModelComparisonView() {
             );
           })}
         </div>
+      )}
+
+      {/* Interactive comparison section */}
+      {comparedModels.length > 0 && (
+        <ModelComparisonInteractive selectedModels={comparedModels.filter(m => m !== undefined) as any} />
       )}
     </div>
   );

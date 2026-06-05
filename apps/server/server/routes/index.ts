@@ -31,6 +31,7 @@ import { graphqlRouter } from '../features/graphql/graphql.router.js';
 import { uploadRouter } from '../features/upload/upload.router.js';
 import { cacheRouter } from '../features/cache/cache.router.js';
 import { assistantRouter } from '../features/assistant/assistant.router.js';
+import { sessionsRouter } from '../features/sessions/sessions.router.js';
 
 import { providerRateLimiter } from '../middleware/rateLimit.js';
 
@@ -67,7 +68,8 @@ export async function registerRoutes(app: FastifyInstance) {
             '/api/v1/metrics',
             '/api/v1/graphql',
             '/api/v1/config',
-          ]).has(fullPath) || fullPath.startsWith('/api/v1/auth');
+            '/api/v1/sessions',
+          ]).has(fullPath) || fullPath.startsWith('/api/v1/auth') || fullPath.startsWith('/api/v1/sessions');
 
         if (isPublic) return;
 
@@ -139,6 +141,7 @@ export async function registerRoutes(app: FastifyInstance) {
       v1.register(chatRouter, { prefix: '/chat' });
       v1.register(filesRouter, { prefix: '/files' });
       v1.register(cacheRouter, { prefix: '/cache' });
+      v1.register(sessionsRouter, { prefix: '/sessions' });
       v1.register(workspaceRouter, { prefix: '/workspace' });
       v1.register(modelProxyRouter, { prefix: '/models' });
       v1.register(promptTemplatesRouter, { prefix: '/prompt-templates' });

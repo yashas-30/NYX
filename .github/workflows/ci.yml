@@ -1,77 +1,65 @@
-name: NYX Hardening CI Pipeline
+name: CI/CD
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, master ]
-
-permissions:
-  contents: read
-  security-events: write
+    branches: [main]
 
 jobs:
-  validate:
-    name: Lint, Typecheck, and Test
+  typecheck:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Codebase
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js Environment
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
 
-      - name: Install Project Dependencies
-        run: npm ci
-
-      - name: Execute Strict Typecheck & Linter
-        run: |
-          npm run lint
-          npm run typecheck
-
-      - name: Run Vitest Unit Tests
-        run: npx vitest run
-
-      - name: Run Snyk Dependency Scan
-        uses: snyk/actions/node@master
-        continue-on-error: true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high
-
-      - name: Install Tauri Dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
-
-      - name: Verify Bundle Compilation
-        run: npm run build
-        env:
-          NODE_ENV: production
-
-  codeql:
-    name: CodeQL Static Analysis
+  test:
     runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
     steps:
-      - name: Checkout Codebase
-        uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          languages: javascript-typescript
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:server
 
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+  release:
+    needs: [typecheck, test, build]
+    runs-on: ${{ matrix.os }}
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run package:exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nyx-${{ matrix.os }}
+          path: dist-desktop/

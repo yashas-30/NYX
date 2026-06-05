@@ -3,58 +3,73 @@ import { TerminalService } from './terminal.service.js';
 import { sendSseTokenRotate } from '../../lib/sseHelpers.js';
 import { validate } from '../../middleware/validate.js';
 import { terminalRunSchema, terminalPromptSchema } from './terminal.schema.js';
+import { runInSandbox } from '../../sandbox/dockerSandbox.js';
+
+const ALLOWED_COMMANDS = [
+  'npm', 'node', 'python', 'python3', 'git', 'gcc', 'make',
+  'cargo', 'go', 'rustc', 'javac', 'java', 'dotnet'
+];
+
+const BLOCKED_PATTERNS = [
+  /rm\s+-rf\s+\//,           // rm -rf /
+  />\s*\/dev\/(null|zero|random)/,  // Dangerous redirects
+  /curl\s+.*\|\s*sh/,        // curl | sh
+  /wget\s+.*\|\s*sh/,        // wget | sh
+  /eval\s*\(/,               // eval()
+  /exec\s*\(/,               // exec()
+  /;\s*rm\s+/,               // chained rm
+  /\|\s*rm\s+/,              // piped rm
+];
 
 export async function terminalRouter(fastify: FastifyInstance) {
   fastify.post(
     '/run',
     {
       preHandler: [validate(terminalRunSchema)],
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: '1 minute'
+        }
+      }
     },
     async (request, reply) => {
       const { command, cwd } = request.body as any;
-      if (!command) {
+      if (!command || typeof command !== 'string') {
         return reply.code(400).send({ error: 'Command is required' });
       }
 
-      const { child, error } = await TerminalService.spawn(command, cwd);
-      if (error) {
-        return reply.code(400).send({ error });
+      for (const pattern of BLOCKED_PATTERNS) {
+        if (pattern.test(command)) {
+          return reply.code(403).send({ error: 'Command blocked for security reasons' });
+        }
       }
 
-      if (!child) {
-        return reply.code(500).send({ error: 'Failed to initialize sandboxed process' });
+      const cmdBase = command.trim().split(' ')[0];
+      if (!ALLOWED_COMMANDS.includes(cmdBase)) {
+        return reply.code(403).send({ 
+          error: `Command '${cmdBase}' is not allowed. Allowed: ${ALLOWED_COMMANDS.join(', ')}` 
+        });
       }
 
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout?.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      child.stderr?.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      child.on('close', (code) => {
-        if (code === 0) {
-          reply.send({ stdout, stderr });
+      try {
+        const result = await runInSandbox(command, cwd || process.cwd());
+        if (result.exitCode === 0) {
+          reply.send({ stdout: result.stdout, stderr: result.stderr });
         } else {
           reply.code(500).send({
-            error: `Process exited with code ${code}`,
-            stdout,
-            stderr,
+            error: `Process exited with code ${result.exitCode}`,
+            stdout: result.stdout,
+            stderr: result.stderr,
           });
         }
-      });
-
-      child.on('error', (err) => {
+      } catch (err: any) {
         reply.code(500).send({
           error: `Process error: ${err.message}`,
-          stdout,
-          stderr,
+          stdout: '',
+          stderr: '',
         });
-      });
+      }
     }
   );
 
@@ -93,7 +108,14 @@ export async function terminalRouter(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get('/stream', async (request, reply) => {
+  fastify.get('/stream', {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: '1 minute'
+      }
+    }
+  }, async (request, reply) => {
     reply.header('Content-Type', 'text/event-stream');
     reply.header('Cache-Control', 'no-cache');
     reply.header('Connection', 'keep-alive');

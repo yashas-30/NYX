@@ -1,5 +1,7 @@
 import logger from '../../lib/logger.js';
 import { CodebaseScanner } from '../workspace/codebaseScanner.js';
+import { CodebaseRAG, buildIndex } from '../rag/index.js';
+import { getWorkspaceRoot } from '../../lib/paths.js';
 import { getKeysSync } from '../vault/vault.service.js';
 // fetch is available globally in Node.js 18+ — no import needed
 import * as fs from 'fs';
@@ -18,6 +20,7 @@ const CACHE_FILE = path.join(process.cwd(), 'server', 'data', 'search_cache.json
 
 export class SearchService {
   private searchCache = new Map<string, SearchCacheEntry>();
+  private rag: CodebaseRAG | null = null;
 
   constructor() {
     this.loadCacheFromDisk();
@@ -77,12 +80,36 @@ export class SearchService {
   }
 
   async codebaseSearch(query: string) {
-    const results = await CodebaseScanner.search(query, 5);
-    const directoryStructure = CodebaseScanner.getDirectoryStructure();
-    return {
-      results,
-      directoryStructure,
-    };
+    try {
+      if (!this.rag) {
+        this.rag = new CodebaseRAG();
+        await this.rag.initialize(getWorkspaceRoot());
+      }
+
+      // Check if index exists, if not build it
+      const stats = await this.rag.getIndexStats();
+      if (stats.documentCount === 0) {
+        logger.info('[CodebaseSearch] Building vector index...');
+        await buildIndex(this.rag, getWorkspaceRoot());
+      }
+
+      const results = await this.rag.search(query, 5);
+      const directoryStructure = CodebaseScanner.getDirectoryStructure();
+
+      return {
+        results,
+        directoryStructure,
+      };
+    } catch (e: any) {
+      logger.error(`[Codebase Search] Error: ${e}`);
+      // Fallback to old scanner
+      const results = await CodebaseScanner.search(query, 5);
+      return {
+        results,
+        directoryStructure: CodebaseScanner.getDirectoryStructure(),
+        fallback: true
+      };
+    }
   }
 
   private async extractQueryWithLLM(rawQuery: string): Promise<string> {
@@ -111,8 +138,12 @@ export class SearchService {
       );
       if (response.ok) {
         const data: any = await response.json();
-        const optimized = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        return optimized || rawQuery;
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          // Remove markdown blocks FIRST, then quotes
+          const optimized = text.replace(/```[\s\S]*?```/g, '').replace(/["'`]/g, '').trim();
+          return optimized || rawQuery;
+        }
       }
     } catch (e) {
       logger.warn(`[QueryOptimizer] Failed to optimize query: ${e}`);

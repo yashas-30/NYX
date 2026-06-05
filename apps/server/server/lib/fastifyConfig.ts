@@ -5,12 +5,16 @@ import fastifyCompress from '@fastify/compress';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyWebsocket from '@fastify/websocket';
+import fastifyStatic from '@fastify/static';
 import {
   serializerCompiler,
   validatorCompiler,
   ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import logger from './logger.js';
 import { env } from '../config/env.js';
 import { isProd } from './paths.js';
@@ -21,6 +25,8 @@ import { fastifyModelRoutes } from '../fastify/fastify.server.js';
 import { registerRoutes } from '../routes/index.js';
 import { verifySessionToken } from '../features/vault/vault.service.js';
 import { workspaceWatcher } from '../features/workspace/workspace.watcher.js';
+
+const _serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 function sanitizePayload(payload: any): any {
   if (!payload) return payload;
@@ -57,6 +63,7 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
     },
     keepAliveTimeout: 75_000,
     maxParamLength: 512,
+    trustProxy: true,
   }).withTypeProvider<ZodTypeProvider>();
 
   // Set Zod compilers
@@ -169,6 +176,8 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
         const devOrigins = [
           'http://localhost:3000',
           'http://127.0.0.1:3000',
+          'http://localhost:3010',
+          'http://127.0.0.1:3010',
           'http://localhost:1420',
           'http://127.0.0.1:1420',
           'http://localhost:5173',
@@ -207,7 +216,21 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
     credentials: true,
   });
 
-  // Add rate limiting
+  // Add rate limiting (Redis optional — falls back to in-memory if unavailable)
+  const { Redis: IORedis } = await import('ioredis');
+  const redis = new IORedis({
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+    lazyConnect: true,
+    enableOfflineQueue: false,
+    retryStrategy: (times) => {
+      if (times > 10) return null;
+      return Math.min(times * 500, 30_000);
+    },
+    maxRetriesPerRequest: 0,
+  });
+  redis.on('error', () => {}); // Suppress unhandled errors
+
   await app.register(fastifyRateLimit, {
     max: 100,
     timeWindow: '1 minute',
@@ -269,22 +292,32 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
     LocalModelManager.addClient(socket as any);
   });
 
-  const wsPingInterval = setInterval(() => {
-    app.websocketServer.clients.forEach((ws: any) => {
-      ws.ping();
-    });
-  }, 30000);
-
-  app.addHook('onClose', (instance, done) => {
-    clearInterval(wsPingInterval);
-    done();
-  });
-
   // Mount model and application routes
   await app.register(fastifyModelRoutes);
   await registerRoutes(app);
 
   await setupOpenApi(app);
+
+  // Serve the built frontend in production
+  if (isProd) {
+    let distPath = path.join(_serverDir, 'dist');
+    if (!fs.existsSync(path.join(distPath, 'index.html'))) {
+      distPath = path.join(_serverDir, '../dist');
+    }
+    logger.info(`[Static] Serving frontend from: ${distPath}`);
+    await app.register(fastifyStatic, {
+      root: distPath,
+      prefix: '/',
+      decorateReply: false,
+    });
+    // SPA fallback — serve index.html for all non-API routes
+    app.setNotFoundHandler(async (request, reply) => {
+      if (request.url.startsWith('/api/') || request.url.startsWith('/ws/')) {
+        return reply.code(404).send({ error: 'Not found' });
+      }
+      return reply.sendFile('index.html', distPath);
+    });
+  }
 
   app.setErrorHandler(errorHandler);
 

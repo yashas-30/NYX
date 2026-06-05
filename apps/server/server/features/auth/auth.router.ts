@@ -25,7 +25,14 @@ export default async function authRouter(app: FastifyInstance) {
     return reply.status(201).send(user);
   });
 
-  app.post('/login', async (request, reply) => {
+  app.post('/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '15 minutes'
+      }
+    }
+  }, async (request, reply) => {
     const { username, password } = loginSchema.parse(request.body);
     const result = await AuthService.login(username, password);
     if (!result.requiresMfa) {

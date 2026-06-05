@@ -7,6 +7,7 @@ import * as si from 'systeminformation';
 import logger from '../../lib/logger.js';
 import crypto from 'crypto';
 import { exec } from 'child_process';
+import { emitDownloadProgress } from '../../websocket/index.js';
 
 // No download queue needed — downloads are tracked per-modelId in activeDownloads map
 
@@ -680,13 +681,21 @@ export const LocalModelManager = {
   },
 
   broadcastProgress() {
-    if (wsClients.size === 0) return;
     const progressData = Array.from(activeDownloads.values());
-    const message = JSON.stringify({ event: 'downloads_progress', data: progressData });
-    for (const client of wsClients) {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(message);
+    
+    // Broadcast via old WebSocket (legacy)
+    if (wsClients.size > 0) {
+      const message = JSON.stringify({ event: 'downloads_progress', data: progressData });
+      for (const client of wsClients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
       }
+    }
+
+    // Broadcast via new Socket.IO namespace
+    for (const [modelId, progress] of activeDownloads.entries()) {
+      emitDownloadProgress(modelId, progress);
     }
   },
 

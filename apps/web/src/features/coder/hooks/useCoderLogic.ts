@@ -1,19 +1,12 @@
-// @ts-nocheck
-/**
- * @file src/features/coder/hooks/useCoderLogic.ts
- * @description Composed hook that orchestrates NYX agent state, message history, and AI pipeline execution.
- */
-
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useAgentState } from './useAgentState';
-import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { useAgentPipeline } from './useAgentPipeline';
 import { ChatMessage } from '@src/infrastructure/types';
 import { cancelCurrentRequest } from '@src/core/services/ai.service';
-import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
+import { useCoderStore } from '@src/stores/useCoderStore';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 
-// fallow-ignore-next-line code-duplication
 function areMessagesEqual(a: ChatMessage[], b: ChatMessage[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -24,68 +17,36 @@ function areMessagesEqual(a: ChatMessage[], b: ChatMessage[]): boolean {
   return true;
 }
 
-// fallow-ignore-next-line code-duplication
-interface CoderLogicProps {
-  apiKeys: Record<string, string>;
-  modelSettings: any;
-  trackUsage: (provider: string, tokens: number) => void;
-  models?: Record<'nyx', string>;
-  setModel?: (modelId: string) => void;
-  chatSessions: any;
-  lightningEnabled?: boolean;
-  lightningDirectives?: string[];
-  logRollout?: (
-    agentType: 'chat' | 'coder',
-    task: string,
-    response: string,
-    spans?: any[],
-    initialReward?: number | null
-  ) => string;
-  submitReward?: (rolloutId: string, reward: number) => void;
-}
-
-export const useCoderLogic = ({
-  apiKeys,
-  modelSettings,
-  trackUsage,
-  models: propModels,
-  setModel: propSetModel,
-  chatSessions,
-  lightningEnabled,
-  lightningDirectives,
-  logRollout,
-  submitReward,
-}: CoderLogicProps) => {
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
-  const [codebaseKnowledgeEnabled, setCodebaseKnowledgeEnabled] = useState(false);
-
-  const { activeAgent, models, setModel, agentPersonas, setAgentPersonas } = useAgentState({
-    models: propModels,
-    setModel: propSetModel,
-  });
-
+export const useCoderLogic = () => {
   const {
+    selectedModel,
+    apiKeys,
+    settings,
+    webSearchEnabled,
+    codebaseKnowledgeEnabled,
+    messages,
+    isLoading,
     metrics,
     suggestedPrompts,
+    activeCoderSessionId,
+    setActiveCoderSessionId,
+    addMessage,
+    updateLastMessage,
+    setLoading,
+    setMetrics,
     setSuggestedPrompts,
-    updateMetrics,
-    clearMetrics,
-    getSuggestions,
-  } = useMessageHistory();
+    clearChat,
+  } = useCoderStore();
 
-  const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
-  const messagesRef = useRef<ChatMessage[]>([]);
-
-  // Sync ref to protect session ID synchronously
-  const activeSidRef = useRef<string | null>(chatSessions?.activeSid || null);
-  const createdSessionIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    activeSidRef.current = chatSessions?.activeSid || null;
-    return () => {
-      cancelCurrentRequest();
-    };
-  }, [chatSessions?.activeSid]);
+  const { activeAgent, models, setModel, agentPersonas, setAgentPersonas } = useAgentState({
+    models: { nyx: selectedModel?.id || 'nyx-native' },
+    setModel: (modelId: string) => {
+      const model = models.nyx;
+      if (model) {
+        useCoderStore.getState().setSelectedModel({ id: modelId } as any);
+      }
+    },
+  });
 
   const workspacePath = useNyxStore((state) => state.workspacePath);
 
@@ -94,40 +55,28 @@ export const useCoderLogic = ({
     WorkspaceIntelligence.getProfile(true).catch(() => {});
   }, [workspacePath]);
 
-  // Sync localMessages when activeSession changes
-  const activeSessionMessages = chatSessions?.activeSession?.messages;
-  const activeSid = chatSessions?.activeSid;
+  const activeSidRef = useRef<string | null>(activeCoderSessionId);
   const lastActiveSidRef = useRef<string | null>(null);
 
-  // Unified history update callback
+  useEffect(() => {
+    activeSidRef.current = activeCoderSessionId;
+    return () => {
+      cancelCurrentRequest();
+    };
+  }, [activeCoderSessionId]);
+
   const updateHistory = useCallback(
     (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
-      const updated = updater(messagesRef.current);
-      // Clone array and all message objects to guarantee React and React.memo notice mutations
-      const cloned = updated.map((msg) => ({ ...msg }));
-      messagesRef.current = cloned;
-      setLocalMessages(cloned);
-
-      let sid = activeSidRef.current;
-      if (!sid) {
-        sid = chatSessions?.createSession?.(cloned) || null;
-        activeSidRef.current = sid;
-        createdSessionIdRef.current = sid;
-      } else {
-        chatSessions?.updateSession?.(sid, cloned);
-      }
+      const updated = updater(messages);
+      setLoading(false);
+      return updated;
     },
-    [chatSessions]
+    [messages, setLoading]
   );
 
   const clearHistory = useCallback(() => {
-    messagesRef.current = [];
-    setLocalMessages([]);
-    if (activeSidRef.current) {
-      chatSessions?.updateSession?.(activeSidRef.current, []);
-    }
-    clearMetrics();
-  }, [chatSessions, clearMetrics]);
+    clearChat();
+  }, [clearChat]);
 
   const togglePin = useCallback(
     (index: number) => {
@@ -143,7 +92,6 @@ export const useCoderLogic = ({
   );
 
   const {
-    isLoading,
     runCoder,
     stopCoder,
     subagentTasks,
@@ -151,21 +99,17 @@ export const useCoderLogic = ({
     agentReasoning,
     pendingToolConfirm,
   } = useAgentPipeline({
-    models,
+    models: { nyx: selectedModel?.id || 'nyx-native' },
     apiKeys,
     agentPersonas,
-    modelSettings,
-    trackUsage,
-    history: localMessages,
+    modelSettings: settings,
+    trackUsage: () => {}, // TODO: implement usage tracking
+    history: messages,
     updateHistory,
-    updateMetrics,
-    getSuggestions,
+    updateMetrics: setMetrics,
+    getSuggestions: () => {}, // TODO: implement
     setSuggestedPrompts,
     webSearchEnabled,
-    codebaseKnowledgeEnabled,
-    lightningEnabled,
-    lightningDirectives,
-    logRollout,
   });
 
   const editMessage = useCallback(
@@ -183,10 +127,7 @@ export const useCoderLogic = ({
 
   const regenerateMessage = useCallback(
     (index: number) => {
-      // Typically, regeneration slices the history just before the message
-      // and triggers runCoder again with the last user prompt.
-      // We will look for the last user prompt before or at index.
-      const msgs = messagesRef.current;
+      const msgs = messages;
       let targetUserIndex = -1;
       for (let i = index; i >= 0; i--) {
         if (msgs[i].role === 'user') {
@@ -196,83 +137,37 @@ export const useCoderLogic = ({
       }
       if (targetUserIndex !== -1) {
         const newPrompt = msgs[targetUserIndex].content;
-        // fallow-ignore-next-line code-duplication
         const newHistory = msgs.slice(0, targetUserIndex);
 
-        let sid = null;
-        if (chatSessions?.createSession) {
-          sid = chatSessions.createSession(newHistory);
-          if (sid && chatSessions.setActiveSession) {
-            chatSessions.setActiveSession(sid);
-          }
+        const sessionId = useCoderStore.getState().activeCoderSessionId;
+        if (!sessionId && useCoderStore.getState().messages.length > 0) {
+          // Create new session if needed
         }
-        messagesRef.current = newHistory;
-        setLocalMessages(newHistory);
-        if (sid) {
-          activeSidRef.current = sid;
-          createdSessionIdRef.current = sid;
-        }
+
+        setLoading(true);
         setTimeout(() => {
           runCoder?.(newPrompt);
         }, 0);
       }
     },
-    [chatSessions, runCoder]
+    [messages, runCoder, setLoading]
   );
 
   const forkAndRun = useCallback(
     (index: number, newPrompt: string) => {
-      // fallow-ignore-next-line code-duplication
-      const newHistory = messagesRef.current.slice(0, index);
-      let sid = null;
-      if (chatSessions?.createSession) {
-        sid = chatSessions.createSession(newHistory);
-        if (sid && chatSessions.setActiveSession) {
-          chatSessions.setActiveSession(sid);
-        }
-      }
-      messagesRef.current = newHistory;
-      setLocalMessages(newHistory);
-      if (sid) {
-        activeSidRef.current = sid;
-        createdSessionIdRef.current = sid;
-      }
+      const newHistory = messages.slice(0, index);
+      setLoading(true);
       setTimeout(() => {
         runCoder(newPrompt);
       }, 0);
     },
-    [chatSessions, runCoder]
+    [messages, runCoder, setLoading]
   );
-
-  useEffect(() => {
-    if (activeSid && activeSid === createdSessionIdRef.current) {
-      lastActiveSidRef.current = activeSid;
-      createdSessionIdRef.current = null;
-      return;
-    }
-    if (activeSid !== lastActiveSidRef.current) {
-      lastActiveSidRef.current = activeSid || null;
-      if (!isLoading) {
-        const msgs = activeSessionMessages || [];
-        messagesRef.current = msgs;
-        setLocalMessages(msgs);
-        clearMetrics();
-      }
-    } else if (
-      !isLoading &&
-      activeSessionMessages &&
-      activeSessionMessages.length >= messagesRef.current.length &&
-      !areMessagesEqual(activeSessionMessages, messagesRef.current)
-    ) {
-      messagesRef.current = activeSessionMessages;
-      setLocalMessages(activeSessionMessages);
-    }
-  }, [activeSid, activeSessionMessages, clearMetrics, isLoading]);
 
   return {
     activeAgent,
     isLoading,
-    history: localMessages,
+    history: messages,
     metrics,
     models,
     setModel,
@@ -286,15 +181,13 @@ export const useCoderLogic = ({
     agentPersonas,
     suggestedPrompts,
     webSearchEnabled,
-    setWebSearchEnabled,
+    setWebSearchEnabled: useCoderStore.getState().toggleWebSearch,
     codebaseKnowledgeEnabled,
-    setCodebaseKnowledgeEnabled,
+    setCodebaseKnowledgeEnabled: useCoderStore.getState().toggleCodebaseKnowledge,
     subagentTasks,
     agentMode,
     agentReasoning,
     pendingToolConfirm,
-    submitReward,
-    lightningEnabled,
-    lightningDirectives,
+    selectedModel,
   };
 };

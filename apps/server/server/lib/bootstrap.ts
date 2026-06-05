@@ -227,25 +227,20 @@ export function spawnBackgroundServices() {
   };
 }
 
-export function registerShutdownHandlers(app: any, expressServer?: any, clearHealthChecks?: () => void) {
+export function registerShutdownHandlers(app: any, clearHealthChecks?: () => void) {
   const shutdown = () => {
     logger.info('[Server] Gracefully shutting down...');
     cleanupProcesses();
-    if (clearHealthChecks) {
-      clearHealthChecks();
-    }
+    if (clearHealthChecks) clearHealthChecks();
     try {
       CodebaseScanner.dispose();
     } catch (error: any) {
       logger.error({ err: error }, '[Shutdown] Failed to dispose CodebaseScanner');
     }
-    
-    const closeFastify = app ? app.close() : Promise.resolve();
-    const closeExpress = expressServer ? new Promise<void>((resolve) => expressServer.close(() => resolve())) : Promise.resolve();
 
-    Promise.all([closeFastify, closeExpress]).then(() => {
+    app.close().then(() => {
       process.exit(0);
-    }).catch((err) => {
+    }).catch((err: any) => {
       logger.error({ err }, '[Shutdown] Error during shutdown');
       process.exit(1);
     });
@@ -267,3 +262,4 @@ export function registerShutdownHandlers(app: any, expressServer?: any, clearHea
     process.exit(1);
   });
 }
+

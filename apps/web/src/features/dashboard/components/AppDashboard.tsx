@@ -30,6 +30,7 @@ import {
   Folder,
   FolderPlus,
   MoreHorizontal,
+  Layers,
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
@@ -230,6 +231,22 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                   className={activeMode === 'coder' ? 'text-zinc-200' : 'text-zinc-500'}
                 />
                 <span>NYX Coder</span>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveMode('workspace');
+                }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left cursor-pointer ${
+                  activeMode === 'workspace'
+                    ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                }`}
+              >
+                <Layers
+                  size={13}
+                  className={activeMode === 'workspace' ? 'text-zinc-200' : 'text-zinc-500'}
+                />
+                <span>Infinite Canvas</span>
               </button>
             </div>
 

@@ -45,6 +45,7 @@ import { ArtifactPanel } from './ArtifactPanel';
 import { CitationCard } from './CitationCard';
 import { SearchResultsPanel } from './SearchResultsPanel';
 import { MemoryPanel } from './MemoryPanel';
+import { ArtifactViewer } from '../../../components/artifacts/ArtifactViewer';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -622,81 +623,9 @@ const FeedbackButtons: React.FC<{
 FeedbackButtons.displayName = 'FeedbackButtons';
 
 // ---------------------------------------------------------------------------
-// Artifact Card
+// Artifact Card (Replaced by ArtifactViewer)
 // ---------------------------------------------------------------------------
 
-const ArtifactCard: React.FC<{ artifact: any }> = memo(({ artifact }) => {
-  const [expanded, setExpanded] = useState(false);
-
-  const handleDownload = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const blob = new Blob([artifact.content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = artifact.title || `artifact.${artifact.language || 'txt'}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="my-3 rounded-xl border border-border bg-card overflow-hidden"
-    >
-      <div
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-muted/40 transition-colors"
-      >
-        <FileText size={13} className="text-[#FF3366] shrink-0" />
-        <span className="text-[11px] font-semibold text-foreground/90 truncate flex-1">
-          {artifact.title || 'Generated Artifact'}
-        </span>
-        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider ml-auto shrink-0 bg-[#FF3366]/10 text-[#FF3366]">
-          {artifact.type || 'code'}
-        </span>
-        <button
-          onClick={handleDownload}
-          className="p-1.5 hover:bg-[#FF3366]/20 rounded-md transition-colors ml-1"
-          title="Download Artifact"
-        >
-          <Download size={12} className="text-[#FF3366]" />
-        </button>
-        {expanded ? (
-          <ChevronDown size={12} className="text-muted-foreground shrink-0 ml-1" />
-        ) : (
-          <ChevronRight size={12} className="text-muted-foreground shrink-0 ml-1" />
-        )}
-      </div>
-
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-border bg-muted/20">
-              {artifact.type === 'code' ? (
-                <CodeBlock language={artifact.language} code={artifact.content} />
-              ) : (
-                <div className="p-4 text-[12px] text-foreground/90 whitespace-pre-wrap font-mono">
-                  {artifact.content}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-});
-ArtifactCard.displayName = 'ArtifactCard';
 
 // ---------------------------------------------------------------------------
 // Message Bubble
@@ -843,7 +772,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                 {msg.artifacts && msg.artifacts.length > 0 && (
                   <div className="space-y-1 mt-2">
                     {msg.artifacts.map((artifact, i) => (
-                      <ArtifactCard key={artifact.id || i} artifact={artifact} />
+                      <ArtifactViewer key={artifact.id || i} artifact={artifact as any} />
                     ))}
                   </div>
                 )}

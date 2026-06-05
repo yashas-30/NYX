@@ -9,6 +9,7 @@ import * as si from 'systeminformation';
 import { LocalModelManager } from './localModelManager.js';
 import { registerProcess } from '../../lib/processRegistry.js';
 import kill from 'tree-kill';
+import axios from 'axios';
 import { Mutex } from 'async-mutex';
 import type { OptimizationProfile } from './modelTypes.js';
 import { LOCAL_MODEL_PORT } from '@nyx/shared';
@@ -238,10 +239,13 @@ function killProcessOnPort(port: number): Promise<void> {
 
       const killPromises = Array.from(pids).map((pid) => {
         return new Promise<void>((res) => {
-          const killCmd =
-            process.platform === 'win32' ? `taskkill /F /PID ${pid}` : `kill -9 ${pid}`;
           logger.info(`[Local Runner] Zombie detection: Killing process ${pid} on port ${port}...`);
-          exec(killCmd, () => res());
+          kill(parseInt(pid, 10), 'SIGKILL', (err) => {
+            if (err) {
+              logger.warn({ err }, `[Local Runner] Failed to kill process ${pid}`);
+            }
+            res();
+          });
         });
       });
 
@@ -305,6 +309,7 @@ export const LocalModelRunner = {
 
     // Fetch latest release from GitHub API
     let CURRENT_VERSION = 'b9479'; // default fallback
+    let assets: any[] = [];
     try {
       const res = await fetch('https://api.github.com/repos/ggml-org/llama.cpp/releases/latest', {
         headers: {
@@ -316,6 +321,9 @@ export const LocalModelRunner = {
         const data = await res.json();
         if (data.tag_name) {
           CURRENT_VERSION = data.tag_name;
+        }
+        if (data.assets) {
+          assets = data.assets;
         }
       }
     } catch (err) {
@@ -345,16 +353,35 @@ export const LocalModelRunner = {
     const isMac = process.platform === 'darwin';
     const isLinux = process.platform === 'linux';
     const isWin = process.platform === 'win32';
+    const arch = os.arch() === 'arm64' ? 'arm64' : 'x64';
 
-    if (isMac) {
-      assetUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-macos-${os.arch() === 'arm64' ? 'arm64' : 'x64'}.tar.gz`;
-    } else if (isLinux) {
-      assetUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-ubuntu-${backend === 'vulkan' ? 'vulkan-' : ''}x64.tar.gz`;
-    } else {
-      assetUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-win-${backend === 'cuda' ? 'cuda-12.4' : 'vulkan'}-x64.zip`;
+    if (assets && assets.length > 0) {
+      let osKeyword = isMac ? 'macos' : isLinux ? 'ubuntu' : 'win';
+      let backendKeyword = backend === 'cuda' ? 'cuda' : backend === 'vulkan' ? 'vulkan' : 'cpu';
+      let match = assets.find((a: any) => 
+        a.name.toLowerCase().includes(osKeyword) && 
+        a.name.toLowerCase().includes(backendKeyword) && 
+        a.name.toLowerCase().includes(arch) &&
+        !a.name.toLowerCase().includes('cudart') &&
+        !a.name.toLowerCase().includes('opencl') &&
+        !a.name.toLowerCase().includes('hip-radeon')
+      );
+      if (match && match.browser_download_url) {
+        assetUrl = match.browser_download_url;
+      }
     }
 
-    const archivePath = path.join(BIN_DIR, isWin ? 'llama-bin.zip' : 'llama-bin.tar.gz');
+    if (!assetUrl) {
+      if (isMac) {
+        assetUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-macos-${arch}.tar.gz`;
+      } else if (isLinux) {
+        assetUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-ubuntu-${backend === 'vulkan' ? 'vulkan-' : ''}x64.tar.gz`;
+      } else {
+        assetUrl = `https://github.com/ggml-org/llama.cpp/releases/download/${CURRENT_VERSION}/llama-${CURRENT_VERSION}-bin-win-${backend === 'cuda' ? 'cuda-12.4' : 'vulkan'}-x64.zip`;
+      }
+    }
+
+    const archivePath = path.join(BIN_DIR, assetUrl.endsWith('.zip') ? 'llama-bin.zip' : 'llama-bin.tar.gz');
 
     try {
       startProgress = 20;
@@ -362,52 +389,35 @@ export const LocalModelRunner = {
       startProgress = 60;
       logger.info('Archive downloaded successfully. Extracting natively...');
 
-      if (isWin) {
+      if (archivePath.endsWith('.zip')) {
         const zip = new AdmZip(archivePath);
-        // fallow-ignore-next-line code-duplication
         zip.extractAllTo(BIN_DIR, true);
-
-        // Ensure llama-server.exe is in the root of BIN_DIR
-        const findBinRecursive = (dir: string): string | null => {
-          const files = fs.readdirSync(dir);
-          for (const f of files) {
-            const p = path.join(dir, f);
-            if (fs.statSync(p).isDirectory()) {
-              const res = findBinRecursive(p);
-              if (res) return res;
-            } else if (f === 'llama-server.exe') {
-              return p;
-            }
-          }
-          return null;
-        };
-        const actualBinPath = findBinRecursive(BIN_DIR);
-        if (actualBinPath && actualBinPath !== path.join(BIN_DIR, 'llama-server.exe')) {
-          fs.renameSync(actualBinPath, path.join(BIN_DIR, 'llama-server.exe'));
-        }
       } else {
-        // fallow-ignore-next-line code-duplication
         await tar.x({ file: archivePath, cwd: BIN_DIR });
+      }
 
-        // Find llama-server recursively
-        const findBinRecursive = (dir: string): string | null => {
-          const files = fs.readdirSync(dir);
-          for (const f of files) {
-            const p = path.join(dir, f);
-            if (fs.statSync(p).isDirectory()) {
-              const res = findBinRecursive(p);
-              if (res) return res;
-            } else if (f === 'llama-server') {
-              return p;
-            }
+      // Ensure BIN_NAME is in the root of BIN_DIR
+      const findBinRecursive = (dir: string): string | null => {
+        const files = fs.readdirSync(dir);
+        for (const f of files) {
+          const p = path.join(dir, f);
+          if (fs.statSync(p).isDirectory()) {
+            const res = findBinRecursive(p);
+            if (res) return res;
+          } else if (f === BIN_NAME) {
+            return p;
           }
-          return null;
-        };
-        const actualBinPath = findBinRecursive(BIN_DIR);
-        if (actualBinPath && actualBinPath !== path.join(BIN_DIR, 'llama-server')) {
-          fs.renameSync(actualBinPath, path.join(BIN_DIR, 'llama-server'));
         }
-        fs.chmodSync(path.join(BIN_DIR, 'llama-server'), 0o755);
+        return null;
+      };
+
+      const actualBinPath = findBinRecursive(BIN_DIR);
+      if (actualBinPath && actualBinPath !== path.join(BIN_DIR, BIN_NAME)) {
+        fs.renameSync(actualBinPath, path.join(BIN_DIR, BIN_NAME));
+      }
+
+      if (!isWin) {
+        fs.chmodSync(path.join(BIN_DIR, BIN_NAME), 0o755);
       }
 
       startProgress = 90;
@@ -432,60 +442,58 @@ export const LocalModelRunner = {
   },
 
   downloadBinaryZipNode(url: string, destPath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const fileStream = fs.createWriteStream(destPath);
+    return new Promise(async (resolve, reject) => {
+      const partPath = destPath + '.part';
+      let existingBytes = 0;
+      if (fs.existsSync(partPath)) {
+        try {
+          existingBytes = fs.statSync(partPath).size;
+        } catch {}
+      }
 
-      const makeRequest = (currentUrl: string) => {
-        const urlObj = new URL(currentUrl);
-        const options = {
-          headers: {
-            'User-Agent': 'Mozilla/5.0',
-            Accept: '*/*',
-          },
-        };
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0',
+        Accept: '*/*',
+      };
+      if (existingBytes > 0) {
+        headers['Range'] = `bytes=${existingBytes}-`;
+      }
 
-        const req = https.get(urlObj, options, (res) => {
-          if (
-            res.statusCode === 301 ||
-            res.statusCode === 302 ||
-            res.statusCode === 307 ||
-            res.statusCode === 308
-          ) {
-            let redirectUrl = res.headers.location;
-            res.resume();
-            if (redirectUrl) {
-              if (!redirectUrl.startsWith('http')) {
-                redirectUrl = new URL(redirectUrl, currentUrl).href;
-              }
-              makeRequest(redirectUrl);
-              return;
-            }
-          }
-
-          if (res.statusCode !== 200) {
-            res.resume();
-            reject(new Error(`Server responded with status ${res.statusCode}`));
-            return;
-          }
-
-          res.pipe(fileStream);
-          fileStream.on('finish', () => {
-            fileStream.close(() => resolve());
-          });
+      try {
+        const response = await axios({
+          method: 'GET',
+          url,
+          responseType: 'stream',
+          headers,
+          maxRedirects: 5,
         });
 
-        req.setTimeout(120000, () => req.destroy(new Error('Timeout')));
-        req.on('error', (err) => {
+        const isRangeSupported = response.status === 206;
+        if (response.status !== 200 && response.status !== 206) {
+          reject(new Error(`Server responded with status ${response.status}`));
+          return;
+        }
+
+        const fileStream = fs.createWriteStream(partPath, { flags: isRangeSupported ? 'a' : 'w' });
+        response.data.pipe(fileStream);
+
+        fileStream.on('finish', () => {
           fileStream.close(() => {
             try {
-              fs.unlinkSync(destPath);
-            } catch {}
-            reject(err);
+              fs.renameSync(partPath, destPath);
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
           });
         });
-      };
 
-      makeRequest(url);
+        response.data.on('error', (err: any) => {
+          fileStream.close(() => reject(err));
+        });
+      } catch (err: any) {
+        reject(err);
+      }
     });
   },
 
@@ -612,8 +620,8 @@ export const LocalModelRunner = {
     if (activeProcess) {
       logger.info('Stopping active local model runner to load new model...');
       await _stop();
-      // Wait for Windows to fully release GPU VRAM after killing the old process.
-      // Without this delay, nvidia-smi still reports the old VRAM as used for ~1-2s,
+      // Wait for the OS to fully release GPU VRAM after killing the old process.
+      // Without this delay, nvidia-smi or similar tools still report the old VRAM as used for ~1-2s,
       // causing the VRAM optimizer to calculate 0 GPU layers and fall back to CPU.
       await new Promise((r) => setTimeout(r, 1500));
     }

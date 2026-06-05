@@ -1,5 +1,8 @@
 import { UnifiedEngine } from '../../lib/aiEngine.js';
 import logger from '../../lib/logger.js';
+import { AgentOrchestrator } from './AgentOrchestrator.js';
+import { Task } from './types.js';
+import { promptRegistry } from '../prompts/registry.js';
 
 export interface AgentExecuteParams {
   model: string;
@@ -24,7 +27,7 @@ export class AgentsService {
 
     // Define the system prompt
     // fallow-ignore-next-line code-duplication
-    const systemInstruction = this.getSystemPromptForAgent(agentType);
+    const systemInstruction = await this.getSystemPromptForAgent(agentType);
 
     const messages: any[] = [];
     if (systemInstruction) {
@@ -66,19 +69,37 @@ export class AgentsService {
     );
   }
 
-  private getSystemPromptForAgent(agentType: 'chat' | 'coder'): string {
+  async orchestrateTask(
+    task: Task,
+    context: any
+  ): Promise<any> {
+    const orchestrator = new AgentOrchestrator();
+    const plan = await orchestrator.createExecutionPlan(task);
+    logger.info(`Execution plan created with ${plan.agents.length} agents`);
+    return await orchestrator.executePlan(plan, context);
+  }
+
+  private async getSystemPromptForAgent(agentType: 'chat' | 'coder'): Promise<string> {
     const strictFormatInstruction = `\nCRITICAL INSTRUCTION: You MUST NOT generate any meta-commentary, chain-of-thought, or internal reasoning before your response. DO NOT start your response with phrases like "The user said", "The user wants", "I will", "Here is", or "This is". Begin your response IMMEDIATELY with the direct answer or requested output. DO NOT wrap your entire response in a markdown code block (like \`\`\`text or \`\`\`markdown) unless you are ONLY outputting code. Just output regular markdown directly.`;
 
-    if (agentType === 'coder') {
-      return (
-        `You are an elite AI coding assistant. You have access to tools to read/write files and execute commands. Use them to solve the user's task.` +
-        strictFormatInstruction
-      );
+    const promptName = `system-prompt-${agentType}`;
+    const activePrompt = await promptRegistry.getActive(promptName);
+    
+    let baseInstruction = '';
+    
+    if (activePrompt) {
+        baseInstruction = activePrompt.content;
+    } else {
+        // Register initial hardcoded prompts
+        if (agentType === 'coder') {
+            baseInstruction = `You are an elite AI coding assistant. You have access to tools to read/write files and execute commands. Use them to solve the user's task.`;
+        } else {
+            baseInstruction = `You are an advanced AI assistant. You have access to search the web and read files.`;
+        }
+        await promptRegistry.register(promptName, baseInstruction);
     }
-    return (
-      `You are an advanced AI assistant. You have access to search the web and read files.` +
-      strictFormatInstruction
-    );
+
+    return baseInstruction + strictFormatInstruction;
   }
 
   private getToolsForAgent(agentType: 'chat' | 'coder'): any[] {

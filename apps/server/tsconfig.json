@@ -1,11 +1,17 @@
 {
-  "extends": "../../packages/config/tsconfig.base.json",
+  "extends": "@nyx/config/tsconfig.node.json",
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@server/*": ["./server/*"],
-      "@nyx/shared": ["../../packages/shared/src/index.ts"]
-    }
+      "@server/*": ["./server/*"]
+    },
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
   },
-  "include": ["server.ts", "server/**/*", "drizzle.config.ts"]
+  "include": ["server.ts", "server/**/*", "drizzle.config.ts"],
+  "exclude": ["node_modules", "dist"]
 }

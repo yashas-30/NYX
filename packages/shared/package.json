@@ -8,13 +8,15 @@
   "type": "module",
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
-    "dev": "tsup src/index.ts --format cjs,esm --dts --watch"
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@nyx/config": "workspace:*",
     "tsup": "^8.0.2",
-    "typescript": "^5.3.3"
+    "typescript": "~5.8.2"
   }
 }

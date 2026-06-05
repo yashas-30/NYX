@@ -23,8 +23,8 @@ import { useScraplingStatus } from '@src/shared/hooks/useScraplingStatus';
 import { useLiveTimer } from '@src/shared/hooks/useLiveTimer';
 
 interface CoderHeaderProps {
-  activeMode?: 'coder' | 'registry' | 'settings';
-  onModeChange?: (mode: 'coder' | 'registry' | 'settings') => void;
+  activeMode?: 'coder' | 'registry' | 'settings' | 'compare';
+  onModeChange?: (mode: 'coder' | 'registry' | 'settings' | 'compare') => void;
   currentPersona?: AgentPersona;
   metrics: { latency: number; tokens: number; tps: number };
   isLoading: boolean;

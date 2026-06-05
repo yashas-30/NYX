@@ -1,5 +1,11 @@
 {
   "name": "@nyx/config",
   "version": "1.0.0",
-  "private": true
+  "private": true,
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.react.json": "./tsconfig.react.json",
+    "./tsconfig.node.json": "./tsconfig.node.json",
+    "./tsconfig.lib.json": "./tsconfig.lib.json"
+  }
 }

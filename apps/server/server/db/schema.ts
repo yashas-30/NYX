@@ -210,7 +210,6 @@ export const searchResultsRelations = relations(searchResults, ({ one }) => ({
   }),
 }));
 
-// Antigravity SDK - Prompt Optimizations
 export const promptOptimizations = sqliteTable('prompt_optimizations', {
   id: text('id').primaryKey(),
   originalPrompt: text('original_prompt').notNull(),
@@ -219,6 +218,19 @@ export const promptOptimizations = sqliteTable('prompt_optimizations', {
   version: text('version').notNull(),
   rating: integer('rating'), // 1 for thumbs up, -1 for thumbs down, null for unrated
   timestamp: integer('timestamp').notNull(),
+});
+
+export const promptVersions = sqliteTable('prompt_versions', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  content: text('content').notNull(),
+  version: integer('version').notNull(),
+  createdAt: integer('created_at').notNull(),
+  avgTokens: real('avg_tokens'),
+  avgLatency: real('avg_latency'),
+  successRate: real('success_rate'),
+  userRating: real('user_rating'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(false).notNull(),
 });
 
 import { index } from 'drizzle-orm/sqlite-core';
@@ -410,5 +422,18 @@ export const pgDbCache = pgTable('db_cache', {
   createdAt: pgTimestamp('createdAt').defaultNow(),
   expiresAt: pgTimestamp('expires_at'),
   hitCount: pgInteger('hit_count').default(0),
+});
+
+export const pgPromptVersions = pgTable('prompt_versions', {
+  id: pgText('id').primaryKey(),
+  name: pgText('name').notNull(),
+  content: pgText('content').notNull(),
+  version: pgInteger('version').notNull(),
+  createdAt: pgTimestamp('created_at').defaultNow(),
+  avgTokens: pgReal('avg_tokens'),
+  avgLatency: pgReal('avg_latency'),
+  successRate: pgReal('success_rate'),
+  userRating: pgReal('user_rating'),
+  isActive: pgInteger('is_active').default(0).notNull(),
 });
 

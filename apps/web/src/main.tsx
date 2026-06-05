@@ -1,9 +1,9 @@
 // fallow-ignore-file code-duplication
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './app/App.tsx';
-import { ErrorBoundary } from './core/components/ErrorBoundary.tsx';
-import './i18n.ts';
+import App from './app/App';
+import { ErrorBoundary } from './core/components/ErrorBoundary';
+import './i18n';
 import './index.css';
 import * as Sentry from '@sentry/react';
 

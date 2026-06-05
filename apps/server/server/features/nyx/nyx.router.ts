@@ -14,6 +14,7 @@ import { FilesystemService } from './filesystem.service.js';
 import { GitService } from './git.service.js';
 import { WorkspaceService } from './workspace.service.js';
 import { MemoryService } from './memory.service.js';
+import { criticQueue, fileWriteQueue } from '../../queues/index.js';
 
 export async function nyxRouter(fastify: FastifyInstance) {
   const agentService = new AgentService();
@@ -93,19 +94,24 @@ export async function nyxRouter(fastify: FastifyInstance) {
     {
       preHandler: [validate(nyxCriticSchema)],
     },
-    (request, reply) => {
-      const { prompt, response, modelId, provider } = request.body as any;
+    async (request, reply) => {
+      const { prompt, response, modelId, provider, apiKey } = request.body as any;
       if (!prompt || !response) {
         return reply.code(400).send({ error: 'Missing prompt or response for critic.' });
       }
-      reply.send({ success: true, processing: true });
-      setImmediate(async () => {
-        try {
-          await agentService.runBackgroundCritic(prompt, response, modelId, provider);
-        } catch (criticError: any) {
-          logger.error('[Nyx Critic Layer Error]:', criticError);
-        }
+      
+      const job = await criticQueue.add('critic-job', {
+        prompt,
+        response,
+        modelId,
+        provider,
+        apiKey
+      }, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 }
       });
+
+      reply.send({ success: true, jobId: job.id });
     }
   );
 
@@ -224,11 +230,12 @@ export async function nyxRouter(fastify: FastifyInstance) {
     async (request, reply) => {
       const { filePath, content, overwrite } = request.body as any;
       try {
-        const result = await filesystemService.writeFile(filePath, content, overwrite);
-        if (result.conflict) {
-          return reply.code(409).send(result);
-        }
-        reply.send(result);
+        const job = await fileWriteQueue.add('write-file', { filePath, content }, {
+          jobId: `write-${Date.now()}`,
+          removeOnComplete: true,
+        });
+
+        reply.send({ success: true, jobId: job.id });
       } catch (error: any) {
         logger.error('[File System Error]:', error.message);
         reply.code(500).send({ error: error.message });
@@ -303,6 +310,13 @@ export async function nyxRouter(fastify: FastifyInstance) {
       }
       const fs = await import('fs');
       const path = await import('path');
+      const { getWorkspaceRoot } = await import('../../lib/paths.js');
+
+      const safeRoot = getWorkspaceRoot();
+      const normalizedRoot = path.resolve(rootPath);
+      if (!normalizedRoot.startsWith(safeRoot)) {
+        return reply.code(403).send({ error: 'Directory traversal forbidden.' });
+      }
 
       const files: any[] = [];
       const targetNames = ['CLAUDE.md', 'GEMINI.md', 'AGENTS.md', 'DESIGN.md', '.claude.md'];
@@ -393,6 +407,13 @@ export async function nyxRouter(fastify: FastifyInstance) {
       }
       const fs = await import('fs');
       const path = await import('path');
+      const { getWorkspaceRoot } = await import('../../lib/paths.js');
+
+      const safeRoot = getWorkspaceRoot();
+      const normalizedRoot = path.resolve(rootPath);
+      if (!normalizedRoot.startsWith(safeRoot)) {
+        return reply.code(403).send({ error: 'Directory traversal forbidden.' });
+      }
 
       const snippets: any[] = [];
       const EXCLUDE_DIRS = new Set([
@@ -575,6 +596,25 @@ export async function nyxRouter(fastify: FastifyInstance) {
       reply.send({ success: true });
     } catch (error: any) {
       logger.error('[Nyx Router] Failed to reset memories:', error);
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // POST /api/nyx/generate-image
+  fastify.post('/generate-image', async (request, reply) => {
+    try {
+      const { prompt } = request.body as { prompt?: string };
+      if (!prompt) {
+        return reply.code(400).send({ error: 'Missing prompt for image generation.' });
+      }
+      
+      const seed = Math.floor(Math.random() * 1000000);
+      const encodedPrompt = encodeURIComponent(prompt);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?seed=${seed}&width=1024&height=1024&nologo=true`;
+      
+      reply.send({ success: true, imageUrl });
+    } catch (error: any) {
+      logger.error('[Nyx Router] Image generation failed:', error);
       reply.code(500).send({ error: error.message });
     }
   });

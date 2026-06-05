@@ -12,29 +12,10 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
     "isolatedModules": true,
     "moduleDetection": "force",
     "allowJs": true,
     "jsx": "react-jsx",
-    "paths": {
-      "@/shared/*": ["./shared/*"],
-      "@/*": ["./*"],
-      "@src/*": ["./src/*"],
-      "@server/*": ["./server/*"],
-      "@shared/*": ["./src/shared/*"],
-      "@features/*": ["./src/features/*"],
-      "@core/*": ["./src/core/*"],
-      "@assets/*": ["./src/assets/*"],
-      "electron-vite": ["./node_modules/electron-vite/dist/index.d.ts"],
-      "electron-updater": ["./node_modules/electron-updater/out/main.d.ts"],
-      "@huggingface/transformers": [
-        "./node_modules/@huggingface/transformers/types/transformers.d.ts"
-      ],
-      "electron-window-state": ["./node_modules/electron-window-state/index.d.ts"],
-      "conf": ["./node_modules/conf/dist/source/index.d.ts"]
-    },
-    "allowImportingTsExtensions": true,
     "noEmit": true
   },
   "files": [],

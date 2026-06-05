@@ -1,19 +1,20 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['server.ts', 'server/worker.ts'],
+  entry: ['server.ts'],
   format: ['esm'],
   target: 'node22',
-  minify: true,
+  outDir: 'dist',
   clean: true,
-  outDir: 'dist-server',
-  banner: {
-    js: `import { createRequire } from 'module'; import { fileURLToPath } from 'url'; import { dirname } from 'path'; const require = createRequire(import.meta.url); const __filename = fileURLToPath(import.meta.url); const __dirname = dirname(__filename);`,
-  },
+  splitting: false,
+  sourcemap: true,
+  minify: process.env.NODE_ENV === 'production',
   external: [
-    'better-sqlite3', 'onnxruntime-node', 'esbuild', 'sharp', 'lightningcss',
-    'pino', 'pino-pretty', 'thread-stream', 'vite', 'swagger-ui-express',
-    '@fastify/swagger-ui', 'keytar', '@opentelemetry/sdk-node',
-    '@opentelemetry/auto-instrumentations-node', '@opentelemetry/exporter-trace-otlp-http'
+    // Native modules that shouldn't be bundled
+    'better-sqlite3',
+    'electron',
   ],
+  banner: {
+    js: `import { createRequire } from 'module'; const require = createRequire(import.meta.url);`
+  }
 });

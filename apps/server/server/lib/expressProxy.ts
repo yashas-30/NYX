@@ -1,4 +1,5 @@
 import express from 'express';
+import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
@@ -37,6 +38,17 @@ export function buildExpressProxy() {
       crossOriginEmbedderPolicy: false,
     })
   );
+
+  // Global rate limiter
+  const limiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 100, // Limit each IP to 100 requests per `window` (here, per 1 minute)
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: { error: 'Too many requests, please try again later.' }
+  });
+
+  expressApp.use(limiter);
 
   // Proxy configurations
   const apiProxy = createProxyMiddleware({

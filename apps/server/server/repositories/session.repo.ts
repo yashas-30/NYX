@@ -32,6 +32,17 @@ export class SessionRepository {
       .orderBy(desc(this.table.updatedAt))) as ChatSession[];
   }
 
+  public static async listAll(): Promise<ChatSession[]> {
+    return this.list();
+  }
+
+  public static async updateTimestamp(id: string): Promise<void> {
+    await db
+      .update(this.table)
+      .set({ updatedAt: new Date() })
+      .where(eq(this.table.id, id));
+  }
+
   public static async create(session: {
     id: string;
     name: string;

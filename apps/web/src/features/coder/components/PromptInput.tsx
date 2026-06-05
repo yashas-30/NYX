@@ -139,7 +139,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const [modelSearch, setModelSearch] = useState('');
   const [selectedProvider, setSelectedProvider] = useState<string>('gemini');
   const [showSettings, setShowSettings] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [attachedImages, setAttachedImages] = useState<Array<{ file: File; preview: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const isSubmitting = useRef(false);
@@ -250,11 +250,23 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   }, [modelSettings, onModelSettingsChange]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      toast.success(`Attached: ${file.name}`);
-    }
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) {
+        toast.error('Only image files are supported');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setAttachedImages(prev => [...prev, { file, preview: event.target?.result as string }]);
+      };
+      reader.readAsDataURL(file);
+    });
+    toast.success(`Attached ${files.length} image(s)`);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const canSubmit = !!prompt.trim() && !!currentModelId && !isLoading;
@@ -273,29 +285,16 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
       let images: Array<{ name: string; dataUrl: string; mimeType?: string }> | undefined;
 
-      if (selectedFile) {
-        try {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(selectedFile);
-          });
-          images = [
-            {
-              name: selectedFile.name,
-              mimeType: selectedFile.type,
-              dataUrl,
-            },
-          ];
-        } catch (err) {
-          console.error('Failed to read file', err);
-          toast.error('Failed to read attached file');
-        }
+      if (attachedImages.length > 0) {
+        images = attachedImages.map(img => ({
+          name: img.file.name,
+          mimeType: img.file.type,
+          dataUrl: img.preview,
+        }));
       }
 
       onSubmit(finalPrompt, images);
-      setSelectedFile(null);
+      setAttachedImages([]);
 
       setTimeout(() => {
         isSubmitting.current = false;
@@ -304,7 +303,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         }
       }, 100);
     },
-    [prompt, onSubmit, canSubmit, selectedFile]
+    [prompt, onSubmit, canSubmit]
   );
 
   const adjustHeight = (reset?: boolean) => {
@@ -842,15 +841,28 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           onDrop={(e) => {
             e.preventDefault();
             setIsDragging(false);
-            const file = e.dataTransfer.files?.[0];
-            if (file) {
-              setSelectedFile(file);
-              toast.success(`Attached via Drop: ${file.name}`);
+            const files = e.dataTransfer.files;
+            if (!files || files.length === 0) return;
+
+            let addedCount = 0;
+            Array.from(files).forEach(file => {
+              if (!file.type.startsWith('image/')) return;
+              addedCount++;
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                setAttachedImages(prev => [...prev, { file, preview: event.target?.result as string }]);
+              };
+              reader.readAsDataURL(file);
+            });
+            if (addedCount > 0) {
+              toast.success(`Attached via Drop: ${addedCount} image(s)`);
+            } else {
+              toast.error('Only image files are supported');
             }
           }}
         >
           {visibleTemplates.length > 0 && prompt.startsWith('/') && (
-            <div className="absolute bottom-[calc(100%+8px)] left-0 w-full md:w-3/4 max-h-60 overflow-y-auto bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 flex flex-col p-1.5 scrollbar-none">
+            <div role="listbox" aria-label="Prompt templates" className="absolute bottom-[calc(100%+8px)] left-0 w-full md:w-3/4 max-h-60 overflow-y-auto bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 flex flex-col p-1.5 scrollbar-none">
               <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2">
                 <Layers size={14} className="text-zinc-400" />
                 <span className="text-xs font-bold text-zinc-300">Prompt Templates</span>
@@ -860,6 +872,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   <button
                     key={t.id}
                     type="button"
+                    role="option"
+                    aria-selected={idx === templateSelectedIndex}
                     onClick={() => {
                       onPromptChange(t.content);
                       setTimeout(() => textareaRef.current?.focus(), 0);
@@ -901,6 +915,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   whileHover={{ y: -1.5, scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   type="button"
+                  aria-label="List tasks"
                   onClick={() => {
                     onPromptChange('List active tasks and show current workspace status.');
                   }}
@@ -918,6 +933,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   whileHover={{ y: -1.5, scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   type="button"
+                  aria-label="Optimize prompt"
                   onClick={() => {
                     if (prompt.trim()) {
                       onPromptChange(optimizePromptText(prompt, analysis || analyzePrompt(prompt)));
@@ -940,6 +956,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   whileHover={{ y: -1.5, scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   type="button"
+                  aria-label="Toggle codebase search"
                   onClick={() => {
                     onCodebaseKnowledgeToggle(!codebaseKnowledgeEnabled);
                     toast.success(
@@ -970,6 +987,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   whileHover={{ y: -1.5, scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   type="button"
+                  aria-label="Toggle web search"
                   onClick={() => {
                     onWebSearchToggle(!webSearchEnabled);
                     toast.success(`Web search ${!webSearchEnabled ? 'enabled' : 'disabled'}`);
@@ -998,6 +1016,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   whileHover={{ y: -1.5, scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   type="button"
+                  aria-label="Reset context"
                   onClick={() => {
                     onClearHistory();
                     onPromptChange('');
@@ -1086,34 +1105,35 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 </div>
               )}
 
-              {/* Attachment chip */}
-              <AnimatePresence>
-                {selectedFile && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: -4 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                    className="flex items-center justify-between gap-2 px-3 py-1.5 bg-secondary/40 border border-border rounded-xl self-start mx-1"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Paperclip className="w-3 h-3 text-accent shrink-0" />
-                      <span className="text-[10px] font-mono text-foreground truncate max-w-[200px]">
-                        {selectedFile.name}
-                      </span>
-                      <span className="text-[8px] text-zinc-500 shrink-0">
-                        ({(selectedFile.size / 1024).toFixed(1)} KB)
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFile(null)}
-                      className="p-0.5 rounded-full hover:bg-white/5 text-zinc-500 hover:text-zinc-300 transition-all cursor-pointer"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/* Attached Images */}
+              {attachedImages.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-2 pb-1">
+                  <AnimatePresence>
+                    {attachedImages.map((img, idx) => (
+                      <motion.div
+                        key={img.file.name + idx}
+                        initial={{ opacity: 0, scale: 0.9, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                        className="relative group"
+                      >
+                        <img 
+                          src={img.preview} 
+                          alt={img.file.name} 
+                          className="w-12 h-12 object-cover rounded-lg border border-border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setAttachedImages(prev => prev.filter((_, i) => i !== idx))}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-background border border-border rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/5 text-zinc-400 hover:text-white"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
 
               {/* Microphone dictation button - absolute top right */}
               <div className="absolute top-3 right-3 flex items-center gap-1.5 group/mic z-10 select-none">
@@ -1129,6 +1149,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   type="button"
                   className="text-zinc-500 hover:text-zinc-300 transition-all cursor-pointer p-1"
                   title="Voice Input"
+                  aria-label="Voice Input"
                 >
                   <Mic size={14} />
                 </motion.button>
@@ -1144,6 +1165,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   onClick={() => fileInputRef.current?.click()}
                   className="text-zinc-500 hover:text-zinc-300 transition-all cursor-pointer p-1"
                   title="Upload File"
+                  aria-label="Upload File"
                 >
                   <Paperclip size={14} />
                 </motion.button>
@@ -1159,6 +1181,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     whileTap={{ scale: 0.95 }}
                     type="button"
                     onClick={onStop}
+                    aria-label="Stop generation"
                     className="h-7 px-3 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center gap-1 border border-red-500/20 text-[9px] font-black tracking-widest uppercase transition-all cursor-pointer"
                   >
                     <StopCircle className="w-3 h-3 animate-pulse" />
@@ -1173,6 +1196,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     whileTap={{ scale: canSubmit ? 0.95 : 1 }}
                     type="submit"
                     disabled={!canSubmit}
+                    aria-label="Send prompt"
                     className={`h-7 w-7 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
                       canSubmit
                         ? 'bg-accent text-white border-accent font-bold'
@@ -1189,6 +1213,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.05)' }}
                   whileTap={{ scale: 0.98 }}
                   type="button"
+                  aria-label="Select model"
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowModelSelector((v) => !v);
@@ -1213,6 +1238,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     type="button"
+                    aria-label="Configure local model settings"
                     onClick={() => {
                       setShowSettings((v) => !v);
                       setShowModelSelector(false);
@@ -1233,6 +1259,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 <textarea
                   ref={textareaRef}
                   value={prompt}
+                  aria-label="Prompt input"
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => setIsFocused(false)}
                   onChange={(e) => {
@@ -1254,7 +1281,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           ref={fileInputRef}
           className="hidden"
           onChange={handleFileChange}
-          accept="*/*"
+          accept="image/*"
+          multiple
         />
       </div>
     </div>

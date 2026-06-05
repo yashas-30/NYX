@@ -30,11 +30,12 @@ export class CacheRepository {
       return null;
     }
 
-    // Increment hit count
-    await db
-      .update(this.table)
+    // Increment hit count asynchronously
+    db.update(this.table)
       .set({ hitCount: (entry.hitCount || 0) + 1 })
-      .where(eq(this.table.key, key));
+      .where(eq(this.table.key, key))
+      .execute()
+      .catch((err) => console.error('[CacheRepository] Failed to update hit count:', err));
 
     return entry;
   }
@@ -85,7 +86,7 @@ export class CacheRepository {
     const all = await db
       .select({ key: queryTable.key })
       .from(queryTable)
-      .orderBy(asc(queryTable.createdAt));
+      .orderBy(asc(queryTable.hitCount), asc(queryTable.createdAt));
 
     if (all.length > maxItems) {
       const overflow = all.length - maxItems;

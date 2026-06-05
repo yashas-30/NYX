@@ -24,14 +24,16 @@ export const useDashboardState = (onExit?: () => void) => {
     if (path === '/models') return 'registry';
     if (path === '/settings') return 'settings';
     if (path === '/compare') return 'compare';
+    if (path === '/workspace') return 'workspace';
     return 'coder';
   })();
 
-  const setActiveMode = (mode: 'settings' | 'registry' | 'coder' | 'chat' | 'compare') => {
+  const setActiveMode = (mode: 'settings' | 'registry' | 'coder' | 'chat' | 'compare' | 'workspace') => {
     if (mode === 'chat') navigate('/chat');
     else if (mode === 'registry') navigate('/models');
     else if (mode === 'settings') navigate('/settings');
     else if (mode === 'compare') navigate('/compare');
+    else if (mode === 'workspace') navigate('/workspace');
     else navigate('/');
   };
   const [chatSettings, setChatSettings] = useState(() => {
@@ -110,7 +112,7 @@ export const useDashboardState = (onExit?: () => void) => {
   // ── Initialization Logic ───────────────────────────────────────────────
   useEffect(() => {
     // Register global mode switch helper
-    (window as any).nyxSwitchActiveMode = (mode: 'settings' | 'registry' | 'coder' | 'chat') => {
+    (window as any).nyxSwitchActiveMode = (mode: 'settings' | 'registry' | 'coder' | 'chat' | 'compare' | 'workspace') => {
       setActiveMode(mode);
     };
 

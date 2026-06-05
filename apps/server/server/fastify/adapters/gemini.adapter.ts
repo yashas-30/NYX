@@ -72,7 +72,7 @@ export class GeminiAdapter implements ProviderAdapter {
               if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
                 yield data.candidates[0].content.parts[0].text;
               }
-            } catch (err) {
+            } catch (error: any) {
               // ignore parse errors for partial chunks
             }
           }
