@@ -414,6 +414,9 @@ importers:
       '@nyx/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.9.1
       '@reactflow/core':
         specifier: ^11.11.4
         version: 11.11.4(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)

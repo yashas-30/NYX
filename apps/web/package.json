@@ -26,6 +26,7 @@
     "@codemirror/view": "^6.43.0",
     "@fontsource-variable/geist": "^5.2.8",
     "@nyx/shared": "workspace:*",
+    "@opentelemetry/api": "^1.9.1",
     "@reactflow/core": "^11.11.4",
     "@reactflow/node-resizer": "^2.2.14",
     "@ricky0123/vad-web": "^0.0.30",
