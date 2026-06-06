@@ -113,14 +113,15 @@ export const getEffectiveApiKey = (
   const key = apiKeys[provider]?.trim();
   if (key && key !== '') return key;
 
-  if (provider === 'gemini') {
+    if (provider === 'gemini') {
     const globalObj: any = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {});
     const metaEnv = globalObj.importMetaEnv;
     if (metaEnv && metaEnv.VITE_GEMINI_API_KEY) {
       return metaEnv.VITE_GEMINI_API_KEY;
     }
-    if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-      return process.env.GEMINI_API_KEY;
+    const procEnv = globalObj.process?.env;
+    if (procEnv && procEnv.GEMINI_API_KEY) {
+      return procEnv.GEMINI_API_KEY;
     }
   }
 
