@@ -251,6 +251,16 @@ async function getOrFetchSessionToken(): Promise<string> {
 }
 
 const originalFetch = window.fetch;
+
+// Endpoints that must NEVER trigger the session token interceptor
+const BOOTSTRAP_URLS = new Set([
+  '/api/v1/auth/session',
+  '/api/v1/vault/token',
+  '/api/v1/health',
+  '/api/v1/admin/logs',
+  '/api/nyx/critic/stream',
+]);
+
 window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   let urlStr = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
@@ -259,12 +269,8 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Pr
     input = urlStr;
   }
 
-  const isApiCall =
-    urlStr.includes('/api/v1/') &&
-    !urlStr.includes('/api/v1/auth/session') &&
-    !urlStr.includes('/api/v1/vault/token') &&
-    !urlStr.includes('/api/v1/health') &&
-    !urlStr.includes('/api/v1/admin/logs');
+  const isBootstrap = [...BOOTSTRAP_URLS].some((u) => urlStr.includes(u));
+  const isApiCall = urlStr.includes('/api/v1/') && !isBootstrap;
 
   if (isApiCall) {
     try {
@@ -293,23 +299,30 @@ function RootContainer() {
 
   useEffect(() => {
     let mounted = true;
+    let attempt = 0;
+
     const checkBackend = async () => {
       await initBackendUrl();
       while (mounted) {
         try {
-          // Always use /api/v1/ — backendBaseUrl is just the host:port when Tauri resolves it
           const base = backendBaseUrl || '';
           const url = `${base}/api/v1/health`;
-          const res = await originalFetch(url, { headers: { Accept: 'application/json' } });
-          // Any real HTTP response (including 500) means the backend is alive and TCP is up
+          // Use originalFetch directly — never triggers the interceptor or token fetcher
+          const res = await originalFetch(url, {
+            headers: { Accept: 'application/json' },
+            signal: AbortSignal.timeout(3000),
+          });
           if (res.status < 600) {
             if (mounted) setIsBackendReady(true);
             return;
           }
         } catch {
-          // Backend not up yet — keep waiting
+          // Backend not ready yet — keep waiting
         }
-        await new Promise((r) => setTimeout(r, 500));
+        attempt++;
+        // Exponential backoff: 500ms → 1s → 2s → cap at 3s
+        const delay = Math.min(500 * Math.pow(1.5, attempt - 1), 3000);
+        await new Promise((r) => setTimeout(r, delay));
       }
     };
     checkBackend();

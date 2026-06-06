@@ -1,50 +1,14 @@
-# docker-compose.yml
 version: '3.8'
-
 services:
-  nyx-server:
-    build:
-      context: .
-      target: server
+  nyx-app:
+    build: .
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - NYX_DB_PATH=/data/nyx.db
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    volumes:
-      - nyx-data:/data
-      - nyx-models:/app/models
-    depends_on:
-      - redis
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-        reservations:
-          memory: 512M
+    restart: always
 
   redis:
-    image: redis:7-alpine
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:alpine
+    image: redis:alpine
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - nyx-server
-    restart: unless-stopped
-
-volumes:
-  nyx-data:
-  nyx-models:
-  redis-data:
+      - "6379:6379"

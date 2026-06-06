@@ -1,6 +1,10 @@
 import logger from './logger.js';
 import { Agent, setGlobalDispatcher } from 'undici';
 import dns from 'node:dns';
+import PQueue from 'p-queue';
+
+// Request Deduplication Queue
+export const requestQueue = new PQueue({ concurrency: 100 });
 
 // ── In-Memory DNS Cache for Zero-Latency Lookups ─────────────────────────────
 export const DNS_CACHE = new Map<string, string>();

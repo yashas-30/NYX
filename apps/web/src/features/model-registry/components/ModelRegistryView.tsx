@@ -43,8 +43,9 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'nyx' | 'cloud'>('nyx');
 
-  // Native GGUF local model states
   const [nativeModels, setNativeModels] = useState<LocalModelPreset[]>([]);
+  const [ollamaModels, setOllamaModels] = useState<any[]>([]);
+  const [lmstudioModels, setLmstudioModels] = useState<any[]>([]);
   const [activeNativeId, setActiveNativeId] = useState<string | null>(null);
   const [nativeStatus, setNativeStatus] = useState<{ status: string; error: string | null }>({
     status: 'stopped',
@@ -72,6 +73,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   useEffect(() => {
     if (localModelsQuery.data) {
       setNativeModels(localModelsQuery.data.models);
+      setOllamaModels(localModelsQuery.data.ollamaModels || []);
+      setLmstudioModels(localModelsQuery.data.lmstudioModels || []);
       setActiveNativeId(localModelsQuery.data.activeModelId);
       setNativeStatus(localModelsQuery.data.runnerStatus);
     }
@@ -577,6 +580,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
            *  NYX NATIVE LOCAL LIBRARY SECTION
            * ════════════════════════════════════════════════════════════════ */}
           {showNyx && (
+            <div className="flex flex-col gap-6">
             <section className="space-y-4 p-5 rounded-md bg-card border border-border">
               <SectionHeader
                 icon={<Cpu size={18} className="text-[#FF3366] animate-pulse" />}
@@ -672,15 +676,9 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 )}
               </SectionHeader>
 
-              {/* Only show downloaded or actively-downloading models in the library */}
+              {/* Show all models in the library */}
               {(() => {
-                const installedModels = nativeModels.filter(
-                  (m) =>
-                    ['completed', 'downloading', 'failed', 'paused'].includes(m.status || '') ||
-                    activeNativeId === m.id
-                );
-
-                if (installedModels.length === 0) {
+                if (nativeModels.length === 0) {
                   return (
                     <div className="py-10 rounded-md border border-dashed border-[#FF3366]/20 flex flex-col items-center justify-center text-center gap-3">
                       <div className="w-10 h-10 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 flex items-center justify-center">
@@ -688,12 +686,10 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                       </div>
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">
-                          No models installed
+                          No models available
                         </p>
                         <p className="text-[8px] text-muted-foreground/40 mt-1 font-medium">
-                          Click{' '}
-                          <span className="text-[#FF3366] font-bold">Browse &amp; Download</span> to
-                          add models to your library.
+                          Unable to load native models.
                         </p>
                       </div>
                     </div>
@@ -702,7 +698,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
                 return (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 auto-rows-max [&>*:nth-child(4n+1)]:md:col-span-2 [&>*:nth-child(4n+1)]:lg:col-span-2">
-                    {installedModels.map((m) => (
+                    {nativeModels.map((m) => (
                       <LocalModelCard
                         key={`native-${m.id}`}
                         m={m}
@@ -725,6 +721,45 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 );
               })()}
             </section>
+            
+            <section className="space-y-4 p-5 rounded-md bg-card border border-border mt-6">
+              <SectionHeader
+                icon={<Cpu size={18} className="text-orange-500" />}
+                title="Ollama Local Library"
+                subtitle="Models hosted by your local Ollama instance"
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 auto-rows-max [&>*:nth-child(4n+1)]:md:col-span-2 [&>*:nth-child(4n+1)]:lg:col-span-2">
+                {ollamaModels.map(m => (
+                   <ModelCard key={m.id} name={m.name} provider={m.provider} description={m.description} specs={m.specs} hasKey={true} status="online" usage={0} />
+                ))}
+                {ollamaModels.length === 0 && (
+                   <div className="py-6 flex flex-col items-center justify-center col-span-full border border-dashed border-border rounded-md opacity-60">
+                     <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">No Ollama models found</p>
+                     <p className="text-[8px] text-muted-foreground mt-1">Ensure Ollama is running and has downloaded models.</p>
+                   </div>
+                )}
+              </div>
+            </section>
+            
+            <section className="space-y-4 p-5 rounded-md bg-card border border-border mt-6">
+              <SectionHeader
+                icon={<Cpu size={18} className="text-blue-500" />}
+                title="LM Studio Local Library"
+                subtitle="Models hosted by your local LM Studio instance"
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 auto-rows-max [&>*:nth-child(4n+1)]:md:col-span-2 [&>*:nth-child(4n+1)]:lg:col-span-2">
+                {lmstudioModels.map(m => (
+                   <ModelCard key={m.id} name={m.name} provider={m.provider} description={m.description} specs={m.specs} hasKey={true} status="online" usage={0} />
+                ))}
+                {lmstudioModels.length === 0 && (
+                   <div className="py-6 flex flex-col items-center justify-center col-span-full border border-dashed border-border rounded-md opacity-60">
+                     <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">No LM Studio models found</p>
+                     <p className="text-[8px] text-muted-foreground mt-1">Ensure LM Studio server is running on port 1234.</p>
+                   </div>
+                )}
+              </div>
+            </section>
+          </div>
           )}
 
           {/* ════════════════════════════════════════════════════════════════

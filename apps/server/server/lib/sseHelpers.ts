@@ -51,6 +51,7 @@ export function formatSseDone(): string {
  * Works with both Express response and Fastify reply.raw.
  */
 export function sseWrite(res: any, data: string): void {
+  if (res.writableEnded || res.destroyed) return;
   res.write(data);
   if (typeof res.flush === 'function') {
     res.flush();

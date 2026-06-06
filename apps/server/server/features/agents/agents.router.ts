@@ -45,7 +45,7 @@ Your purpose is to provide industrial-grade, production-ready code.
 
   fastify.post('/chat', async (request, reply) => {
     logger.info('[Agents Router] Received /chat request');
-    handleAgentStream(request, reply, 'chat');
+    await handleAgentStream(request, reply, 'chat');
   });
 
   const clineService = new ClineService();
@@ -73,16 +73,25 @@ Your purpose is to provide industrial-grade, production-ready code.
           images,
         },
         (event) => {
-          // Stream event back to the client
-          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+          if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+            reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+          }
         }
       );
-      reply.raw.write('data: [DONE]\n\n');
-      reply.raw.end();
+      if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+        reply.raw.write('data: [DONE]\n\n');
+        reply.raw.end();
+      }
     } catch (error: any) {
       logger.error(`[Agents Router Error - coder-cline]:`, error.message);
-      reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
-      reply.raw.end();
+      if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+        try {
+          reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+          reply.raw.end();
+        } catch (writeErr) {
+          logger.error(`[Agents Router Error] Failed to write error to stream:`, writeErr);
+        }
+      }
     }
   });
 
@@ -110,11 +119,15 @@ Your purpose is to provide industrial-grade, production-ready code.
           images,
         },
         (chunk) => {
-          reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+            reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          }
         },
         () => {
-          reply.raw.write('data: [DONE]\n\n');
-          reply.raw.end();
+          if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+            reply.raw.write('data: [DONE]\n\n');
+            reply.raw.end();
+          }
         }
       );
     } catch (error: any) {

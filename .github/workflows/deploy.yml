@@ -1,90 +1,18 @@
-name: Deploy to GitHub Pages
-
+name: Deploy
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-    inputs:
-      rollback_sha:
-        description: 'Commit SHA or Git Ref to roll back to (for manual rollback)'
-        required: true
-        type: string
-
-env:
-  NODE_OPTIONS: "--max-old-space-size=4096"
-
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
+  workflow_run:
+    workflows: ["Build & Push"]
+    types: [completed]
+    branches: [main]
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: azure/k8s-set-context@v3
         with:
-          ref: ${{ github.event.inputs.rollback_sha || github.sha }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.5.1
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --reporter append-only
-
-      - name: Install Tauri Dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
-
-      - name: Build
-        run: pnpm run build
-        env:
-          GITHUB_ACTIONS: "true"
-
-      - name: Copy Graphify Assets
-        run: |
-          mkdir -p dist/graphify-out
-          cp graphify-out/graph.html dist/graphify-out/ || true
-          cp graphify-out/sampleData.json dist/graphify-out/ || true
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: './dist'
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
-
-      - name: Ping Search Engines with Sitemap
-        run: |
-          curl -s "https://www.google.com/ping?sitemap=https://yashas-30.github.io/NYX/sitemap.xml" || true
-          curl -s "https://www.bing.com/ping?sitemap=https://yashas-30.github.io/NYX/sitemap.xml" || true
-
-      - name: Alert on Failure
-        if: failure()
-        run: |
-          echo "::error::Deployment failed! Manual rollback can be triggered via Workflow Dispatch using the last successful commit SHA."
-
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+      - run: |
+          kubectl set image deployment/nyx-server nyx=ghcr.io/${{ github.repository }}:${{ github.sha }} -n nyx-production
+          kubectl rollout status deployment/nyx-server -n nyx-production

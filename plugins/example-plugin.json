@@ -1,0 +1,17 @@
+{
+  "id": "nyx.example.github",
+  "name": "GitHub Integration",
+  "version": "1.0.0",
+  "description": "Read repositories, manage issues, and create PRs autonomously.",
+  "author": "NYX Core Team",
+  "permissions": ["network", "file-read", "file-write"],
+  "tools": [
+    {
+      "name": "search_repos",
+      "description": "Search GitHub repositories"
+    }
+  ],
+  "ui": {
+    "components": ["GithubSettingsPanel"]
+  }
+}

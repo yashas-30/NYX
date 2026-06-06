@@ -1,45 +1,23 @@
 import { NodeSDK } from '@opentelemetry/sdk-node';
+import { JaegerExporter } from '@opentelemetry/exporter-jaeger';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { resourceFromAttributes } from '@opentelemetry/resources';
-import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
-import { isProd } from './paths.js';
-import { env } from '../config/env.js';
 
-// Configure trace exporter (Jaeger in dev, OTLP in prod)
-const traceExporter = new OTLPTraceExporter({
-  url: isProd ? env.OTLP_TRACE_ENDPOINT : 'http://localhost:4318/v1/traces',
-});
+export const initTelemetry = () => {
+  if (process.env.DISABLE_TELEMETRY === 'true') return;
 
-const sdk = new NodeSDK({
-  resource: resourceFromAttributes({
-    [SemanticResourceAttributes.SERVICE_NAME]: 'nyx-backend',
-    [SemanticResourceAttributes.SERVICE_VERSION]: '3.0.0',
-  }),
-  traceExporter: traceExporter as any,
-  instrumentations: [
-    getNodeAutoInstrumentations({
-      '@opentelemetry/instrumentation-fs': {
-        enabled: true,
-      },
-      '@opentelemetry/instrumentation-http': {
-        enabled: true,
-      },
+  const sdk = new NodeSDK({
+    traceExporter: new JaegerExporter({ 
+      endpoint: process.env.JAEGER_ENDPOINT || 'http://localhost:14268/api/traces' 
     }),
-  ],
-});
+    instrumentations: [getNodeAutoInstrumentations()]
+  });
 
-try {
   sdk.start();
-  console.log('[Telemetry] OpenTelemetry initialized.');
-} catch (error) {
-  console.error('[Telemetry] Error initializing OpenTelemetry', error);
-}
-
-process.on('SIGTERM', () => {
-  sdk
-    .shutdown()
-    .then(() => console.log('[Telemetry] OpenTelemetry shut down.'))
-    .catch((error) => console.log('[Telemetry] Error shutting down OpenTelemetry', error))
-    .finally(() => process.exit(0));
-});
+  
+  process.on('SIGTERM', () => {
+    sdk.shutdown()
+      .then(() => console.log('Tracing terminated'))
+      .catch((error) => console.log('Error terminating tracing', error))
+      .finally(() => process.exit(0));
+  });
+};

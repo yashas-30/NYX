@@ -503,22 +503,6 @@ export const useChatPipeline = ({
       const controller = new AbortController();
       controllerRef.current = controller;
 
-      // Quick health check for backend
-      try {
-        const healthRes = await fetch('/api/v1/health', { signal: AbortSignal.timeout(5000) });
-        if (!healthRes.ok) {
-          console.warn('[Chat Pipeline] Backend health check failed');
-          toast.error('Backend server is not responding. Please ensure the server is running.');
-          return;
-        }
-      } catch (healthErr: any) {
-        if (healthErr.name !== 'AbortError') {
-          console.warn('[Chat Pipeline] Backend health check error:', healthErr);
-          toast.error('Cannot reach backend server. Please start the server first.');
-          return;
-        }
-      }
-
       try {
         // Validate API key early
         if (!nyxApiKey && nyxProvider !== 'nyx-native') {

@@ -51,19 +51,21 @@ export async function runDependencyHealthChecks() {
     );
   }
 
-  // Check Vulkan driver
+  // Check GPU/driver availability (fast registry check on Windows, no slow dxdiag)
   try {
-    await execAsync('vulkaninfo --summary 2>&1 | head -5', { timeout: 5_000 });
-    logger.info('[DepCheck] Vulkan driver: OK');
-  } catch {
-    try {
-      await execAsync('dxdiag /t nul 2>&1', { timeout: 5_000 });
+    const { platform } = process;
+    if (platform === 'win32') {
+      // Quick check via wmic - much faster than dxdiag
+      await execAsync('wmic path win32_VideoController get name /format:value 2>nul', { timeout: 3_000 });
       logger.info('[DepCheck] Vulkan driver: Using DirectX fallback (GPU detected)');
-    } catch {
-      logger.warn(
-        '[DepCheck] Vulkan driver: NOT DETECTED — GPU acceleration may be unavailable for local models'
-      );
+    } else {
+      await execAsync('vulkaninfo --summary 2>&1 | head -5', { timeout: 3_000 });
+      logger.info('[DepCheck] Vulkan driver: OK');
     }
+  } catch {
+    logger.warn(
+      '[DepCheck] Vulkan driver: NOT DETECTED — GPU acceleration may be unavailable for local models'
+    );
   }
   logger.info('[DepCheck] Startup dependency health checks complete.');
 }
@@ -268,7 +270,13 @@ export function registerShutdownHandlers(app: any, clearHealthChecks?: () => voi
     setTimeout(() => process.exit(1), 5000).unref();
   });
 
-  process.on('uncaughtException', (e) => {
+  process.on('uncaughtException', (e: any) => {
+    // Don't crash the server for non-fatal stream/network errors
+    const nonFatalCodes = ['ERR_STREAM_WRITE_AFTER_END', 'ERR_STREAM_DESTROYED', 'ECONNRESET', 'EPIPE'];
+    if (nonFatalCodes.includes(e.code)) {
+      logger.warn({ err: e }, '[UncaughtException] Non-fatal error suppressed — server continues running');
+      return;
+    }
     logger.error({ err: e }, '[UncaughtException]');
     cleanupProcesses();
     if (clearHealthChecks) clearHealthChecks();

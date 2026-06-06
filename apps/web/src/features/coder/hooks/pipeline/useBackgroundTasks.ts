@@ -12,30 +12,57 @@ export const useBackgroundTasks = ({ models, apiKeys }: BackgroundTasksProps) =>
   const [criticResult, setCriticResult] = useState<any>(null);
 
   useEffect(() => {
-    const eventSource = new EventSource('/api/nyx/critic/stream');
-    
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'progress') setCriticStatus('learning');
-        if (data.type === 'completed') {
-          setCriticStatus('completed');
-          setCriticResult(data.result);
-          setTimeout(() => setCriticStatus('idle'), 5000);
+    let eventSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+    let attempt = 0;
+    let destroyed = false;
+
+    const connect = () => {
+      if (destroyed) return;
+      eventSource = new EventSource('/api/nyx/critic/stream');
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'progress') setCriticStatus('learning');
+          if (data.type === 'completed') {
+            setCriticStatus('completed');
+            setCriticResult(data.result);
+            setTimeout(() => setCriticStatus('idle'), 5000);
+          }
+          if (data.type === 'failed') {
+            setCriticStatus('failed');
+            setTimeout(() => setCriticStatus('idle'), 5000);
+          }
+          // Reset backoff on successful message
+          attempt = 0;
+        } catch (err) {
+          console.error('[Critic Stream] Error parsing SSE data:', err);
         }
-        if (data.type === 'failed') {
-          setCriticStatus('failed');
-          setTimeout(() => setCriticStatus('idle'), 5000);
+      };
+
+      eventSource.onerror = () => {
+        eventSource?.close();
+        eventSource = null;
+        if (!destroyed) {
+          // Exponential backoff: 2s → 4s → 8s → cap at 30s
+          attempt++;
+          const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
+          reconnectTimer = setTimeout(connect, delay);
         }
-      } catch (err) {
-        console.error('[Critic Stream] Error parsing SSE data:', err);
-      }
+      };
     };
 
+    // Delay initial connection by 2s to avoid hitting the server before it's ready
+    reconnectTimer = setTimeout(connect, 2000);
+
     return () => {
-      eventSource.close();
+      destroyed = true;
+      clearTimeout(reconnectTimer);
+      eventSource?.close();
     };
   }, []);
+
 
   // fallow-ignore-next-line code-duplication
   const triggerBackgroundCritic = useCallback(

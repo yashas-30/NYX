@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nyx-server
+  namespace: nyx-production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nyx
+  template:
+    metadata:
+      labels:
+        app: nyx
+    spec:
+      containers:
+      - name: nyx
+        image: ghcr.io/yashas-30/nyx:latest
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: nyx-config
+        - secretRef:
+            name: nyx-secrets
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 30

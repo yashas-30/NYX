@@ -1,0 +1,34 @@
+groups:
+- name: nyx_alerts
+  rules:
+  - alert: HighErrorRate
+    expr: rate(nyx_errors_total[5m]) > 0.05
+    for: 5m
+    labels:
+      severity: page
+    annotations:
+      summary: High Error Rate detected
+
+  - alert: HighLatency
+    expr: histogram_quantile(0.95, rate(nyx_inference_duration_seconds_bucket[10m])) > 30
+    for: 10m
+    labels:
+      severity: page
+    annotations:
+      summary: p95 Latency is over 30s
+
+  - alert: HighVRAMUsage
+    expr: nyx_vram_usage_bytes / 24000000000 > 0.90
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: VRAM usage > 90%
+
+  - alert: LowCacheHitRate
+    expr: nyx_cache_hit_ratio < 0.50
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: Cache hit rate below 50%

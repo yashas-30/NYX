@@ -39,7 +39,7 @@ interface Props {
 }
 
 // Structured provider order for the selector
-const PROVIDER_ORDER = ['gemini', 'nyx-native'];
+const PROVIDER_ORDER = ['gemini', 'nyx-native', 'lmstudio', 'ollama'];
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
@@ -104,9 +104,20 @@ export const ModelSelector: React.FC<Props> = ({
         return;
       }
       try {
-        const res = await AIService.fetchWithAuth('/api/v1/nyx/local-models');
-        if (res.ok) {
-          const data = await res.json();
+        const [nyxRes, ollamaRes, lmstudioRes] = await Promise.allSettled([
+          AIService.fetchWithAuth('/api/v1/nyx/local-models'),
+          AIService.fetchWithAuth('/api/v1/nyx/local-models/ollama/models'),
+          AIService.fetchWithAuth('/api/v1/models/list', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: 'lmstudio' })
+          })
+        ]);
+
+        let combinedModels: any[] = [];
+
+        if (nyxRes.status === 'fulfilled' && nyxRes.value.ok) {
+          const data = await nyxRes.value.json();
           if (active && data.models && Array.isArray(data.models)) {
             const completed = data.models
               .filter((m: any) => m.status === 'completed' || m.status === 'downloading')
@@ -123,8 +134,46 @@ export const ModelSelector: React.FC<Props> = ({
                 },
                 status: m.status,
               }));
-            setLocalLibraryModels(completed);
+            combinedModels = [...combinedModels, ...completed];
           }
+        }
+
+        if (ollamaRes.status === 'fulfilled' && ollamaRes.value.ok) {
+          try {
+            const oData = await ollamaRes.value.json();
+            const ollamaModels = (oData.models || oData || []).map((m: any) => ({
+              id: m.name || m,
+              name: (m.name || m).replace('ollama/', ''),
+              provider: 'ollama',
+              description: 'Ollama local model',
+              specs: { contextWindow: '8K', trainingData: 'N/A', maxOutput: 'N/A', modality: 'Text' },
+              status: 'completed'
+            }));
+            combinedModels = [...combinedModels, ...ollamaModels];
+          } catch (e) {}
+        }
+
+        if (lmstudioRes.status === 'fulfilled' && lmstudioRes.value.ok) {
+          try {
+            const lData = await lmstudioRes.value.json();
+            const lmstudioModels = (lData.models || []).map((m: any) => {
+              const idStr = typeof m === 'string' ? m : (m.id || m.key || m.name || JSON.stringify(m));
+              const nameStr = typeof m === 'string' ? m : (m.name || m.display_name || m.id || m.key || JSON.stringify(m));
+              return {
+                id: idStr,
+                name: nameStr.replace('lmstudio/', ''),
+              provider: 'lmstudio',
+              description: 'LM Studio local model',
+              specs: { contextWindow: '8K', trainingData: 'N/A', maxOutput: 'N/A', modality: 'Text' },
+              status: 'completed'
+              };
+            });
+            combinedModels = [...combinedModels, ...lmstudioModels];
+          } catch (e) {}
+        }
+
+        if (active) {
+          setLocalLibraryModels(combinedModels);
         }
       } catch (err: any) {
         console.error('[ModelSelector] Failed to load local models:', err);
@@ -175,7 +224,10 @@ export const ModelSelector: React.FC<Props> = ({
 
   const groupedModels = useMemo(() => {
     const groups: Record<string, any[]> = {
+      'gemini': [],
       'nyx-native': [],
+      'lmstudio': [],
+      'ollama': [],
     };
     mergedModels.forEach((model) => {
       const p = model.provider || 'unknown';

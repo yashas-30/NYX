@@ -3,13 +3,28 @@ packages:
   - "packages/*"
 allowBuilds:
   '@google/genai': true
+  '@parcel/watcher': true
+  '@playwright/browser-chromium': true
   '@swc/core': true
+  bcrypt: true
   better-sqlite3: true
+  cpu-features: true
   esbuild: true
+  isolated-vm: set this to true or false
   keytar: true
   msgpackr-extract: true
   msw: true
+  netlify-cli: true
   onnxruntime-node: true
   protobufjs: true
   sharp: true
+  snyk: true
+  ssh2: true
   tesseract.js: true
+  tree-sitter: set this to true or false
+  tree-sitter-go: set this to true or false
+  tree-sitter-javascript: set this to true or false
+  tree-sitter-python: set this to true or false
+  tree-sitter-rust: set this to true or false
+  tree-sitter-typescript: set this to true or false
+  unix-dgram: true

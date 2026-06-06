@@ -23,6 +23,8 @@ import {
 import { ModelDefinition, Provider } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { Joyride } from 'react-joyride';
+import type { Step, CallBackProps } from 'react-joyride';
 
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import { CoderHeader } from './CoderHeader';
@@ -135,42 +137,31 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     'checking'
   );
 
-  // Scrapling connectivity — routed through our backend to avoid ERR_CONNECTION_REFUSED
-  // spam when the optional Python sidecar isn't running. Uses exponential backoff
-  // (10s → 20s → 40s … up to 5 min) when offline.
+  const [runJoyride, setRunJoyride] = useState(false);
+  const joyrideSteps: Step[] = [
+    {
+      target: '.coder-header',
+      content: 'Welcome to NYX! This is the Coder workspace.',
+      disableBeacon: true,
+    },
+    {
+      target: '.prompt-input-area',
+      content: 'Type your instructions here. NYX will write the code.',
+    },
+  ];
+
   useEffect(() => {
-    let active = true;
-    let intervalMs = 10_000;
-    let timerId: ReturnType<typeof setTimeout>;
+    if (!localStorage.getItem('nyx_onboarding_completed')) {
+      setRunJoyride(true);
+    }
+  }, []);
 
-    const checkScrapling = async () => {
-      try {
-        const res = await fetch('/api/v1/admin/scrapling-status');
-        if (!active) return;
-        if (res.ok) {
-          const { status } = await res.json();
-          setScraplingStatus(status === 'running' ? 'online' : 'offline');
-          // Reset backoff when we get a real answer
-          intervalMs = 10_000;
-        } else {
-          setScraplingStatus('offline');
-        }
-      } catch {
-        if (!active) return;
-        setScraplingStatus('offline');
-        // Back off up to 5 minutes when the backend itself is unreachable
-        intervalMs = Math.min(intervalMs * 2, 300_000);
-      }
-      if (active) {
-        timerId = setTimeout(checkScrapling, intervalMs);
-      }
-    };
-
-    checkScrapling();
-    return () => {
-      active = false;
-      clearTimeout(timerId);
-    };
+  const handleJoyrideCallback = useCallback((data: CallBackProps) => {
+    const { status } = data;
+    if (status === 'finished' || status === 'skipped') {
+      setRunJoyride(false);
+      localStorage.setItem('nyx_onboarding_completed', 'true');
+    }
   }, []);
 
   // Auto-launch VS Code when Coder page is opened with a workspace
@@ -335,6 +326,21 @@ export const CoderPage: React.FC<CoderPageProps> = ({
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
+      <Joyride
+        steps={joyrideSteps}
+        run={runJoyride}
+        continuous
+        showSkipButton
+        callback={handleJoyrideCallback}
+        styles={{
+          options: {
+            primaryColor: '#00f0ff',
+            textColor: '#fff',
+            backgroundColor: '#18181b',
+            arrowColor: '#18181b',
+          }
+        }}
+      />
       <ErrorBoundary
         fallback={
           <div className="flex-1 p-6 text-red-400 flex items-center justify-center">

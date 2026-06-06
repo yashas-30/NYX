@@ -74,8 +74,6 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
   // Middlewares / Hooks
   app.addHook('onRequest', requestIdMiddleware);
 
-  const { registerMetricsHook } = await import('./metrics.js');
-  registerMetricsHook(app);
 
   app.addHook('onResponse', (request, reply, done) => {
     const latency = reply.elapsedTime;

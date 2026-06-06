@@ -54,11 +54,8 @@ export async function metricsRouter(fastify: FastifyInstance) {
     labelNames: ['dependency'],
   });
 
-  const { updateSystemMetrics } = await import('../../lib/metrics.js');
-
   fastify.get('/metrics', async (request, reply) => {
     try {
-      await updateSystemMetrics();
       const { cacheStats, hitRate, uptime, memory, modelsState, activeModel, activeContextSize } =
         await service.getMetrics();
       const health = await service.getHealth();

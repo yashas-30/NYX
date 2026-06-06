@@ -266,13 +266,22 @@ export const useChatLogic = ({
   useEffect(() => {
     if (!chatSessions?.activeSid) return;
 
-    let ws: WebSocket;
+    let ws: WebSocket | null = null;
     let reconnectTimeout: NodeJS.Timeout;
+    let tokenPollTimeout: NodeJS.Timeout;
 
     const connect = () => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const token = getSessionToken();
-      const wsUrl = `${protocol}//${window.location.host}/ws/session-sync?sessionId=${chatSessions.activeSid}&token=${token || ''}`;
+
+      // Don't connect with an empty token — the server will reject it.
+      // Poll every 500ms until a valid token is available.
+      if (!token) {
+        tokenPollTimeout = setTimeout(connect, 500);
+        return;
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/session-sync?sessionId=${chatSessions.activeSid}&token=${token}`;
 
       ws = new WebSocket(wsUrl);
 
@@ -298,9 +307,11 @@ export const useChatLogic = ({
 
     return () => {
       clearTimeout(reconnectTimeout);
+      clearTimeout(tokenPollTimeout);
       ws?.close();
     };
   }, [chatSessions?.activeSid]);
+
 
   // -------------------------------------------------------------------------
   // Session synchronization
