@@ -11,6 +11,9 @@ on:
         required: true
         type: string
 
+env:
+  NODE_OPTIONS: "--max-old-space-size=4096"
+
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
