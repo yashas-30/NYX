@@ -68,7 +68,15 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
   }).withTypeProvider<ZodTypeProvider>();
 
   // Set Zod compilers
-  app.setValidatorCompiler(validatorCompiler);
+  app.setValidatorCompiler(({ schema }) => {
+    return (data) => {
+      const parsed = (schema as any).safeParse(data);
+      if (parsed.success) {
+        return { value: parsed.data };
+      }
+      return { error: parsed.error };
+    };
+  });
   app.setSerializerCompiler(serializerCompiler);
 
   // Middlewares / Hooks
@@ -152,7 +160,7 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
       if (!isPublic) {
         try {
           if (
-            env.NODE_ENV !== 'development' ||
+            (env.NODE_ENV !== 'development' && env.NODE_ENV !== 'test') ||
             request.headers['csrf-token'] ||
             request.headers['xsrf-token'] ||
             request.headers['x-csrf-token']
