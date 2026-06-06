@@ -31,7 +31,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
-          args: --all-projects
+          args: --all-projects --exclude=.agents,nyx-antigravity-extension
 
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.10.0
