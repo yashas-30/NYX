@@ -18,6 +18,9 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile --reporter append-only
       - run: pnpm run typecheck
 
@@ -32,6 +35,9 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile --reporter append-only
       - run: pnpm test
 
@@ -49,6 +55,9 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile --reporter append-only
       - run: pnpm run build
       - run: pnpm run build:server
@@ -69,6 +78,9 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile --reporter append-only
       - run: pnpm run package:exe
       - uses: actions/upload-artifact@v4
