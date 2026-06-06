@@ -1,6 +1,7 @@
 import { setupServer } from 'msw/node';
 import { HttpResponse, http } from 'msw';
 import { beforeAll, afterEach, afterAll, vi } from 'vitest';
+import '@testing-library/jest-dom';
 
 // Define MSW mock server handlers
 export const handlers = [

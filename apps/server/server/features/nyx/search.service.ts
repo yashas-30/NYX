@@ -80,7 +80,7 @@ export class SearchService {
     };
   }
 
-  async codebaseSearch(query: string) {
+  async codebaseSearch(query: string): Promise<{ results: any[]; directoryStructure: any; fallback?: boolean }> {
     try {
       if (!this.rag) {
         this.rag = new CodebaseRAG();

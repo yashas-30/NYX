@@ -6,7 +6,7 @@ import { FastifyInstance } from 'fastify';
 
 export const registry = new OpenAPIRegistry();
 
-export function generateOpenApiDocument() {
+export function generateOpenApiDocument(): any {
   const generator = new OpenApiGeneratorV3(registry.definitions);
 
   return generator.generateDocument({
