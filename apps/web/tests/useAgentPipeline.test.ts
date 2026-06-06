@@ -103,8 +103,9 @@ describe('useAgentPipeline hook', () => {
   it('should abort agent run when stopCoder is triggered', async () => {
     const { result } = renderHook(() => useAgentPipeline(defaultProps as any));
     
+    let runPromise: Promise<void> | undefined;
     act(() => {
-      result.current.runCoder('Perform long task');
+      runPromise = result.current.runCoder('Perform long task');
     });
 
     expect(result.current.isLoading).toBe(true);
@@ -114,5 +115,11 @@ describe('useAgentPipeline hook', () => {
     });
 
     expect(result.current.isLoading).toBe(false);
+
+    if (runPromise) {
+      await act(async () => {
+        await runPromise;
+      });
+    }
   });
 });

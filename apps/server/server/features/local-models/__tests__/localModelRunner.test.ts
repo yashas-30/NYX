@@ -19,6 +19,28 @@ vi.mock('../localModelManager.js', () => ({
   },
 }));
 
+vi.mock('fs', () => ({
+  default: {
+    statSync: vi.fn(() => ({ size: 1.5 * 1024 * 1024 * 1024 })),
+    readFileSync: vi.fn(() => 'vulkan'),
+    existsSync: vi.fn(() => true),
+  },
+}));
+
+vi.mock('node:fs', () => ({
+  default: {
+    statSync: vi.fn(() => ({ size: 1.5 * 1024 * 1024 * 1024 })),
+    readFileSync: vi.fn(() => 'vulkan'),
+    existsSync: vi.fn(() => true),
+  },
+}));
+
+vi.mock('@huggingface/gguf', () => ({
+  gguf: vi.fn(async () => ({
+    metadata: { 'gemma2.block_count': 32 },
+  })),
+}));
+
 describe('LocalModelRunner Layer Math Optimizer', () => {
   beforeEach(() => {
     vi.clearAllMocks();

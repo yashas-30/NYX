@@ -2,12 +2,14 @@
 import request from 'supertest';
 import { buildFastifyServer } from '../../apps/server/server/lib/fastifyConfig.js';
 import { FastifyInstance } from 'fastify';
+import { runMigrations } from '../../apps/server/server/db/migrator.js';
 
 describe('API Integration', () => {
   let app: FastifyInstance;
   let token: string;
 
   beforeAll(async () => {
+    runMigrations();
     app = await buildFastifyServer();
     await app.ready();
 

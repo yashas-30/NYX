@@ -4,6 +4,20 @@ import { beforeAll, afterEach, afterAll, vi } from 'vitest';
 import '@testing-library/jest-dom';
 
 // Define MSW mock server handlers
+vi.mock('keytar', () => ({
+  default: {
+    setPassword: vi.fn(),
+    getPassword: vi.fn(),
+    deletePassword: vi.fn(),
+    findPassword: vi.fn(),
+    findCredentials: vi.fn(),
+  },
+  setPassword: vi.fn(),
+  getPassword: vi.fn(),
+  deletePassword: vi.fn(),
+  findPassword: vi.fn(),
+  findCredentials: vi.fn(),
+}));
 export const handlers = [
   http.get('*/api/health', () => {
     return HttpResponse.json({ status: 'ok' });
