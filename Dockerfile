@@ -1,6 +1,7 @@
 FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+RUN apk add --no-cache python3 make g++
 RUN corepack enable
 
 FROM base AS builder
