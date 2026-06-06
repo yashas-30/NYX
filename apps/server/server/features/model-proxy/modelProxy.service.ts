@@ -22,7 +22,7 @@ export class ModelProxyService {
           res = await fetch('http://127.0.0.1:1234/api/v1/models').catch(() => null);
         }
         if (res && res.ok) {
-          const data = await res.json();
+          const data = await res.json() as any;
           if (data && data.data && Array.isArray(data.data)) {
             return data.data.map((m: any) => `lmstudio/${m.id}`);
           }
