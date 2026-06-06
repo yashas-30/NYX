@@ -13,6 +13,8 @@ jobs:
         with:
           method: kubeconfig
           kubeconfig: ${{ secrets.KUBECONFIG }}
+      - name: Lowercase Repository Name
+        run: echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
       - run: |
-          kubectl set image deployment/nyx-server nyx=ghcr.io/${{ github.repository }}:${{ github.sha }} -n nyx-production
+          kubectl set image deployment/nyx-server nyx=ghcr.io/${{ env.REPO_LC }}:${{ github.sha }} -n nyx-production
           kubectl rollout status deployment/nyx-server -n nyx-production
