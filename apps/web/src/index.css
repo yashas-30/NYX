@@ -3,86 +3,95 @@
 @import "tw-animate-css";
 
 
-/* ── Apple HIG Design Tokens ─────────────────────────────────── */
+/* ── Minimalist Utilitarian UI Tokens ───────────────────────── */
 :root {
-  /* Light Mode (Premium Cream / Apple Aesthetic) */
-  --background: #F5F2E9;
-  --foreground: #1D1D1F;
-  --card: #FCF9F2;
-  --card-foreground: #1D1D1F;
+  /* Light Mode (Warm Bone Editorial) */
+  --background: #FBFBFA;
+  --foreground: #111111;
+  --card: #FFFFFF;
+  --card-foreground: #111111;
   --popover: #FFFFFF;
-  --popover-foreground: #1D1D1F;
+  --popover-foreground: #111111;
   
-  /* Apple System Colors */
-  --primary: #0071E3; /* System Blue */
-  --primary-rgb: 0, 113, 227;
+  --primary: #111111;
   --primary-foreground: #FFFFFF;
-  --secondary: #F0EDE8;
-  --secondary-foreground: #1D1D1F;
-  --muted: #F0EDE8;
-  --muted-foreground: #86868B;
-  --accent: #0071E3;
-  --accent-rgb: 0, 113, 227;
-  --accent-foreground: #FFFFFF;
-  --destructive: #FF3B30; /* System Red */
+  --secondary: #F7F6F3;
+  --secondary-foreground: #787774;
+  --muted: #F7F6F3;
+  --muted-foreground: #787774;
   
-  --border: rgba(0, 0, 0, 0.25);
-  --border-strong: rgba(0, 0, 0, 0.45);
-  --input: rgba(0, 0, 0, 0.04);
-  --ring: rgba(0, 113, 227, 0.3);
+  /* Desaturated Pastel Accents */
+  --accent: #E1F3FE;
+  --accent-foreground: #1F6C9F;
+  --accent-red: #FDEBEC;
+  --accent-red-foreground: #9F2F2D;
+  --accent-green: #EDF3EC;
+  --accent-green-foreground: #346538;
+  --accent-yellow: #FBF3DB;
+  --accent-yellow-foreground: #956400;
   
-  /* Spatial Grid & Radius */
+  --destructive: #FDEBEC;
+  --destructive-foreground: #9F2F2D;
+  
+  --border: #EAEAEA;
+  --border-strong: rgba(0, 0, 0, 0.06);
+  --input: #EAEAEA;
+  --ring: rgba(0, 0, 0, 0.06);
+  
+  /* Crisp Geometry */
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
   
-  /* Shadows */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 32px 64px -16px rgba(0, 0, 0, 0.15);
-  --shadow-terminal: 0 20px 40px -12px rgba(0, 0, 0, 0.2);
-  --shadow-inner: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  /* Ultra-diffuse Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 12px 24px rgba(0, 0, 0, 0.04);
+  --shadow-terminal: 0 20px 40px rgba(0, 0, 0, 0.05);
   
-  /* Animation */
+  /* Emil-Design-Eng Animation */
   --ease-apple: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 
-  --duration-normal: 300ms;
+  --duration-normal: 200ms;
   --duration-fast: 150ms;
   
   color-scheme: light;
 }
 
 .dark {
-  /* Dark Mode (Premium Matte Gray "Just Gray" Stitch Design Scheme) */
-  --background: #1c1c1c; /* Solid Matte Gray canvas background */
-  --foreground: #e3e3e3; /* Soft off-white text */
-  --card: #262626; /* Warm Gray Card Fill */
-  --card-foreground: #e3e3e3;
-  --popover: #262626;
-  --popover-foreground: #e3e3e3;
+  /* Minimalist Charcoal Dark Mode */
+  --background: #111111;
+  --foreground: #EAEAEA;
+  --card: #1A1A1A;
+  --card-foreground: #EAEAEA;
+  --popover: #1A1A1A;
+  --popover-foreground: #EAEAEA;
   
-  --primary: #ffffff; /* Monochromatic Clean White */
-  --primary-rgb: 255, 255, 255;
-  --primary-foreground: #1c1c1c;
-  --secondary: #4A5059; /* Thundercloud Ash Sidebar */
-  --secondary-foreground: #e3e3e3; /* Soft off-white text */
-  --muted: #2d2d2d; /* Soft dark grey for blockquotes and code */
-  --muted-foreground: #a3a3a3; /* Muted text */
-  --accent: #FF3366; /* Flame Azalea Accent */
-  --accent-rgb: 255, 51, 102;
-  --accent-foreground: #ffffff;
-  --destructive: #ef4444;
+  --primary: #FFFFFF;
+  --primary-foreground: #111111;
+  --secondary: #222222;
+  --secondary-foreground: #A1A1A1;
+  --muted: #222222;
+  --muted-foreground: #787774;
   
-  --border: rgba(255, 255, 255, 0.06); /* Extremely thin clean border lines */
-  --border-strong: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.02);
-  --ring: rgba(255, 51, 102, 0.3); /* Flame Azalea focus ring */
+  /* Muted Accents */
+  --accent: #1C2B36;
+  --accent-foreground: #69B4E8;
+  --destructive: #361C1D;
+  --destructive-foreground: #E8696A;
   
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 16px 48px -8px rgba(0, 0, 0, 0.7);
-  --shadow-terminal: 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+  --border: #2A2A2A;
+  --border-strong: #333333;
+  --input: #2A2A2A;
+  --ring: rgba(255, 255, 255, 0.1);
+  
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 12px 24px rgba(0, 0, 0, 0.4);
+  --shadow-terminal: 0 20px 40px rgba(0, 0, 0, 0.5);
   
   color-scheme: dark;
 }
@@ -138,7 +147,8 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     scroll-behavior: smooth;
-    letter-spacing: -0.012em; /* Apple's tight tracking */
+    letter-spacing: -0.012em;
+    line-height: 1.6;
   }
 
   body {
@@ -179,46 +189,38 @@
 }
 
 @layer components {
-  /* ── Apple Materials (Glassmorphism) ────────────────────────── */
+  /* ── Apple Materials (Glassmorphism) -> Replaced with Minimalist Borders ── */
   .glass {
     background: var(--card);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid var(--border);
     box-shadow: var(--shadow-sm);
   }
 
   .glass-thick {
-    background: color-mix(in srgb, var(--card) 90%, transparent);
-    -webkit-backdrop-filter: blur(40px) saturate(200%);
-    backdrop-filter: blur(40px) saturate(200%);
+    background: var(--card);
     border: 1px solid var(--border);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-sm);
   }
 
   /* ── Geometry & Squirrels ───────────────────────────────────── */
   .squircle {
     border-radius: var(--radius-lg);
-    -webkit-mask-image: url('data:image/svg+xml;utf8,<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M 0,20 C 0,0 0,0 20,0 L 80,0 C 100,0 100,0 100,20 L 100,80 C 100,100 100,100 80,100 L 20,100 C 0,100 0,100 0,80 Z" fill="black"/></svg>');
-    mask-image: url('data:image/svg+xml;utf8,<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M 0,20 C 0,0 0,0 20,0 L 80,0 C 100,0 100,0 100,20 L 100,80 C 100,100 100,100 80,100 L 20,100 C 0,100 0,100 0,80 Z" fill="black"/></svg>');
-    -webkit-mask-size: 100% 100%;
-    mask-size: 100% 100%;
   }
 
   .btn-apple {
-    @apply px-5 py-2.5 rounded-full font-semibold transition-all active:scale-[0.97] disabled:opacity-50;
+    @apply px-4 py-2 rounded-md font-semibold transition-all active:scale-[0.98] disabled:opacity-50;
     background: var(--primary);
     color: var(--primary-foreground);
-    box-shadow: var(--shadow-sm);
+    border: 1px solid transparent;
   }
 
   .btn-apple:hover {
-    background: color-mix(in srgb, var(--primary) 90%, black);
-    box-shadow: var(--shadow-md);
+    background: var(--primary);
+    opacity: 0.9;
   }
 
   .input-apple {
-    @apply px-4 py-2.5 rounded-xl border bg-input transition-all focus:ring-4 focus:ring-primary/20 outline-none;
+    @apply px-4 py-2.5 rounded-md border bg-input transition-all focus:ring-1 focus:ring-primary outline-none;
     border-color: var(--border);
   }
 }
@@ -237,18 +239,10 @@
 /* ── Custom Backgrounds ─────────────────────────────────────── */
 .bg-mesh {
   background-color: var(--background);
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(240, 237, 232, 0.5) 0, transparent 50%), 
-    radial-gradient(at 50% 0%, rgba(255, 255, 255, 0.4) 0, transparent 50%), 
-    radial-gradient(at 100% 0%, rgba(234, 230, 222, 0.5) 0, transparent 50%);
 }
 
 .dark .bg-mesh {
   background-color: var(--background);
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(99, 99, 102, 0.4) 0, transparent 50%), 
-    radial-gradient(at 50% 0%, rgba(142, 142, 147, 0.3) 0, transparent 50%), 
-    radial-gradient(at 100% 0%, rgba(72, 72, 74, 0.4) 0, transparent 50%);
 }
 
 /* ── Scrollbars (Gemini-style thin dark) ────────────────────── */
@@ -524,7 +518,7 @@
 }
 
 .btn-tech {
-  @apply px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all duration-200 border cursor-pointer flex items-center justify-center gap-1.5;
+  @apply px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-md transition-all duration-200 border cursor-pointer flex items-center justify-center gap-1.5;
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.03);
   color: var(--foreground);
@@ -613,6 +607,6 @@ button:active,
 button,
 [role="button"],
 .active-scale {
-  transition: transform 120ms ease-out !important;
+  transition: transform 160ms var(--ease-out) !important;
 }
 

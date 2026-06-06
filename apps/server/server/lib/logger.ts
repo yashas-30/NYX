@@ -77,6 +77,22 @@ try {
   logStream = pino.multistream([{ stream: process.stdout, level: logLevel }]);
 }
 
+// Exported sanitizeLog function for explicit usage
+export function sanitizeLog(obj: any): any {
+  if (typeof obj === 'string') {
+    return obj.replace(/key=([A-Za-z0-9_-]{20,})/g, 'key=***REDACTED***');
+  }
+  if (typeof obj === 'object' && obj !== null) {
+    try {
+      const str = JSON.stringify(obj);
+      return JSON.parse(str.replace(/key=([A-Za-z0-9_-]{20,})/g, 'key=***REDACTED***'));
+    } catch {
+      return obj;
+    }
+  }
+  return obj;
+}
+
 // Configure base pino logger
 const logger = pino(
   {
@@ -90,6 +106,13 @@ const logger = pino(
     mixin() {
       const requestId = getRequestId();
       return requestId ? { requestId } : {};
+    },
+    hooks: {
+      logMethod(inputArgs, method) {
+        // Redact deep string values and keys from all args
+        const sanitizedArgs = inputArgs.map(arg => sanitizeLog(arg));
+        return method.apply(this, sanitizedArgs);
+      }
     },
     redact: {
       paths: [
@@ -108,6 +131,17 @@ const logger = pino(
   },
   logStream
 );
+
+// Override console methods to use sanitizeLog to prevent external libraries from leaking
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+const originalConsoleInfo = console.info;
+
+console.log = (...args) => originalConsoleLog(...args.map(a => sanitizeLog(a)));
+console.error = (...args) => originalConsoleError(...args.map(a => sanitizeLog(a)));
+console.warn = (...args) => originalConsoleWarn(...args.map(a => sanitizeLog(a)));
+console.info = (...args) => originalConsoleInfo(...args.map(a => sanitizeLog(a)));
 
 // Child logger utility for creating context-aware sub-loggers
 export function childLogger(contextName: string, extraData?: Record<string, any>) {

@@ -10,6 +10,16 @@
       "cache": false,
       "persistent": true
     },
+    "@nyx/server#dev": {
+      "dependsOn": ["@nyx/shared#build"],
+      "cache": false,
+      "persistent": true
+    },
+    "@nyx/web#dev": {
+      "dependsOn": ["@nyx/shared#build"],
+      "cache": false,
+      "persistent": true
+    },
     "lint": {
       "cache": true
     },

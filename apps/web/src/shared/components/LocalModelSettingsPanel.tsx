@@ -51,19 +51,19 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-              className="absolute bottom-full mb-3 left-0 right-0 z-[500] bg-card border border-white/[0.04] p-1 rounded-3xl shadow-2xl overflow-hidden"
+              className="absolute bottom-full mb-3 left-0 right-0 z-[500] bg-card border border-white/[0.04] p-1 rounded-md shadow-sm border border-border overflow-hidden"
             >
               <div className="w-full bg-card/98 border border-white/[0.04] rounded-[calc(1.5rem-4px)] overflow-hidden">
                 <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/[0.05]">
                   <div className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-xl bg-[#FF3366]/10 border border-[#FF3366]/20 flex items-center justify-center">
-                      <div size={13} className="text-[#FF3366]" />
+                    <div className="w-7 h-7 rounded-md bg-muted/50 border border-border flex items-center justify-center">
+                      <Zap size={13} className="text-foreground" />
                     </div>
                     <div>
-                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-foreground/85">
+                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-foreground">
                         Local Inference
                       </p>
-                      <p className="text-[8px] text-[#FF3366]/80 font-semibold uppercase tracking-wider mt-0.5">
+                      <p className="text-[8px] text-muted-foreground font-semibold uppercase tracking-wider mt-0.5">
                         {currentModelId?.name || 'GGUF Model'} · settings
                       </p>
                     </div>
@@ -133,7 +133,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                         }
                       }}
                       title="Auto-adjust based on system specs"
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-emerald-400 hover:bg-emerald-500/8 border border-transparent hover:border-emerald-500/15 transition-all"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-emerald-400 hover:bg-emerald-500/8 border border-transparent hover:border-emerald-500/15 transition-all"
                     >
                       <Zap size={9} />
                       Analyze System
@@ -143,7 +143,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                       type="button"
                       onClick={resetLocalSettings}
                       title="Reset to defaults"
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-[#FF3366] hover:bg-[#FF3366]/8 border border-transparent hover:border-[#FF3366]/15 transition-all"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[8px] font-black uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent transition-all"
                     >
                       <RotateCcw size={9} />
                       Reset
@@ -152,7 +152,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                       whileTap={{ scale: 0.88 }}
                       type="button"
                       onClick={() => setShowSettings(false)}
-                      className="p-1.5 rounded-xl text-muted-foreground/30 hover:text-foreground/70 hover:bg-white/5 transition-all"
+                      className="p-1.5 rounded-md text-muted-foreground/30 hover:text-foreground/70 hover:bg-white/5 transition-all"
                     >
                       <Check size={13} />
                     </motion.button>
@@ -169,11 +169,11 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                         <SectionLabel
                           icon={<MemoryStick size={9} />}
                           label="GPU / VRAM"
-                          color="text-[#FF3366]"
+                          color="text-foreground"
                         />
-                        <div className="mt-3 p-3.5 rounded-2xl bg-[#FF3366]/[0.04] border border-[#FF3366]/10 space-y-2.5">
+                        <div className="mt-3 p-3.5 rounded-md bg-muted/20 border border-border space-y-2.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wider">
+                            <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider">
                               GPU Layers (ngl)
                             </span>
                             <div className="flex items-center gap-1.5">
@@ -182,7 +182,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                               >
                                 {gpuModeLabel}
                               </span>
-                              <span className="text-[10px] font-mono font-bold text-foreground/45 tabular-nums">
+                              <span className="text-[10px] font-mono font-bold text-foreground tabular-nums">
                                 {localSettings.gpuLayers}
                               </span>
                             </div>
@@ -194,11 +194,11 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                             step={1}
                             value={localSettings.gpuLayers}
                             onChange={(e) => updateLocal('gpuLayers', Number(e.target.value))}
-                            className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#FF3366] bg-white/8"
+                            className="w-full h-1.5 rounded-md appearance-none cursor-pointer accent-foreground bg-muted"
                           />
                           <div className="flex justify-between">
-                            <span className="text-[7px] text-muted-foreground/25">CPU Only</span>
-                            <span className="text-[7px] text-muted-foreground/25">Full VRAM</span>
+                            <span className="text-[7px] text-muted-foreground">CPU Only</span>
+                            <span className="text-[7px] text-muted-foreground">Full VRAM</span>
                           </div>
                         </div>
                       </section>
@@ -207,7 +207,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                         <SectionLabel
                           icon={<Layers size={9} />}
                           label="Context & Memory"
-                          color="text-[#FF3366]"
+                          color="text-foreground"
                         />
                         <div className="mt-3">
                           <ParamSlider
@@ -218,7 +218,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                             max={32768}
                             step={512}
                             display={(v) => `${Math.round(v / 1024)}K`}
-                            accent="accent-[#FF3366]"
+                            accent="accent-foreground"
                             onChange={(v) => updateLocal('contextSize', v)}
                           />
                         </div>
@@ -230,7 +230,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                         <SectionLabel
                           icon={<Thermometer size={9} />}
                           label="Sampling"
-                          color="text-[#FF3366]"
+                          color="text-foreground"
                         />
                         <div className="mt-3 space-y-4">
                           <ParamSlider
@@ -241,7 +241,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                             max={2}
                             step={0.05}
                             display={(v) => (v ?? 0.7).toFixed(2)}
-                            accent="accent-[#FF3366]"
+                            accent="accent-foreground"
                             onChange={(v) => updateLocal('temperature', v)}
                             isFloat
                           />
@@ -253,7 +253,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                             max={1}
                             step={0.01}
                             display={(v) => (v ?? 0.95).toFixed(2)}
-                            accent="accent-[#FF3366]"
+                            accent="accent-foreground"
                             onChange={(v) => updateLocal('topP', v)}
                             isFloat
                           />

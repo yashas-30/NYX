@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { TerminalService } from './terminal.service.js';
-import { sendSseTokenRotate } from '../../lib/sseHelpers.js';
-import { validate } from '../../middleware/validate.js';
+import { sendSseTokenRotate, sseWrite } from '../../lib/sseHelpers.js';
 import { terminalRunSchema, terminalPromptSchema } from './terminal.schema.js';
 import { runInSandbox } from '../../sandbox/dockerSandbox.js';
 
@@ -25,7 +25,11 @@ export async function terminalRouter(fastify: FastifyInstance) {
   fastify.post(
     '/run',
     {
-      preHandler: [validate(terminalRunSchema)],
+      schema: {
+        tags: ['terminal'],
+        summary: 'Run a terminal command',
+        body: terminalRunSchema,
+      },
       config: {
         rateLimit: {
           max: 60,
@@ -34,8 +38,8 @@ export async function terminalRouter(fastify: FastifyInstance) {
       }
     },
     async (request, reply) => {
-      const { command, cwd } = request.body as any;
-      if (!command || typeof command !== 'string') {
+      const { command, cwd } = request.body as z.infer<typeof terminalRunSchema>;
+      if (!command) {
         return reply.code(400).send({ error: 'Command is required' });
       }
 
@@ -76,10 +80,14 @@ export async function terminalRouter(fastify: FastifyInstance) {
   fastify.post(
     '/prompt',
     {
-      preHandler: [validate(terminalPromptSchema)],
+      schema: {
+        tags: ['terminal'],
+        summary: 'Start a long-running terminal prompt',
+        body: terminalPromptSchema,
+      }
     },
     (request, reply) => {
-      const { nodeId, prompt, cwd } = request.body as any;
+      const { nodeId, prompt, cwd } = request.body as z.infer<typeof terminalPromptSchema>;
       const command = prompt;
       if (!command) {
         return reply.code(400).send({ error: 'Command/prompt is required' });
@@ -116,9 +124,8 @@ export async function terminalRouter(fastify: FastifyInstance) {
       }
     }
   }, async (request, reply) => {
-    reply.header('Content-Type', 'text/event-stream');
-    reply.header('Cache-Control', 'no-cache');
-    reply.header('Connection', 'keep-alive');
+    const { initFastifySse } = await import('../../lib/sseHelpers.js');
+    initFastifySse(reply);
     reply.raw.flushHeaders();
     sendSseTokenRotate(reply.raw as any);
 
@@ -130,7 +137,7 @@ export async function terminalRouter(fastify: FastifyInstance) {
     if (execId) {
       const pending = TerminalService.getPending(execId);
       if (!pending) {
-        reply.raw.write(
+        sseWrite(reply.raw,
           `event: error\ndata: ${JSON.stringify({ message: 'Execution session not found' })}\n\n`
         );
         return reply.raw.end();
@@ -138,7 +145,7 @@ export async function terminalRouter(fastify: FastifyInstance) {
       command = pending.command;
       cwd = pending.cwd;
     } else {
-      reply.raw.write(
+      sseWrite(reply.raw,
         `event: error\ndata: ${JSON.stringify({ message: 'execId parameter is required' })}\n\n`
       );
       return reply.raw.end();
@@ -148,12 +155,12 @@ export async function terminalRouter(fastify: FastifyInstance) {
     const { child, error } = await TerminalService.spawn(command, cwd);
 
     if (error) {
-      reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: error })}\n\n`);
+      sseWrite(reply.raw, `event: error\ndata: ${JSON.stringify({ message: error })}\n\n`);
       return reply.raw.end();
     }
 
     if (!child) {
-      reply.raw.write(
+      sseWrite(reply.raw,
         `event: error\ndata: ${JSON.stringify({ message: 'Failed to initialize sandboxed process' })}\n\n`
       );
       return reply.raw.end();
@@ -164,7 +171,7 @@ export async function terminalRouter(fastify: FastifyInstance) {
       const lines = chunk.toString().split('\n');
       for (const line of lines) {
         if (line !== '') {
-          reply.raw.write(`event: stdout\ndata: ${line}\n\n`);
+          sseWrite(reply.raw, `event: stdout\ndata: ${line}\n\n`);
         }
       }
     });
@@ -174,7 +181,7 @@ export async function terminalRouter(fastify: FastifyInstance) {
       const lines = chunk.toString().split('\n');
       for (const line of lines) {
         if (line !== '') {
-          reply.raw.write(`event: stderr\ndata: ${line}\n\n`);
+          sseWrite(reply.raw, `event: stderr\ndata: ${line}\n\n`);
         }
       }
     });
@@ -182,12 +189,12 @@ export async function terminalRouter(fastify: FastifyInstance) {
     // Handle exit/close
     child.on('close', (code) => {
       const executionTimeMs = Date.now() - startTime;
-      reply.raw.write(`event: exit\ndata: ${JSON.stringify({ code, executionTimeMs })}\n\n`);
+      sseWrite(reply.raw, `event: exit\ndata: ${JSON.stringify({ code, executionTimeMs })}\n\n`);
       reply.raw.end();
     });
 
     child.on('error', (err) => {
-      reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
+      sseWrite(reply.raw, `event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
       reply.raw.end();
     });
 

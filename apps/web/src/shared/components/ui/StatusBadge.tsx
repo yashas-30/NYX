@@ -56,7 +56,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, labelOverride 
         initial={{ opacity: 0, scale: 0.8 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.8 }}
-        className={`flex items-center justify-center rounded-lg border-2 ${cfg.badge} ${label ? 'gap-2 px-5 py-2 text-[12px] font-bold uppercase tracking-widest' : 'w-5 h-5 p-0'}`}
+        className={`flex items-center justify-center rounded-md border-2 ${cfg.badge} ${label ? 'gap-2 px-5 py-2 text-[12px] font-bold uppercase tracking-widest' : 'w-5 h-5 p-0'}`}
       >
         <span className={`rounded-sm ${cfg.dot} ${label ? 'w-1.5 h-1.5' : 'w-2 h-2'}`} />
         {label}

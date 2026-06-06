@@ -108,7 +108,7 @@ const ToolCallCard: React.FC<{
     <motion.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`my-2 rounded-xl border overflow-hidden ${
+      className={`my-2 rounded-md border overflow-hidden ${
         isError
           ? 'bg-red-500/5 border-red-500/20'
           : isRunning
@@ -131,7 +131,7 @@ const ToolCallCard: React.FC<{
           {tool.function.name}
         </span>
         <span
-          className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium uppercase tracking-wider ml-auto shrink-0 ${
+          className={`text-[9px] px-1.5 py-0.5 rounded-md font-medium uppercase tracking-wider ml-auto shrink-0 ${
             isRunning
               ? 'bg-sky-500/10 text-sky-400'
               : isError
@@ -159,7 +159,7 @@ const ToolCallCard: React.FC<{
           >
             <div className="px-3.5 pb-3 pt-1 border-t border-border">
               <div className="text-[10px] text-muted-foreground font-mono mb-1.5">Arguments:</div>
-              <pre className="text-[11px] font-mono text-foreground/90 bg-muted/50 rounded-lg p-2.5 overflow-x-auto">
+              <pre className="text-[11px] font-mono text-foreground/90 bg-muted/50 rounded-md p-2.5 overflow-x-auto">
                 {JSON.stringify(JSON.parse(tool.function.arguments || '{}'), null, 2)}
               </pre>
             </div>
@@ -188,7 +188,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
   const lang = language || 'text';
 
   return (
-    <div className="relative group/code my-4 rounded-2xl border border-border bg-muted overflow-hidden shadow-xl text-left">
+    <div className="relative group/code my-4 rounded-md border border-border bg-muted overflow-hidden text-left">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-muted/50 border-b border-border">
         <div className="flex items-center gap-2">
@@ -260,7 +260,7 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
       className="my-2 relative group/image"
     >
       <div
-        className={`relative rounded-xl overflow-hidden border border-border bg-muted/50 cursor-zoom-in transition-all ${
+        className={`relative rounded-md overflow-hidden border border-border bg-muted/50 cursor-zoom-in transition-all ${
           expanded
             ? 'fixed inset-4 z-50 flex items-center justify-center bg-black/80'
             : 'inline-block max-w-sm'
@@ -284,7 +284,7 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
               e.stopPropagation();
               setExpanded(false);
             }}
-            className="absolute top-4 right-4 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+            className="absolute top-4 right-4 p-2 rounded-md bg-black/50 text-white hover:bg-black/70 transition-colors"
           >
             <X size={16} />
           </button>
@@ -351,8 +351,7 @@ const MarkdownContent: React.FC<{
         </h1>
       ),
       h2: ({ children }: any) => (
-        <h2 className="text-[13px] font-black tracking-tight text-foreground mt-4 mb-2 flex items-center gap-2">
-          <span className="w-1 h-4 rounded-full bg-[#FF3366] inline-block shrink-0" />
+        <h2 className="text-[13px] font-black tracking-tight text-foreground mt-4 mb-2">
           {children}
         </h2>
       ),
@@ -374,9 +373,9 @@ const MarkdownContent: React.FC<{
       strong: ({ children }: any) => (
         <strong className="font-bold text-foreground">{children}</strong>
       ),
-      em: ({ children }: any) => <em className="italic text-[#FF3366]/80">{children}</em>,
+      em: ({ children }: any) => <em className="italic text-foreground/90">{children}</em>,
       blockquote: ({ children }: any) => (
-        <blockquote className="my-2 pl-3 py-1 border-l border-[#FF3366]/45 bg-muted/20 rounded-r-lg text-sm text-foreground/65 italic">
+        <blockquote className="my-2 pl-4 py-1 border-l-2 border-border bg-transparent text-sm text-muted-foreground italic">
           {children}
         </blockquote>
       ),
@@ -391,7 +390,7 @@ const MarkdownContent: React.FC<{
               target="_blank"
               rel="noopener noreferrer"
               title={cite?.source || cite?.url}
-              className="inline-flex items-center justify-center min-w-[16px] h-4 ml-0.5 px-1 text-[9px] font-bold text-[#FF3366] bg-[#FF3366]/10 rounded-full hover:bg-[#FF3366]/20 hover:scale-110 transition-all align-super no-underline cursor-pointer"
+              className="inline-flex items-center justify-center min-w-[16px] h-4 ml-0.5 px-1 text-[9px] font-bold text-[#FF3366] bg-[#FF3366]/10 rounded-md hover:bg-[#FF3366]/20 hover:scale-110 transition-all align-super no-underline cursor-pointer"
               onClick={(e) => {
                 if (!cite?.url) e.preventDefault();
               }}
@@ -405,7 +404,7 @@ const MarkdownContent: React.FC<{
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[#FF3366] hover:underline underline-offset-2 decoration-[#FF3366]/30"
+            className="text-foreground font-semibold hover:underline underline-offset-4 decoration-border"
           >
             {children}
           </a>
@@ -498,18 +497,18 @@ const MessageActions: React.FC<{
               if (e.key === 'Enter' && e.metaKey) handleEditSubmit();
               if (e.key === 'Escape') setIsEditing(false);
             }}
-            className="w-full min-h-[80px] bg-card border border-border rounded-xl p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
+            className="w-full min-h-[80px] bg-card border border-border rounded-md p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
           />
           <div className="flex items-center gap-2">
             <button
               onClick={handleEditSubmit}
-              className="px-3 py-1.5 rounded-lg bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer"
             >
               Save & Submit
             </button>
             <button
               onClick={() => setIsEditing(false)}
-              className="px-3 py-1.5 rounded-lg bg-muted border border-border text-muted-foreground text-[11px] font-semibold hover:bg-muted/80 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-md bg-muted border border-border text-muted-foreground text-[11px] font-semibold hover:bg-muted/80 transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -657,7 +656,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
       >
         {isUser ? (
           <div className="max-w-[85%] sm:max-w-[75%]">
-            <div className="py-3.5 px-5 bg-muted/50 border border-border rounded-2xl shadow-sm hover:bg-muted/70 transition-all">
+            <div className="py-3.5 px-5 bg-muted/10 border border-border rounded-md hover:bg-muted/20 transition-all">
               <div className="text-[14px] font-normal leading-relaxed text-foreground select-text whitespace-pre-wrap">
                 {msg.content}
               </div>
@@ -687,11 +686,11 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               (msg.toolCalls && msg.toolCalls.length > 0) ||
               msg.status === 'loading') && (
               <div className="flex items-center gap-2.5 mb-3 select-none">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#22d3ee]/20 to-[#FF3366]/20 border border-border flex items-center justify-center shadow-inner">
+                <div className="w-6 h-6 rounded-md bg-muted/80 border border-border flex items-center justify-center">
                   <Logo size={14} />
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-[11px] font-mono font-bold tracking-widest text-[#22d3ee] uppercase">
+                  <span className="text-[11px] font-mono font-bold tracking-widest text-foreground uppercase">
                     NYX
                   </span>
                   {activeModel && (
@@ -705,7 +704,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
 
             {/* Error state */}
             {msg.status === 'error' && (
-              <div className="flex items-center gap-2 py-2 px-3 rounded-xl bg-red-500/5 border border-red-500/10">
+              <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-red-500/5 border border-red-500/10">
                 <AlertTriangle size={14} className="text-red-400 shrink-0" />
                 <p className="text-sm text-red-400/90 font-medium">
                   Error: Generation failed. Please check your model settings or connection.
@@ -727,7 +726,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               !msg.reasoning &&
               (!msg.toolCalls || msg.toolCalls.length === 0) && (
                 <div className="flex items-center gap-2.5 py-1 select-none">
-                  <NyxLoader size={14} className="text-[#22d3ee] shrink-0" />
+                  <NyxLoader size={14} className="text-foreground shrink-0" />
                   <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.2em]">
                     Formulating response...
                   </span>
@@ -792,7 +791,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           href={cite.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-[10px] text-muted-foreground hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card border border-border text-[10px] text-muted-foreground hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
                         >
                           <Globe size={9} />
                           <span className="truncate max-w-[200px]">
@@ -856,7 +855,7 @@ const EmptyState: React.FC<{
     transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
     className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
   >
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-full blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-md blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
 
     <motion.div
       initial={{ opacity: 0 }}
@@ -869,7 +868,7 @@ const EmptyState: React.FC<{
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
         className="relative flex items-center justify-center transform-gpu"
       >
-        <div className="absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
+        <div className="absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-md blur-[45px] pointer-events-none select-none transform-gpu" />
         <Logo
           size={90}
           className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default"
@@ -916,7 +915,7 @@ const EmptyState: React.FC<{
             }}
             whileTap={{ scale: 0.99 }}
             onClick={() => onSuggestedPromptClick?.(p)}
-            className="p-4 text-[11px] font-bold text-left rounded-2xl bg-card border border-border text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
+            className="p-4 text-[11px] font-bold text-left rounded-md bg-card border border-border text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
           >
             <span>{p}</span>
             <span className="text-[10px] text-[#FF3366]/70 font-extrabold ml-2">➔</span>
@@ -1106,11 +1105,11 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 12 }}
             onClick={jumpToBottom}
-            className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 px-3.5 py-2.5 rounded-full bg-card/90 border border-border text-foreground/70 hover:text-foreground shadow-xl text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-muted/90 cursor-pointer"
+            className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 px-3.5 py-2.5 rounded-md bg-card/90 border border-border text-foreground/70 hover:text-foreground shadow-sm border border-border text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-muted/90 cursor-pointer"
           >
             <ArrowDown className="w-3 h-3" />
             Latest
-            {isLoading && <span className="w-1.5 h-1.5 rounded-full bg-[#FF3366] animate-pulse" />}
+            {isLoading && <span className="w-1.5 h-1.5 rounded-md bg-[#FF3366] animate-pulse" />}
           </motion.button>
         )}
       </AnimatePresence>
@@ -1118,7 +1117,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       {/* New messages indicator */}
       {!autoScroll && isLoading && (
         <div className="absolute top-0 left-0 right-0 z-10 flex justify-center pt-2 pointer-events-none">
-          <div className="px-3 py-1 rounded-full bg-[#FF3366]/10 border border-[#FF3366]/20 text-[10px] text-[#FF3366] font-semibold animate-pulse">
+          <div className="px-3 py-1 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 text-[10px] text-[#FF3366] font-semibold animate-pulse">
             Generating...
           </div>
         </div>

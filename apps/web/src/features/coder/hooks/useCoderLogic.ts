@@ -98,6 +98,10 @@ export const useCoderLogic = () => {
     agentMode,
     agentReasoning,
     pendingToolConfirm,
+    criticStatus,
+    criticResult,
+    missingDebugWarning,
+    setMissingDebugWarning,
   } = useAgentPipeline({
     models: { nyx: selectedModel?.id || 'nyx-native' },
     apiKeys,
@@ -189,5 +193,9 @@ export const useCoderLogic = () => {
     agentReasoning,
     pendingToolConfirm,
     selectedModel,
+    criticStatus,
+    criticResult,
+    missingDebugWarning,
+    setMissingDebugWarning,
   };
 };

@@ -30,7 +30,7 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
           <Wrench className="h-4 w-4 text-primary" />
           <span className="font-mono">{toolName}</span>
           {status === 'pending' && (
-            <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+            <span className="flex h-2 w-2 rounded-md bg-yellow-500 animate-pulse" />
           )}
           {status === 'success' && <CheckCircle2 className="h-3 w-3 text-green-500" />}
           {status === 'error' && <AlertCircle className="h-3 w-3 text-red-500" />}

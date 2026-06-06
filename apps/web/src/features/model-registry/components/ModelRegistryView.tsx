@@ -12,6 +12,7 @@ import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
 import { AIService } from '@src/core/services/ai.service';
 import { useLocalModels } from '@src/shared/hooks/useLocalModels';
+import { getSessionToken } from '@src/infrastructure/api/authFetch';
 
 // Import modular sub-components
 import { SectionHeader } from './RegistryShared';
@@ -103,7 +104,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/downloads`;
+    const token = getSessionToken();
+    const wsUrl = `${protocol}//${window.location.host}/ws/downloads?token=${token || ''}`;
 
     let ws: WebSocket;
     let reconnectTimer: NodeJS.Timeout;
@@ -538,26 +540,26 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   }
                 }}
                 className="
-                  bg-background border border-border rounded-full
+                  bg-background border border-border rounded-md
                   text-[11px] font-medium text-foreground
                   pl-8 pr-3 py-1.5 w-full sm:w-48
                   outline-none focus:border-[#FF3366]/30
-                  transition-all placeholder:text-muted-foreground/20 shadow-sm
+                  transition-all placeholder:text-muted-foreground/20
                 "
               />
             </div>
 
             {/* Filter tabs */}
-            <div className="flex gap-1 bg-background p-1 rounded-full border border-border shadow-sm shrink-0 w-full sm:w-auto overflow-x-auto scrollbar-none">
+            <div className="flex gap-1 bg-background p-1 rounded-md border border-border shrink-0 w-full sm:w-auto overflow-x-auto scrollbar-none">
               {(['nyx', 'cloud'] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
                   className={`
-                    flex-1 sm:flex-none px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-tight transition-all text-center
+                    flex-1 sm:flex-none px-3 py-1 rounded-md text-[11px] font-bold uppercase tracking-tight transition-all text-center
                     ${
                       filter === f
-                        ? 'bg-[#FF3366] text-black shadow-sm'
+                        ? 'bg-[#FF3366] text-black'
                         : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted'
                     }
                   `}
@@ -575,7 +577,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
            *  NYX NATIVE LOCAL LIBRARY SECTION
            * ════════════════════════════════════════════════════════════════ */}
           {showNyx && (
-            <section className="space-y-4 p-5 rounded-2xl bg-card border border-border shadow-sm">
+            <section className="space-y-4 p-5 rounded-md bg-card border border-border">
               <SectionHeader
                 icon={<Cpu size={18} className="text-[#FF3366] animate-pulse" />}
                 title="NYX Native Local Library"
@@ -585,7 +587,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   {/* Direct RAM Load Status Badge */}
                   <div
                     className={`
-                    inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-tight
+                    inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-tight
                     ${
                       activeNativeId
                         ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
@@ -595,7 +597,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   >
                     <div
                       className={`
-                      w-1.5 h-1.5 rounded-full
+                      w-1.5 h-1.5 rounded-md
                       ${activeNativeId ? 'bg-emerald-400 animate-ping' : 'bg-zinc-400'}
                     `}
                     />
@@ -604,9 +606,9 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
                   {/* Browse Presets / Download button */}
                   <motion.button
-                    whileTap={{ scale: 0.96 }}
+                    whileTap={{ scale: 0.97 }}
                     onClick={() => setShowDownloadModal(true)}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#FF3366] hover:bg-[#FF3366]/90 border border-transparent text-[11px] font-bold uppercase tracking-wider text-black shadow-lg transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-[#FF3366] hover:bg-[#FF3366]/90 text-[11px] font-bold uppercase tracking-wider text-black transition-all cursor-pointer"
                   >
                     <Download size={10} />
                     <span>Browse &amp; Download</span>
@@ -615,9 +617,9 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   {/* Compare Models button */}
                   {setActiveMode && (
                     <motion.button
-                      whileTap={{ scale: 0.96 }}
+                      whileTap={{ scale: 0.97 }}
                       onClick={() => setActiveMode('compare')}
-                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-white/10 text-[11px] font-bold uppercase tracking-wider text-white shadow-lg transition-all cursor-pointer"
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-muted hover:bg-muted/80 border border-border text-[11px] font-bold uppercase tracking-wider text-foreground transition-all cursor-pointer"
                     >
                       <GitCompare size={10} />
                       <span>Compare Models</span>
@@ -627,7 +629,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
                 {/* VRAM / RAM Real-time Visualization */}
                 {compatibility?.specs && (
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/40 p-3 rounded-xl border border-border">
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/40 p-3 rounded-md border border-border">
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider">
                         <span className="flex items-center gap-1 text-muted-foreground">
@@ -638,7 +640,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                           {compatibility.specs.totalVramGB} GB
                         </span>
                       </div>
-                      <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div className="h-2 w-full bg-muted rounded-md overflow-hidden">
                         <div
                           className="h-full bg-[#FF3366] transition-all duration-500"
                           style={{
@@ -657,7 +659,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                           {compatibility.specs.totalRamGB} GB
                         </span>
                       </div>
-                      <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div className="h-2 w-full bg-muted rounded-md overflow-hidden">
                         <div
                           className="h-full bg-blue-500 transition-all duration-500"
                           style={{
@@ -680,8 +682,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
                 if (installedModels.length === 0) {
                   return (
-                    <div className="py-10 rounded-2xl border border-dashed border-[#FF3366]/20 flex flex-col items-center justify-center text-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-[#FF3366]/10 border border-[#FF3366]/20 flex items-center justify-center">
+                    <div className="py-10 rounded-md border border-dashed border-[#FF3366]/20 flex flex-col items-center justify-center text-center gap-3">
+                      <div className="w-10 h-10 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 flex items-center justify-center">
                         <Download size={16} className="text-[#FF3366]" />
                       </div>
                       <div>
@@ -699,7 +701,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 }
 
                 return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 auto-rows-max [&>*:nth-child(4n+1)]:md:col-span-2 [&>*:nth-child(4n+1)]:lg:col-span-2">
                     {installedModels.map((m) => (
                       <LocalModelCard
                         key={`native-${m.id}`}
@@ -729,7 +731,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
            *  CLOUD MODELS SECTION
            * ════════════════════════════════════════════════════════════════ */}
           {showCloud && (
-            <section className="space-y-5 p-5 rounded-2xl bg-card border border-border">
+            <section className="space-y-5 p-5 rounded-md bg-card border border-border">
               <SectionHeader
                 icon={<Globe size={18} strokeWidth={1.5} />}
                 title="Cloud Models"
@@ -746,7 +748,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     <div className="h-px flex-1 bg-gradient-to-r from-border/40 to-transparent" />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 auto-rows-max [&>*:nth-child(4n+1)]:md:col-span-2 [&>*:nth-child(4n+1)]:lg:col-span-2">
                     {models.map((m) => (
                       <ModelCard
                         key={m.id}
@@ -769,21 +771,21 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
       {/* Sticky Compare Bar */}
       {compareIds.length > 0 && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md sm:w-auto bg-card border border-accent/40 shadow-2xl px-6 py-3 rounded-2xl sm:rounded-full flex flex-col sm:flex-row items-center gap-3 sm:gap-4 z-50">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md sm:w-auto bg-card border border-border px-6 py-3 rounded-md flex flex-col sm:flex-row items-center gap-3 sm:gap-4 z-50">
           <span className="text-xs font-bold text-foreground text-center">
             {compareIds.length} model{compareIds.length > 1 ? 's' : ''} selected
           </span>
           <div className="flex gap-2 w-full sm:w-auto">
             <button
               onClick={() => setCompareIds([])}
-              className="flex-1 sm:flex-none text-[10px] uppercase font-bold tracking-wider text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-full hover:bg-muted transition-all"
+              className="flex-1 sm:flex-none text-[10px] uppercase font-bold tracking-wider text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-md hover:bg-muted transition-all"
             >
               Clear
             </button>
             <button
               onClick={() => setShowCompareModal(true)}
               disabled={compareIds.length < 2}
-              className="flex-1 sm:flex-none text-[10px] uppercase font-bold tracking-wider bg-[#FF3366] text-black px-4 py-1.5 rounded-full hover:bg-[#FF3366]/90 transition-all disabled:opacity-50"
+              className="flex-1 sm:flex-none text-[10px] uppercase font-bold tracking-wider bg-[#FF3366] text-black px-4 py-1.5 rounded-md hover:bg-[#FF3366]/90 transition-all disabled:opacity-50"
             >
               Compare Models
             </button>

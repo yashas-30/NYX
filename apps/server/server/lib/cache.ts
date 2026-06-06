@@ -28,7 +28,9 @@ export class CacheServer {
     const sortedKeys = Object.keys(obj).sort();
     const result: any = {};
     for (const key of sortedKeys) {
-      result[key] = CacheServer.sortKeys(obj[key]);
+      if (obj[key] !== undefined) {
+        result[key] = CacheServer.sortKeys(obj[key]);
+      }
     }
     return result;
   }
@@ -38,6 +40,7 @@ export class CacheServer {
    */
   public static generateKey(body: any): string {
     const sortedInput = CacheServer.sortKeys({
+      _version: 1, // cache key versioning
       provider: body.provider || '',
       model: body.model || '',
       prompt: body.prompt || '',
@@ -77,7 +80,8 @@ export class CacheServer {
     provider: string,
     model: string
   ): Promise<void> {
-    return this.setWithTTL(key, data, provider, model, 0);
+    const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+    return this.setWithTTL(key, data, provider, model, DEFAULT_TTL_MS);
   }
 
   /**
@@ -100,11 +104,12 @@ export class CacheServer {
       await CacheRepository.set(key, data, provider, model, ttlMs);
       
       // Async I/O: Run eviction without blocking the response
-      CacheRepository.evictOldestIfNeeded(MAX_ITEMS).catch(err => 
-        logger.error('[CacheServer] Async eviction failed:', err.message)
+      const MAX_CACHE_SIZE_BYTES = Number(process.env.MAX_CACHE_SIZE) || 1024 * 1024 * 1024; // 1GB
+      CacheRepository.evictOldestIfNeeded(MAX_CACHE_SIZE_BYTES).catch(err => 
+        logger.error({ err, key }, '[CacheServer] Async eviction failed')
       );
     } catch (error: any) {
-      logger.error('[CacheServer] Failed to write cache:', error.message);
+      logger.error({ err: error, key, provider, model }, '[CacheServer] Failed to write cache');
     }
   }
 
@@ -154,7 +159,7 @@ export class TTLCache<V> {
   private defaultTTLMs: number;
   private maxSize: number;
 
-  constructor(defaultTTLMs: number = 60000, maxSize: number = 1000) {
+  constructor(defaultTTLMs: number = 60000, maxSize: number = MAX_ITEMS) {
     this.defaultTTLMs = defaultTTLMs;
     this.maxSize = maxSize;
   }

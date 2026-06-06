@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { sendSseTokenRotate } from '../../lib/sseHelpers.js';
+import { sendSseTokenRotate, sseWrite, formatSseChunk, formatSseDone, formatSseError } from '../../lib/sseHelpers.js';
 import { UnifiedEngine } from '../../lib/aiEngine.js';
 import { geminiStreamSchema } from './gemini.schema.js';
 import logger from '../../lib/logger.js';
@@ -39,11 +39,8 @@ export async function geminiRouter(fastify: FastifyInstance) {
     } = request.body as any;
 
     // Set event-stream headers immediately
-    reply.header('Content-Type', 'text/event-stream');
-    reply.header('Cache-Control', 'no-cache');
-    reply.header('Connection', 'keep-alive');
-    reply.header('X-Accel-Buffering', 'no');
-    reply.raw.flushHeaders();
+    const { initFastifySse } = await import('../../lib/sseHelpers.js');
+    initFastifySse(reply);
     sendSseTokenRotate(reply.raw as any);
 
     let finalSystemInstruction = systemInstruction || '';
@@ -70,7 +67,7 @@ export async function geminiRouter(fastify: FastifyInstance) {
 
     const listener: StreamListener = {
       write: (chunk: string) => {
-        reply.raw.write(chunk);
+        sseWrite(reply.raw, chunk);
       },
       end: () => {
         reply.raw.end();
@@ -150,7 +147,7 @@ export async function geminiRouter(fastify: FastifyInstance) {
           tools,
         },
         (chunk) => {
-          const payload = `data: ${JSON.stringify(chunk)}\n\n`;
+          const payload = formatSseChunk(chunk);
           for (const l of listeners) {
             try {
               l.write(payload);
@@ -158,7 +155,7 @@ export async function geminiRouter(fastify: FastifyInstance) {
           }
         },
         () => {
-          const payload = 'data: [DONE]\n\n';
+          const payload = formatSseDone();
           for (const l of listeners) {
             try {
               l.write(payload);
@@ -170,7 +167,7 @@ export async function geminiRouter(fastify: FastifyInstance) {
       );
     } catch (error: any) {
       logger.error(error, '[Gemini Route Proxy Error]');
-      const payload = `data: ${JSON.stringify({ error: error.message })}\n\n`;
+      const payload = formatSseError(error.message);
       for (const l of listeners) {
         try {
           l.write(payload);

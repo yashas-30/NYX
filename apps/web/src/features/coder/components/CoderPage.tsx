@@ -108,6 +108,10 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     agentMode,
     agentReasoning,
     pendingToolConfirm,
+    criticStatus,
+    criticResult,
+    missingDebugWarning,
+    setMissingDebugWarning,
   } = useCoderLogic();
 
   const workspacePath = useNyxStore((s) => s.workspacePath);
@@ -380,10 +384,10 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     <motion.div
                       whileHover={{ scale: 1.01, borderColor: 'hsl(var(--primary) / 0.2)' }}
                       onClick={selectWorkspace}
-                      className="p-6 rounded-2xl border border-border bg-card hover:bg-muted/40 transition-all cursor-pointer group flex flex-col justify-between h-48 select-none"
+                      className="p-6 rounded-md border border-border bg-card hover:bg-muted/40 transition-all cursor-pointer group flex flex-col justify-between h-48 select-none"
                     >
                       <div className="space-y-3">
-                        <div className="p-3 w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-105 transition-all">
+                        <div className="p-3 w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center text-primary group-hover:scale-105 transition-all">
                           <FolderPlus size={22} />
                         </div>
                         <div>
@@ -406,10 +410,10 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     <motion.div
                       whileHover={{ scale: 1.01, borderColor: 'hsl(var(--primary) / 0.2)' }}
                       onClick={() => setShowCreateForm((p) => !p)}
-                      className="p-6 rounded-2xl border border-border bg-card hover:bg-muted/40 transition-all cursor-pointer group flex flex-col justify-between min-h-48 select-none"
+                      className="p-6 rounded-md border border-border bg-card hover:bg-muted/40 transition-all cursor-pointer group flex flex-col justify-between min-h-48 select-none"
                     >
                       <div className="space-y-3">
-                        <div className="p-3 w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-105 transition-all">
+                        <div className="p-3 w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center text-primary group-hover:scale-105 transition-all">
                           <Plus size={22} />
                         </div>
                         <div>
@@ -448,12 +452,12 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                                   value={parentPath}
                                   onChange={(e) => setParentPath(e.target.value)}
                                   placeholder="C:\Users\Username\Projects"
-                                  className="flex-1 bg-background text-foreground text-xs px-3 py-2 rounded-lg border border-border focus:outline-none focus:border-primary/50"
+                                  className="flex-1 bg-background text-foreground text-xs px-3 py-2 rounded-md border border-border focus:outline-none focus:border-primary/50"
                                 />
                                 <button
                                   type="button"
                                   onClick={handleBrowseParent}
-                                  className="bg-secondary hover:bg-secondary/80 text-secondary-foreground text-[10px] font-bold uppercase px-3 py-2 rounded-lg border border-border transition-all cursor-pointer shrink-0"
+                                  className="bg-secondary hover:bg-secondary/80 text-secondary-foreground text-[10px] font-bold uppercase px-3 py-2 rounded-md border border-border transition-all cursor-pointer shrink-0"
                                 >
                                   Browse
                                 </button>
@@ -469,14 +473,14 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                                 value={newProjectName}
                                 onChange={(e) => setNewProjectName(e.target.value)}
                                 placeholder="my-cool-app"
-                                className="w-full bg-background text-foreground text-xs px-3 py-2 rounded-lg border border-border focus:outline-none focus:border-primary/50"
+                                className="w-full bg-background text-foreground text-xs px-3 py-2 rounded-md border border-border focus:outline-none focus:border-primary/50"
                               />
                             </div>
 
                             <button
                               type="submit"
                               disabled={isCreatingProject}
-                              className="w-full py-2 bg-primary hover:bg-primary/95 disabled:bg-muted text-primary-foreground text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer mt-1"
+                              className="w-full py-2 bg-primary hover:bg-primary/95 disabled:bg-muted text-primary-foreground text-xs font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer mt-1"
                             >
                               {isCreatingProject ? 'Initializing...' : 'Create & Open Project'}
                             </button>
@@ -492,7 +496,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                   <div className="flex justify-start pl-1 gap-2">
                     <div
                       onClick={selectWorkspace}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-muted-foreground border border-border bg-card hover:bg-muted/40 transition-all cursor-pointer select-none"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-muted-foreground border border-border bg-card hover:bg-muted/40 transition-all cursor-pointer select-none"
                     >
                       <Folder size={12} className="text-primary fill-primary/10" />
                       <span>{workspacePath.split(/[/\\]/).pop() || 'NYX'}</span>
@@ -504,7 +508,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                         const formattedPath = workspacePath.replace(/\\/g, '/');
                         window.location.href = `vscode://file/${formattedPath}`;
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-primary border border-primary/20 bg-primary/10 hover:bg-primary/20 transition-all cursor-pointer select-none"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-primary border border-primary/20 bg-primary/10 hover:bg-primary/20 transition-all cursor-pointer select-none"
                       title="Launch Antigravity VS Code Environment"
                     >
                       <Monitor size={12} />
@@ -542,9 +546,19 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                     />
                   </div>
 
+                  {/* Critic Status Indicator */}
+                  {criticStatus === 'learning' && (
+                    <div className="flex justify-start pl-1 mb-2">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-green-500 border border-green-500/20 bg-green-500/10 animate-pulse select-none">
+                        <Monitor size={12} className="text-green-500" />
+                        <span>Learning from this interaction...</span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Local Selector Pill (Laptop Pill) */}
                   <div className="flex justify-start pl-1">
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-muted-foreground border border-border bg-card hover:bg-muted/40 transition-all cursor-pointer select-none">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-muted-foreground border border-border bg-card hover:bg-muted/40 transition-all cursor-pointer select-none">
                       <Monitor size={12} className="text-muted-foreground" />
                       <span>Local</span>
                       <ChevronDown size={10} className="text-muted-foreground opacity-60" />
@@ -569,13 +583,13 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                 <div className="absolute top-2 left-2 z-10 flex items-center gap-2">
                   <button
                     onClick={() => setShowGit(!showGit)}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors ${showGit ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:bg-secondary/80 border border-border'}`}
+                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${showGit ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:bg-secondary/80 border border-border'}`}
                   >
                     Git
                   </button>
                   <button
                     onClick={() => setShowRepl(!showRepl)}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors ${showRepl ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:bg-secondary/80 border border-border'}`}
+                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${showRepl ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:bg-secondary/80 border border-border'}`}
                   >
                     Terminal REPL
                   </button>
@@ -691,12 +705,14 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                 alignDropdown="top"
                 agentMode={agentMode}
                 agentReasoning={agentReasoning}
+                missingDebugWarning={missingDebugWarning}
+                setMissingDebugWarning={setMissingDebugWarning}
               />
             </>
           )}
 
           {pendingToolConfirm && (
-            <div className="absolute bottom-24 right-4 z-50 bg-popover border border-border rounded-lg p-4 shadow-xl max-w-sm">
+            <div className="absolute bottom-24 right-4 z-50 bg-popover border border-border rounded-md p-4 shadow-sm border border-border max-w-sm">
               <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center">
                 <AlertTriangle className="w-4 h-4 mr-2 text-yellow-500" />
                 Confirmation Required

@@ -42,8 +42,9 @@ export class FilesystemService {
   async writeFile(filePath: string, content: string, overwrite?: boolean, agentRunId?: string) {
     const workspaceRoot = getWorkspaceRoot();
 
-    // Normalize both paths for case-insensitive Windows comparison
-    const normalizedFull = path.resolve(workspaceRoot, filePath);
+    // 1. Normalize both paths
+    const normalizedFilePath = path.normalize(filePath);
+    const normalizedFull = path.resolve(workspaceRoot, normalizedFilePath);
     const normalizedRoot = path.resolve(workspaceRoot);
     const relative = path.relative(normalizedRoot, normalizedFull);
     if (relative.startsWith('..') || path.isAbsolute(relative)) {
@@ -51,7 +52,23 @@ export class FilesystemService {
     }
     const fullPath = normalizedFull;
 
-    // Check nyxignore (using relative path with forward slashes for minimatch)
+    // 2. Forbidden Paths Check
+    const forbiddenPaths = [
+      '/etc', '/usr', '/bin', '/sbin', '/lib', '/var', '/boot', '/dev', '/sys', '/proc',
+      'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)', 'C:\\System Volume Information'
+    ];
+    for (const forbidden of forbiddenPaths) {
+      if (fullPath.toLowerCase().startsWith(forbidden.toLowerCase())) {
+        throw new Error('Writing to system directories is forbidden.');
+      }
+    }
+
+    // 3. Size limit (10MB) handled by fastify body limit / zod schema, but added here for safety
+    if (Buffer.byteLength(content, 'utf8') > 10 * 1024 * 1024) {
+      throw new Error('File exceeds 10MB limit.');
+    }
+
+    // Check nyxignore
     const posixRelative = relative.split(path.sep).join('/');
     if (this.isNyxIgnored(posixRelative)) {
       await AuditLog.log({
@@ -63,30 +80,21 @@ export class FilesystemService {
       throw new Error(`File access forbidden by .nyxignore: ${filePath}`);
     }
 
-    // Symlink protection
+    // 4. Symlink protection via realpathSync (if it exists)
     if (fs.existsSync(fullPath)) {
+      const realPath = fs.realpathSync(fullPath);
+      if (!realPath.startsWith(normalizedRoot)) {
+        throw new Error('Symlink traversal out of workspace is forbidden.');
+      }
       const lstat = fs.lstatSync(fullPath);
       if (lstat.isSymbolicLink()) {
         throw new Error('Writing to symbolic links is forbidden.');
       }
     }
 
-    // Extension whitelist
+    // 5. Extension whitelist
     const ALLOWED_EXTENSIONS = new Set([
-      '.ts',
-      '.tsx',
-      '.js',
-      '.jsx',
-      '.json',
-      '.css',
-      '.html',
-      '.py',
-      '.md',
-      '.yml',
-      '.yaml',
-      '.sh',
-      '.txt',
-      '.env',
+      '.ts', '.tsx', '.js', '.jsx', '.json', '.css', '.html', '.py', '.md', '.yml', '.yaml', '.sh', '.txt', '.env'
     ]);
     const ext = path.extname(fullPath).toLowerCase();
     if (ext && !ALLOWED_EXTENSIONS.has(ext)) {

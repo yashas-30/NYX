@@ -22,6 +22,8 @@ export interface ExecuteOptions {
   messages: Array<{ role: string; content: string; images?: any[] }>;
   settings?: ModelSettings;
   apiKey?: string;
+  customGatewayUrls?: Record<string, string>;
+  tools?: any[];
 }
 
 // Circuit Breaker & Coalescing State
@@ -58,7 +60,7 @@ export class UnifiedEngine {
     onChunk: (chunk: StreamChunk) => void,
     onComplete: () => void
   ): Promise<void> {
-    const { provider, model, messages, settings, apiKey } = options;
+    const { provider, model, messages, settings, apiKey, customGatewayUrls, tools } = options;
 
     this.checkCircuit(provider);
 
@@ -70,26 +72,46 @@ export class UnifiedEngine {
     }
 
     const promise = (async () => {
-      try {
-        switch (provider) {
-          case 'gemini':
-            await this.streamGemini(model, messages, apiKey || '', settings, onChunk, onComplete);
+      let lastError: any;
+      const maxRetries = 3;
+      
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          switch (provider) {
+            case 'gemini':
+              await this.streamGemini(model, messages, apiKey || '', settings, customGatewayUrls, tools, onChunk, onComplete);
+              break;
+            case 'nyx-native':
+              await this.streamLocal(model, messages, settings, onChunk, onComplete);
+              break;
+            default:
+              throw new Error(`Unsupported provider: ${provider}`);
+          }
+          this.recordSuccess(provider);
+          delete activeRequests[requestKey];
+          return;
+        } catch (error: any) {
+          lastError = error;
+          const message = error.message || String(error);
+          const isTransient = /429|502|503|504|RESOURCE_EXHAUSTED|UNAVAILABLE|timeout/i.test(message);
+          const isNonRetryable = /400|401|403|404|key|auth|unauthorized/i.test(message);
+
+          if (isTransient && !isNonRetryable && i < maxRetries - 1) {
+            const delay = Math.min(1000 * Math.pow(2, i), 10000);
+            logger.warn(`[UnifiedEngine] Retry ${i + 1}/${maxRetries} for ${provider} in ${delay}ms: ${message}`);
+            onChunk({ chunk: `\n\n[System: Connection failed. Retrying in ${delay / 1000}s...]\n\n` });
+            await new Promise(r => setTimeout(r, delay));
+          } else {
             break;
-          case 'nyx-native':
-            await this.streamLocal(model, messages, settings, onChunk, onComplete);
-            break;
-          default:
-            throw new Error(`Unsupported provider: ${provider}`);
+          }
         }
-        this.recordSuccess(provider);
-      } catch (error: any) {
-        this.recordFailure(provider);
-        onChunk({ error: error.message });
-        onComplete();
-        throw error;
-      } finally {
-        delete activeRequests[requestKey];
       }
+      
+      this.recordFailure(provider);
+      onChunk({ error: lastError?.message || 'Unknown error' });
+      onComplete();
+      delete activeRequests[requestKey];
+      throw lastError;
     })();
 
     activeRequests[requestKey] = promise;
@@ -101,10 +123,12 @@ export class UnifiedEngine {
     messages: any[],
     apiKey: string,
     settings: any,
+    customGatewayUrls: Record<string, string> | undefined,
+    tools: any[] | undefined,
     onChunk: (chunk: StreamChunk) => void,
     onComplete: () => void
   ) {
-    const { url } = Gateway.buildUrl('gemini', `/models/${model}:streamGenerateContent?alt=sse`);
+    const { url } = Gateway.buildUrl('gemini', `/models/${model}:streamGenerateContent?alt=sse`, customGatewayUrls, model);
     
     const authResult = Gateway.validateAuth('gemini', model, apiKey);
     if (!authResult.valid) {
@@ -130,6 +154,12 @@ export class UnifiedEngine {
         { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
       ],
     };
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools;
+    } else {
+      requestBody.tools = [{ googleSearch: {} }];
+    }
 
     if (formatted.systemInstruction) {
       requestBody.systemInstruction = {

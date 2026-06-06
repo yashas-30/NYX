@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { ChevronRight, ChevronDown, File, Folder, RefreshCw } from 'lucide-react';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useIdeStore } from '../store/useIdeStore';
+import { getSessionToken } from '@src/infrastructure/api/authFetch';
 
 interface FileNode {
   name: string;
@@ -52,7 +53,9 @@ export const WorkspaceSidebar: React.FC = () => {
   // Connect to WebSocket for file watching
   useEffect(() => {
     if (!workspacePath) return;
-    const wsUrl = `ws://${window.location.host}/ws/file-watcher`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const token = getSessionToken();
+    const wsUrl = `${protocol}//${window.location.host}/ws/file-watcher?token=${token || ''}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -121,23 +124,23 @@ export const WorkspaceSidebar: React.FC = () => {
       return (
         <div key={node.path} className="flex flex-col">
           <div
-            className="flex items-center gap-1.5 px-2 py-1 hover:bg-white/5 cursor-pointer text-xs text-zinc-300 transition-colors rounded-md mx-1"
+            className="flex items-center gap-1.5 px-2 py-1 hover:bg-muted/40 cursor-pointer text-xs text-muted-foreground transition-colors rounded-md mx-1"
             style={{ paddingLeft: `${level * 12 + 8}px` }}
             onClick={() => handleFileClick(node)}
           >
             {node.isDirectory ? (
               isExpanded ? (
-                <ChevronDown size={14} className="text-zinc-500" />
+                <ChevronDown size={14} className="text-muted-foreground" />
               ) : (
-                <ChevronRight size={14} className="text-zinc-500" />
+                <ChevronRight size={14} className="text-muted-foreground" />
               )
             ) : (
-              <File size={14} className="text-zinc-500 opacity-0" /> /* spacer */
+              <File size={14} className="text-muted-foreground opacity-0" /> /* spacer */
             )}
             {node.isDirectory ? (
-              <Folder size={14} className="text-cyan-400" />
+              <Folder size={14} className="text-foreground" />
             ) : (
-              <File size={14} className="text-zinc-400" />
+              <File size={14} className="text-muted-foreground" />
             )}
             <span className="truncate">{node.name}</span>
           </div>
@@ -152,18 +155,18 @@ export const WorkspaceSidebar: React.FC = () => {
   if (!workspacePath) return null;
 
   return (
-    <div className="w-64 h-full bg-card border-r border-white/5 flex flex-col shrink-0 select-none">
-      <div className="h-10 flex items-center justify-between px-4 border-b border-white/5">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+    <div className="w-64 h-full bg-card border-r border-border flex flex-col shrink-0 select-none">
+      <div className="h-10 flex items-center justify-between px-4 border-b border-border">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Explorer
         </span>
-        <button onClick={loadRoot} className="text-zinc-500 hover:text-cyan-400 transition-colors">
+        <button onClick={loadRoot} className="text-muted-foreground hover:text-foreground transition-colors">
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar py-2">
         {loading && fileTree.length === 0 ? (
-          <div className="text-xs text-zinc-500 px-4">Loading...</div>
+          <div className="text-xs text-muted-foreground px-4">Loading...</div>
         ) : (
           renderTree(fileTree)
         )}

@@ -1548,23 +1548,35 @@ To keep my outputs high-performance and focused, I only handle programming, debu
 Please describe your coding task, and I'll deliver production-ready results!`;
 
 export function isMissingDebugDetails(prompt: string, intent: string): boolean {
+  if (intent !== 'debug' && intent !== 'code_debug') return false;
+
   const lower = prompt.toLowerCase();
+  let confidence = 0; // 0.0 to 1.0 (1.0 = definitely missing details)
 
-  const hasErrorKeywords =
-    /\b(error|bug|crash|exception|compile\s+error|not\s+compiling|fails?\s+to\s+compile|getting\s+an?\s+error|got\s+an?\s+error|cannot\s+compile|wont\s+compile|won't\s+compile|how\s+to\s+fix|what\s+can\s+be\s+the\s+problem|why\s+is\s+it\s+failing)\b/i.test(
-      lower
-    );
+  // 1. Check for code blocks or inline code
+  const hasCodeBlock = prompt.includes('```') || prompt.includes('    ');
+  const hasInlineCode = /`[^`]+`/.test(prompt);
+  const syntaxSymbolsCount = (prompt.match(/[{}();=<>+*/-]/g) || []).length;
+  
+  if (!hasCodeBlock && !hasInlineCode && syntaxSymbolsCount < 5) {
+    confidence += 0.4; // Highly likely missing code
+  }
 
-  if (!hasErrorKeywords && intent !== 'debug') return false;
+  // 2. Check for stack traces or error logs
+  const hasStackTrace = /at\s+.+\s+\(?.+:\d+:\d+\)?/i.test(prompt) || 
+                        /Exception in thread/i.test(prompt) || 
+                        /Traceback \(most recent call last\):/i.test(prompt) ||
+                        /ERR_/.test(prompt) ||
+                        /Error:/i.test(prompt);
+                        
+  const hasFileRef = /[a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+:\d+/.test(prompt);
 
-  const hasCodeBlock =
-    prompt.includes('```') ||
-    prompt.includes('    ') ||
-    (prompt.match(/[{}();]/g) || []).length > 6;
-  if (hasCodeBlock) return false;
+  if (!hasStackTrace && !hasFileRef) {
+    confidence += 0.4; // Highly likely missing error logs
+  }
 
+  // 3. Vague error queries strongly suggest missing details
   const isVagueErrorQuery =
-    /error\s+message/i.test(lower) ||
     /getting\s+an?\s+error/i.test(lower) ||
     /fails?\s+to\s+compile/i.test(lower) ||
     /won't\s+compile/i.test(lower) ||
@@ -1573,14 +1585,32 @@ export function isMissingDebugDetails(prompt: string, intent: string): boolean {
     /problem\s+compiling/i.test(lower) ||
     /error\s+when\s+i\s+try\s+to\s+compile/i.test(lower) ||
     /cannot\s+compile/i.test(lower) ||
-    /what\s+can\s+be\s+the\s+problem/i.test(lower);
+    /what\s+can\s+be\s+the\s+problem/i.test(lower) ||
+    /how\s+to\s+fix/i.test(lower);
 
-  const wordCount = prompt.split(/\s+/).length;
-  if (wordCount < 45 && isVagueErrorQuery) {
-    return true;
+  if (isVagueErrorQuery) {
+    confidence += 0.2;
   }
 
-  return false;
+  // 4. Extremely detailed descriptions might just be conceptual questions
+  const wordCount = prompt.split(/\s+/).length;
+  if (wordCount > 60) {
+    confidence -= 0.3; // Give benefit of the doubt
+  }
+
+  // Console logging for debugging (as requested in the prompt)
+  console.log('[Gate: Debug Details]', {
+    wordCount,
+    hasCodeBlock,
+    hasInlineCode,
+    syntaxSymbolsCount,
+    hasStackTrace,
+    hasFileRef,
+    isVagueErrorQuery,
+    finalConfidence: confidence
+  });
+
+  return confidence >= 0.8;
 }
 
 export const MISSING_DEBUG_DETAILS_RESPONSE = `I would love to help you analyze and fix your compilation or code error! 

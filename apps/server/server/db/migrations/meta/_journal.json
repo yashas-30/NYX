@@ -71,6 +71,13 @@
       "when": 1780553920065,
       "tag": "0009_tearful_the_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1780721400000,
+      "tag": "0010_sessions_and_new_tables",
+      "breakpoints": true
     }
   ]
 }

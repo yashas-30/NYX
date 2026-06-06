@@ -102,7 +102,7 @@ export function ArtifactViewer({ artifact, onUpdate }: { artifact: Artifact; onU
   };
 
   return (
-    <div className="rounded-lg border border-border bg-surface overflow-hidden flex flex-col my-4 shadow-sm w-full max-w-4xl">
+    <div className="rounded-md border border-border bg-surface overflow-hidden flex flex-col my-4 shadow-sm w-full max-w-4xl">
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-surface-hover/50">
         <div className="flex items-center gap-2 overflow-hidden">
           <ArtifactIcon type={artifact.type} />

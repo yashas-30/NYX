@@ -75,7 +75,7 @@ export const GitIntegrationPanel: React.FC = () => {
       </div>
 
       <div className="p-4 flex flex-col gap-4">
-        <div className="flex items-center gap-2 bg-white/[0.02] border border-white/5 p-2 rounded-lg">
+        <div className="flex items-center gap-2 bg-white/[0.02] border border-white/5 p-2 rounded-md">
           <GitBranch size={14} className="text-zinc-500" />
           <span className="text-zinc-300 font-mono text-[11px]">{branch}</span>
         </div>

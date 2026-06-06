@@ -34,7 +34,7 @@ export const HotkeyManager: React.FC = () => {
   };
 
   return (
-    <div className="bg-card border border-border rounded-3xl p-6 shadow-sm mb-4">
+    <div className="bg-card border border-border rounded-md p-6 shadow-sm mb-4">
       <div className="flex items-center gap-2 mb-4">
         <Keyboard size={16} className="text-accent" />
         <h3 className="text-sm font-bold text-foreground uppercase tracking-widest">
@@ -46,7 +46,7 @@ export const HotkeyManager: React.FC = () => {
         {hotkeys.map((hk) => (
           <div
             key={hk.id}
-            className="flex items-center justify-between bg-secondary/20 border border-border p-3 rounded-xl"
+            className="flex items-center justify-between bg-secondary/20 border border-border p-3 rounded-md"
           >
             <span className="text-xs font-semibold text-foreground">{hk.action}</span>
             <div className="flex items-center gap-3">
@@ -66,19 +66,19 @@ export const HotkeyManager: React.FC = () => {
         <div className="flex items-center gap-2 pt-3 border-t border-border">
           <input
             placeholder="Action (e.g. Save File)"
-            className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:border-accent/50"
+            className="flex-1 bg-background border border-border rounded-md px-3 py-2 text-xs text-foreground focus:outline-none focus:border-accent/50"
             value={newAction}
             onChange={(e) => setNewAction(e.target.value)}
           />
           <input
             placeholder="Keys (e.g. ctrl+s)"
-            className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground font-mono uppercase focus:outline-none focus:border-accent/50"
+            className="flex-1 bg-background border border-border rounded-md px-3 py-2 text-xs text-foreground font-mono uppercase focus:outline-none focus:border-accent/50"
             value={newKeys}
             onChange={(e) => setNewKeys(e.target.value)}
           />
           <button
             onClick={addHotkey}
-            className="bg-secondary border border-border hover:bg-secondary/80 text-foreground p-2 rounded-xl transition-all"
+            className="bg-secondary border border-border hover:bg-secondary/80 text-foreground p-2 rounded-md transition-all"
           >
             <Plus size={16} />
           </button>

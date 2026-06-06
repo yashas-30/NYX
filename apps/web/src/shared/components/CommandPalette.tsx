@@ -312,7 +312,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -8 }}
             transition={{ duration: 0 }}
-            className="w-full max-w-lg overflow-hidden rounded-2xl bg-zinc-950 border border-white/[0.08] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] flex flex-col relative"
+            className="w-full max-w-lg overflow-hidden rounded-md bg-zinc-950 border border-white/[0.08] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] flex flex-col relative"
           >
             {/* Input Bar */}
             <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/[0.05]">
@@ -359,7 +359,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         data-active={idx === selectedIndex}
                         onClick={() => triggerItem(idx)}
                         onMouseEnter={() => setSelectedIndex(idx)}
-                        className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl cursor-pointer transition-all ${
+                        className={`flex items-center justify-between px-3.5 py-2.5 rounded-md cursor-pointer transition-all ${
                           idx === selectedIndex
                             ? 'bg-white/[0.06] text-white'
                             : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.02]'
@@ -367,7 +367,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <span
-                            className={`p-1.5 rounded-lg border transition-all ${
+                            className={`p-1.5 rounded-md border transition-all ${
                               idx === selectedIndex
                                 ? 'bg-white/10 border-white/10 text-white animate-pulse'
                                 : 'bg-white/[0.02] border-white/[0.03] text-zinc-500'
@@ -415,7 +415,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                           data-active={idx === selectedIndex}
                           onClick={() => triggerItem(idx)}
                           onMouseEnter={() => setSelectedIndex(idx)}
-                          className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl cursor-pointer transition-all ${
+                          className={`flex items-center justify-between px-3.5 py-2.5 rounded-md cursor-pointer transition-all ${
                             idx === selectedIndex
                               ? 'bg-white/[0.06] text-white'
                               : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.02]'
@@ -423,7 +423,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <span
-                              className={`p-1.5 rounded-lg border transition-all ${
+                              className={`p-1.5 rounded-md border transition-all ${
                                 idx === selectedIndex
                                   ? 'bg-[#FF3366]/10 border-[#FF3366]/20 text-[#FF3366]'
                                   : 'bg-white/[0.02] border-white/[0.03] text-zinc-500'

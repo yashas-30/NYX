@@ -93,11 +93,17 @@ export async function registerRoutes(app: FastifyInstance) {
       v1.register(authRouter, { prefix: '/auth' });
 
       v1.get('/auth/session', async (request, reply) => {
-        const isStream = (request.query as any)?.stream === 'true';
-        return reply.send({
-          token: createSessionToken(isStream),
-          expiresAt: Date.now() + 5 * 60 * 1000,
-        });
+        try {
+          const isStream = (request.query as any)?.stream === 'true';
+          const token = createSessionToken(isStream);
+          return reply.send({
+            token,
+            expiresAt: Date.now() + 5 * 60 * 1000,
+          });
+        } catch (error) {
+          console.error("ERROR IN /auth/session:", error);
+          reply.code(500).send({ error: "Internal Server Error", details: String(error) });
+        }
       });
 
       v1.get('/config', async (request, reply) => {

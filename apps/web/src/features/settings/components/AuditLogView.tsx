@@ -25,7 +25,7 @@ const mockLogs: AuditLog[] = [
 
 export const AuditLogView: React.FC = () => {
   return (
-    <div className="bg-card border border-border rounded-3xl p-6 shadow-sm mb-4">
+    <div className="bg-card border border-border rounded-md p-6 shadow-sm mb-4">
       <div className="flex items-center gap-2 mb-4">
         <FileText size={16} className="text-accent" />
         <h3 className="text-sm font-bold text-foreground uppercase tracking-widest">

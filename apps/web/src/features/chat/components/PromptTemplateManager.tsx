@@ -80,7 +80,7 @@ export const PromptTemplateManager: React.FC<{
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="absolute bottom-full mb-2 left-0 w-80 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50"
+            className="absolute bottom-full mb-2 left-0 w-80 bg-zinc-900 border border-white/10 rounded-md shadow-sm border border-border overflow-hidden z-50"
           >
             <div className="flex items-center justify-between p-3 border-b border-white/5 bg-zinc-900/50">
               <span className="text-xs font-semibold text-zinc-200">Prompt Templates</span>
@@ -91,7 +91,7 @@ export const PromptTemplateManager: React.FC<{
 
             <div className="max-h-64 overflow-y-auto p-2">
               {isEditing && (
-                <div className="mb-2 p-2 bg-white/[0.02] rounded-lg border border-white/10">
+                <div className="mb-2 p-2 bg-white/[0.02] rounded-md border border-white/10">
                   <input
                     type="text"
                     placeholder="Title"
@@ -129,7 +129,7 @@ export const PromptTemplateManager: React.FC<{
                     onSelectTemplate(t.content);
                     setIsOpen(false);
                   }}
-                  className="group flex items-center justify-between p-2 hover:bg-white/[0.04] rounded-lg cursor-pointer transition-colors mb-1"
+                  className="group flex items-center justify-between p-2 hover:bg-white/[0.04] rounded-md cursor-pointer transition-colors mb-1"
                 >
                   <div className="truncate text-xs text-zinc-300">{t.title}</div>
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

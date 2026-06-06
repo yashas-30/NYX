@@ -409,7 +409,7 @@ export const AgentPlanner: React.FC<{
   return (
     <div className="w-full select-none text-left">
       <motion.div
-        className="bg-card border-border rounded-2xl border shadow overflow-hidden"
+        className="bg-card border-border rounded-md border shadow overflow-hidden"
         initial={{ opacity: 0, y: 10 }}
         animate={{
           opacity: 1,

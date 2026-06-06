@@ -5,7 +5,7 @@
  * Dispatches requests to CoderAgent and handles streaming code generation.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   ChatMessage,
   TelemetryMetrics,
@@ -80,9 +80,9 @@ export const useAgentPipeline = ({
     controllerRef.current = null;
   }, []);
 
-  const { triggerBackgroundCritic, commitToMemory } = useBackgroundTasks({ models, apiKeys });
+  const { triggerBackgroundCritic, commitToMemory, criticStatus, criticResult } = useBackgroundTasks({ models, apiKeys });
 
-  const { agentMode, setAgentMode, agentReasoning, setAgentReasoning, analyzeAndRoute } =
+  const { agentMode, setAgentMode, agentReasoning, setAgentReasoning, analyzeAndRoute, missingDebugWarning, setMissingDebugWarning } =
     usePromptAnalysis({
       updateHistory,
       setIsLoading,
@@ -116,7 +116,7 @@ export const useAgentPipeline = ({
    * Main execution handler that routes the prompt dynamically.
    */
   const runCoder = useCallback(
-    async (prompt: string, images?: Array<{ name: string; dataUrl: string; mimeType?: string }>) => {
+    async (prompt: string, images?: Array<{ name: string; dataUrl: string; mimeType?: string }>, forceContinue: boolean = false) => {
       const nyxModel = models['nyx'];
       if (!prompt.trim() || !nyxModel) return;
       const nyxProvider = detectProvider(nyxModel);
@@ -138,7 +138,12 @@ export const useAgentPipeline = ({
           url: img.dataUrl
         }))
       };
-      updateHistory((prev) => [...prev, userMsg]);
+      
+      // If we are forcing continue, we might not want to append the user message again if it's identical
+      // But for simplicity, we let it append or we just rely on the history
+      if (!forceContinue) {
+        updateHistory((prev) => [...prev, userMsg]);
+      }
 
       setIsLoading(true);
       setSuggestedPrompts([]);
@@ -149,7 +154,7 @@ export const useAgentPipeline = ({
       setAgentReasoning('');
 
       try {
-        const analysisResult = analyzeAndRoute(prompt);
+        const analysisResult = analyzeAndRoute(prompt, forceContinue);
         if (!analysisResult) {
           // Early exit triggered by missing debug details
           return;
@@ -457,6 +462,18 @@ export const useAgentPipeline = ({
     setIsLoading(false);
   }, []);
 
+  // Force continue listener
+  useEffect(() => {
+    const handleForceContinue = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.prompt) {
+        runCoder(customEvent.detail.prompt, undefined, true);
+      }
+    };
+    window.addEventListener('nyx-force-continue', handleForceContinue);
+    return () => window.removeEventListener('nyx-force-continue', handleForceContinue);
+  }, [runCoder]);
+
   return {
     runCoder,
     stopCoder,
@@ -465,5 +482,9 @@ export const useAgentPipeline = ({
     agentMode,
     agentReasoning,
     pendingToolConfirm,
+    criticStatus,
+    criticResult,
+    missingDebugWarning,
+    setMissingDebugWarning,
   };
 };

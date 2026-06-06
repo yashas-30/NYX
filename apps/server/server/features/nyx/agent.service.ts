@@ -37,7 +37,7 @@ export class AgentService {
   }
 
   resetRules() {
-    RulesDb.resetRules();
+    return RulesDb.resetRules();
   }
 
   async runBackgroundCritic(

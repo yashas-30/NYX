@@ -27,7 +27,7 @@ function safeCompare(a: string, b: string): boolean {
 }
 
 export async function adminRouter(fastify: FastifyInstance) {
-  fastify.get('/logs', (request, reply) => {
+  fastify.get('/logs/stream', async (request, reply) => {
     const adminKey = env.ADMIN_KEY;
     if (!adminKey) {
       return reply.code(404).send('Not Found');
@@ -39,10 +39,8 @@ export async function adminRouter(fastify: FastifyInstance) {
       return reply.code(401).send({ error: 'Unauthorized: Invalid admin key' });
     }
 
-    reply.header('Content-Type', 'text/event-stream');
-    reply.header('Cache-Control', 'no-cache');
-    reply.header('Connection', 'keep-alive');
-    reply.raw.flushHeaders();
+    const { initFastifySse } = await import('../../lib/sseHelpers.js');
+    initFastifySse(reply);
 
     const dateStr = new Date().toISOString().slice(0, 10);
     const logPath = path.join(LOGS_DIR, `nyx-${dateStr}.log`);

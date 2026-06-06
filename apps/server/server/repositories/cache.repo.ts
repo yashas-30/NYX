@@ -78,21 +78,23 @@ export class CacheRepository {
     }
   }
 
-  public static async evictOldestIfNeeded(maxItems: number): Promise<void> {
+  public static async evictOldestIfNeeded(maxSizeLimitBytes: number): Promise<void> {
     const queryTable = this.table;
     // Evict expired entries first
     await db.delete(queryTable).where(lt(queryTable.expiresAt, new Date()));
 
     const all = await db
-      .select({ key: queryTable.key })
+      .select({ key: queryTable.key, size: sql<number>`length(${queryTable.data})` })
       .from(queryTable)
       .orderBy(asc(queryTable.hitCount), asc(queryTable.createdAt));
 
-    if (all.length > maxItems) {
-      const overflow = all.length - maxItems;
-      const keysToDelete = all.slice(0, overflow).map((r: any) => r.key);
-      for (const key of keysToDelete) {
-        await db.delete(queryTable).where(eq(queryTable.key, key));
+    let totalSize = all.reduce((acc: number, curr: any) => acc + (curr.size || 0), 0);
+
+    if (totalSize > maxSizeLimitBytes) {
+      for (const row of all) {
+        if (totalSize <= maxSizeLimitBytes) break;
+        await db.delete(queryTable).where(eq(queryTable.key, row.key));
+        totalSize -= (row.size || 0);
       }
     }
   }

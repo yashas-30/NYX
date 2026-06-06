@@ -38,12 +38,28 @@ export async function cacheRouter(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get('/stats', (_req, reply) => {
+  fastify.get('/stats', async (_req, reply) => {
     try {
-      const stats = service.getStats();
+      const stats = await service.getStats();
       reply.send(stats);
     } catch (error: any) {
       reply.code(500).send({ error: error.message });
+    }
+  });
+
+  fastify.get('/health', async (_req, reply) => {
+    try {
+      const stats = await service.getStats();
+      const maxSize = Number(process.env.MAX_CACHE_SIZE) || 1024 * 1024 * 1024;
+      const health = {
+        status: stats.totalSizeBytes > maxSize * 0.9 ? 'warning' : 'ok',
+        utilization: (stats.totalSizeBytes / maxSize) * 100,
+        itemCount: stats.itemCount,
+        maxSize
+      };
+      reply.send(health);
+    } catch (error: any) {
+      reply.code(500).send({ status: 'error', error: error.message });
     }
   });
 

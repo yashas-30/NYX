@@ -70,7 +70,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
       whileHover={{ y: -2, scale: 1.01 }}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       className={`
-        group relative p-4 rounded-2xl border border-solid flex flex-col justify-between gap-3 overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300
+        group relative p-4 rounded-md border border-solid flex flex-col justify-between gap-3 overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300
         ${
           isResident
             ? 'bg-card border-accent/40 shadow-[0_0_20px_rgba(var(--accent-rgb),0.08)]'
@@ -83,13 +83,13 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
       <div>
         {/* Presets badges */}
         <div className="flex items-center justify-between mb-2">
-          <span className="inline-block text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20">
+          <span className="inline-block text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-accent/10 text-accent border border-accent/20">
             NYX Native
           </span>
           <div className="flex items-center gap-1.5">
             {compat && (
               <span
-                className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0 ${
+                className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border shrink-0 ${
                   !meetsRam
                     ? 'bg-destructive/10 text-destructive border-destructive/20'
                     : compat.speedClass === 'fast'
@@ -109,23 +109,23 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               </span>
             )}
             {isResident && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-md bg-emerald-400" />
                 Resident RAM
               </span>
             )}
             {isCompleted && !isResident && (
-              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 dark:text-zinc-300 border border-zinc-500/20">
+              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md bg-zinc-500/10 text-zinc-400 dark:text-zinc-300 border border-zinc-500/20">
                 Ready
               </span>
             )}
             {isDownloading && (
-              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20 animate-pulse">
+              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md bg-accent/10 text-accent border border-accent/20 animate-pulse">
                 Downloading
               </span>
             )}
             {isPaused && (
-              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20">
                 Paused
               </span>
             )}
@@ -191,7 +191,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
         {m.metadata && (
           <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-border/10">
             <div className="grid grid-cols-3 gap-2">
-              <div className="flex flex-col items-center p-1.5 rounded-lg bg-secondary/20">
+              <div className="flex flex-col items-center p-1.5 rounded-md bg-secondary/20">
                 <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
                   MMLU
                 </span>
@@ -199,7 +199,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                   {m.metadata.mmluScore || '--'}
                 </span>
               </div>
-              <div className="flex flex-col items-center p-1.5 rounded-lg bg-secondary/20">
+              <div className="flex flex-col items-center p-1.5 rounded-md bg-secondary/20">
                 <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
                   HumanEval
                 </span>
@@ -207,7 +207,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                   {m.metadata.humanEvalScore || '--'}
                 </span>
               </div>
-              <div className="flex flex-col items-center p-1.5 rounded-lg bg-secondary/20">
+              <div className="flex flex-col items-center p-1.5 rounded-md bg-secondary/20">
                 <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">
                   MT-Bench
                 </span>
@@ -218,7 +218,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
             </div>
             {m.metadata.ggufMetadata && (
               <div className="grid grid-cols-2 gap-2 mt-1">
-                <div className="flex flex-col items-center p-1.5 rounded-lg bg-accent/5 border border-accent/10">
+                <div className="flex flex-col items-center p-1.5 rounded-md bg-accent/5 border border-accent/10">
                   <span className="text-[8px] font-black uppercase tracking-widest text-accent">
                     Architecture
                   </span>
@@ -226,7 +226,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                     {m.metadata.ggufMetadata.architecture || '--'}
                   </span>
                 </div>
-                <div className="flex flex-col items-center p-1.5 rounded-lg bg-accent/5 border border-accent/10">
+                <div className="flex flex-col items-center p-1.5 rounded-md bg-accent/5 border border-accent/10">
                   <span className="text-[8px] font-black uppercase tracking-widest text-accent">
                     Context
                   </span>
@@ -244,7 +244,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
         {/* Hardware Offload projection for downloaded library models */}
         {compat && (
           <div
-            className={`mt-2.5 p-2 rounded-xl border text-[9px] ${
+            className={`mt-2.5 p-2 rounded-md border text-[9px] ${
               !meetsRam
                 ? 'bg-destructive/5 border-destructive/10 text-destructive'
                 : compat.speedClass === 'fast'
@@ -286,7 +286,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <span>{progress.progressPercentage}% Completed</span>
               <span>{progress.speedMbps > 0 ? `${progress.speedMbps} MB/s` : 'Connecting...'}</span>
             </div>
-            <div className="w-full h-1 rounded-full bg-secondary overflow-hidden">
+            <div className="w-full h-1 rounded-md bg-secondary overflow-hidden">
               <motion.div
                 className="h-full bg-accent"
                 style={{ width: `${progress.progressPercentage}%` }}
@@ -305,7 +305,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={() => handlePause(m.id)}
-                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer"
+                className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer"
               >
                 <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor">
                   <rect x="1" y="1" width="3" height="8" rx="1" />
@@ -316,7 +316,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={() => handleCancel(m.id)}
-                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 transition-all cursor-pointer"
+                className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 transition-all cursor-pointer"
               >
                 <svg
                   width="9"
@@ -345,7 +345,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                   : ''}
               </span>
             </div>
-            <div className="w-full h-1 rounded-full bg-secondary overflow-hidden">
+            <div className="w-full h-1 rounded-md bg-secondary overflow-hidden">
               <div
                 className="h-full bg-amber-400"
                 style={{ width: `${progress.progressPercentage}%` }}
@@ -356,7 +356,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={() => handleResume(m.id)}
-                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 hover:border-accent/40 transition-all cursor-pointer"
+                className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 hover:border-accent/40 transition-all cursor-pointer"
               >
                 <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor">
                   <polygon points="2,1 9,5 2,9" />
@@ -366,7 +366,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 onClick={() => handleCancel(m.id)}
-                className="flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 transition-all cursor-pointer"
+                className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 transition-all cursor-pointer"
               >
                 <svg
                   width="9"
@@ -386,7 +386,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
         )}
 
         {m.status === 'failed' && (
-          <div className="p-2 mb-2 rounded-lg bg-destructive/10 border border-destructive/20 text-[10px] font-semibold text-destructive flex items-start gap-1.5">
+          <div className="p-2 mb-2 rounded-md bg-destructive/10 border border-destructive/20 text-[10px] font-semibold text-destructive flex items-start gap-1.5">
             <AlertCircle size={10} className="shrink-0 mt-0.5" />
             <span>{progress.error || 'Download failed. Please check network connections.'}</span>
           </div>
@@ -399,7 +399,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 value={selectedQuant}
                 onChange={(e) => setSelectedQuant(e.target.value)}
                 disabled={isCurrentAction || !!actionInProgress}
-                className="bg-secondary text-accent text-[10px] font-bold tracking-wider rounded-xl border border-border px-2 outline-none cursor-pointer w-24"
+                className="bg-secondary text-accent text-[10px] font-bold tracking-wider rounded-md border border-border px-2 outline-none cursor-pointer w-24"
               >
                 <option value="Q2_K">Q2_K</option>
                 <option value="Q4_K_M">Q4_K_M</option>
@@ -412,8 +412,8 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 onClick={() => handleDownload(m.id, selectedQuant)}
                 disabled={isCurrentAction || !!actionInProgress}
                 className="
-                  flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                  bg-accent hover:bg-accent/90 text-accent-foreground shadow-lg disabled:opacity-40 cursor-pointer
+                  flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                  bg-accent hover:bg-accent/90 text-accent-foreground shadow-sm border border-border disabled:opacity-40 cursor-pointer
                 "
               >
                 {isCurrentAction ? (
@@ -437,8 +437,8 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               onClick={() => handleRun(m.id)}
               disabled={isCurrentAction || !!actionInProgress}
               className="
-                w-full py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg disabled:opacity-40 cursor-pointer
+                w-full py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm border border-border disabled:opacity-40 cursor-pointer
               "
             >
               {isCurrentAction ? (
@@ -462,7 +462,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                 onClick={() => handleStop(m.id)}
                 disabled={isCurrentAction || !!actionInProgress}
                 className="
-                  flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                  flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
                   bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 disabled:opacity-40 cursor-pointer
                 "
               >
@@ -486,8 +486,8 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
                   toast.success(`NYX Chatbot active model is now ${m.name}`);
                 }}
                 className="
-                  flex-1 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
-                  bg-accent hover:bg-accent/90 text-accent-foreground shadow-lg cursor-pointer
+                  flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all
+                  bg-accent hover:bg-accent/90 text-accent-foreground shadow-sm border border-border cursor-pointer
                 "
               >
                 <TerminalIcon size={10} />
@@ -503,7 +503,7 @@ export const LocalModelCard: React.FC<LocalModelCardProps> = ({
               onClick={() => handleDelete(m.id, m.name)}
               disabled={isCurrentAction || !!actionInProgress}
               className="
-                w-full py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all mt-1
+                w-full py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all mt-1
                 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 disabled:opacity-40 cursor-pointer
               "
             >

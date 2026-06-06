@@ -64,9 +64,9 @@ export async function nyxRouter(fastify: FastifyInstance) {
   });
 
   // GET /api/nyx/rules
-  fastify.get('/rules', (_req, reply) => {
+  fastify.get('/rules', async (_req, reply) => {
     try {
-      const rules = agentService.getRules();
+      const rules = await agentService.getRules();
       reply.send({ success: true, rules });
     } catch (error: any) {
       logger.error('[Nyx Router] Failed to fetch rules:', error);
@@ -75,12 +75,12 @@ export async function nyxRouter(fastify: FastifyInstance) {
   });
 
   // POST /api/nyx/reset
-  fastify.post('/reset', (request, reply) => {
+  fastify.post('/reset', async (request, reply) => {
     if ((request.body as any)?.confirm !== true) {
       return reply.code(400).send({ error: 'Must pass { confirm: true } to reset rules.' });
     }
     try {
-      agentService.resetRules();
+      await agentService.resetRules();
       reply.send({ success: true });
     } catch (error: any) {
       logger.error('[Nyx Router] Failed to reset rules:', error);
@@ -114,6 +114,43 @@ export async function nyxRouter(fastify: FastifyInstance) {
       reply.send({ success: true, jobId: job.id });
     }
   );
+
+  // GET /api/nyx/critic/stream
+  fastify.get('/critic/stream', async (request, reply) => {
+    const { initFastifySse } = await import('../../lib/sseHelpers.js');
+    initFastifySse(reply);
+    
+    const { QueueEvents } = await import('bullmq');
+    const queueEvents = new QueueEvents('critic-queue', {
+      connection: criticQueue.opts.connection
+    });
+
+    const onProgress = ({ jobId, data }: { jobId: string; data: number | object | string }) => {
+      reply.raw.write(`data: ${JSON.stringify({ type: 'progress', jobId, data })}\n\n`);
+      if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
+    };
+
+    const onCompleted = ({ jobId, returnvalue }: { jobId: string; returnvalue: any }) => {
+      reply.raw.write(`data: ${JSON.stringify({ type: 'completed', jobId, result: returnvalue })}\n\n`);
+      if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
+    };
+
+    const onFailed = ({ jobId, failedReason }: { jobId: string; failedReason: string }) => {
+      reply.raw.write(`data: ${JSON.stringify({ type: 'failed', jobId, error: failedReason })}\n\n`);
+      if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
+    };
+
+    queueEvents.on('progress', onProgress);
+    queueEvents.on('completed', onCompleted);
+    queueEvents.on('failed', onFailed);
+
+    request.raw.on('close', () => {
+      queueEvents.off('progress', onProgress);
+      queueEvents.off('completed', onCompleted);
+      queueEvents.off('failed', onFailed);
+      queueEvents.close();
+    });
+  });
 
   // ── Search Endpoints ───────────────────────────────────────────────────────────
 
@@ -151,7 +188,10 @@ export async function nyxRouter(fastify: FastifyInstance) {
   fastify.post(
     '/search',
     {
-      preHandler: [validate(nyxSearchSchema)],
+      preHandler: [validate(nyxSearchSchema), async (req, res) => {
+        const { searchRateLimiter } = await import('../../middleware/rateLimit.js');
+        await searchRateLimiter(req, res);
+      }],
     },
     async (request, reply) => {
       const { query } = request.body as any;
@@ -230,12 +270,9 @@ export async function nyxRouter(fastify: FastifyInstance) {
     async (request, reply) => {
       const { filePath, content, overwrite } = request.body as any;
       try {
-        const job = await fileWriteQueue.add('write-file', { filePath, content }, {
-          jobId: `write-${Date.now()}`,
-          removeOnComplete: true,
-        });
-
-        reply.send({ success: true, jobId: job.id });
+        const agentRunId = (request.headers['x-agent-run-id'] as string) || undefined;
+        const result = await filesystemService.writeFile(filePath, content, overwrite, agentRunId);
+        reply.send(result);
       } catch (error: any) {
         logger.error('[File System Error]:', error.message);
         reply.code(500).send({ error: error.message });

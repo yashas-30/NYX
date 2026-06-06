@@ -95,7 +95,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
   };
 
   return (
-    <header className="flex items-center justify-between px-6 py-3 shrink-0 select-none bg-background border-b border-white/[0.03]">
+    <header className="flex items-center justify-between px-8 py-4 shrink-0 select-none bg-background border-b border-border">
       {/* Left: Collapsed sidebar toggle trigger */}
       <div className="flex items-center gap-2">
         {!sidebarOpen && onToggleSidebar && (
@@ -103,7 +103,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
             whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
             whileTap={{ scale: 0.95 }}
             onClick={onToggleSidebar}
-            className="p-1.5 rounded-lg text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer mr-1"
+            className="p-1.5 rounded-md text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer mr-1"
           >
             <PanelLeftOpen size={14} />
           </motion.button>
@@ -114,7 +114,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
       <motion.div
         whileHover={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
         onClick={() => toast.info(`Active chat: ${sessionTitle}`)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer select-none transition-all duration-200"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md cursor-pointer select-none transition-all duration-200"
       >
         <span className="text-[13px] font-semibold text-foreground/85 translate-y-[-0.5px]">
           {sessionTitle}
@@ -135,12 +135,12 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
               placeholder="Search messages..."
               value={messageSearchQuery}
               onChange={(e) => onMessageSearchChange(e.target.value)}
-              className="w-36 md:w-48 bg-white/[0.03] hover:bg-white/[0.05] focus:bg-white/[0.05] border border-white/[0.05] focus:border-white/10 rounded-full py-1.5 pl-7 pr-7 text-xs text-zinc-300 placeholder:text-zinc-600 outline-none transition-all focus:w-48 md:focus:w-56"
+              className="w-36 md:w-48 bg-white/[0.03] hover:bg-white/[0.05] focus:bg-white/[0.05] border border-white/[0.05] focus:border-white/10 rounded-md py-1.5 pl-7 pr-7 text-xs text-zinc-300 placeholder:text-zinc-600 outline-none transition-all focus:w-48 md:focus:w-56"
             />
             {messageSearchQuery && (
               <button
                 onClick={() => onMessageSearchChange('')}
-                className="absolute right-2 p-0.5 rounded-full text-zinc-500 hover:text-zinc-300 hover:bg-white/10 transition-colors"
+                className="absolute right-2 p-0.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-white/10 transition-colors"
               >
                 <X size={10} />
               </button>
@@ -150,21 +150,21 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
 
         {/* Scrapling Health Badge */}
         <div
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-800/40 border border-white/5 text-[9px] font-extrabold uppercase tracking-wider text-zinc-400 select-none cursor-pointer"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-800/40 border border-white/5 text-[9px] font-extrabold uppercase tracking-wider text-zinc-400 select-none cursor-pointer"
           title={`Scrapling Health: ${scraplingStatus === 'running' ? 'Running & Healthy' : scraplingStatus === 'restarting' ? 'Restarting...' : scraplingStatus === 'offline' ? 'Offline (using fallback)' : 'Checking Status...'}`}
           onClick={async () => {
             toast.info(`Scrapling status is: ${scraplingStatus}`);
           }}
         >
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
+            className={`w-1.5 h-1.5 rounded-md ${
               scraplingStatus === 'running'
-                ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                ? 'bg-emerald-400'
                 : scraplingStatus === 'restarting'
-                  ? 'bg-yellow-400 animate-pulse shadow-[0_0_6px_#facc15]'
+                  ? 'bg-yellow-400 animate-pulse'
                   : scraplingStatus === 'checking'
                     ? 'bg-zinc-500'
-                    : 'bg-red-400 shadow-[0_0_6px_#f87171]'
+                    : 'bg-red-400'
             }`}
           />
           <span>Scrapling</span>
@@ -179,7 +179,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
             }}
             whileTap={{ scale: 0.94 }}
             onClick={onOpenLightning}
-            className="p-2 rounded-xl text-cyan-400 hover:text-cyan-300 border border-cyan-500/10 bg-cyan-500/[0.03] transition-all cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.1)]"
+            className="p-2 rounded-md text-cyan-400 hover:text-cyan-300 border border-cyan-500/10 bg-cyan-500/[0.03] transition-all cursor-pointer"
             title="Agent Lightning Continuous Learning"
           >
             <Zap size={13} fill="currentColor" strokeWidth={1.8} />
@@ -205,7 +205,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
               );
             }
           }}
-          className={`p-2 rounded-xl border transition-all cursor-pointer ${
+          className={`p-2 rounded-md border transition-all cursor-pointer ${
             privacyMode
               ? 'text-red-400 bg-red-500/10 border-red-500/20'
               : 'text-zinc-500 hover:text-white border-transparent hover:border-white/5'
@@ -225,14 +225,14 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
             whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
             whileTap={{ scale: 0.94 }}
             onClick={() => setShowExport(!showExport)}
-            className="p-2 rounded-xl text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer"
+            className="p-2 rounded-md text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer"
             title="Export Chat"
           >
             <Download size={13} strokeWidth={1.8} />
           </motion.button>
 
           {showExport && (
-            <div className="absolute right-0 mt-2 w-36 bg-secondary border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+            <div className="absolute right-0 mt-2 w-36 bg-secondary border border-white/10 rounded-md shadow-sm border border-border overflow-hidden z-50">
               <button
                 onClick={handleExportMarkdown}
                 className="w-full text-left px-4 py-2 text-xs text-zinc-300 hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
@@ -263,7 +263,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
             navigator.clipboard.writeText(window.location.href);
             toast.success('App share link copied!');
           }}
-          className="p-2 rounded-xl text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer"
+          className="p-2 rounded-md text-zinc-500 hover:text-white border border-transparent hover:border-white/5 transition-all cursor-pointer"
           title="Share Chat"
         >
           <Share2 size={13} strokeWidth={1.8} />
@@ -278,7 +278,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
           }}
           whileTap={{ scale: 0.94 }}
           onClick={onClear}
-          className="p-2 rounded-xl text-zinc-500 hover:text-red-400 border border-transparent hover:border-white/5 transition-all cursor-pointer"
+          className="p-2 rounded-md text-zinc-500 hover:text-red-400 border border-transparent hover:border-white/5 transition-all cursor-pointer"
           title="Clear Session"
         >
           <Trash2 size={13} strokeWidth={1.8} />

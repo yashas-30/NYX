@@ -10,6 +10,20 @@ import { Provider, ChatMessage, AISettings } from '@nyx/shared';
 import { env } from '../config/env.js';
 export type { Provider, ChatMessage, AISettings };
 
+export const VALID_GEMINI_MODELS = [
+  'gemini-3.5-flash', 'gemini-3-flash', 'gemini-3.1-pro-preview',
+  'gemini-3.1-flash-lite', 'gemini-3.1-flash-live-preview',
+  'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite',
+  'gemma-4-31b-it', 'gemma-4-26b-a4b-it', 'gemma-4-e4b-it', 'gemma-4-e2b-it',
+  'gemini-3.1-flash-image', 'gemini-3-pro-image',
+  'gemini-3.1-pro-preview-customtools'
+];
+
+export const GEMINI_API_VERSION = (model: string) => {
+  if (model.startsWith('gemini-3.5') || model.startsWith('gemini-3.1')) return 'v1';
+  return 'v1beta';
+};
+
 export interface GatewayRequest {
   provider: Provider;
   model: string;
@@ -65,7 +79,7 @@ const getCloudflareGateway = (provider: Provider): AIGatewayConfig => {
 
 // Provider URL configuration
 const PROVIDER_URLS: Record<Provider, string> = {
-  gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta', // Kept for backwards compatibility
   'nyx-native': '',
   'antigravity-sdk': '',
   terminal: '',
@@ -132,6 +146,13 @@ export class Gateway {
       return { valid: true };
     }
 
+    if (provider === 'gemini' && !VALID_GEMINI_MODELS.includes(modelId)) {
+      return {
+        valid: false,
+        error: `INVALID MODEL: ${modelId} is not a valid Gemini model ID.`,
+      };
+    }
+
     const activeKey = this.getActiveKey(provider, apiKey);
     if (!activeKey) {
       return {
@@ -154,7 +175,8 @@ export class Gateway {
   static buildUrl(
     provider: Provider,
     endpoint: string,
-    customGatewayUrls?: Record<string, string>
+    customGatewayUrls?: Record<string, string>,
+    model?: string
   ): { url: string; viaGateway: boolean } {
     // Check for custom user-defined gateway URL first
     if (customGatewayUrls && customGatewayUrls[provider]) {
@@ -168,7 +190,11 @@ export class Gateway {
       return { url: `${gateway.baseUrl}${endpoint}`, viaGateway: true };
     }
 
-    const base = PROVIDER_URLS[provider];
+    let base = PROVIDER_URLS[provider];
+    if (provider === 'gemini') {
+      const version = model ? GEMINI_API_VERSION(model) : 'v1beta';
+      base = `https://generativelanguage.googleapis.com/${version}`;
+    }
     return { url: `${base}${endpoint}`, viaGateway: false };
   }
 

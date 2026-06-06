@@ -299,10 +299,10 @@ function RootContainer() {
         try {
           // Always use /api/v1/ — backendBaseUrl is just the host:port when Tauri resolves it
           const base = backendBaseUrl || '';
-          const url = `${base}/api/v1/auth/session`;
+          const url = `${base}/api/v1/health`;
           const res = await originalFetch(url, { headers: { Accept: 'application/json' } });
-          // Any real HTTP response means the backend is alive
-          if (res.ok || res.status === 401 || res.status === 403 || res.status === 404) {
+          // Any real HTTP response (including 500) means the backend is alive and TCP is up
+          if (res.status < 600) {
             if (mounted) setIsBackendReady(true);
             return;
           }

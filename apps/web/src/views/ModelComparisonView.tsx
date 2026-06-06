@@ -65,7 +65,7 @@ export default function ModelComparisonView() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="p-2 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-all cursor-pointer"
+            className="p-2 rounded-md hover:bg-white/5 text-zinc-400 hover:text-white transition-all cursor-pointer"
           >
             <ArrowLeft size={16} />
           </button>
@@ -89,7 +89,7 @@ export default function ModelComparisonView() {
                   handleAddModel(e.target.value);
                 }
               }}
-              className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-primary/50 cursor-pointer appearance-none pr-8 relative"
+              className="bg-zinc-900 border border-white/10 rounded-md px-3 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-primary/50 cursor-pointer appearance-none pr-8 relative"
             >
               <option value="" disabled>+ Add Model to Compare</option>
               {availableToSelect.map((m) => (
@@ -120,7 +120,7 @@ export default function ModelComparisonView() {
             return (
               <div
                 key={model.id}
-                className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5 hover:border-white/[0.08] transition-all relative group flex flex-col min-h-[400px] backdrop-blur-md"
+                className="bg-white/[0.02] border border-white/[0.04] rounded-md p-5 hover:border-white/[0.08] transition-all relative group flex flex-col min-h-[400px] backdrop-blur-md"
               >
                 {/* Remove button */}
                 <button
@@ -131,7 +131,7 @@ export default function ModelComparisonView() {
                 </button>
 
                 <div className="mb-4">
-                  <span className="text-[9px] uppercase tracking-widest font-black text-primary px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
+                  <span className="text-[9px] uppercase tracking-widest font-black text-primary px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20">
                     {model.provider}
                   </span>
                   <h3 className="text-md font-bold mt-2.5 text-zinc-200">{model.name}</h3>

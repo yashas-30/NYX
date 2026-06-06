@@ -1,7 +1,7 @@
 import logger from '../../lib/logger.js';
 import { FastifyInstance } from 'fastify';
 import { validate } from '../../middleware/validate.js';
-import { sendSseTokenRotate } from '../../lib/sseHelpers.js';
+import { sendSseTokenRotate, sseWrite, formatSseChunk, formatSseDone, formatSseError } from '../../lib/sseHelpers.js';
 import { LocalModelsService } from './localModels.service.js';
 import {
   localModelStartSchema,
@@ -220,18 +220,36 @@ export async function localModelsRouter(fastify: FastifyInstance) {
           webSearch,
         });
 
-        reply.header('Content-Type', 'text/event-stream');
-        reply.header('Cache-Control', 'no-cache');
-        reply.header('Connection', 'keep-alive');
-        reply.raw.flushHeaders();
+        const { initFastifySse, sendSseTokenRotate, sseWrite, formatSseDone, formatSseChunk } = await import('../../lib/sseHelpers.js');
+        initFastifySse(reply);
         sendSseTokenRotate(reply.raw as any);
 
         if (response.body) {
           const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            reply.raw.write(value);
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                if (data === '[DONE]') {
+                  sseWrite(reply.raw, formatSseDone());
+                } else {
+                  try {
+                    const parsed = JSON.parse(data);
+                    const chunk = parsed.choices?.[0]?.delta?.content || '';
+                    sseWrite(reply.raw, formatSseChunk({ chunk }));
+                  } catch {
+                    sseWrite(reply.raw, formatSseChunk({ chunk: data }));
+                  }
+                }
+              }
+            }
           }
         }
         reply.raw.end();
@@ -240,7 +258,7 @@ export async function localModelsRouter(fastify: FastifyInstance) {
         if (reply.raw.headersSent) {
           // Headers already sent (streaming started) — write an SSE error event and close
           try {
-            reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+            sseWrite(reply.raw, formatSseError(error.message));
             reply.raw.end();
           } catch {
             /* socket already closed */

@@ -1,5 +1,7 @@
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, text as pgText, timestamp as pgTimestamp, integer as pgInteger, real as pgReal } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
+
 
 // Legacy tables (kept for migration purposes)
 export const conversations = sqliteTable('conversations', {

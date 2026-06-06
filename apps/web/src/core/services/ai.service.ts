@@ -414,6 +414,14 @@ export class AIService {
         console.warn(
           `[AIService] Retry ${attempt}/3 for ${provider} in ${delay.toFixed(0)}ms: ${message}`
         );
+        if (onStream) {
+          const retryMsg = `\n\n[System: Connection failed. Retrying in ${(delay / 1000).toFixed(1)}s...]\n\n`;
+          if (options?.streamEvents) {
+             onStream({ type: 'text', content: retryMsg, final: false });
+          } else {
+             onStream(retryMsg);
+          }
+        }
         await new Promise((resolve) => setTimeout(resolve, delay));
         return this.executeWithRetry(
           requestId,
@@ -554,7 +562,7 @@ export class AIService {
 
     // Cache write
     if (cacheKey && result.text) {
-      await this.fetchWithAuth('/api/v1/cache/set', {
+      this.fetchWithAuth('/api/v1/cache/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -563,7 +571,14 @@ export class AIService {
           provider,
           model: modelId,
         }),
-      }).catch((err) => console.warn('[Cache] Write failed:', err));
+      }).catch((err) => {
+        console.error(`[AIService] Cache write failed for key ${cacheKey.slice(0, 8)}...`, {
+          error: err.message || err,
+          provider,
+          model: modelId,
+          textLength: result.text.length,
+        });
+      });
     }
 
     return result;

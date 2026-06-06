@@ -127,7 +127,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       const res = await fetchWithAuth('/api/v1/nyx/rules');
       if (res.ok) {
         const data = await res.json();
-        setEvolvedRules(data.rules || data || []);
+        setEvolvedRules(Array.isArray(data.rules) ? data.rules : (Array.isArray(data) ? data : []));
       }
     } catch (e: any) {
       console.error('Failed to fetch evolved rules:', e);
@@ -167,7 +167,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         <header
-          className={`flex items-center justify-between p-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-white/[0.04] shrink-0 select-none bg-zinc-950 backdrop-blur-md transition-all duration-300`}
+          className={`flex items-center justify-between p-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-background transition-all duration-300`}
         >
           <div className="flex items-center gap-2">
             <SettingsIcon size={16} className="text-[#FF3366]" />
@@ -176,10 +176,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <button
             onClick={() => setShowGateways(!showGateways)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all ${
               showGateways
-                ? 'bg-[#FF3366]/20 text-[#FF3366] border border-[#FF3366]/30'
-                : 'bg-white/5 text-muted-foreground border border-white/5 hover:border-[#FF3366]/30'
+                ? 'bg-muted text-foreground border border-border'
+                : 'bg-transparent text-muted-foreground border border-transparent hover:bg-muted/40 hover:text-foreground'
             }`}
           >
             <Network size={12} />
@@ -188,7 +188,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </header>
 
         {/* Global Settings Toolbar */}
-        <div className="px-6 py-4 border-b border-white/[0.04] bg-white/[0.01] flex flex-wrap items-center gap-4 shrink-0">
+        <div className="px-6 py-4 border-b border-border bg-card flex flex-wrap items-center gap-4 shrink-0">
           <div className="relative flex-1 min-w-[200px]">
             <Search
               className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -199,11 +199,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               placeholder="Search settings..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-background border border-white/[0.05] rounded-xl pl-9 pr-4 py-2 text-xs text-foreground focus:outline-none focus:border-[#FF3366]/50 transition-colors"
+              className="w-full bg-background border border-border rounded-md pl-9 pr-4 py-2 text-xs text-foreground focus:outline-none focus:border-[#FF3366]/50 transition-colors"
             />
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-1.5">
+            <div className="flex items-center gap-2 bg-background border border-border rounded-md px-3 py-1.5">
               <User size={14} className="text-muted-foreground" />
               <select
                 value={activeProfile}
@@ -221,7 +221,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </option>
               </select>
             </div>
-            <div className="flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-1.5">
+            <div className="flex items-center gap-2 bg-background border border-border rounded-md px-3 py-1.5">
               <Palette size={14} className="text-muted-foreground" />
               <select
                 value={activeTheme}
@@ -277,7 +277,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="mt-6 flex gap-3 pb-6">
               <button
                 onClick={() => SettingsSyncService.exportSettings()}
-                className="flex-1 py-2 rounded-xl bg-secondary border border-border text-foreground text-xs font-bold hover:bg-secondary/80 transition-colors"
+                className="flex-1 py-2 rounded-md bg-secondary border border-border text-foreground text-xs font-bold hover:bg-secondary/80 transition-colors"
               >
                 Export Settings
               </button>
@@ -295,7 +295,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   };
                   input.click();
                 }}
-                className="flex-1 py-2 rounded-xl bg-secondary border border-border text-foreground text-xs font-bold hover:bg-secondary/80 transition-colors"
+                className="flex-1 py-2 rounded-md bg-secondary border border-border text-foreground text-xs font-bold hover:bg-secondary/80 transition-colors"
               >
                 Import Settings
               </button>
@@ -304,14 +304,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   const success = await SettingsSyncService.importFromVSCode();
                   if (success) toast.success('VS Code Settings imported successfully.');
                 }}
-                className="flex-1 py-2 rounded-xl bg-secondary border border-border text-foreground text-xs font-bold hover:bg-secondary/80 transition-colors"
+                className="flex-1 py-2 rounded-md bg-secondary border border-border text-foreground text-xs font-bold hover:bg-secondary/80 transition-colors"
               >
                 Import from VS Code
               </button>
             </div>
 
             {/* Learning Hub: App Workflow & Free Keys Guide */}
-            <div className="mt-6 group p-5 rounded-3xl bg-card border border-border hover:border-accent/40 transition-all duration-300 relative overflow-hidden shadow-lg">
+            <div className="mt-6 group p-5 rounded-md bg-card border border-border hover:border-accent/40 transition-all duration-300 relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-accent/20 via-accent/10 to-accent/20 opacity-70 group-hover:opacity-100 transition-opacity" />
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-border pb-3">
@@ -324,12 +324,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </h3>
                 </div>
 
-                <div className="flex bg-secondary p-0.5 rounded-full border border-border">
+                <div className="flex bg-secondary p-0.5 rounded-md border border-border">
                   <button
                     onClick={() => setActiveGuideTab('workflow')}
-                    className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                       activeGuideTab === 'workflow'
-                        ? 'bg-accent text-white shadow-sm'
+                        ? 'bg-accent text-white'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -337,9 +337,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </button>
                   <button
                     onClick={() => setActiveGuideTab('keys')}
-                    className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                    className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                       activeGuideTab === 'keys'
-                        ? 'bg-accent text-white shadow-sm'
+                        ? 'bg-accent text-white'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -357,9 +357,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-background/40 border border-border rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-background/60 transition-colors">
+                    <div className="bg-background/40 border border-border rounded-md p-3.5 flex flex-col gap-2 hover:bg-background/60 transition-colors">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-accent/10 text-accent">
+                        <div className="p-1 rounded-md bg-accent/10 text-accent">
                           <Zap size={12} />
                         </div>
                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
@@ -372,9 +372,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </p>
                     </div>
 
-                    <div className="bg-background/40 border border-border rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-background/60 transition-colors">
+                    <div className="bg-background/40 border border-border rounded-md p-3.5 flex flex-col gap-2 hover:bg-background/60 transition-colors">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-accent/10 text-accent">
+                        <div className="p-1 rounded-md bg-accent/10 text-accent">
                           <Cpu size={12} />
                         </div>
                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
@@ -387,9 +387,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </p>
                     </div>
 
-                    <div className="bg-background/40 border border-border rounded-2xl p-3.5 flex flex-col gap-2 hover:bg-background/60 transition-colors">
+                    <div className="bg-background/40 border border-border rounded-md p-3.5 flex flex-col gap-2 hover:bg-background/60 transition-colors">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-accent/10 text-accent">
+                        <div className="p-1 rounded-md bg-accent/10 text-accent">
                           <Database size={12} />
                         </div>
                         <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
@@ -403,33 +403,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="bg-background border border-border rounded-2xl p-3.5 flex flex-col gap-2">
+                  <div className="bg-background border border-border rounded-md p-3.5 flex flex-col gap-2">
                     <h4 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
                       Features Walkthrough
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[10px] text-muted-foreground">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-accent shrink-0" />
+                        <div className="w-1 h-1 rounded-md bg-accent shrink-0" />
                         <span>
                           <strong>Compare Workspace</strong>: Benchmark model outputs side-by-side.
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-accent shrink-0" />
+                        <div className="w-1 h-1 rounded-md bg-accent shrink-0" />
                         <span>
                           <strong>Performance Evaluation</strong>: Evaluate reasoning, response
                           depth, & code.
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-accent shrink-0" />
+                        <div className="w-1 h-1 rounded-md bg-accent shrink-0" />
                         <span>
                           <strong>Agent Workspace</strong>: Specialized editor with multiline code
                           playground.
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1 h-1 rounded-full bg-accent shrink-0" />
+                        <div className="w-1 h-1 rounded-md bg-accent shrink-0" />
                         <span>
                           <strong>Model Registry</strong>: Manage model configurations & discover
                           local instances.
@@ -447,7 +447,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   <div className="space-y-2">
                     {/* Google Gemini Key */}
-                    <div className="border border-border rounded-xl overflow-hidden bg-background/40 hover:bg-background/60 transition-all">
+                    <div className="border border-border rounded-md overflow-hidden bg-background/40 hover:bg-background/60 transition-all">
                       <button
                         onClick={() =>
                           setExpandedGuideProvider(
@@ -457,13 +457,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         className="w-full px-3 py-2 flex items-center justify-between text-left cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 rounded-full bg-accent/10 text-accent flex items-center justify-center text-[10px] font-black">
+                          <div className="w-4 h-4 rounded-md bg-accent/10 text-accent flex items-center justify-center text-[10px] font-black">
                             G
                           </div>
                           <span className="text-[10px] font-bold text-foreground">
                             Google Gemini API
                           </span>
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/20">
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-md border border-emerald-500/20">
                             Free Tier
                           </span>
                         </div>

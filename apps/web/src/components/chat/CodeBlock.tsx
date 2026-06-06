@@ -42,7 +42,7 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
   };
 
   return (
-    <div className="rounded-lg overflow-hidden border border-border my-4">
+    <div className="rounded-md overflow-hidden border border-border my-4">
       {filename && (
         <div className="flex items-center justify-between px-4 py-2 bg-surface border-b border-border">
           <span className="text-sm text-text-muted font-mono">{filename}</span>

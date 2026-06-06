@@ -300,11 +300,11 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     const ta = textareaRef.current;
     if (!ta) return;
     if (reset) {
-      ta.style.height = '36px';
+      ta.style.height = '56px';
       return;
     }
-    ta.style.height = '36px';
-    ta.style.height = `${Math.max(36, Math.min(ta.scrollHeight, 220))}px`;
+    ta.style.height = '56px';
+    ta.style.height = `${Math.max(56, Math.min(ta.scrollHeight, 150))}px`;
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -381,7 +381,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   return (
     <div className="shrink-0 w-full flex flex-col items-center px-4 pb-4 pt-2 bg-background z-30 gap-2">
       <div
-        className={`relative w-full transition-all duration-500 ease-out ${prompt.trim().length > 0 ? 'max-w-3xl' : 'max-w-2xl'}`}
+        className={`relative w-full transition-all duration-500 ease-out ${prompt.trim().length > 0 ? 'max-w-2xl' : 'max-w-xl'}`}
       >
         {/* ── Settings Panel ────────────────────────────────────────── */}
         <LocalModelSettingsPanel
@@ -405,7 +405,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
           className="relative w-full"
         >
           {visibleTemplates.length > 0 && prompt.startsWith('/') && (
-            <div className="absolute bottom-[calc(100%+8px)] left-0 w-full max-h-60 overflow-y-auto bg-popover/90 backdrop-blur-xl border border-border rounded-xl shadow-lg z-50 flex flex-col p-2 scrollbar-none">
+            <div className="absolute bottom-[calc(100%+8px)] left-0 w-full max-h-60 overflow-y-auto bg-popover/90 backdrop-blur-xl border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] z-50 flex flex-col p-2 scrollbar-none">
               <div className="px-3 py-2 border-b border-border/40 flex items-center gap-2">
                 <Layers size={14} className="text-muted-foreground" />
                 <span className="text-xs font-bold text-foreground/80">Prompt Templates</span>
@@ -420,7 +420,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                       setTimeout(() => textareaRef.current?.focus(), 0);
                     }}
                     onMouseEnter={() => setTemplateSelectedIndex(idx)}
-                    className={`flex flex-col text-left px-3 py-2 rounded-lg transition-all ${
+                    className={`flex flex-col text-left px-3 py-2 rounded-md transition-all ${
                       idx === templateSelectedIndex
                         ? 'bg-accent/10 text-foreground font-medium'
                         : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
@@ -434,14 +434,42 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
             </div>
           )}
 
-          <div className="w-full flex flex-col bg-card/60 backdrop-blur-xl border border-border focus-within:border-accent/40 rounded-xl p-2 shadow-lg">
+          <div className="w-full flex flex-col bg-card/60 backdrop-blur-xl border border-border focus-within:border-accent/40 rounded-md p-1 shadow-[0_8px_32px_rgba(0,0,0,0.04)]">
             <motion.div
               variants={tagContainerVariants}
               initial="hidden"
               animate="visible"
-              className="flex items-center justify-between px-3 py-2 border-b border-border/40 overflow-x-auto gap-3 scrollbar-none select-none"
+              className="flex items-center justify-between px-1 py-0.5 border-b border-border/40 overflow-x-auto gap-2 scrollbar-none select-none"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <motion.button
+                  variants={tagItemVariants}
+                  whileHover={{ y: -1.5, scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="button"
+                  onClick={handleImageUploadClick}
+                  disabled={isUploadingImage}
+                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-secondary border border-border hover:border-border/80 transition-all text-left text-foreground cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span className="text-[9.5px] font-bold tracking-tight">{isUploadingImage ? 'Uploading...' : 'Attach File'}</span>
+                </motion.button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImageChange}
+                  className="hidden"
+                />
+
+                <div className="flex items-center gap-1">
+                  <PromptTemplateManager
+                    onSelectTemplate={(content) => {
+                      onPromptChange(content);
+                      setTimeout(() => textareaRef.current?.focus(), 0);
+                    }}
+                  />
+                </div>
+
                 <motion.button
                   variants={tagItemVariants}
                   whileHover={{ y: -1.5, scale: 1.02 }}
@@ -455,7 +483,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                       toast.error('Type a prompt first to optimize it');
                     }
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/25 hover:border-cyan-500/40 transition-all text-left text-cyan-600 dark:text-cyan-300 hover:text-cyan-800 dark:hover:text-white cursor-pointer shrink-0"
+                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/25 hover:border-cyan-500/40 transition-all text-left text-cyan-600 dark:text-cyan-300 hover:text-cyan-800 dark:hover:text-white cursor-pointer shrink-0"
                 >
                   <span className="w-3.5 h-3.5 rounded bg-cyan-500/20 flex items-center justify-center text-[9px] font-black text-cyan-600 dark:text-cyan-400 leading-none font-mono">
                     /
@@ -473,7 +501,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     onPromptChange('');
                     toast.success('Context reset');
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 hover:border-amber-500/40 transition-all text-left text-amber-600 dark:text-amber-300 hover:text-amber-800 dark:hover:text-white cursor-pointer shrink-0"
+                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/25 hover:border-amber-500/40 transition-all text-left text-amber-600 dark:text-amber-300 hover:text-amber-800 dark:hover:text-white cursor-pointer shrink-0"
                 >
                   <span className="w-3.5 h-3.5 rounded bg-amber-500/20 flex items-center justify-center text-[9px] font-black text-amber-600 dark:text-amber-400 leading-none font-mono">
                     /
@@ -481,10 +509,32 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   <span className="text-[9.5px] font-bold tracking-tight">Reset context</span>
                 </motion.button>
               </div>
+
+              <div className="flex items-center gap-2">
+                {isLocalModel && (
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1.5, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => {
+                      setShowSettings((v) => !v);
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[9.5px] font-bold transition-all cursor-pointer ${
+                      showSettings
+                        ? 'bg-accent/10 text-accent border border-accent/30'
+                        : 'bg-secondary border border-border text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <SlidersHorizontal size={10} />
+                    <span>Configure</span>
+                  </motion.button>
+                )}
+              </div>
             </motion.div>
 
             <div
-              className={`w-full bg-background border rounded-lg p-4 mt-2 flex flex-col gap-2 relative transition-all duration-300 border-border ${
+              className={`w-full bg-background border rounded-md px-3 py-2 mt-2 flex flex-col gap-1 relative transition-all duration-300 border-border ${
                 isFocused ? 'border-accent/40 ring-1 ring-accent/30' : ''
               }`}
             >
@@ -493,12 +543,12 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   {selectedImages.map((img, idx) => (
                     <div
                       key={idx}
-                      className="relative group/img flex items-center gap-2 p-2 bg-muted border border-border rounded-lg pr-6"
+                      className="relative group/img flex items-center gap-2 p-2 bg-muted border border-border rounded-md pr-6"
                     >
                       <img
                         src={`data:${img.mimeType};base64,${img.data}`}
                         alt={img.name}
-                        className="w-8 h-8 rounded-lg object-cover bg-background"
+                        className="w-8 h-8 rounded-md object-cover bg-background"
                       />
                       <div className="flex flex-col min-w-0 max-w-[120px]">
                         <span className="text-[9px] font-semibold text-foreground truncate">
@@ -520,11 +570,11 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                 </div>
               )}
               {/* Microphone dictation button - absolute top right */}
-              <div className="absolute top-3 right-3 flex items-center gap-1.5 group/mic z-10 select-none">
+              <div className="absolute top-2 right-2 flex items-center gap-1.5 group/mic z-10 select-none">
                 <div className="flex items-center gap-[1.5px] h-2.5 opacity-0 group-hover/mic:opacity-100 transition-opacity duration-300 pointer-events-none">
-                  <span className="w-[1.5px] h-full bg-emerald-500 rounded-full animate-[bounce_0.6s_infinite_100ms]" />
-                  <span className="w-[1.5px] h-full bg-emerald-500 rounded-full animate-[bounce_0.6s_infinite_300ms]" />
-                  <span className="w-[1.5px] h-full bg-emerald-500 rounded-full animate-[bounce_0.6s_infinite_200ms]" />
+                  <span className="w-[1.5px] h-full bg-emerald-500 rounded-md animate-[bounce_0.6s_infinite_100ms]" />
+                  <span className="w-[1.5px] h-full bg-emerald-500 rounded-md animate-[bounce_0.6s_infinite_300ms]" />
+                  <span className="w-[1.5px] h-full bg-emerald-500 rounded-md animate-[bounce_0.6s_infinite_200ms]" />
                 </div>
 
                 <motion.button
@@ -539,7 +589,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
               </div>
 
               {/* Submit / Stop button - absolute bottom right */}
-              <div className="absolute bottom-3 right-3 z-10 select-none">
+              <div className="absolute bottom-2 right-2 z-10 select-none">
                 {isLoading ? (
                   <motion.button
                     whileHover={{
@@ -550,7 +600,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     whileTap={{ scale: 0.95 }}
                     type="button"
                     onClick={onStop}
-                    className="h-7 px-3 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center gap-1 border border-red-500/20 text-[9px] font-black tracking-widest uppercase transition-all cursor-pointer"
+                    className="h-7 px-3 rounded-md bg-red-500/10 text-red-500 flex items-center justify-center gap-1 border border-red-500/20 text-[9px] font-black tracking-widest uppercase transition-all cursor-pointer"
                   >
                     <StopCircle className="w-3 h-3 animate-pulse" />
                     Stop
@@ -564,7 +614,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     whileTap={{ scale: canSubmit ? 0.95 : 1 }}
                     type="submit"
                     disabled={!canSubmit}
-                    className={`h-7 w-7 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
+                    className={`h-7 w-7 rounded-md flex items-center justify-center transition-all border cursor-pointer ${
                       canSubmit
                         ? 'bg-accent text-accent-foreground border-accent font-bold'
                         : 'bg-muted border-transparent text-muted-foreground/30 cursor-not-allowed'
@@ -575,52 +625,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                 )}
               </div>
 
-              <div className="flex items-center gap-2 px-1 pr-12">
-                <motion.button
-                  whileHover={{ scale: 1.02, backgroundColor: 'rgba(var(--accent-rgb), 0.05)' }}
-                  whileTap={{ scale: 0.98 }}
-                  type="button"
-                  onClick={handleImageUploadClick}
-                  disabled={isUploadingImage}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary border border-border text-[10px] font-bold text-foreground transition-all select-none cursor-pointer disabled:opacity-50 shrink-0"
-                >
-                  <ImageIcon className="w-3 h-3 text-muted-foreground" />
-                  <span>{isUploadingImage ? 'Uploading...' : 'Attach File'}</span>
-                </motion.button>
-                <div className="flex items-center gap-1">
-                  <PromptTemplateManager
-                    onSelectTemplate={(content) => {
-                      onPromptChange(content);
-                      setTimeout(() => textareaRef.current?.focus(), 0);
-                    }}
-                  />
-                </div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleImageChange}
-                  className="hidden"
-                />
 
-                {isLocalModel && (
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="button"
-                    onClick={() => {
-                      setShowSettings((v) => !v);
-                    }}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
-                      showSettings
-                        ? 'bg-accent/10 text-accent border border-accent/30'
-                        : 'bg-secondary border border-border text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <SlidersHorizontal size={9} />
-                    <span>Configure</span>
-                  </motion.button>
-                )}
-              </div>
 
               <div className="flex items-start gap-1.5 px-1 pr-10">
                 <textarea
@@ -635,7 +640,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder="Ask anything..."
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1.5 px-1 resize-none min-h-[36px] max-h-[220px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/40 focus:outline-none"
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1 px-1 resize-none min-h-[80px] max-h-[150px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/40 focus:outline-none"
                   style={{ scrollbarWidth: 'none' }}
                 />
               </div>

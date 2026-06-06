@@ -56,7 +56,7 @@ function CustomNode({ data, id }: { data: CanvasNode['data']; id: string }) {
 
   return (
     <div className={cn(
-      'w-80 rounded-lg border shadow-lg overflow-hidden bg-white/5 backdrop-blur-md',
+      'w-80 rounded-md border shadow-sm border border-border overflow-hidden bg-white/5 backdrop-blur-md',
       data.status === 'loading' && 'border-sky-500 animate-pulse',
       data.status === 'done' && 'border-emerald-500',
       data.status === 'error' && 'border-red-500',
@@ -143,23 +143,23 @@ export function InfiniteCanvas() {
               default: return '#71717a';
             }
           }}
-          className="bg-zinc-900 border border-white/10 rounded-lg"
+          className="bg-zinc-900 border border-white/10 rounded-md"
           maskColor="rgba(0,0,0,0.5)"
         />
       </ReactFlow>
 
       {/* Floating toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 bg-zinc-900/90 backdrop-blur border border-white/10 rounded-full px-4 py-2 shadow-xl z-10">
-        <button onClick={() => addNode('chat', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-sky-400 hover:bg-white/5 rounded-full transition-all cursor-pointer" title="Add Chat Node">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 bg-zinc-900/90 backdrop-blur border border-white/10 rounded-md px-4 py-2 shadow-sm border border-border z-10">
+        <button onClick={() => addNode('chat', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-sky-400 hover:bg-white/5 rounded-md transition-all cursor-pointer" title="Add Chat Node">
           <MessageSquare className="w-4 h-4" />
         </button>
-        <button onClick={() => addNode('code', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-emerald-400 hover:bg-white/5 rounded-full transition-all cursor-pointer" title="Add Code Node">
+        <button onClick={() => addNode('code', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-emerald-400 hover:bg-white/5 rounded-md transition-all cursor-pointer" title="Add Code Node">
           <Code className="w-4 h-4" />
         </button>
-        <button onClick={() => addNode('image', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-amber-400 hover:bg-white/5 rounded-full transition-all cursor-pointer" title="Add Image Node">
+        <button onClick={() => addNode('image', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-amber-400 hover:bg-white/5 rounded-md transition-all cursor-pointer" title="Add Image Node">
           <Image className="w-4 h-4" />
         </button>
-        <button onClick={() => addNode('note', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-zinc-100 hover:bg-white/5 rounded-full transition-all cursor-pointer" title="Add Note Node">
+        <button onClick={() => addNode('note', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-zinc-100 hover:bg-white/5 rounded-md transition-all cursor-pointer" title="Add Note Node">
           <StickyNote className="w-4 h-4" />
         </button>
       </div>

@@ -36,7 +36,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
   const totalCalls = cacheStats.hits + cacheStats.misses;
 
   return (
-    <div className="mt-6 group p-5 rounded-3xl bg-card border border-border hover:border-accent/25 transition-all duration-300 relative overflow-hidden shadow-lg">
+    <div className="mt-6 group p-5 rounded-md bg-card border border-border hover:border-accent/25 transition-all duration-300 relative overflow-hidden shadow-sm border border-border">
       <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-accent/20 via-accent/10 to-accent/20 opacity-70 group-hover:opacity-100 transition-opacity" />
 
       <div className="flex items-center justify-between mb-4">
@@ -48,13 +48,13 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
             Persistent Query Acceleration
           </h3>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-widest text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-accent bg-accent/10 px-2 py-0.5 rounded-md border border-accent/20">
           Active Server
         </span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        <div className="bg-background/60 border border-border rounded-2xl p-3 flex flex-col justify-between">
+        <div className="bg-background/60 border border-border rounded-md p-3 flex flex-col justify-between">
           <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">
             CACHED QUERIES
           </span>
@@ -62,7 +62,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
             {cacheStats.itemCount}
           </span>
         </div>
-        <div className="bg-background/60 border border-border rounded-2xl p-3 flex flex-col justify-between">
+        <div className="bg-background/60 border border-border rounded-md p-3 flex flex-col justify-between">
           <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">
             STORAGE USED
           </span>
@@ -72,7 +72,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
               : `${(cacheStats.totalSizeBytes / 1024).toFixed(1)} KB`}
           </span>
         </div>
-        <div className="bg-background/60 border border-border rounded-2xl p-3 flex flex-col justify-between">
+        <div className="bg-background/60 border border-border rounded-md p-3 flex flex-col justify-between">
           <span className="text-[9px] font-black text-muted-foreground/80 uppercase tracking-widest">
             HIT EFFICIENCY
           </span>
@@ -89,9 +89,9 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
             {cacheStats.hits} Hits / {totalCalls} Total
           </span>
         </div>
-        <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+        <div className="h-1.5 w-full bg-white/5 rounded-md overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-accent to-emerald-500 rounded-full transition-all duration-500"
+            className="h-full bg-gradient-to-r from-accent to-emerald-500 rounded-md transition-all duration-500"
             style={{
               width:
                 totalCalls > 0 ? `${Math.min(100, (cacheStats.hits / totalCalls) * 100)}%` : '0%',
@@ -109,7 +109,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
           whileTap={cacheStats.itemCount === 0 ? {} : { scale: 0.95 }}
           onClick={handleClearCache}
           disabled={cacheStats.itemCount === 0}
-          className={`px-4 py-2.5 rounded-xl border text-[11px] font-bold uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
+          className={`px-4 py-2.5 rounded-md border text-[11px] font-bold uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
             cacheStats.itemCount === 0
               ? 'bg-white/5 border-white/5 text-muted-foreground/30 cursor-not-allowed'
               : 'bg-red-500/5 border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white hover:border-red-500 cursor-pointer shadow-sm'

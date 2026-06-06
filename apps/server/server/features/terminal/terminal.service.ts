@@ -127,6 +127,29 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     return { isDocker: false, error: 'Empty command.' };
   }
 
+  // Strict Command Whitelist (Option D)
+  const ALLOWED_COMMANDS = new Set([
+    'npm', 'node', 'python', 'python3', 'git', 'gcc', 'make', 'npx', 'yarn', 'pnpm', 'tsc', 'vitest', 'jest'
+  ]);
+  const baseCmd = trimmedCmd.split(' ')[0];
+  if (!ALLOWED_COMMANDS.has(baseCmd)) {
+    logSecurityBlock(trimmedCmd, `Command '${baseCmd}' is not in the whitelist.`);
+    return {
+      isDocker: false,
+      error: `Security Sandbox Block: Command '${baseCmd}' is not allowed.`,
+    };
+  }
+  
+  // Shell Operator check to prevent escape via `npm install; rm -rf /`
+  const shellOperators = /[&|;><`]/;
+  if (shellOperators.test(trimmedCmd)) {
+    logSecurityBlock(trimmedCmd, 'Shell operators are forbidden.');
+    return {
+      isDocker: false,
+      error: 'Security Sandbox Block: Shell operators (&, |, ;, >, <, \`) are not allowed.',
+    };
+  }
+
   // Capability-based Sandboxing removes the need for naive whitelists.
   // We apply OS-level isolation (seccomp, seatbelt, AppContainer) or Docker.
 
@@ -171,7 +194,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     const child = spawn(wrapper.bin, wrapper.args, {
       cwd: resolvedCwd,
       env: { ...process.env, FORCE_COLOR: '1' },
-      timeout: 5 * 60 * 1000, // 5-minute timeout
+      timeout: 30 * 1000, // 30-second timeout
     });
 
     return {
@@ -189,7 +212,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
   }
 
   // Default: Docker execution with strict capability drops and resource limits
-  // CPU 2 cores, RAM 2GB, disk limits via tmpfs, no network
+  // CPU 2 cores, RAM 512MB, disk limits via tmpfs, no network
   const image = trimmedCmd.includes('python') ? 'python:3.11-slim' : 'node:20-alpine';
   const dockerArgs = [
     'run',
@@ -207,7 +230,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     '--cpus',
     '2.0',
     '--memory',
-    '2G',
+    '512m',
     '--pids-limit',
     '64',
     '--security-opt',
@@ -231,7 +254,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
 
   const child = spawn('docker', dockerArgs, {
     cwd: resolvedCwd,
-    timeout: 5 * 60 * 1000, // 5-minute timeout
+    timeout: 30 * 1000, // 30-second timeout
   });
 
   return {

@@ -20,9 +20,10 @@ export const usePromptAnalysis = ({
 }: PromptAnalysisProps) => {
   const [agentMode, setAgentMode] = useState<'chat' | 'coder' | 'architect' | null>(null);
   const [agentReasoning, setAgentReasoning] = useState<string>('');
+  const [missingDebugWarning, setMissingDebugWarning] = useState<{ prompt: string } | null>(null);
 
   const analyzeAndRoute = useCallback(
-    (prompt: string) => {
+    (prompt: string, bypassGate: boolean = false) => {
       // Step 1: Analyze prompt
       // fallow-ignore-next-line code-duplication
       const analysis = analyzePrompt(prompt);
@@ -33,7 +34,7 @@ export const usePromptAnalysis = ({
       setAgentReasoning(route.reasoning);
 
       // Step 3: Check for missing debug details
-      if (analysis.intent === 'code_debug' && isMissingDebugDetails(prompt, 'debug')) {
+      if (!bypassGate && analysis.intent === 'code_debug' && isMissingDebugDetails(prompt, 'debug')) {
         updateHistory((prev) => [
           ...prev,
           {
@@ -43,16 +44,18 @@ export const usePromptAnalysis = ({
             status: 'success',
           },
         ]);
+        setMissingDebugWarning({ prompt });
         toast.error('Please provide your code or error logs');
         setIsLoading(false);
         clearController();
         return null; // Return null to indicate early exit
       }
 
+      setMissingDebugWarning(null);
       return { analysis, route };
     },
     [updateHistory, setIsLoading, clearController]
   );
 
-  return { agentMode, setAgentMode, agentReasoning, setAgentReasoning, analyzeAndRoute };
+  return { agentMode, setAgentMode, agentReasoning, setAgentReasoning, analyzeAndRoute, missingDebugWarning, setMissingDebugWarning };
 };

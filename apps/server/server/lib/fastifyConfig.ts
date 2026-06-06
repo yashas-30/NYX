@@ -6,6 +6,7 @@ import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
+import vitePlugin from '@fastify/vite';
 import {
   serializerCompiler,
   validatorCompiler,
@@ -298,26 +299,20 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
 
   await setupOpenApi(app);
 
-  // Serve the built frontend in production
   if (isProd) {
-    let distPath = path.join(_serverDir, 'dist');
-    if (!fs.existsSync(path.join(distPath, 'index.html'))) {
-      distPath = path.join(_serverDir, '../dist');
-    }
-    logger.info(`[Static] Serving frontend from: ${distPath}`);
-    await app.register(fastifyStatic, {
-      root: distPath,
-      prefix: '/',
-      decorateReply: false,
-    });
-    // SPA fallback — serve index.html for all non-API routes
-    app.setNotFoundHandler(async (request, reply) => {
-      if (request.url.startsWith('/api/') || request.url.startsWith('/ws/')) {
-        return reply.code(404).send({ error: 'Not found' });
-      }
-      return reply.sendFile('index.html', distPath);
+    // Serve the SPA using @fastify/vite for prod only
+    await app.register(vitePlugin, {
+      root: path.resolve(_serverDir, '../web'),
+      dev: false,
+      spa: true,
     });
   }
+
+  app.ready(() => {
+    console.log("=== FASTIFY ROUTES ===");
+    console.log(app.printRoutes());
+    console.log("======================");
+  });
 
   app.setErrorHandler(errorHandler);
 

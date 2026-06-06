@@ -59,6 +59,46 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     return registry.metrics();
   });
 
+  // Gemini specific upload endpoint for multimodal support
+  app.post('/api/gemini/upload', async (request, reply) => {
+    try {
+      const data = await request.file();
+      if (!data) {
+        return reply.code(400).send({ error: 'No file uploaded' });
+      }
+
+      const { pipeline } = await import('stream/promises');
+      const fs = await import('fs');
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+
+      const _dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+      const UPLOADS_DIR = path.join(_dirname, '../../../../uploads/gemini');
+
+      if (!fs.existsSync(UPLOADS_DIR)) {
+        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      }
+
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const ext = path.extname(data.filename);
+      const basename = path.basename(data.filename, ext);
+      const newFilename = `${basename}-${uniqueSuffix}${ext}`;
+      const filepath = path.join(UPLOADS_DIR, newFilename);
+
+      await pipeline(data.file, fs.createWriteStream(filepath));
+
+      return reply.send({
+        message: 'File uploaded successfully',
+        filename: newFilename,
+        path: `/uploads/gemini/${newFilename}`,
+        mimeType: data.mimetype,
+      });
+    } catch (err: any) {
+      logger.error({ err }, '[Gemini Upload] Error uploading file');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
   // fallow-ignore-next-line code-duplication
   app.post('/api/models/list', async (request, reply) => {
     const { provider } = request.body as any;
@@ -141,10 +181,8 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       return reply.code(400).send({ error: 'Unsupported provider' });
     }
 
-    reply.raw.setHeader('Content-Type', 'text/event-stream');
-    reply.raw.setHeader('Cache-Control', 'no-cache');
-    reply.raw.setHeader('Connection', 'keep-alive');
-
+    const { initFastifySse } = await import('../lib/sseHelpers.js');
+    initFastifySse(reply);
     try {
       const adapter = adapters[provider];
       const cacheKey = generateCacheKey(provider, chatReq.model, chatReq.messages);

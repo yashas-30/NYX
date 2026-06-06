@@ -1,13 +1,41 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import logger from '../../lib/logger.js';
 import { ChatService } from './chat.service.js';
+
+const uploadImageSchema = z.object({
+  name: z.string(),
+  mimeType: z.string(),
+  data: z.string(),
+});
+
+const chatStreamSchema = z.object({
+  prompt: z.string().min(1),
+  history: z.array(z.any()).optional(),
+  provider: z.string().optional(),
+  modelId: z.string().optional(),
+  settings: z.record(z.any()).optional(),
+  systemInstruction: z.string().optional(),
+  enableWebSearch: z.boolean().optional(),
+  images: z.array(z.any()).optional(),
+});
+
+const suggestionsSchema = z.object({
+  history: z.array(z.any()).optional(),
+});
 
 export async function chatRouter(fastify: FastifyInstance) {
   const chatService = new ChatService();
 
-  fastify.post('/upload-image', async (request, reply) => {
+  fastify.post('/upload-image', {
+    schema: {
+      tags: ['chat'],
+      summary: 'Upload an image for chat context',
+      body: uploadImageSchema,
+    }
+  }, async (request, reply) => {
     try {
-      const { name, mimeType, data } = request.body as any;
+      const { name, mimeType, data } = request.body as z.infer<typeof uploadImageSchema>;
       if (!data) {
         return reply.code(400).send({ error: 'Missing image data' });
       }
@@ -43,7 +71,13 @@ export async function chatRouter(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/stream', async (request, reply) => {
+  fastify.post('/stream', {
+    schema: {
+      tags: ['chat'],
+      summary: 'Stream a chat completion',
+      body: chatStreamSchema,
+    }
+  }, async (request, reply) => {
     try {
       const {
         prompt,
@@ -54,14 +88,13 @@ export async function chatRouter(fastify: FastifyInstance) {
         systemInstruction,
         enableWebSearch,
         images,
-      } = request.body as any;
+      } = request.body as z.infer<typeof chatStreamSchema>;
       if (!prompt) {
         return reply.code(400).send({ error: 'Missing prompt' });
       }
 
-      reply.header('Content-Type', 'text/event-stream');
-      reply.header('Cache-Control', 'no-cache');
-      reply.header('Connection', 'keep-alive');
+      const { initFastifySse } = await import('../../lib/sseHelpers.js');
+      initFastifySse(reply);
 
       // Abort signal handling if client disconnects
       const abortController = new AbortController();
@@ -79,9 +112,10 @@ export async function chatRouter(fastify: FastifyInstance) {
           images,
         },
         abortController.signal,
-        (chunk: string) => {
+        (chunk: any) => {
           try {
-            reply.raw.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+            const payload = typeof chunk === 'string' ? { type: 'text', content: chunk } : chunk;
+            reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
             if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
           } catch (e) {
             logger.error(e, 'Error writing chunk to stream');
@@ -104,9 +138,15 @@ export async function chatRouter(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/suggestions', async (request, reply) => {
+  fastify.post('/suggestions', {
+    schema: {
+      tags: ['chat'],
+      summary: 'Get prompt suggestions based on chat history',
+      body: suggestionsSchema,
+    }
+  }, async (request, reply) => {
     try {
-      const { history } = request.body as any;
+      const { history } = request.body as z.infer<typeof suggestionsSchema>;
       const suggestions = await chatService.getSuggestions(history || []);
       reply.send({ suggestions });
     } catch (error: any) {

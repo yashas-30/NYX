@@ -124,9 +124,9 @@ const ContextBar: React.FC<{ used: number; limit: number }> = ({ used, limit }) 
       className="flex items-center gap-2 group cursor-help"
       title={`${formatTokens(used)} / ${formatTokens(limit)} tokens`}
     >
-      <div className="w-16 h-1.5 rounded-full bg-muted/60 overflow-hidden">
+      <div className="w-16 h-1.5 rounded-md bg-muted/60 overflow-hidden">
         <motion.div
-          className={`h-full rounded-full ${isCritical ? 'bg-red-500' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'}`}
+          className={`h-full rounded-md ${isCritical ? 'bg-red-500' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'}`}
           initial={{ width: 0 }}
           animate={{ width: `${ratio * 100}%` }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
@@ -143,15 +143,15 @@ const ContextBar: React.FC<{ used: number; limit: number }> = ({ used, limit }) 
 
 const ConnectionDot: React.FC<{ status: ChatHeaderProps['connectionStatus'] }> = ({ status }) => {
   const colors = {
-    online: 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]',
-    degraded: 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)] animate-pulse',
-    offline: 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.4)]',
+    online: 'bg-emerald-500',
+    degraded: 'bg-amber-500 animate-pulse',
+    offline: 'bg-red-500',
   };
   const labels = { online: 'Connected', degraded: 'Slow', offline: 'Disconnected' };
 
   return (
     <div className="flex items-center gap-1.5" title={labels[status || 'online']}>
-      <span className={`w-1.5 h-1.5 rounded-full ${colors[status || 'online']}`} />
+      <span className={`w-1.5 h-1.5 rounded-md ${colors[status || 'online']}`} />
       <span className="text-[10px] text-muted-foreground hidden lg:inline">
         {labels[status || 'online']}
       </span>
@@ -200,7 +200,7 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         disabled={disabled}
-        className={`p-2 rounded-xl border transition-all cursor-pointer relative ${
+        className={`p-2 rounded-md border transition-all cursor-pointer relative ${
           dragOver
             ? 'bg-accent/10 border-accent/30 text-accent'
             : 'text-muted-foreground hover:text-foreground border-transparent hover:border-border'
@@ -212,7 +212,7 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="absolute inset-0 rounded-xl border-2 border-dashed border-accent/50 bg-accent/5 flex items-center justify-center"
+            className="absolute inset-0 rounded-md border-2 border-dashed border-accent/50 bg-accent/5 flex items-center justify-center"
           >
             <span className="text-[10px] text-accent font-medium">Drop files</span>
           </motion.div>
@@ -257,7 +257,7 @@ const ShareMenu: React.FC<{
         whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
         whileTap={{ scale: 0.94 }}
         onClick={() => setOpen(!open)}
-        className="p-2 rounded-xl text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer"
+        className="p-2 rounded-md text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer"
         title="Share & Export"
       >
         <Share2 size={13} strokeWidth={1.8} />
@@ -269,7 +269,7 @@ const ShareMenu: React.FC<{
             initial={{ opacity: 0, y: -4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            className="absolute top-full right-0 mt-1 w-56 bg-popover/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl overflow-hidden z-50"
+            className="absolute top-full right-0 mt-1 w-56 bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden z-50"
           >
             <div className="px-3 py-2 border-b border-border">
               <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -398,7 +398,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   return (
     <header className="flex flex-col shrink-0 select-none bg-background border-b border-border">
       {/* Main header row */}
-      <div className="flex items-center justify-between px-4 py-2.5">
+      <div className="flex items-center justify-between px-6 py-4">
         {/* Left zone: Sidebar toggle + Model selector */}
         <div className="flex items-center gap-2 min-w-0">
           {onToggleSidebar && (
@@ -406,7 +406,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
               whileTap={{ scale: 0.95 }}
               onClick={onToggleSidebar}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer shrink-0"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer shrink-0"
               title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
             >
               {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
@@ -423,7 +423,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 setShowModelSelector((v) => !v);
               }}
               disabled={isLoading}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all select-none ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border transition-all select-none ${
                 showModelSelector
                   ? 'bg-muted border-border'
                   : 'bg-transparent border-transparent hover:border-border text-muted-foreground hover:text-foreground'
@@ -495,7 +495,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     }
                   }}
                   onBlur={handleTitleSubmit}
-                  className="text-[13px] font-semibold text-foreground/85 bg-muted/50 border border-border rounded-lg px-2.5 py-1 outline-none focus:border-primary/30 w-48 sm:w-64"
+                  className="text-[13px] font-semibold text-foreground/85 bg-muted/50 border border-border rounded-md px-2.5 py-1 outline-none focus:border-primary/30 w-48 sm:w-64"
                   maxLength={60}
                 />
               </motion.div>
@@ -506,7 +506,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   setEditTitle(sessionTitle);
                   setIsEditingTitle(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer select-none transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md cursor-pointer select-none transition-all"
                 title="Click to rename"
               >
                 <span className="text-[13px] font-semibold text-foreground/85 translate-y-[-0.5px] truncate max-w-[140px] sm:max-w-[200px]">
@@ -526,7 +526,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         {/* Right zone: Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Response metrics */}
-          <div className="hidden md:flex items-center gap-3 px-3 py-1 bg-muted/30 border border-border rounded-xl text-muted-foreground font-mono text-[10px] mr-1">
+          <div className="hidden md:flex items-center gap-3 px-3 py-1 bg-muted/30 border border-border rounded-md text-muted-foreground font-mono text-[10px] mr-1">
             <div className="flex items-center gap-1.5" title="Response latency">
               <Wifi size={11} className="text-muted-foreground" />
               <span>{displayLatency > 0 ? formatLatency(displayLatency) : '0ms'}</span>
@@ -564,7 +564,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.94 }}
                 onClick={onStopGeneration}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
               >
                 <Square size={10} fill="currentColor" />
                 <span className="text-[11px] font-medium hidden sm:inline">Stop</span>
@@ -588,7 +588,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     }}
                     whileTap={{ scale: 0.94 }}
                     onClick={onOpenLightning}
-                    className="p-2 rounded-xl text-cyan-400 hover:text-cyan-300 border border-cyan-500/10 bg-cyan-500/[0.03] transition-all cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.1)]"
+                    className="p-2 rounded-md text-cyan-400 hover:text-cyan-600 border border-transparent hover:border-cyan-200 transition-all cursor-pointer"
                     title="Agent Lightning"
                   >
                     <Zap size={13} fill="currentColor" strokeWidth={1.8} />
@@ -603,7 +603,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   }}
                   whileTap={{ scale: 0.94 }}
                   onClick={handlePrivacyToggle}
-                  className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                  className={`p-2 rounded-md border transition-all cursor-pointer ${
                     privacyMode
                       ? 'text-red-400 bg-red-500/10 border-red-500/20'
                       : 'text-muted-foreground hover:text-foreground border-transparent hover:border-border'
@@ -619,19 +619,19 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
                 {/* Scrapling Health Badge */}
                 <div
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-muted/40 border border-border text-[9px] font-extrabold uppercase tracking-wider text-muted-foreground select-none cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/40 border border-border text-[9px] font-extrabold uppercase tracking-wider text-muted-foreground select-none cursor-pointer"
                   title={`Scrapling Health: ${scraplingStatus === 'running' ? 'Running & Healthy' : scraplingStatus === 'restarting' ? 'Restarting...' : scraplingStatus === 'offline' ? 'Offline (using fallback)' : 'Checking Status...'}`}
                   onClick={() => toast.info(`Scrapling status is: ${scraplingStatus}`)}
                 >
                   <span
-                    className={`w-1.5 h-1.5 rounded-full ${
+                    className={`w-1.5 h-1.5 rounded-md ${
                       scraplingStatus === 'running'
-                        ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                        ? 'bg-emerald-400'
                         : scraplingStatus === 'restarting'
-                          ? 'bg-yellow-400 animate-pulse shadow-[0_0_6px_#facc15]'
+                          ? 'bg-yellow-400 animate-pulse'
                           : scraplingStatus === 'checking'
                             ? 'bg-muted-foreground/50'
-                            : 'bg-red-400 shadow-[0_0_6px_#f87171]'
+                            : 'bg-red-400'
                     }`}
                   />
                   Search
@@ -649,7 +649,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   }}
                   whileTap={{ scale: 0.94 }}
                   onClick={onClear}
-                  className="p-2 rounded-xl text-muted-foreground hover:text-destructive border border-transparent hover:border-border transition-all cursor-pointer"
+                  className="p-2 rounded-md text-muted-foreground hover:text-destructive border border-transparent hover:border-border transition-all cursor-pointer"
                   title="Clear chat"
                 >
                   <Trash2 size={13} strokeWidth={1.8} />
@@ -661,7 +661,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
                     whileTap={{ scale: 0.94 }}
                     onClick={() => setShowShortcuts(!showShortcuts)}
-                    className="p-2 rounded-xl text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer"
+                    className="p-2 rounded-md text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer"
                   >
                     <MoreHorizontal size={13} />
                   </motion.button>
@@ -672,7 +672,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
-                        className="absolute top-full right-0 mt-1 w-48 bg-popover border border-border rounded-xl shadow-2xl overflow-hidden z-50 p-2"
+                        className="absolute top-full right-0 mt-1 w-48 bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden z-50 p-2"
                       >
                         <div className="text-[10px] text-muted-foreground px-2 py-1 uppercase tracking-wider">
                           Shortcuts

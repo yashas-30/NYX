@@ -104,7 +104,7 @@ const ThinkingBlock: React.FC<{ steps: ThinkingStep[]; isStreaming?: boolean }> 
       <motion.div
         initial={{ opacity: 0, height: 0 }}
         animate={{ opacity: 1, height: 'auto' }}
-        className="bg-[#18181B] border border-[#2A2A2E] rounded-lg overflow-hidden"
+        className="bg-[#18181B] border border-[#2A2A2E] rounded-md overflow-hidden"
       >
         <button
           onClick={() => setExpanded(!expanded)}
@@ -115,7 +115,7 @@ const ThinkingBlock: React.FC<{ steps: ThinkingStep[]; isStreaming?: boolean }> 
             {isStreaming ? 'Thinking...' : 'Reasoning Process'}
           </span>
           {isStreaming && (
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse ml-1" />
+            <span className="w-1.5 h-1.5 rounded-md bg-amber-400 animate-pulse ml-1" />
           )}
           <span className="ml-auto">
             {expanded ? (
@@ -146,9 +146,9 @@ const ThinkingBlock: React.FC<{ steps: ThinkingStep[]; isStreaming?: boolean }> 
                 ))}
                 {isStreaming && (
                   <div className="flex gap-1 items-center h-3">
-                    <span className="w-1 h-1 bg-amber-400/50 rounded-full animate-pulse" />
-                    <span className="w-1 h-1 bg-amber-400/50 rounded-full animate-pulse delay-75" />
-                    <span className="w-1 h-1 bg-amber-400/50 rounded-full animate-pulse delay-150" />
+                    <span className="w-1 h-1 bg-amber-400/50 rounded-md animate-pulse" />
+                    <span className="w-1 h-1 bg-amber-400/50 rounded-md animate-pulse delay-75" />
+                    <span className="w-1 h-1 bg-amber-400/50 rounded-md animate-pulse delay-150" />
                   </div>
                 )}
               </div>
@@ -168,7 +168,7 @@ const ToolCallCard: React.FC<{ call: ToolCall }> = memo(({ call }) => {
     <motion.div
       initial={{ opacity: 0, x: -4 }}
       animate={{ opacity: 1, x: 0 }}
-      className="bg-[#1a1a1e] border border-blue-900/30 rounded-lg overflow-hidden"
+      className="bg-[#1a1a1e] border border-blue-900/30 rounded-md overflow-hidden"
     >
       <button
         onClick={() => setExpanded(!expanded)}
@@ -178,7 +178,7 @@ const ToolCallCard: React.FC<{ call: ToolCall }> = memo(({ call }) => {
         <span className="text-[11px] font-mono text-blue-400">{call.tool}</span>
         {call.status === 'running' && (
           <span className="ml-auto flex items-center gap-1 text-[10px] text-blue-400/70">
-            <span className="w-1 h-1 bg-blue-400 rounded-full animate-pulse" />
+            <span className="w-1 h-1 bg-blue-400 rounded-md animate-pulse" />
             Running
           </span>
         )}
@@ -238,7 +238,7 @@ const ArtifactCard: React.FC<{ artifact: Artifact }> = memo(({ artifact }) => {
   return (
     <motion.div
       whileHover={{ borderColor: 'rgba(59, 130, 246, 0.3)' }}
-      className="bg-[#18181B] border border-[#2A2A2E] hover:border-blue-500/30 cursor-pointer transition-all rounded-lg p-3 group"
+      className="bg-[#18181B] border border-[#2A2A2E] hover:border-blue-500/30 cursor-pointer transition-all rounded-md p-3 group"
     >
       <div className="flex items-center gap-2 mb-1">
         {icons[artifact.type] || icons.document}
@@ -264,7 +264,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language
   }, [code]);
 
   return (
-    <div className="relative group/code my-3 rounded-xl border border-[#2A2A2E] bg-[#0d1117] overflow-hidden">
+    <div className="relative group/code my-3 rounded-md border border-[#2A2A2E] bg-[#0d1117] overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 bg-[#161b22] border-b border-[#2A2A2E]">
         <span className="text-[10px] font-bold uppercase tracking-wider text-[#555]">
           {language}
@@ -327,7 +327,7 @@ const MarkdownRenderer: React.FC<{ content: string; isStreaming?: boolean }> = m
         ),
         h2: ({ children }: any) => (
           <h2 className="text-[14px] font-bold text-[#E0E0E0] mt-3 mb-2 flex items-center gap-2">
-            <span className="w-1 h-4 rounded-full bg-blue-500 inline-block" />
+            <span className="w-1 h-4 rounded-md bg-blue-500 inline-block" />
             {children}
           </h2>
         ),
@@ -460,15 +460,15 @@ const AssistantMessage: React.FC<{
       {!msg.content && isStreaming && msg.status === 'streaming' && (
         <div className="flex gap-1 items-center h-5">
           <span
-            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"
+            className="w-1.5 h-1.5 bg-blue-500 rounded-md animate-pulse"
             style={{ animationDelay: '0ms' }}
           />
           <span
-            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"
+            className="w-1.5 h-1.5 bg-blue-500 rounded-md animate-pulse"
             style={{ animationDelay: '150ms' }}
           />
           <span
-            className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"
+            className="w-1.5 h-1.5 bg-blue-500 rounded-md animate-pulse"
             style={{ animationDelay: '300ms' }}
           />
         </div>
@@ -609,7 +609,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
             <h2 className="font-semibold text-sm tracking-wide">Orchestrator</h2>
             {isProcessing && (
               <span className="flex items-center gap-1.5 text-[10px] text-blue-400/70 ml-2">
-                <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                <span className="w-1.5 h-1.5 bg-blue-400 rounded-md animate-pulse" />
                 Active
               </span>
             )}
@@ -656,7 +656,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                 >
                   {msg.role === 'user' ? (
                     <div className="max-w-[85%]">
-                      <div className="bg-[#2A2A2E] text-white px-4 py-3 rounded-2xl rounded-tr-sm shadow-sm text-[14px] leading-relaxed">
+                      <div className="bg-[#2A2A2E] text-white px-4 py-3 rounded-md rounded-tr-sm shadow-sm text-[14px] leading-relaxed">
                         {msg.content}
                       </div>
                       {msg.images && msg.images.length > 0 && (
@@ -664,7 +664,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                           {msg.images.map((img, i) => (
                             <div
                               key={i}
-                              className="w-20 h-20 rounded-lg bg-[#1a1a1e] border border-[#2A2A2E] overflow-hidden"
+                              className="w-20 h-20 rounded-md bg-[#1a1a1e] border border-[#2A2A2E] overflow-hidden"
                             >
                               <img
                                 src={img.url || `data:${img.mimeType};base64,${img.data}`}
@@ -698,11 +698,11 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
                 onClick={scrollToBottom}
-                className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-[#18181B] border border-[#2A2A2E] text-[#888] hover:text-white text-[10px] font-bold uppercase tracking-wider shadow-xl cursor-pointer"
+                className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-md bg-[#18181B] border border-[#2A2A2E] text-[#888] hover:text-white text-[10px] font-bold uppercase tracking-wider shadow-sm border border-border cursor-pointer"
               >
                 <span>Latest</span>
                 {isProcessing && (
-                  <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                  <span className="w-1.5 h-1.5 bg-blue-400 rounded-md animate-pulse" />
                 )}
               </motion.button>
             )}
@@ -755,7 +755,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                 <h4 className="text-[10px] uppercase text-[#666] font-bold tracking-wider">
                   Active Route
                 </h4>
-                <div className="bg-[#18181B] border border-[#2A2A2E] rounded-lg p-3 text-xs space-y-2">
+                <div className="bg-[#18181B] border border-[#2A2A2E] rounded-md p-3 text-xs space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="text-blue-400 font-medium text-[13px]">
                       {selectedModel.model.name}
@@ -783,7 +783,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                 <h4 className="text-[10px] uppercase text-[#666] font-bold tracking-wider">
                   Intent Analysis
                 </h4>
-                <div className="bg-[#18181B] border border-[#2A2A2E] rounded-lg p-3 text-xs space-y-2">
+                <div className="bg-[#18181B] border border-[#2A2A2E] rounded-md p-3 text-xs space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="text-[#888]">Intent</span>
                     <span className="text-emerald-400 font-medium">{analysis.intent}</span>
@@ -825,14 +825,14 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                 <h4 className="text-[10px] uppercase text-[#666] font-bold tracking-wider">
                   Usage
                 </h4>
-                <div className="bg-[#18181B] border border-[#2A2A2E] rounded-lg p-3">
+                <div className="bg-[#18181B] border border-[#2A2A2E] rounded-md p-3">
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-[#888]">Messages</span>
                     <span className="text-[#E0E0E0]">{messages.length}</span>
                   </div>
-                  <div className="w-full h-1 bg-[#2A2A2E] rounded-full overflow-hidden">
+                  <div className="w-full h-1 bg-[#2A2A2E] rounded-md overflow-hidden">
                     <div
-                      className="h-full bg-blue-500/50 rounded-full transition-all"
+                      className="h-full bg-blue-500/50 rounded-md transition-all"
                       style={{ width: `${Math.min((messages.length / 50) * 100, 100)}%` }}
                     />
                   </div>

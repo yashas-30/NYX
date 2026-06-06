@@ -45,7 +45,7 @@ export const ParamSlider: React.FC<{
       onChange={(e) =>
         onChange(isFloat ? parseFloat(e.target.value) : parseInt(e.target.value, 10))
       }
-      className={`w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/8 ${accent}`}
+      className={`w-full h-1.5 rounded-md appearance-none cursor-pointer bg-muted ${accent}`}
     />
   </div>
 );
@@ -62,10 +62,10 @@ export const ToolButton: React.FC<{
     type="button"
     onClick={onClick}
     title={title}
-    className={`p-1.5 rounded-lg border transition-all duration-200 ${
+    className={`p-1.5 rounded-md border transition-all duration-200 ${
       active
-        ? `${activeColor} border`
-        : 'text-muted-foreground/40 hover:text-foreground/70 hover:bg-muted/40 border-transparent'
+        ? `${activeColor} border-border bg-muted/20`
+        : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/40 border-transparent'
     }`}
   >
     {icon}

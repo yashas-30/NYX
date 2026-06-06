@@ -246,40 +246,77 @@ export class SearchService {
       score: number;
     }> = [];
 
-    try {
-      const scraplingPort = env.SCRAPLING_PORT || 3002;
-      logger.info('[Web Search] Calling Scrapling server...');
+    const scraplingPort = env.SCRAPLING_PORT || 3002;
+    logger.info('[Web Search] Calling Scrapling server...');
 
-      const response = await fetch(`http://127.0.0.1:${scraplingPort}/v1/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: query,
-          limit: 5,
-          engine: 'google',
-          type: 'text',
-          timeout: 30,
-        }),
-      });
+      try {
+        const response = await fetch(`http://127.0.0.1:${scraplingPort}/v1/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: query,
+            limit: 5,
+            engine: 'google',
+            type: 'text',
+            timeout: 30,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`Scrapling returned ${response.status}`);
+        if (!response.ok) throw new Error(`Scrapling returned ${response.status}`);
+        const data: any = await response.json();
+        const pythonResults = data.results || [];
+
+        results = pythonResults.map((r: any) => ({
+          title: r.title || '',
+          link: r.url || '',
+          snippet: r.markdown ? r.markdown.substring(0, 300) + '...' : '',
+          content: r.markdown || '',
+          score: r.rank ? 10 - r.rank : 0,
+        }));
+      } catch (scraplingError) {
+        logger.warn(`[Web Search] Scrapling failed, falling back to Cheerio DDG scraper: ${scraplingError}`);
+        
+        // User Agent Rotation
+        const uas = [
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0'
+        ];
+        const ua = uas[Math.floor(Math.random() * uas.length)];
+
+        // Native DuckDuckGo HTML Fallback using Cheerio
+        const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        const ddgResponse = await fetch(ddgUrl, {
+          headers: { 'User-Agent': ua, 'Accept-Language': 'en-US,en;q=0.9' }
+        });
+
+        if (ddgResponse.ok) {
+          const html = await ddgResponse.text();
+          if (html.includes('CaptchaRedirect') || html.includes('captcha-delivery')) {
+            logger.warn('[Web Search] DuckDuckGo CAPTCHA detected');
+            throw new Error('DuckDuckGo CAPTCHA detected');
+          }
+          const cheerio = await import('cheerio');
+          const $ = cheerio.load(html);
+          
+          $('.result').each((i, el) => {
+            if (i >= 5) return;
+            const title = $(el).find('.result__title').text().trim();
+            const snippet = $(el).find('.result__snippet').text().trim();
+            const link = $(el).find('.result__url').attr('href') || '';
+            const actualLink = link.startsWith('//') ? `https:${link}` : link;
+            if (title && actualLink) {
+              results.push({
+                title,
+                link: actualLink,
+                snippet,
+                content: snippet,
+                score: 5 - i,
+              });
+            }
+          });
+        }
       }
-
-      const data: any = await response.json();
-      const pythonResults = data.results || [];
-
-      results = pythonResults.map((r: any) => ({
-        title: r.title || '',
-        link: r.url || '',
-        snippet: r.markdown ? r.markdown.substring(0, 300) + '...' : '',
-        content: r.markdown || '',
-        score: r.rank ? 10 - r.rank : 0, // Invert rank to score
-      }));
-    } catch (e) {
-      logger.error(`[Web Search] Scrapling failed: ${e}`);
-      return [];
-    }
 
     // Process and summarize content
     for (let i = 0; i < results.length; i++) {

@@ -1,5 +1,27 @@
 import { ProviderAdapter, ChatRequest } from './base.adapter.js';
 
+export function geminiContentBuilder(messages: any[], images?: any[]) {
+  const contents = messages.map((m) => ({
+    role: m.role === 'assistant' ? 'model' : m.role,
+    parts: [{ text: m.content }] as any[],
+  }));
+
+  if (images && images.length > 0) {
+    const lastUserContent = contents.slice().reverse().find((c) => c.role === 'user');
+    if (lastUserContent) {
+      for (const img of images) {
+        lastUserContent.parts.push({
+          inlineData: {
+            mimeType: img.mimeType || 'image/png',
+            data: img.data || img.base64 || img.dataUrl?.split(',')[1] || '',
+          },
+        });
+      }
+    }
+  }
+  return contents;
+}
+
 export class GeminiAdapter implements ProviderAdapter {
   providerName = 'gemini';
 
@@ -26,11 +48,7 @@ export class GeminiAdapter implements ProviderAdapter {
     const model = request.model.replace('gemini/', '');
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-    // Normalize request (messages must be parts array)
-    const contents = request.messages.map((m) => ({
-      role: m.role === 'assistant' ? 'model' : m.role,
-      parts: [{ text: m.content }],
-    }));
+    const contents = geminiContentBuilder(request.messages, request.images);
 
     // fallow-ignore-next-line code-duplication
     const payload: any = {
@@ -39,6 +57,19 @@ export class GeminiAdapter implements ProviderAdapter {
         temperature: request.temperature ?? 0.7,
       },
     };
+
+    if (request.webSearch) {
+      payload.tools = [
+        {
+          googleSearchRetrieval: {
+            dynamicRetrievalConfig: {
+              mode: 'MODE_DYNAMIC',
+              dynamicThreshold: 0.7,
+            },
+          },
+        },
+      ];
+    }
 
     const res = await fetch(url, {
       method: 'POST',

@@ -57,11 +57,8 @@ Your purpose is to provide industrial-grade, production-ready code.
       return reply.code(400).send({ error: 'Model is required' });
     }
 
-    reply.header('Content-Type', 'text/event-stream');
-    reply.header('Cache-Control', 'no-cache');
-    reply.header('Connection', 'keep-alive');
-    reply.header('X-Accel-Buffering', 'no');
-    reply.raw.flushHeaders();
+    const { initFastifySse } = await import('../../lib/sseHelpers.js');
+    initFastifySse(reply);
     sendSseTokenRotate(reply.raw as any);
 
     try {
@@ -96,11 +93,8 @@ Your purpose is to provide industrial-grade, production-ready code.
       return reply.code(400).send({ error: 'Model is required' });
     }
 
-    reply.header('Content-Type', 'text/event-stream');
-    reply.header('Cache-Control', 'no-cache');
-    reply.header('Connection', 'keep-alive');
-    reply.header('X-Accel-Buffering', 'no');
-    reply.raw.flushHeaders();
+    const { initFastifySse } = await import('../../lib/sseHelpers.js');
+    initFastifySse(reply);
     sendSseTokenRotate(reply.raw as any);
 
     try {
@@ -124,8 +118,14 @@ Your purpose is to provide industrial-grade, production-ready code.
       );
     } catch (error: any) {
       logger.error(`[Agents Router Error - ${agentType}]:`, error.message);
-      reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
-      reply.raw.end();
+      if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+        try {
+          reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+          reply.raw.end();
+        } catch (writeErr) {
+          logger.error(`[Agents Router Error] Failed to write error to stream:`, writeErr);
+        }
+      }
     }
   }
 }

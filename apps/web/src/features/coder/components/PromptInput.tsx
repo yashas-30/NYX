@@ -27,6 +27,7 @@ import {
   Thermometer,
   Layers,
   RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 import { ModelSelector } from '@src/shared/components/ModelSelector';
 import { ModelDefinition } from '@src/infrastructure/types';
@@ -35,6 +36,7 @@ import { analyzePrompt, optimizePromptText } from '@nyx/shared';
 import { AgentModeBadge } from './AgentModeBadge';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { initVoiceMode } from '@src/features/voice/vad';
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 interface PromptInputProps {
@@ -66,6 +68,8 @@ interface PromptInputProps {
   alignDropdown?: 'top' | 'bottom';
   agentMode?: 'chat' | 'coder' | 'architect' | null;
   agentReasoning?: string;
+  missingDebugWarning?: { prompt: string } | null;
+  setMissingDebugWarning?: (warning: { prompt: string } | null) => void;
 }
 
 interface LocalInferenceSettings {
@@ -133,6 +137,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   alignDropdown = 'top',
   agentMode = null,
   agentReasoning = '',
+  missingDebugWarning,
+  setMissingDebugWarning,
 }) => {
   const { workspacePath } = useNyxStore();
   const [showModelSelector, setShowModelSelector] = useState(false);
@@ -144,6 +150,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const [isFocused, setIsFocused] = useState(false);
   const isSubmitting = useRef(false);
   const localSettings = modelSettings;
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const vadRef = useRef<any>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -179,6 +187,33 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       setShowSettings(false);
     }
   }, [currentModelId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleVoice = useCallback(async () => {
+    if (isVoiceActive) {
+      if (vadRef.current) {
+        vadRef.current.pause();
+        vadRef.current = null;
+      }
+      setIsVoiceActive(false);
+      toast.info('Voice input stopped');
+    } else {
+      setIsVoiceActive(true);
+      toast.success('Listening... Start speaking');
+      try {
+        const myvad = await initVoiceMode((audio) => {
+          toast.info('Processing speech...');
+          // Mock sending to backend for whisper:
+          // In real implementation, this would POST audio to backend whisper route
+          onPromptChange(prompt + (prompt ? ' ' : '') + '[Voice Input Captured]');
+        });
+        vadRef.current = myvad;
+        if (myvad) myvad.start();
+      } catch (err) {
+        toast.error('Failed to initialize microphone');
+        setIsVoiceActive(false);
+      }
+    }
+  }, [isVoiceActive, prompt, onPromptChange]);
 
   /* ── Close settings if user switches to a cloud model ───────────────── */
   useEffect(() => {
@@ -387,14 +422,14 @@ export const PromptInput: React.FC<PromptInputProps> = ({
               animate={{ opacity: 1, height: 'auto', y: 0 }}
               exit={{ opacity: 0, height: 0, y: 8 }}
               transition={{ type: 'spring', stiffness: 220, damping: 28 }}
-              className="mb-3 overflow-hidden rounded-2xl border border-primary/20 bg-zinc-900/90 backdrop-blur-xl shadow-2xl"
+              className="mb-3 overflow-hidden rounded-md border border-primary/20 bg-zinc-900/90 backdrop-blur-xl shadow-sm border border-border"
             >
               <div className="p-4">
                 <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-white/[0.05]">
                   <div className="flex items-center gap-2">
                     <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-md bg-primary/60 opacity-75" />
+                      <span className="relative inline-flex rounded-md h-2 w-2 bg-primary" />
                     </span>
                     <Bot className="w-3.5 h-3.5 text-primary" />
                     <span className="font-extrabold text-[10px] uppercase tracking-widest text-primary">
@@ -409,7 +444,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                       onPromptChange(optimizePromptText(prompt, promptAnalysis));
                       toast.success('Prompt optimized!');
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/45 text-[9px] font-black uppercase tracking-widest text-primary transition-all"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/45 text-[9px] font-black uppercase tracking-widest text-primary transition-all"
                   >
                     <Zap className="w-3 h-3 text-accent fill-accent animate-pulse" />
                     Auto-Optimize Spec
@@ -420,7 +455,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     {analysis.hardware.detectedPlatforms.map((p: string, i: number) => (
                       <span
                         key={i}
-                        className="px-2 py-0.5 rounded-full bg-cyan-500/8 border border-cyan-500/15 text-[8px] font-bold uppercase tracking-wider text-cyan-400"
+                        className="px-2 py-0.5 rounded-md bg-cyan-500/8 border border-cyan-500/15 text-[8px] font-bold uppercase tracking-wider text-cyan-400"
                       >
                         Host: {p}
                       </span>
@@ -428,7 +463,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     {analysis.hardware.detectedComponents.map((c: string, i: number) => (
                       <span
                         key={i}
-                        className="px-2 py-0.5 rounded-full bg-primary/5 border border-primary/15 text-[8px] font-bold uppercase tracking-wider text-primary"
+                        className="px-2 py-0.5 rounded-md bg-primary/5 border border-primary/15 text-[8px] font-bold uppercase tracking-wider text-primary"
                       >
                         Component: {c}
                       </span>
@@ -438,7 +473,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     {analysis.hardware.gaps.map((gap: string, i: number) => (
                       <div
                         key={i}
-                        className="flex items-start gap-2 text-[10px] text-yellow-200/90 bg-yellow-500/4 p-2 rounded-xl border border-yellow-500/10"
+                        className="flex items-start gap-2 text-[10px] text-yellow-200/90 bg-yellow-500/4 p-2 rounded-md border border-yellow-500/10"
                       >
                         <span className="shrink-0">⚠</span>
                         <span className="leading-relaxed">{gap}</span>
@@ -447,7 +482,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     {analysis.hardware.safetyHazards.map((h: string, i: number) => (
                       <div
                         key={i}
-                        className="flex items-start gap-2 text-[10px] text-red-200/90 bg-red-500/4 p-2 rounded-xl border border-red-500/10"
+                        className="flex items-start gap-2 text-[10px] text-red-200/90 bg-red-500/4 p-2 rounded-md border border-red-500/10"
                       >
                         <span className="shrink-0">!</span>
                         <span className="leading-relaxed">{h}</span>
@@ -499,12 +534,12 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 12, scale: 0.97 }}
                 transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-                className="absolute bottom-full mb-3 left-0 right-0 z-[500] bg-card border border-white/[0.04] p-1 rounded-3xl shadow-2xl overflow-hidden"
+                className="absolute bottom-full mb-3 left-0 right-0 z-[500] bg-card border border-white/[0.04] p-1 rounded-md shadow-sm border border-border overflow-hidden"
               >
                 <div className="w-full bg-card/98 border border-white/[0.04] rounded-[calc(1.5rem-4px)] overflow-hidden">
                   <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
                     <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center">
+                      <div className="w-7 h-7 rounded-md bg-accent/10 border border-accent/20 flex items-center justify-center">
                         <SlidersHorizontal size={13} className="text-accent" />
                       </div>
                       <div>
@@ -581,7 +616,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                           }
                         }}
                         title="Auto-adjust based on system specs"
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-emerald-400 hover:bg-emerald-500/8 border border-transparent hover:border-emerald-500/15 transition-all"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-emerald-400 hover:bg-emerald-500/8 border border-transparent hover:border-emerald-500/15 transition-all"
                       >
                         <Zap size={9} />
                         Analyze System
@@ -591,7 +626,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                         type="button"
                         onClick={resetLocalSettings}
                         title="Reset to defaults"
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-accent hover:bg-accent/8 border border-transparent hover:border-accent/15 transition-all"
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[8px] font-black uppercase tracking-wider text-muted-foreground/35 hover:text-accent hover:bg-accent/8 border border-transparent hover:border-accent/15 transition-all"
                       >
                         <RotateCcw size={9} />
                         Reset
@@ -600,7 +635,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                         whileTap={{ scale: 0.88 }}
                         type="button"
                         onClick={() => setShowSettings(false)}
-                        className="p-1.5 rounded-xl text-muted-foreground/30 hover:text-foreground/70 hover:bg-white/5 transition-all"
+                        className="p-1.5 rounded-md text-muted-foreground/30 hover:text-foreground/70 hover:bg-white/5 transition-all"
                       >
                         <Check size={13} />
                       </motion.button>
@@ -619,7 +654,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                             label="GPU / VRAM"
                             color="text-accent"
                           />
-                          <div className="mt-3 p-3.5 rounded-2xl bg-accent/[0.04] border border-accent/10 space-y-2.5">
+                          <div className="mt-3 p-3.5 rounded-md bg-accent/[0.04] border border-accent/10 space-y-2.5">
                             <div className="flex items-center justify-between">
                               <span className="text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wider">
                                 GPU Layers (ngl)
@@ -642,7 +677,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               step={1}
                               value={localSettings.gpuLayers}
                               onChange={(e) => updateLocal('gpuLayers', Number(e.target.value))}
-                              className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-accent bg-white/8"
+                              className="w-full h-1.5 rounded-md appearance-none cursor-pointer accent-accent bg-white/8"
                             />
                             <div className="flex justify-between">
                               <span className="text-[7px] text-muted-foreground/25">CPU Only</span>
@@ -793,7 +828,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                                     whileTap={{ scale: 0.9 }}
                                     type="button"
                                     onClick={() => updateLocal('mirostat', v)}
-                                    className={`flex-1 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-wider transition-all ${
+                                    className={`flex-1 py-1.5 rounded-md text-[8px] font-black uppercase tracking-wider transition-all ${
                                       localSettings.mirostat === v
                                         ? 'bg-accent/15 text-accent border border-accent/30'
                                         : 'bg-white/4 text-muted-foreground/35 border border-white/6 hover:bg-white/8 hover:text-muted-foreground/60'
@@ -862,7 +897,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           }}
         >
           {visibleTemplates.length > 0 && prompt.startsWith('/') && (
-            <div role="listbox" aria-label="Prompt templates" className="absolute bottom-[calc(100%+8px)] left-0 w-full md:w-3/4 max-h-60 overflow-y-auto bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 flex flex-col p-1.5 scrollbar-none">
+            <div role="listbox" aria-label="Prompt templates" className="absolute bottom-[calc(100%+8px)] left-0 w-full md:w-3/4 max-h-60 overflow-y-auto bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-md shadow-sm border border-border z-50 flex flex-col p-1.5 scrollbar-none">
               <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2">
                 <Layers size={14} className="text-zinc-400" />
                 <span className="text-xs font-bold text-zinc-300">Prompt Templates</span>
@@ -879,7 +914,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                       setTimeout(() => textareaRef.current?.focus(), 0);
                     }}
                     onMouseEnter={() => setTemplateSelectedIndex(idx)}
-                    className={`flex flex-col text-left px-3 py-2 rounded-xl transition-all ${
+                    className={`flex flex-col text-left px-3 py-2 rounded-md transition-all ${
                       idx === templateSelectedIndex
                         ? 'bg-white/10 text-white'
                         : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
@@ -895,7 +930,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
           {/* Outer capsule wrapper */}
           <div
-            className={`w-full flex flex-col bg-card/60 backdrop-blur-xl border rounded-[24px] p-1.5 shadow-2xl transition-all duration-300 ${
+            className={`w-full flex flex-col bg-card/60 backdrop-blur-xl border rounded-[24px] p-1.5 shadow-sm border border-border transition-all duration-300 ${
               isDragging
                 ? 'border-accent shadow-[0_0_24px_rgba(var(--accent-rgb),0.2)] bg-accent/5'
                 : 'border-border focus-within:border-border/80'
@@ -919,7 +954,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   onClick={() => {
                     onPromptChange('List active tasks and show current workspace status.');
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/[0.03] border border-emerald-500/10 hover:border-emerald-500/25 transition-all text-left text-zinc-300 hover:text-white cursor-pointer shrink-0"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/[0.03] border border-emerald-500/10 hover:border-emerald-500/25 transition-all text-left text-zinc-300 hover:text-white cursor-pointer shrink-0"
                 >
                   <span className="w-3.5 h-3.5 rounded bg-emerald-500/15 flex items-center justify-center text-[9px] font-black text-emerald-400 leading-none font-mono">
                     /
@@ -942,7 +977,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                       toast.error('Type a prompt first to optimize it');
                     }
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/[0.03] border border-cyan-500/10 hover:border-cyan-500/25 transition-all text-left text-zinc-300 hover:text-white cursor-pointer shrink-0"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan-500/[0.03] border border-cyan-500/10 hover:border-cyan-500/25 transition-all text-left text-zinc-300 hover:text-white cursor-pointer shrink-0"
                 >
                   <span className="w-3.5 h-3.5 rounded bg-cyan-500/15 flex items-center justify-center text-[9px] font-black text-cyan-400 leading-none font-mono">
                     /
@@ -963,7 +998,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                       `Codebase knowledge ${!codebaseKnowledgeEnabled ? 'enabled' : 'disabled'}`
                     );
                   }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all text-left cursor-pointer shrink-0 ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all text-left cursor-pointer shrink-0 ${
                     codebaseKnowledgeEnabled
                       ? 'bg-purple-500/10 border border-purple-500/35 text-white'
                       : 'bg-purple-500/[0.03] border border-purple-500/10 text-zinc-300 hover:text-white hover:border-purple-500/25'
@@ -992,7 +1027,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     onWebSearchToggle(!webSearchEnabled);
                     toast.success(`Web search ${!webSearchEnabled ? 'enabled' : 'disabled'}`);
                   }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all text-left cursor-pointer shrink-0 ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all text-left cursor-pointer shrink-0 ${
                     webSearchEnabled
                       ? 'bg-sky-500/10 border border-sky-500/35 text-white'
                       : 'bg-sky-500/[0.03] border border-sky-500/10 text-zinc-300 hover:text-white hover:border-sky-500/25'
@@ -1022,7 +1057,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     onPromptChange('');
                     toast.success('Context reset');
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/[0.03] border border-amber-500/10 hover:border-amber-500/25 transition-all text-left text-zinc-300 hover:text-white cursor-pointer shrink-0"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/[0.03] border border-amber-500/10 hover:border-amber-500/25 transition-all text-left text-zinc-300 hover:text-white cursor-pointer shrink-0"
                 >
                   <span className="w-3.5 h-3.5 rounded bg-amber-500/15 flex items-center justify-center text-[9px] font-black text-amber-400 leading-none font-mono">
                     /
@@ -1046,7 +1081,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     initial={{ opacity: 0, y: 10, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                    className="absolute bottom-full left-0 mb-2 w-64 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col"
+                    className="absolute bottom-full left-0 mb-2 w-64 bg-zinc-900 border border-white/10 rounded-md shadow-sm border border-border overflow-hidden z-50 flex flex-col"
                   >
                     <div className="px-3 py-2 border-b border-white/5 bg-white/5">
                       <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
@@ -1105,6 +1140,50 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 </div>
               )}
 
+              {/* Missing Debug Details UI */}
+              {missingDebugWarning && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                  exit={{ opacity: 0, height: 0, scale: 0.95 }}
+                  className="flex flex-col gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-md mt-1 mb-2 overflow-hidden"
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs text-red-200 font-medium">Missing Debug Details</p>
+                      <p className="text-[11px] text-red-300/80 mt-0.5">
+                        Please provide your code, terminal output, or error logs to help me debug effectively.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setMissingDebugWarning?.(null)}
+                      className="px-3 py-1.5 bg-background/50 hover:bg-background border border-white/5 text-zinc-300 text-[10px] uppercase font-bold tracking-wider rounded-md transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent('nyx-force-continue', {
+                            detail: { prompt: missingDebugWarning.prompt },
+                          })
+                        );
+                        setMissingDebugWarning?.(null);
+                      }}
+                      className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 text-[10px] uppercase font-bold tracking-wider rounded-md transition-colors flex items-center gap-1.5"
+                    >
+                      <Zap size={10} />
+                      Force Continue
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
               {/* Attached Images */}
               {attachedImages.length > 0 && (
                 <div className="flex flex-wrap gap-2 px-2 pb-1">
@@ -1120,12 +1199,12 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                         <img 
                           src={img.preview} 
                           alt={img.file.name} 
-                          className="w-12 h-12 object-cover rounded-lg border border-border"
+                          className="w-12 h-12 object-cover rounded-md border border-border"
                         />
                         <button
                           type="button"
                           onClick={() => setAttachedImages(prev => prev.filter((_, i) => i !== idx))}
-                          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-background border border-border rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/5 text-zinc-400 hover:text-white"
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-background border border-border rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/5 text-zinc-400 hover:text-white"
                         >
                           <X className="w-2.5 h-2.5" />
                         </button>
@@ -1138,20 +1217,21 @@ export const PromptInput: React.FC<PromptInputProps> = ({
               {/* Microphone dictation button - absolute top right */}
               <div className="absolute top-3 right-3 flex items-center gap-1.5 group/mic z-10 select-none">
                 <div className="flex items-center gap-[1.5px] h-2.5 opacity-0 group-hover/mic:opacity-100 transition-opacity duration-300 pointer-events-none">
-                  <span className="w-[1.5px] h-full bg-emerald-400 rounded-full animate-[bounce_0.6s_infinite_100ms]" />
-                  <span className="w-[1.5px] h-full bg-emerald-400 rounded-full animate-[bounce_0.6s_infinite_300ms]" />
-                  <span className="w-[1.5px] h-full bg-emerald-400 rounded-full animate-[bounce_0.6s_infinite_200ms]" />
+                  <span className="w-[1.5px] h-full bg-emerald-400 rounded-md animate-[bounce_0.6s_infinite_100ms]" />
+                  <span className="w-[1.5px] h-full bg-emerald-400 rounded-md animate-[bounce_0.6s_infinite_300ms]" />
+                  <span className="w-[1.5px] h-full bg-emerald-400 rounded-md animate-[bounce_0.6s_infinite_200ms]" />
                 </div>
 
                 <motion.button
                   whileHover={{ scale: 1.08, color: '#FFFFFF' }}
                   whileTap={{ scale: 0.9 }}
                   type="button"
-                  className="text-zinc-500 hover:text-zinc-300 transition-all cursor-pointer p-1"
-                  title="Voice Input"
+                  onClick={toggleVoice}
+                  className={`transition-all cursor-pointer p-1 ${isVoiceActive ? 'text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title={isVoiceActive ? "Stop Voice Input" : "Voice Input"}
                   aria-label="Voice Input"
                 >
-                  <Mic size={14} />
+                  <Mic size={14} className={isVoiceActive ? 'animate-pulse' : ''} />
                 </motion.button>
               </div>
 
@@ -1182,7 +1262,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     type="button"
                     onClick={onStop}
                     aria-label="Stop generation"
-                    className="h-7 px-3 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center gap-1 border border-red-500/20 text-[9px] font-black tracking-widest uppercase transition-all cursor-pointer"
+                    className="h-7 px-3 rounded-md bg-red-500/10 text-red-400 flex items-center justify-center gap-1 border border-red-500/20 text-[9px] font-black tracking-widest uppercase transition-all cursor-pointer"
                   >
                     <StopCircle className="w-3 h-3 animate-pulse" />
                     Stop
@@ -1197,7 +1277,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     type="submit"
                     disabled={!canSubmit}
                     aria-label="Send prompt"
-                    className={`h-7 w-7 rounded-full flex items-center justify-center transition-all border cursor-pointer ${
+                    className={`h-7 w-7 rounded-md flex items-center justify-center transition-all border cursor-pointer ${
                       canSubmit
                         ? 'bg-accent text-white border-accent font-bold'
                         : 'bg-white/5 border-transparent text-zinc-700 cursor-not-allowed'
@@ -1219,7 +1299,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     setShowModelSelector((v) => !v);
                     setShowSettings(false);
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/5 text-[10px] font-bold text-zinc-300 transition-all select-none cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.03] border border-white/5 text-[10px] font-bold text-zinc-300 transition-all select-none cursor-pointer"
                 >
                   {currentModel ? (
                     getCustomModelIcon(currentModel)
@@ -1243,7 +1323,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                       setShowSettings((v) => !v);
                       setShowModelSelector(false);
                     }}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
                       showSettings
                         ? 'bg-accent/10 text-accent border border-accent/30'
                         : 'bg-secondary/30 border border-border text-zinc-400 hover:text-white'
@@ -1335,7 +1415,7 @@ const ParamSlider: React.FC<{
       onChange={(e) =>
         onChange(isFloat ? parseFloat(e.target.value) : parseInt(e.target.value, 10))
       }
-      className={`w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/8 ${accent}`}
+      className={`w-full h-1.5 rounded-md appearance-none cursor-pointer bg-white/8 ${accent}`}
     />
   </div>
 );
@@ -1353,7 +1433,7 @@ const ToolButton: React.FC<{
     type="button"
     onClick={onClick}
     title={title}
-    className={`p-1.5 rounded-lg border transition-all duration-200 ${
+    className={`p-1.5 rounded-md border transition-all duration-200 ${
       active
         ? `${activeColor} border`
         : 'text-muted-foreground/40 hover:text-foreground/70 hover:bg-muted/40 border-transparent'

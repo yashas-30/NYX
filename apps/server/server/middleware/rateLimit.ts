@@ -47,3 +47,22 @@ export function providerRateLimiter(provider: string) {
     store.timestamps.push(now);
   };
 }
+
+import { RateLimiterMemory } from 'rate-limiter-flexible';
+
+const searchLimiter = new RateLimiterMemory({
+  points: 10, // 10 searches
+  duration: 60, // per 60 seconds
+});
+
+export const searchRateLimiter = async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const ip = request.ip || 'anonymous';
+    await searchLimiter.consume(ip);
+  } catch (rateLimiterRes: any) {
+    logger.warn(`Rate limit exceeded for search by IP ${request.ip}`);
+    reply.header('Retry-After', String(Math.ceil(rateLimiterRes.msBeforeNext / 1000)));
+    reply.code(429).send({ error: 'Rate limit exceeded. Maximum 10 searches per minute.' });
+    return reply;
+  }
+};

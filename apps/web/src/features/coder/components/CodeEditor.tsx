@@ -25,8 +25,9 @@ import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
-import { X, Play } from 'lucide-react';
+import { X, Play, Monitor } from 'lucide-react';
 import { useIdeStore } from '../store/useIdeStore';
+import { initCollaboration } from '../collaboration/yjs';
 
 export const CodeEditor: React.FC = () => {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -34,6 +35,18 @@ export const CodeEditor: React.FC = () => {
   const { openFiles, activeFilePath, closeFile, setActiveFile, updateFileContent } = useIdeStore();
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath);
+
+  useEffect(() => {
+    try {
+      const collab = initCollaboration('nyx-global-room');
+      return () => {
+        collab.provider.destroy();
+        collab.ydoc.destroy();
+      };
+    } catch (err) {
+      console.error('Failed to initialize yjs collaboration:', err);
+    }
+  }, []);
 
   useEffect(() => {
     if (!editorRef.current || !activeFile) return;
@@ -98,7 +111,7 @@ export const CodeEditor: React.FC = () => {
 
   if (!activeFilePath || !activeFile) {
     return (
-      <div className="flex-1 bg-background flex flex-col items-center justify-center text-zinc-500">
+      <div className="flex-1 bg-background flex flex-col items-center justify-center text-muted-foreground">
         <Monitor size={48} className="mb-4 opacity-20" />
         <p className="text-sm">Select a file from the explorer to edit</p>
       </div>
@@ -107,24 +120,24 @@ export const CodeEditor: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[#282c34]">
-      <div className="flex h-10 bg-card border-b border-white/5 overflow-x-auto custom-scrollbar">
+      <div className="flex h-10 bg-card border-b border-border overflow-x-auto custom-scrollbar">
         {openFiles.map((file) => (
           <div
             key={file.path}
             onClick={() => setActiveFile(file.path)}
-            className={`flex items-center gap-2 px-4 py-2 border-r border-white/5 cursor-pointer min-w-max transition-colors
-              ${activeFilePath === file.path ? 'bg-[#282c34] text-white border-t-2 border-t-cyan-400' : 'bg-card text-zinc-400 hover:bg-white/5'}`}
+            className={`flex items-center gap-2 px-4 py-2 border-r border-border cursor-pointer min-w-max transition-colors
+              ${activeFilePath === file.path ? 'bg-[#282c34] text-white' : 'bg-card text-muted-foreground hover:bg-muted/40'}`}
           >
             <span className="text-xs truncate max-w-[200px]">
               {file.path.split(/[/\\]/).pop()}
-              {file.isDirty && <span className="ml-1 text-cyan-400">*</span>}
+              {file.isDirty && <span className="ml-1 text-foreground">*</span>}
             </span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 closeFile(file.path);
               }}
-              className="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-white"
+              className="p-0.5 rounded hover:bg-muted/40 text-muted-foreground hover:text-foreground"
             >
               <X size={12} />
             </button>
@@ -141,5 +154,3 @@ export const CodeEditor: React.FC = () => {
   );
 };
 
-// Temp mock for Monitor icon (imported above in final version, or just removed)
-import { Monitor } from 'lucide-react';

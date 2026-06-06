@@ -9,6 +9,8 @@ export interface ChatRequest {
   temperature?: number;
   max_tokens?: number;
   stream?: boolean;
+  images?: Array<{ mimeType?: string; dataUrl?: string; data?: string; base64?: string }>;
+  webSearch?: boolean;
 }
 
 export interface ProviderAdapter {

@@ -251,9 +251,8 @@ export const ModelSelector: React.FC<Props> = ({
           scale: 1,
           y: 0,
           transition: {
-            type: 'spring',
-            stiffness: 420,
-            damping: 30,
+            duration: 0.2,
+            ease: [0.23, 1, 0.32, 1],
           },
         }}
         exit={{
@@ -261,21 +260,21 @@ export const ModelSelector: React.FC<Props> = ({
           scale: 0.95,
           y: exitY,
           transition: {
-            duration: 0.18,
+            duration: 0.15,
             ease: [0.23, 1, 0.32, 1],
           },
         }}
         style={{ transformOrigin }}
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-[300px] bg-[#262626]/98 border border-white/[0.06] rounded-3xl shadow-[0_35px_80px_rgba(0,0,0,0.65)] overflow-hidden flex flex-col max-h-[35vh] backdrop-blur-3xl cursor-default"
+        className="relative w-full max-w-[300px] bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col max-h-[35vh] cursor-default"
       >
-        {/* Top Edge Highlight for premium visual depth */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        {/* Top Edge Highlight */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-foreground/5 to-transparent" />
         {/* Main Content Split Area */}
         <div className="flex flex-1 min-h-0 gap-1.5 p-1.5 overflow-hidden">
           {/* Left Box: Providers (Gateways) */}
-          <div className="w-[85px] shrink-0 bg-[#161616]/60 border border-white/[0.06] rounded-2xl flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar shadow-inner">
-            <span className="px-1 py-0.5 text-[6.5px] font-black uppercase tracking-[0.2em] text-zinc-500">
+          <div className="w-[85px] shrink-0 bg-muted/30 border border-border rounded-md flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar">
+            <span className="px-1 py-0.5 text-[6.5px] font-black uppercase tracking-[0.2em] text-muted-foreground">
               Gateways
             </span>
             {sortedProviders.map((provider) => {
@@ -292,13 +291,13 @@ export const ModelSelector: React.FC<Props> = ({
                     onSearchChange('');
                   }}
                   className={`
-                    w-full flex items-center justify-between px-1.5 py-1 rounded-lg transition-all duration-300 group cursor-pointer border
+                    w-full flex items-center justify-between px-1.5 py-1 rounded-md transition-all duration-300 group cursor-pointer border
                     ${
                       isActive
                         ? status === 'no-key'
-                          ? 'bg-zinc-500/10 border-zinc-500/20 text-zinc-300 font-bold'
-                          : 'bg-white/[0.08] border-white/10 text-white font-bold shadow-sm'
-                        : 'hover:bg-white/5 border-transparent text-zinc-400 hover:text-zinc-200'
+                          ? 'bg-muted border-border text-muted-foreground font-bold'
+                          : 'bg-primary/5 border-primary/10 text-primary font-bold'
+                        : 'hover:bg-muted/50 border-transparent text-muted-foreground hover:text-foreground'
                     }
                   `}
                 >
@@ -310,7 +309,7 @@ export const ModelSelector: React.FC<Props> = ({
                   {providerStatuses && (
                     <div className="relative flex items-center shrink-0 ml-1">
                       <div
-                        className={`w-1.5 h-1.5 rounded-full ${
+                        className={`w-1.5 h-1.5 rounded-md ${
                           status === 'online'
                             ? 'bg-emerald-400 animate-pulse'
                             : status === 'no-key'
@@ -326,13 +325,13 @@ export const ModelSelector: React.FC<Props> = ({
           </div>
 
           {/* Right Box: Models Grid */}
-          <div className="flex-1 bg-[#161616]/60 border border-white/[0.06] rounded-2xl overflow-hidden flex flex-col shadow-inner">
+          <div className="flex-1 bg-muted/10 border border-border rounded-md overflow-hidden flex flex-col">
             {/* Context Sub-header */}
-            <div className="p-1.5 px-2 border-b border-white/[0.04] flex items-center justify-between bg-white/[0.02]">
-              <span className="text-[7px] font-black uppercase tracking-[0.2em] text-zinc-500">
+            <div className="p-1.5 px-2 border-b border-border flex items-center justify-between bg-muted/20">
+              <span className="text-[7px] font-black uppercase tracking-[0.2em] text-muted-foreground">
                 Units
               </span>
-              <div className="px-1.5 py-0.5 rounded-full bg-white/[0.08] border border-white/10 text-[7px] font-mono font-black text-white">
+              <div className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-[7px] font-mono font-black text-foreground">
                 {filteredModels.length.toString().padStart(2, '0')}
               </div>
             </div>
@@ -341,7 +340,7 @@ export const ModelSelector: React.FC<Props> = ({
             <div ref={parentRef} className="flex-1 overflow-y-auto p-2 custom-scrollbar">
               {selectedProvider === 'nyx-native' && filteredModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-zinc-400 text-center p-3 py-6 space-y-3">
-                  <div className="w-10 h-10 rounded-2xl bg-[#FF3366]/10 flex items-center justify-center border border-[#FF3366]/20 shadow-inner">
+                  <div className="w-10 h-10 rounded-md bg-[#FF3366]/10 flex items-center justify-center border border-[#FF3366]/20 shadow-inner">
                     <Cpu className="w-5 h-5 text-[#FF3366] animate-pulse" />
                   </div>
                   <div className="space-y-1">
@@ -360,14 +359,14 @@ export const ModelSelector: React.FC<Props> = ({
                         (window as any).nyxSwitchActiveMode('registry');
                       }
                     }}
-                    className="px-3 py-1.5 rounded-full bg-[#FF3366] text-black text-[8px] font-black uppercase tracking-wider shadow-md hover:bg-[#FF3366]/90 transition-all cursor-pointer"
+                    className="px-3 py-1.5 rounded-md bg-[#FF3366] text-black text-[8px] font-black uppercase tracking-wider shadow-sm hover:bg-[#FF3366]/90 transition-all cursor-pointer"
                   >
                     Go to Registry
                   </motion.button>
                 </div>
               ) : filteredModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-zinc-500 text-center space-y-2 py-6">
-                  <div className="w-8 h-8 rounded-2xl bg-white/5 flex items-center justify-center border border-dashed border-white/10">
+                  <div className="w-8 h-8 rounded-md bg-white/5 flex items-center justify-center border border-dashed border-white/10">
                     <Bot className="w-4 h-4 opacity-25" />
                   </div>
                   <p className="text-[8px] font-black uppercase tracking-widest opacity-35">
@@ -408,13 +407,13 @@ export const ModelSelector: React.FC<Props> = ({
                             onSelect((model as any).realId || model.id);
                           }}
                           className={`
-                            flex items-center justify-between gap-1.5 p-1.5 rounded-lg transition-all duration-300 border text-left group relative overflow-hidden cursor-pointer h-full
+                            flex items-center justify-between gap-1.5 p-1.5 rounded-md transition-all duration-300 border text-left group relative overflow-hidden cursor-pointer h-full
                             ${
                               isSelected
                                 ? isNoKey
-                                  ? 'bg-zinc-500/10 border-zinc-500/20 shadow-sm'
-                                  : 'bg-white/[0.08] border-white/10 shadow-sm'
-                                : 'bg-[#1c1c1c] border-white/[0.04] hover:bg-[#2d2d2d] hover:border-white/10'
+                                  ? 'bg-muted border-border'
+                                  : 'bg-primary/5 border-primary/10'
+                                : 'bg-transparent border-transparent hover:bg-muted/40 hover:border-border'
                             }
                           `}
                         >
@@ -459,7 +458,7 @@ export const ModelSelector: React.FC<Props> = ({
 
                           {isSelected && (
                             <div
-                              className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 shadow-md ${isNoKey ? 'bg-zinc-600' : 'bg-white border border-white/10'}`}
+                              className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ${isNoKey ? 'bg-zinc-600' : 'bg-white border border-white/10'}`}
                             >
                               <Check
                                 className={`w-2 h-2 ${isNoKey ? 'text-white' : 'text-black'}`}
@@ -477,19 +476,19 @@ export const ModelSelector: React.FC<Props> = ({
         </div>
 
         {/* Execution Mode Selector */}
-        <div className="p-1.5 border-t border-white/[0.04] flex items-center gap-1 bg-[#161616]/40">
-          <span className="px-1 text-[7px] font-black uppercase tracking-[0.2em] text-zinc-500 shrink-0 w-[80px]">
+        <div className="p-1.5 border-t border-border flex items-center gap-1 bg-muted/20">
+          <span className="px-1 text-[7px] font-black uppercase tracking-[0.2em] text-muted-foreground shrink-0 w-[80px]">
             Execution
           </span>
-          <div className="flex-1 flex gap-1 bg-black/40 p-0.5 rounded-xl border border-white/[0.06] shadow-inner">
+          <div className="flex-1 flex gap-1 bg-background p-0.5 rounded-md border border-border">
             {(['standard', 'parallel', 'ensemble', 'ab-test'] as ExecutionMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setExecutionMode(mode)}
-                className={`flex-1 py-1 rounded-lg text-[7px] font-black uppercase tracking-wider transition-all ${
+                className={`flex-1 py-1 rounded-md text-[7px] font-black uppercase tracking-wider transition-all ${
                   executionMode === mode
-                    ? 'bg-white/[0.08] text-white shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 }`}
               >
                 {mode.replace('-', ' ')}

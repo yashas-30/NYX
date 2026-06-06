@@ -10,7 +10,7 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
   if (!isOpen) return null;
 
   return (
-    <div className="absolute top-0 right-0 w-80 h-full bg-[#09090B] border-l border-[rgba(255,255,255,0.06)] shadow-2xl z-40 flex flex-col transform transition-transform duration-300">
+    <div className="absolute top-0 right-0 w-80 h-full bg-[#09090B] border-l border-[rgba(255,255,255,0.06)] shadow-sm border border-border z-40 flex flex-col transform transition-transform duration-300">
       <div className="flex items-center justify-between p-4 border-b border-[rgba(255,255,255,0.06)] bg-[#0e1416]">
         <div className="flex items-center gap-2 text-[#F8FAFC]">
           <Settings2 className="w-5 h-5 text-[#FF3366]" />
@@ -40,7 +40,7 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
             max="1"
             step="0.1"
             defaultValue="0.7"
-            className="w-full accent-[#FF3366] h-1 bg-[#18181B] rounded-lg appearance-none cursor-pointer"
+            className="w-full accent-[#FF3366] h-1 bg-[#18181B] rounded-md appearance-none cursor-pointer"
           />
           <p className="text-[11px] text-[#4A5059] leading-relaxed">
             Controls randomness: Lower values are more deterministic, higher values are more

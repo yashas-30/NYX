@@ -139,7 +139,7 @@ export default defineConfig(({ mode }) => {
       },
       port: 3000,
       strictPort: true,
-      proxy: {
+      proxy: process.env.FASTIFY_VITE_EMBEDDED ? undefined : {
         // Forward all /api/* requests to Express backend (default dev port 3010)
         '/api': {
           target: 'http://127.0.0.1:3010',

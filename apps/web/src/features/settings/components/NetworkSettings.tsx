@@ -6,7 +6,7 @@ export const NetworkSettings: React.FC = () => {
   const [useSocks, setUseSocks] = useState(false);
 
   return (
-    <div className="bg-card border border-border rounded-3xl p-6 shadow-sm mb-4">
+    <div className="bg-card border border-border rounded-md p-6 shadow-sm mb-4">
       <div className="flex items-center gap-2 mb-4">
         <Globe size={16} className="text-accent" />
         <h3 className="text-sm font-bold text-foreground uppercase tracking-widest">
@@ -23,7 +23,7 @@ export const NetworkSettings: React.FC = () => {
           <input
             type="text"
             placeholder="e.g. http://proxy.corp.internal:8080"
-            className="bg-background border border-border rounded-xl px-4 py-2 text-xs text-foreground focus:outline-none focus:border-accent/50"
+            className="bg-background border border-border rounded-md px-4 py-2 text-xs text-foreground focus:outline-none focus:border-accent/50"
             value={proxy}
             onChange={(e) => setProxy(e.target.value)}
           />
@@ -39,7 +39,7 @@ export const NetworkSettings: React.FC = () => {
           <span className="text-xs text-foreground">Use SOCKS5 instead of HTTP</span>
         </label>
 
-        <button className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-accent/90 transition-all">
+        <button className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-md text-xs font-bold uppercase tracking-wider hover:bg-accent/90 transition-all">
           <Save size={14} />
           Save Proxy
         </button>

@@ -10,6 +10,7 @@ import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { useChatPipeline } from './useChatPipeline';
 import { cancelRequest, cancelAllRequests } from '@src/core/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
+import { getSessionToken } from '@src/infrastructure/api/authFetch';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -270,7 +271,8 @@ export const useChatLogic = ({
 
     const connect = () => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws/session-sync?sessionId=${chatSessions.activeSid}`;
+      const token = getSessionToken();
+      const wsUrl = `${protocol}//${window.location.host}/ws/session-sync?sessionId=${chatSessions.activeSid}&token=${token || ''}`;
 
       ws = new WebSocket(wsUrl);
 

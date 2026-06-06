@@ -24,6 +24,7 @@ import {
   GitBranch,
 } from 'lucide-react';
 import { ChatMessage, SubagentTask } from '@src/infrastructure/types';
+import { AGUIMessage } from '@src/core/types/ag-ui';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -139,7 +140,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
 
   return (
     /* Premium flat carbon card style */
-    <div className="relative group/code my-4 p-[1px] bg-white/[0.03] border border-white/[0.04] rounded-2xl shadow-xl text-left">
+    <div className="relative group/code my-4 p-[1px] bg-white/[0.03] border border-white/[0.04] rounded-md shadow-sm border border-border text-left">
       <div className="rounded-[calc(1rem-1px)] overflow-hidden bg-[#111622] border border-white/[0.03]">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-[#4A5059] border-b border-white/[0.03]">
@@ -160,7 +161,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
                 whileTap={{ scale: 0.95 }}
                 onClick={handleRunCommand}
                 disabled={isRunning}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 transition-all text-[8px] font-black uppercase tracking-widest disabled:opacity-50 shadow-sm cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 transition-all text-[8px] font-black uppercase tracking-widest disabled:opacity-50 shadow-sm cursor-pointer"
               >
                 <Play size={9} />
                 <span>{isRunning ? 'Running' : 'Run'}</span>
@@ -175,7 +176,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
                 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowApplyPanel(!showApplyPanel)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] hover:text-white transition-all text-[8px] font-black uppercase tracking-widest shadow-sm cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] hover:text-white transition-all text-[8px] font-black uppercase tracking-widest shadow-sm cursor-pointer"
               >
                 <Save size={9} />
                 <span>Apply</span>
@@ -189,7 +190,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
               }}
               whileTap={{ scale: 0.95 }}
               onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/4 border border-white/5 text-muted-foreground/50 hover:text-foreground transition-all text-[8px] font-black uppercase tracking-widest shadow-sm cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white/4 border border-white/5 text-muted-foreground/50 hover:text-foreground transition-all text-[8px] font-black uppercase tracking-widest shadow-sm cursor-pointer"
             >
               {copied ? (
                 <>
@@ -227,18 +228,18 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
                   value={filePath}
                   onChange={(e) => setFilePath(e.target.value)}
                   placeholder="e.g., src/components/Button.tsx"
-                  className="flex-1 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/5 text-xs text-foreground placeholder-muted-foreground/30 focus:outline-none focus:border-[#FF3366]/50 transition-colors font-mono"
+                  className="flex-1 px-3 py-2 rounded-md bg-white/[0.02] border border-white/5 text-xs text-foreground placeholder-muted-foreground/30 focus:outline-none focus:border-[#FF3366]/50 transition-colors font-mono"
                 />
                 <button
                   onClick={handleApplyFile}
                   disabled={applyStatus === 'writing'}
-                  className="px-4 py-2 rounded-xl bg-[#FF3366] text-[#0B0E14] font-bold text-[10px] uppercase tracking-wider transition-colors hover:opacity-95 disabled:opacity-50 shrink-0 cursor-pointer shadow-[0_0_12px_rgba(255, 51, 102,0.2)]"
+                  className="px-4 py-2 rounded-md bg-[#FF3366] text-[#0B0E14] font-bold text-[10px] uppercase tracking-wider transition-colors hover:opacity-95 disabled:opacity-50 shrink-0 cursor-pointer shadow-[0_0_12px_rgba(255, 51, 102,0.2)]"
                 >
                   {applyStatus === 'writing' ? 'Writing...' : 'Write File'}
                 </button>
                 <button
                   onClick={() => setShowApplyPanel(false)}
-                  className="p-2 rounded-xl hover:bg-white/5 text-muted-foreground transition-colors shrink-0 cursor-pointer"
+                  className="p-2 rounded-md hover:bg-white/5 text-muted-foreground transition-colors shrink-0 cursor-pointer"
                 >
                   <X size={14} />
                 </button>
@@ -304,7 +305,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
 
 // Interface definition
 interface MessageListProps {
-  history: ChatMessage[];
+  history: (ChatMessage | AGUIMessage)[];
   activeAgent: 'nyx';
   isLoading: boolean;
   onCopy: (text: string, id: string) => void;
@@ -360,7 +361,7 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
 
             if (match && match[1] === 'think') {
               return (
-                <div className="my-3 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-400 italic text-sm shadow-inner">
+                <div className="my-3 p-4 bg-zinc-900/50 border border-zinc-800 rounded-md text-zinc-400 italic text-sm shadow-inner">
                   <div className="flex items-center gap-2 mb-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
                     ✨ NYX Reasoning
                   </div>
@@ -393,7 +394,7 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
           ),
           h2: ({ children }) => (
             <h2 className="text-[13px] font-black tracking-tight text-foreground mt-4 mb-2 flex items-center gap-2">
-              <span className="w-1 h-4 rounded-full bg-[#FF3366] inline-block shrink-0" />
+              <span className="w-1 h-4 rounded-md bg-[#FF3366] inline-block shrink-0" />
               {children}
             </h2>
           ),
@@ -432,7 +433,7 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
             <div className="my-4 h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
           ),
           table: ({ children }) => (
-            <div className="my-3 overflow-x-auto rounded-xl border border-white/8">
+            <div className="my-3 overflow-x-auto rounded-md border border-white/8">
               <table className="w-full text-[11px]">{children}</table>
             </div>
           ),
@@ -487,7 +488,7 @@ const EmptyState: React.FC<{
     className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
   >
     {/* Background warm aesthetic glow */}
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-full blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-md blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
 
     {/* Elegant bird logo with entrance and floating animations split to prevent Lottie measurement glitch */}
     <motion.div
@@ -502,7 +503,7 @@ const EmptyState: React.FC<{
         className="relative flex items-center justify-center transform-gpu"
       >
         {/* Premium static hardware-accelerated logo glow */}
-        <div className="absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-full blur-[45px] pointer-events-none select-none transform-gpu" />
+        <div className="absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-md blur-[45px] pointer-events-none select-none transform-gpu" />
 
         <Logo
           size={90}
@@ -553,7 +554,7 @@ const EmptyState: React.FC<{
             }}
             whileTap={{ scale: 0.99 }}
             onClick={() => onSuggestedPromptClick?.(p)}
-            className="p-4 text-[11px] font-bold text-left rounded-2xl bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
+            className="p-4 text-[11px] font-bold text-left rounded-md bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
           >
             <span>{p}</span>
             <span className="text-[10px] text-[#FF3366]/70 font-extrabold ml-2">➔</span>
@@ -565,7 +566,7 @@ const EmptyState: React.FC<{
 );
 
 interface MessageBubbleProps {
-  msg: ChatMessage;
+  msg: ChatMessage | AGUIMessage;
   index: number;
   activeAgent: 'nyx';
   onCopy: (text: string, id: string) => void;
@@ -619,18 +620,18 @@ const MessageActions: React.FC<{
               if (e.key === 'Enter' && e.metaKey) handleEditSubmit();
               if (e.key === 'Escape') setIsEditing(false);
             }}
-            className="w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-xl p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
+            className="w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-md p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
           />
           <div className="flex items-center gap-2">
             <button
               onClick={handleEditSubmit}
-              className="px-3 py-1.5 rounded-lg bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer"
             >
               Save & Submit
             </button>
             <button
               onClick={() => setIsEditing(false)}
-              className="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 text-zinc-400 text-[11px] font-semibold hover:bg-white/[0.06] transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-md bg-white/[0.03] border border-white/5 text-zinc-400 text-[11px] font-semibold hover:bg-white/[0.06] transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -707,7 +708,16 @@ const MessageBubble = React.memo<MessageBubbleProps>(
     onBranch,
   }) => {
     const isUser = msg.role === 'user';
-    const isStreaming = msg.status === 'loading';
+    const isStreaming = (msg as any).status === 'loading' || (msg as any).metadata?.status === 'running';
+    
+    // Check if it's an AGUIMessage
+    const agMsg = msg as AGUIMessage;
+    const isAGUI = 'type' in msg && ('timestamp' in msg || 'metadata' in msg);
+    
+    const status = isAGUI ? agMsg.metadata?.status : (msg as any).status;
+    const content = isAGUI ? agMsg.content : (msg as any).content;
+    const toolCalls = isAGUI ? (agMsg.type === 'tool_call' ? [{ name: agMsg.metadata?.toolName, args: agMsg.metadata?.toolArgs, result: agMsg.metadata?.result, status: agMsg.metadata?.status }] : []) : (msg as any).toolCalls;
+    const citations = (msg as any).citations;
 
     return (
       <motion.div
@@ -720,11 +730,11 @@ const MessageBubble = React.memo<MessageBubbleProps>(
           /* ── User bubble: flat right-aligned text ── */
           <div className="flex flex-col items-end w-full max-w-[85%] sm:max-w-[75%]">
             <div className="py-2 px-1 text-[13px] font-semibold leading-[1.75] text-zinc-200 select-text">
-              {msg.content}
+              {content}
             </div>
             <MessageActions
               index={index}
-              content={msg.content}
+              content={content}
               onEdit={onEdit}
               onCopy={onCopy}
               copiedId={copiedId}
@@ -735,26 +745,26 @@ const MessageBubble = React.memo<MessageBubbleProps>(
         ) : (
           /* ── Assistant: container-less, direct on canvas ── */
           <div className="flex-1 min-w-0">
-            {msg.status === 'error' ? (
+            {status === 'error' || agMsg.type === 'error' ? (
               <p className="text-sm text-red-400/90 py-1 font-semibold uppercase tracking-wide">
-                {msg.content ||
+                {content ||
                   'Error: Generation failed. Please check your model settings or connection.'}
               </p>
-            ) : msg.status === 'stopped' ? (
+            ) : status === 'stopped' ? (
               <p className="text-sm text-zinc-500 py-1 italic">Generation stopped.</p>
-            ) : msg.status === 'loading' && !msg.content ? (
+            ) : (status === 'loading' || status === 'running') && !content ? (
               <div className="flex items-center gap-2.5 py-2 select-none">
                 <NyxLoader size={14} className="text-primary shrink-0" />
                 <span className="text-[10.5px] text-zinc-400 font-black uppercase tracking-[0.2em] leading-none">
                   NYX is active...
                 </span>
               </div>
-            ) : msg.content ? (
+            ) : content || toolCalls?.length > 0 ? (
               <>
                 {/* Tool Calls */}
-                {msg.toolCalls && msg.toolCalls.length > 0 && (
+                {toolCalls && toolCalls.length > 0 && (
                   <div className="mb-3">
-                    {msg.toolCalls.map((tc, idx) => (
+                    {toolCalls.map((tc: any, idx: number) => (
                       <ToolCallCard
                         key={tc.id || idx}
                         toolName={tc.name}
@@ -766,28 +776,37 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                   </div>
                 )}
 
-                <MarkdownContent
-                  content={msg.content}
-                  isStreaming={isStreaming}
-                  citations={msg.citations}
-                />
+                {agMsg.type === 'reasoning' ? (
+                   <div className="my-3 p-4 bg-zinc-900/50 border border-zinc-800 rounded-md text-zinc-400 italic text-sm shadow-inner">
+                     <div className="flex items-center gap-2 mb-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                       ✨ NYX Reasoning
+                     </div>
+                     <div className="whitespace-pre-wrap">{content}</div>
+                   </div>
+                ) : (content && (
+                  <MarkdownContent
+                    content={content}
+                    isStreaming={isStreaming}
+                    citations={citations}
+                  />
+                ))}
 
                 {/* Citations */}
-                {msg.citations && msg.citations.length > 0 && (
+                {citations && citations.length > 0 && (
                   <div className="mt-3 pt-2 border-t border-white/5">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5 flex items-center gap-1.5">
                       <Search size={10} />
                       Sources
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {msg.citations.map((cite, i) => (
+                      {citations.map((cite: any, i: number) => (
                         <a
                           key={i}
                           id={`cite-${cite.id}`}
                           href={cite.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
                         >
                           <Globe size={9} />
                           <span className="truncate max-w-[200px]">
@@ -995,7 +1014,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 12 }}
             onClick={jumpToBottom}
-            className="absolute bottom-1 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-card/90 border border-border text-foreground/70 hover:text-foreground shadow-xl text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-muted/90"
+            className="absolute bottom-1 right-6 z-20 flex items-center gap-1.5 px-3 py-2 rounded-md bg-card/90 border border-border text-foreground/70 hover:text-foreground shadow-sm border border-border text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-muted/90"
           >
             <ArrowDown className="w-3 h-3" />
             Latest

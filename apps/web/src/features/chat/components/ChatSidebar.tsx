@@ -37,7 +37,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         <button
           onClick={onNewSession}
           aria-label={t('new_chat', 'New Chat')}
-          className="flex-1 flex items-center justify-center gap-2 bg-accent/10 text-accent hover:bg-accent/20 transition-colors py-2 rounded-lg text-[13px] font-medium border border-accent/20 mr-2"
+          className="flex-1 flex items-center justify-center gap-2 bg-foreground text-background hover:bg-foreground/90 transition-colors py-2 rounded-md text-[13px] font-medium mr-2"
         >
           <Plus className="w-4 h-4" />
           {t('new_chat', 'New Chat')}
@@ -45,7 +45,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         <button
           onClick={onClose}
           aria-label="Close Sidebar"
-          className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg"
+          className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-md"
         >
           <PanelLeftClose className="w-4 h-4" />
         </button>
@@ -56,7 +56,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
           <div
             key={session.id}
             onClick={() => onSelectSession(session.id)}
-            className="group flex flex-col p-2 rounded-lg hover:bg-muted/40 cursor-pointer transition-colors border border-transparent hover:border-border relative"
+            className="group flex flex-col p-2 rounded-md hover:bg-muted/40 cursor-pointer transition-colors border border-transparent hover:border-border relative"
           >
             <div className="flex items-center gap-2">
               <MessageSquare className="w-3.5 h-3.5 text-muted-foreground group-hover:text-accent" />

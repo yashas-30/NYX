@@ -36,7 +36,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
     <div
       className={`
       flex flex-col bg-[#09090B] border-l border-[rgba(255,255,255,0.06)] transition-all duration-300 z-50
-      ${isFullscreen ? 'fixed inset-0 w-full h-full' : 'absolute top-0 right-0 w-1/3 h-full min-w-[400px] max-w-[600px] shadow-2xl'}
+      ${isFullscreen ? 'fixed inset-0 w-full h-full' : 'absolute top-0 right-0 w-1/3 h-full min-w-[400px] max-w-[600px] shadow-sm border border-border'}
     `}
     >
       <div className="flex items-center justify-between p-4 border-b border-[rgba(255,255,255,0.06)] bg-[#0e1416]">

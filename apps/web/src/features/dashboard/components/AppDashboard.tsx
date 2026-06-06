@@ -146,7 +146,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           initial="open"
           animate={sidebarOpen ? 'open' : 'closed'}
           transition={{ type: 'spring', stiffness: 380, damping: 35 }}
-          className={`h-full overflow-hidden flex flex-col bg-secondary border-r border-white/[0.04] relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-2xl w-[260px]' : 'flex-none z-20'}`}
+          className={`h-full overflow-hidden flex flex-col bg-secondary border-r border-white/[0.04] relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-sm border border-border w-[260px]' : 'flex-none z-20'}`}
         >
           <div className="flex flex-col h-full min-w-[260px] bg-background">
             {/* Sidebar Top Header (Stitch Design Flat) */}
@@ -193,7 +193,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     setActiveMode('coder');
                   }
                 }}
-                className="w-full flex items-center justify-start gap-2 px-3 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer border border-white/[0.04] text-zinc-300 bg-white/[0.02] mb-1"
+                className="w-full flex items-center justify-start gap-2 px-3 py-2 rounded-md text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer border border-white/[0.04] text-zinc-300 bg-white/[0.02] mb-1"
               >
                 <Plus size={13} strokeWidth={1.8} className="text-zinc-400" />
                 <span>New Conversation</span>
@@ -203,7 +203,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 onClick={() => {
                   setActiveMode('chat');
                 }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left cursor-pointer ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-semibold transition-all text-left cursor-pointer ${
                   activeMode === 'chat'
                     ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
@@ -220,7 +220,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 onClick={() => {
                   setActiveMode('coder');
                 }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left cursor-pointer ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-semibold transition-all text-left cursor-pointer ${
                   activeMode === 'coder'
                     ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
@@ -236,7 +236,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 onClick={() => {
                   setActiveMode('workspace');
                 }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left cursor-pointer ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-semibold transition-all text-left cursor-pointer ${
                   activeMode === 'workspace'
                     ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
@@ -387,7 +387,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setSidebarOpen(true)}
-              className="absolute top-3.5 left-3.5 z-30 p-2 rounded-xl bg-secondary hover:bg-secondary/80 border border-white/[0.04] text-zinc-500 hover:text-white transition-all shadow-md cursor-pointer"
+              className="absolute top-3.5 left-3.5 z-30 p-2 rounded-md bg-secondary hover:bg-secondary/80 border border-white/[0.04] text-zinc-500 hover:text-white transition-all shadow-sm cursor-pointer"
             >
               <PanelLeftOpen size={14} />
             </motion.button>
@@ -448,7 +448,7 @@ const SideNavButton: React.FC<{
     whileHover={{ scale: 1.01 }}
     whileTap={{ scale: 0.98 }}
     onClick={onClick}
-    className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
+    className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-md text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
       active
         ? 'bg-white/[0.08] text-white border border-white/10 shadow-sm font-bold'
         : 'text-zinc-400 hover:text-white hover:bg-white/[0.03] border border-transparent'
@@ -523,7 +523,7 @@ const SessionItem: React.FC<{
               <MoreHorizontal size={9} />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-900 border border-white/10 rounded-md shadow-lg py-1 z-50">
+              <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-900 border border-white/10 rounded-md shadow-sm border border-border py-1 z-50">
                 <div className="px-2 py-1 text-[9px] font-bold text-zinc-500 uppercase">
                   Move to...
                 </div>
@@ -571,7 +571,7 @@ const SessionItem: React.FC<{
             <Trash2 size={9} />
           </button>
         ) : isActive ? (
-          <span className="w-1.5 h-1.5 rounded-full bg-[#0071E3] shadow-[0_0_6px_#0071E3]" />
+          <span className="w-1.5 h-1.5 rounded-md bg-[#0071E3] shadow-[0_0_6px_#0071E3]" />
         ) : (
           <span className="text-[9px] text-zinc-500 font-mono tracking-tighter">
             {timeAgo(session.updatedAt)}

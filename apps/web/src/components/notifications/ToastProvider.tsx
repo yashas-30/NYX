@@ -72,7 +72,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.95 }}
               className={cn(
-                'rounded-lg shadow-lg p-4 min-w-[300px] max-w-[400px]',
+                'rounded-md shadow-sm border border-border p-4 min-w-[300px] max-w-[400px]',
                 toast.type === 'success' && 'bg-success/10 border border-success/20',
                 toast.type === 'error' && 'bg-error/10 border border-error/20',
                 toast.type === 'warning' && 'bg-warning/10 border border-warning/20',

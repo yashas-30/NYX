@@ -44,7 +44,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
             y: 15,
             transition: { duration: 0.18, ease: 'easeOut' },
           }}
-          className="relative w-full max-w-5xl bg-card border border-border rounded-3xl shadow-[0_30px_70px_rgba(0,0,0,0.6)] flex flex-col overflow-hidden cursor-default z-[710]"
+          className="relative w-full max-w-5xl bg-card border border-border rounded-md shadow-[0_30px_70px_rgba(0,0,0,0.6)] flex flex-col overflow-hidden cursor-default z-[710]"
         >
           {/* Header */}
           <div className="p-4 px-6 border-b border-border bg-muted/20 flex items-center justify-between shrink-0">
@@ -57,7 +57,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
             <motion.button
               whileTap={{ scale: 0.9 }}
               onClick={onClose}
-              className="p-1.5 rounded-xl text-muted-foreground/45 hover:text-foreground hover:bg-muted transition-all cursor-pointer"
+              className="p-1.5 rounded-md text-muted-foreground/45 hover:text-foreground hover:bg-muted transition-all cursor-pointer"
             >
               <X size={14} />
             </motion.button>
@@ -73,10 +73,10 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
               return (
                 <div
                   key={m.id}
-                  className="min-w-[280px] flex-1 flex flex-col gap-4 border border-border rounded-2xl p-5 bg-background shadow-sm"
+                  className="min-w-[280px] flex-1 flex flex-col gap-4 border border-border rounded-md p-5 bg-background shadow-sm"
                 >
                   <div className="space-y-1 border-b border-border pb-4">
-                    <span className="inline-block text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                    <span className="inline-block text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border">
                       {m.provider || 'Local'}
                     </span>
                     <h4 className="text-[14px] font-bold text-foreground leading-tight mt-2">
@@ -93,7 +93,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                       Benchmarks
                     </h5>
                     <div className="grid grid-cols-3 gap-2">
-                      <div className="flex flex-col items-center p-2 rounded-xl bg-muted/10 border border-border">
+                      <div className="flex flex-col items-center p-2 rounded-md bg-muted/10 border border-border">
                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                           MMLU
                         </span>
@@ -101,7 +101,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                           {m.metadata?.mmluScore || '--'}
                         </span>
                       </div>
-                      <div className="flex flex-col items-center p-2 rounded-xl bg-muted/10 border border-border">
+                      <div className="flex flex-col items-center p-2 rounded-md bg-muted/10 border border-border">
                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                           H-Eval
                         </span>
@@ -109,7 +109,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                           {m.metadata?.humanEvalScore || '--'}
                         </span>
                       </div>
-                      <div className="flex flex-col items-center p-2 rounded-xl bg-muted/10 border border-border">
+                      <div className="flex flex-col items-center p-2 rounded-md bg-muted/10 border border-border">
                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                           MT-B
                         </span>
@@ -159,7 +159,7 @@ export const ModelComparisonModal: React.FC<ModelComparisonModalProps> = ({
                       System Req (Proj.)
                     </h5>
                     <div
-                      className={`p-3 rounded-xl border ${!meetsRam ? 'bg-red-500/5 border-red-500/10' : 'bg-emerald-500/5 border-emerald-500/10'}`}
+                      className={`p-3 rounded-md border ${!meetsRam ? 'bg-red-500/5 border-red-500/10' : 'bg-emerald-500/5 border-emerald-500/10'}`}
                     >
                       <div className="flex justify-between items-center text-[11px] mb-2">
                         <span className="text-muted-foreground flex items-center gap-1.5">

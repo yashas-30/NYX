@@ -85,7 +85,7 @@ export function ModelComparisonInteractive({ selectedModels }: { selectedModels:
         <p className="text-xs text-zinc-400">Run a prompt across the selected models above to compare outputs and latency.</p>
         
         <textarea
-          className="w-full rounded-lg bg-black/20 border border-white/10 p-3 text-sm text-zinc-200 focus:outline-none focus:border-sky-500 transition-colors resize-y min-h-[100px]"
+          className="w-full rounded-md bg-black/20 border border-white/10 p-3 text-sm text-zinc-200 focus:outline-none focus:border-sky-500 transition-colors resize-y min-h-[100px]"
           placeholder="Enter a prompt to test across selected models..."
           value={prompt}
           onChange={e => setPrompt(e.target.value)}
@@ -110,7 +110,7 @@ export function ModelComparisonInteractive({ selectedModels }: { selectedModels:
           results.length >= 4 && 'grid-cols-2'
         )}>
           {results.map((result, i) => (
-            <div key={`${result.modelId}-${i}`} className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col">
+            <div key={`${result.modelId}-${i}`} className="rounded-md border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col">
               <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-black/20">
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-xs text-zinc-200">{result.modelId}</span>

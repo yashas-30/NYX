@@ -130,7 +130,7 @@ function SharedChatView() {
   if (!data) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
-        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-md animate-spin" />
       </div>
     );
   }
@@ -155,7 +155,7 @@ function SharedChatView() {
         {data.messages?.map((msg: any, i: number) => (
           <div
             key={i}
-            className={`p-4 rounded-lg ${msg.role === 'user' ? 'bg-primary/10 ml-12' : 'bg-muted mr-12'}`}
+            className={`p-4 rounded-md ${msg.role === 'user' ? 'bg-primary/10 ml-12' : 'bg-muted mr-12'}`}
           >
             <div className="text-xs font-bold mb-2 uppercase opacity-50">{msg.role}</div>
             <div className="whitespace-pre-wrap text-sm">{msg.content}</div>

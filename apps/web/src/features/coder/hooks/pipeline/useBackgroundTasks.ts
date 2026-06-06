@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { triggerCritic, triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 
@@ -8,6 +8,35 @@ interface BackgroundTasksProps {
 }
 
 export const useBackgroundTasks = ({ models, apiKeys }: BackgroundTasksProps) => {
+  const [criticStatus, setCriticStatus] = useState<'idle' | 'learning' | 'completed' | 'failed'>('idle');
+  const [criticResult, setCriticResult] = useState<any>(null);
+
+  useEffect(() => {
+    const eventSource = new EventSource('/api/nyx/critic/stream');
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'progress') setCriticStatus('learning');
+        if (data.type === 'completed') {
+          setCriticStatus('completed');
+          setCriticResult(data.result);
+          setTimeout(() => setCriticStatus('idle'), 5000);
+        }
+        if (data.type === 'failed') {
+          setCriticStatus('failed');
+          setTimeout(() => setCriticStatus('idle'), 5000);
+        }
+      } catch (err) {
+        console.error('[Critic Stream] Error parsing SSE data:', err);
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
+
   // fallow-ignore-next-line code-duplication
   const triggerBackgroundCritic = useCallback(
     async (prompt: string, responseText: string, complexity?: string) => {
@@ -69,5 +98,5 @@ export const useBackgroundTasks = ({ models, apiKeys }: BackgroundTasksProps) =>
     [models]
   );
 
-  return { triggerBackgroundCritic, commitToMemory };
+  return { triggerBackgroundCritic, commitToMemory, criticStatus, criticResult };
 };

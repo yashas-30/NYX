@@ -3,6 +3,7 @@ import { getKeysSync } from '../vault/vault.service.js';
 import { LOCAL_MODEL_PORT } from '@nyx/shared';
 import { SearchService } from '../nyx/search.service.js';
 import { env } from '../../config/env.js';
+import { initVectorStore } from '../../lib/memory/vectorStore.js';
 
 const searchService = new SearchService();
 
@@ -21,7 +22,7 @@ export class ChatService {
   async streamChat(
     params: ChatStreamParams,
     signal: AbortSignal,
-    onChunk: (chunk: string) => void,
+    onChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
     const {
@@ -39,6 +40,15 @@ export class ChatService {
 
     let finalPrompt = prompt;
     let webContext = '';
+
+    try {
+      const { agentApp } = await import('../../lib/agentGraph.js');
+      onChunk({ type: 'reasoning', content: 'Initializing agent graph...' });
+      await agentApp.invoke({ messages: [{ role: 'user', content: prompt }] });
+      onChunk({ type: 'reasoning', content: '\nGraph execution complete. Planning done.' });
+    } catch (graphErr: any) {
+      logger.warn(`[ChatService] Agent Graph execution failed: ${graphErr.message}`);
+    }
 
     if (enableWebSearch) {
       try {
@@ -61,6 +71,29 @@ export class ChatService {
           `[ChatService] Web search failed or timed out: ${err.message}. Proceeding without search context.`
         );
       }
+    }
+
+    try {
+      logger.info('[ChatService] Querying LanceDB for memory context...');
+      const memoryTable = await initVectorStore();
+      
+      // We would normally embed the query here. For now, we mock embedding with zeros 
+      // or use a local embedding model if available. Since we just have a mock array:
+      const mockEmbedding = new Array(384).fill(0);
+      const results = await memoryTable.search(mockEmbedding).limit(3).execute();
+      
+      if (results && results.length > 0) {
+        const memoryContext = results
+          .filter(r => r.id !== 'init')
+          .map(r => `Past Memory: ${r.content}`)
+          .join('\n');
+        
+        if (memoryContext) {
+          finalPrompt += `\n\n[Long-Term Memory]:\n${memoryContext}`;
+        }
+      }
+    } catch (err: any) {
+      logger.warn(`[ChatService] Memory retrieval failed: ${err.message}`);
     }
 
     const payload = {

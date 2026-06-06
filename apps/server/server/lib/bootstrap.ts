@@ -250,10 +250,28 @@ export function registerShutdownHandlers(app: any, clearHealthChecks?: () => voi
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
-  process.on('unhandledRejection', (e) => logger.error({ err: e }, '[UnhandledRejection]'));
+  process.on('unhandledRejection', (e) => {
+    logger.error({ err: e }, '[UnhandledRejection] Shutting down gracefully...');
+    cleanupProcesses();
+    if (clearHealthChecks) clearHealthChecks();
+    try {
+      CodebaseScanner.dispose();
+    } catch (error: any) {
+      logger.error({ error }, '[UnhandledRejection] Failed to dispose CodebaseScanner');
+    }
+    app.close().then(() => {
+      process.exit(1);
+    }).catch((err: any) => {
+      logger.error({ err }, '[UnhandledRejection] Error during app close');
+      process.exit(1);
+    });
+    setTimeout(() => process.exit(1), 5000).unref();
+  });
+
   process.on('uncaughtException', (e) => {
     logger.error({ err: e }, '[UncaughtException]');
     cleanupProcesses();
+    if (clearHealthChecks) clearHealthChecks();
     try {
       CodebaseScanner.dispose();
     } catch (error: any) {
