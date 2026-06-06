@@ -63,7 +63,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile --reporter append-only
       - run: pnpm run build
-      - run: pnpm run build:server
 
   release:
     needs: [typecheck, test, build]
