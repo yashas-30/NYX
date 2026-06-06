@@ -1,5 +1,5 @@
-import { db } from './db/client';
-import redis from './redis';
+import { db } from './db/client.js';
+import redis from './redis.js';
 import fs from 'fs';
 
 interface HealthStatus {

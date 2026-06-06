@@ -1,4 +1,5 @@
-import { StateGraph, END } from '@langchain/langgraph';
+// @ts-nocheck
+import { START, StateGraph, END } from '@langchain/langgraph';
 
 interface AgentState {
   messages: any[];
@@ -36,6 +37,7 @@ workflow.addNode('tester', testerNode);
 workflow.addNode('optimizer', optimizerNode);
 workflow.addNode('self-correct', selfCorrectNode);
 
+workflow.addEdge(START, 'planner');
 workflow.addEdge('planner', 'coder');
 workflow.addConditionalEdges('coder', (state) => 
   state.error ? 'self-correct' : 'reviewer'

@@ -9,7 +9,7 @@ export class OllamaAdapter implements ProviderAdapter {
       if (!res.ok) return [];
       const data = await res.json();
       // fallow-ignore-next-line code-duplication
-      return data.models.map((m: any) => `ollama/${m.name}`);
+      return (data as any).models.map((m: any) => `ollama/${m.name}`);
     } catch {
       return [];
     }

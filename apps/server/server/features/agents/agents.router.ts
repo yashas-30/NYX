@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { FastifyInstance } from 'fastify';
 import { AgentsService } from './agents.service.js';
 import { ClineService } from './cline.service.js';

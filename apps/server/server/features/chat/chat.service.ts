@@ -227,7 +227,7 @@ export class ChatService {
         }),
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json() as any;
         const text = data.text || '';
         const match = text.match(/\[.*\]/s);
         if (match) {

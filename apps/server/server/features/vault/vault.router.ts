@@ -188,7 +188,7 @@ export async function vaultRouter(fastify: FastifyInstance) {
             const errData = await response.json().catch(() => ({}));
             return reply
               .code(400)
-              .send({ valid: false, error: errData.error?.message || 'Invalid API Key' });
+              .send({ valid: false, error: (errData as any).error?.message || 'Invalid API Key' });
           }
         }
 

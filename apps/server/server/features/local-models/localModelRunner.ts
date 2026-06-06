@@ -318,7 +318,7 @@ export const LocalModelRunner = {
         },
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json() as any;
         if (data.tag_name) {
           CURRENT_VERSION = data.tag_name;
         }
@@ -541,7 +541,7 @@ export const LocalModelRunner = {
       });
       if (res.ok) {
         const healthData = await res.json().catch(() => ({}));
-        if (healthData.status === 'ok' || healthData.status === 'success') {
+        if ((healthData as any).status === 'ok' || (healthData as any).status === 'success') {
           // Port is alive! Check if it's the model we want
           let isSameModel = false;
           try {
@@ -549,7 +549,7 @@ export const LocalModelRunner = {
               signal: AbortSignal.timeout(1500),
             });
             if (propsRes.ok) {
-              const propsData = await propsRes.json();
+              const propsData = await propsRes.json() as any;
               const loadedPath = (propsData.model_path || '').toLowerCase();
               const targetPreset = LocalModelManager.listModels().find((m) => m.id === modelId);
               const targetFileName = (targetPreset?.fileName || '').toLowerCase();
@@ -1051,7 +1051,7 @@ export const LocalModelRunner = {
           const port = getLlamaPort();
           const res = await fetch(`http://127.0.0.1:${port}/health`);
           if (res.ok) {
-            const data = await res.json();
+            const data = await res.json() as any;
             if (data.status === 'ok' || data.status === 'success') {
               healthy = true;
               break;

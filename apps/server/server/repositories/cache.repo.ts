@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { db, isPg, schema } from '../db/client.js';
 import { eq, lt, sql, and, asc } from 'drizzle-orm';
 

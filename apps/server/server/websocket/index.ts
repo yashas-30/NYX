@@ -66,7 +66,7 @@ export function initializeWebSocket(fastify: FastifyInstance): SocketIOServer {
             messages: [...(history || []), { role: 'user', content: prompt }],
             settings,
           },
-          (chunk: { text: string; done?: boolean }) => {
+          (chunk: any) => {
             socket.emit('stream-chunk', { text: chunk.text, done: chunk.done ?? false });
           },
           () => {

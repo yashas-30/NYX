@@ -325,8 +325,7 @@ export const users = sqliteTable('users', {
 });
 
 // New tables requested in implementation plan
-import { pgTable, text as pgText, integer as pgInteger, real as pgReal, timestamp as pgTimestamp } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
+
 
 // SQLite Versions
 export const dbSessions = sqliteTable('db_sessions', {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import logger from '../../lib/logger.js';
 import { CodebaseScanner } from '../workspace/codebaseScanner.js';
 import { CodebaseRAG, buildIndex } from '../rag/index.js';

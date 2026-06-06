@@ -33,7 +33,7 @@ export class GeminiAdapter implements ProviderAdapter {
       );
       if (!res.ok) return [];
       const data = await res.json();
-      return data.models.map((m: any) => `gemini/${m.name.replace('models/', '')}`);
+      return (data as any).models.map((m: any) => `gemini/${m.name.replace('models/', '')}`);
     } catch {
       return [];
     }

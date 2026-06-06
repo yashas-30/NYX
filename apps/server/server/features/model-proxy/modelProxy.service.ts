@@ -26,7 +26,7 @@ export class ModelProxyService {
         body: JSON.stringify({ provider, apiKey }),
       });
       if (!res.ok) throw new Error('Antigravity service error');
-      const data = await res.json();
+      const data = await res.json() as any;
       return data.models || [];
     } catch (err: any) {
       if (provider === 'gemini') {

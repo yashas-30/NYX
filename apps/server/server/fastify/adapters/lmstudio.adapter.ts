@@ -9,7 +9,7 @@ export class LmStudioAdapter implements ProviderAdapter {
       const port = env.LMSTUDIO_PORT;
       const res = await fetch(`http://127.0.0.1:${port}/v1/models`);
       if (!res.ok) return [];
-      const data = await res.json();
+      const data = await res.json() as any;
       // fallow-ignore-next-line code-duplication
       return data.data.map((m: any) => `lmstudio/${m.id}`);
     } catch {

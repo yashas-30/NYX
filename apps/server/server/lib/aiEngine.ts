@@ -403,7 +403,7 @@ export class UnifiedEngine {
         });
 
         if (verifyResponse.ok) {
-          const verifyData = await verifyResponse.json();
+          const verifyData = await verifyResponse.json() as any;
           const verifyResult: string = verifyData?.choices?.[0]?.message?.content || '';
           if (verifyResult && !verifyResult.startsWith('VERIFIED')) {
             // Emit verification issues as a special chunk so the frontend can display them

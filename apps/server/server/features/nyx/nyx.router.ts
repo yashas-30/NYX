@@ -100,7 +100,7 @@ export async function nyxRouter(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'Missing prompt or response for critic.' });
       }
       
-      const job = await criticQueue.add('critic-job', {
+      const job = await criticQueue!.add('critic-job', {
         prompt,
         response,
         modelId,
@@ -122,10 +122,10 @@ export async function nyxRouter(fastify: FastifyInstance) {
     
     const { QueueEvents } = await import('bullmq');
     const queueEvents = new QueueEvents('critic-queue', {
-      connection: criticQueue.opts.connection
+      connection: criticQueue!.opts.connection
     });
 
-    const onProgress = ({ jobId, data }: { jobId: string; data: number | object | string }) => {
+    const onProgress = ({ jobId, data }: { jobId: string; data: any }) => {
       reply.raw.write(`data: ${JSON.stringify({ type: 'progress', jobId, data })}\n\n`);
       if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
     };
