@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",
-    "@cline/sdk": "^0.0.42",
+    "@cline/sdk": "^0.0.44",
     "@fastify/compress": "^8.3.1",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
@@ -27,11 +27,11 @@
     "@fastify/swagger-ui": "^5.2.6",
     "@fastify/vite": "^9.0.2",
     "@fastify/websocket": "^11.2.0",
-    "@google/genai": "^2.7.0",
+    "@google/genai": "^2.8.0",
 
     "@huggingface/transformers": "^4.2.0",
     "@langchain/core": "^1.1.48",
-    "@langchain/langgraph": "^1.3.5",
+    "@langchain/langgraph": "^1.3.7",
     "@langchain/openai": "^1.4.7",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nyx/shared": "workspace:*",
@@ -93,7 +93,7 @@
     "pptxgenjs": "^4.0.1",
     "prom-client": "^15.1.3",
     "proper-lockfile": "^4.1.2",
-    "rate-limiter-flexible": "^11.1.0",
+    "rate-limiter-flexible": "^11.2.0",
     "rotating-file-stream": "^3.2.5",
     "sanitize-html": "^2.17.4",
     "sharp": "^0.34.5",
@@ -104,14 +104,14 @@
     "tesseract.js": "^7.0.0",
     "tiktoken": "^1.0.22",
     "tree-kill": "^1.2.2",
-    "undici": "^8.3.0",
+    "undici": "^8.4.1",
     "unleash-client": "^6.11.0",
-    "uuid": "^11.1.1",
+    "uuid": "^14.0.0",
     "vectordb": "^0.21.2",
-    "vercel": "^54.9.1",
+    "vercel": "^54.10.2",
     "whisper-node": "^1.1.1",
     "ws": "^8.21.0",
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@nyx/config": "workspace:*",
@@ -119,7 +119,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/dockerode": "^4.0.1",
     "@types/helmet": "^4.0.0",
-    "@types/node": "^25.9.1",
+    "@types/node": "^25.9.2",
     "@types/pdf-parse": "^1.1.5",
     "@types/pg": "^8.20.0",
     "@types/sanitize-html": "^2.16.1",
@@ -134,7 +134,7 @@
     "supertest": "^7.2.2",
     "tsup": "^8.5.1",
     "tsx": "^4.22.3",
-    "typescript": "~5.8.2",
+    "typescript": "~6.0.3",
     "vitest": "^4.1.8"
   }
 }
