@@ -84,3 +84,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - Copy a DESIGN.md into your project to generate high-quality UI that stays visually consistent with the design language.
 - You can find a curated collection of DESIGN.md files at: https://github.com/voltagent/awesome-design-md
+
+## Global UI Design Guidelines
+
+Whenever making ANY frontend design changes, creating new UI components, or implementing design features, you MUST rigorously apply the constraints from the following skills:
+1. `emil-design-eng`
+2. `impeccable`
+3. `design-taste-frontend`
+
+Automatically assume these skills are active for the entire project folder. Do not generate basic or generic UI ("AI slop"); always strive for high-agency, premium, and motion-rich interfaces as dictated by these skills.

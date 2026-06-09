@@ -20,6 +20,7 @@ import { ModelOption } from '@src/types';
 import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
 import { AIService } from '@src/core/services/ai.service';
 import { useNyxStore, ExecutionMode } from '@src/shared/store/useNyxStore';
+import { ModelStatusBadge } from '@src/features/model-registry/ModelStatusBadge';
 
 interface Props {
   currentModelId?: string;
@@ -39,7 +40,7 @@ interface Props {
 }
 
 // Structured provider order for the selector
-const PROVIDER_ORDER = ['gemini', 'nyx-native', 'lmstudio', 'ollama'];
+const PROVIDER_ORDER = ['gemini', 'lmstudio', 'ollama'];
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
@@ -91,21 +92,16 @@ export const ModelSelector: React.FC<Props> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   const [localLibraryModels, setLocalLibraryModels] = React.useState<ModelOption[]>([]);
+  const [expandedModelId, setExpandedModelId] = React.useState<string | null>(null);
   const executionMode = useNyxStore((s) => s.executionMode);
   const setExecutionMode = useNyxStore((s) => s.setExecutionMode);
 
   React.useEffect(() => {
     let active = true;
     const loadLocalModels = async () => {
-      if (localStorage.getItem('llm_ref_local_models_enabled') !== 'true') {
-        if (active) {
-          setLocalLibraryModels([]);
-        }
-        return;
-      }
+      const isLocalEngineEnabled = localStorage.getItem('llm_ref_local_models_enabled') === 'true';
       try {
-        const [nyxRes, ollamaRes, lmstudioRes] = await Promise.allSettled([
-          AIService.fetchWithAuth('/api/v1/nyx/local-models'),
+        const [ollamaRes, lmstudioRes] = await Promise.allSettled([
           AIService.fetchWithAuth('/api/v1/nyx/local-models/ollama/models'),
           AIService.fetchWithAuth('/api/v1/models/list', {
             method: 'POST',
@@ -115,28 +111,6 @@ export const ModelSelector: React.FC<Props> = ({
         ]);
 
         let combinedModels: any[] = [];
-
-        if (nyxRes.status === 'fulfilled' && nyxRes.value.ok) {
-          const data = await nyxRes.value.json();
-          if (active && data.models && Array.isArray(data.models)) {
-            const completed = data.models
-              .filter((m: any) => m.status === 'completed' || m.status === 'downloading')
-              .map((m: any) => ({
-                id: m.id,
-                name: m.name,
-                provider: 'nyx-native',
-                description: m.description || `Local GGUF model (${m.size || ''})`,
-                specs: {
-                  contextWindow: m.contextLength || '8K',
-                  trainingData: 'N/A',
-                  maxOutput: 'N/A',
-                  modality: 'Text',
-                },
-                status: m.status,
-              }));
-            combinedModels = [...combinedModels, ...completed];
-          }
-        }
 
         if (ollamaRes.status === 'fulfilled' && ollamaRes.value.ok) {
           try {
@@ -211,7 +185,7 @@ export const ModelSelector: React.FC<Props> = ({
     const seenIds = new Set();
 
     // Filter out static presets if we successfully loaded active models
-    const filteredAllModels = allModels.filter((m) => m.provider !== 'nyx-native');
+    const filteredAllModels = allModels;
     const nativeSource = localLibraryModels;
 
     const allSources = [...filteredAllModels, ...nativeSource];
@@ -225,7 +199,6 @@ export const ModelSelector: React.FC<Props> = ({
   const groupedModels = useMemo(() => {
     const groups: Record<string, any[]> = {
       'gemini': [],
-      'nyx-native': [],
       'lmstudio': [],
       'ollama': [],
     };
@@ -390,33 +363,7 @@ export const ModelSelector: React.FC<Props> = ({
 
             {/* Scrollable list of models */}
             <div ref={parentRef} className="flex-1 overflow-y-auto p-2 custom-scrollbar">
-              {selectedProvider === 'nyx-native' && filteredModels.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-zinc-400 text-center p-3 py-6 space-y-3">
-                  <div className="w-10 h-10 rounded-md bg-[#FF3366]/10 flex items-center justify-center border border-[#FF3366]/20 shadow-inner">
-                    <Cpu className="w-5 h-5 text-[#FF3366] animate-pulse" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-black uppercase tracking-[0.15em] text-white">
-                      No Local Models
-                    </p>
-                    <p className="text-[7.5px] text-zinc-500 leading-normal max-w-[150px] mx-auto">
-                      Run lightweight GGUF models on your own CPU & GPU entirely on-device.
-                    </p>
-                  </div>
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                      if (onClose) onClose();
-                      if (typeof (window as any).nyxSwitchActiveMode === 'function') {
-                        (window as any).nyxSwitchActiveMode('registry');
-                      }
-                    }}
-                    className="px-3 py-1.5 rounded-md bg-[#FF3366] text-black text-[8px] font-black uppercase tracking-wider shadow-sm hover:bg-[#FF3366]/90 transition-all cursor-pointer"
-                  >
-                    Go to Registry
-                  </motion.button>
-                </div>
-              ) : filteredModels.length === 0 ? (
+              {filteredModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-zinc-500 text-center space-y-2 py-6">
                   <div className="w-8 h-8 rounded-md bg-white/5 flex items-center justify-center border border-dashed border-white/10">
                     <Bot className="w-4 h-4 opacity-25" />
@@ -438,28 +385,26 @@ export const ModelSelector: React.FC<Props> = ({
                     const isSelected = currentModelId === model.id;
                     const isNoKey = providerStatuses?.[model.provider] === 'no-key';
                     const isOnline = providerStatuses?.[model.provider] === 'online';
+                    const isExpanded = expandedModelId === model.id;
 
                     return (
                       <div
                         key={virtualItem.key}
+                        data-index={virtualItem.index}
+                        ref={rowVirtualizer.measureElement}
                         style={{
                           position: 'absolute',
                           top: 0,
                           left: 0,
                           width: '100%',
-                          height: `${virtualItem.size}px`,
                           transform: `translateY(${virtualItem.start}px)`,
                           paddingBottom: '4px',
                         }}
                       >
                         <motion.div
                           variants={listItemVariants}
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() => {
-                            onSelect((model as any).realId || model.id);
-                          }}
                           className={`
-                            flex items-center justify-between gap-1.5 p-1.5 rounded-md transition-all duration-300 border text-left group relative overflow-hidden cursor-pointer h-full
+                            flex flex-col gap-1.5 p-1.5 rounded-md transition-all duration-300 border text-left group relative overflow-hidden h-full
                             ${
                               isSelected
                                 ? isNoKey
@@ -469,54 +414,142 @@ export const ModelSelector: React.FC<Props> = ({
                             }
                           `}
                         >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1">
-                              <h4
-                                className={`text-[9px] font-bold truncate leading-none ${isSelected ? 'text-foreground font-black' : 'text-foreground/80'}`}
-                              >
-                                {model.name}
-                              </h4>
-
-                              {/* Status Tag */}
-                              {providerStatuses && providerStatuses[model.provider] && (
-                                <div
-                                  className={`
-                                  text-[5.5px] font-black uppercase tracking-wider px-1 py-0.5 rounded-[3px] border shrink-0
-                                  ${
-                                    isOnline
-                                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                      : isNoKey
-                                        ? 'bg-zinc-800 border-white/[0.04] text-zinc-400'
-                                        : 'bg-zinc-900 border-white/[0.04] text-zinc-500'
-                                  }
-                                `}
+                          <div 
+                            className="flex items-center justify-between gap-1.5 cursor-pointer"
+                            onClick={() => {
+                              onSelect((model as any).realId || model.id);
+                            }}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1">
+                                <h4
+                                  className={`text-[9px] font-bold truncate leading-none ${
+                                    isSelected ? 'text-foreground font-black' : 'text-foreground/80'
+                                  } ${
+                                    (model as any).status === 'deprecated'
+                                      ? 'line-through opacity-60'
+                                      : ''
+                                  }`}
                                 >
-                                  {isOnline ? 'Online' : isNoKey ? 'Auth' : 'Off'}
+                                  {model.name}
+                                </h4>
+
+                                {/* Model lifecycle status badge (preview / deprecated / alias) */}
+                                {(model as any).status && (model as any).status !== 'ga' && (
+                                  <ModelStatusBadge
+                                    status={(model as any).status}
+                                    shutdownDate={(model as any).shutdownDate}
+                                    compact
+                                  />
+                                )}
+
+                                {/* Provider connection status tag */}
+                                {providerStatuses && providerStatuses[model.provider] && (
+                                  <div
+                                    className={`
+                                    text-[5.5px] font-black uppercase tracking-wider px-1 py-0.5 rounded-[3px] border shrink-0
+                                    ${
+                                      isOnline
+                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                        : isNoKey
+                                          ? 'bg-zinc-800 border-white/[0.04] text-zinc-400'
+                                          : 'bg-zinc-900 border-white/[0.04] text-zinc-500'
+                                    }
+                                  `}
+                                  >
+                                    {isOnline ? 'Online' : isNoKey ? 'Auth' : 'Off'}
+                                  </div>
+                                )}
+
+                                {/* Inline Monospace Specs Badge */}
+                                {model.specs?.contextWindow && (
+                                  <span className="text-[6px] font-mono font-bold text-muted-foreground/50 bg-white/5 px-1 py-0.5 rounded border border-white/5 shrink-0 ml-auto leading-none">
+                                    {model.specs.contextWindow}
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="text-[7px] font-mono text-zinc-500 truncate uppercase tracking-tight mt-0.5 leading-none pr-6">
+                                {model.description || model.id}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {/* Info Button */}
+                              {(model.features || model.pros || model.cons) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedModelId(isExpanded ? null : model.id);
+                                  }}
+                                  className={`p-1 rounded transition-colors ${
+                                    isExpanded 
+                                      ? 'bg-accent/20 text-accent' 
+                                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                                  }`}
+                                  title="View features"
+                                >
+                                  <Info size={12} />
+                                </button>
+                              )}
+                              
+                              {isSelected && (
+                                <div
+                                  className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ml-0.5 ${isNoKey ? 'bg-zinc-600' : 'bg-white border border-white/10'}`}
+                                >
+                                  <Check
+                                    className={`w-2 h-2 ${isNoKey ? 'text-white' : 'text-black'}`}
+                                  />
                                 </div>
                               )}
-
-                              {/* Inline Monospace Specs Badge */}
-                              {model.specs?.contextWindow && (
-                                <span className="text-[6px] font-mono font-bold text-muted-foreground/50 bg-white/5 px-1 py-0.5 rounded border border-white/5 shrink-0 ml-auto leading-none">
-                                  {model.specs.contextWindow}
-                                </span>
-                              )}
                             </div>
-
-                            <p className="text-[7px] font-mono text-zinc-500 truncate uppercase tracking-tight mt-0.5 leading-none">
-                              {model.description || model.id}
-                            </p>
                           </div>
 
-                          {isSelected && (
-                            <div
-                              className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ${isNoKey ? 'bg-zinc-600' : 'bg-white border border-white/10'}`}
-                            >
-                              <Check
-                                className={`w-2 h-2 ${isNoKey ? 'text-white' : 'text-black'}`}
-                              />
-                            </div>
-                          )}
+                          {/* Expanded Details */}
+                          <AnimatePresence>
+                            {isExpanded && (model.features || model.pros || model.cons) && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="pt-2 mt-1 border-t border-border/30 flex flex-col gap-2">
+                                  {model.features && model.features.length > 0 && (
+                                    <div>
+                                      <span className="text-[7px] font-black uppercase tracking-widest text-muted-foreground/80">Features</span>
+                                      <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
+                                        {model.features.map((f, i) => (
+                                          <li key={i} className="text-[8px] text-foreground/80 leading-snug">{f}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  {model.pros && model.pros.length > 0 && (
+                                    <div>
+                                      <span className="text-[7px] font-black uppercase tracking-widest text-emerald-500/80">Good</span>
+                                      <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
+                                        {model.pros.map((p, i) => (
+                                          <li key={i} className="text-[8px] text-emerald-500/90 leading-snug">{p}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  {model.cons && model.cons.length > 0 && (
+                                    <div>
+                                      <span className="text-[7px] font-black uppercase tracking-widest text-[#FF3366]/80">Bad</span>
+                                      <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
+                                        {model.cons.map((c, i) => (
+                                          <li key={i} className="text-[8px] text-[#FF3366]/90 leading-snug">{c}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </motion.div>
                       </div>
                     );

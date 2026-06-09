@@ -19,7 +19,7 @@ export const useBackgroundTasks = ({ models, apiKeys }: BackgroundTasksProps) =>
 
     const connect = () => {
       if (destroyed) return;
-      eventSource = new EventSource('/api/nyx/critic/stream');
+      eventSource = new EventSource('/api/v1/nyx/critic/stream');
 
       eventSource.onmessage = (event) => {
         try {

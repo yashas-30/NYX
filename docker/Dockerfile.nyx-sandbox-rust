@@ -1,0 +1,4 @@
+FROM rust:1.75-alpine
+RUN apk add --no-cache git build-base
+WORKDIR /workspace
+CMD ["rustc", "-"]

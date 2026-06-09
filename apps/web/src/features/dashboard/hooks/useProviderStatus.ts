@@ -26,11 +26,11 @@ export const useProviderStatus = (
 
     const providers: string[] = ['gemini'];
     if (localModelsEnabled) {
-      providers.push('nyx-native');
+      providers.push('ollama');
     }
     const newStatuses: Record<string, Status> = {};
     if (!localModelsEnabled) {
-      newStatuses['nyx-native'] = 'offline';
+      newStatuses['ollama'] = 'offline';
     }
 
     await Promise.all(

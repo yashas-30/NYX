@@ -1,9 +1,62 @@
 // @ts-nocheck
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { AgentsService } from './agents.service.js';
 import { ClineService } from './cline.service.js';
 import { sendSseTokenRotate } from '../../lib/sseHelpers.js';
+import { verifySessionToken } from '../vault/vault.service.js';
 import logger from '../../lib/logger.js';
+import { getDedupKey, executeWithDedup } from '../../lib/streamDeduplicator.js';
+
+// ── Request Validation Schemas ─────────────────────────────────────────────
+
+const ImageSchema = z.object({
+  mimeType: z.string(),
+  data: z.string().refine(val => /^[A-Za-z0-9+/=]+$/.test(val.replace(/\s/g, '')), {
+    message: 'Invalid base64 image data',
+  }),
+  name: z.string().optional(),
+});
+
+const HistoryMessageSchema = z.object({
+  role: z.enum(['user', 'assistant', 'system', 'model']),
+  content: z.string().max(100_000),
+  images: z.array(ImageSchema).max(16).optional().default([]),
+});
+
+const ChatRequestSchema = z.object({
+  model: z.string().min(1),
+  provider: z.enum(['gemini', 'ollama', 'lmstudio', 'antigravity-sdk', 'terminal']).optional(),
+  prompt: z.string().max(100_000),
+  history: z.array(HistoryMessageSchema).max(100).optional().default([]),
+  images: z.array(ImageSchema).max(16).optional().default([]),
+  gatewayUrls: z.record(z.string()).optional(),
+  settings: z.record(z.unknown()).optional(),
+  apiKey: z.string().optional(),
+});
+
+const CoderRequestSchema = z.object({
+  model: z.string().min(1),
+  prompt: z.string().max(100_000),
+  history: z.array(HistoryMessageSchema).max(100).optional().default([]),
+  images: z.array(ImageSchema).max(16).optional().default([]),
+  gatewayUrls: z.record(z.string()).optional(),
+  apiKey: z.string().optional(),
+});
+
+// ── Auth Pre-handler ───────────────────────────────────────────────────────
+
+async function requireSession(request: any, reply: any) {
+  const token =
+    (request.headers['x-nyx-session-token'] as string) ||
+    (request.headers['authorization'] as string)?.replace(/^Bearer\s+/i, '');
+
+  if (!verifySessionToken(token)) {
+    reply.code(401).send({ error: 'Unauthorized: valid session token required' });
+  }
+}
+
+// ── Router ─────────────────────────────────────────────────────────────────
 
 export async function agentsRouter(fastify: FastifyInstance) {
   const service = new AgentsService();
@@ -43,20 +96,40 @@ Your purpose is to provide industrial-grade, production-ready code.
     });
   });
 
-  fastify.post('/chat', async (request, reply) => {
+  fastify.post('/chat', {
+    preHandler: [requireSession],
+    schema: { body: ChatRequestSchema },
+    compress: { threshold: 1024 }
+  }, async (request, reply) => {
     logger.info('[Agents Router] Received /chat request');
-    await handleAgentStream(request, reply, 'chat');
+
+    const parseResult = ChatRequestSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parseResult.error.flatten() });
+    }
+
+    await handleAgentStream(parseResult.data, reply, 'chat');
   });
 
   const clineService = new ClineService();
 
-  fastify.post('/coder', async (request, reply) => {
+  fastify.post('/coder', {
+    preHandler: [requireSession],
+    schema: { body: CoderRequestSchema },
+    compress: { threshold: 1024 }
+  }, async (request, reply) => {
     logger.info('[Agents Router] Received /coder request (Cline)');
-    const { model, prompt, history, apiKey, gatewayUrls, images } = (request.body as any) || {};
 
-    if (!model) {
-      return reply.code(400).send({ error: 'Model is required' });
+    const parseResult = CoderRequestSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parseResult.error.flatten() });
     }
+
+    const { model, prompt, history, gatewayUrls, images, apiKey } = parseResult.data;
+
+    // Resolve key server-side (Phase 1.2) if not provided by client
+    const { Gateway } = await import('../../lib/gateway.js');
+    const resolvedApiKey = Gateway.getActiveKey('gemini', apiKey);
 
     const { initFastifySse } = await import('../../lib/sseHelpers.js');
     initFastifySse(reply);
@@ -68,9 +141,9 @@ Your purpose is to provide industrial-grade, production-ready code.
           model,
           prompt,
           history,
-          apiKey,
           gatewayUrls,
           images,
+          apiKey: resolvedApiKey,
         },
         (event) => {
           if (!reply.raw.writableEnded && !reply.raw.destroyed) {
@@ -95,40 +168,53 @@ Your purpose is to provide industrial-grade, production-ready code.
     }
   });
 
-  async function handleAgentStream(request: any, reply: any, agentType: 'chat' | 'coder') {
-    const { model, prompt, history, apiKey, gatewayUrls, images } = (request.body as any) || {};
-
-    if (!model) {
-      // fallow-ignore-next-line code-duplication
-      return reply.code(400).send({ error: 'Model is required' });
-    }
+  async function handleAgentStream(body: any, reply: any, agentType: 'chat' | 'coder') {
+    const { model, provider, prompt, history, gatewayUrls, images, settings, apiKey } = body;
 
     const { initFastifySse } = await import('../../lib/sseHelpers.js');
     initFastifySse(reply);
     sendSseTokenRotate(reply.raw as any);
 
+    // Build a dedup key — null means this request is unique and runs directly
+    const dedupKey = getDedupKey({
+      model,
+      prompt,
+      historyLength: history?.length ?? 0,
+    });
+
+    const writeChunk = (chunk: any) => {
+      if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      }
+    };
+    const writeDone = () => {
+      if (!reply.raw.writableEnded && !reply.raw.destroyed) {
+        reply.raw.write('data: [DONE]\n\n');
+        reply.raw.end();
+      }
+    };
+
     try {
-      await service.executeAgentStream(
-        {
-          model,
-          prompt,
-          history,
-          apiKey,
-          gatewayUrls,
-          agentType,
-          images,
+      await executeWithDedup(
+        dedupKey,
+        async (onChunk, onDone) => {
+          await service.executeAgentStream(
+            {
+              model,
+              provider,
+              prompt,
+              history,
+              gatewayUrls,
+              agentType,
+              images,
+              apiKey,
+            },
+            onChunk,
+            onDone
+          );
         },
-        (chunk) => {
-          if (!reply.raw.writableEnded && !reply.raw.destroyed) {
-            reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-          }
-        },
-        () => {
-          if (!reply.raw.writableEnded && !reply.raw.destroyed) {
-            reply.raw.write('data: [DONE]\n\n');
-            reply.raw.end();
-          }
-        }
+        writeChunk,
+        writeDone
       );
     } catch (error: any) {
       logger.error(`[Agents Router Error - ${agentType}]:`, error.message);

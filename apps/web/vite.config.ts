@@ -42,7 +42,7 @@ export default defineConfig(({ mode }) => {
         },
       }),
       visualizer({
-        open: true,
+        open: false,
         gzipSize: true,
         brotliSize: true,
         filename: 'dist/stats.html'
@@ -140,18 +140,36 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       strictPort: true,
       proxy: process.env.FASTIFY_VITE_EMBEDDED ? undefined : {
-        // Forward all /api/* requests to Express backend (default dev port 3010)
         '/api': {
-          target: 'http://127.0.0.1:3010',
+          target: 'http://127.0.0.1:3001',
           changeOrigin: true,
           secure: false,
+          configure: (proxy, options) => {
+            proxy.on('error', (err: any, req, res: any) => {
+              if (err.code === 'ECONNREFUSED') {
+                if (!res.headersSent) {
+                  res.writeHead(503, { 'Content-Type': 'application/json' });
+                }
+                res.end(JSON.stringify({ error: 'Server starting, please retry...' }));
+              }
+            });
+          }
         },
-        // Forward WebSocket session-sync to Express
         '/ws': {
-          target: 'http://127.0.0.1:3010',
+          target: 'http://127.0.0.1:3001',
           changeOrigin: true,
           ws: true,
           secure: false,
+          configure: (proxy, options) => {
+            proxy.on('error', (err: any, req, res: any) => {
+              if (err.code === 'ECONNREFUSED') {
+                if (res.writeHead && !res.headersSent) {
+                  res.writeHead(503, { 'Content-Type': 'application/json' });
+                }
+                if (res.end) res.end(JSON.stringify({ error: 'Server starting, please retry...' }));
+              }
+            });
+          }
         },
       },
     },

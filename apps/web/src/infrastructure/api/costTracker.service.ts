@@ -13,10 +13,8 @@ export const PRICING_MATRIX: Record<string, ModelPricing> = {
   'gemini/gemini-2.5-flash': { inputPer1M: 0.075, outputPer1M: 0.3 },
   'gemini/gemma-4-31b-it': { inputPer1M: 0.1, outputPer1M: 0.2 },
   'gemini/gemma-4-27b-it': { inputPer1M: 0.1, outputPer1M: 0.2 },
-  'nyx-native/nyx-gemma-4-e2b-it': { inputPer1M: 0, outputPer1M: 0 },
-  'nyx-native/qwen2.5-coder-1.5b-native': { inputPer1M: 0, outputPer1M: 0 },
-  'nyx-native/qwen2.5-coder-3b-native': { inputPer1M: 0, outputPer1M: 0 },
-  'nyx-native/llama-3.2-3b-native': { inputPer1M: 0, outputPer1M: 0 },
+  'ollama/qwen2.5-coder-7b': { inputPer1M: 0, outputPer1M: 0 },
+  'lmstudio/qwen2.5-coder-7b': { inputPer1M: 0, outputPer1M: 0 },
 };
 
 export interface UsageRecord {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box } from 'lucide-react';
+import { Package } from '@phosphor-icons/react';
 
 /** Section header with icon, title, and right-side controls */
 export const SectionHeader: React.FC<{
@@ -26,8 +26,8 @@ export const SectionHeader: React.FC<{
 
 /** Empty state for when no models are found */
 export const EmptyState: React.FC<{ message: string; hint: string }> = ({ message, hint }) => (
-  <div className="py-12 rounded-md border border-dashed border-white/15 dark:border-white/5 flex flex-col items-center justify-center text-center bg-white/10 dark:bg-white/5">
-    <Box size={32} className="text-muted-foreground/15 mb-3" />
+  <div className="py-12 min-h-[240px] rounded-md border border-dashed border-white/15 dark:border-white/5 flex flex-col items-center justify-center text-center bg-white/10 dark:bg-white/5">
+    <Package size={32} weight="duotone" className="text-muted-foreground/30 mb-3" />
     <p className="text-[11px] font-black uppercase tracking-[0.25em] text-muted-foreground">
       {message}
     </p>

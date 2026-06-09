@@ -95,7 +95,11 @@ export const useDashboardState = (onExit?: () => void) => {
 
   const [localModelsEnabled, setLocalModelsEnabled] = useState(false);
   const localModelsQuery = useLocalModels(localModelsEnabled);
-  const localLibraryModels = localModelsQuery.data?.completed || [];
+  const localLibraryModels = [
+    ...(localModelsQuery.data?.completed || []),
+    ...(localModelsQuery.data?.ollamaModels || []),
+    ...(localModelsQuery.data?.lmstudioModels || []),
+  ];
 
   // 2. Security & API Keys from Zustand store
   const apiKeys = useNyxStore((state) => state.apiKeys);

@@ -35,8 +35,8 @@ describe('Gateway Auth & Router', () => {
   });
 
   describe('validateAuth', () => {
-    it('always permits local GGUF runner without keys', () => {
-      expect(Gateway.validateAuth('nyx-native', 'some-local-model').valid).toBe(true);
+    it('always permits local providers without keys', () => {
+      expect(Gateway.validateAuth('ollama', 'llama3').valid).toBe(true);
     });
 
     it('demands keys for gemini when not configured', () => {

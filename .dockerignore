@@ -1,0 +1,12 @@
+node_modules
+.git
+.env
+*.log
+.nyx
+.nyx-memory
+dist
+dist-desktop
+dist-server
+playwright-report
+test-results
+coverage

@@ -70,7 +70,7 @@ export default function ModelComparisonView() {
             <ArrowLeft size={16} />
           </button>
           <div>
-            <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-500 bg-clip-text text-transparent">
+            <h1 className="text-xl font-bold tracking-tight text-foreground">
               Model Comparison
             </h1>
             <p className="text-xs text-zinc-500 mt-0.5">
@@ -125,7 +125,7 @@ export default function ModelComparisonView() {
                 {/* Remove button */}
                 <button
                   onClick={() => handleRemoveModel(model.id)}
-                  className="absolute top-4 right-4 p-1 rounded-md hover:bg-red-500/10 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                  className="absolute top-4 right-4 p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-colors cursor-pointer"
                 >
                   <X size={14} />
                 </button>
@@ -179,7 +179,7 @@ export default function ModelComparisonView() {
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <ShieldCheck size={12} className="text-emerald-400" />
                       <span className="text-xs font-medium text-zinc-300">
-                        {model.provider === 'nyx-native' ? (model.status || 'Active') : 'Cloud API Ready'}
+                        {['ollama', 'lmstudio'].includes(model.provider) ? (model.status || 'Active') : 'Cloud API Ready'}
                       </span>
                     </div>
                   </div>

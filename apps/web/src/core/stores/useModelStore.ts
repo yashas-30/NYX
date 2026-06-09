@@ -67,7 +67,7 @@ export const useModelStore = create<ModelState>((set, get) => {
               .map((m: any) => ({
                 id: m.id,
                 name: m.name,
-                provider: 'nyx-native',
+                provider: 'ollama',
                 description: m.description || `Local GGUF model (${m.size || ''})`,
                 specs: {
                   contextWindow: m.contextLength || '8K',

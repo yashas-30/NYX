@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AIService } from '@src/core/services/ai.service';
-import { Check, X, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, CircleNotch } from '@phosphor-icons/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -94,9 +94,9 @@ export function ModelComparisonInteractive({ selectedModels }: { selectedModels:
           <button 
             onClick={runComparison} 
             disabled={isRunning || !prompt.trim() || selectedModels.length === 0}
-            className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-white font-medium rounded-md text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
+            className="px-4 py-2 bg-primary hover:opacity-90 active-scale text-primary-foreground font-semibold rounded-md text-xs transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
           >
-            {isRunning ? <><Loader2 className="w-3 h-3 animate-spin" /> Running...</> : 'Run Comparison'}
+            {isRunning ? <><CircleNotch className="w-3 h-3 animate-spin" /> Running...</> : 'Run Comparison'}
           </button>
         </div>
       </div>
@@ -110,15 +110,15 @@ export function ModelComparisonInteractive({ selectedModels }: { selectedModels:
           results.length >= 4 && 'grid-cols-2'
         )}>
           {results.map((result, i) => (
-            <div key={`${result.modelId}-${i}`} className="rounded-md border border-white/10 bg-white/[0.02] overflow-hidden flex flex-col">
+            <div key={`${result.modelId}-${i}`} className="glass-panel rounded-md overflow-hidden flex flex-col">
               <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-black/20">
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-xs text-zinc-200">{result.modelId}</span>
                   <span className="text-[10px] text-zinc-500 uppercase tracking-wider">{result.provider}</span>
                 </div>
-                {result.status === 'loading' && <Loader2 className="w-4 h-4 text-sky-400 animate-spin" />}
-                {result.status === 'done' && <Check className="w-4 h-4 text-emerald-500" />}
-                {result.status === 'error' && <X className="w-4 h-4 text-red-500" />}
+                {result.status === 'loading' && <CircleNotch className="w-4 h-4 text-primary animate-spin" />}
+                {result.status === 'done' && <CheckCircle weight="fill" className="w-4 h-4 text-emerald-500" />}
+                {result.status === 'error' && <XCircle weight="fill" className="w-4 h-4 text-destructive" />}
               </div>
               
               <div className="p-4 flex-1">

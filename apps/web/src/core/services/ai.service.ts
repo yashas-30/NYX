@@ -553,8 +553,9 @@ export class AIService {
       case 'gemini':
         result = await this.executeGemini(providerConfig);
         break;
-      case 'nyx-native':
-        result = await this.executeNyxNative(providerConfig);
+      case 'ollama':
+      case 'lmstudio':
+        result = await this.executeLocal({ ...providerConfig, provider: String(provider) } as any);
         break;
       default:
         throw new Error(`Unsupported provider: ${provider}`);
@@ -651,7 +652,7 @@ export class AIService {
     };
   }
 
-  private static async executeNyxNative(config: ProviderConfig): Promise<EnhancedAIResponse> {
+  private static async executeLocal(config: ProviderConfig & { provider: string }): Promise<EnhancedAIResponse> {
     const {
       modelId,
       prompt,
@@ -663,14 +664,16 @@ export class AIService {
       agentMode,
       webSearch,
       streamEvents,
+      provider,
     } = config;
 
     const messages = this.buildMessages(prompt, systemInstruction, history);
-    const response = await this.fetchWithAuth('/api/v1/nyx/local-models/chat', {
+    const response = await this.fetchWithAuth('/api/v1/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: modelId,
+        provider: provider,
         messages,
         temperature: settings?.temperature ?? 0.7,
         max_tokens: settings?.maxTokens ?? 4096,
@@ -686,8 +689,8 @@ export class AIService {
       }),
       signal,
     });
-    if (!response.ok) await this.handleNonOkResponse(response, 'Native GGUF Runner');
-    return this.processStream(response, modelId, 'nyx-native', onStream, streamEvents);
+    if (!response.ok) await this.handleNonOkResponse(response, provider);
+    return this.processStream(response, modelId, provider, onStream, streamEvents);
   }
 
   // -------------------------------------------------------------------------
@@ -792,7 +795,7 @@ export class AIService {
   }
 
   private static validateApiKey(provider: Provider | string, key?: string) {
-    const noKeyProviders = ['nyx-native'];
+    const noKeyProviders = ['ollama', 'lmstudio'];
     if (noKeyProviders.includes(String(provider))) return;
 
     if (!key?.trim()) {
@@ -817,9 +820,9 @@ export class AIService {
     provider: Provider | string,
     apiKey?: string
   ): Promise<'online' | 'offline' | 'no-key'> {
-    if (provider === 'nyx-native') {
+    if (provider === 'ollama' || provider === 'lmstudio') {
       try {
-        const res = await this.fetchWithAuth('/api/v1/nyx/local-models/status');
+        const res = await this.fetchWithAuth(`/api/v1/models/status?provider=${provider}`);
         if (!res.ok) return 'offline';
         const data = await res.json();
         return data.activeModelId ? 'online' : 'offline';

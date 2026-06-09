@@ -3,7 +3,11 @@ import { pipeline } from '@xenova/transformers';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const chroma = new ChromaClient({ path: 'http://localhost:8000' });
+const chroma = new ChromaClient({
+  host: 'localhost',
+  port: 8000,
+  ssl: false
+});
 let embedder: any = null;
 
 async function getEmbedder() {

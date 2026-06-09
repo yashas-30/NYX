@@ -4,7 +4,6 @@ import checkDiskSpace from 'check-disk-space';
 import si from 'systeminformation';
 import { APP_STATE_DIR } from '../../lib/paths.js';
 import { CacheServer } from '../../lib/cache.js';
-import { LocalModelRunner } from '../local-models/localModelRunner.js';
 import logger from '../../lib/logger.js';
 import { LOCAL_MODEL_PORT } from '@nyx/shared';
 import { db } from '../../db/client.js';
@@ -212,9 +211,6 @@ export class SystemService {
       hitRate,
       uptime,
       memory,
-      modelsState: LocalModelRunner.getState(),
-      activeModel: LocalModelRunner.getActiveModel(),
-      activeContextSize: LocalModelRunner.getActiveContextSize(),
     };
   }
 
@@ -222,13 +218,6 @@ export class SystemService {
     const { vram, freeVram, gpuName } = await this.detectVRAM();
 
     let optimalLayers = null;
-    if (modelId) {
-      try {
-        optimalLayers = await LocalModelRunner.calculateOptimalLayers(modelId);
-      } catch (error: any) {
-        logger.error({ error }, 'Error calculating optimal layers on SystemService');
-      }
-    }
 
     return {
       platform: os.platform(),

@@ -61,7 +61,6 @@ const r = getRedis();
 if (r) {
   // Dynamic imports keep Agentservice + LocalModelManager out of cold-start path
   const { AgentService } = await import('../features/nyx/agent.service.js');
-  const { LocalModelManager } = await import('../features/local-models/localModelManager.js');
   const agentService = new AgentService();
 
   const criticWorker = new Worker('critic', async (job) => {
@@ -69,10 +68,7 @@ if (r) {
     await agentService.runBackgroundCritic(prompt, response, modelId, provider);
   }, { connection: r as ConnectionOptions, concurrency: 2 });
 
-  const downloadWorker = new Worker('download', async (job) => {
-    const { modelId } = job.data;
-    await (LocalModelManager as any).startDownload(modelId);
-  }, { connection: r as ConnectionOptions, concurrency: 1 });
+
 
   const fileWriteWorker = new Worker('file-write', async (job) => {
     const { filePath, content } = job.data;
@@ -82,6 +78,5 @@ if (r) {
 
   // Suppress BullMQ worker internal error noise
   criticWorker.on('error',    (err) => logger.debug({ err: err.message }, '[Worker:critic] error'));
-  downloadWorker.on('error',  (err) => logger.debug({ err: err.message }, '[Worker:download] error'));
   fileWriteWorker.on('error', (err) => logger.debug({ err: err.message }, '[Worker:file-write] error'));
 }

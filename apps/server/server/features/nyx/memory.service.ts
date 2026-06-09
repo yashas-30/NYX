@@ -328,7 +328,7 @@ ${nyxResponse}
           if (!res.ok) throw new Error(`Gemini Critic API error: ${res.statusText}`);
           const data: any = await res.json();
           responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        } else if (provider === 'nyx-native') {
+        } else if (provider === 'ollama' || provider === 'lmstudio') {
           const llamaPort = env.LLAMA_PORT || LOCAL_MODEL_PORT;
           const res = await fetch(`http://127.0.0.1:${llamaPort}/v1/chat/completions`, {
             method: 'POST',

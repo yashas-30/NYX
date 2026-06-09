@@ -11,12 +11,28 @@ import { env } from '../config/env.js';
 export type { Provider, ChatMessage, AISettings };
 
 export const VALID_GEMINI_MODELS = [
-  'gemini-3.5-flash', 'gemini-3-flash', 'gemini-3.1-pro-preview',
-  'gemini-3.1-flash-lite', 'gemini-3.1-flash-live-preview',
-  'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite',
-  'gemma-4-31b-it', 'gemma-4-26b-a4b-it', 'gemma-4-e4b-it', 'gemma-4-e2b-it',
-  'gemini-3.1-flash-image', 'gemini-3-pro-image',
-  'gemini-3.1-pro-preview-customtools'
+  // GA
+  'gemini-3.5-flash',
+  // Preview
+  'gemini-3-flash-preview',
+  'gemini-3.1-pro-preview',
+  'gemini-3.1-flash-lite',
+  'gemini-3.1-flash-live-preview',
+  'gemini-3.1-flash-image',
+  'gemini-3-pro-image',
+  'gemini-3.1-pro-preview-customtools',
+  // Deprecated (shutting down Oct 16, 2026)
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash-lite',
+  // Open models
+  'gemma-4-31b-it',
+  'gemma-4-26b-a4b-it',
+  'gemma-4-e4b-it',
+  'gemma-4-e2b-it',
+  // Aliases
+  'gemini-flash-latest',
+  'gemini-pro-latest',
 ];
 
 export const GEMINI_API_VERSION = (model: string) => {
@@ -37,6 +53,8 @@ export interface StreamCallbacks {
   onChunk: (text: any) => void;
   onDone: () => void;
   onError: (error: string) => void;
+  isPaused?: () => boolean;
+  waitForResume?: () => Promise<void>;
 }
 
 // Cloudflare AI Gateway Configuration
@@ -49,7 +67,7 @@ interface AIGatewayConfig {
 
 /**
  * Returns Cloudflare AI Gateway config for provider if enabled.
- * Local providers (nyx-native) always use direct connections.
+ * Local providers (ollama, lmstudio) always use direct connections.
  * @param provider - The AI provider to check
  * @returns AIGatewayConfig with enabled flag and baseUrl
  */
@@ -80,7 +98,8 @@ const getCloudflareGateway = (provider: Provider): AIGatewayConfig => {
 // Provider URL configuration
 const PROVIDER_URLS: Record<Provider, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta', // Kept for backwards compatibility
-  'nyx-native': '',
+  ollama: '',
+  lmstudio: '',
   'antigravity-sdk': '',
   terminal: '',
 };
@@ -131,7 +150,7 @@ export class Gateway {
 
   /**
    * Validates that we have proper authentication before making requests.
-   * Local providers (nyx-native) don't need keys.
+   * Local providers (ollama, lmstudio) don't need keys.
    * @param provider - The AI provider
    * @param modelId - The model identifier
    * @param apiKey - Optional user-provided API key
@@ -142,7 +161,7 @@ export class Gateway {
     modelId: string,
     apiKey?: string
   ): { valid: boolean; error?: string } {
-    if (provider === 'nyx-native') {
+    if (provider === 'ollama' || provider === 'lmstudio') {
       return { valid: true };
     }
 
@@ -233,6 +252,10 @@ export class Gateway {
 
     try {
       while (true) {
+        if (callbacks.isPaused?.()) {
+          await callbacks.waitForResume?.();
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -315,6 +338,8 @@ export class Gateway {
       }
       logger.error({ err: error }, '[Gateway.processSSEStream] Stream error');
       callbacks.onError(error.message || 'Stream processing failed');
+    } finally {
+      reader.cancel().catch(() => {});
     }
   }
 

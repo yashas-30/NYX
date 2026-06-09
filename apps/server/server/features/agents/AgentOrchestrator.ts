@@ -177,11 +177,15 @@ export class AgentOrchestrator {
 
     let fullText = '';
     
+    // Override provider and model if provided in context (e.g., local model selection)
+    const providerToUse = input.provider || agent.provider;
+    const modelToUse = input.model || agent.model;
+    
     await new Promise<void>((resolve, reject) => {
       UnifiedEngine.executeStream(
         {
-          provider: agent.provider as any,
-          model: agent.model,
+          provider: providerToUse as any,
+          model: modelToUse,
           messages: messages as any[],
           apiKey: input.apiKey,
           settings: { temperature: agent.temperature, maxTokens: agent.maxTokens }
@@ -218,9 +222,14 @@ export class AgentOrchestrator {
       contextPrompt += '\n\nPrevious Agent Results:\n' + JSON.stringify(previousResults, null, 2);
     }
     
+    // Resolve apiKey dynamically based on the provider we end up using
+    const overrideProvider = context.provider || agent.provider;
+    
     return {
       prompt: contextPrompt,
-      apiKey: context.apiKeys?.[agent.provider] || '',
+      apiKey: context.apiKeys?.[overrideProvider] || '',
+      provider: context.provider,
+      model: context.modelId || context.model,
       previousResults,
       codebase: context.codebase,
       requirements: context.requirements

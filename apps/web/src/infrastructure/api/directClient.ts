@@ -176,17 +176,11 @@ async function parseError(response: Response): Promise<Error> {
 // Helper to resolve Gemini models
 function resolveRealGeminiModel(model: string): string {
   const modelMap: Record<string, string> = {
-    'gemma-4-31b-it': 'gemma-4-31b-it',
-    'gemma-4-27b-it': 'gemma-4-26b-a4b-it',
-    'gemini-3.5-flash': 'gemini-3.5-flash',
-    'gemini-3-flash': 'gemini-3-flash-preview',
-    'gemini-3.1-pro': 'gemini-3.1-pro-preview',
+    'gemini-3-flash': 'gemini-3-flash',
+    'gemini-3-flash-lite': 'gemini-3-flash-lite',
     'gemini-2.5-flash': 'gemini-2.5-flash',
-    'gemini-2.5-pro': 'gemini-2.5-pro',
-    'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
-    'gemini-2.0-flash': 'gemini-2.0-flash',
-    'gemini-1.5-pro': 'gemini-1.5-pro',
-    'gemini-1.5-flash': 'gemini-1.5-flash',
+    'gemma-4-31b-it': 'gemma-4-31b-it',
+    'gemma-4-27b-it': 'gemma-4-27b-it',
   };
   return modelMap[model] || model;
 }

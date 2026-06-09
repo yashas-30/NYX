@@ -2,7 +2,7 @@
  * @file src/infrastructure/services/hybridRouter.ts
  * @description Production-grade hybrid model router with predictive latency,
  *   cost optimization, per-request isolation, and Claude/Kimi-parity routing.
- *   Exclusively supports Gemini and local models (nyx-native).
+ *   Exclusively supports Gemini and local models (ollama, lmstudio).
  */
 
 import { AVAILABLE_MODELS } from '@shared/config/models';
@@ -118,7 +118,7 @@ export class HybridModelRouter {
       return;
     }
     try {
-      const res = await fetchWithAuth('/api/v1/nyx/local-models');
+      const res = await fetchWithAuth('/api/v1/models/status?provider=ollama');
       if (!res.ok) return;
 
       const data = await res.json();
@@ -308,8 +308,8 @@ export class HybridModelRouter {
       typeof localStorage !== 'undefined' &&
       localStorage.getItem('llm_ref_local_models_enabled') === 'true';
     const candidates = AVAILABLE_MODELS.filter((m) => {
-      // Exclusively support Gemini and local models (nyx-native)
-      if (m.provider === 'nyx-native') return localEnabled;
+      // Exclusively support Gemini and local models
+      if (m.provider === 'ollama' || m.provider === 'lmstudio') return localEnabled;
       if (m.provider === 'gemini') return !!context.apiKeys['gemini']?.trim();
       return false;
     });
@@ -334,7 +334,7 @@ export class HybridModelRouter {
 
     const best = scored[0];
     const warmth = this.predictWarmth(best.model.id);
-    const isLocal = best.model.provider === 'nyx-native';
+    const isLocal = best.model.provider === 'ollama' || best.model.provider === 'lmstudio';
 
     // Auto-warm cold local models for simple tasks
     if (isLocal && warmth.timeToWarmMs > 0 && context.task.complexity !== 'enterprise') {
@@ -349,7 +349,7 @@ export class HybridModelRouter {
       }`,
       estimatedLatency:
         warmth.timeToWarmMs + (this.performanceLog.get(best.model.id)?.avgLatencyMs || 500),
-      estimatedCost: best.model.provider === 'nyx-native' ? 'free' : 'low',
+      estimatedCost: (best.model.provider === 'ollama' || best.model.provider === 'lmstudio') ? 'free' : 'low',
     };
   }
 
@@ -368,7 +368,7 @@ export class HybridModelRouter {
       requiresTools: false,
       requiresVision: false,
       maxLatencyMs: 2000,
-      preferredProviders: ['nyx-native', 'gemini'],
+      preferredProviders: ['ollama', 'lmstudio', 'gemini'],
     });
   }
 
@@ -417,7 +417,7 @@ export class HybridModelRouter {
     const alternatives = AVAILABLE_MODELS.filter((m) => {
       if (m.id === modelId) return false;
       if (this.isCircuitOpen(m.id)) return false;
-      if (m.provider === 'nyx-native') return true;
+      if (m.provider === 'ollama' || m.provider === 'lmstudio') return true;
       if (m.provider === 'gemini') return !!apiKeys['gemini']?.trim();
       return false;
     }).sort((a, b) => {
@@ -458,7 +458,7 @@ export class HybridModelRouter {
       const current = chain[i];
       const apiKey = apiKeys[current.provider] || '';
 
-      if (current.provider !== 'nyx-native' && !apiKey) {
+      if (current.provider !== 'ollama' && current.provider !== 'lmstudio' && !apiKey) {
         continue;
       }
 
@@ -467,14 +467,14 @@ export class HybridModelRouter {
           `[FallbackChain] ${current.id} (${current.provider}) [${i + 1}/${chain.length}]`
         );
 
-        if (current.provider === 'nyx-native') {
-          const status = await checkStatusFn('nyx-native').catch(() => 'offline');
+        if (current.provider === 'ollama' || current.provider === 'lmstudio') {
+          const status = await checkStatusFn(current.provider).catch(() => 'offline');
           if (status !== 'online') {
             console.log('[FallbackChain] Booting cold local model fallback...');
-            await fetchWithAuth('/api/v1/nyx/local-models/run', {
+            await fetchWithAuth('/api/v1/chat/stream', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ modelId: current.id, settings: { contextSize: 4096 } }),
+              body: JSON.stringify({ model: current.id, provider: current.provider, messages: [{role: 'user', content: 'hello'}] }),
             }).catch(() => {});
             await new Promise((r) => setTimeout(r, 2000)); // Sleep to allow start
           }
@@ -518,17 +518,16 @@ export class HybridModelRouter {
   // -------------------------------------------------------------------------
 
   private async warmModel(modelId: string): Promise<void> {
-    fetchWithAuth('/api/v1/nyx/local-models/run', {
+    fetchWithAuth('/api/v1/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ modelId, settings: { contextSize: 4096 } }),
+      body: JSON.stringify({ model: modelId, messages: [{role: 'user', content: 'hello'}] }),
     }).catch(() => {});
   }
 
   private async handleOOM(modelId: string): Promise<void> {
     console.warn(`[HybridModelRouter] OOM for ${modelId} — stopping local models`);
     try {
-      await fetchWithAuth('/api/v1/nyx/local-models/stop', { method: 'POST' });
       // Clear hot models
       for (const [id, state] of this.localModelPool) {
         if (state.status === 'hot') {

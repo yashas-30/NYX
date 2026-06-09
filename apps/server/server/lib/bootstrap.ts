@@ -7,6 +7,7 @@ import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import logger from './logger.js';
+import { workerPool } from './workers/workerPool.js';
 import { cleanupProcesses, registerProcess } from './processRegistry.js';
 import { CodebaseScanner } from '../features/workspace/codebaseScanner.js';
 import { runMigrations } from '../db/migrator.js';
@@ -239,6 +240,9 @@ export function registerShutdownHandlers(app: any, clearHealthChecks?: () => voi
     } catch (error: any) {
       logger.error({ err: error }, '[Shutdown] Failed to dispose CodebaseScanner');
     }
+
+    // Gracefully shut down worker thread pool
+    workerPool.shutdown().catch(() => {});
 
     app.close().then(() => {
       process.exit(0);

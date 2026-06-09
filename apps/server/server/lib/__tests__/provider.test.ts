@@ -9,18 +9,14 @@ import {
 
 describe('AI Provider Utility Functions', () => {
   describe('detectProvider', () => {
-    it('detects local GGUF model patterns', () => {
-      expect(detectProvider('nyx-gemma-4-e2b-it')).toBe('nyx-native');
-      expect(detectProvider('my-model.gguf')).toBe('nyx-native');
+    it('detects local model patterns', () => {
+      expect(detectProvider('llama3:latest')).toBe('ollama');
+      expect(detectProvider('lmstudio-community')).toBe('lmstudio');
     });
 
-    it('detects custom patterns as nyx-native', () => {
-      expect(detectProvider('custom-my-model')).toBe('nyx-native');
-    });
-
-    it('defaults to Gemini for unknown patterns', () => {
-      expect(detectProvider('my-strange-local-model')).toBe('gemini');
-      expect(detectProvider('')).toBe('gemini');
+    it('throws error for unknown patterns', () => {
+      expect(() => detectProvider('my-strange-local-model')).toThrow();
+      expect(() => detectProvider('')).toThrow();
     });
 
     it('defaults to Gemini for gemini model IDs', () => {
@@ -44,7 +40,8 @@ describe('AI Provider Utility Functions', () => {
     });
 
     it('returns false for local providers', () => {
-      expect(requiresApiKey('nyx-native')).toBe(false);
+      expect(requiresApiKey('ollama')).toBe(false);
+      expect(requiresApiKey('lmstudio')).toBe(false);
     });
   });
 

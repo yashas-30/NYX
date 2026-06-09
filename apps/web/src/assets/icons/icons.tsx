@@ -1,5 +1,5 @@
 import React from 'react';
-import Lottie from 'lottie-react';
+import { Player } from '@lottiefiles/react-lottie-player';
 import circleLoading from '../circle-loading.json';
 
 /**
@@ -104,7 +104,7 @@ export const NyxLoader = React.memo(
   ({ size = 28, className = '' }: { size?: number; className?: string }) => {
     return (
       <div style={{ width: size, height: size }} className={className}>
-        <Lottie animationData={circleLoading} loop={true} />
+        <Player autoplay loop src={circleLoading} style={{ width: '100%', height: '100%' }} />
       </div>
     );
   }

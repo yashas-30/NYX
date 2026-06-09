@@ -22,7 +22,7 @@ import {
   updateConversationState,
   ConversationState,
 } from '@src/core/services/promptClassifier';
-import { ChatAgentWithTools } from '@src/core/agents/chatAgentWithTools';
+import { ChatAgent } from '@src/core/agents/chatAgent';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
 import { AIService, countTokens } from '@src/core/services/ai.service';
@@ -212,7 +212,8 @@ export const useChatPipeline = ({
     async (
       generator: AsyncGenerator<StreamChunk>,
       signal: AbortSignal,
-      timeoutMs: number = 60000
+      timeoutMs: number = 60000,
+      onFirstChunk?: () => void
     ): Promise<{ text: string; metrics: TelemetryMetrics | null; finishReason: string }> => {
       let accumulatedText = '';
       let accumulatedReasoning = '';
@@ -226,7 +227,10 @@ export const useChatPipeline = ({
 
       try {
         for await (const chunk of generator) {
-          hasReceivedFirstChunk = true;
+          if (!hasReceivedFirstChunk) {
+            hasReceivedFirstChunk = true;
+            onFirstChunk?.();
+          }
 
           if (signal.aborted) break;
 
@@ -426,7 +430,7 @@ export const useChatPipeline = ({
 
   const gatherSearchContext = useCallback(
     async (
-      agent: ChatAgentWithTools,
+      agent: ChatAgent,
       prompt: string,
       analysis: PromptAnalysis,
       signal: AbortSignal
@@ -505,7 +509,7 @@ export const useChatPipeline = ({
 
       try {
         // Validate API key early
-        if (!nyxApiKey && nyxProvider !== 'nyx-native') {
+        if (!nyxApiKey && nyxProvider !== 'ollama' && nyxProvider !== 'lmstudio') {
           throw new Error(
             `${nyxProvider} API key not found. Please add your API key in Settings before using this model.`
           );
@@ -564,14 +568,14 @@ export const useChatPipeline = ({
         const compressedPrompt = AIService.compressPrompt(sanitizedPrompt, 50000);
 
         // 4. Initialize agent with snapshot (not live ref)
-        const agent = new ChatAgentWithTools({
+        const agent = new ChatAgent({
           modelId: nyxModel,
           provider: nyxProvider,
           apiKey: nyxApiKey,
           settings: modelSettings,
           history: optimizedHistory,
           lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
-          webSearchEnabled: false,
+          webSearchEnabled: webSearchEnabled,
           // conversationState: conversationStateRef.current,
         });
 
@@ -642,7 +646,7 @@ export const useChatPipeline = ({
           })();
         }
 
-        // Wrap processStream with timeout
+        // Wrap processStream with timeout (10 minutes total, but cleared on first chunk)
         let streamTimeoutHandle: NodeJS.Timeout | null = null;
         const streamTimeoutPromise = new Promise<any>((_, reject) => {
           streamTimeoutHandle = setTimeout(() => {
@@ -650,11 +654,21 @@ export const useChatPipeline = ({
             reject(
               new Error('Stream response timeout after 60 seconds - no data received from model')
             );
-          }, 60000);
+          }, 600000); // 10 minutes total safety timeout
         });
 
         try {
-          const streamPromise = processStream(generator, controller.signal, 60000);
+          const streamPromise = processStream(
+            generator,
+            controller.signal,
+            60000,
+            () => {
+              if (streamTimeoutHandle) {
+                clearTimeout(streamTimeoutHandle);
+                streamTimeoutHandle = null;
+              }
+            }
+          );
           const { text, metrics, finishReason } = await Promise.race([
             streamPromise,
             streamTimeoutPromise,
@@ -778,12 +792,13 @@ export const useChatPipeline = ({
           if (last && last.role === 'assistant') {
             // Preserve any partial content
             const partialContent = last.content || '';
+            const errorMsg = error?.message || 'Generation failed.';
             next[next.length - 1] = {
               ...last,
               status: isAborted ? 'stopped' : 'error',
               content:
                 partialContent ||
-                (isAborted ? 'Generation stopped.' : 'The model did not respond.'),
+                (isAborted ? 'Generation stopped.' : `Error: ${errorMsg}`),
               metrics: {
                 ...(last.metrics || {}),
                 finishReason: isAborted ? 'stopped' : 'error',

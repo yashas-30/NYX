@@ -222,34 +222,20 @@ export class AssistantService {
       }
 
       case 'model.list': {
-        const result = this.localModelsService.listModels();
-        const modelNames = result.models.map((m: any) => m.id).join(', ');
-        const activeText = result.activeModelId
-          ? `Active Model: ${result.activeModelId}`
-          : 'No active running model';
         return {
-          message: `Available Models: [${modelNames || 'None'}]. ${activeText}. Running state: ${result.runnerStatus}.`,
+          message: `Local model management is delegated to Ollama and LM Studio. Check your provider settings.`,
         };
       }
 
       case 'model.status': {
-        const result = this.localModelsService.listModels();
-        const activeText = result.activeModelId
-          ? `Active model is "${result.activeModelId}"`
-          : 'There is currently no active model running';
         return {
-          message: `${activeText}. Runner status: ${result.runnerStatus}.`,
+          message: `Check your Ollama or LM Studio interface for running model status.`,
         };
       }
 
       case 'model.switch': {
-        const modelId = entities.modelId;
-        if (!modelId) {
-          return { message: 'Could not switch model: no model ID specified in query.' };
-        }
-        await this.localModelsService.runModel(modelId);
         return {
-          message: `Successfully requested running model: "${modelId}".`,
+          message: `Model switching should be done via the client UI or externally.`,
         };
       }
 

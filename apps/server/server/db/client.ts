@@ -32,6 +32,7 @@ if (isPg) {
   sqliteInstance.pragma('synchronous = NORMAL');
   sqliteInstance.pragma('temp_store = MEMORY');
   sqliteInstance.pragma('foreign_keys = ON');
+  sqliteInstance.pragma('cache_size = 10000');
   dbInstance = sqliteDrizzle(sqliteInstance, { schema });
 }
 

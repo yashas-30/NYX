@@ -19,8 +19,8 @@ export async function routeTask(task: TaskProfile): Promise<RoutingDecision> {
   // Stub intelligent router rules engine
   if (task.containsSensitiveData || task.isPrivateRepo) {
     return {
-      model: 'nyx-gemma-4-e2b-it',
-      provider: 'nyx-native',
+      model: 'llama3',
+      provider: 'ollama',
       reason: 'Sensitive data - local only',
       estimatedCost: 0,
       estimatedLatency: 150,

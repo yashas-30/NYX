@@ -1,7 +1,11 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['server.ts'],
+  entry: {
+    server: 'server.ts',
+    worker: 'server/worker.ts',
+    'tokenEstimator.worker': 'server/lib/workers/tokenEstimator.worker.ts'
+  },
   format: ['esm'],
   target: 'node22',
   outDir: 'dist',

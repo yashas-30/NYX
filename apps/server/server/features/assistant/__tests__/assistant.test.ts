@@ -323,39 +323,21 @@ describe('AssistantService & Intent Execution', () => {
   });
 
   it('runs model.list action immediately', async () => {
-    mockListModels.mockReturnValue({
-      models: [{ id: 'gemma' }, { id: 'llama' }],
-      activeModelId: 'gemma',
-      runnerStatus: 'running',
-    });
-
     const res = await service.processMessage('list available models', 'session1');
-    expect(mockListModels).toHaveBeenCalled();
     expect(res.intent).toBe('model.list');
-    expect(res.response).toContain('Available Models: [gemma, llama]');
-    expect(res.response).toContain('Active Model: gemma');
+    expect(res.response).toContain('delegated to Ollama and LM Studio');
   });
 
   it('runs model.status action immediately', async () => {
-    mockListModels.mockReturnValue({
-      models: [{ id: 'gemma' }],
-      activeModelId: 'gemma',
-      runnerStatus: 'running',
-    });
-
     const res = await service.processMessage('check active model status', 'session1');
-    expect(mockListModels).toHaveBeenCalled();
     expect(res.intent).toBe('model.status');
-    expect(res.response).toContain('Active model is "gemma"');
+    expect(res.response).toContain('Check your Ollama or LM Studio interface');
   });
 
   it('runs model.switch action immediately', async () => {
-    mockRunModel.mockResolvedValue({ status: 'running', modelId: 'gemma' });
-
     const res = await service.processMessage('switch model to gemma', 'session1');
-    expect(mockRunModel).toHaveBeenCalledWith('gemma');
     expect(res.intent).toBe('model.switch');
-    expect(res.response).toContain('Successfully requested running model: "gemma"');
+    expect(res.response).toContain('Model switching should be done via the client UI');
   });
 
   it('runs cache.stats action immediately', async () => {

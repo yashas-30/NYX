@@ -4,13 +4,14 @@ import { AVAILABLE_MODELS } from './models.js';
 export const PROVIDER_LABELS: Record<string, string> = {
   gemini: 'Gemini',
   terminal: 'Terminal',
-  'nyx-native': 'NYX Edge',
+  ollama: 'Ollama',
+  lmstudio: 'LM Studio',
   'antigravity-sdk': 'Antigravity SDK',
 };
 
 export const CLOUD_PROVIDERS: string[] = ['gemini', 'antigravity-sdk'];
 
-export const LOCAL_PROVIDERS: string[] = ['nyx-native'];
+export const LOCAL_PROVIDERS: string[] = ['ollama', 'lmstudio'];
 
 const LOCAL_MODEL_IDS = new Set([
   'nyx-gemma-4-e2b-it',
@@ -46,46 +47,94 @@ const LOCAL_MODEL_IDS = new Set([
  * Structured provider detection that checks in priority order.
  */
 export const detectProvider = (modelId: string): Provider => {
-  if (!modelId) return 'gemini';
+  if (!modelId) {
+    throw new Error('Model ID is required but was not provided.');
+  }
+
+  if (modelId.startsWith('ollama/') || modelId.startsWith('ollama:')) return 'ollama';
+  if (modelId.startsWith('lmstudio/')) return 'lmstudio';
 
   // 1. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'nyx-native';
+    return 'ollama';
   }
 
   // 2. Check in static AVAILABLE_MODELS presets
   const availableModel = AVAILABLE_MODELS.find((m) => m.id === modelId);
   if (availableModel) return availableModel.provider;
 
-  // 3. Check GGUF and custom patterns for imported models
+  // 3. Check generic patterns
   const lowerId = modelId.toLowerCase();
-  if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
-    return 'nyx-native';
+  if (lowerId.startsWith('gemini-') || lowerId.startsWith('gemma-4')) {
+    return 'gemini';
+  }
+  if (lowerId.includes('lmstudio')) {
+    return 'lmstudio';
+  }
+  if (
+    lowerId.includes('llama') ||
+    lowerId.includes('qwen') ||
+    lowerId.includes('gemma') ||
+    lowerId.includes('phi') ||
+    lowerId.includes('mistral') ||
+    lowerId.includes('deepseek')
+  ) {
+    return 'ollama';
   }
 
-  return 'gemini';
+  // 4. Check GGUF and custom patterns for imported models
+  if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
+    return 'ollama';
+  }
+
+  throw new Error(`Unknown model: ${modelId}. No provider mapping found.`);
 };
 
 /**
  * Gets provider from model ID with proper fallback to AVAILABLE_MODELS.
  */
 export const getProviderForModel = (modelId: string): Provider => {
+  if (!modelId) {
+    throw new Error('Model ID is required but was not provided.');
+  }
+
+  if (modelId.startsWith('ollama/') || modelId.startsWith('ollama:')) return 'ollama';
+  if (modelId.startsWith('lmstudio/')) return 'lmstudio';
+
   // 1. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'nyx-native';
+    return 'ollama';
   }
 
   // 2. Check in static AVAILABLE_MODELS presets
   const availableModel = AVAILABLE_MODELS.find((m) => m.id === modelId);
   if (availableModel) return availableModel.provider;
 
-  // 3. Check GGUF and custom patterns for imported models
+  // 3. Check generic patterns
   const lowerId = modelId.toLowerCase();
-  if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
-    return 'nyx-native';
+  if (lowerId.startsWith('gemini-') || lowerId.startsWith('gemma-4')) {
+    return 'gemini';
+  }
+  if (lowerId.includes('lmstudio')) {
+    return 'lmstudio';
+  }
+  if (
+    lowerId.includes('llama') ||
+    lowerId.includes('qwen') ||
+    lowerId.includes('gemma') ||
+    lowerId.includes('phi') ||
+    lowerId.includes('mistral') ||
+    lowerId.includes('deepseek')
+  ) {
+    return 'ollama';
   }
 
-  return 'gemini';
+  // 4. Check GGUF and custom patterns for imported models
+  if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
+    return 'ollama';
+  }
+
+  throw new Error(`Unknown model: ${modelId}. No provider mapping found.`);
 };
 
 /**

@@ -96,119 +96,51 @@ export class ChatService {
       logger.warn(`[ChatService] Memory retrieval failed: ${err.message}`);
     }
 
-    const payload = {
-      model: modelId,
-      prompt: finalPrompt,
-      history,
-      systemInstruction,
-      settings: settings || { temperature: 0.7, maxTokens: 4096 },
-    };
-
-    if (provider === 'gemini' && modelId) {
-      const keys = getKeysSync();
-      const activeKey = keys['gemini'] || '';
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?key=${activeKey}&alt=sse`;
-
-      const contents = [...history];
-      if (systemInstruction) {
-        // Add system instruction if supported by history mapping (simplified for this example)
-      }
-      const parts: any[] = [{ text: finalPrompt }];
-      for (const img of images) {
-        parts.push({
-          inlineData: {
-            mimeType: img.mimeType,
-            data: img.data,
-          },
-        });
-      }
-      contents.push({ role: 'user', parts });
-
-      const { traceActiveSpan } = await import('../../lib/otel.js');
-      const res = await traceActiveSpan('Gemini API Call', async (span) => {
-        span.setAttributes({
-          'ai.provider': 'gemini',
-          'ai.model': modelId,
-          'ai.history_length': history.length,
-          'ai.has_images': images.length > 0,
-        });
-        return await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents,
-            generationConfig: payload.settings,
-          }),
-        });
-      });
-
-      if (!res.ok) throw new Error(`Gemini API Error: ${res.statusText}`);
-
-      // Basic SSE parser for Gemini
-      // fallow-ignore-next-line code-duplication
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) throw new Error('No reader available');
-
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6).trim();
-            if (dataStr === '[DONE]') continue;
-            try {
-              const data = JSON.parse(dataStr);
-              const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-              if (text) onChunk(text);
-            } catch (e) {}
-          }
+    const messages: any[] = [];
+    if (systemInstruction) {
+      messages.push({ role: 'system', content: systemInstruction });
+    }
+    
+    if (Array.isArray(history)) {
+      for (const h of history) {
+        if (h.parts) {
+          messages.push({ role: h.role, content: h.parts.map((p: any) => p.text).join('') });
+        } else if (h.content) {
+          messages.push({ role: h.role, content: h.content });
         }
       }
-      onDone();
-      return;
     }
 
-    // Default fallback to local python scrapling server /api/gemini/stream
-    const scraplingPort = env.SCRAPLING_PORT || 3002;
-    const res = await fetch(`http://127.0.0.1:${scraplingPort}/api/gemini/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal,
+    messages.push({ 
+      role: 'user', 
+      content: finalPrompt, 
+      images: images.length > 0 ? images : undefined 
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Local backend stream error: ${text}`);
-    }
+    const keys = getKeysSync();
+    const apiKey = keys[provider || ''] || '';
 
-    // fallow-ignore-next-line code-duplication
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder();
-    if (!reader) throw new Error('No reader available');
-
-    // fallow-ignore-next-line code-duplication
-    let buf = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        onChunk(line + '\n');
-      }
+    try {
+      const { UnifiedEngine } = await import('../../lib/unifiedEngine.js');
+      await UnifiedEngine.executeStream(
+        {
+          provider: provider || 'gemini',
+          model: modelId || '',
+          messages,
+          settings: settings || { temperature: 0.7, maxTokens: 4096 },
+          apiKey,
+        },
+        (chunk: any) => {
+          onChunk(chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '');
+        },
+        () => {
+          onDone();
+        }
+      );
+    } catch (err: any) {
+      logger.error({ err }, 'UnifiedEngine stream failed');
+      throw new Error(`UnifiedEngine execution failed: ${err.message}`);
     }
-    if (buf.trim()) onChunk(buf + '\n');
-    onDone();
   }
 
   async getSuggestions(history: any[]): Promise<string[]> {

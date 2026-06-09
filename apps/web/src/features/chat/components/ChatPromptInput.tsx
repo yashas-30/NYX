@@ -206,7 +206,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
               {
                 name: data.name,
                 mimeType: data.mimeType,
-                data: data.data,
+                data: base64Data, // Use local base64Data since server response does not contain it
               },
             ]);
             toast.success(`File "${file.name}" attached successfully`);
@@ -239,7 +239,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const providerStr = String(currentModel?.provider ?? '');
   const isLocalModel = !!(
     currentModelId &&
-    (providerStr === 'local' || providerStr === 'nyx-native' || (!currentModel && currentModelId))
+    (providerStr === 'ollama' || providerStr === 'lmstudio' || (!currentModel && currentModelId))
   );
 
   useEffect(() => {

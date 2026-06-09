@@ -99,8 +99,10 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
     done();
   });
 
+  // Disable global compression to compress specific routes (like SSE agent streams)
   await app.register(fastifyCompress, {
-    customTypes: /text\/html|text\/plain|application\/json/,
+    global: false,
+    encodings: ['gzip', 'deflate'],
   });
 
   await app.register(fastifyHelmet, {
@@ -179,6 +181,14 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
 
+      const corsOrigin = process.env.CORS_ORIGIN || env.ALLOWED_ORIGINS || '';
+      if (corsOrigin) {
+        const allowedOrigins = corsOrigin.split(',').map((o) => o.trim());
+        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+          return callback(null, true);
+        }
+      }
+
       if (!isProd) {
         const devOrigins = [
           'http://localhost:3000',
@@ -196,16 +206,8 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
         return callback(new Error('Not allowed by CORS'), false);
       }
 
-      const allowedOriginsStr = env.ALLOWED_ORIGINS || '';
-      if (allowedOriginsStr) {
-        const allowedOrigins = allowedOriginsStr.split(',').map((o) => o.trim());
-        if (allowedOrigins.includes(origin)) {
-          return callback(null, true);
-        }
-      } else {
-        if (origin === 'tauri://localhost' || origin === 'nyx://localhost') {
-          return callback(null, true);
-        }
+      if (origin === 'tauri://localhost' || origin === 'nyx://localhost') {
+        return callback(null, true);
       }
       callback(new Error('Not allowed by CORS'), false);
     },
@@ -219,6 +221,7 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
       'tracestate',
       'Connection',
       'Accept',
+      'Accept-Encoding',
     ],
     credentials: true,
   });
@@ -288,16 +291,7 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
     workspaceWatcher.addClient(socket as any);
   });
 
-  app.get('/ws/downloads', { websocket: true }, async (socket, req) => {
-    const searchParams = new URL(req.url, `http://${req.headers.host}`).searchParams;
-    const token = searchParams.get('token');
-    if (!token || !verifySessionToken(token)) {
-      socket.close(1008, 'Unauthorized');
-      return;
-    }
-    const { LocalModelManager } = await import('../features/local-models/localModelManager.js');
-    LocalModelManager.addClient(socket as any);
-  });
+
 
   // Mount model and application routes
   await app.register(fastifyModelRoutes);

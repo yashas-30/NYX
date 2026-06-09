@@ -34,15 +34,6 @@ export async function metricsRouter(fastify: FastifyInstance) {
     help: 'Total size of cache in bytes',
   });
 
-  const activeModelGauge = new promClient.Gauge({
-    name: 'nyx_active_model',
-    help: 'Active local model (1 if active, labeled by model name)',
-    labelNames: ['model'],
-  });
-  const activeContextSizeGauge = new promClient.Gauge({
-    name: 'nyx_active_context_size',
-    help: 'Active local model context size in tokens',
-  });
 
   const systemHealthGauge = new promClient.Gauge({
     name: 'nyx_system_health_status',
@@ -56,7 +47,7 @@ export async function metricsRouter(fastify: FastifyInstance) {
 
   fastify.get('/metrics', async (request, reply) => {
     try {
-      const { cacheStats, hitRate, uptime, memory, modelsState, activeModel, activeContextSize } =
+      const { cacheStats, hitRate, uptime, memory } =
         await service.getMetrics();
       const health = await service.getHealth();
 
@@ -67,13 +58,6 @@ export async function metricsRouter(fastify: FastifyInstance) {
       cacheItemCountGauge.set(cacheStats.itemCount);
       cacheSizeBytesGauge.set(cacheStats.totalSizeBytes);
 
-      activeModelGauge.reset();
-      if (activeModel) {
-        activeModelGauge.labels({ model: activeModel }).set(1);
-      } else {
-        activeModelGauge.labels({ model: 'none' }).set(1);
-      }
-      activeContextSizeGauge.set(activeContextSize || 0);
 
       const overallHealthVal =
         health.overall === 'ok' ? 1 : health.overall === 'degraded' ? 0.5 : 0;
@@ -101,11 +85,7 @@ export async function metricsRouter(fastify: FastifyInstance) {
           hitRate,
           ...cacheStats,
         },
-        models: {
-          state: modelsState,
-          activeModel,
-          activeContextSize,
-        },
+
         system: {
           uptime,
           memory,

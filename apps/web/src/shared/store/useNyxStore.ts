@@ -259,38 +259,7 @@ export const useNyxStore = create<NyxState>()(
         const newStatuses: Record<string, 'online' | 'offline' | 'no-key' | 'invalid-key'> = {};
 
         try {
-          // Check local models status
-          const localEnabled =
-            get().localModelsEnabled ||
-            (typeof localStorage !== 'undefined' &&
-              localStorage.getItem('nyx_local_models_enabled') === 'true');
-          if (localEnabled) {
-            const nativeRes = await fetchWithAuth('/api/v1/nyx/local-models/status').catch(
-              () => null
-            );
-            if (nativeRes && nativeRes.ok) {
-              const data = await nativeRes.json();
-              if (data.activeModelId) {
-                // Ping the model with a trivial request
-                const healthRes = await fetchWithAuth('/api/v1/nyx/local-models/chat', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    model: data.activeModelId,
-                    messages: [{ role: 'user', content: 'hi' }],
-                    max_tokens: 1,
-                  }),
-                }).catch(() => null);
-                newStatuses['nyx-native'] = healthRes?.ok ? 'online' : 'offline';
-              } else {
-                newStatuses['nyx-native'] = 'offline';
-              }
-            } else {
-              newStatuses['nyx-native'] = 'offline';
-            }
-          } else {
-            newStatuses['nyx-native'] = 'offline';
-          }
+          // Local models status is handled by useProviderStatus hooks elsewhere
 
           // Check safeStorage vault configuration for cloud providers
           const vaultRes = await fetch('/api/v1/vault/status').catch(() => null);

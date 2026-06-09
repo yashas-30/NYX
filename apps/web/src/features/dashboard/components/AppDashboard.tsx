@@ -81,7 +81,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
   const allModels = React.useMemo(() => {
     const seen = new Set();
-    const filteredAvailable = AVAILABLE_MODELS.filter((m) => m.provider !== 'nyx-native');
+    const filteredAvailable = AVAILABLE_MODELS.filter((m) => m.provider !== 'ollama');
     const merged = [...localLibraryModels, ...filteredAvailable];
     return merged.filter((m) => {
       if (seen.has(m.id)) return false;
@@ -140,38 +140,38 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           )}
         </AnimatePresence>
 
-        {/* ── Collapsible Sidebar (Claude Warm Slate) ────────────────────── */}
+        {/* ── Collapsible Sidebar ────────────────────── */}
         <motion.aside
           variants={sidebarVariants}
           initial="open"
           animate={sidebarOpen ? 'open' : 'closed'}
           transition={{ type: 'spring', stiffness: 380, damping: 35 }}
-          className={`h-full overflow-hidden flex flex-col bg-secondary border-r border-white/[0.04] relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-sm border border-border w-[260px]' : 'flex-none z-20'}`}
+          className={`h-full overflow-hidden flex flex-col bg-secondary border-r border-border relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-sm border border-border w-[260px]' : 'flex-none z-20'}`}
         >
-          <div className="flex flex-col h-full min-w-[260px] bg-background">
-            {/* Sidebar Top Header (Stitch Design Flat) */}
-            <div className="px-4.5 pt-3.5 pb-2 select-none border-b border-white/[0.03]">
+          <div className="flex flex-col h-full min-w-[260px] bg-secondary">
+            {/* Sidebar Top Header */}
+            <div className="h-14 px-4 flex items-center select-none border-b border-border shrink-0">
               {/* Toolbar: Sidebar Toggle + Back/Forward Arrows */}
-              <div className="flex items-center gap-3 text-zinc-500">
+              <div className="flex items-center gap-3 text-muted-foreground">
                 <motion.button
-                  whileHover={{ scale: 1.05, color: '#f5f5f5' }}
+                  whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => setSidebarOpen(false)}
-                  className="p-1 rounded hover:bg-white/5 text-zinc-400 transition-all cursor-pointer"
+                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
                   title="Collapse Sidebar"
                 >
                   <PanelLeftClose size={13} />
                 </motion.button>
-                <div className="flex items-center gap-2 text-zinc-600">
+                <div className="flex items-center gap-2">
                   <motion.button
-                    whileHover={{ scale: 1.05, color: '#f5f5f5' }}
-                    className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                    whileHover={{ scale: 1.05 }}
+                    className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
                   >
                     <ArrowLeft size={12} />
                   </motion.button>
                   <motion.button
-                    whileHover={{ scale: 1.05, color: '#f5f5f5' }}
-                    className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                    whileHover={{ scale: 1.05 }}
+                    className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
                   >
                     <ArrowRight size={12} />
                   </motion.button>
@@ -179,13 +179,10 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               </div>
             </div>
 
-            {/* Top Primary Actions (Stitch design tabs) */}
-            <div className="px-3.5 pt-3 pb-2 space-y-1">
+            {/* Top Primary Actions */}
+            <div className="px-3 pt-3 pb-2 space-y-1">
               <motion.button
-                whileHover={{
-                  backgroundColor: 'rgba(255,255,255,0.04)',
-                  borderColor: 'rgba(255,255,255,0.08)',
-                }}
+                whileHover={{ backgroundColor: 'var(--muted)' }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => {
                   createSession([]);
@@ -193,58 +190,52 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     setActiveMode('coder');
                   }
                 }}
-                className="w-full flex items-center justify-start gap-2 px-3 py-2 rounded-md text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer border border-white/[0.04] text-zinc-300 bg-white/[0.02] mb-1"
+                className="w-full flex items-center justify-start gap-2 px-3 py-2 rounded-md text-xs font-medium tracking-wide transition-all duration-200 cursor-pointer border border-border text-foreground bg-background mb-1 hover:bg-muted"
               >
-                <Plus size={13} strokeWidth={1.8} className="text-zinc-400" />
+                <Plus size={13} strokeWidth={1.8} className="text-primary" />
                 <span>New Conversation</span>
               </motion.button>
 
               <button
-                onClick={() => {
-                  setActiveMode('chat');
-                }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-semibold transition-all text-left cursor-pointer ${
+                onClick={() => { setActiveMode('chat'); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
                   activeMode === 'chat'
-                    ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                    ? 'text-foreground bg-card border border-border font-semibold'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
                 }`}
               >
                 <MessageSquare
                   size={13}
-                  className={activeMode === 'chat' ? 'text-zinc-200' : 'text-zinc-500'}
+                  className={activeMode === 'chat' ? 'text-primary' : 'text-muted-foreground'}
                 />
                 <span>NYX</span>
               </button>
 
               <button
-                onClick={() => {
-                  setActiveMode('coder');
-                }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-semibold transition-all text-left cursor-pointer ${
+                onClick={() => { setActiveMode('coder'); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
                   activeMode === 'coder'
-                    ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                    ? 'text-foreground bg-card border border-border font-semibold'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
                 }`}
               >
                 <Box
                   size={13}
-                  className={activeMode === 'coder' ? 'text-zinc-200' : 'text-zinc-500'}
+                  className={activeMode === 'coder' ? 'text-primary' : 'text-muted-foreground'}
                 />
                 <span>NYX Coder</span>
               </button>
               <button
-                onClick={() => {
-                  setActiveMode('workspace');
-                }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-semibold transition-all text-left cursor-pointer ${
+                onClick={() => { setActiveMode('workspace'); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
                   activeMode === 'workspace'
-                    ? 'text-white bg-white/[0.06] border border-white/[0.08] font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border border-transparent'
+                    ? 'text-foreground bg-card border border-border font-semibold'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
                 }`}
               >
                 <Layers
                   size={13}
-                  className={activeMode === 'workspace' ? 'text-zinc-200' : 'text-zinc-500'}
+                  className={activeMode === 'workspace' ? 'text-primary' : 'text-muted-foreground'}
                 />
                 <span>Infinite Canvas</span>
               </button>
@@ -253,7 +244,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             {/* Folders and Chat Session List */}
             <div className="flex-1 overflow-y-auto px-2 space-y-1.5 scrollbar-none pt-3">
               <div className="flex items-center justify-between px-2.5 pb-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
                   Chats
                 </span>
                 <button
@@ -261,7 +252,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     const name = prompt('New Folder Name:');
                     if (name) createFolder(name);
                   }}
-                  className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer p-1"
+                  className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer p-1"
                   title="New Folder"
                 >
                   <FolderPlus size={13} />
@@ -311,8 +302,8 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     ))}
 
                   {filteredSessions.length === 0 && folders?.length === 0 && (
-                    <div className="text-left py-4 pl-4.5">
-                      <p className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">
+                    <div className="text-left py-4 pl-4">
+                      <p className="text-[9px] text-muted-foreground/60 font-semibold uppercase tracking-wider">
                         No conversations
                       </p>
                     </div>
@@ -322,54 +313,48 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             </div>
 
             {/* Bottom Section (Model Library & Settings) */}
-            <div className="px-4.5 py-3.5 border-t border-white/[0.03] mt-auto space-y-3">
+            <div className="px-4 py-3.5 border-t border-border mt-auto space-y-1">
               <button
-                onClick={() => {
-                  setActiveMode('registry');
-                }}
-                className={`w-full flex items-center gap-2.5 transition-all text-left cursor-pointer text-xs font-semibold ${
+                onClick={() => { setActiveMode('registry'); }}
+                className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${
                   activeMode === 'registry'
-                    ? 'text-white font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200'
+                    ? 'text-foreground bg-card border border-border'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
                 <Library
                   size={13}
-                  className={activeMode === 'registry' ? 'text-[#FF3366]' : 'text-zinc-500'}
+                  className={activeMode === 'registry' ? 'text-primary' : 'text-muted-foreground'}
                 />
                 <span>Model Library</span>
               </button>
 
               <button
-                onClick={() => {
-                  setActiveMode('compare');
-                }}
-                className={`w-full flex items-center gap-2.5 transition-all text-left cursor-pointer text-xs font-semibold ${
+                onClick={() => { setActiveMode('compare'); }}
+                className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${
                   activeMode === 'compare'
-                    ? 'text-white font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200'
+                    ? 'text-foreground bg-card border border-border'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
                 <Activity
                   size={13}
-                  className={activeMode === 'compare' ? 'text-[#0071E3]' : 'text-zinc-500'}
+                  className={activeMode === 'compare' ? 'text-primary' : 'text-muted-foreground'}
                 />
                 <span>Model Comparison</span>
               </button>
 
               <button
-                onClick={() => {
-                  setActiveMode('settings');
-                }}
-                className={`w-full flex items-center gap-2.5 transition-all text-left cursor-pointer text-xs font-semibold ${
+                onClick={() => { setActiveMode('settings'); }}
+                className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${
                   activeMode === 'settings'
-                    ? 'text-white font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200'
+                    ? 'text-foreground bg-card border border-border'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
                 <Settings
                   size={13}
-                  className={activeMode === 'settings' ? 'text-white' : 'text-zinc-500'}
+                  className={activeMode === 'settings' ? 'text-primary' : 'text-muted-foreground'}
                 />
                 <span>Settings</span>
               </button>
@@ -384,10 +369,10 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-              whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.05)' }}
+              whileHover={{ scale: 1.05, backgroundColor: 'var(--muted)' }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setSidebarOpen(true)}
-              className="absolute top-3.5 left-3.5 z-30 p-2 rounded-md bg-secondary hover:bg-secondary/80 border border-white/[0.04] text-zinc-500 hover:text-white transition-all shadow-sm cursor-pointer"
+              className="absolute top-3.5 left-3.5 z-30 p-2 rounded-md bg-secondary hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all shadow-sm cursor-pointer"
             >
               <PanelLeftOpen size={14} />
             </motion.button>
@@ -437,7 +422,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   );
 };
 
-/* ── Sidebar Nav Button (Tactile editorial design) ─────────────────────── */
+/* ── Sidebar Nav Button ─────────────────────── */
 const SideNavButton: React.FC<{
   icon: React.ReactNode;
   label: string;
@@ -448,18 +433,18 @@ const SideNavButton: React.FC<{
     whileHover={{ scale: 1.01 }}
     whileTap={{ scale: 0.98 }}
     onClick={onClick}
-    className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-md text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer ${
+    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium tracking-wide transition-all duration-200 cursor-pointer ${
       active
-        ? 'bg-white/[0.08] text-white border border-white/10 shadow-sm font-bold'
-        : 'text-zinc-400 hover:text-white hover:bg-white/[0.03] border border-transparent'
+        ? 'bg-card text-foreground border border-border font-semibold'
+        : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
     }`}
   >
     <span
-      className={`transition-all duration-200 ${active ? 'scale-105 text-[#FF3366]' : 'opacity-70 text-zinc-400'}`}
+      className={`transition-all duration-200 ${active ? 'scale-105 text-primary' : 'text-muted-foreground'}`}
     >
       {icon}
     </span>
-    <span className="translate-y-[-0.5px]">{label}</span>
+    <span>{label}</span>
   </motion.button>
 );
 
@@ -498,10 +483,10 @@ const SessionItem: React.FC<{
         setHovered(false);
         setMenuOpen(false);
       }}
-      className={`group relative flex items-center justify-between px-3.5 py-1.5 rounded-md cursor-pointer transition-all ${
+      className={`group relative flex items-center justify-between px-3 py-1.5 rounded-md cursor-pointer transition-all ${
         isActive
-          ? 'text-zinc-200 font-semibold bg-white/[0.03]'
-          : 'text-zinc-400 hover:bg-white/[0.02] hover:text-zinc-200'
+          ? 'text-foreground font-semibold bg-card border border-border'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
       }`}
       onClick={onClick}
     >
@@ -517,14 +502,14 @@ const SessionItem: React.FC<{
                 e.stopPropagation();
                 setMenuOpen(!menuOpen);
               }}
-              className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-white/10 transition-all cursor-pointer"
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all cursor-pointer"
               title="Move to Folder"
             >
               <MoreHorizontal size={9} />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-900 border border-white/10 rounded-md shadow-sm border border-border py-1 z-50">
-                <div className="px-2 py-1 text-[9px] font-bold text-zinc-500 uppercase">
+              <div className="absolute right-0 top-full mt-1 w-32 bg-popover border border-border rounded-md shadow-md py-1 z-50">
+                <div className="px-2 py-1 text-[9px] font-semibold text-muted-foreground uppercase">
                   Move to...
                 </div>
                 {session.folderId && (
@@ -534,7 +519,7 @@ const SessionItem: React.FC<{
                       onMoveToFolder(null);
                       setMenuOpen(false);
                     }}
-                    className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-white/10"
+                    className="w-full text-left px-3 py-1.5 text-[11px] text-foreground hover:bg-muted"
                   >
                     Remove from Folder
                   </button>
@@ -549,7 +534,7 @@ const SessionItem: React.FC<{
                         onMoveToFolder(f.id);
                         setMenuOpen(false);
                       }}
-                      className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-300 hover:bg-white/10 truncate"
+                      className="w-full text-left px-3 py-1.5 text-[11px] text-foreground hover:bg-muted truncate"
                     >
                       {f.name}
                     </button>
@@ -565,15 +550,15 @@ const SessionItem: React.FC<{
               e.stopPropagation();
               onDelete();
             }}
-            className="p-1 rounded bg-red-500/10 text-red-400/60 hover:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
+            className="p-1 rounded bg-destructive/10 text-destructive/60 hover:text-destructive hover:bg-destructive/20 transition-all cursor-pointer"
             title="Delete Chat"
           >
             <Trash2 size={9} />
           </button>
         ) : isActive ? (
-          <span className="w-1.5 h-1.5 rounded-md bg-[#0071E3] shadow-[0_0_6px_#0071E3]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
         ) : (
-          <span className="text-[9px] text-zinc-500 font-mono tracking-tighter">
+          <span className="text-[9px] text-muted-foreground font-mono tracking-tighter">
             {timeAgo(session.updatedAt)}
           </span>
         )}
@@ -616,11 +601,11 @@ const FolderItem: React.FC<{
         layout
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        className="group flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer hover:bg-white/[0.02] text-zinc-400 hover:text-zinc-200 transition-colors"
+        className="group flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
         <div className="flex items-center gap-2">
-          <Folder size={12} className={isOpen ? 'text-[#FF3366]' : 'text-zinc-500'} />
+          <Folder size={12} className={isOpen ? 'text-primary' : 'text-muted-foreground'} />
           <span className="text-[11px] font-semibold">{folder.name}</span>
         </div>
         {hovered && (
@@ -629,7 +614,7 @@ const FolderItem: React.FC<{
               e.stopPropagation();
               onDeleteFolder();
             }}
-            className="p-1 rounded bg-red-500/10 text-red-400/60 hover:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
+            className="p-1 rounded bg-destructive/10 text-destructive/60 hover:text-destructive hover:bg-destructive/20 transition-all cursor-pointer"
             title="Delete Folder"
           >
             <Trash2 size={9} />
@@ -642,7 +627,7 @@ const FolderItem: React.FC<{
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden pl-3 border-l border-white/[0.04] ml-3 mt-0.5 space-y-0.5"
+            className="overflow-hidden pl-3 border-l border-border ml-3 mt-0.5 space-y-0.5"
           >
             {sessions.map((session) => (
               <SessionItem

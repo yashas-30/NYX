@@ -10,7 +10,7 @@ export interface SearchWorkerResponse {
 self.onmessage = async (e: MessageEvent<SearchWorkerRequest>) => {
   const { prompt } = e.data;
   try {
-    const res = await fetch('/api/v1/tools/search', {
+    const res = await fetch('/api/v1/nyx/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: prompt })

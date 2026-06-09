@@ -102,6 +102,7 @@ export const chatMessages = sqliteTable('chat_messages', {
   timestamp: integer('timestamp').notNull(),
   tokenUsage: text('token_usage'),
   attachments: text('attachments'),
+  feedback: integer('feedback'), // 1 = thumbs up, -1 = thumbs down, null = unrated
 });
 
 export const codeConversations = sqliteTable('code_conversations', {
@@ -438,3 +439,22 @@ export const pgPromptVersions = pgTable('prompt_versions', {
   isActive: pgInteger('is_active').default(0).notNull(),
 });
 
+// ── Telemetry Events ───────────────────────────────────────────────────────────
+// Stores structured per-request metrics for local observability dashboards.
+export const telemetryEvents = sqliteTable(
+  'telemetry_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    eventType: text('event_type').notNull(), // 'request' | 'error' | 'tool_call'
+    durationMs: integer('duration_ms'),
+    tokensGenerated: integer('tokens_generated'),
+    errorType: text('error_type'),
+    timestamp: integer('timestamp').notNull(),
+  },
+  (table) => ({
+    providerModelIdx: index('idx_telemetry_provider_model').on(table.provider, table.model),
+    timestampIdx: index('idx_telemetry_timestamp').on(table.timestamp),
+  })
+);

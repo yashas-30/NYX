@@ -31,7 +31,7 @@ export function StreamingIndicator() {
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="w-1.5 h-1.5 rounded-md bg-primary-500 animate-bounce"
+            className="w-1.5 h-1.5 rounded-md bg-primary nyx-dot"
             style={{ animationDelay: `${i * 150}ms` }}
           />
         ))}

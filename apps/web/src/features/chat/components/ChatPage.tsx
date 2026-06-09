@@ -306,7 +306,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       const model = mergedModels.find((m) => m.id === modelId);
       if (!model) return;
 
-      const requiresKey = !['nyx-native'].includes(model.provider);
+      const requiresKey = !['ollama', 'lmstudio'].includes(model.provider);
       if (requiresKey && !apiKeys[model.provider]) {
         toast.warning(`${model.provider} requires an API key in Settings`);
       }

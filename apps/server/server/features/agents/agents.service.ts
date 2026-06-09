@@ -3,9 +3,11 @@ import logger from '../../lib/logger.js';
 import { AgentOrchestrator } from './AgentOrchestrator.js';
 import { Task } from './types.js';
 import { promptRegistry } from '../prompts/registry.js';
+import { getModelCapabilities } from '@nyx/shared';
 
 export interface AgentExecuteParams {
   model: string;
+  provider?: string;
   prompt: string;
   history?: any[];
   apiKey?: string;
@@ -14,13 +16,69 @@ export interface AgentExecuteParams {
   images?: any[];
 }
 
+// ── Sanitization & Slicing Helpers ───────────────────────────────────────────
+
+const INJECTION_PATTERNS = [
+  /ignore\s+previous\s+instructions/i,
+  /ignore\s+above\s+instructions/i,
+  /system\s*:\s*/i,
+  /you\s+are\s+now\s+/i,
+  /DAN\s+mode/i,
+  /jailbreak/i,
+];
+
+export function sanitizePrompt(prompt: string): { clean: string; blocked: boolean } {
+  const blocked = INJECTION_PATTERNS.some(p => p.test(prompt));
+  if (blocked) {
+    return {
+      clean: '[Content blocked: potential prompt injection detected]',
+      blocked: true,
+    };
+  }
+  return { clean: prompt, blocked: false };
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function sliceHistoryByTokens(messages: any[], maxTokens: number): any[] {
+  let total = 0;
+  const result: any[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msgTokens = estimateTokens(messages[i].content || '');
+    if (total + msgTokens > maxTokens) break;
+    total += msgTokens;
+    result.unshift(messages[i]);
+  }
+  return result;
+}
+
 export class AgentsService {
   async executeAgentStream(
     params: AgentExecuteParams,
     onChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
-    const { model, prompt, history, apiKey, gatewayUrls, agentType, images } = params;
+    const { model, provider: requestedProvider, prompt, history, apiKey, gatewayUrls, agentType, images } = params;
+
+    // Sanitization (Phase 4.3)
+    const sanitization = sanitizePrompt(prompt);
+    if (sanitization.blocked) {
+      onChunk({ chunk: sanitization.clean });
+      onDone();
+      return;
+    }
+
+    // Detect provider — prefer explicit provider from request, then infer from model ID prefix
+    let resolvedProvider = requestedProvider || 'gemini';
+    if (!requestedProvider) {
+      if (model.startsWith('ollama/') || model.startsWith('ollama:')) {
+        resolvedProvider = 'ollama';
+      } else if (model.startsWith('lmstudio/')) {
+        resolvedProvider = 'lmstudio';
+      }
+    }
 
     // Define tools specific to the agent type
     const tools = this.getToolsForAgent(agentType);
@@ -34,11 +92,13 @@ export class AgentsService {
       messages.push({ role: 'system' as const, content: systemInstruction });
     }
 
-    if (history && Array.isArray(history)) {
-      messages.push(
-        ...history.map((m: any) => ({ role: m.role as any, content: m.content, images: m.images }))
-      );
-    }
+    const rawHistory = history && Array.isArray(history)
+      ? history.map((m: any) => ({ role: m.role as any, content: m.content, images: m.images }))
+      : [];
+    
+    // Budget 80K tokens for history (Phase 5.1)
+    const slicedHistory = sliceHistoryByTokens(rawHistory, 80_000);
+    messages.push(...slicedHistory);
 
     const userMsg: any = { role: 'user' as const, content: prompt };
     if (images && Array.isArray(images) && images.length > 0) {
@@ -46,23 +106,15 @@ export class AgentsService {
     }
     messages.push(userMsg);
 
-    // Call unified engine.
-    // In a full implementation, this service would loop over the responses,
-    // execute tools internally, and then call the engine again.
-    // Since we are proxying tools to the backend, the backend will now intercept tool calls.
-
-    // TODO: Implement backend-side tool execution loop.
-    // For now, we will stream the tool calls down to the client just in case,
-    // or execute them here.
-
     await UnifiedEngine.executeStream(
       {
-        provider: 'gemini',
+        provider: resolvedProvider as any,
         model,
         messages,
         apiKey,
         customGatewayUrls: gatewayUrls,
-        tools, // Pass tools to the engine
+        // Use per-model capability check instead of per-provider blanket disable
+        tools: getModelCapabilities(model).supportsTools ? tools : undefined,
       },
       onChunk,
       onDone

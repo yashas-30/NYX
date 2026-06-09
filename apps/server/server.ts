@@ -19,9 +19,21 @@ import {
 import { buildFastifyServer } from './server/lib/fastifyConfig.js';
 import { initializeWebSocket } from './server/websocket/index.js';
 
-const PORT = env.PORT || 3010;
+const PORT = process.env.NYX_MANAGED_PORT ? parseInt(process.env.NYX_MANAGED_PORT, 10) : (env.PORT || 3001);
 
 async function startServer() {
+  if (process.env.NYX_PARENT_PID) {
+    const parentPid = parseInt(process.env.NYX_PARENT_PID, 10);
+    setInterval(() => {
+      try {
+        process.kill(parentPid, 0);
+      } catch (e) {
+        logger.error(`[Watchdog] Parent process ${parentPid} died. Initiating graceful shutdown.`);
+        process.exit(0);
+      }
+    }, 2000).unref();
+  }
+
   await initializeDatabaseAndPlugins();
   await runDependencyHealthChecks();
   const { clearHealthChecks } = spawnBackgroundServices();

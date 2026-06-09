@@ -6,7 +6,7 @@ export class LmStudioAdapter implements ProviderAdapter {
 
   async listModels(apiKey?: string): Promise<string[]> {
     try {
-      const port = env.LMSTUDIO_PORT;
+    const port = env.LMSTUDIO_PORT || 1234;
       const res = await fetch(`http://127.0.0.1:${port}/v1/models`);
       if (!res.ok) return [];
       const data = await res.json() as any;
@@ -23,7 +23,7 @@ export class LmStudioAdapter implements ProviderAdapter {
 
   async *streamChat(request: ChatRequest, apiKey?: string): AsyncGenerator<string, void, unknown> {
     const model = request.model.replace('lmstudio/', '');
-    const port = env.LMSTUDIO_PORT;
+    const port = env.LMSTUDIO_PORT || 1234;
     // fallow-ignore-next-line code-duplication
     const url = `http://127.0.0.1:${port}/v1/chat/completions`;
 

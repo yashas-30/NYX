@@ -396,9 +396,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   };
 
   return (
-    <header className="flex flex-col shrink-0 select-none bg-background border-b border-border">
+    <header className="h-14 shrink-0 select-none bg-background border-b border-border">
       {/* Main header row */}
-      <div className="flex items-center justify-between px-6 py-4">
+      <div className="w-full h-full flex items-center justify-between px-6">
         {/* Left zone: Sidebar toggle + Model selector */}
         <div className="flex items-center gap-2 min-w-0">
           {onToggleSidebar && (

@@ -114,7 +114,7 @@ export class ContinuationManager {
   ): number {
     if (settings?.maxTokens) return settings.maxTokens;
 
-    if (provider === 'nyx-native') {
+    if (provider === 'ollama' || provider === 'lmstudio') {
       return 4096;
     }
 

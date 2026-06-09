@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Provider definition
-export type ModelProvider = 'gemini' | 'terminal' | 'nyx-native' | 'antigravity-sdk';
+export type ModelProvider = 'gemini' | 'terminal' | 'ollama' | 'lmstudio' | 'antigravity-sdk';
 export type Provider = ModelProvider;
 
 // Telemetry Metrics schema and type
@@ -63,14 +63,22 @@ export const ModelSpecsSchema = z.object({
 });
 export type ModelSpecs = z.infer<typeof ModelSpecsSchema>;
 
+// Model Lifecycle Status
+export type ModelStatus = 'ga' | 'preview' | 'deprecated' | 'alias';
+
 // ModelOption schema and type
 export const ModelOptionSchema = z.object({
   id: z.string(),
   name: z.string(),
-  provider: z.enum(['gemini', 'terminal', 'nyx-native', 'antigravity-sdk']),
+  provider: z.enum(['gemini', 'terminal', 'ollama', 'lmstudio', 'antigravity-sdk']),
   description: z.string(),
   isLocal: z.boolean().optional(),
+  status: z.enum(['ga', 'preview', 'deprecated', 'alias']).optional().default('ga'),
+  shutdownDate: z.string().optional(), // ISO date string for deprecated models
   specs: ModelSpecsSchema.optional(),
+  features: z.array(z.string()).optional(),
+  pros: z.array(z.string()).optional(),
+  cons: z.array(z.string()).optional(),
 });
 export type ModelOption = z.infer<typeof ModelOptionSchema>;
 

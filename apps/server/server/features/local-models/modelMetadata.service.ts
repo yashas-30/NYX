@@ -1,6 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { gguf } from '@huggingface/gguf';
 import { MODELS_DIR } from '../../lib/paths.js';
 import fsSync from 'fs';
 
@@ -46,24 +45,8 @@ export class ModelMetadataService {
     };
 
     if (fileName) {
-      const filePath = path.join(MODELS_DIR, fileName);
-      if (fsSync.existsSync(filePath)) {
-        try {
-          const { metadata: rawMeta } = await gguf(filePath);
-          const parsedMeta = rawMeta as any;
-          metadata.ggufMetadata = {
-            architecture: parsedMeta['general.architecture'],
-            contextLength:
-              parsedMeta['llama.context_length'] ||
-              parsedMeta[`${parsedMeta['general.architecture']}.context_length`],
-            parameterCount: parsedMeta['general.parameter_count'],
-            quantizationVersion: parsedMeta['general.quantization_version'],
-            fileType: parsedMeta['general.file_type'],
-          };
-        } catch (e) {
-          // ignore parsing error
-        }
-      }
+      // Local GGUF parsing removed as requested.
+      // Metadata will now be handled by Ollama/LM Studio APIs.
     }
 
     // Simulated Leaderboard scores based on model name heuristic

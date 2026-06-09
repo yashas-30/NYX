@@ -39,7 +39,7 @@ export const useCoderLogic = () => {
   } = useCoderStore();
 
   const { activeAgent, models, setModel, agentPersonas, setAgentPersonas } = useAgentState({
-    models: { nyx: selectedModel?.id || 'nyx-native' },
+    models: { nyx: selectedModel?.id || 'ollama' },
     setModel: (modelId: string) => {
       const model = models.nyx;
       if (model) {
@@ -103,7 +103,7 @@ export const useCoderLogic = () => {
     missingDebugWarning,
     setMissingDebugWarning,
   } = useAgentPipeline({
-    models: { nyx: selectedModel?.id || 'nyx-native' },
+    models: { nyx: selectedModel?.id || 'ollama' },
     apiKeys,
     agentPersonas,
     modelSettings: settings,

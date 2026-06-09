@@ -71,6 +71,8 @@ function AppContent() {
         )}
       </ErrorBoundary>
 
+      {/* 
+      User requested to disable all toast popups app-wide
       <Toaster
         position="bottom-right"
         theme={theme}
@@ -90,7 +92,8 @@ function AppContent() {
             color: 'var(--foreground)',
           },
         }}
-      />
+      /> 
+      */}
     </div>
   );
 }

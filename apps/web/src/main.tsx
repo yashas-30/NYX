@@ -258,7 +258,7 @@ const BOOTSTRAP_URLS = new Set([
   '/api/v1/vault/token',
   '/api/v1/health',
   '/api/v1/admin/logs',
-  '/api/nyx/critic/stream',
+  '/api/v1/nyx/critic/stream',
 ]);
 
 window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -340,9 +340,9 @@ function RootContainer() {
           width: '100vw',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#09090b',
-          color: '#a1a1aa',
-          fontFamily: 'sans-serif',
+          backgroundColor: '#faf9f5',
+          color: '#6c6a64',
+          fontFamily: '"Inter", sans-serif',
         }}
       >
         <div
@@ -352,14 +352,14 @@ function RootContainer() {
             style={{
               width: '2rem',
               height: '2rem',
-              border: '3px solid #27272a',
-              borderTopColor: '#3b82f6',
+              border: '3px solid #e6dfd8',
+              borderTopColor: '#cc785c',
               borderRadius: '50%',
               animation: 'spin 1s linear infinite',
             }}
           ></div>
           <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-          <div>Starting NYX backend...</div>
+          <div style={{ fontSize: '13px', letterSpacing: '0.02em' }}>Starting NYX backend...</div>
         </div>
       </div>
     );

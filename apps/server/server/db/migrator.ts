@@ -23,7 +23,11 @@ export function runMigrations() {
     const migrationsFolder = path.join(currentDirname, 'migrations');
 
     if (!fs.existsSync(migrationsFolder)) {
-      const fallbackFolder = path.resolve(currentDirname, '..', 'server', 'db', 'migrations');
+      let fallbackFolder = path.resolve(currentDirname, '..', 'apps', 'server', 'server', 'db', 'migrations');
+      if (!fs.existsSync(fallbackFolder)) {
+        fallbackFolder = path.resolve(currentDirname, '..', 'server', 'db', 'migrations');
+      }
+      
       if (fs.existsSync(fallbackFolder)) {
         migrate(db, { migrationsFolder: fallbackFolder });
         logger.info('[DB] Migrations completed using workspace fallback.');

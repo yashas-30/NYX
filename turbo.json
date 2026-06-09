@@ -1,34 +1,23 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"],
-      "cache": true
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
-    "@nyx/server#dev": {
+    "@nyx/shared#build": {
+      "dependsOn": [],
+      "outputs": ["dist/**"]
+    },
+    "@nyx/shared#dev": {
       "dependsOn": ["@nyx/shared#build"],
       "cache": false,
       "persistent": true
-    },
-    "@nyx/web#dev": {
-      "dependsOn": ["@nyx/shared#build"],
-      "cache": false,
-      "persistent": true
-    },
-    "lint": {
-      "cache": true
-    },
-    "typecheck": {
-      "dependsOn": ["^build"],
-      "cache": true
-    },
-    "clean": {
-      "cache": false
     }
   }
 }

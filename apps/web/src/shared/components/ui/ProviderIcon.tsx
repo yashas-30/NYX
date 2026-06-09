@@ -23,7 +23,8 @@ function getIcon(provider: string | undefined, size: number, className: string):
       return <Logo size={size + 4} className={className} />;
     case 'terminal':
       return <Cpu size={size} strokeWidth={1.5} className={className} />;
-    case 'nyx-native':
+    case 'ollama':
+    case 'lmstudio':
       return (
         <Cpu
           size={size}
@@ -49,7 +50,8 @@ export const ProviderIcon: React.FC<ProviderIconProps> = ({
 // Matches PROVIDER_LABELS in provider.ts for unified naming.
 export function getProviderLabel(provider: string | undefined): string {
   if (!provider) return 'node';
-  if (provider === 'nyx-native') return 'NYX Native';
+  if (provider === 'ollama') return 'Ollama';
+  if (provider === 'lmstudio') return 'LM Studio';
   if (provider === 'google') return 'Google';
   if (provider === 'meta') return 'Meta (Llama)';
   if (provider === 'microsoft') return 'Microsoft';

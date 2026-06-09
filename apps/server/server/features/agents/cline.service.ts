@@ -2,6 +2,7 @@ import { Agent, createTool } from '@cline/sdk';
 import { z } from 'zod';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { FilesystemService } from '../nyx/filesystem.service.js';
 import { SearchService } from '../nyx/search.service.js';
 import { WorkspaceService } from '../nyx/workspace.service.js';
@@ -10,6 +11,101 @@ import { TerminalService } from '../terminal/terminal.service.js';
 import { getWorkspaceRoot } from '../../lib/paths.js';
 import logger from '../../lib/logger.js';
 import { env } from '../../config/env.js';
+import { sanitizePrompt } from './agents.service.js';
+import { Gateway } from '../../lib/gateway.js';
+
+// ── Security: Command Allowlist & Blocklist ───────────────────────────────────
+
+const ALLOWED_COMMANDS = new Set([
+  'git', 'npm', 'npx', 'pnpm', 'yarn', 'node', 'python', 'python3',
+  'cat', 'ls', 'dir', 'grep', 'find', 'echo', 'type', 'pwd',
+  'tsc', 'tsx', 'eslint', 'prettier', 'vitest', 'jest',
+]);
+
+const BLOCKED_PATTERNS = [
+  /rm\s+-rf\s*\//i,
+  /rm\s+-rf\s*~/i,
+  /del\s+\/[sS]/,
+  /curl[^|]*\|\s*bash/i,
+  /curl[^|]*\|\s*sh/i,
+  /wget[^|]*\|\s*bash/i,
+  />\s*\/dev\/(null|sd|hd|zero)/,
+  /format\s+c:/i,
+  /mkfs/i,
+  /:(){ :|:& };:/,  // fork bomb
+];
+
+function validateCommand(cmd: string): { valid: boolean; reason?: string } {
+  const trimmed = cmd.trim();
+  const base = trimmed.split(/\s+/)[0]?.toLowerCase() || '';
+  // Strip path prefix (e.g. /usr/bin/node -> node)
+  const binary = path.basename(base);
+
+  if (!ALLOWED_COMMANDS.has(binary)) {
+    return { valid: false, reason: `Command '${binary}' is not in the allowed list. Allowed: ${[...ALLOWED_COMMANDS].join(', ')}` };
+  }
+  for (const pattern of BLOCKED_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { valid: false, reason: `Command contains a blocked pattern: ${pattern}` };
+    }
+  }
+  return { valid: true };
+}
+
+/** Guard against path traversal in file tools. Returns resolved safe path or throws. */
+function safePath(inputPath: string): string {
+  if (path.isAbsolute(inputPath)) {
+    throw new Error(`Absolute paths are blocked: '${inputPath}'`);
+  }
+  if (inputPath.split(/[/\\]/).includes('..')) {
+    throw new Error(`Path traversal with '..' is blocked: '${inputPath}'`);
+  }
+
+  const workspaceRoot = getWorkspaceRoot();
+  const resolved = path.resolve(workspaceRoot, inputPath);
+
+  // Symlink check
+  try {
+    const realPath = fs.realpathSync(resolved);
+    if (!realPath.startsWith(workspaceRoot)) {
+      throw new Error(`Symlink targets outside workspace: '${inputPath}'`);
+    }
+  } catch (err: any) {
+    // If target file doesn't exist, realpathSync might fail. In that case, check the parent directory
+    let current = resolved;
+    while (current !== workspaceRoot && current !== path.dirname(current)) {
+      try {
+        if (fs.existsSync(current)) {
+          const realCurrent = fs.realpathSync(current);
+          if (!realCurrent.startsWith(workspaceRoot)) {
+            throw new Error(`Path resolves outside workspace via symlink: '${inputPath}'`);
+          }
+          break;
+        }
+      } catch {}
+      current = path.dirname(current);
+    }
+  }
+
+  if (!resolved.startsWith(workspaceRoot)) {
+    throw new Error(`Path traversal blocked: '${inputPath}' resolves outside workspace`);
+  }
+  return resolved;
+}
+
+/** Creates a git checkpoint commit before destructive agent edits. Silent if git not initialized. */
+export function checkpointWorkspace(workspacePath: string): void {
+  try {
+    execSync('git add -A && git commit -m "NYX: auto-checkpoint before agent edit" --allow-empty', {
+      cwd: workspacePath,
+      stdio: 'ignore',
+      timeout: 10_000,
+    });
+    logger.info('[ClineService] Git checkpoint created');
+  } catch {
+    // Git not initialized, nothing to commit, or commit failed — safe to continue
+  }
+}
 
 const filesystemService = new FilesystemService();
 const searchService = new SearchService();
@@ -28,6 +124,7 @@ const readFileTool = createTool({
   }),
   async execute(input: any) {
     try {
+      safePath(input.path); // Throws if path traversal detected
       const content = await filesystemService.readFile(input.path, input.startLine, input.endLine);
       return content;
     } catch (err: any) {
@@ -46,6 +143,9 @@ const writeFileTool = createTool({
   }),
   async execute(input: any) {
     try {
+      safePath(input.path); // Throws if path traversal detected
+      const workspacePath = getWorkspaceRoot();
+      checkpointWorkspace(workspacePath);
       const result = await filesystemService.writeFile(input.path, input.content, input.overwrite);
       return JSON.stringify(result);
     } catch (err: any) {
@@ -63,6 +163,13 @@ const runCommandTool = createTool({
   }),
   async execute(input: any) {
     const { command, cwd } = input;
+
+    const validation = validateCommand(command);
+    if (!validation.valid) {
+      logger.warn(`[ClineService] Blocked command: ${command} — ${validation.reason}`);
+      return `Error: Command blocked by security policy. ${validation.reason}`;
+    }
+
     const { child, error } = await TerminalService.spawn(command, cwd);
     if (error) {
       return `Error: ${error}`;
@@ -73,6 +180,10 @@ const runCommandTool = createTool({
     return new Promise((resolve) => {
       let stdout = '';
       let stderr = '';
+      const timeoutId = setTimeout(() => {
+        child.kill('SIGTERM');
+        resolve(`Error: Command timed out after 60 seconds.\nStdout:\n${stdout}\nStderr:\n${stderr}`);
+      }, 60_000);
       child.stdout?.on('data', (d) => {
         stdout += d.toString();
       });
@@ -80,9 +191,11 @@ const runCommandTool = createTool({
         stderr += d.toString();
       });
       child.on('close', (code) => {
+        clearTimeout(timeoutId);
         resolve(`Exit code: ${code}\nStdout:\n${stdout}\nStderr:\n${stderr}`);
       });
       child.on('error', (err) => {
+        clearTimeout(timeoutId);
         resolve(`Process error: ${err.message}\nStdout:\n${stdout}\nStderr:\n${stderr}`);
       });
     });
@@ -204,6 +317,11 @@ const runCodeTool = createTool({
       return new Promise((resolve) => {
         let stdout = '';
         let stderr = '';
+        const timeoutId = setTimeout(() => {
+          child.kill('SIGTERM');
+          try { fs.unlinkSync(tempFile); } catch {}
+          resolve(`Error: Code execution timed out after 30 seconds.\nStdout:\n${stdout}\nStderr:\n${stderr}`);
+        }, 30_000);
         child.stdout?.on('data', (d) => {
           stdout += d.toString();
         });
@@ -211,15 +329,13 @@ const runCodeTool = createTool({
           stderr += d.toString();
         });
         child.on('close', (code) => {
-          try {
-            fs.unlinkSync(tempFile);
-          } catch {}
+          clearTimeout(timeoutId);
+          try { fs.unlinkSync(tempFile); } catch {}
           resolve(`Exit code: ${code}\nStdout:\n${stdout}\nStderr:\n${stderr}`);
         });
         child.on('error', (err) => {
-          try {
-            fs.unlinkSync(tempFile);
-          } catch {}
+          clearTimeout(timeoutId);
+          try { fs.unlinkSync(tempFile); } catch {}
           resolve(`Process error: ${err.message}\nStdout:\n${stdout}\nStderr:\n${stderr}`);
         });
       });
@@ -273,8 +389,15 @@ export class ClineService {
       'gemma-4-27b-it': 'gemma-4-26b-a4b-it',
       'gemini-3.5-flash': 'gemini-3.5-flash',
       'gemini-3-flash': 'gemini-3-flash-preview',
+      'gemini-3-flash-preview': 'gemini-3-flash-preview',
       'gemini-3.1-pro': 'gemini-3.1-pro-preview',
+      'gemini-3.1-pro-preview': 'gemini-3.1-pro-preview',
+      'gemini-3.1-flash-lite': 'gemini-3.1-flash-lite',
       'gemini-2.5-flash': 'gemini-2.5-flash',
+      'gemini-2.5-pro': 'gemini-2.5-pro',
+      'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
+      'gemini-flash-latest': 'gemini-flash-latest',
+      'gemini-pro-latest': 'gemini-pro-latest',
     };
     return modelMap[model] || model;
   }
@@ -296,12 +419,22 @@ export class ClineService {
   ): Promise<void> {
     const { model, prompt, apiKey } = params;
 
+    // Sanitization (Phase 4.3)
+    const sanitization = sanitizePrompt(prompt);
+    if (sanitization.blocked) {
+      onEvent({
+        type: 'assistant-text-delta',
+        text: sanitization.clean,
+      });
+      return;
+    }
+
     let providerId = 'gemini';
     let modelId = ClineService.resolveRealGeminiModel(model);
-    let resolvedApiKey = apiKey || env.ANTIGRAVITY_API_KEY || '';
+    let resolvedApiKey = apiKey || Gateway.getActiveKey('gemini', undefined) || env.ANTIGRAVITY_API_KEY || '';
 
     // Route local offline runner via openai-compatible provider in Cline
-    if (model === 'nyx-native' || modelId.startsWith('nyx-native')) {
+    if (model === 'ollama' || model === 'lmstudio' || modelId.startsWith('ollama') || modelId.startsWith('lmstudio')) {
       providerId = 'openai-compatible';
       modelId = 'qwen2.5-coder-7b'; // default mock identifier
       resolvedApiKey = 'dummy-key';

@@ -1,7 +1,7 @@
 // fallow-ignore-file code-duplication
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Key, ChevronUp, ChevronDown, Network, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Key, ChevronUp, ChevronDown, Network, Trash2, Eye, EyeOff, Loader2, Check, X } from 'lucide-react';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -72,6 +72,10 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     setVisibleKeys((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const [validationStatus, setValidationStatus] = React.useState<Record<string, 'idle' | 'loading' | 'valid' | 'invalid'>>({});
+  const validationTimeoutRef = React.useRef<Record<string, NodeJS.Timeout>>({});
+  const revertTimeoutRef = React.useRef<Record<string, NodeJS.Timeout>>({});
+
   const providers = PROVIDER_CONFIGS.map((p) => ({
     ...p,
     modelCount: getModelCountForProvider(p.id),
@@ -81,30 +85,88 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     return gatewayUrls[provider] || DEFAULT_GATEWAY_URLS[provider] || '';
   };
 
-  const validateGeminiKey = async (key: string): Promise<boolean> => {
+  const validateGeminiKey = async (key: string): Promise<{ valid: boolean; error?: string }> => {
     try {
       const res = await fetchWithAuth('/api/v1/vault/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: 'gemini', key, geminiUrl: getGatewayUrl('gemini') }),
       });
-      if (!res.ok) return false;
-      const data = await res.json();
-      return data.valid === true;
-    } catch {
-      return false;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { valid: false, error: data.error || `Server returned status ${res.status}` };
+      }
+      return { valid: data.valid === true, error: data.error };
+    } catch (err: any) {
+      return { valid: false, error: err.message || 'Network error' };
     }
+  };
+
+  const triggerValidation = (provider: string, key: string) => {
+    if (!key) {
+      setValidationStatus(prev => ({ ...prev, [provider]: 'idle' }));
+      return;
+    }
+    
+    if (validationTimeoutRef.current[provider]) {
+      clearTimeout(validationTimeoutRef.current[provider]);
+    }
+    if (revertTimeoutRef.current[provider]) {
+      clearTimeout(revertTimeoutRef.current[provider]);
+    }
+
+    setValidationStatus(prev => ({ ...prev, [provider]: 'loading' }));
+
+    validationTimeoutRef.current[provider] = setTimeout(async () => {
+      let isValid = true;
+      if (provider === 'gemini') {
+        const result = await validateGeminiKey(key);
+        isValid = result.valid;
+      }
+      
+      setValidationStatus(prev => ({ ...prev, [provider]: isValid ? 'valid' : 'invalid' }));
+
+      revertTimeoutRef.current[provider] = setTimeout(() => {
+        setValidationStatus(prev => ({ ...prev, [provider]: 'idle' }));
+      }, 2000);
+    }, 800);
   };
 
   const handleSaveToVault = async () => {
     // Validate Gemini key if it's being updated
     const geminiKey = keysInput['gemini'];
     let isGeminiValid = true;
+    let validationError = '';
     if (geminiKey && geminiKey.trim().length > 0) {
       toast.info('Validating Gemini API Key...');
-      isGeminiValid = await validateGeminiKey(geminiKey);
+      const result = await validateGeminiKey(geminiKey);
+      isGeminiValid = result.valid;
+      validationError = result.error || '';
+
       if (!isGeminiValid) {
-        toast.error('Invalid Gemini API Key. It will not be saved.');
+        const isNetworkErr = 
+          validationError.toLowerCase().includes('connection') || 
+          validationError.toLowerCase().includes('fetch') || 
+          validationError.toLowerCase().includes('unreachable') ||
+          validationError.toLowerCase().includes('timeout') ||
+          validationError.toLowerCase().includes('starting') ||
+          validationError.toLowerCase().includes('retry') ||
+          validationError.toLowerCase().includes('status 5');
+
+        if (isNetworkErr) {
+          toast.warning(`Could not reach validation server (${validationError}). Saving key anyway...`);
+          isGeminiValid = true; // Allow saving since it's a network issue, not necessarily a bad key
+        } else {
+          const forceSave = window.confirm(
+            `Gemini API Key validation failed: ${validationError}\n\nDo you want to save this key anyway? (It might be valid but unreachable from the server, or restricted by region/permissions)`
+          );
+          if (forceSave) {
+            isGeminiValid = true;
+            toast.warning('Saving API Key despite validation failure.');
+          } else {
+            toast.error(`Invalid Gemini API Key: ${validationError}. It will not be saved.`);
+          }
+        }
       } else {
         toast.success('Gemini API Key validated successfully.');
       }
@@ -253,33 +315,6 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                     <div className="flex items-center gap-2">
                       {providerUsage && hasKey && (
                         <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] font-bold">
-                          {providerUsage.totalUSD !== undefined && (
-                            <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-border">
-                              <span className="text-[9px] font-black uppercase tracking-widest text-accent/75">
-                                USD
-                              </span>
-                              <span className="text-[10px] font-mono text-accent font-bold tracking-tight">
-                                $
-                                {(providerUsage.totalUSD - (providerUsage.usedUSD || 0)).toFixed(2)}
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-border">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/75">
-                              USED
-                            </span>
-                            <span className="text-[10px] font-mono text-foreground/90 font-bold tracking-tight">
-                              {(providerUsage.used / 1000).toFixed(1)}K
-                            </span>
-                          </div>
-                          <div className="flex flex-col items-start sm:items-end px-1.5 border-r border-border">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/75">
-                              REM
-                            </span>
-                            <span className="text-[10px] font-mono text-emerald-400 font-bold tracking-tight">
-                              {(providerUsage.remaining / 1000).toFixed(1)}K
-                            </span>
-                          </div>
                           <button
                             onClick={() => resetUsage(p.id)}
                             className="px-2 py-0.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-[9px] font-black uppercase tracking-widest transition-colors cursor-pointer"
@@ -302,9 +337,10 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                             <input
                               type={visibleKeys['scrapling'] ? 'text' : 'password'}
                               value={keysInput['scrapling'] ?? apiKeys['scrapling'] ?? ''}
-                              onChange={(e) =>
-                                setKeysInput((prev) => ({ ...prev, scrapling: e.target.value }))
-                              }
+                              onChange={(e) => {
+                                setKeysInput((prev) => ({ ...prev, scrapling: e.target.value }));
+                                triggerValidation('scrapling', e.target.value);
+                              }}
                               placeholder={
                                 vaultStatus['scrapling']
                                   ? '•••••••••••••••• (Optional for Local)'
@@ -320,11 +356,18 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                             />
                             <button
                               type="button"
-                              onClick={() => toggleVisibility('scrapling')}
-                              className="absolute right-2.5 text-zinc-500 hover:text-white transition-colors cursor-pointer"
-                              title={visibleKeys['scrapling'] ? 'Hide API key' : 'Show API key'}
+                              onClick={() => {
+                                if ((validationStatus['scrapling'] || 'idle') === 'idle') {
+                                  toggleVisibility('scrapling');
+                                }
+                              }}
+                              className={`absolute right-2.5 transition-colors ${(validationStatus['scrapling'] || 'idle') === 'idle' ? 'text-zinc-500 hover:text-white cursor-pointer' : 'text-zinc-400 cursor-default'}`}
+                              title={(validationStatus['scrapling'] || 'idle') === 'idle' ? (visibleKeys['scrapling'] ? 'Hide API key' : 'Show API key') : undefined}
                             >
-                              {visibleKeys['scrapling'] ? <EyeOff size={12} /> : <Eye size={12} />}
+                              {(validationStatus['scrapling'] || 'idle') === 'loading' && <Loader2 size={12} className="animate-spin text-accent" />}
+                              {(validationStatus['scrapling'] || 'idle') === 'valid' && <Check size={12} className="text-emerald-400" />}
+                              {(validationStatus['scrapling'] || 'idle') === 'invalid' && <X size={12} className="text-red-400" />}
+                              {(validationStatus['scrapling'] || 'idle') === 'idle' && (visibleKeys['scrapling'] ? <EyeOff size={12} /> : <Eye size={12} />)}
                             </button>
                           </div>
                         </div>
@@ -354,9 +397,10 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                         <input
                           type={visibleKeys[p.id] ? 'text' : 'password'}
                           value={keysInput[p.id] ?? apiKeys[p.id] ?? ''}
-                          onChange={(e) =>
-                            setKeysInput((prev) => ({ ...prev, [p.id]: e.target.value }))
-                          }
+                          onChange={(e) => {
+                            setKeysInput((prev) => ({ ...prev, [p.id]: e.target.value }));
+                            triggerValidation(p.id, e.target.value);
+                          }}
                           placeholder={hasKey ? '••••••••••••••••' : `Enter ${p.name} API key`}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
@@ -368,11 +412,18 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                         />
                         <button
                           type="button"
-                          onClick={() => toggleVisibility(p.id)}
-                          className="absolute right-2.5 text-zinc-500 hover:text-white transition-colors cursor-pointer"
-                          title={visibleKeys[p.id] ? 'Hide API key' : 'Show API key'}
+                          onClick={() => {
+                            if ((validationStatus[p.id] || 'idle') === 'idle') {
+                              toggleVisibility(p.id);
+                            }
+                          }}
+                          className={`absolute right-2.5 transition-colors ${(validationStatus[p.id] || 'idle') === 'idle' ? 'text-zinc-500 hover:text-white cursor-pointer' : 'text-zinc-400 cursor-default'}`}
+                          title={(validationStatus[p.id] || 'idle') === 'idle' ? (visibleKeys[p.id] ? 'Hide API key' : 'Show API key') : undefined}
                         >
-                          {visibleKeys[p.id] ? <EyeOff size={12} /> : <Eye size={12} />}
+                          {(validationStatus[p.id] || 'idle') === 'loading' && <Loader2 size={12} className="animate-spin text-accent" />}
+                          {(validationStatus[p.id] || 'idle') === 'valid' && <Check size={12} className="text-emerald-400" />}
+                          {(validationStatus[p.id] || 'idle') === 'invalid' && <X size={12} className="text-red-400" />}
+                          {(validationStatus[p.id] || 'idle') === 'idle' && (visibleKeys[p.id] ? <EyeOff size={12} /> : <Eye size={12} />)}
                         </button>
                       </div>
                     )}

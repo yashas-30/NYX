@@ -178,7 +178,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const providerStr = String(currentModel?.provider ?? '');
   const isLocalModel = !!(
     currentModelId &&
-    (providerStr === 'local' || providerStr === 'nyx-native' || (!currentModel && currentModelId))
+    (providerStr === 'ollama' || providerStr === 'lmstudio' || (!currentModel && currentModelId))
   );
 
   /* ── Reset settings when switching local models ──────────────────────── */
@@ -954,7 +954,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   onClick={() => {
                     onPromptChange('List active tasks and show current workspace status.');
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/[0.03] border border-emerald-500/10 hover:border-emerald-500/25 transition-all text-left text-zinc-300 hover:text-white cursor-pointer shrink-0"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/[0.03] border border-emerald-500/10 hover:border-emerald-500/25 transition-all text-left text-emerald-100 hover:text-emerald-50 cursor-pointer shrink-0"
                 >
                   <span className="w-3.5 h-3.5 rounded bg-emerald-500/15 flex items-center justify-center text-[9px] font-black text-emerald-400 leading-none font-mono">
                     /
@@ -977,7 +977,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                       toast.error('Type a prompt first to optimize it');
                     }
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan-500/[0.03] border border-cyan-500/10 hover:border-cyan-500/25 transition-all text-left text-zinc-300 hover:text-white cursor-pointer shrink-0"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan-500/[0.03] border border-cyan-500/10 hover:border-cyan-500/25 transition-all text-left text-cyan-100 hover:text-cyan-50 cursor-pointer shrink-0"
                 >
                   <span className="w-3.5 h-3.5 rounded bg-cyan-500/15 flex items-center justify-center text-[9px] font-black text-cyan-400 leading-none font-mono">
                     /
@@ -1001,7 +1001,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all text-left cursor-pointer shrink-0 ${
                     codebaseKnowledgeEnabled
                       ? 'bg-purple-500/10 border border-purple-500/35 text-white'
-                      : 'bg-purple-500/[0.03] border border-purple-500/10 text-zinc-300 hover:text-white hover:border-purple-500/25'
+                      : 'bg-purple-500/[0.03] border border-purple-500/10 text-purple-100 hover:text-purple-50 hover:border-purple-500/25'
                   }`}
                 >
                   <span
@@ -1030,7 +1030,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all text-left cursor-pointer shrink-0 ${
                     webSearchEnabled
                       ? 'bg-sky-500/10 border border-sky-500/35 text-white'
-                      : 'bg-sky-500/[0.03] border border-sky-500/10 text-zinc-300 hover:text-white hover:border-sky-500/25'
+                      : 'bg-sky-500/[0.03] border border-sky-500/10 text-sky-100 hover:text-sky-50 hover:border-sky-500/25'
                   }`}
                 >
                   <span
@@ -1057,7 +1057,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                     onPromptChange('');
                     toast.success('Context reset');
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/[0.03] border border-amber-500/10 hover:border-amber-500/25 transition-all text-left text-zinc-300 hover:text-white cursor-pointer shrink-0"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/[0.03] border border-amber-500/10 hover:border-amber-500/25 transition-all text-left text-amber-100 hover:text-amber-50 cursor-pointer shrink-0"
                 >
                   <span className="w-3.5 h-3.5 rounded bg-amber-500/15 flex items-center justify-center text-[9px] font-black text-amber-400 leading-none font-mono">
                     /

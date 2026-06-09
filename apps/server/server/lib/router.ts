@@ -32,7 +32,7 @@ export class SmartRouter {
         const key = apiKeys[model.provider] || '';
 
         // Skip if no API key
-        if (!key && model.provider !== 'pollinations' && model.provider !== 'nyx-native') {
+        if (!key && model.provider !== 'pollinations' && model.provider !== 'ollama' && model.provider !== 'lmstudio') {
           return null;
         }
 
@@ -86,7 +86,8 @@ export class SmartRouter {
       'nvidia': { input: 0, output: 0 },  // Free tier
       'opencode': { input: 0, output: 0 },  // Free
       'pollinations': { input: 0, output: 0 },  // Free
-      'nyx-native': { input: 0, output: 0 },  // Local
+      'ollama': { input: 0, output: 0 },  // Local
+      'lmstudio': { input: 0, output: 0 },  // Local
     };
 
     const price = pricing[model.provider] || pricing.openrouter;
@@ -100,7 +101,8 @@ export class SmartRouter {
       'nvidia': 600,
       'opencode': 1000,
       'pollinations': 1500,
-      'nyx-native': 200,  // Local is fastest
+      'ollama': 200,  // Local is fastest
+      'lmstudio': 200,
     };
     return baseLatency[model.provider] || 1000;
   }
