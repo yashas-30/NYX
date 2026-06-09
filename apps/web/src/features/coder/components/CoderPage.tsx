@@ -24,7 +24,7 @@ import { ModelDefinition, Provider } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { Joyride } from 'react-joyride';
-import type { Step, CallBackProps } from 'react-joyride';
+import type { Step } from 'react-joyride';
 
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import { CoderHeader } from './CoderHeader';
@@ -142,7 +142,6 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     {
       target: '.coder-header',
       content: 'Welcome to NYX! This is the Coder workspace.',
-      disableBeacon: true,
     },
     {
       target: '.prompt-input-area',
@@ -156,7 +155,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
     }
   }, []);
 
-  const handleJoyrideCallback = useCallback((data: CallBackProps) => {
+  const handleJoyrideCallback = useCallback((data: any) => {
     const { status } = data;
     if (status === 'finished' || status === 'skipped') {
       setRunJoyride(false);
@@ -327,19 +326,20 @@ export const CoderPage: React.FC<CoderPageProps> = ({
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <Joyride
-        steps={joyrideSteps}
-        run={runJoyride}
-        continuous
-        showSkipButton
-        callback={handleJoyrideCallback}
-        styles={{
-          options: {
-            primaryColor: '#00f0ff',
-            textColor: '#fff',
-            backgroundColor: '#18181b',
-            arrowColor: '#18181b',
+        {...({
+          steps: joyrideSteps,
+          run: runJoyride,
+          continuous: true,
+          callback: handleJoyrideCallback,
+          styles: {
+            options: {
+              primaryColor: '#00f0ff',
+              textColor: '#fff',
+              backgroundColor: '#18181b',
+              arrowColor: '#18181b',
+            }
           }
-        }}
+        } as any)}
       />
       <ErrorBoundary
         fallback={

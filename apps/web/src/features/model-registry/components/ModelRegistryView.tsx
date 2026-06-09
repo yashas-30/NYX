@@ -155,7 +155,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
                   {ollamaModels.map(m => (
-                     <ModelCard key={m.id} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={0} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
+                     <ModelCard key={m.id} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={undefined} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
                   ))}
                   {ollamaModels.length === 0 && (
                      <div className="col-span-full">
@@ -173,7 +173,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
                   {lmstudioModels.map(m => (
-                     <ModelCard key={m.id} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={0} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
+                     <ModelCard key={m.id} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={undefined} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
                   ))}
                   {lmstudioModels.length === 0 && (
                      <div className="col-span-full">

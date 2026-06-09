@@ -520,7 +520,7 @@ export const ModelSelector: React.FC<Props> = ({
                                     <div>
                                       <span className="text-[7px] font-black uppercase tracking-widest text-muted-foreground/80">Features</span>
                                       <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
-                                        {model.features.map((f, i) => (
+                                        {model.features.map((f: string, i: number) => (
                                           <li key={i} className="text-[8px] text-foreground/80 leading-snug">{f}</li>
                                         ))}
                                       </ul>
@@ -530,7 +530,7 @@ export const ModelSelector: React.FC<Props> = ({
                                     <div>
                                       <span className="text-[7px] font-black uppercase tracking-widest text-emerald-500/80">Good</span>
                                       <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
-                                        {model.pros.map((p, i) => (
+                                        {model.pros.map((p: string, i: number) => (
                                           <li key={i} className="text-[8px] text-emerald-500/90 leading-snug">{p}</li>
                                         ))}
                                       </ul>
@@ -540,7 +540,7 @@ export const ModelSelector: React.FC<Props> = ({
                                     <div>
                                       <span className="text-[7px] font-black uppercase tracking-widest text-[#FF3366]/80">Bad</span>
                                       <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
-                                        {model.cons.map((c, i) => (
+                                        {model.cons.map((c: string, i: number) => (
                                           <li key={i} className="text-[8px] text-[#FF3366]/90 leading-snug">{c}</li>
                                         ))}
                                       </ul>

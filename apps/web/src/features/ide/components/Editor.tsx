@@ -23,7 +23,6 @@ export function CodeEditor({ file, onChange, onSave }: { file: any, onChange: an
         fontLigatures: true,
         tabSize: 2,
         wordWrap: 'on',
-        formatOnSave: true,
         autoIndent: 'full',
         suggestOnTriggerCharacters: true,
         quickSuggestions: true,

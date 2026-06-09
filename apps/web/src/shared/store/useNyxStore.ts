@@ -79,6 +79,7 @@ const DEFAULT_MODEL: ModelOption = {
   name: 'Gemini 2.5 Flash',
   provider: 'gemini',
   description: 'Highly Stable Flash model.',
+  status: 'ga',
   specs: {
     contextWindow: '1M',
     trainingData: '2025',
