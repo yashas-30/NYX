@@ -3,7 +3,7 @@ import { Provider, ChatMessage, AISettings, getModelCapabilities } from '@nyx/sh
 import { env } from '../config/env.js';
 import { Gateway } from './gateway.js';
 import logger from './logger.js';
-import { AIEngine } from './aiengine.js';
+import { AIEngine } from './aiEngine.js';
 import { SmartRouter } from './router.js';
 import { loadKeys } from '../features/vault/vault.service.js';
 import { compressPrompt } from '../features/prompts/compression.js';

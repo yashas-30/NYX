@@ -55,7 +55,7 @@ export function initializeWebSocket(fastify: FastifyInstance): SocketIOServer {
       provider: string;
       prompt: string;
       settings?: Record<string, any>;
-      history?: Array<{ role: string; content: string }>;
+      history?: import('@nyx/shared').ChatMessage[];
     }) => {
       const { modelId, provider, prompt, settings, history } = data;
       try {
@@ -63,7 +63,7 @@ export function initializeWebSocket(fastify: FastifyInstance): SocketIOServer {
           {
             provider: provider as any,
             model: modelId,
-            messages: [...(history || []), { role: 'user', content: prompt }],
+            messages: [...(history || []), { role: 'user', content: prompt }] as import('@nyx/shared').ChatMessage[],
             settings,
           },
           (chunk: any) => {

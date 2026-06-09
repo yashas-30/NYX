@@ -111,7 +111,7 @@ class WorkerPool {
           this.useFallback = true;
           // Reject all pending tasks to prevent hangs
           for (const [id, task] of this.pending.entries()) {
-            task.reject(err);
+            task.reject(err instanceof Error ? err : new Error(String(err)));
             this.pending.delete(id);
           }
         });
