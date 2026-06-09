@@ -23,7 +23,7 @@ COPY --from=builder /app/packages/shared/package.json ./packages/shared/
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/config/package.json ./packages/config/
 
-RUN pnpm install --prod --frozen-lockfile
+RUN npm pkg delete scripts.prepare && pnpm install --prod --frozen-lockfile
 
 EXPOSE 3000
 CMD ["pnpm", "--filter", "server", "start"]
