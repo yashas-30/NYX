@@ -70,20 +70,18 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       const { pipeline } = await import('stream/promises');
       const fs = await import('fs');
       const path = await import('path');
-      const { fileURLToPath } = await import('url');
+      const { UPLOADS_DIR } = await import('../lib/paths.js');
+      const GEMINI_UPLOADS_DIR = path.join(UPLOADS_DIR, 'gemini');
 
-      const _dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
-      const UPLOADS_DIR = path.join(_dirname, '../../../../uploads/gemini');
-
-      if (!fs.existsSync(UPLOADS_DIR)) {
-        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      if (!fs.existsSync(GEMINI_UPLOADS_DIR)) {
+        fs.mkdirSync(GEMINI_UPLOADS_DIR, { recursive: true });
       }
 
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
       const ext = path.extname(data.filename);
       const basename = path.basename(data.filename, ext);
       const newFilename = `${basename}-${uniqueSuffix}${ext}`;
-      const filepath = path.join(UPLOADS_DIR, newFilename);
+      const filepath = path.join(GEMINI_UPLOADS_DIR, newFilename);
 
       await pipeline(data.file, fs.createWriteStream(filepath));
 

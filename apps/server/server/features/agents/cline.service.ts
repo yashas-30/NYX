@@ -13,6 +13,7 @@ import logger from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { sanitizePrompt } from './agents.service.js';
 import { Gateway } from '../../lib/gateway.js';
+import { resolveRealGeminiModel } from '../../lib/modelUtils.js';
 
 // ── Security: Command Allowlist & Blocklist ───────────────────────────────────
 
@@ -311,8 +312,14 @@ const runCodeTool = createTool({
       else if (input.language === 'sh') cmd = `bash .nyx_temp_code.${ext}`;
 
       const { child, error } = await TerminalService.spawn(cmd, workspacePath);
-      if (error) return `Error: ${error}`;
-      if (!child) return `Error: Failed to spawn process.`;
+      if (error) {
+        try { fs.unlinkSync(tempFile); } catch {}
+        return `Error: ${error}`;
+      }
+      if (!child) {
+        try { fs.unlinkSync(tempFile); } catch {}
+        return `Error: Failed to spawn process.`;
+      }
 
       return new Promise((resolve) => {
         let stdout = '';
@@ -383,25 +390,6 @@ export interface ClineExecuteParams {
 }
 
 export class ClineService {
-  static resolveRealGeminiModel(model: string): string {
-    const modelMap: Record<string, string> = {
-      'gemma-4-31b-it': 'gemma-4-31b-it',
-      'gemma-4-27b-it': 'gemma-4-26b-a4b-it',
-      'gemini-3.5-flash': 'gemini-3.5-flash',
-      'gemini-3-flash': 'gemini-3-flash-preview',
-      'gemini-3-flash-preview': 'gemini-3-flash-preview',
-      'gemini-3.1-pro': 'gemini-3.1-pro-preview',
-      'gemini-3.1-pro-preview': 'gemini-3.1-pro-preview',
-      'gemini-3.1-flash-lite': 'gemini-3.1-flash-lite',
-      'gemini-2.5-flash': 'gemini-2.5-flash',
-      'gemini-2.5-pro': 'gemini-2.5-pro',
-      'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
-      'gemini-flash-latest': 'gemini-flash-latest',
-      'gemini-pro-latest': 'gemini-pro-latest',
-    };
-    return modelMap[model] || model;
-  }
-
   /** Whether a Cline SDK error indicates an empty model turn that can be retried. */
   private static isEmptyOutputError(err: any): boolean {
     const msg: string = err?.message || '';
@@ -430,7 +418,7 @@ export class ClineService {
     }
 
     let providerId = 'gemini';
-    let modelId = ClineService.resolveRealGeminiModel(model);
+    let modelId = resolveRealGeminiModel(model);
     let resolvedApiKey = apiKey || Gateway.getActiveKey('gemini', undefined) || env.ANTIGRAVITY_API_KEY || '';
 
     // Route local offline runner via openai-compatible provider in Cline
@@ -461,38 +449,37 @@ export class ClineService {
       onEvent(event);
     });
 
-    const MAX_RETRIES = 2;
+    const MAX_RETRIES = 3;
     let lastErr: any;
+    let currentPrompt = prompt;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        await agent.run(prompt);
+        await agent.run(currentPrompt);
         return; // success
       } catch (err: any) {
         lastErr = err;
-        if (ClineService.isEmptyOutputError(err) && attempt < MAX_RETRIES) {
-          logger.warn(
-            `[ClineService] Empty model output on attempt ${attempt}, retrying with nudge prompt…`
-          );
-          // Emit a synthetic thinking event so the client knows we're retrying
-          onEvent({ type: 'assistant-text-delta', text: '' });
-          // Retry with an explicit nudge appended
-          try {
-            const nudgedPrompt =
-              prompt +
-              '\n\n[System: Your previous response was empty. Please respond with at least a brief status update or continue the task.]';
-            await agent.run(nudgedPrompt);
-            return; // success on retry
-          } catch (retryErr: any) {
-            lastErr = retryErr;
-          }
-        } else {
+
+        if (!ClineService.isEmptyOutputError(err)) {
+          // Non-retryable error — bail immediately
           break;
         }
+
+        if (attempt < MAX_RETRIES) {
+          logger.warn(
+            `[ClineService] Empty model output on attempt ${attempt}/${MAX_RETRIES}, retrying with nudge prompt…`
+          );
+          onEvent({ type: 'assistant-text-delta', text: '' });
+          currentPrompt =
+            prompt +
+            '\n\n[System: Your previous response was empty. Please respond with at least a brief status update or continue the task.]';
+          // continue to next attempt
+        }
+        // else: loop will exit naturally, lastErr is set
       }
     }
 
-    // If all retries failed, transform empty-output errors into a friendly message
+    // If all retries exhausted on empty-output errors, send friendly fallback
     if (ClineService.isEmptyOutputError(lastErr)) {
       logger.warn(
         '[ClineService] Model returned empty output after retries, sending fallback message.'

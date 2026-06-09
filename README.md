@@ -28,11 +28,11 @@
 | ----------------------------------- | ------------------------------------------------------------------------------------------ |
 | 🖥️ **Local GGUF Models**            | Run Llama 3, Qwen, Gemma, Mistral, Phi, DeepSeek **on your GPU** via built-in llama-server |
 | ⚙️ **Per-Model Inference Controls** | GPU layers, context size, temperature, Top-P/K, Mirostat — per model, not global           |
-| 🤖 **NYX Agent**                    | Planner → SubagentSwarm → Optimizer pipeline using whichever model you select              |
+| 🤖 **NYX Agent Swarm**              | Client-side agent pipeline (Planner → SubagentSwarm → Optimizer) coordinating tasks        |
 | ☁️ **Cloud Orchestration**          | Gemini — unified under one interface                                                       |
 | 📚 **Codebase Knowledge**           | Index your local codebase and query it contextually during code generation                 |
-| ⚡ **Zero-Delay Streaming**         | Dual Express + Fastify server with TCP `setNoDelay`, DNS pre-warming, SHA-256 cache        |
-| 🔐 **100% Local Keys**              | API keys stay in your browser's localStorage — never sent to a database                    |
+| ⚡ **Zero-Delay Streaming**         | Fastify server with TCP `setNoDelay`, DNS pre-warming, SHA-256 cache                       |
+| 🔐 **Secure Local Keys**            | Keys stored client-side (browser/Tauri) and cached in a memory-only server vault           |
 | 🎨 **Premium Design**               | Glassmorphism, spring physics, micro-animations, dark-first design                         |
 
 ---
@@ -52,13 +52,13 @@ git clone https://github.com/yashas-30/NYX.git
 cd NYX
 
 # Install dependencies
-npm install
+pnpm install
 
-# Start (Express port 3000 + Fastify port 3001)
-npm run dev
+# Start dev server (Fastify server on port 3001)
+pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3001](http://localhost:3001) in your browser.
 
 ### API Keys (Cloud Models)
 
@@ -115,82 +115,60 @@ Settings reset automatically when you switch models.
 
 ## 🤖 NYX Agent Pipeline
 
-When you send a prompt with the NYX Agent model selected, it runs an advanced **multi-stage coordination pipeline**:
+When you select the NYX Agent, the client-side `SubagentOrchestrator` runs an advanced multi-agent coding loop:
 
 ```
-Prompt ──→ [ Planner Agent ]   ──→  Execution Blueprint
-           [ SubagentSwarm ]   ──→  Parallel Implementation (Coder + Reviewer + Tester)
-           [ Optimizer Agent ] ──→  Final Polished Output
+Prompt ──→ [ Planner Agent ]   ──→  Execution Checklist (task.md)
+           [ SubagentSwarm ]   ──→  Parallel Coder & Reviewer agents implementing changes
+           [ Optimizer Agent ] ──→  Final Polished Response
 ```
 
-- **Planner Agent**: Analyzes requirements and constructs a comprehensive step-by-step execution plan.
-- **SubagentSwarm**: Co-ordinates specialized subagents (Coder, Reviewer, Tester) running in parallel to implement the plan, review for security/correctness, and verify results.
-- **Optimizer Agent**: Takes the raw outputs, applies style guides/critique rules, and returns a single polished block. Only this final output is displayed.
-- Works with any model you select in the model selector.
+- **Planner Agent**: Analyzes codebase context, requirements, and structures a checklist on disk.
+- **SubagentSwarm**: Coordinates specialized client-side agents running in parallel to edit files and review changes.
+- **Optimizer Agent**: Takes the raw changes and comments, applies lint/style rules, and returns a polished result.
+- Works transparently with any model you select in the model selector.
 
 ---
 
 ## 🏗️ Architecture
 
+NYX is structured as a pnpm monorepo using Turborepo for efficient building:
+
 ```
 NYX/
-├── server.ts                  ← Entry point — Express (3000) + Fastify (3001)
+├── apps/
+│   ├── web/                   ← React 19 + Vite + Tailwind v4 frontend SPA
+│   ├── server/                ← Fastify Node.js backend server
+│   └── desktop/               ← Tauri v2 desktop shell wrapper
 │
-├── server/
-│   ├── lib/
-│   │   ├── fastifyApi.ts      ← Zero-delay SSE streaming, DNS warmup, TCP tuning
-│   │   ├── localModelRunner.ts← llama-server lifecycle (spawn, health, kill)
-│   │   ├── localModelManager.ts← Model download, VRAM offload, disk management
-│   │   ├── unifiedEngine.ts   ← Single inference entrypoint (local + cloud)
-│   │   ├── cache.ts           ← SHA-256 disk cache (`.nyx-cache/`)
-│   │   └── keyVault.ts        ← Secure per-session API key storage
-│   └── routes/
-│       ├── nyx.ts             ← NYX agent pipeline endpoint
-│       ├── localModels.ts     ← GGUF download, status, delete
-│       └── terminal.ts        ← Code execution sandbox
+├── packages/
+│   └── shared/                ← Shared models catalog config, schemas, and types
 │
-└── src/
-    ├── components/
-    │   ├── CoderDashboard.tsx  ← Global layout and state coordinator
-    │   ├── dashboard/
-    │   │   ├── ModelRegistryView.tsx  ← NYX Native Library (local models only)
-    │   │   └── SettingsView.tsx       ← API keys, quotas, gateway config
-    │   └── model-card/
-    │       └── ModelSelector.tsx      ← Unified cloud + local model picker
-    ├── features/coder/
-    │   ├── CoderPage.tsx       ← IDE workspace
-    │   ├── components/
-    │   │   ├── PromptInput.tsx ← Prompt pill + per-model inference settings
-    │   │   ├── MessageList.tsx ← Syntax-highlighted streaming response
-    │   │   └── CoderHeader.tsx ← Live TPS + latency display
-    │   └── hooks/
-    │       ├── useAgentPipeline.ts   ← 3-stage NYX agent orchestration
-    │       └── useCoderLogic.ts      ← Model routing, streaming, history
-    ├── config/
-    │   ├── models.ts           ← All cloud + local model definitions
-    │   └── agents.ts           ← NYX agent personas and system prompts
-    └── core/
-        └── services/ai.service.ts    ← Unified AI inference client
+└── uploads/                   ← Root-level upload staging directory (served statically by Fastify)
 ```
+
+### Backend Architecture (`apps/server/`)
+- **`server/lib/unifiedEngine.ts`**: Unified inference coordinator mapping user requests to local or cloud providers.
+- **`server/lib/logger.ts`**: Pino logger with custom hook redacting API keys in logged query parameters.
+- **`server/middleware/requestSigner.ts`**: Timing-safe request signature validation utilizing unique user keys derived from the session token using `HMAC(sessionToken, globalSecret)`.
+- **`server/db/schema.sqlite.ts`** & **`server/db/schema.pg.ts`**: Physically separated schema files for SQLite (local) and PostgreSQL (production).
+
+### Frontend Architecture (`apps/web/`)
+- **`web/src/features/`**: Feature-sliced architecture (e.g. `features/chat`, `features/coder`, `features/model-registry`).
+- **`web/src/core/services/ai.service.ts`**: Unified client interfacing with the backend Gateway.
 
 ---
 
 ## ⚡ Performance Architecture
 
-NYX uses a dual-server design to maximise streaming throughput:
+NYX runs on a high-throughput Fastify server:
 
-### Express Gateway (Port 3000)
-
-- Serves the React SPA
-- SHA-256 prompt cache — 0ms for repeated queries
-- API key proxy and quota checking
-
-### Fastify Engine (Port 3001)
-
-- **TCP `setNoDelay(true)`** — eliminates the 40ms Nagle's Algorithm buffer
-- **DNS pre-warming** — background Cloudflare lookups remove first-request latency
-- **Connection keep-alives** — 75s persistent sockets, no repeated TLS handshakes
-- **Zero-copy SSE** — EventSource chunks flushed with no buffering overhead
+- **Unified Server (Port 3001)** — Serves both the React SPA static assets (via `@fastify/static`) and the API gateway endpoints under a single port.
+- **TCP `setNoDelay(true)`** — Eliminates the 40ms Nagle's Algorithm buffer for zero-delay SSE streaming.
+- **DNS pre-warming** — Background Cloudflare lookups remove first-request latency for cloud APIs.
+- **Connection keep-alives** — 75s persistent sockets, avoiding repeated TLS handshakes.
+- **Zero-copy SSE** — Server-Sent Events chunks flushed directly to the socket with no buffering overhead.
+- **SHA-256 prompt cache** — Instant response caching for identical queries.
 
 ---
 

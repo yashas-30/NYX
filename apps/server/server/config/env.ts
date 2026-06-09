@@ -34,6 +34,7 @@ const envSchema = z.object({
   DIALOGFLOW_ACCESS_TOKEN: z.string().optional(),
   RASA_URL: z.string().optional(),
   ANTIGRAVITY_API_KEY: z.string().optional(),
+  OLLAMA_FALLBACK_MODEL: z.string().optional(),
   RULES_DB_MAX_ENTRIES: z.string().default('500').transform((val) => parseInt(val, 10)),
   DATABASE_URL: z.string().url().optional(),
 }).passthrough();

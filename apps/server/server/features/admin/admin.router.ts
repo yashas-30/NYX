@@ -48,6 +48,7 @@ export async function adminRouter(fastify: FastifyInstance) {
     reply.raw.write(
       `event: connected\ndata: ${JSON.stringify({ status: 'connected', logPath })}\n\n`
     );
+    if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
 
     let filePosition = 0;
     try {
@@ -72,11 +73,13 @@ export async function adminRouter(fastify: FastifyInstance) {
             const trimmed = line.trim();
             if (trimmed) {
               reply.raw.write(`event: log\ndata: ${trimmed}\n\n`);
+              if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
             }
           }
         }
       } catch (error: any) {
         reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+        if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
       }
     };
 

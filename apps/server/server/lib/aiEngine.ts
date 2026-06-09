@@ -5,6 +5,7 @@
 
 import { Gateway, Provider, ChatMessage, AISettings } from './gateway.js';
 import { env } from '../config/env.js';
+import { ABSTENTION_INSTRUCTION, resolveRealGeminiModel } from './modelUtils.js';
 
 // ── Ollama keep-alive: prevents cold-start latency by keeping models loaded ─────
 // The interval uses .unref() so it won't prevent clean Node.js shutdown.
@@ -25,27 +26,7 @@ import { workerPool } from './workers/workerPool.js';
 
 export type { Provider, ChatMessage, AISettings } from './gateway.js';
 
-// ── Layer 7: Abstention Training ──────────────────────────────────────────────
-// Injected into all system prompts to reduce hallucinations by encouraging
-// the model to say "I don't know" rather than guess wrong answers.
-const ABSTENTION_INSTRUCTION = `
-IMPORTANT: If you are unsure about an API, function, library, or implementation detail, or if the context does not contain sufficient information to answer accurately, explicitly state "I don't have enough context to answer this reliably" rather than guessing. Accuracy over completeness. Never hallucinate imports, library names, or function signatures.`.trim();
 
-/**
- * Injects abstention instruction into the last system message, or prepends a new one.
- */
-function injectAbstentionInstruction(messages: ChatMessage[]): ChatMessage[] {
-  const systemIdx = messages.findIndex((m) => m.role === 'system');
-  if (systemIdx >= 0) {
-    const updated = [...messages];
-    updated[systemIdx] = {
-      ...updated[systemIdx],
-      content: `${updated[systemIdx].content}\n\n${ABSTENTION_INSTRUCTION}`,
-    };
-    return updated;
-  }
-  return [{ role: 'system', content: ABSTENTION_INSTRUCTION }, ...messages];
-}
 
 export interface UnifiedRequest {
   provider: Provider;
@@ -85,10 +66,10 @@ export class AIEngine {
         );
 
       case 'ollama':
-        return this.streamOllama(model, messages, settings, writeChunk, onDone);
+        return this.streamOllama(model, messages, settings, req.signal, writeChunk, onDone);
 
       case 'lmstudio':
-        return this.streamLMStudio(model, messages, settings, writeChunk, onDone);
+        return this.streamLMStudio(model, messages, settings, req.signal, writeChunk, onDone);
 
       case 'antigravity-sdk':
         return this.streamAntigravitySdk(model, messages, apiKey || '', req.signal, writeChunk, onDone);
@@ -100,24 +81,6 @@ export class AIEngine {
 
   // ─── Provider-specific streamers ───────────────────────────────────────────
 
-  private static resolveRealGeminiModel(model: string): string {
-    const modelMap: Record<string, string> = {
-      'gemma-4-31b-it': 'gemma-4-31b-it',
-      'gemma-4-27b-it': 'gemma-4-26b-a4b-it',
-      'gemini-3.5-flash': 'gemini-3.5-flash',
-      'gemini-3-flash': 'gemini-3-flash-preview',
-      'gemini-3-flash-preview': 'gemini-3-flash-preview',
-      'gemini-3.1-pro': 'gemini-3.1-pro-preview',
-      'gemini-3.1-pro-preview': 'gemini-3.1-pro-preview',
-      'gemini-3.1-flash-lite': 'gemini-3.1-flash-lite',
-      'gemini-2.5-flash': 'gemini-2.5-flash',
-      'gemini-2.5-pro': 'gemini-2.5-pro',
-      'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
-      'gemini-flash-latest': 'gemini-flash-latest',
-      'gemini-pro-latest': 'gemini-pro-latest',
-    };
-    return modelMap[model] || model;
-  }
 
   /**
    * Streams responses from Gemini using Google's generative language API.
@@ -140,7 +103,7 @@ export class AIEngine {
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
-    const realModel = this.resolveRealGeminiModel(model);
+    const realModel = resolveRealGeminiModel(model);
     const { url } = Gateway.buildUrl(
       'gemini',
       `/models/${realModel}:streamGenerateContent?alt=sse&key=${apiKey}`,
@@ -148,30 +111,60 @@ export class AIEngine {
     );
     const { contents, systemInstruction } = Gateway.formatMessages(messages, 'gemini');
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // fallow-ignore-next-line code-duplication
-      body: JSON.stringify({
-        contents,
-        systemInstruction: systemInstruction
-          ? { parts: [{ text: systemInstruction + '\n\n' + ABSTENTION_INSTRUCTION }] }
-          : { parts: [{ text: ABSTENTION_INSTRUCTION }] },
-        generationConfig: {
-          temperature: settings?.temperature ?? 0.1, // Near-greedy for code accuracy
-          maxOutputTokens: settings?.maxTokens,
-          topP: settings?.topP ?? 0.9,
-          topK: settings?.topK ?? 20,
-        },
-        tools: tools,
-      }),
-      signal,
-    });
+    let response: Response | null = null;
+    let retries = 3;
+    let delay = 1000;
+    
+    while (retries >= 0) {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // fallow-ignore-next-line code-duplication
+        body: JSON.stringify({
+          contents,
+          systemInstruction: systemInstruction
+            ? { parts: [{ text: systemInstruction + '\n\n' + ABSTENTION_INSTRUCTION }] }
+            : { parts: [{ text: ABSTENTION_INSTRUCTION }] },
+          generationConfig: {
+            temperature: settings?.temperature ?? 0.1, // Near-greedy for code accuracy
+            maxOutputTokens: settings?.maxTokens,
+            topP: settings?.topP ?? 0.9,
+            topK: settings?.topK ?? 20,
+          },
+          tools: tools && tools.length > 0 ? tools : undefined,
+        }),
+        signal,
+      });
 
-    if (!response.ok) throw new Error(`Gemini API Error: ${response.status}`);
+      if (response.ok) break;
+
+      if ((response.status === 503 || response.status === 429) && retries > 0) {
+        retries--;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay *= 2;
+        continue;
+      }
+
+      const errorText = await response.text().catch(() => '');
+      throw new Error(`Gemini API Error: ${response.status} ${errorText}`);
+    }
+
+    if (!response || !response.ok) {
+      throw new Error(`Gemini API Error: ${response?.status}`);
+    }
 
     await Gateway.processSSEStream(response, {
-      onChunk: (text) => write({ chunk: text }),
+      onChunk: (data) => {
+        if (typeof data === 'string') {
+          write({ chunk: data });
+        } else if (data && typeof data === 'object') {
+          if (data.functionCall) {
+            write({ tool_call: data.functionCall });
+          } else {
+            write(data);
+          }
+        }
+      },
       onDone: done,
       onError: (err) => {
         throw new Error(err);
@@ -205,7 +198,14 @@ export class AIEngine {
     if (!response.ok) throw new Error(`Antigravity SDK Error: ${response.status}`);
 
     await Gateway.processSSEStream(response, {
-      onChunk: (text) => write({ chunk: text }),
+      onChunk: (data) => {
+        if (typeof data === 'string') {
+          write({ chunk: data });
+        } else if (data && typeof data === 'object') {
+          if (data.functionCall) write({ tool_call: data.functionCall });
+          else write(data);
+        }
+      },
       onDone: done,
       onError: (err) => {
         throw new Error(err);
@@ -220,6 +220,7 @@ export class AIEngine {
     model: string,
     messages: ChatMessage[],
     settings: AISettings | undefined,
+    signal: AbortSignal | undefined,
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
@@ -228,6 +229,10 @@ export class AIEngine {
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 600000);
+    
+    if (signal) {
+      signal.addEventListener('abort', () => abortController.abort());
+    }
 
     try {
       const formattedMessages = messages.map((m: any) => ({ role: m.role, content: m.content }));
@@ -250,7 +255,14 @@ export class AIEngine {
       }
 
       await Gateway.processSSEStream(response, {
-        onChunk: (text) => write({ chunk: text }),
+        onChunk: (data) => {
+          if (typeof data === 'string') {
+            write({ chunk: data });
+          } else if (data && typeof data === 'object') {
+            if (data.functionCall) write({ tool_call: data.functionCall });
+            else write(data);
+          }
+        },
         onDone: done,
         onError: (err) => { throw new Error(err); },
       });
@@ -266,6 +278,7 @@ export class AIEngine {
     model: string,
     messages: ChatMessage[],
     settings: AISettings | undefined,
+    signal: AbortSignal | undefined,
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
@@ -274,6 +287,10 @@ export class AIEngine {
 
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), 600000);
+
+    if (signal) {
+      signal.addEventListener('abort', () => abortController.abort());
+    }
 
     try {
       const formattedMessages = messages.map((m: any) => ({ role: m.role, content: m.content }));
@@ -296,7 +313,14 @@ export class AIEngine {
       }
 
       await Gateway.processSSEStream(response, {
-        onChunk: (text) => write({ chunk: text }),
+        onChunk: (data) => {
+          if (typeof data === 'string') {
+            write({ chunk: data });
+          } else if (data && typeof data === 'object') {
+            if (data.functionCall) write({ tool_call: data.functionCall });
+            else write(data);
+          }
+        },
         onDone: done,
         onError: (err) => { throw new Error(err); },
       });

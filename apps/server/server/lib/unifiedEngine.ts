@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Provider, ChatMessage, AISettings, getModelCapabilities } from '@nyx/shared';
 import { env } from '../config/env.js';
 import { Gateway } from './gateway.js';
@@ -10,6 +9,7 @@ import { compressPrompt } from '../features/prompts/compression.js';
 import { workerPool } from './workers/workerPool.js';
 import { NyxTelemetry } from './telemetry.js';
 import { CacheServer } from './cache.js';
+import { ABSTENTION_INSTRUCTION, resolveRealGeminiModel } from './modelUtils.js';
 
 export interface ModelSettings {
   temperature?: number;
@@ -28,6 +28,17 @@ export interface StreamChunk {
   antigravity_id?: string;
 }
 
+export interface UnifiedEngineExecuteParams {
+  provider: Provider;
+  model: string;
+  messages: ChatMessage[];
+  apiKey?: string;
+  customGatewayUrls?: Record<string, string>;
+  settings?: any;
+  tools?: any[];
+  signal?: AbortSignal;
+}
+
 export interface ExecuteOptions {
   provider: string;
   model: string;
@@ -36,6 +47,7 @@ export interface ExecuteOptions {
   apiKey?: string;
   customGatewayUrls?: Record<string, string>;
   tools?: any[];
+  signal?: AbortSignal;
 }
 
 // Per-provider limits for GPU and Quota Protection (Phase 1.5)
@@ -72,8 +84,7 @@ function sliceHistoryByTokens(messages: ChatMessage[], maxTokens: number): ChatM
   return result;
 }
 
-const ABSTENTION_INSTRUCTION = `
-IMPORTANT: If you are unsure about an API, function, library, or implementation detail, or if the context does not contain sufficient information to answer accurately, explicitly state "I don't have enough context to answer this reliably" rather than guessing. Accuracy over completeness. Never hallucinate imports, library names, or function signatures.`.trim();
+
 
 function injectAbstentionInstruction(messages: ChatMessage[]): ChatMessage[] {
   const systemIdx = messages.findIndex((m) => m.role === 'system');
@@ -150,12 +161,12 @@ export class UnifiedEngine {
       }
 
       // 2. Auth validation
-      const authResult = Gateway.validateAuth(provider, model, apiKey);
+      const authResult = Gateway.validateAuth(provider as Provider, model, apiKey);
       if (!authResult.valid) {
         throw new Error(authResult.error);
       }
 
-      const activeKey = apiKey || Gateway.getActiveKey(provider, apiKey);
+      const activeKey = apiKey || Gateway.getActiveKey(provider as Provider, apiKey);
 
       // Token-based history slicing (Phase 5.1)
       const MAX_HISTORY_TOKENS = 80_000;
@@ -207,7 +218,7 @@ export class UnifiedEngine {
             if (preprocessRes.ok) {
               const data: any = await preprocessRes.json();
               if (data && typeof data.prompt === 'string') {
-                const lastUserIdx = processedMessages.lastIndexOf(lastUserMessage);
+                const lastUserIdx = processedMessages.map((m) => m.role).lastIndexOf('user');
                 if (lastUserIdx >= 0) {
                   processedMessages = [...processedMessages];
                   processedMessages[lastUserIdx] = {
@@ -232,14 +243,14 @@ export class UnifiedEngine {
 
                     // Send as dedicated SSE event (Phase 2.3)
                     onChunk({ type: 'meta', antigravity_id: optimizationId });
-                  } catch (dbErr) {
-                    logger.error('[Antigravity Middleware] Failed to log optimization:', dbErr);
+                  } catch (dbErr: any) {
+                    logger.error({ err: dbErr }, '[Antigravity Middleware] Failed to log optimization:');
                   }
                 }
               }
             }
           } catch (err: any) {
-            logger.warn('[Antigravity Middleware] Prompt preprocessing failed (non-fatal):', err.message);
+            logger.warn({ err }, '[Antigravity Middleware] Prompt preprocessing failed (non-fatal):');
           }
         }
       }
@@ -283,7 +294,10 @@ export class UnifiedEngine {
       // Rank providers: primary, followed by fallbacks if primary fails
       const providersToTry = [{ provider, model }];
       if (provider === 'gemini') {
-        providersToTry.push({ provider: 'ollama', model: 'qwen2.5-coder-3b-native' });
+        const fallbackOllamaModel = env.OLLAMA_FALLBACK_MODEL;
+        if (fallbackOllamaModel) {
+          providersToTry.push({ provider: 'ollama', model: fallbackOllamaModel });
+        }
       }
 
       let succeeded = false;
@@ -292,17 +306,18 @@ export class UnifiedEngine {
 
       for (const currentProv of providersToTry) {
         try {
-          const provKey = currentProv.provider === provider ? activeKey : Gateway.getActiveKey(currentProv.provider);
+          const provKey = currentProv.provider === provider ? activeKey : Gateway.getActiveKey(currentProv.provider as Provider);
           
           await AIEngine.stream(
             {
-              provider: currentProv.provider,
+              provider: currentProv.provider as Provider,
               model: currentProv.model,
               messages: processedMessages,
               apiKey: provKey,
               settings,
               customGatewayUrls,
               tools,
+              signal: options.signal,
             },
             (chunkEvent: any) => {
               if (chunkEvent.chunk) {

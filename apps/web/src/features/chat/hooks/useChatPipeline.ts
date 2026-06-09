@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * @file src/features/chat/hooks/useChatPipeline.ts
  * @description Production-grade AI streaming pipeline with batched updates,
@@ -471,7 +470,7 @@ export const useChatPipeline = ({
         }
       }
     },
-    [maxRetries, webSearchEnabled]
+    [webSearchEnabled]
   );
 
   // -------------------------------------------------------------------------

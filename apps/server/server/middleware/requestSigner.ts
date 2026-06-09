@@ -50,7 +50,30 @@ export const requestSignerMiddleware = async (request: FastifyRequest, reply: Fa
     return reply;
   }
 
+  const authHeader = request.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.substring(7)
+    : (request.headers['x-nyx-session-token'] as string);
+
+  if (!token) {
+    if (env.ENFORCE_REQUEST_SIGNATURE) {
+      logger.warn('[RequestSigner] Missing token for signature verification');
+      reply.code(401).send({ error: 'Missing session token' });
+      return reply;
+    }
+    return;
+  }
+
   const secrets = await getRequestSignerSecrets();
+
+  // Derive the user-specific keys from session token + global secrets
+  const userSecretCurrent = crypto
+    .createHmac('sha256', secrets.current)
+    .update(token)
+    .digest('hex');
+  const userSecretPrevious = secrets.previous
+    ? crypto.createHmac('sha256', secrets.previous).update(token).digest('hex')
+    : null;
 
   // Hash the body + timestamp + path
   const payload = `${request.method}:${fullPath}:${timestamp}:${
@@ -58,11 +81,11 @@ export const requestSignerMiddleware = async (request: FastifyRequest, reply: Fa
   }`;
 
   const expectedSignatureCurrent = crypto
-    .createHmac('sha256', secrets.current)
+    .createHmac('sha256', userSecretCurrent)
     .update(payload)
     .digest('hex');
-  const expectedSignaturePrevious = secrets.previous
-    ? crypto.createHmac('sha256', secrets.previous).update(payload).digest('hex')
+  const expectedSignaturePrevious = userSecretPrevious
+    ? crypto.createHmac('sha256', userSecretPrevious).update(payload).digest('hex')
     : null;
 
   try {

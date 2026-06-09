@@ -353,9 +353,17 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           sidebarOpen={sidebarOpen}
           onToggleSidebar={onToggleSidebar}
           sessionTitle={chatSessions?.activeSession?.title || 'New Chat'}
-          onTitleChange={(title) => {
-            if (chatSessions?.activeSid) {
-              chatSessions.updateSession(chatSessions.activeSid, history);
+          onTitleChange={async (title) => {
+            if (chatSessions?.activeSid && title.trim()) {
+              try {
+                await fetch(`/api/v1/sessions/${chatSessions.activeSid}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name: title.trim() }),
+                });
+              } catch {
+                // Non-fatal: title update failure doesn't break chat
+              }
             }
           }}
           onOpenLightning={onOpenLightning}
@@ -419,22 +427,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         />
       </div>
 
-      {/* Scrollbar styles */}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { 
-          background: hsl(var(--foreground) / 0.1); 
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { 
-          background: hsl(var(--primary) / 0.2); 
-        }
-      `,
-        }}
-      />
+
     </motion.div>
   );
 };

@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AgentsService } from './agents.service.js';
@@ -10,12 +10,18 @@ import { getDedupKey, executeWithDedup } from '../../lib/streamDeduplicator.js';
 
 // ── Request Validation Schemas ─────────────────────────────────────────────
 
+// Max image size: 10MB base64 encoded (~13.3MB raw)
+const MAX_IMAGE_BASE64_LENGTH = 13_981_013;
+
 const ImageSchema = z.object({
-  mimeType: z.string(),
-  data: z.string().refine(val => /^[A-Za-z0-9+/=]+$/.test(val.replace(/\s/g, '')), {
-    message: 'Invalid base64 image data',
-  }),
-  name: z.string().optional(),
+  mimeType: z.string().regex(/^image\/(jpeg|png|gif|webp|bmp)$/, { message: 'Invalid image MIME type' }),
+  data: z
+    .string()
+    .max(MAX_IMAGE_BASE64_LENGTH, { message: 'Image data exceeds maximum size of 10MB' })
+    .refine((val) => /^[A-Za-z0-9+/=]+$/.test(val.replace(/\s/g, '')), {
+      message: 'Invalid base64 image data',
+    }),
+  name: z.string().max(255).optional(),
 });
 
 const HistoryMessageSchema = z.object({
@@ -109,6 +115,7 @@ Your purpose is to provide industrial-grade, production-ready code.
     }
 
     await handleAgentStream(parseResult.data, reply, 'chat');
+    return reply;
   });
 
   const clineService = new ClineService();
@@ -148,6 +155,7 @@ Your purpose is to provide industrial-grade, production-ready code.
         (event) => {
           if (!reply.raw.writableEnded && !reply.raw.destroyed) {
             reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+            if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
           }
         }
       );
@@ -162,10 +170,12 @@ Your purpose is to provide industrial-grade, production-ready code.
           reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
           reply.raw.end();
         } catch (writeErr) {
-          logger.error(`[Agents Router Error] Failed to write error to stream:`, writeErr);
+          logger.error({ err: writeErr }, '[Agents Router Error] Failed to write error to stream:');
         }
       }
     }
+
+    return reply;
   });
 
   async function handleAgentStream(body: any, reply: any, agentType: 'chat' | 'coder') {
@@ -185,6 +195,7 @@ Your purpose is to provide industrial-grade, production-ready code.
     const writeChunk = (chunk: any) => {
       if (!reply.raw.writableEnded && !reply.raw.destroyed) {
         reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
       }
     };
     const writeDone = () => {
@@ -193,6 +204,11 @@ Your purpose is to provide industrial-grade, production-ready code.
         reply.raw.end();
       }
     };
+
+    const reqAbortController = new AbortController();
+    reply.request.raw.on('close', () => {
+      reqAbortController.abort();
+    });
 
     try {
       await executeWithDedup(
@@ -208,6 +224,8 @@ Your purpose is to provide industrial-grade, production-ready code.
               agentType,
               images,
               apiKey,
+              settings,
+              signal: reqAbortController.signal,
             },
             onChunk,
             onDone
@@ -223,7 +241,7 @@ Your purpose is to provide industrial-grade, production-ready code.
           reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
           reply.raw.end();
         } catch (writeErr) {
-          logger.error(`[Agents Router Error] Failed to write error to stream:`, writeErr);
+          logger.error({ err: writeErr }, '[Agents Router Error] Failed to write error to stream:');
         }
       }
     }

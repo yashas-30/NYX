@@ -18,7 +18,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import logger from './logger.js';
 import { env } from '../config/env.js';
-import { isProd } from './paths.js';
+import { isProd, UPLOADS_DIR } from './paths.js';
 import { requestIdMiddleware } from '../middleware/requestId.js';
 import { errorHandler } from '../middleware/errorHandler.js';
 import { setupOpenApi } from '../docs/openapi.js';
@@ -292,6 +292,13 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
   });
 
 
+
+  // Serve the uploads directory statically
+  await app.register(fastifyStatic, {
+    root: UPLOADS_DIR,
+    prefix: '/uploads/',
+    decorateReply: false,
+  });
 
   // Mount model and application routes
   await app.register(fastifyModelRoutes);

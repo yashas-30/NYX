@@ -14,6 +14,7 @@ export interface AgentExecuteParams {
   gatewayUrls?: Record<string, string>;
   agentType: 'chat' | 'coder';
   images?: any[];
+  settings?: any;
 }
 
 // ── Sanitization & Slicing Helpers ───────────────────────────────────────────
@@ -60,7 +61,7 @@ export class AgentsService {
     onChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
-    const { model, provider: requestedProvider, prompt, history, apiKey, gatewayUrls, agentType, images } = params;
+    const { model, provider: requestedProvider, prompt, history, apiKey, gatewayUrls, agentType, images, settings, signal } = params;
 
     // Sanitization (Phase 4.3)
     const sanitization = sanitizePrompt(prompt);
@@ -113,6 +114,8 @@ export class AgentsService {
         messages,
         apiKey,
         customGatewayUrls: gatewayUrls,
+        settings,
+        signal,
         // Use per-model capability check instead of per-provider blanket disable
         tools: getModelCapabilities(model).supportsTools ? tools : undefined,
       },

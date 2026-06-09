@@ -38,6 +38,7 @@ export const VAULT_DIR = path.join(APP_STATE_DIR, '.nyx-keys');
 export const LOGS_DIR = path.join(APP_STATE_DIR, '.nyx-logs');
 export const MODELS_DIR = path.join(APP_STATE_DIR, '.nyx-models');
 export const CACHE_DIR = path.join(APP_STATE_DIR, '.nyx-cache');
+export const UPLOADS_DIR = path.join(findProjectRoot(), 'uploads');
 export const DB_FILE = path.join(APP_STATE_DIR, 'nyx.db');
 
 function isSpawnable(cmd: string): boolean {
@@ -93,7 +94,7 @@ export function findPythonPath(): string {
 }
 
 // Ensure directories exist
-const dirs = [APP_STATE_DIR, VAULT_DIR, LOGS_DIR, MODELS_DIR, CACHE_DIR];
+const dirs = [APP_STATE_DIR, VAULT_DIR, LOGS_DIR, MODELS_DIR, CACHE_DIR, UPLOADS_DIR];
 dirs.forEach((dir) => {
   if (!fs.existsSync(dir)) {
     try {

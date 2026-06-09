@@ -134,8 +134,19 @@ export async function registerRoutes(app: FastifyInstance) {
       });
 
       v1.get('/auth/handshake', async (request, reply) => {
+        const authHeader = request.headers.authorization;
+        if (!authHeader?.startsWith('Bearer ') || !verifySessionToken(authHeader.substring(7))) {
+          reply.code(401).send({ error: 'Unauthorized: Invalid or expired session token' });
+          return reply;
+        }
+        const token = authHeader.substring(7);
         const secrets = await getRequestSignerSecrets();
-        return reply.send({ secret: secrets.current });
+        const crypto = await import('crypto');
+        const derivedSecret = crypto
+          .createHmac('sha256', secrets.current)
+          .update(token)
+          .digest('hex');
+        return reply.send({ secret: derivedSecret });
       });
 
       // --- Feature Routes ---

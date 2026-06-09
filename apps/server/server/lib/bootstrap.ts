@@ -11,10 +11,7 @@ import { workerPool } from './workers/workerPool.js';
 import { cleanupProcesses, registerProcess } from './processRegistry.js';
 import { CodebaseScanner } from '../features/workspace/codebaseScanner.js';
 import { runMigrations } from '../db/migrator.js';
-import {
-  migrateOldStore,
-  migrateSqliteStore,
-} from '../features/conversations/conversations.service.js';
+
 import { pluginRegistry } from './pluginRegistry.js';
 import http from 'node:http';
 
@@ -112,8 +109,6 @@ function performHealthCheck(url: string, timeoutMs = 5000): Promise<void> {
 
 export async function initializeDatabaseAndPlugins() {
   runMigrations();
-  migrateSqliteStore();
-  migrateOldStore();
   await pluginRegistry.loadPlugins();
 }
 
