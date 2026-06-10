@@ -18,7 +18,7 @@ export class ModelMetadataService {
   private static instance: ModelMetadataService;
   private cache: Map<string, ModelMetadata> = new Map();
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): ModelMetadataService {
     if (!ModelMetadataService.instance) {
@@ -64,7 +64,7 @@ export class ModelMetadataService {
       metadata.mmluScore = 71.3;
       metadata.humanEvalScore = 60.5;
       metadata.mtBenchScore = 8.1;
-    } else if (lowerId.includes('gemma-2-27b') || lowerId.includes('gemma-3-27b')) {
+    } else if (lowerId.includes('gemma-4-26b') || lowerId.includes('gemma-4-26b')) {
       metadata.mmluScore = 75.2;
       metadata.humanEvalScore = 68.9;
       metadata.mtBenchScore = 8.4;

@@ -9,8 +9,9 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     name: 'Gemini 3.5 Flash',
     provider: 'gemini',
     status: 'ga',
-    description: 'Cutting-edge high performance Flash model.',
+    description: 'Cutting-edge high performance Flash model. Limits: 5 RPM, 250k TPM, 20 RPD.',
     specs: { contextWindow: '1M', trainingData: '2026', maxOutput: '32K', modality: 'Multimodal' },
+    limits: { rpm: 5, tpm: 250000, rpd: 20 },
   },
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -37,8 +38,9 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     name: 'Gemini 3.1 Flash Lite',
     provider: 'gemini',
     status: 'preview',
-    description: 'Lightweight, cost-efficient Flash model (preview).',
+    description: 'Lightweight, cost-efficient Flash model (preview). Limits: 15 RPM, 250k TPM, 500 RPD.',
     specs: { contextWindow: '1M', trainingData: '2026', maxOutput: '16K', modality: 'Multimodal' },
+    limits: { rpm: 15, tpm: 250000, rpd: 500 },
   },
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -50,8 +52,9 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'gemini',
     status: 'deprecated',
     shutdownDate: '2026-10-16',
-    description: 'Stable Flash model. Deprecated — migrating to 3.x series.',
+    description: 'Stable Flash model. Deprecated — migrating to 3.x series. Limits: 5 RPM, 250k TPM, 20 RPD.',
     specs: { contextWindow: '1M', trainingData: '2025', maxOutput: '32K', modality: 'Multimodal' },
+    limits: { rpm: 5, tpm: 250000, rpd: 20 },
   },
   {
     id: 'gemini-2.5-pro',
@@ -80,8 +83,9 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     name: 'Gemma 4 31B',
     provider: 'gemini',
     status: 'ga',
-    description: "Google's best open weights model — reasoning and math",
+    description: "Google's best open weights model — reasoning and math. Limits: 15 RPM, unlimited TPM, 1500 RPD.",
     specs: { contextWindow: '256K', trainingData: '2026', maxOutput: '8K', modality: 'Text' },
+    limits: { rpm: 15, tpm: null, rpd: 1500 },
   },
 
   // ═══════════════════════════════════════════════════════════════════════════════

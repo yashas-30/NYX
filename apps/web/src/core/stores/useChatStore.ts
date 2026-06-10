@@ -66,7 +66,7 @@ interface ChatStoreState {
     sid: string,
     meta: { folderId?: string | null; tags?: string | null }
   ) => void;
-  
+
   // Getters (computed properties)
   getSessions: (agentType?: 'chat' | 'coder') => ChatSession[];
   getActiveSid: (agentType?: 'chat' | 'coder') => string | null;
@@ -185,7 +185,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
                 }
               }
               const sorted = merged.sort((a, b) => b.updatedAt - a.updatedAt);
-              
+
               let activeSidChat = state.activeSidChat;
               let activeSidCoder = state.activeSidCoder;
 

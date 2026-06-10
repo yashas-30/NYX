@@ -133,6 +133,21 @@ export async function executeTool(
         return { success: true, result: rules };
       }
 
+      case 'computer_use': {
+        try {
+          // Attempt to use Tauri invoke if available
+          const { invoke } = await import('@tauri-apps/api/core');
+          const result = await invoke('execute_computer_action', { 
+            action: args.action, 
+            params: args.params ? JSON.parse(args.params) : null 
+          });
+          return { success: true, result };
+        } catch (error: any) {
+          console.error('[ToolExecutor] computer_use failed:', error);
+          return { success: false, result: null, error: error.message || 'Computer use failed' };
+        }
+      }
+
       default:
         return { success: false, result: null, error: `Unknown tool: ${name}` };
     }

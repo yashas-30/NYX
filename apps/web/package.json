@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "wait-on tcp:3001 -t 120000 && vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -42,6 +42,7 @@
     "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-virtual": "^3.13.26",
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-http": "^2.5.9",
     "async-mutex": "^0.5.0",
     "axios": "^1.16.1",
     "canvas-confetti": "^1.9.4",

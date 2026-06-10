@@ -10,7 +10,7 @@ export class ContextManager {
   private readonly MAX_TOKENS: number;
   private readonly TOKEN_MULTIPLIER = 4; // chars per token heuristic
 
-  constructor(maxTokens: number = 8192) {
+  constructor(maxTokens: number = 128000) {
     this.MAX_TOKENS = maxTokens;
   }
 

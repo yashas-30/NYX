@@ -79,6 +79,20 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
   });
   app.setSerializerCompiler(serializerCompiler);
 
+  // Custom JSON parser to allow empty bodies (fixes "Body cannot be empty when content-type is set to 'application/json'")
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, function (req, body: string, done) {
+    if (!body || body.trim() === '') {
+      done(null, {});
+    } else {
+      try {
+        done(null, JSON.parse(body));
+      } catch (err: any) {
+        err.statusCode = 400;
+        done(err, undefined);
+      }
+    }
+  });
+
   // Middlewares / Hooks
   app.addHook('onRequest', requestIdMiddleware);
 

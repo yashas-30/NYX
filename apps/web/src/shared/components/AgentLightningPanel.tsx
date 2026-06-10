@@ -329,13 +329,13 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                         </div>
 
                         <div className="space-y-1">
-                          <div className="text-[10px] text-foreground font-semibold truncate">
+                          <div className="text-[10px] text-foreground font-semibold break-words">
                             <span className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground mr-1.5">
                               Task:
                             </span>
                             {rollout.task}
                           </div>
-                          <div className="text-[9.5px] text-muted-foreground leading-normal truncate">
+                          <div className="text-[9.5px] text-muted-foreground leading-normal break-words">
                             <span className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground mr-1.5">
                               Action:
                             </span>

@@ -7,8 +7,9 @@
   "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts",
-    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "build": "tsup src/index.ts --format cjs,esm --no-dts && tsc --emitDeclarationOnly --declaration --declarationDir dist --declarationMap",
+    "build:dev": "tsup src/index.ts --format cjs,esm --no-dts",
+    "dev": "tsup src/index.ts --format cjs,esm --no-dts --watch",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

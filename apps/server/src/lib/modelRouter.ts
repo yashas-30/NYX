@@ -22,9 +22,10 @@ export interface ModelRecommendation {
 }
 
 const AVAILABLE_MODELS: ModelCapabilities[] = [
-  { id: 'gemini-3.5-pro', contextWindow: 2000000, costPer1kTokens: 0.01, avgLatency: 2000, codingScore: 95, reasoningScore: 95, creativityScore: 90, isAvailable: true },
+  { id: 'gemini-3.1-pro-preview', contextWindow: 2000000, costPer1kTokens: 0.01, avgLatency: 2000, codingScore: 95, reasoningScore: 95, creativityScore: 90, isAvailable: true },
   { id: 'gemini-3.5-flash', contextWindow: 1000000, costPer1kTokens: 0.001, avgLatency: 500, codingScore: 80, reasoningScore: 80, creativityScore: 85, isAvailable: true },
-  { id: 'local-llama3', contextWindow: 8192, costPer1kTokens: 0, avgLatency: 100, codingScore: 70, reasoningScore: 65, creativityScore: 70, isAvailable: true }
+  { id: 'gemini-3.1-flash-lite', contextWindow: 1000000, costPer1kTokens: 0.0005, avgLatency: 300, codingScore: 70, reasoningScore: 72, creativityScore: 75, isAvailable: true },
+  { id: 'nyx-gemma-4-e2b-it', contextWindow: 131072, costPer1kTokens: 0, avgLatency: 100, codingScore: 65, reasoningScore: 60, creativityScore: 65, isAvailable: true }
 ];
 
 export function selectModel(task: TaskProfile): ModelRecommendation {

@@ -59,15 +59,18 @@ pub fn run() {
         .manage(AppState::default())
         .setup(|app| {
             let handle = app.handle().clone();
+            
+            // Register global shortcut
+            use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+            use std::str::FromStr;
+            let shortcut = tauri_plugin_global_shortcut::Shortcut::from_str("Super+Space").unwrap_or_else(|_| tauri_plugin_global_shortcut::Shortcut::from_str("CmdOrCtrl+Space").unwrap());
+            if let Err(e) = app.global_shortcut().register(shortcut) {
+                tracing::warn!("Failed to register global shortcut: {}", e);
+            }
+
             tauri::async_runtime::spawn(async move {
                 setup_app(&handle).await;
             });
-
-            // Open DevTools in debug builds to see console errors
-            // #[cfg(debug_assertions)]
-            // if let Some(window) = app.get_webview_window("main") {
-            //     window.open_devtools();
-            // }
 
             Ok(())
         })
@@ -78,6 +81,8 @@ pub fn run() {
             system_gpu_info, system_info, system_get_userdata,
             server_get_ports, server_restart,
             app_get_version, app_open_external,
+            proxy_request,
+            execute_computer_action,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -134,6 +139,12 @@ async fn setup_app(handle: &tauri::AppHandle) {
     let _ = window.show();
     let _ = window.set_focus();
 
+    #[cfg(target_os = "macos")]
+    let _ = window_vibrancy::apply_vibrancy(&window, window_vibrancy::NSVisualEffectMaterial::HudWindow, None, None);
+
+    #[cfg(target_os = "windows")]
+    let _ = window_vibrancy::apply_blur(&window, Some((18, 18, 18, 125))); // Dark blur
+
     tracing::info!("✅ NYX Tauri fully initialized");
 }
 
@@ -155,6 +166,7 @@ async fn create_main_window(handle: &tauri::AppHandle, port: u16) -> tauri::Webv
         .inner_size(1440.0, 900.0)
         .min_inner_size(900.0, 600.0)
         .center()
+        .transparent(true)
         .visible(false)
         .build()
         .expect("Failed to create window")
@@ -172,6 +184,7 @@ async fn create_main_window(handle: &tauri::AppHandle, port: u16) -> tauri::Webv
             .inner_size(1440.0, 900.0)
             .min_inner_size(900.0, 600.0)
             .center()
+            .transparent(true)
             .visible(false)
             .build()
             .expect("Failed to create window")

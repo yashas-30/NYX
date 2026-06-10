@@ -48,7 +48,29 @@ export class GeminiAdapter implements ProviderAdapter {
     const model = request.model.replace('gemini/', '');
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-    const contents = geminiContentBuilder(request.messages, request.images);
+    let contents = geminiContentBuilder(request.messages, request.images);
+
+    // Extract system messages
+    const systemMessages = contents.filter((c: any) => c.role === 'system');
+    contents = contents.filter((c: any) => c.role !== 'system');
+
+    let systemText = systemMessages.map((s: any) => s.parts[0].text).join('\n\n');
+
+    if (model.toLowerCase().includes('gemma')) {
+      const suppressReasoningInstruction = `You are a helpful AI assistant. Respond directly to the user. \nDo NOT show your internal reasoning, planning, or thought process. \nDo NOT include sections like "Intent:", "Identity:", "Drafting:", or "Refining:". \nJust give the final answer in a natural, conversational tone.`;
+      
+      systemText = systemText ? `${systemText}\n\n${suppressReasoningInstruction}` : suppressReasoningInstruction;
+      
+      if (contents.length > 0 && contents[0].role === 'user') {
+        contents[0].parts.unshift({ text: `System Instruction:\n${systemText}\n\n` });
+      } else {
+        contents.unshift({ role: 'user', parts: [{ text: `System Instruction:\n${systemText}` }] });
+        // To maintain alternating roles, insert a dummy model response if next is user
+        if (contents.length > 1 && contents[1].role === 'user') {
+            contents.splice(1, 0, { role: 'model', parts: [{ text: 'Acknowledged.' }] });
+        }
+      }
+    }
 
     // fallow-ignore-next-line code-duplication
     const payload: any = {
@@ -57,6 +79,12 @@ export class GeminiAdapter implements ProviderAdapter {
         temperature: request.temperature ?? 0.7,
       },
     };
+
+    if (systemText && !model.toLowerCase().includes('gemma')) {
+      payload.systemInstruction = {
+        parts: [{ text: systemText }]
+      };
+    }
 
     if (request.webSearch) {
       payload.tools = [

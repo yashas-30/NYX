@@ -55,7 +55,7 @@ const STREAM_TIMEOUT_MS = 120000;
 const MAX_RETRIES = 2;
 const BASE_RETRY_DELAY_MS = 1000;
 
-const FASTIFY_URL = 'http://localhost:3001/api/models/stream';
+const FASTIFY_URL = '/api/models/stream';
 
 // fallow-ignore-next-line code-duplication
 const API_KEY_PATTERNS: Record<string, (key: string) => boolean> = {

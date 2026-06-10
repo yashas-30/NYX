@@ -14,6 +14,9 @@ import { env } from '../../config/env.js';
 import { sanitizePrompt } from './agents.service.js';
 import { Gateway } from '../../lib/gateway.js';
 import { resolveRealGeminiModel } from '../../lib/modelUtils.js';
+import { mcpClientManager } from '../../lib/mcp/McpClientManager.js';
+import { browserService } from '../browser/browserService.js';
+import { computerUseTool } from '../tools/computerUse.js';
 
 // ── Security: Command Allowlist & Blocklist ───────────────────────────────────
 
@@ -376,7 +379,77 @@ const ALL_CLINE_TOOLS = [
   getWorkspaceInfoTool,
   runCodeTool,
   getEvolutionaryRulesTool,
+  computerUseTool,
 ];
+
+// ── Browser Automation Tools ─────────────────────────────────────────────────
+
+const browserNavigateTool = createTool({
+  name: 'browser_navigate',
+  description: 'Navigate the headless browser to a URL.',
+  inputSchema: z.object({
+    url: z.string().url().describe('The full URL to navigate to (e.g., http://localhost:3000)'),
+  }),
+  async execute(input: any) {
+    try {
+      return await browserService.navigate(input.url);
+    } catch (err: any) {
+      return `Error: ${err.message}`;
+    }
+  },
+});
+
+const browserClickTool = createTool({
+  name: 'browser_click',
+  description: 'Click an element on the current webpage using a CSS selector.',
+  inputSchema: z.object({
+    selector: z.string().describe('CSS selector of the element to click'),
+  }),
+  async execute(input: any) {
+    try {
+      return await browserService.click(input.selector);
+    } catch (err: any) {
+      return `Error: ${err.message}`;
+    }
+  },
+});
+
+const browserTypeTool = createTool({
+  name: 'browser_type',
+  description: 'Type text into an input field on the current webpage.',
+  inputSchema: z.object({
+    selector: z.string().describe('CSS selector of the input element'),
+    text: z.string().describe('Text to type into the field'),
+  }),
+  async execute(input: any) {
+    try {
+      return await browserService.type(input.selector, input.text);
+    } catch (err: any) {
+      return `Error: ${err.message}`;
+    }
+  },
+});
+
+const browserScreenshotTool = createTool({
+  name: 'browser_screenshot',
+  description: 'Take a screenshot of the current webpage. Returns a base64 string.',
+  inputSchema: z.object({}),
+  async execute(input: any) {
+    try {
+      const base64 = await browserService.getScreenshotBase64();
+      return JSON.stringify({ image_base64: base64 });
+    } catch (err: any) {
+      return `Error: ${err.message}`;
+    }
+  },
+});
+
+ALL_CLINE_TOOLS.push(
+  browserNavigateTool,
+  browserClickTool,
+  browserTypeTool,
+  browserScreenshotTool
+);
 
 // ── Service Execution ─────────────────────────────────────────────────────────
 
@@ -421,10 +494,16 @@ export class ClineService {
     let modelId = resolveRealGeminiModel(model);
     let resolvedApiKey = apiKey || Gateway.getActiveKey('gemini', undefined) || env.ANTIGRAVITY_API_KEY || '';
 
+    let baseUrl: string | undefined = undefined;
+
     // Route local offline runner via openai-compatible provider in Cline
     if (model === 'ollama' || model === 'lmstudio' || modelId.startsWith('ollama') || modelId.startsWith('lmstudio')) {
       providerId = 'openai-compatible';
-      modelId = 'qwen2.5-coder-7b'; // default mock identifier
+      baseUrl = model.includes('lmstudio') ? 'http://127.0.0.1:1234/v1' : 'http://127.0.0.1:11434/v1';
+      modelId = modelId.replace(/^ollama[:\\/]?/, '').replace(/^lmstudio[:\\/]?/, '');
+      if (modelId === 'ollama' || modelId === 'lmstudio' || modelId === '') {
+          modelId = 'qwen2.5-coder-7b'; // default mock identifier
+      }
       resolvedApiKey = 'dummy-key';
     }
 
@@ -436,12 +515,32 @@ export class ClineService {
       'If you have nothing else to add, write a brief summary of what you did.',
     ].join(' ');
 
+    const mcpToolsDef = await mcpClientManager.getAvailableTools();
+    const dynamicTools = mcpToolsDef.map((def) => {
+      return createTool({
+        name: def.function.name,
+        description: def.function.description,
+        // @ts-ignore
+        inputSchema: def.function.parameters as any,
+        execute: async (input: any) => {
+          try {
+            const result = await mcpClientManager.executeTool(def.function.name, input);
+            return JSON.stringify(result);
+          } catch (err: any) {
+            return `Error executing MCP tool: ${err.message}`;
+          }
+        }
+      });
+    });
+
+    const combinedTools = [...ALL_CLINE_TOOLS, ...dynamicTools];
+
     const agent = new Agent({
       providerId,
       modelId,
       apiKey: resolvedApiKey,
-      baseUrl: providerId === 'openai-compatible' ? 'http://127.0.0.1:12345/v1' : undefined,
-      tools: ALL_CLINE_TOOLS,
+      baseUrl: baseUrl,
+      tools: combinedTools,
       systemPrompt,
     });
 

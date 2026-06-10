@@ -285,6 +285,8 @@ export const useChatLogic = ({
 
       ws = new WebSocket(wsUrl);
 
+      let reconnectAttempts = 0;
+
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -294,12 +296,22 @@ export const useChatLogic = ({
             }
           }
         } catch (e) {
-          console.error('[ChatLogic] WebSocket error:', e);
+          console.debug('[ChatLogic] WebSocket message parse error:', e);
         }
       };
 
+      ws.onopen = () => {
+        reconnectAttempts = 0;
+      };
+
       ws.onclose = () => {
-        reconnectTimeout = setTimeout(connect, 3000);
+        reconnectAttempts++;
+        const delay = Math.min(3000 * Math.pow(1.5, reconnectAttempts - 1), 30000);
+        reconnectTimeout = setTimeout(connect, delay);
+      };
+
+      ws.onerror = () => {
+        // Suppress native error logging is impossible, but we avoid adding our own spam
       };
     };
 

@@ -37,6 +37,8 @@ import { AgentModeBadge } from './AgentModeBadge';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { initVoiceMode } from '@src/features/voice/vad';
+import { SpeechToTextHelper } from '@src/features/voice/speechToText';
+
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 interface PromptInputProps {
@@ -151,7 +153,75 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const isSubmitting = useRef(false);
   const localSettings = modelSettings;
   const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [voiceEngine, setVoiceEngine] = useState<'browser' | 'vad'>('browser');
+  const [showVoiceMenu, setShowVoiceMenu] = useState(false);
   const vadRef = useRef<any>(null);
+  const sttRef = useRef<any>(null);
+  const basePromptRef = useRef('');
+
+  useEffect(() => {
+    return () => {
+      if (vadRef.current) vadRef.current.pause();
+      if (sttRef.current) sttRef.current.stop();
+    };
+  }, []);
+
+  const toggleVoice = useCallback(async () => {
+    if (isVoiceActive) {
+      if (voiceEngine === 'vad') {
+        if (vadRef.current) {
+          vadRef.current.pause();
+          vadRef.current = null;
+        }
+      } else {
+        if (sttRef.current) {
+          sttRef.current.stop();
+          sttRef.current = null;
+        }
+      }
+      setIsVoiceActive(false);
+      toast.info('Voice input stopped');
+    } else {
+      setIsVoiceActive(true);
+      basePromptRef.current = prompt;
+
+      if (voiceEngine === 'vad') {
+        toast.success('Local VAD Listening... Start speaking');
+        try {
+          const myvad = await initVoiceMode((audio) => {
+            toast.info('Processing speech (Local VAD)...');
+            onPromptChange(basePromptRef.current + (basePromptRef.current ? ' ' : '') + '[Voice Input Captured]');
+          });
+          vadRef.current = myvad;
+          if (myvad) myvad.start();
+        } catch (err) {
+          toast.error('Failed to initialize microphone');
+          setIsVoiceActive(false);
+        }
+      } else {
+        toast.success('Speech-to-Text active... Speak now');
+        try {
+          const helper = new SpeechToTextHelper({
+            onResult: (text, isFinal) => {
+              onPromptChange(basePromptRef.current + (basePromptRef.current ? ' ' : '') + text);
+            },
+            onEnd: () => {
+              setIsVoiceActive(false);
+            },
+            onError: (err) => {
+              toast.error(err);
+              setIsVoiceActive(false);
+            }
+          });
+          sttRef.current = helper;
+          helper.start();
+        } catch (err) {
+          toast.error('Speech Recognition not supported or failed');
+          setIsVoiceActive(false);
+        }
+      }
+    }
+  }, [isVoiceActive, voiceEngine, prompt, onPromptChange]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -174,46 +244,17 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     fetchTemplates();
   }, []);
 
-  /* ── Detect local GGUF model ─────────────────────────────────────────── */
   const providerStr = String(currentModel?.provider ?? '');
   const isLocalModel = !!(
     currentModelId &&
     (providerStr === 'ollama' || providerStr === 'lmstudio' || (!currentModel && currentModelId))
   );
 
-  /* ── Reset settings when switching local models ──────────────────────── */
   useEffect(() => {
     if (isLocalModel) {
       setShowSettings(false);
     }
-  }, [currentModelId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleVoice = useCallback(async () => {
-    if (isVoiceActive) {
-      if (vadRef.current) {
-        vadRef.current.pause();
-        vadRef.current = null;
-      }
-      setIsVoiceActive(false);
-      toast.info('Voice input stopped');
-    } else {
-      setIsVoiceActive(true);
-      toast.success('Listening... Start speaking');
-      try {
-        const myvad = await initVoiceMode((audio) => {
-          toast.info('Processing speech...');
-          // Mock sending to backend for whisper:
-          // In real implementation, this would POST audio to backend whisper route
-          onPromptChange(prompt + (prompt ? ' ' : '') + '[Voice Input Captured]');
-        });
-        vadRef.current = myvad;
-        if (myvad) myvad.start();
-      } catch (err) {
-        toast.error('Failed to initialize microphone');
-        setIsVoiceActive(false);
-      }
-    }
-  }, [isVoiceActive, prompt, onPromptChange]);
+  }, [currentModelId, isLocalModel]);
 
   /* ── Close settings if user switches to a cloud model ───────────────── */
   useEffect(() => {
@@ -677,7 +718,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               step={1}
                               value={localSettings.gpuLayers}
                               onChange={(e) => updateLocal('gpuLayers', Number(e.target.value))}
-                              className="w-full h-1.5 rounded-md appearance-none cursor-pointer accent-accent bg-white/8"
+                              className="w-full h-1.5 rounded-md appearance-none cursor-pointer accent-primary bg-white/8"
                             />
                             <div className="flex justify-between">
                               <span className="text-[7px] text-muted-foreground/25">CPU Only</span>
@@ -699,7 +740,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                           <SectionLabel
                             icon={<Layers size={9} />}
                             label="Context & Memory"
-                            color="text-[#FF3366]"
+                            color="text-primary"
                           />
                           <div className="mt-3">
                             <ParamSlider
@@ -710,7 +751,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               max={32768}
                               step={512}
                               display={(v) => `${Math.round(v / 1024)}K`}
-                              accent="accent-[#FF3366]"
+                              accent="accent-primary"
                               onChange={(v) => updateLocal('contextSize', v)}
                             />
                           </div>
@@ -720,7 +761,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                           <SectionLabel
                             icon={<Cpu size={9} />}
                             label="CPU Compute"
-                            color="text-[#FF3366]"
+                            color="text-primary"
                           />
                           <div className="mt-3 space-y-4">
                             <ParamSlider
@@ -731,7 +772,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               max={32}
                               step={1}
                               display={(v) => `${v}`}
-                              accent="accent-[#FF3366]"
+                              accent="accent-primary"
                               onChange={(v) => updateLocal('threads', v)}
                             />
                             <ParamSlider
@@ -742,7 +783,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               max={2048}
                               step={64}
                               display={(v) => `${v}`}
-                              accent="accent-[#FF3366]"
+                              accent="accent-primary"
                               onChange={(v) => updateLocal('batchSize', v)}
                             />
                           </div>
@@ -754,7 +795,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                           <SectionLabel
                             icon={<Thermometer size={9} />}
                             label="Sampling"
-                            color="text-[#FF3366]"
+                            color="text-primary"
                           />
                           <div className="mt-3 space-y-4">
                             <ParamSlider
@@ -765,7 +806,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               max={2}
                               step={0.05}
                               display={(v) => (v ?? 0.7).toFixed(2)}
-                              accent="accent-[#FF3366]"
+                              accent="accent-primary"
                               onChange={(v) => updateLocal('temperature', v)}
                               isFloat
                             />
@@ -777,7 +818,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               max={1}
                               step={0.01}
                               display={(v) => (v ?? 0.95).toFixed(2)}
-                              accent="accent-[#FF3366]"
+                              accent="accent-primary"
                               onChange={(v) => updateLocal('topP', v)}
                               isFloat
                             />
@@ -789,7 +830,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               max={200}
                               step={1}
                               display={(v) => `${v ?? 40}`}
-                              accent="accent-[#FF3366]"
+                              accent="accent-primary"
                               onChange={(v) => updateLocal('topK', v)}
                             />
                             <ParamSlider
@@ -800,7 +841,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                               max={2}
                               step={0.05}
                               display={(v) => (v ?? 1.1).toFixed(2)}
-                              accent="accent-accent"
+                              accent="accent-primary"
                               onChange={(v) => updateLocal('repeatPenalty', v)}
                               isFloat
                             />
@@ -1065,6 +1106,95 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   <span className="text-[9.5px] font-bold tracking-tight">Reset context</span>
                 </motion.button>
               </div>
+
+              <div className="flex items-center gap-2">
+                {/* Voice Input Tag with Dropdown */}
+                <div className="relative flex items-center shrink-0">
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1.5, scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={toggleVoice}
+                    className={`flex items-center justify-center w-6 h-6 rounded-l-md border transition-all cursor-pointer shrink-0 ${
+                      isVoiceActive
+                        ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400 font-bold'
+                        : 'bg-emerald-500/[0.03] border-emerald-500/10 text-emerald-100 hover:text-emerald-50'
+                    }`}
+                    title={isVoiceActive ? 'Stop Voice Input' : 'Voice Input'}
+                  >
+                    <Mic size={11} className={isVoiceActive ? 'animate-pulse text-emerald-400' : 'text-zinc-400'} />
+                  </motion.button>
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1.5, scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={() => setShowVoiceMenu((prev) => !prev)}
+                    className={`flex items-center justify-center w-4 h-6 rounded-r-md border-y border-r transition-all cursor-pointer shrink-0 ${
+                      isVoiceActive
+                        ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400'
+                        : 'bg-emerald-500/[0.03] border-emerald-500/10 text-emerald-100 hover:text-emerald-50'
+                    }`}
+                    title="Choose Voice Engine"
+                  >
+                    <ChevronDown size={8} />
+                  </motion.button>
+
+                  <AnimatePresence>
+                    {showVoiceMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setShowVoiceMenu(false)}
+                        />
+                        <motion.div
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          className="absolute bottom-full mb-2 right-0 w-48 bg-popover border border-border rounded-md shadow-sm border border-border z-50 p-1 flex flex-col gap-0.5"
+                        >
+                          <div className="px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-zinc-400 border-b border-white/5 mb-1">
+                            Voice Engine
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVoiceEngine('browser');
+                              setShowVoiceMenu(false);
+                              toast.info('Switched to Browser Speech API');
+                            }}
+                            className={`flex items-center justify-between px-2.5 py-1.5 rounded text-[10px] text-left transition-colors ${
+                              voiceEngine === 'browser'
+                                ? 'bg-white/10 text-white font-semibold'
+                                : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span>Browser Speech API (Native)</span>
+                            {voiceEngine === 'browser' && <Check size={10} className="text-accent" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVoiceEngine('vad');
+                              setShowVoiceMenu(false);
+                              toast.info('Switched to Local VAD');
+                            }}
+                            className={`flex items-center justify-between px-2.5 py-1.5 rounded text-[10px] text-left transition-colors ${
+                              voiceEngine === 'vad'
+                                ? 'bg-white/10 text-white font-semibold'
+                                : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span>Local VAD (Model-based)</span>
+                            {voiceEngine === 'vad' && <Check size={10} className="text-accent" />}
+                          </button>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
             </motion.div>
 
             <div
@@ -1214,26 +1344,18 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 </div>
               )}
 
-              {/* Microphone dictation button - absolute top right */}
-              <div className="absolute top-3 right-3 flex items-center gap-1.5 group/mic z-10 select-none">
-                <div className="flex items-center gap-[1.5px] h-2.5 opacity-0 group-hover/mic:opacity-100 transition-opacity duration-300 pointer-events-none">
-                  <span className="w-[1.5px] h-full bg-emerald-400 rounded-md animate-[bounce_0.6s_infinite_100ms]" />
-                  <span className="w-[1.5px] h-full bg-emerald-400 rounded-md animate-[bounce_0.6s_infinite_300ms]" />
-                  <span className="w-[1.5px] h-full bg-emerald-400 rounded-md animate-[bounce_0.6s_infinite_200ms]" />
+              {/* Voice indicator animation if listening */}
+              {isVoiceActive && (
+                <div className="absolute top-3 right-3 flex items-center gap-[2px] h-3.5 z-10 select-none pointer-events-none bg-background/80 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  <span className="w-1 h-1 bg-emerald-400 rounded-full animate-ping" />
+                  <span className="text-[8px] text-emerald-400 font-bold uppercase tracking-wider font-mono">REC</span>
+                  <div className="flex items-center gap-[1px] h-1.5 ml-1">
+                    <span className="w-[1px] h-full bg-emerald-400 rounded-md animate-[bounce_0.5s_infinite_100ms]" />
+                    <span className="w-[1px] h-full bg-emerald-400 rounded-md animate-[bounce_0.5s_infinite_200ms]" />
+                    <span className="w-[1px] h-full bg-emerald-400 rounded-md animate-[bounce_0.5s_infinite_300ms]" />
+                  </div>
                 </div>
-
-                <motion.button
-                  whileHover={{ scale: 1.08, color: '#FFFFFF' }}
-                  whileTap={{ scale: 0.9 }}
-                  type="button"
-                  onClick={toggleVoice}
-                  className={`transition-all cursor-pointer p-1 ${isVoiceActive ? 'text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}
-                  title={isVoiceActive ? "Stop Voice Input" : "Voice Input"}
-                  aria-label="Voice Input"
-                >
-                  <Mic size={14} className={isVoiceActive ? 'animate-pulse' : ''} />
-                </motion.button>
-              </div>
+              )}
 
               {/* Attachment & Submit / Stop controls - absolute bottom right */}
               <div className="absolute bottom-3 right-3 flex items-center gap-1.5 z-10 select-none">

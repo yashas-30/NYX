@@ -181,4 +181,24 @@ export const NYX_TOOLS = [
       properties: {},
     },
   },
+
+  // 🖱️ Computer Use 🖱️
+  {
+    name: 'computer_use',
+    description: 'Perform an OS level computer action (mouse move, click, type, screenshot).',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        action: {
+          type: Type.STRING,
+          description: 'The action to perform: screenshot, mouse_move, left_click, left_click_drag, right_click, middle_click, double_click, type, key'
+        },
+        params: {
+          type: Type.STRING,
+          description: 'JSON string of parameters for the action (e.g. {"x": 100, "y": 200} for mouse_move, or {"text": "hello"} for type/key)'
+        }
+      },
+      required: ['action']
+    }
+  }
 ];

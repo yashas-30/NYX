@@ -21,7 +21,7 @@ export class AutoRouterService {
       return [
         { provider: 'ollama', modelId: 'ollama/qwen2.5-coder-7b' },
         { provider: 'gemini', modelId: 'gemini/gemini-3.5-flash' },
-        { provider: 'gemini', modelId: 'gemini/gemma-4-27b-it' },
+        { provider: 'gemini', modelId: 'gemini/gemma-4-26b-it' },
       ];
     } else if (this.costVsQuality > 0.7) {
       return [

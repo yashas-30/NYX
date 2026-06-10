@@ -1,6 +1,9 @@
 import React from 'react';
-import { Player } from '@lottiefiles/react-lottie-player';
-import circleLoading from '../circle-loading.json';
+
+// Lazy load the Player component to optimize bundle size and speed up initial page load
+const LazyPlayer = React.lazy(() =>
+  import('@lottiefiles/react-lottie-player').then((m) => ({ default: m.Player }))
+);
 
 /**
  * NYX - Custom Icons & Logos
@@ -39,7 +42,7 @@ export const Logo = React.memo(
             gradientUnits="userSpaceOnUse"
           >
             <stop offset="0%" stopColor="#D97706" />
-            <stop offset="50%" stopColor="#FF3366" />
+            <stop offset="50%" stopColor="#cc785c" />
             <stop offset="100%" stopColor="#FBBF24" />
           </linearGradient>
           <linearGradient
@@ -50,7 +53,7 @@ export const Logo = React.memo(
             y2="25"
             gradientUnits="userSpaceOnUse"
           >
-            <stop offset="0%" stopColor="#FF3366" />
+            <stop offset="0%" stopColor="#cc785c" />
             <stop offset="100%" stopColor="#FFFBEB" />
           </linearGradient>
         </defs>
@@ -102,12 +105,94 @@ RegistryIcon.displayName = 'RegistryIcon';
 
 export const NyxLoader = React.memo(
   ({ size = 28, className = '' }: { size?: number; className?: string }) => {
+    const [animationData, setAnimationData] = React.useState<any>(null);
+
+    React.useEffect(() => {
+      import('../circle-loading.json')
+        .then((mod) => setAnimationData(mod.default))
+        .catch((err) => console.error('Failed to load circle-loading.json:', err));
+    }, []);
+
+    if (!animationData) {
+      return (
+        <div
+          style={{ width: size, height: size }}
+          className={`${className} animate-pulse bg-muted/20 rounded-full shrink-0`}
+        />
+      );
+    }
+
     return (
-      <div style={{ width: size, height: size }} className={className}>
-        <Player autoplay loop src={circleLoading} style={{ width: '100%', height: '100%' }} />
+      <div style={{ width: size, height: size }} className={`${className} shrink-0 overflow-hidden transform-gpu`}>
+        <React.Suspense fallback={<div className="w-full h-full animate-pulse bg-muted/20 rounded-full" />}>
+          <LazyPlayer autoplay loop src={animationData} style={{ width: '100%', height: '100%' }} />
+        </React.Suspense>
       </div>
     );
   }
 );
 
 NyxLoader.displayName = 'NyxLoader';
+
+export const CatLoader = React.memo(
+  ({ size = 28, className = '' }: { size?: number; className?: string }) => {
+    const [animationData, setAnimationData] = React.useState<any>(null);
+
+    React.useEffect(() => {
+      import('../animations/preloader_cat_new.json')
+        .then((mod) => setAnimationData(mod.default))
+        .catch((err) => console.error('Failed to load preloader_cat_new.json:', err));
+    }, []);
+
+    if (!animationData) {
+      return (
+        <div
+          style={{ width: size, height: size }}
+          className={`${className} animate-pulse bg-muted/20 rounded-md shrink-0`}
+        />
+      );
+    }
+
+    return (
+      <div style={{ width: size, height: size }} className={`${className} shrink-0 overflow-hidden transform-gpu`}>
+        <React.Suspense fallback={<div className="w-full h-full animate-pulse bg-muted/20 rounded-md" />}>
+          <LazyPlayer autoplay loop src={animationData} style={{ width: '100%', height: '100%' }} />
+        </React.Suspense>
+      </div>
+    );
+  }
+);
+
+CatLoader.displayName = 'CatLoader';
+
+export const AnimatedLogo = React.memo(
+  ({ size = 28, className = '' }: { size?: number; className?: string }) => {
+    const [animationData, setAnimationData] = React.useState<any>(null);
+
+    React.useEffect(() => {
+      import('../animations/response_complete.json')
+        .then((mod) => setAnimationData(mod.default))
+        .catch((err) => console.error('Failed to load response_complete.json:', err));
+    }, []);
+
+    if (!animationData) {
+      return (
+        <div
+          style={{ width: size, height: size }}
+          className={`${className} animate-pulse bg-muted/20 rounded-md shrink-0`}
+        />
+      );
+    }
+
+    return (
+      <div style={{ width: size, height: size }} className={`${className} shrink-0 overflow-hidden transform-gpu`}>
+        <React.Suspense fallback={<div className="w-full h-full animate-pulse bg-muted/20 rounded-md" />}>
+          <LazyPlayer autoplay loop src={animationData} style={{ width: '100%', height: '100%' }} />
+        </React.Suspense>
+      </div>
+    );
+  }
+);
+
+AnimatedLogo.displayName = 'AnimatedLogo';
+

@@ -42,6 +42,10 @@ dirs = "5"
 uuid = { version = "1", features = ["v4"] }
 tokio-tungstenite = "0.24"
 open = "5"
+enigo = "0.3.0"
+xcap = "0.9.6"
+image = "0.25.6"
+window-vibrancy = "0.7.1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

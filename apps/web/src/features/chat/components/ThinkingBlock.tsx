@@ -19,7 +19,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplet
       >
         <div className="flex items-center gap-2">
           <Brain
-            className={`w-4 h-4 ${!isComplete ? 'text-[#FF3366] animate-pulse' : 'text-[#4A5059]'}`}
+            className={`w-4 h-4 ${!isComplete ? 'text-primary animate-pulse' : 'text-[#4A5059]'}`}
           />
           <span
             className={`text-[13px] font-mono font-medium ${!isComplete ? 'text-[#F8FAFC]' : 'text-[#4A5059]'}`}

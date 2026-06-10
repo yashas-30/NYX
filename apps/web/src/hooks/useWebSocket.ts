@@ -39,7 +39,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (socketRef.current?.connected) return;
 
     const token = getToken();
-    const socket = io(`http://localhost:3000${namespace ? `/${namespace}` : ''}`, {
+    const base = (window as any).__NYX_BACKEND_URL__ || window.location.origin;
+    const socket = io(`${base}${namespace ? `/${namespace}` : ''}`, {
+      path: '/ws/socket.io',
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,

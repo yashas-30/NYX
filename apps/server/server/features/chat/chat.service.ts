@@ -4,6 +4,8 @@ import { LOCAL_MODEL_PORT } from '@nyx/shared';
 import { SearchService } from '../nyx/search.service.js';
 import { env } from '../../config/env.js';
 import { initVectorStore } from '../../lib/memory/vectorStore.js';
+import { mcpClientManager } from '../../lib/mcp/McpClientManager.js';
+import { ContextOptimizer } from '../../lib/contextOptimizer.js';
 
 const searchService = new SearchService();
 
@@ -41,16 +43,12 @@ export class ChatService {
     let finalPrompt = prompt;
     let webContext = '';
 
-    try {
-      const { agentApp } = await import('../../lib/agentGraph.js');
-      onChunk({ type: 'reasoning', content: 'Initializing agent graph...' });
-      await agentApp.invoke({ messages: [{ role: 'user', content: prompt }] });
-      onChunk({ type: 'reasoning', content: '\nGraph execution complete. Planning done.' });
-    } catch (graphErr: any) {
-      logger.warn(`[ChatService] Agent Graph execution failed: ${graphErr.message}`);
-    }
+    // Agent Graph unconditionally removed to prevent stream hanging
 
-    if (enableWebSearch) {
+    const searchKeywords = /\b(search|find|latest|current|news|who is|what is the price|today)\b/i;
+    const requiresWebSearch = searchKeywords.test(prompt);
+
+    if (enableWebSearch && requiresWebSearch) {
       try {
         // "Fix the agent ask to scrapling feature" - we pre-fetch search if enabled, or ideally use a tool call.
         // For simplicity and speed in the chat, we can query Scrapling directly with the user's prompt
@@ -77,10 +75,18 @@ export class ChatService {
       logger.info('[ChatService] Querying LanceDB for memory context...');
       const memoryTable = await initVectorStore();
       
-      // We would normally embed the query here. For now, we mock embedding with zeros 
-      // or use a local embedding model if available. Since we just have a mock array:
-      const mockEmbedding = new Array(384).fill(0);
-      const results = await memoryTable.search(mockEmbedding).limit(3).execute();
+      let embedding: number[];
+      try {
+        const { pipeline } = await import('@xenova/transformers');
+        const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+        const output = await extractor(prompt, { pooling: 'mean', normalize: true });
+        embedding = Array.from(output.data);
+      } catch (e) {
+        logger.warn('Failed to embed query, using fallback zeros');
+        embedding = new Array(384).fill(0);
+      }
+      
+      const results = await memoryTable.search(embedding).limit(3).execute();
       
       if (results && results.length > 0) {
         const memoryContext = results
@@ -117,21 +123,46 @@ export class ChatService {
       images: images.length > 0 ? images : undefined 
     });
 
+    const optimizedMessages = await ContextOptimizer.compressHistory(messages, {
+      maxTokens: settings?.maxContextTokens || 32000,
+      preservationTurns: settings?.preservationTurns || 6,
+      mode: settings?.contextMode || 'prune',
+      provider: provider || 'gemini',
+      modelId: modelId || 'gemini-3.5-flash',
+    });
+
     const keys = getKeysSync();
     const apiKey = keys[provider || ''] || '';
 
     try {
+      // Fetch available MCP tools dynamically
+      let tools: any[] | undefined = undefined;
+      try {
+        const mcpTools = await mcpClientManager.getAvailableTools();
+        if (mcpTools && mcpTools.length > 0) {
+          tools = mcpTools;
+          logger.info(`[ChatService] Loaded ${mcpTools.length} MCP tools.`);
+        }
+      } catch (e: any) {
+        logger.warn({ err: e.message }, 'Failed to fetch MCP tools');
+      }
+
       const { UnifiedEngine } = await import('../../lib/unifiedEngine.js');
       await UnifiedEngine.executeStream(
         {
           provider: provider || 'gemini',
           model: modelId || '',
-          messages,
+          messages: optimizedMessages,
           settings: settings || { temperature: 0.7, maxTokens: 4096 },
           apiKey,
+          tools, // Pass dynamically loaded MCP tools
         },
         (chunk: any) => {
-          onChunk(chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '');
+          if (chunk.tool_call) {
+            onChunk({ tool_call: chunk.tool_call });
+          } else {
+            onChunk(chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '');
+          }
         },
         () => {
           onDone();
@@ -145,26 +176,28 @@ export class ChatService {
 
   async getSuggestions(history: any[]): Promise<string[]> {
     logger.info('[ChatService] Generating suggestions...');
-    // Lightweight LLM call
-    const scraplingPort = env.SCRAPLING_PORT || 3002;
     try {
-      const res = await fetch(`http://127.0.0.1:${scraplingPort}/api/gemini/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt:
-            'Generate 3 short, relevant follow-up questions or suggestions based on this chat history. Return ONLY a JSON array of strings.',
-          history: history.slice(-5), // only last 5
-          settings: { maxTokens: 150, temperature: 0.5 },
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json() as any;
-        const text = data.text || '';
-        const match = text.match(/\[.*\]/s);
-        if (match) {
-          return JSON.parse(match[0]);
-        }
+      const { UnifiedEngine } = await import('../../lib/unifiedEngine.js');
+      let resultText = '';
+      const promptStr = 'Generate 3 short, relevant follow-up questions or suggestions based on this chat history. Return ONLY a JSON array of strings.';
+      const messages = [...history.slice(-5), { role: 'user', content: promptStr }];
+      
+      await UnifiedEngine.executeStream(
+        {
+          provider: 'gemini',
+          model: 'gemini-3.5-flash',
+          messages,
+          settings: { temperature: 0.5, maxTokens: 150 },
+        },
+        (chunk: any) => {
+          resultText += chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '';
+        },
+        () => {}
+      );
+      
+      const match = resultText.match(/\[.*\]/s);
+      if (match) {
+        return JSON.parse(match[0]);
       }
     } catch (e) {
       logger.error(e, '[ChatService] Failed to generate suggestions:');

@@ -99,6 +99,8 @@ function injectAbstentionInstruction(messages: ChatMessage[]): ChatMessage[] {
   return [{ role: 'system', content: ABSTENTION_INSTRUCTION }, ...messages];
 }
 
+const smartRouter = new SmartRouter();
+
 export class UnifiedEngine {
   static async executeStream(
     options: ExecuteOptions,
@@ -121,7 +123,6 @@ export class UnifiedEngine {
 
     try {
       // 1. Resolve Provider via Router if necessary
-      const router = new SmartRouter();
       const apiKeys = await loadKeys();
 
       if (apiKey) {
@@ -131,11 +132,11 @@ export class UnifiedEngine {
       if (provider !== 'ollama' && provider !== 'lmstudio' && provider !== 'antigravity-sdk') {
         try {
           const prompt = messages[messages.length - 1]?.content || '';
-          const decision = await router.route(prompt, {
+          const decision = await smartRouter.route(prompt, {
             primary: { provider: provider as any, id: model, name: model, description: '', status: 'ga' },
             fallbacks: [
-              { provider: 'openrouter' as any, id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: '', status: 'ga' },
-              { provider: 'gemini', id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: '', status: 'ga' }
+              { provider: 'gemini', id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', description: '', status: 'ga' },
+              { provider: 'gemini', id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', description: '', status: 'ga' }
             ]
           }, apiKeys);
 
@@ -172,8 +173,8 @@ export class UnifiedEngine {
       const MAX_HISTORY_TOKENS = 80_000;
       let processedMessages = sliceHistoryByTokens(messages, MAX_HISTORY_TOKENS);
 
-      // Prompt pre-processing middleware using Antigravity service
-      if (settings?.antigravity) {
+      // Prompt pre-processing middleware using Antigravity service (Enabled globally as primary backend handler)
+      if (settings?.antigravity !== false && env.ENABLE_ANTIGRAVITY_PREPROCESSING) {
         const userMessages = processedMessages.filter((m) => m.role === 'user');
         if (userMessages.length > 0) {
           const lastUserMessage = userMessages[userMessages.length - 1];

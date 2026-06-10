@@ -12,6 +12,9 @@ export interface ModelSettings {
   repeatPenalty: number;
   mirostat: number;
   antigravity?: boolean;
+  maxContextTokens?: number;
+  preservationTurns?: number;
+  contextMode?: 'off' | 'prune' | 'summarize';
 }
 
 const DEFAULT_CHAT_SETTINGS: ModelSettings = {
@@ -26,6 +29,9 @@ const DEFAULT_CHAT_SETTINGS: ModelSettings = {
   repeatPenalty: 1.1,
   mirostat: 0,
   antigravity: true,
+  maxContextTokens: 32000,
+  preservationTurns: 6,
+  contextMode: 'prune',
 };
 
 const DEFAULT_CODER_SETTINGS: ModelSettings = {
@@ -40,6 +46,9 @@ const DEFAULT_CODER_SETTINGS: ModelSettings = {
   repeatPenalty: 1.1,
   mirostat: 0,
   antigravity: true,
+  maxContextTokens: 64000,
+  preservationTurns: 10,
+  contextMode: 'prune',
 };
 
 interface SettingsState {

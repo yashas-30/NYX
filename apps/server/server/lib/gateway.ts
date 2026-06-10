@@ -310,6 +310,12 @@ export class Gateway {
                   callbacks.onChunk({ functionCall });
                 }
 
+                if (data.usageMetadata || data.usage) {
+                  callbacks.onChunk({ type: 'metrics', metadata: data.usageMetadata || data.usage });
+                  callbacks.onDone();
+                  return;
+                }
+
                 const finishReason = data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason;
                 if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'STOP') {
                   callbacks.onDone();

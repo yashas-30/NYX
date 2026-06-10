@@ -33,8 +33,22 @@
       "dependsOn": [],
       "outputs": ["dist/**"]
     },
+    "@nyx/shared#build:dev": {
+      "dependsOn": [],
+      "outputs": ["dist/**"]
+    },
     "@nyx/shared#dev": {
-      "dependsOn": ["@nyx/shared#build"],
+      "dependsOn": ["@nyx/shared#build:dev"],
+      "cache": false,
+      "persistent": true
+    },
+    "@nyx/server#dev": {
+      "dependsOn": ["@nyx/shared#build:dev"],
+      "cache": false,
+      "persistent": true
+    },
+    "@nyx/web#dev": {
+      "dependsOn": ["@nyx/shared#build:dev"],
       "cache": false,
       "persistent": true
     }

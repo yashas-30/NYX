@@ -4,6 +4,7 @@ import { Wrench, ChevronDown, ChevronRight, CheckCircle2, AlertCircle } from 'lu
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { CodeDiffViewer } from './CodeDiffViewer';
+import { ComputerUsePreview } from '../../chat/components/ComputerUsePreview';
 
 interface ToolCallCardProps {
   toolName: string;
@@ -19,6 +20,22 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   status = 'success',
 }) => {
   const [expanded, setExpanded] = useState(false);
+
+  if (toolName === 'computer_use') {
+    let parsedArgs: any = {};
+    try {
+      parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+    } catch {}
+    
+    return (
+      <ComputerUsePreview 
+        action={parsedArgs.action || 'unknown'} 
+        coordinate={parsedArgs.coordinate} 
+        text={parsedArgs.text} 
+        result={typeof result === 'string' ? result : JSON.stringify(result)}
+      />
+    );
+  }
 
   return (
     <div className="my-3 overflow-hidden rounded-md border border-neutral-800 bg-[#0f0f11]">
@@ -64,14 +81,35 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
               {result && (
                 <>
                   <div className="mt-3 mb-2 font-semibold text-neutral-400">Result:</div>
-                  <SyntaxHighlighter
-                    language="json"
-                    style={oneDark}
-                    customStyle={{ background: 'transparent', padding: 0, margin: 0 }}
-                    codeTagProps={{ className: 'font-mono text-xs' }}
-                  >
-                    {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
-                  </SyntaxHighlighter>
+                  {(() => {
+                    let parsedResult = result;
+                    if (typeof result === 'string') {
+                      try {
+                        parsedResult = JSON.parse(result);
+                      } catch {}
+                    }
+                    if (parsedResult && typeof parsedResult === 'object' && 'image_base64' in parsedResult) {
+                      return (
+                        <div className="mt-2 rounded overflow-hidden border border-neutral-700 bg-neutral-900">
+                          <img 
+                            src={`data:image/png;base64,${parsedResult.image_base64}`} 
+                            alt="Browser Screenshot" 
+                            className="w-full h-auto"
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <SyntaxHighlighter
+                        language="json"
+                        style={oneDark}
+                        customStyle={{ background: 'transparent', padding: 0, margin: 0, maxHeight: '300px', overflowY: 'auto' }}
+                        codeTagProps={{ className: 'font-mono text-xs' }}
+                      >
+                        {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
+                      </SyntaxHighlighter>
+                    );
+                  })()}
                 </>
               )}
             </div>

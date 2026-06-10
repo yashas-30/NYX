@@ -74,7 +74,6 @@ export default defineConfig(({ mode }) => {
         'async-mutex',
         '@opentelemetry/api',
       ],
-      entries: ['src/**/*.{ts,tsx}'],
     },
     esbuild: {
       logOverride: {
@@ -140,6 +139,11 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       strictPort: true,
       proxy: process.env.FASTIFY_VITE_EMBEDDED ? undefined : {
+        '/uploads': {
+          target: 'http://127.0.0.1:3001',
+          changeOrigin: true,
+          secure: false,
+        },
         '/api': {
           target: 'http://127.0.0.1:3001',
           changeOrigin: true,

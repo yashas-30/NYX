@@ -120,6 +120,14 @@
     transition: background-color 0.5s var(--ease-apple), color 0.5s var(--ease-apple);
   }
 
+  /* Make background transparent when running in Tauri to enable native window vibrancy (acrylic/glass) */
+  html.is-tauri, html.is-tauri body {
+    background-color: transparent !important;
+  }
+  html.is-tauri #root {
+    background-color: rgba(24, 23, 21, 0.4) !important; /* Semi-transparent dark overlay to keep text readable over the native blur */
+  }
+
   #root {
     width: 100%;
     min-height: 100dvh;
@@ -192,6 +200,25 @@
 @keyframes scale-in {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes smooth-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.animate-smooth-reveal {
+  animation: smooth-reveal 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  opacity: 0; /* Ensures it is hidden before the animation starts */
+  will-change: transform, opacity, filter;
 }
 
 /* ── Custom Backgrounds ─────────────────────────────────────── */
@@ -467,12 +494,12 @@
 }
 
 .neon-border {
-  border-color: rgba(255, 51, 102, 0.3) !important;
-  box-shadow: 0 0 15px rgba(255, 51, 102, 0.05);
+  border-color: rgba(204, 120, 92, 0.3) !important;
+  box-shadow: 0 0 15px rgba(204, 120, 92, 0.05);
 }
 
 .neon-glow-cyan, .neon-glow-flame {
-  text-shadow: 0 0 8px rgba(255, 51, 102, 0.5);
+  text-shadow: 0 0 8px rgba(204, 120, 92, 0.5);
 }
 
 .btn-tech {
@@ -483,10 +510,10 @@
 }
 
 .btn-tech:hover {
-  background: rgba(255, 51, 102, 0.08);
-  border-color: rgba(255, 51, 102, 0.3);
+  background: rgba(204, 120, 92, 0.08);
+  border-color: rgba(204, 120, 92, 0.3);
   color: var(--primary);
-  box-shadow: 0 0 12px rgba(255, 51, 102, 0.05);
+  box-shadow: 0 0 12px rgba(204, 120, 92, 0.05);
 }
 
 .btn-tech:active {

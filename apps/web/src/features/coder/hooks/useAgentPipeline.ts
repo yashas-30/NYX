@@ -300,6 +300,15 @@ export const useAgentPipeline = ({
                             };
                           }
                           break;
+
+                        case 'meta':
+                          if (event.antigravity_id) {
+                            yield {
+                              type: 'meta',
+                              metadata: { antigravity_id: event.antigravity_id },
+                            };
+                          }
+                          break;
                       }
                     } catch (parseErr) {
                       // Ignore JSON parse errors for chunk boundaries
@@ -349,6 +358,7 @@ export const useAgentPipeline = ({
 
             // Log rollout trace in Agent Lightning
             if (logRollout) {
+              const antigravityId = last.metadata?.antigravity_id;
               logRollout(
                 'coder',
                 prompt,
@@ -365,7 +375,8 @@ export const useAgentPipeline = ({
                       },
                     ]
                   : [],
-                null
+                null,
+                antigravityId
               );
             }
           }

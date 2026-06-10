@@ -246,9 +246,16 @@ function extractContent(parsed: any): ExtractedContent {
   }
 
   // Gemini format
-  const geminiText = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (geminiText) {
-    result.text = geminiText;
+  const geminiParts = parsed.candidates?.[0]?.content?.parts;
+  if (geminiParts && Array.isArray(geminiParts)) {
+    const textParts = geminiParts
+      .filter((p: any) => !p.thought)
+      .map((p: any) => p.text)
+      .filter(Boolean)
+      .join('');
+    if (textParts) {
+      result.text = textParts;
+    }
   }
 
   // Raw text field
@@ -340,7 +347,14 @@ export async function parseSSEStream(
   const processStreamBuffer = (flush = false) => {
     while (streamBuffer.length > 0) {
       if (!isThinking) {
-        const startIdx = streamBuffer.indexOf('<think>');
+        let startIdx = streamBuffer.indexOf('<think>');
+        let startLen = 7;
+        
+        if (startIdx === -1) {
+          startIdx = streamBuffer.indexOf('<|channel>thought');
+          startLen = 17;
+        }
+
         if (startIdx !== -1) {
           const before = streamBuffer.slice(0, startIdx);
           if (before) {
@@ -348,22 +362,22 @@ export async function parseSSEStream(
             onChunk?.(before, resultText);
           }
           isThinking = true;
-          streamBuffer = streamBuffer.slice(startIdx + 7);
+          streamBuffer = streamBuffer.slice(startIdx + startLen);
           continue;
         }
 
         let partialIdx = -1;
         if (!flush) {
-          // fallow-ignore-next-line code-duplication
-          const target = '<think>';
-          for (
-            let i = Math.max(0, streamBuffer.length - target.length);
-            i < streamBuffer.length;
-            i++
-          ) {
-            if (streamBuffer[i] === target[0] && target.startsWith(streamBuffer.slice(i))) {
-              partialIdx = i;
-              break;
+          const targets = ['<think>', '<|channel>thought'];
+          for (const target of targets) {
+            for (
+              let i = Math.max(0, streamBuffer.length - target.length);
+              i < streamBuffer.length;
+              i++
+            ) {
+              if (streamBuffer[i] === target[0] && target.startsWith(streamBuffer.slice(i))) {
+                partialIdx = partialIdx === -1 ? i : Math.min(partialIdx, i);
+              }
             }
           }
         }
@@ -382,7 +396,14 @@ export async function parseSSEStream(
           streamBuffer = '';
         }
       } else {
-        const endIdx = streamBuffer.indexOf('</think>');
+        let endIdx = streamBuffer.indexOf('</think>');
+        let endLen = 8;
+        
+        if (endIdx === -1) {
+          endIdx = streamBuffer.indexOf('<channel|>');
+          endLen = 10;
+        }
+
         if (endIdx !== -1) {
           const reasoningDelta = streamBuffer.slice(0, endIdx);
           if (reasoningDelta) {
@@ -390,22 +411,22 @@ export async function parseSSEStream(
             onReasoning?.(reasoningDelta, resultReasoning);
           }
           isThinking = false;
-          streamBuffer = streamBuffer.slice(endIdx + 8);
+          streamBuffer = streamBuffer.slice(endIdx + endLen);
           continue;
         }
 
         let partialIdx = -1;
         if (!flush) {
-          // fallow-ignore-next-line code-duplication
-          const target = '</think>';
-          for (
-            let i = Math.max(0, streamBuffer.length - target.length);
-            i < streamBuffer.length;
-            i++
-          ) {
-            if (streamBuffer[i] === target[0] && target.startsWith(streamBuffer.slice(i))) {
-              partialIdx = i;
-              break;
+          const targets = ['</think>', '<channel|>'];
+          for (const target of targets) {
+            for (
+              let i = Math.max(0, streamBuffer.length - target.length);
+              i < streamBuffer.length;
+              i++
+            ) {
+              if (streamBuffer[i] === target[0] && target.startsWith(streamBuffer.slice(i))) {
+                partialIdx = partialIdx === -1 ? i : Math.min(partialIdx, i);
+              }
             }
           }
         }

@@ -124,11 +124,12 @@ export const useAgentLightning = () => {
       task: string,
       response: string,
       spans: LightningSpan[] = [],
-      initialReward: number | null = null
+      initialReward: number | null = null,
+      customId?: string
     ) => {
       const activeDirectives = apoDirectives[agentType];
       const newRollout: LightningRollout = {
-        id: `rollout-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: customId || `rollout-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         agentType,
         timestamp: Date.now(),
         task,

@@ -14,6 +14,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     features: ['High-speed tier balancing reasoning and low-latency', 'Native handling of text, image, audio, and video inputs'],
     pros: ['High Speed & Low Latency', 'Cost-Efficiency for high-volume tasks', 'Large 1M Context Window'],
     cons: ['Risk of Hallucinations compared to Pro tier', 'Inconsistency in highly complex logic tasks'],
+    limits: { rpm: 5, tpm: 250000, rpd: 20 },
   },
   {
     id: 'gemini-3.1-flash-lite',
@@ -25,6 +26,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     features: ['Optimized for maximum cost efficiency and lowest latency', 'Multimodal support'],
     pros: ['Incredibly fast inference times', 'Extremely cheap for high-frequency workflows'],
     cons: ['Limited capability on deep reasoning', 'Can over-generalize or over-simplify complex requests'],
+    limits: { rpm: 15, tpm: 250000, rpd: 500 },
   },
   {
     id: 'gemini-2.5-flash',
@@ -36,6 +38,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     features: ['Workhorse model balancing speed and capable performance', 'Supports "thinking" capabilities and Google Search grounding'],
     pros: ['Highly reliable and scalable for production', 'Excellent cost-effectiveness'],
     cons: ['Outpaced by Gemini 3 series for frontier intelligence', 'May struggle with multi-step edge cases compared to newer models'],
+    limits: { rpm: 5, tpm: 250000, rpd: 20 },
   },
   {
     id: 'gemma-4-31b-it',
@@ -47,10 +50,11 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     features: ['Dense flagship model for workstations', 'Configurable thinking modes for logic', 'High intelligence-per-parameter'],
     pros: ['Frontier-level reasoning in its size class', 'Highly capable in agentic workflows', 'Apache 2.0 commercial license'],
     cons: ['Resource Intensive (requires ~19GB+ VRAM)', 'Complex ecosystem setup compared to managed APIs'],
+    limits: { rpm: 15, tpm: null, rpd: 1500 },
   },
   {
-    id: 'gemma-4-27b-it',
-    name: 'Gemma 4 27B',
+    id: 'gemma-4-26b-it',
+    name: 'Gemma 4 26B',
     provider: 'gemini',
     description: "Google's open weights model with MoE architecture",
     status: 'ga',
@@ -58,6 +62,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     features: ['Mixture of Experts (MoE) architecture', 'Optimized for fast consumer GPU performance', 'Configurable thinking modes'],
     pros: ['Very fast generation speeds due to MoE', 'Extremely efficient active parameter count', 'Excellent for general logic and chat'],
     cons: ['Slightly lower reasoning depth than dense 31B', 'Requires MoE compatible engines for deployment'],
+    limits: { rpm: 15, tpm: null, rpd: 1500 },
   },
 
   // ═══════════════════════════════════════════════════════════════════════════════

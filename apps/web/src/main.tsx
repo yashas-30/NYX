@@ -174,6 +174,7 @@ let backendBaseUrl = '';
 if (typeof window !== 'undefined') {
   const isTauri = !!(window as any).__TAURI__ || !!(window as any).__TAURI_INTERNALS__;
   if (isTauri) {
+    document.documentElement.classList.add('is-tauri');
     import('@tauri-apps/api/core')
       .then(({ invoke }) => {
         (window as any).nyxIPC = {
@@ -213,6 +214,7 @@ async function initBackendUrl() {
       const res = await invoke<any>('server_get_ports');
       if (res && res.success && res.data && res.data.express_port) {
         backendBaseUrl = `http://127.0.0.1:${res.data.express_port}`;
+        (window as any).__NYX_BACKEND_URL__ = backendBaseUrl;
         console.log(`[Tauri] Dynamically resolved Express backend URL: ${backendBaseUrl}`);
         return;
       }
@@ -221,6 +223,7 @@ async function initBackendUrl() {
     }
   }
   backendBaseUrl = '';
+  (window as any).__NYX_BACKEND_URL__ = '';
 }
 
 async function getOrFetchSessionToken(): Promise<string> {
@@ -264,13 +267,13 @@ const BOOTSTRAP_URLS = new Set([
 window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   let urlStr = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
-  if (urlStr.startsWith('/api/v1/') && backendBaseUrl) {
+  if (urlStr.startsWith('/api/') && backendBaseUrl) {
     urlStr = `${backendBaseUrl}${urlStr}`;
     input = urlStr;
   }
 
   const isBootstrap = [...BOOTSTRAP_URLS].some((u) => urlStr.includes(u));
-  const isApiCall = urlStr.includes('/api/v1/') && !isBootstrap;
+  const isApiCall = urlStr.includes('/api/') && !isBootstrap;
 
   if (isApiCall) {
     try {
@@ -296,14 +299,24 @@ window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Pr
 
 function RootContainer() {
   const [isBackendReady, setIsBackendReady] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('Starting NYX backend...');
 
   useEffect(() => {
     let mounted = true;
     let attempt = 0;
+    const HARD_TIMEOUT_MS = 90_000; // 90s max wait — if server hasn't started by then, something is wrong
+    const startedAt = Date.now();
 
     const checkBackend = async () => {
       await initBackendUrl();
       while (mounted) {
+        // Hard timeout guard
+        const elapsed = Date.now() - startedAt;
+        if (elapsed > HARD_TIMEOUT_MS) {
+          setLoadingMsg('Server took too long to start. Please restart the app.');
+          return;
+        }
+
         try {
           const base = backendBaseUrl || '';
           const url = `${base}/api/v1/health`;
@@ -312,19 +325,26 @@ function RootContainer() {
             headers: { Accept: 'application/json' },
             signal: AbortSignal.timeout(3000),
           });
-          if (res.status < 600) {
+          // Only a genuine 200 OK means the server is fully up and serving
+          if (res.status === 200) {
             if (mounted) setIsBackendReady(true);
             return;
           }
         } catch {
-          // Backend not ready yet — keep waiting
+          // Backend not ready yet — keep polling
         }
+
         attempt++;
-        // Exponential backoff: 500ms → 1s → 2s → cap at 3s
-        const delay = Math.min(500 * Math.pow(1.5, attempt - 1), 3000);
+        const elapsed2 = Date.now() - startedAt;
+        const seconds = Math.floor(elapsed2 / 1000);
+        if (seconds > 5) setLoadingMsg(`Starting NYX backend... (${seconds}s)`);
+
+        // Exponential backoff: 300ms → 600ms → 1.2s → cap at 2s
+        const delay = Math.min(300 * Math.pow(1.5, Math.min(attempt - 1, 8)), 2000);
         await new Promise((r) => setTimeout(r, delay));
       }
     };
+
     checkBackend();
     return () => {
       mounted = false;
@@ -359,7 +379,7 @@ function RootContainer() {
             }}
           ></div>
           <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-          <div style={{ fontSize: '13px', letterSpacing: '0.02em' }}>Starting NYX backend...</div>
+          <div style={{ fontSize: '13px', letterSpacing: '0.02em' }}>{loadingMsg}</div>
         </div>
       </div>
     );

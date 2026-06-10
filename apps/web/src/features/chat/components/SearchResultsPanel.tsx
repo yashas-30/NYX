@@ -26,7 +26,7 @@ export const SearchResultsPanel: React.FC<SearchResultsPanelProps> = ({
     <div className="flex flex-col gap-3 my-4 bg-[#0e1416] border border-[rgba(255,255,255,0.06)] p-4 rounded-md">
       <div className="flex items-center gap-2 pb-3 border-b border-[rgba(255,255,255,0.06)]">
         <Globe
-          className={`w-4 h-4 ${isSearching ? 'text-[#FF3366] animate-spin' : 'text-[#4A5059]'}`}
+          className={`w-4 h-4 ${isSearching ? 'text-primary animate-spin' : 'text-[#4A5059]'}`}
         />
         <span className="text-[14px] font-medium text-[#F8FAFC]">
           {isSearching ? 'Gathering context...' : 'Search Context'}

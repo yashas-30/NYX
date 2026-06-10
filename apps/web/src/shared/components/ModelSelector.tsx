@@ -241,8 +241,8 @@ export const ModelSelector: React.FC<Props> = ({
 
   const dropdownClassName =
     alignDropdown === 'bottom'
-      ? 'absolute top-full left-0 mt-3.5 z-[500] w-[300px]'
-      : 'absolute bottom-full left-0 mb-3.5 z-[500] w-[300px]';
+      ? 'absolute top-full left-0 mt-3.5 z-[500] w-[95vw] sm:w-[520px] max-w-[520px]'
+      : 'absolute bottom-full left-0 mb-3.5 z-[500] w-[95vw] sm:w-[520px] max-w-[520px]';
 
   const transformOrigin = dropdown
     ? alignDropdown === 'bottom'
@@ -291,14 +291,14 @@ export const ModelSelector: React.FC<Props> = ({
         }}
         style={{ transformOrigin }}
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-[300px] bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col max-h-[35vh] cursor-default"
+        className="relative w-full max-w-[520px] bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col max-h-[60vh] cursor-default"
       >
         {/* Top Edge Highlight */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-foreground/5 to-transparent" />
         {/* Main Content Split Area */}
         <div className="flex flex-1 min-h-0 gap-1.5 p-1.5 overflow-hidden">
           {/* Left Box: Providers (Gateways) */}
-          <div className="w-[85px] shrink-0 bg-muted/30 border border-border rounded-md flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar">
+          <div className="w-[120px] shrink-0 bg-muted/30 border border-border rounded-md flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar">
             <span className="px-1 py-0.5 text-[6.5px] font-black uppercase tracking-[0.2em] text-muted-foreground">
               Gateways
             </span>
@@ -485,7 +485,7 @@ export const ModelSelector: React.FC<Props> = ({
                                   }}
                                   className={`p-1 rounded transition-colors ${
                                     isExpanded 
-                                      ? 'bg-accent/20 text-accent' 
+                                      ? 'bg-primary/20 text-primary' 
                                       : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                                   }`}
                                   title="View features"
@@ -538,10 +538,10 @@ export const ModelSelector: React.FC<Props> = ({
                                   )}
                                   {model.cons && model.cons.length > 0 && (
                                     <div>
-                                      <span className="text-[7px] font-black uppercase tracking-widest text-[#FF3366]/80">Bad</span>
+                                      <span className="text-[7px] font-black uppercase tracking-widest text-destructive/80">Bad</span>
                                       <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
                                         {model.cons.map((c: string, i: number) => (
-                                          <li key={i} className="text-[8px] text-[#FF3366]/90 leading-snug">{c}</li>
+                                          <li key={i} className="text-[8px] text-destructive/90 leading-snug">{c}</li>
                                         ))}
                                       </ul>
                                     </div>
@@ -562,7 +562,7 @@ export const ModelSelector: React.FC<Props> = ({
 
         {/* Execution Mode Selector */}
         <div className="p-1.5 border-t border-border flex items-center gap-1 bg-muted/20">
-          <span className="px-1 text-[7px] font-black uppercase tracking-[0.2em] text-muted-foreground shrink-0 w-[80px]">
+          <span className="px-1 text-[7px] font-black uppercase tracking-[0.2em] text-muted-foreground shrink-0 w-[95px]">
             Execution
           </span>
           <div className="flex-1 flex gap-1 bg-background p-0.5 rounded-md border border-border">

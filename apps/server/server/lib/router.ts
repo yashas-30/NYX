@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { ModelOption, Provider } from '@nyx/shared';
 // import { loadKeys } from '../vault'; // TODO: adjust import path as needed
 
@@ -32,7 +31,7 @@ export class SmartRouter {
         const key = apiKeys[model.provider] || '';
 
         // Skip if no API key
-        if (!key && model.provider !== 'pollinations' && model.provider !== 'ollama' && model.provider !== 'lmstudio') {
+        if (!key && (model.provider as string) !== 'pollinations' && model.provider !== 'ollama' && model.provider !== 'lmstudio') {
           return null;
         }
 

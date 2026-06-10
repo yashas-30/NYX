@@ -7,6 +7,13 @@
 import { context, propagation, trace } from '@opentelemetry/api';
 import { Mutex } from 'async-mutex';
 
+// Tauri imports (conditionally used)
+import { invoke } from '@tauri-apps/api/core';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
+
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+let backendPort: number | null = null;
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -60,26 +67,53 @@ function isTokenValid(): boolean {
   return !!sessionToken && Date.now() < tokenExpiresAt - TOKEN_REFRESH_BUFFER_MS;
 }
 
-async function fetchFreshToken(isStream = false): Promise<{ token: string; expiresAt: number }> {
-  const endpoint = isStream ? '/api/v1/vault/token?stream=true' : '/api/v1/vault/token';
-  const res = await fetch(endpoint, {
-    headers: { Accept: 'application/json' },
-  });
+async function fetchFreshToken(isStream = false, attempt = 0): Promise<{ token: string; expiresAt: number }> {
+  // If endpoint is relative, resolve it via Tauri invoke (dynamic)
+  const basePath = isStream ? '/api/v1/vault/token?stream=true' : '/api/v1/vault/token';
+  const endpoint = isTauri && backendPort 
+    ? `http://127.0.0.1:${backendPort}${basePath}`
+    : basePath;
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => 'Unknown error');
-    throw new Error(`Token refresh failed: ${res.status} ${text}`);
+  const fetchFn = isTauri ? tauriFetch : window.fetch;
+
+  try {
+    const res = await fetchFn(endpoint, {
+      method: 'GET',
+      headers: {
+        'x-nyx-client': 'web-v1',
+      },
+      signal: createTimeoutSignal(10000),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => 'Unknown error');
+      
+      // Retry with backoff if server is starting (503) or generic 502/504
+      if ((res.status === 503 || res.status === 502 || res.status === 504) && attempt < 5) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+        return fetchFreshToken(isStream, attempt + 1);
+      }
+      
+      throw new Error(`Token refresh failed: ${res.status} ${text}`);
+    }
+
+    const data = await res.json();
+    if (!data.token) {
+      throw new Error('Token refresh returned empty token');
+    }
+
+    return {
+      token: data.token,
+      expiresAt: data.expiresAt || Date.now() + TOKEN_TTL_MS,
+    };
+  } catch (err: any) {
+    if (attempt < 5) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+      return fetchFreshToken(isStream, attempt + 1);
+    }
+    
+    throw new Error(`Token refresh failed: ${err.message}`);
   }
-
-  const data = await res.json();
-  if (!data.token) {
-    throw new Error('Token refresh returned empty token');
-  }
-
-  return {
-    token: data.token,
-    expiresAt: data.expiresAt || Date.now() + TOKEN_TTL_MS,
-  };
 }
 
 async function getOrFetchSessionToken(isStream = false): Promise<string> {
@@ -172,12 +206,23 @@ function mergeSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
 // URL resolution
 // ---------------------------------------------------------------------------
 
-function resolveTargetUrl(url: string): string {
-  // Do not rewrite URLs — let them flow through the Vite proxy → Express
-  // which correctly handles /api/gemini/stream via the geminiRouter.
-  // Previously this rewrote to port 3001 (Fastify), but Tauri uses dynamic
-  // port allocation so 3001 is not guaranteed.
-  return url;
+async function resolveTargetUrl(url: string): Promise<string> {
+  if (!isTauri || url.startsWith('http')) return url;
+  
+  if (backendPort === null) {
+    try {
+      const res: any = await invoke('server_get_ports');
+      if (res.success && res.data) {
+        backendPort = res.data.express_port || 3010;
+      } else {
+        backendPort = 3010;
+      }
+    } catch (e) {
+      backendPort = 3010;
+    }
+  }
+  
+  return `http://127.0.0.1:${backendPort}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,12 +251,18 @@ function logRequest(
     if (error) span.setAttribute('error.message', error);
   }
 
-  if (error || status >= 400) {
+  // Downgrade expected polling errors to debug so they don't spam the console
+  const isExpectedPollingError = 
+    (url.includes('local-models/ollama/models') && status === 500) ||
+    (url.includes('models/list') && status === 409) ||
+    (url.includes('local-models/ollama/models') && status === 503);
+
+  if ((error || status >= 400) && !isExpectedPollingError) {
     console.error(
       `[AuthFetch] ${method} ${url} → ${status} (${latencyMs}ms)${error ? ` | ${error}` : ''}`
     );
   } else {
-    console.debug(`[AuthFetch] ${method} ${url} → ${status} (${latencyMs}ms)`);
+    console.debug(`[AuthFetch] ${method} ${url} → ${status} (${latencyMs}ms)${error ? ` | ${error}` : ''}`);
   }
 }
 
@@ -224,7 +275,7 @@ export async function fetchWithAuth(
   init?: RequestInit,
   isStream = false
 ): Promise<Response> {
-  const targetUrl = resolveTargetUrl(url);
+  const targetUrl = await resolveTargetUrl(url);
   const method = init?.method || 'GET';
 
   // Circuit breaker check for stream endpoints
@@ -264,7 +315,9 @@ export async function fetchWithAuth(
 
   injectTracing(headers);
 
-  const requestPromise = fetch(targetUrl, {
+  const fetchFn = isTauri ? tauriFetch : window.fetch;
+
+  const requestPromise = fetchFn(targetUrl, {
     ...init,
     headers,
     signal,
@@ -301,7 +354,7 @@ export async function fetchWithAuth(
         retryHeaders.set('Accept', 'application/json');
         injectTracing(retryHeaders);
 
-        const retryResponse = await fetch(targetUrl, {
+        const retryResponse = await fetchFn(targetUrl, {
           ...init,
           headers: retryHeaders,
           signal,

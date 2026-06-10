@@ -15,6 +15,7 @@ export interface AgentExecuteParams {
   agentType: 'chat' | 'coder';
   images?: any[];
   settings?: any;
+  signal?: AbortSignal;
 }
 
 // ── Sanitization & Slicing Helpers ───────────────────────────────────────────
@@ -137,6 +138,8 @@ export class AgentsService {
   private async getSystemPromptForAgent(agentType: 'chat' | 'coder'): Promise<string> {
     const strictFormatInstruction = `\nCRITICAL INSTRUCTION: You MUST NOT generate any meta-commentary, chain-of-thought, or internal reasoning before your response. DO NOT start your response with phrases like "The user said", "The user wants", "I will", "Here is", or "This is". Begin your response IMMEDIATELY with the direct answer or requested output. DO NOT wrap your entire response in a markdown code block (like \`\`\`text or \`\`\`markdown) unless you are ONLY outputting code. Just output regular markdown directly.`;
 
+    const identityInstruction = `\nIDENTITY: You are NYX, an intelligent AI assistant created by Moonshot AI. Never claim to be created by OpenAI, Google, Anthropic, or any other entity. You are NYX.`;
+
     const promptName = `system-prompt-${agentType}`;
     const activePrompt = await promptRegistry.getActive(promptName);
     
@@ -147,14 +150,14 @@ export class AgentsService {
     } else {
         // Register initial hardcoded prompts
         if (agentType === 'coder') {
-            baseInstruction = `You are an elite AI coding assistant. You have access to tools to read/write files and execute commands. Use them to solve the user's task.`;
+            baseInstruction = `You are NYX, an elite AI coding assistant created by Moonshot AI. You have access to tools to read/write files and execute commands. Use them to solve the user's task.`;
         } else {
-            baseInstruction = `You are an advanced AI assistant. You have access to search the web and read files.`;
+            baseInstruction = `You are NYX, an advanced AI assistant created by Moonshot AI. You have access to search the web and read files.`;
         }
         await promptRegistry.register(promptName, baseInstruction);
     }
 
-    return baseInstruction + strictFormatInstruction;
+    return baseInstruction + identityInstruction + strictFormatInstruction;
   }
 
   private getToolsForAgent(agentType: 'chat' | 'coder'): any[] {
@@ -204,6 +207,18 @@ export class AgentsService {
                 required: ['filePath'],
               },
             },
+            {
+              name: 'computerUse',
+              description: 'Perform an OS level computer action (mouse move, click, type, screenshot).',
+              parameters: {
+                type: 'OBJECT',
+                properties: {
+                  action: { type: 'STRING', description: 'The action to perform: screenshot, mouse_move, left_click, left_click_drag, right_click, middle_click, double_click, type, key' },
+                  params: { type: 'STRING', description: 'JSON string of parameters for the action (e.g. {"x": 100, "y": 200} for mouse_move, or {"text": "hello"} for type/key)' }
+                },
+                required: ['action']
+              }
+            }
           ],
         },
       ];

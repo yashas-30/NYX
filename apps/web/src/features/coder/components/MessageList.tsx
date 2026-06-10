@@ -145,7 +145,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-[#4A5059] border-b border-white/[0.03]">
           <div className="flex items-center gap-2">
-            <Terminal size={10} className="text-[#FF3366]" />
+            <Terminal size={10} className="text-primary" />
             <span className="text-[9px] font-black uppercase tracking-[0.25em] text-zinc-400">
               {lang}
             </span>
@@ -171,12 +171,12 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
               <motion.button
                 whileHover={{
                   scale: 1.02,
-                  backgroundColor: 'rgba(255, 51, 102,0.15)',
-                  borderColor: 'rgba(255, 51, 102,0.3)',
+                  backgroundColor: 'rgba(204, 120, 92, 0.15)',
+                  borderColor: 'rgba(204, 120, 92, 0.3)',
                 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowApplyPanel(!showApplyPanel)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] hover:text-white transition-all text-[8px] font-black uppercase tracking-widest shadow-sm cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 border border-primary/20 text-primary hover:text-white transition-all text-[8px] font-black uppercase tracking-widest shadow-sm cursor-pointer"
               >
                 <Save size={9} />
                 <span>Apply</span>
@@ -217,7 +217,7 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
               className="bg-[#111622] border-b border-white/5 px-4 py-3.5 flex flex-col gap-2.5"
             >
               <div className="flex items-center gap-2">
-                <FileText size={12} className="text-[#FF3366]" />
+                <FileText size={12} className="text-primary" />
                 <span className="text-[10px] text-muted-foreground/75 font-black uppercase tracking-wider">
                   Save to Workspace:
                 </span>
@@ -228,12 +228,12 @@ const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, cod
                   value={filePath}
                   onChange={(e) => setFilePath(e.target.value)}
                   placeholder="e.g., src/components/Button.tsx"
-                  className="flex-1 px-3 py-2 rounded-md bg-white/[0.02] border border-white/5 text-xs text-foreground placeholder-muted-foreground/30 focus:outline-none focus:border-[#FF3366]/50 transition-colors font-mono"
+                  className="flex-1 px-3 py-2 rounded-md bg-white/[0.02] border border-white/5 text-xs text-foreground placeholder-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-colors font-mono"
                 />
                 <button
                   onClick={handleApplyFile}
                   disabled={applyStatus === 'writing'}
-                  className="px-4 py-2 rounded-md bg-[#FF3366] text-[#0B0E14] font-bold text-[10px] uppercase tracking-wider transition-colors hover:opacity-95 disabled:opacity-50 shrink-0 cursor-pointer shadow-[0_0_12px_rgba(255, 51, 102,0.2)]"
+                  className="px-4 py-2 rounded-md bg-primary text-primary-foreground font-bold text-[10px] uppercase tracking-wider transition-colors hover:opacity-95 disabled:opacity-50 shrink-0 cursor-pointer shadow-[0_0_12px_rgba(204,120,92,0.2)]"
                 >
                   {applyStatus === 'writing' ? 'Writing...' : 'Write File'}
                 </button>
@@ -380,7 +380,7 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
             }
             return (
               <code
-                className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-[#FF3366] text-[11px] font-mono font-semibold"
+                className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-primary text-[11px] font-mono font-semibold"
                 {...props}
               >
                 {children}
@@ -394,7 +394,7 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
           ),
           h2: ({ children }) => (
             <h2 className="text-[13px] font-black tracking-tight text-foreground mt-4 mb-2 flex items-center gap-2">
-              <span className="w-1 h-4 rounded-md bg-[#FF3366] inline-block shrink-0" />
+              <span className="w-1 h-4 rounded-md bg-primary inline-block shrink-0" />
               {children}
             </h2>
           ),
@@ -423,9 +423,9 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
           strong: ({ children }) => (
             <strong className="font-bold text-foreground">{children}</strong>
           ),
-          em: ({ children }) => <em className="italic text-[#FF3366]/80">{children}</em>,
+          em: ({ children }) => <em className="italic text-primary/80">{children}</em>,
           blockquote: ({ children }) => (
-            <blockquote className="my-2 pl-3 py-1 border-l border-[#FF3366]/45 bg-white/[0.01] rounded-r-lg text-sm text-foreground/65 italic">
+            <blockquote className="my-2 pl-3 py-1 border-l border-primary/45 bg-white/[0.01] rounded-r-lg text-sm text-foreground/65 italic">
               {children}
             </blockquote>
           ),
@@ -438,7 +438,7 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-white/[0.04] text-[#FF3366] border-b border-white/8">
+            <thead className="bg-white/[0.04] text-primary border-b border-white/8">
               {children}
             </thead>
           ),
@@ -455,7 +455,7 @@ const MarkdownContent: React.FC<{ content: string; isStreaming?: boolean; citati
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[#FF3366] underline underline-offset-2 hover:opacity-85 transition-colors"
+              className="text-primary underline underline-offset-2 hover:opacity-85 transition-colors"
             >
               {children}
             </a>
@@ -488,7 +488,7 @@ const EmptyState: React.FC<{
     className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
   >
     {/* Background warm aesthetic glow */}
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-md blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-primary/[0.02] rounded-md blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
 
     {/* Elegant bird logo with entrance and floating animations split to prevent Lottie measurement glitch */}
     <motion.div
@@ -503,7 +503,7 @@ const EmptyState: React.FC<{
         className="relative flex items-center justify-center transform-gpu"
       >
         {/* Premium static hardware-accelerated logo glow */}
-        <div className="absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-md blur-[45px] pointer-events-none select-none transform-gpu" />
+        <div className="absolute w-24 h-24 bg-primary/[0.08] rounded-md blur-[45px] pointer-events-none select-none transform-gpu" />
 
         <Logo
           size={90}
@@ -522,7 +522,7 @@ const EmptyState: React.FC<{
       >
         How can{' '}
         <span className="font-black text-foreground">
-          NY<span className="text-[#FF3366]">X</span>
+          NY<span className="text-primary">X</span>
         </span>{' '}
         assist your project today?
       </motion.h1>
@@ -549,15 +549,15 @@ const EmptyState: React.FC<{
             key={idx}
             whileHover={{
               scale: 1.01,
-              backgroundColor: 'rgba(255, 51, 102, 0.05)',
-              borderColor: 'rgba(255, 51, 102, 0.2)',
+              backgroundColor: 'rgba(204, 120, 92, 0.05)',
+              borderColor: 'rgba(204, 120, 92, 0.2)',
             }}
             whileTap={{ scale: 0.99 }}
             onClick={() => onSuggestedPromptClick?.(p)}
-            className="p-4 text-[11px] font-bold text-left rounded-md bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
+            className="p-4 text-[11px] font-bold text-left rounded-md bg-white/[0.01] border border-white/5 text-foreground/75 hover:text-primary transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
           >
             <span>{p}</span>
-            <span className="text-[10px] text-[#FF3366]/70 font-extrabold ml-2">➔</span>
+            <span className="text-[10px] text-primary/70 font-extrabold ml-2">➔</span>
           </motion.button>
         ))}
       </motion.div>
@@ -620,12 +620,12 @@ const MessageActions: React.FC<{
               if (e.key === 'Enter' && e.metaKey) handleEditSubmit();
               if (e.key === 'Escape') setIsEditing(false);
             }}
-            className="w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-md p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
+            className="w-full min-h-[80px] bg-white/[0.03] border border-white/10 rounded-md p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-primary/30"
           />
           <div className="flex items-center gap-2">
             <button
               onClick={handleEditSubmit}
-              className="px-3 py-1.5 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-md bg-primary/10 border border-primary/20 text-primary text-[11px] font-semibold hover:bg-primary/20 transition-colors cursor-pointer"
             >
               Save & Submit
             </button>
@@ -644,7 +644,7 @@ const MessageActions: React.FC<{
       <div className="mt-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
         <button
           onClick={() => onCopy(content, msgId)}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-primary hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
         >
           {copiedId === msgId ? (
             <>
@@ -662,7 +662,7 @@ const MessageActions: React.FC<{
         {isUser && onEdit && (
           <button
             onClick={() => setIsEditing(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-primary hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
           >
             <Pencil size={10} />
             <span>Edit</span>
@@ -672,7 +672,7 @@ const MessageActions: React.FC<{
         {!isUser && onRegenerate && (
           <button
             onClick={() => onRegenerate(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-primary hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
           >
             <RefreshCw size={10} />
             <span>Regenerate</span>
@@ -682,7 +682,7 @@ const MessageActions: React.FC<{
         {!isUser && onBranch && (
           <button
             onClick={() => onBranch(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-[#FF3366] hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-zinc-500 hover:text-primary hover:bg-white/[0.03] transition-all cursor-pointer uppercase font-bold tracking-wider"
           >
             <GitBranch size={10} />
             <span>Branch</span>
@@ -806,7 +806,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           href={cite.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/[0.02] border border-white/5 text-[10px] text-zinc-400 hover:text-primary hover:border-primary/20 transition-all"
                         >
                           <Globe size={9} />
                           <span className="truncate max-w-[200px]">

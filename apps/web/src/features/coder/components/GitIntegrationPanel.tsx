@@ -63,7 +63,7 @@ export const GitIntegrationPanel: React.FC = () => {
     <div className="flex flex-col h-full bg-[#111622] border-t border-white/5 font-sans text-xs">
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
         <div className="flex items-center gap-2 font-bold uppercase tracking-wider text-zinc-400 text-[10px]">
-          <GitBranch size={12} className="text-[#FF3366]" />
+          <GitBranch size={12} className="text-primary" />
           <span>Git Management</span>
         </div>
         <button
@@ -93,7 +93,7 @@ export const GitIntegrationPanel: React.FC = () => {
                   key={i}
                   className="flex items-center gap-2 font-mono text-[10px] text-zinc-400"
                 >
-                  <span className="text-[#FF3366]">{file.substring(0, 2)}</span>
+                  <span className="text-primary">{file.substring(0, 2)}</span>
                   <span>{file.substring(3)}</span>
                 </div>
               ))}
@@ -107,12 +107,12 @@ export const GitIntegrationPanel: React.FC = () => {
             value={commitMessage}
             onChange={(e) => setCommitMessage(e.target.value)}
             placeholder="Commit message..."
-            className="w-full bg-black border border-white/5 rounded-md px-3 py-2 text-zinc-300 placeholder:text-zinc-700 outline-none focus:border-[#FF3366]/50 transition-colors"
+            className="w-full bg-black border border-white/5 rounded-md px-3 py-2 text-zinc-300 placeholder:text-zinc-700 outline-none focus:border-primary/50 transition-colors"
           />
           <button
             onClick={handleCommit}
             disabled={isLoading || !commitMessage.trim()}
-            className="flex items-center justify-center gap-2 w-full bg-[#FF3366] text-black font-bold uppercase tracking-wider text-[10px] py-2 rounded-md hover:bg-[#FF3366]/90 disabled:opacity-50 transition-colors"
+            className="flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground font-bold uppercase tracking-wider text-[10px] py-2 rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             <GitCommit size={14} />
             <span>Commit All</span>

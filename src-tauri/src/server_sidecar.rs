@@ -5,14 +5,18 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 use tauri::{AppHandle, Manager};
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::sync::Mutex;
+
 pub struct ServerManager {
     app_handle: AppHandle,
-    child: Option<Child>,
+    child: Arc<Mutex<Option<Child>>>,
     pub express_port: u16,
     pub fastify_port: u16,
     pub scrapling_port: u16,
     restart_attempts: u32,
-    is_shutting_down: bool,
+    is_shutting_down: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -26,12 +30,12 @@ impl ServerManager {
     pub async fn new(app_handle: AppHandle) -> Self {
         Self {
             app_handle,
-            child: None,
+            child: Arc::new(Mutex::new(None)),
             express_port: 3010,
             fastify_port: 3011,
             scrapling_port: 3012,
             restart_attempts: 0,
-            is_shutting_down: false,
+            is_shutting_down: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -54,7 +58,7 @@ impl ServerManager {
     }
 
     async fn spawn(&mut self) -> anyhow::Result<()> {
-        if self.is_shutting_down { return Ok(()); }
+        if self.is_shutting_down.load(Ordering::SeqCst) { return Ok(()); }
 
         let server_path_buf = get_server_path(&self.app_handle)?;
         let mut server_path_str = server_path_buf.to_string_lossy().into_owned();
@@ -115,14 +119,74 @@ impl ServerManager {
             });
         }
 
-        self.child = Some(child);
+        let child_arc = self.child.clone();
+        *child_arc.lock().await = Some(child);
         self.restart_attempts = 0;
+
+        let is_shutting_down = self.is_shutting_down.clone();
+        let server_path_clone = server_path.clone();
+        let express_port = self.express_port;
+        let fastify_port = self.fastify_port;
+        let scrapling_port = self.scrapling_port;
+
+        tokio::spawn(async move {
+            let mut restart_count = 0;
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                if is_shutting_down.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                let mut exited = false;
+                if let Ok(mut guard) = child_arc.try_lock() {
+                    if let Some(c) = guard.as_mut() {
+                        match c.try_wait() {
+                            Ok(Some(_)) => exited = true,
+                            _ => {}
+                        }
+                    }
+                }
+
+                if exited {
+                    if restart_count >= 3 {
+                        tracing::error!("Node.js server failed to restart after 3 attempts");
+                        break;
+                    }
+                    tracing::warn!("Node.js server crashed, restarting...");
+                    tokio::time::sleep(Duration::from_secs(2u64.pow(restart_count))).await;
+                    restart_count += 1;
+
+                    let node_exe = get_local_node_path();
+                    let mut cmd = Command::new(&node_exe);
+                    if let Some(parent) = server_path_clone.parent() {
+                        cmd.current_dir(parent);
+                    }
+                    cmd.arg(&server_path_clone)
+                        .env("PORT", express_port.to_string())
+                        .env("FASTIFY_PORT", fastify_port.to_string())
+                        .env("SCRAPLING_PORT", scrapling_port.to_string())
+                        .env("NODE_ENV", if cfg!(debug_assertions) { "development" } else { "production" })
+                        .env("IS_PACKAGED", if cfg!(debug_assertions) { "false" } else { "true" })
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .kill_on_drop(true);
+
+                    if let Ok(new_child) = cmd.spawn() {
+                        if let Ok(mut guard) = child_arc.try_lock() {
+                            *guard = Some(new_child);
+                        }
+                    }
+                }
+            }
+        });
+
         Ok(())
     }
 
     pub async fn shutdown(&mut self) -> anyhow::Result<()> {
-        self.is_shutting_down = true;
-        if let Some(mut child) = self.child.take() {
+        self.is_shutting_down.store(true, Ordering::SeqCst);
+        let mut child_opt = self.child.lock().await.take();
+        if let Some(mut child) = child_opt {
             info!("Shutting down Node.js server...");
             child.kill().await.ok();
             let timeout = sleep(Duration::from_secs(10));

@@ -41,7 +41,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
     >
       <div className="flex items-center justify-between p-4 border-b border-[rgba(255,255,255,0.06)] bg-[#0e1416]">
         <div className="flex items-center gap-3">
-          <div className="p-1.5 bg-[#18181B] rounded text-[#FF3366]">
+          <div className="p-1.5 bg-[#18181B] rounded text-primary">
             <Code2 className="w-4 h-4" />
           </div>
           <div>

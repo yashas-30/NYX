@@ -25,6 +25,7 @@ import { promptTemplatesRouter } from '../features/prompt-templates/prompt-templ
 import { geminiRouter } from '../features/ai-providers/gemini.router.js';
 import { terminalRouter } from '../features/terminal/terminal.router.js';
 import { agentsRouter } from '../features/agents/agents.router.js';
+import { mcpRouter } from '../features/mcp/mcp.router.js';
 import { localModelsRouter } from '../features/local-models/localModels.router.js';
 import { nyxRouter } from '../features/nyx/nyx.router.js';
 import { graphqlRouter } from '../features/graphql/graphql.router.js';
@@ -36,22 +37,7 @@ import { sessionsRouter } from '../features/sessions/sessions.router.js';
 import { providerRateLimiter } from '../middleware/rateLimit.js';
 
 export async function registerRoutes(app: FastifyInstance) {
-  // Global config endpoint
-  app.get('/api/config', async (request, reply) => {
-    return reply.send({
-      version: '3.0.0',
-      nodeEnv: env.NODE_ENV,
-      featureFlags: {
-        useCloudflareGateway: env.USE_CLOUDFLARE_GATEWAY,
-        allowRawTerminal: env.NYX_ALLOW_RAW_TERMINAL,
-        enforceRequestSignature: env.ENFORCE_REQUEST_SIGNATURE,
-      },
-      limits: {
-        rulesDbMaxEntries: env.RULES_DB_MAX_ENTRIES,
-        maxTokenQuota: env.MAX_TOKEN_QUOTA,
-      },
-    });
-  });
+  // Global config endpoint handled in v1
 
   // V1 Plugin
   await app.register(
@@ -175,6 +161,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
       v1.register(terminalRouter, { prefix: '/terminal' });
       v1.register(agentsRouter, { prefix: '/agents' });
+      v1.register(mcpRouter, { prefix: '/mcp' });
       v1.register(localModelsRouter, { prefix: '/nyx/local-models' });
       v1.register(nyxRouter, { prefix: '/nyx' });
       v1.register(graphqlRouter, { prefix: '/graphql' });

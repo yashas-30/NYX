@@ -69,7 +69,7 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
     analysis: PromptAnalysis,
     signal: AbortSignal,
     searchContext?: string,
-    images?: File[]
+    images?: { name: string; mimeType: string; data: string }[]
   ): AsyncGenerator<StreamEvent> {
     const reasoningChain: string[] = [];
     yield* this.emitThinking('Connecting to backend agent service...', reasoningChain);
@@ -175,6 +175,9 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
                 content: 'Tool finished',
                 metadata: parsed.tool_result,
               };
+            }
+            if (parsed.type === 'metrics' || parsed.type === 'meta') {
+              yield parsed;
             }
           }
         }

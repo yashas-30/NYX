@@ -181,7 +181,9 @@ export async function vaultRouter(fastify: FastifyInstance) {
           )
             .trim()
             .replace(/\/$/, '');
-          const response = await fetch(`${baseUrl}/models?key=${key}`);
+          const response = await fetch(`${baseUrl}/models?key=${key}`, {
+            signal: AbortSignal.timeout(5000),
+          });
           if (response.ok) {
             return reply.send({ valid: true });
           } else {

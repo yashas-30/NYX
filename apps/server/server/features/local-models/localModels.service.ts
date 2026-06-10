@@ -5,9 +5,9 @@ export class LocalModelsService {
 
   public async listOllamaModels(): Promise<any> {
     try {
-      let response = await fetch('http://127.0.0.1:11434/api/tags').catch(() => null);
+      let response = await fetch('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(5000) }).catch(() => null);
       if (!response || !response.ok) {
-        response = await fetch('http://localhost:11434/api/tags').catch(() => null);
+        response = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(5000) }).catch(() => null);
       }
       if (!response || !response.ok) {
         // Fallback: Check local filesystem
@@ -50,6 +50,7 @@ export class LocalModelsService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: modelName, stream: false }),
+        signal: AbortSignal.timeout(10 * 60 * 1000), // 10 minute timeout for large model downloads
       });
       if (!response.ok) throw new Error(await response.text());
       return await response.json();
@@ -64,6 +65,7 @@ export class LocalModelsService {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: modelName }),
+        signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) throw new Error(await response.text());
       return { success: true };

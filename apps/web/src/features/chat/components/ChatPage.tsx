@@ -18,6 +18,7 @@ import { ChatSidebar } from './ChatSidebar';
 import { ChatSettings } from './ChatSettings';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useChatLogic } from '../hooks/useChatLogic';
+import { ArtifactCanvas } from '../../artifacts/components/ArtifactCanvas';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -113,6 +114,36 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   logRollout,
   ...rest
 }) => {
+  // --- Local input and attachment states ---
+  const [prompt, setPrompt] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pendingImages, setPendingImages] = useState<ChatImage[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  
+  // --- Artifact State ---
+  const [activeArtifact, setActiveArtifact] = useState<{
+    content: string;
+    language?: string;
+    title?: string;
+  } | null>(null);
+
+  // --- Model resolution ---
+  const currentModelId = models['nyx'];
+
+  const mergedModels = useMemo(() => {
+    const seenIds = new Set<string>();
+    return allModels.filter((m) => {
+      if (seenIds.has(m.id)) return false;
+      seenIds.add(m.id);
+      return true;
+    });
+  }, [allModels]);
+
+  const currentModel = useMemo(() => {
+    if (!currentModelId) return null;
+    return mergedModels.find((m) => m.id === currentModelId) || null;
+  }, [currentModelId, mergedModels]);
+
   const {
     activeAgent,
     isLoading,
@@ -136,30 +167,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     lightningDirectives,
     logRollout,
     submitReward,
+    maxContextTokens: Math.floor(getModelContextWindow(currentModel) * 0.9),
   });
+
   const streaming = (rest as any).streaming;
-  // --- Local input and attachment states ---
-  const [prompt, setPrompt] = useState('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [pendingImages, setPendingImages] = useState<ChatImage[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  // --- Model resolution ---
-  const currentModelId = models['nyx'];
-
-  const mergedModels = useMemo(() => {
-    const seenIds = new Set<string>();
-    return allModels.filter((m) => {
-      if (seenIds.has(m.id)) return false;
-      seenIds.add(m.id);
-      return true;
-    });
-  }, [allModels]);
-
-  const currentModel = useMemo(() => {
-    if (!currentModelId) return null;
-    return mergedModels.find((m) => m.id === currentModelId) || null;
-  }, [currentModelId, mergedModels]);
 
   // --- Context window token estimation ---
   const contextTokens = useMemo(() => {
@@ -400,6 +411,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           streamingContent={streaming?.content}
           streamingReasoning={streaming?.reasoning}
           streamingToolCalls={streaming?.toolCalls}
+          onArtifactClick={setActiveArtifact}
         />
 
         {/* CHAT PROMPT INPUT */}
@@ -426,6 +438,15 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onImagesChange={setPendingImages}
         />
       </div>
+
+      {/* ARTIFACT CANVAS */}
+      <ArtifactCanvas
+        isOpen={!!activeArtifact}
+        content={activeArtifact?.content || ''}
+        language={activeArtifact?.language}
+        title={activeArtifact?.title}
+        onClose={() => setActiveArtifact(null)}
+      />
 
 
     </motion.div>

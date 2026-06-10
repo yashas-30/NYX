@@ -8,6 +8,7 @@ class DebugLoggerService {
   private queue: any[] = [];
   private isConnecting = false;
   private isInitialized = false;
+  private reconnectAttempts = 0;
 
   public init() {
     if (this.isInitialized || (import.meta as any).env?.MODE === 'production') return;
@@ -28,6 +29,7 @@ class DebugLoggerService {
 
       this.ws.onopen = () => {
         this.isConnecting = false;
+        this.reconnectAttempts = 0;
         // Flush queue
         while (this.queue.length > 0) {
           const msg = this.queue.shift();
@@ -38,8 +40,11 @@ class DebugLoggerService {
       this.ws.onclose = () => {
         this.isConnecting = false;
         this.ws = null;
-        // Attempt reconnect after 2 seconds
-        setTimeout(() => this.connect(), 2000);
+        
+        // Attempt reconnect with exponential backoff
+        this.reconnectAttempts++;
+        const delay = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
+        setTimeout(() => this.connect(), delay);
       };
 
       this.ws.onerror = () => {

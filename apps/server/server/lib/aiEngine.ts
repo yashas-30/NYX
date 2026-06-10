@@ -38,6 +38,7 @@ export interface UnifiedRequest {
   signal?: AbortSignal;
   customGatewayUrls?: Record<string, string>;
   tools?: any[];
+  cachedContent?: string;
 }
 
 export class AIEngine {
@@ -49,7 +50,7 @@ export class AIEngine {
     writeChunk: (chunk: any) => void,
     onDone: () => void
   ): Promise<void> {
-    const { provider, model, messages, settings, apiKey, customGatewayUrls, tools } = req;
+    const { provider, model, messages, settings, apiKey, customGatewayUrls, tools, cachedContent } = req;
 
     switch (provider) {
       case 'gemini':
@@ -60,16 +61,17 @@ export class AIEngine {
           settings,
           customGatewayUrls,
           tools,
+          cachedContent,
           req.signal,
           writeChunk,
           onDone
         );
 
       case 'ollama':
-        return this.streamOllama(model, messages, settings, req.signal, writeChunk, onDone);
+        return this.streamOllama(model, messages, settings, req.signal, tools, writeChunk, onDone);
 
       case 'lmstudio':
-        return this.streamLMStudio(model, messages, settings, req.signal, writeChunk, onDone);
+        return this.streamLMStudio(model, messages, settings, req.signal, tools, writeChunk, onDone);
 
       case 'antigravity-sdk':
         return this.streamAntigravitySdk(model, messages, apiKey || '', req.signal, writeChunk, onDone);
@@ -99,6 +101,7 @@ export class AIEngine {
     settings: AISettings | undefined,
     customGatewayUrls: Record<string, string> | undefined,
     tools: any[] | undefined,
+    cachedContent: string | undefined,
     signal: AbortSignal | undefined,
     write: (chunk: any) => void,
     done: () => void
@@ -132,6 +135,7 @@ export class AIEngine {
             topK: settings?.topK ?? 20,
           },
           tools: tools && tools.length > 0 ? tools : undefined,
+          cachedContent: cachedContent ? cachedContent : undefined,
         }),
         signal,
       });
@@ -221,6 +225,7 @@ export class AIEngine {
     messages: ChatMessage[],
     settings: AISettings | undefined,
     signal: AbortSignal | undefined,
+    tools: any[] | undefined,
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
@@ -235,7 +240,7 @@ export class AIEngine {
     }
 
     try {
-      const formattedMessages = messages.map((m: any) => ({ role: m.role, content: m.content }));
+      const formattedMessages = Gateway.formatMessages(messages, 'ollama');
       const response = await fetch('http://127.0.0.1:11434/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -246,6 +251,7 @@ export class AIEngine {
           temperature: settings?.temperature ?? 0.7,
           max_tokens: settings?.maxTokens ?? 4096,
           top_p: settings?.topP ?? 1.0,
+          tools: tools && tools.length > 0 ? tools : undefined,
         }),
         signal: abortController.signal,
       });
@@ -279,6 +285,7 @@ export class AIEngine {
     messages: ChatMessage[],
     settings: AISettings | undefined,
     signal: AbortSignal | undefined,
+    tools: any[] | undefined,
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
@@ -293,7 +300,7 @@ export class AIEngine {
     }
 
     try {
-      const formattedMessages = messages.map((m: any) => ({ role: m.role, content: m.content }));
+      const formattedMessages = Gateway.formatMessages(messages, 'lmstudio');
       const response = await fetch('http://127.0.0.1:1234/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -304,6 +311,7 @@ export class AIEngine {
           temperature: settings?.temperature ?? 0.7,
           max_tokens: settings?.maxTokens ?? 4096,
           top_p: settings?.topP ?? 1.0,
+          tools: tools && tools.length > 0 ? tools : undefined,
         }),
         signal: abortController.signal,
       });

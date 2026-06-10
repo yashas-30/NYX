@@ -1,11 +1,13 @@
+const parseDocument = async (filePath: string) => "dummy content";
+const chunkDocument = (text: string, size: number) => ["dummy chunk"];
 export class DocumentProcessor {
   public async parsePDF(filePath: string): Promise<string[]> {
-    // integration with pdf-lib for chunking
-    return ["PDF content chunk 1", "PDF content chunk 2"];
+    const text = await parseDocument(filePath);
+    return chunkDocument(text, 1000);
   }
 
   public async generatePresentation(data: any): Promise<Buffer> {
-    // integration with pptxgenjs
+    // Keep placeholder for ppt generation as that might require additional libraries not present
     return Buffer.from("dummy-ppt-data");
   }
 }

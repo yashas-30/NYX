@@ -39,7 +39,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { toast } from '@src/shared/components/ui/sonner';
-import { Logo, NyxLoader } from '@src/assets/icons/icons';
+import { AVAILABLE_MODELS } from '@src/shared/config/models';
+import { Logo, NyxLoader, CatLoader, AnimatedLogo } from '@src/assets/icons/icons';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ArtifactPanel } from './ArtifactPanel';
 import { CitationCard } from './CitationCard';
@@ -76,6 +77,7 @@ export interface ChatMessageListProps {
   streamingReasoning?: string;
   streamingToolCalls?: ToolCall[];
   activeModel?: string;
+  onArtifactClick?: (artifact: any) => void;
 }
 
 interface MessageBubbleProps {
@@ -90,6 +92,7 @@ interface MessageBubbleProps {
   onRegenerate?: (index: number) => void;
   onBranch?: (index: number) => void;
   activeModel?: string;
+  onArtifactClick?: (artifact: any) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,7 +276,11 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
           </div>
         )}
         <img
-          src={src}
+          src={
+            src.startsWith('/uploads/') || src.startsWith('/api/')
+              ? `${(window as any).__NYX_BACKEND_URL__ || ''}${src}`
+              : src
+          }
           alt={alt || 'Attached image'}
           className={`max-h-64 object-contain transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={() => setLoaded(true)}
@@ -301,7 +308,7 @@ ImageAttachment.displayName = 'ImageAttachment';
 
 const StreamingCursor: React.FC = memo(() => (
   <span className="inline-flex items-center ml-1">
-    <span className="w-[7px] h-[14px] bg-[#FF3366]/60 rounded-sm animate-pulse" />
+    <span className="w-[7px] h-[14px] bg-primary/60 rounded-sm animate-pulse" />
   </span>
 ));
 StreamingCursor.displayName = 'StreamingCursor';
@@ -338,7 +345,7 @@ const MarkdownContent: React.FC<{
 
         return (
           <code
-            className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-[#FF3366] text-[11px] font-mono font-semibold"
+            className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-primary text-[11px] font-mono font-semibold"
             {...props}
           >
             {children}
@@ -346,28 +353,28 @@ const MarkdownContent: React.FC<{
         );
       },
       h1: ({ children }: any) => (
-        <h1 className="text-base font-black tracking-tight text-foreground mt-5 mb-2 pb-2 border-b border-border">
+        <h1 className="text-lg font-serif font-medium tracking-tight text-foreground mt-6 mb-3 pb-2 border-b border-border animate-smooth-reveal">
           {children}
         </h1>
       ),
       h2: ({ children }: any) => (
-        <h2 className="text-[13px] font-black tracking-tight text-foreground mt-4 mb-2">
+        <h2 className="text-[16px] font-serif font-medium tracking-tight text-foreground mt-5 mb-3 animate-smooth-reveal">
           {children}
         </h2>
       ),
       h3: ({ children }: any) => (
-        <h3 className="text-[12px] font-bold tracking-tight text-foreground/90 mt-3 mb-1.5">
+        <h3 className="text-[15px] font-serif font-medium tracking-tight text-foreground/90 mt-4 mb-2 animate-smooth-reveal">
           {children}
         </h3>
       ),
       p: ({ children }: any) => (
-        <p className="text-sm leading-[1.8] text-foreground/80 my-1.5">{children}</p>
+        <p className="text-[15px] md:text-[16px] font-sans antialiased leading-[1.85] tracking-[0.015em] text-foreground/90 my-3 animate-smooth-reveal">{children}</p>
       ),
       ul: ({ children }: any) => (
-        <ul className="list-disc pl-6 space-y-1 my-2 text-sm text-foreground/75">{children}</ul>
+        <ul className="list-disc pl-6 space-y-2 my-4 text-[15px] md:text-[16px] font-sans antialiased text-foreground/85 animate-smooth-reveal">{children}</ul>
       ),
       ol: ({ children }: any) => (
-        <ol className="list-decimal pl-6 space-y-1 my-2 text-sm text-foreground/75">{children}</ol>
+        <ol className="list-decimal pl-6 space-y-2 my-4 text-[15px] md:text-[16px] font-sans antialiased text-foreground/85 animate-smooth-reveal">{children}</ol>
       ),
       li: ({ children }: any) => <li className="leading-relaxed pl-1">{children}</li>,
       strong: ({ children }: any) => (
@@ -390,7 +397,7 @@ const MarkdownContent: React.FC<{
               target="_blank"
               rel="noopener noreferrer"
               title={cite?.source || cite?.url}
-              className="inline-flex items-center justify-center min-w-[16px] h-4 ml-0.5 px-1 text-[9px] font-bold text-[#FF3366] bg-[#FF3366]/10 rounded-md hover:bg-[#FF3366]/20 hover:scale-110 transition-all align-super no-underline cursor-pointer"
+              className="inline-flex items-center justify-center min-w-[16px] h-4 ml-0.5 px-1 text-[9px] font-bold text-primary bg-primary/10 rounded-md hover:bg-primary/20 hover:scale-110 transition-all align-super no-underline cursor-pointer"
               onClick={(e) => {
                 if (!cite?.url) e.preventDefault();
               }}
@@ -497,12 +504,12 @@ const MessageActions: React.FC<{
               if (e.key === 'Enter' && e.metaKey) handleEditSubmit();
               if (e.key === 'Escape') setIsEditing(false);
             }}
-            className="w-full min-h-[80px] bg-card border border-border rounded-md p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-[#FF3366]/30"
+            className="w-full min-h-[80px] bg-card border border-border rounded-md p-3 text-sm text-foreground/90 resize-y focus:outline-none focus:border-primary/30"
           />
           <div className="flex items-center gap-2">
             <button
               onClick={handleEditSubmit}
-              className="px-3 py-1.5 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 text-[#FF3366] text-[11px] font-semibold hover:bg-[#FF3366]/20 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-md bg-primary/10 border border-primary/20 text-primary text-[11px] font-semibold hover:bg-primary/20 transition-colors cursor-pointer"
             >
               Save & Submit
             </button>
@@ -521,7 +528,7 @@ const MessageActions: React.FC<{
       <div className="mt-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
         <button
           onClick={() => onCopy(content, msgId)}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-[#FF3366] hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
         >
           {copiedId === msgId ? (
             <>
@@ -539,7 +546,7 @@ const MessageActions: React.FC<{
         {isUser && onEdit && (
           <button
             onClick={() => setIsEditing(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-[#FF3366] hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
           >
             <Pencil size={10} />
             <span>Edit</span>
@@ -549,7 +556,7 @@ const MessageActions: React.FC<{
         {!isUser && onRegenerate && (
           <button
             onClick={() => onRegenerate(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-[#FF3366] hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
             title={`Regenerate with ${activeModel || 'current model'}`}
           >
             <RefreshCw size={10} />
@@ -560,7 +567,7 @@ const MessageActions: React.FC<{
         {!isUser && onBranch && (
           <button
             onClick={() => onBranch(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-[#FF3366] hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
           >
             <GitBranch size={10} />
             <span>Branch</span>
@@ -643,9 +650,17 @@ const MessageBubble = React.memo<MessageBubbleProps>(
     onRegenerate,
     onBranch,
     activeModel,
+    onArtifactClick,
   }) => {
     const isUser = msg.role === 'user';
     const msgId = `${msg.timestamp}-${index}`;
+    // Used for the reasoning text loading state if there are no tool calls
+    const isThinking =
+      ((msg.status === 'loading' && !msg.content) || (isStreaming && !msg.content && msg.reasoning)) &&
+      (!msg.toolCalls || msg.toolCalls.length === 0);
+      
+    // Used to show the animated loader instead of the cat icon during response generation
+    const isLoadingIcon = msg.status === 'loading' || (isStreaming && isLast);
 
     return (
       <motion.div
@@ -663,7 +678,18 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               {msg.images && msg.images.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {msg.images.map((img, i) => (
-                    <ImageAttachment key={i} src={img.url || img.data || ''} alt={img.name} />
+                    <ImageAttachment
+                      key={i}
+                      src={
+                        img.url ||
+                        (img.data
+                          ? img.data.startsWith('data:')
+                            ? img.data
+                            : `data:${img.mimeType || 'image/png'};base64,${img.data}`
+                          : '')
+                      }
+                      alt={img.name}
+                    />
                   ))}
                 </div>
               )}
@@ -679,160 +705,176 @@ const MessageBubble = React.memo<MessageBubbleProps>(
             />
           </div>
         ) : (
-          <div className="flex-1 min-w-0">
-            {/* Clean Gemini-style Header */}
-            {(msg.content ||
-              msg.reasoning ||
-              (msg.toolCalls && msg.toolCalls.length > 0) ||
-              msg.status === 'loading') && (
-              <div className="flex items-center gap-2.5 mb-3 select-none">
-                <div className="w-6 h-6 rounded-md bg-muted/80 border border-border flex items-center justify-center">
-                  <Logo size={14} />
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-[11px] font-mono font-bold tracking-widest text-foreground uppercase">
-                    NYX
+          <div className="flex flex-col w-full animate-fade-in">
+            {/* Clean Header with Message-Specific Model Resolution */}
+            {(() => {
+              const messageModel = msg.model || activeModel;
+              if (!messageModel || messageModel.toLowerCase() === 'default') return null;
+              const found = AVAILABLE_MODELS.find((m) => m.id === messageModel);
+              const displayName = found ? found.name : messageModel;
+              if (displayName.toLowerCase() === 'default') return null;
+
+              if (
+                !(msg.content ||
+                  msg.reasoning ||
+                  (msg.toolCalls && msg.toolCalls.length > 0) ||
+                  msg.status === 'loading')
+              ) {
+                return null;
+              }
+
+              return (
+                <div className="flex items-baseline gap-2 mb-2.5 select-none pl-16">
+                  <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
+                    {displayName}
                   </span>
-                  {activeModel && (
-                    <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
-                      {activeModel}
-                    </span>
+                </div>
+              );
+            })()}
+
+            <div className="flex w-full gap-2 items-start">
+              <div className="flex-shrink-0 pt-0.5 select-none">
+                <div className="w-14 h-14 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
+                  {isLoadingIcon ? (
+                    <NyxLoader size={24} className="text-foreground animate-spin" />
+                  ) : (
+                    <AnimatedLogo size={56} className="animate-fade-in" />
                   )}
                 </div>
               </div>
-            )}
-
-            {/* Error state */}
-            {msg.status === 'error' && (
-              <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-red-500/5 border border-red-500/10">
-                <AlertTriangle size={14} className="text-red-400 shrink-0" />
-                <p className="text-sm text-red-400/90 font-medium">
-                  Error: Generation failed. Please check your model settings or connection.
-                </p>
-              </div>
-            )}
-
-            {/* Stopped state */}
-            {msg.status === 'stopped' && (
-              <p className="text-sm text-muted-foreground py-1 italic flex items-center gap-2">
-                <Square size={10} className="text-muted-foreground" />
-                Generation stopped by user.
-              </p>
-            )}
-
-            {/* Loading with no content */}
-            {msg.status === 'loading' &&
-              !msg.content &&
-              !msg.reasoning &&
-              (!msg.toolCalls || msg.toolCalls.length === 0) && (
-                <div className="flex items-center gap-2.5 py-1 select-none">
-                  <NyxLoader size={14} className="text-foreground shrink-0" />
-                  <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.2em]">
-                    Formulating response...
-                  </span>
-                </div>
-              )}
-
-            {/* Content rendering */}
-            {(msg.content || msg.reasoning || (msg.toolCalls && msg.toolCalls.length > 0)) && (
-              <div className="pl-0 sm:pl-8">
-                {/* Reasoning Block */}
-                {msg.reasoning && (
-                  <ThinkingBlock content={msg.reasoning} isComplete={!isStreaming} />
+              <div className="flex-1 min-w-0">
+                {/* Error state */}
+                {msg.status === 'error' && (
+                  <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-red-500/5 border border-red-500/10">
+                    <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                    <p className="text-sm text-red-400/90 font-medium">
+                      Error: Generation failed. Please check your model settings or connection.
+                    </p>
+                  </div>
                 )}
 
-                {/* Tool calls */}
-                {msg.toolCalls && msg.toolCalls.length > 0 && (
-                  <div className="space-y-1">
-                    {msg.toolCalls.map((tool, i) => (
-                      <ToolCallCard
-                        key={tool.id || i}
-                        tool={tool}
-                        status={
-                          isStreaming && isLast && i === msg.toolCalls!.length - 1
-                            ? 'running'
-                            : 'completed'
-                        }
+                {/* Stopped state */}
+                {msg.status === 'stopped' && (
+                  <p className="text-sm text-muted-foreground py-1 italic flex items-center gap-2">
+                    <Square size={10} className="text-muted-foreground" />
+                    Generation stopped by user.
+                  </p>
+                )}
+
+                {/* Loading / Thinking state (during reasoning or initial Formulation) */}
+                {isThinking && (
+                  <div className="flex items-center gap-2.5 py-1 select-none h-14">
+                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.15em] animate-pulse">
+                      Thinking...
+                    </span>
+                  </div>
+                )}
+
+                {/* Content rendering */}
+                {(msg.content || (msg.toolCalls && msg.toolCalls.length > 0)) && (
+                  <div className="pl-0">
+                    {/* Reasoning block is hidden to keep the response page clean as requested */}
+
+                    {/* Tool calls */}
+                    {msg.toolCalls && msg.toolCalls.length > 0 && (
+                      <div className="space-y-1">
+                        {msg.toolCalls.map((tool, i) => (
+                          <ToolCallCard
+                            key={tool.id || i}
+                            tool={tool}
+                            status={
+                              isStreaming && isLast && i === msg.toolCalls!.length - 1
+                                ? 'running'
+                                : 'completed'
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Main content */}
+                    {msg.content && (
+                      <MarkdownContent
+                        content={msg.content}
+                        isStreaming={isStreaming && isLast}
+                        citations={msg.citations}
                       />
-                    ))}
+                    )}
+
+                    {/* Artifacts */}
+                    {msg.artifacts && msg.artifacts.length > 0 && (
+                      <div className="space-y-1 mt-2">
+                        {msg.artifacts.map((artifact, i) => (
+                          <div 
+                            key={artifact.id || i}
+                            onClick={() => onArtifactClick?.(artifact)}
+                            className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all rounded-md"
+                          >
+                            <ArtifactViewer artifact={artifact as any} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Citations */}
+                    {msg.citations && msg.citations.length > 0 && (
+                      <div className="mt-3 pt-2 border-t border-border">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                          <Search size={10} />
+                          Sources
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {msg.citations.map((cite, i) => (
+                            <a
+                              key={i}
+                              id={`cite-${cite.id}`}
+                              href={cite.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card border border-border text-[10px] text-muted-foreground hover:text-primary hover:border-primary/20 transition-all"
+                            >
+                              <Globe size={9} />
+                              <span className="truncate max-w-[200px]">
+                                {cite.source || cite.title || cite.url}
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    {!isStreaming && (
+                      <>
+                        <MessageActions
+                          index={index}
+                          content={msg.content}
+                          onCopy={onCopy}
+                          copiedId={copiedId}
+                          msgId={msgId}
+                          isUser={false}
+                          onRegenerate={onRegenerate}
+                          onBranch={onBranch}
+                          activeModel={activeModel}
+                        />
+                        <FeedbackButtons msg={msg} submitReward={submitReward} />
+                      </>
+                    )}
                   </div>
                 )}
 
-                {/* Main content */}
-                {msg.content && (
-                  <MarkdownContent
-                    content={msg.content}
-                    isStreaming={isStreaming && isLast}
-                    citations={msg.citations}
-                  />
-                )}
-
-                {/* Artifacts */}
-                {msg.artifacts && msg.artifacts.length > 0 && (
-                  <div className="space-y-1 mt-2">
-                    {msg.artifacts.map((artifact, i) => (
-                      <ArtifactViewer key={artifact.id || i} artifact={artifact as any} />
-                    ))}
-                  </div>
-                )}
-
-                {/* Citations */}
-                {msg.citations && msg.citations.length > 0 && (
-                  <div className="mt-3 pt-2 border-t border-border">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
-                      <Search size={10} />
-                      Sources
+                {/* Empty fallback */}
+                {!msg.content &&
+                  !msg.reasoning &&
+                  (!msg.toolCalls || msg.toolCalls.length === 0) &&
+                  msg.status !== 'loading' &&
+                  msg.status !== 'error' && (
+                    <div className="text-muted-foreground text-xs italic py-1">
+                      Empty response from model.
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {msg.citations.map((cite, i) => (
-                        <a
-                          key={i}
-                          id={`cite-${cite.id}`}
-                          href={cite.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card border border-border text-[10px] text-muted-foreground hover:text-[#FF3366] hover:border-[#FF3366]/20 transition-all"
-                        >
-                          <Globe size={9} />
-                          <span className="truncate max-w-[200px]">
-                            {cite.source || cite.title || cite.url}
-                          </span>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Actions */}
-                {!isStreaming && (
-                  <>
-                    <MessageActions
-                      index={index}
-                      content={msg.content}
-                      onCopy={onCopy}
-                      copiedId={copiedId}
-                      msgId={msgId}
-                      isUser={false}
-                      onRegenerate={onRegenerate}
-                      onBranch={onBranch}
-                      activeModel={activeModel}
-                    />
-                    <FeedbackButtons msg={msg} submitReward={submitReward} />
-                  </>
-                )}
+                  )}
               </div>
-            )}
-
-            {/* Empty fallback */}
-            {!msg.content &&
-              !msg.reasoning &&
-              (!msg.toolCalls || msg.toolCalls.length === 0) &&
-              msg.status !== 'loading' &&
-              msg.status !== 'error' && (
-                <div className="text-muted-foreground text-xs italic py-1">
-                  Empty response from model.
-                </div>
-              )}
+            </div>
           </div>
         )}
       </motion.div>
@@ -855,7 +897,7 @@ const EmptyState: React.FC<{
     transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
     className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
   >
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#FF3366]/[0.02] rounded-md blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-primary/[0.02] rounded-md blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
 
     <motion.div
       initial={{ opacity: 0 }}
@@ -868,7 +910,7 @@ const EmptyState: React.FC<{
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
         className="relative flex items-center justify-center transform-gpu"
       >
-        <div className="absolute w-24 h-24 bg-[#FF3366]/[0.08] rounded-md blur-[45px] pointer-events-none select-none transform-gpu" />
+        <div className="absolute w-24 h-24 bg-primary/[0.08] rounded-md blur-[45px] pointer-events-none select-none transform-gpu" />
         <Logo
           size={90}
           className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default"
@@ -885,7 +927,7 @@ const EmptyState: React.FC<{
       >
         Chat with{' '}
         <span className="font-black text-foreground">
-          NY<span className="text-[#FF3366]">X</span>
+          NY<span className="text-primary">X</span>
         </span>
       </motion.h1>
       <motion.p
@@ -915,10 +957,10 @@ const EmptyState: React.FC<{
             }}
             whileTap={{ scale: 0.99 }}
             onClick={() => onSuggestedPromptClick?.(p)}
-            className="p-4 text-[11px] font-bold text-left rounded-md bg-card border border-border text-foreground/75 hover:text-[#FF3366] transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
+            className="p-4 text-[11px] font-bold text-left rounded-md bg-card border border-border text-foreground/75 hover:text-primary transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
           >
             <span>{p}</span>
-            <span className="text-[10px] text-[#FF3366]/70 font-extrabold ml-2">➔</span>
+            <span className="text-[10px] text-primary/70 font-extrabold ml-2">➔</span>
           </motion.button>
         ))}
       </motion.div>
@@ -947,6 +989,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   streamingReasoning,
   streamingToolCalls,
   activeModel,
+  onArtifactClick,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -1088,6 +1131,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                       onRegenerate={onRegenerate}
                       onBranch={onBranchFromMessage}
                       activeModel={activeModel}
+                      onArtifactClick={onArtifactClick}
                     />
                   </div>
                 </div>
@@ -1109,7 +1153,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
           >
             <ArrowDown className="w-3 h-3" />
             Latest
-            {isLoading && <span className="w-1.5 h-1.5 rounded-md bg-[#FF3366] animate-pulse" />}
+            {isLoading && <span className="w-1.5 h-1.5 rounded-md bg-primary animate-pulse" />}
           </motion.button>
         )}
       </AnimatePresence>
@@ -1117,7 +1161,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       {/* New messages indicator */}
       {!autoScroll && isLoading && (
         <div className="absolute top-0 left-0 right-0 z-10 flex justify-center pt-2 pointer-events-none">
-          <div className="px-3 py-1 rounded-md bg-[#FF3366]/10 border border-[#FF3366]/20 text-[10px] text-[#FF3366] font-semibold animate-pulse">
+          <div className="px-3 py-1 rounded-md bg-primary/10 border border-primary/20 text-[10px] text-primary font-semibold animate-pulse">
             Generating...
           </div>
         </div>

@@ -159,12 +159,12 @@ async function spawnNewServer(projectHash: string, configHash: string): Promise<
   };
 
   let bound = false;
-  for (let i = 0; i < 40; i++) { // Wait up to 10s for fastify/vite to compile
+  for (let i = 0; i < 120; i++) { // Wait up to 60s — tsx + heavy imports take time
     if (await isServerHealthy(serverInfo)) {
       bound = true;
       break;
     }
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 500));
   }
 
   if (!bound) {

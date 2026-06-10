@@ -118,7 +118,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   );
 
   const sidebarVariants = {
-    open: { width: 260, opacity: 1 },
+    open: { width: 200, opacity: 1 },
     closed: { width: 0, opacity: 0 },
   };
 
@@ -146,11 +146,11 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           initial="open"
           animate={sidebarOpen ? 'open' : 'closed'}
           transition={{ type: 'spring', stiffness: 380, damping: 35 }}
-          className={`h-full overflow-hidden flex flex-col bg-secondary border-r border-border relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-sm border border-border w-[260px]' : 'flex-none z-20'}`}
+          className={`h-full overflow-hidden flex flex-col bg-card border-r border-border relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-sm border border-border w-[200px]' : 'flex-none z-20'}`}
         >
-          <div className="flex flex-col h-full min-w-[260px] bg-secondary">
+          <div className="flex flex-col h-full min-w-[200px] bg-card">
             {/* Sidebar Top Header */}
-            <div className="h-14 px-4 flex items-center select-none border-b border-border shrink-0">
+            <div className="h-10 px-4 flex items-center select-none border-b border-border shrink-0">
               {/* Toolbar: Sidebar Toggle + Back/Forward Arrows */}
               <div className="flex items-center gap-3 text-muted-foreground">
                 <motion.button
@@ -200,7 +200,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 onClick={() => { setActiveMode('chat'); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
                   activeMode === 'chat'
-                    ? 'text-foreground bg-card border border-border font-semibold'
+                    ? 'text-foreground bg-muted border border-border font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
                 }`}
               >
@@ -215,7 +215,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 onClick={() => { setActiveMode('coder'); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
                   activeMode === 'coder'
-                    ? 'text-foreground bg-card border border-border font-semibold'
+                    ? 'text-foreground bg-muted border border-border font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
                 }`}
               >
@@ -229,7 +229,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 onClick={() => { setActiveMode('workspace'); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
                   activeMode === 'workspace'
-                    ? 'text-foreground bg-card border border-border font-semibold'
+                    ? 'text-foreground bg-muted border border-border font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
                 }`}
               >
@@ -318,7 +318,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 onClick={() => { setActiveMode('registry'); }}
                 className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${
                   activeMode === 'registry'
-                    ? 'text-foreground bg-card border border-border'
+                    ? 'text-foreground bg-muted border border-border'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
@@ -333,7 +333,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 onClick={() => { setActiveMode('compare'); }}
                 className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${
                   activeMode === 'compare'
-                    ? 'text-foreground bg-card border border-border'
+                    ? 'text-foreground bg-muted border border-border'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
@@ -348,7 +348,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 onClick={() => { setActiveMode('settings'); }}
                 className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${
                   activeMode === 'settings'
-                    ? 'text-foreground bg-card border border-border'
+                    ? 'text-foreground bg-muted border border-border'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
@@ -372,7 +372,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               whileHover={{ scale: 1.05, backgroundColor: 'var(--muted)' }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setSidebarOpen(true)}
-              className="absolute top-3.5 left-3.5 z-30 p-2 rounded-md bg-secondary hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all shadow-sm cursor-pointer"
+              className="absolute top-[7px] left-3.5 z-30 p-1.5 rounded-md bg-secondary hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all shadow-sm cursor-pointer"
             >
               <PanelLeftOpen size={14} />
             </motion.button>
@@ -435,7 +435,7 @@ const SideNavButton: React.FC<{
     onClick={onClick}
     className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium tracking-wide transition-all duration-200 cursor-pointer ${
       active
-        ? 'bg-card text-foreground border border-border font-semibold'
+        ? 'bg-muted text-foreground border border-border font-semibold'
         : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
     }`}
   >
@@ -485,7 +485,7 @@ const SessionItem: React.FC<{
       }}
       className={`group relative flex items-center justify-between px-3 py-1.5 rounded-md cursor-pointer transition-all ${
         isActive
-          ? 'text-foreground font-semibold bg-card border border-border'
+          ? 'text-foreground font-semibold bg-muted border border-border'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground'
       }`}
       onClick={onClick}

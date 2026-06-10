@@ -173,7 +173,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       className="h-full w-full flex flex-col min-h-0 overflow-hidden bg-background"
     >
       <header
-        className={`h-14 flex items-center justify-between px-6 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-card transition-all duration-300 gap-6`}
+        className={`h-10 flex items-center justify-between px-6 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-card transition-all duration-300 gap-6`}
       >
         <div className="flex items-center gap-2 shrink-0">
           <SettingsIcon size={16} className="text-primary" />

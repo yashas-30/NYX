@@ -95,7 +95,7 @@ export const CoderHeader: React.FC<CoderHeaderProps> = ({
   };
 
   return (
-    <header className="h-14 flex items-center justify-between px-8 shrink-0 select-none bg-background border-b border-border">
+    <header className="h-10 flex items-center justify-between px-8 shrink-0 select-none bg-card border-b border-border">
       {/* Left: Collapsed sidebar toggle trigger */}
       <div className="flex items-center gap-2">
         {!sidebarOpen && onToggleSidebar && (

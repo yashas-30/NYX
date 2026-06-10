@@ -38,8 +38,9 @@ import { ModelSelector } from '@src/shared/components/ModelSelector';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { ModelInfo } from '@src/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
-import { useScraplingStatus } from '@src/shared/hooks/useScraplingStatus';
 import { useLiveTimer } from '@src/shared/hooks/useLiveTimer';
+import { useUsageStore } from '@src/core/stores/useUsageStore';
+import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -190,8 +191,7 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
         }}
       />
       <motion.button
-        whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
-        whileTap={{ scale: 0.94 }}
+        whileTap={{ scale: 0.95 }}
         onClick={() => inputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
@@ -200,21 +200,20 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         disabled={disabled}
-        className={`p-2 rounded-md border transition-all cursor-pointer relative ${
-          dragOver
-            ? 'bg-accent/10 border-accent/30 text-accent'
-            : 'text-muted-foreground hover:text-foreground border-transparent hover:border-border'
-        } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+        className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors relative cursor-pointer ${dragOver
+            ? 'bg-accent/10 text-accent'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+          } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
         title="Attach files (or drag & drop)"
       >
-        <Paperclip size={13} strokeWidth={1.8} />
+        <Paperclip size={15} strokeWidth={1.8} />
         {dragOver && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             className="absolute inset-0 rounded-md border-2 border-dashed border-accent/50 bg-accent/5 flex items-center justify-center"
           >
-            <span className="text-[10px] text-accent font-medium">Drop files</span>
+            <span className="text-[10px] text-accent font-medium hidden">Drop</span>
           </motion.div>
         )}
       </motion.button>
@@ -252,15 +251,15 @@ const ShareMenu: React.FC<{
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative flex items-center">
       <motion.button
-        whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
-        whileTap={{ scale: 0.94 }}
+        whileTap={{ scale: 0.95 }}
         onClick={() => setOpen(!open)}
-        className="p-2 rounded-md text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer"
+        className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer ${open ? 'bg-muted/60 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+          }`}
         title="Share & Export"
       >
-        <Share2 size={13} strokeWidth={1.8} />
+        <Share2 size={15} strokeWidth={1.8} />
       </motion.button>
 
       <AnimatePresence>
@@ -320,6 +319,79 @@ const ShareMenu: React.FC<{
   );
 };
 
+const ModelUsageIndicator: React.FC<{ modelId: string | null; apiKey?: string; allModels: any[] }> = ({ modelId, apiKey, allModels }) => {
+  const { usage, refreshLimits } = useUsageStore();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => refreshLimits(), 15000);
+    return () => clearInterval(timer);
+  }, [refreshLimits]);
+
+  if (!modelId) return null;
+  const modelConfig = allModels.find(m => m.id === modelId);
+  const limits = modelConfig?.limits;
+  if (!limits) return null;
+
+  const key = `${modelId}_${apiKey || 'default'}`;
+  const currentUsage = usage[key] || { rpmUsed: 0, tpmUsed: 0, rpdUsed: 0 };
+  const rpmRatio = limits.rpm ? currentUsage.rpmUsed / limits.rpm : 0;
+
+  const isWarning = rpmRatio > 0.8;
+  const isCritical = rpmRatio >= 1;
+
+  return (
+    <div
+      className="relative flex items-center gap-1.5 px-2 py-1 cursor-pointer group"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <div className="flex items-center gap-1 text-muted-foreground/80 hover:text-foreground transition-colors" title="Rate Limits">
+        <Cpu size={13} className={isCritical ? 'text-red-500' : isWarning ? 'text-amber-500' : ''} />
+        <span className="text-[11px] font-mono hidden xl:inline">
+          {currentUsage.rpmUsed}/{limits.rpm}
+        </span>
+      </div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            className="absolute top-full right-0 mt-2 w-48 bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-lg p-3 z-50 flex flex-col gap-2"
+          >
+            <div className="flex justify-between items-center pb-2 border-b border-border/50">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Usage limit</span>
+            </div>
+
+            <div className="flex flex-col gap-1.5 text-[12px] font-mono">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">RPM</span>
+                <span className={isCritical ? 'text-red-400' : 'text-foreground/90'}>
+                  {currentUsage.rpmUsed} / {limits.rpm}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">TPM</span>
+                <span className="text-foreground/90">
+                  {formatTokens(currentUsage.tpmUsed)} / {limits.tpm ? formatTokens(limits.tpm) : '∞'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">RPD</span>
+                <span className="text-foreground/90">
+                  {currentUsage.rpdUsed} / {limits.rpd ? limits.rpd : '∞'}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
@@ -359,8 +431,11 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   const privacyMode = useNyxStore((state) => state.privacyMode);
   const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
   const lastPrivacyToggle = useRef(0);
-  const scraplingStatus = useScraplingStatus();
   const liveElapsed = useLiveTimer(isLoading);
+
+  const apiKeys = useNyxStore((state) => state.apiKeys);
+  const currentProvider = currentModelId ? detectProvider(currentModelId) : '';
+  const currentApiKey = getEffectiveApiKey(currentProvider, apiKeys) || undefined;
 
   // Focus title input when editing
   useEffect(() => {
@@ -396,26 +471,24 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   };
 
   return (
-    <header className="h-14 shrink-0 select-none bg-background border-b border-border">
+    <header className="h-14 shrink-0 select-none bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/40 z-10">
       {/* Main header row */}
-      <div className="w-full h-full flex items-center justify-between px-6">
+      <div className="w-full h-full flex items-center justify-between px-2 sm:px-4 lg:px-6 gap-2 sm:gap-4">
         {/* Left zone: Sidebar toggle + Model selector */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-1 sm:gap-3 min-w-0 shrink justify-start">
           {onToggleSidebar && (
             <motion.button
-              whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
               whileTap={{ scale: 0.95 }}
               onClick={onToggleSidebar}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer shrink-0"
+              className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer shrink-0"
               title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
             >
-              {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
+              {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
             </motion.button>
           )}
 
-          <div className="hidden sm:block relative">
+          <div className="flex relative min-w-0 shrink">
             <motion.button
-              whileHover={{ scale: 1.02, backgroundColor: 'var(--input)' }}
               whileTap={{ scale: 0.98 }}
               type="button"
               onClick={(e) => {
@@ -423,18 +496,19 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 setShowModelSelector((v) => !v);
               }}
               disabled={isLoading}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border transition-all select-none ${
-                showModelSelector
-                  ? 'bg-muted border-border'
-                  : 'bg-transparent border-transparent hover:border-border text-muted-foreground hover:text-foreground'
-              } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors select-none w-full ${showModelSelector
+                  ? 'bg-muted/80 text-foreground'
+                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             >
-              {currentModel ? getCustomModelIcon(currentModel) : <Bot className="w-3.5 h-3.5" />}
-              <span className="truncate max-w-[150px] text-[11px] font-semibold text-foreground/90">
+              <div className="shrink-0">
+                {currentModel ? getCustomModelIcon(currentModel) : <Bot className="w-4 h-4" />}
+              </div>
+              <span className="truncate max-w-[80px] sm:max-w-[150px] text-[13px] font-medium text-foreground/90">
                 {currentModel?.name || 'Select model'}
               </span>
               <ChevronDown
-                className={`w-3.5 h-3.5 opacity-60 shrink-0 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
+                className={`w-4 h-4 opacity-50 shrink-0 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
               />
             </motion.button>
 
@@ -468,20 +542,20 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           </div>
 
           {/* Connection status (desktop) */}
-          <div className="hidden md:flex">
+          <div className="hidden md:flex ml-2 shrink-0">
             <ConnectionDot status={connectionStatus} />
           </div>
         </div>
 
         {/* Center zone: Session title + Context */}
-        <div className="flex items-center gap-3 absolute left-1/2 -translate-x-1/2">
+        <div className="flex-1 flex items-center justify-center gap-2 min-w-0 px-2 shrink">
           {/* Editable session title */}
-          <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center justify-center gap-2 min-w-0">
             {isEditingTitle ? (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="flex items-center gap-1.5"
+                className="flex items-center gap-1.5 min-w-0 shrink"
               >
                 <input
                   ref={titleInputRef}
@@ -495,209 +569,148 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     }
                   }}
                   onBlur={handleTitleSubmit}
-                  className="text-[13px] font-semibold text-foreground/85 bg-muted/50 border border-border rounded-md px-2.5 py-1 outline-none focus:border-primary/30 w-48 sm:w-64"
+                  className="text-[14px] font-medium text-foreground bg-muted border border-border/50 rounded-md px-3 py-1 outline-none focus:border-primary/40 w-full max-w-[200px]"
                   maxLength={60}
                 />
               </motion.div>
             ) : (
-              <motion.button
-                whileHover={{ backgroundColor: 'var(--input)' }}
+              <button
                 onClick={() => {
                   setEditTitle(sessionTitle);
                   setIsEditingTitle(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md cursor-pointer select-none transition-all"
+                className="flex items-center justify-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md cursor-pointer select-none transition-colors hover:bg-muted/40 group min-w-0 shrink"
                 title="Click to rename"
               >
-                <span className="text-[13px] font-semibold text-foreground/85 translate-y-[-0.5px] truncate max-w-[140px] sm:max-w-[200px]">
+                <span className="text-[14px] font-medium text-foreground/90 truncate">
                   {sessionTitle}
                 </span>
-                <ChevronDown size={11} className="text-muted-foreground opacity-60 mt-0.5" />
-              </motion.button>
-            )}
-
-            {/* Context usage indicator */}
-            {metrics.totalMessages > 0 && (
-              <ContextBar used={metrics.contextTokens} limit={metrics.contextLimit} />
+                <ChevronDown size={14} className="text-muted-foreground opacity-0 group-hover:opacity-50 transition-opacity shrink-0 hidden sm:block" />
+              </button>
             )}
           </div>
         </div>
 
         {/* Right zone: Actions */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0 shrink-0 justify-end">
           {/* Response metrics */}
-          <div className="hidden md:flex items-center gap-3 px-3 py-1 bg-muted/30 border border-border rounded-md text-muted-foreground font-mono text-[10px] mr-1">
+          <div className="hidden lg:flex items-center gap-4 px-2 py-1 text-muted-foreground font-mono text-[11px] mr-2 shrink-0">
             <div className="flex items-center gap-1.5" title="Response latency">
-              <Wifi size={11} className="text-muted-foreground" />
+              <Wifi size={13} className="text-muted-foreground/60" />
               <span>{displayLatency > 0 ? formatLatency(displayLatency) : '0ms'}</span>
             </div>
-            <div className="w-[1px] h-3 bg-border" />
             <div className="flex items-center gap-1.5" title="Tokens per second">
-              <Zap size={11} className="text-muted-foreground" />
+              <Zap size={13} className="text-muted-foreground/60" />
               <span>{metrics.tps} tok/s</span>
             </div>
             {metrics.estimatedCostUsd !== undefined && metrics.estimatedCostUsd > 0 && (
-              <>
-                <div className="w-[1px] h-3 bg-border" />
-                <div className="flex items-center gap-1.5" title="Estimated Cost">
-                  <span className="text-emerald-400 font-medium">
-                    ${metrics.estimatedCostUsd.toFixed(5)}
-                  </span>
-                </div>
-              </>
+              <div className="flex items-center gap-1.5" title="Estimated Cost">
+                <span className="text-emerald-500/80 font-medium">
+                  ${metrics.estimatedCostUsd.toFixed(5)}
+                </span>
+              </div>
             )}
-            <div className="w-[1px] h-3 bg-border" />
             <div className="flex items-center gap-1.5" title="Tokens generated">
-              <HardDrive size={11} className="text-muted-foreground" />
+              <HardDrive size={13} className="text-muted-foreground/60" />
               <span>{formatTokens(metrics.tokens)} tok</span>
             </div>
           </div>
 
-          {/* Stop generation button (replaces everything during loading) */}
-          <AnimatePresence mode="wait">
-            {isLoading && onStopGeneration ? (
-              <motion.button
-                key="stop"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.94 }}
-                onClick={onStopGeneration}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
-              >
-                <Square size={10} fill="currentColor" />
-                <span className="text-[11px] font-medium hidden sm:inline">Stop</span>
-              </motion.button>
-            ) : (
-              <>
-                {/* Attach files */}
-                {onAttachFiles && (
-                  <div className="hidden sm:block">
-                    <AttachmentButton onAttach={onAttachFiles} disabled={isLoading} />
-                  </div>
-                )}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Model Usage Indicator */}
+            <div className="hidden lg:block shrink-0">
+              <ModelUsageIndicator modelId={currentModelId || null} apiKey={currentApiKey} allModels={allModels || []} />
+            </div>
 
-                {/* Agent Lightning */}
-                {onOpenLightning && (
-                  <motion.button
-                    whileHover={{
-                      scale: 1.05,
-                      backgroundColor: 'rgba(6,182,212,0.1)',
-                      borderColor: 'rgba(6,182,212,0.25)',
-                    }}
-                    whileTap={{ scale: 0.94 }}
-                    onClick={onOpenLightning}
-                    className="p-2 rounded-md text-cyan-400 hover:text-cyan-600 border border-transparent hover:border-cyan-200 transition-all cursor-pointer"
-                    title="Agent Lightning"
-                  >
-                    <Zap size={13} fill="currentColor" strokeWidth={1.8} />
-                  </motion.button>
-                )}
-
-                {/* Privacy */}
-                <motion.button
-                  whileHover={{
-                    scale: 1.05,
-                    backgroundColor: privacyMode ? 'rgba(239,68,68,0.1)' : 'var(--input)',
-                  }}
-                  whileTap={{ scale: 0.94 }}
-                  onClick={handlePrivacyToggle}
-                  className={`p-2 rounded-md border transition-all cursor-pointer ${
-                    privacyMode
-                      ? 'text-red-400 bg-red-500/10 border-red-500/20'
-                      : 'text-muted-foreground hover:text-foreground border-transparent hover:border-border'
-                  }`}
-                  title={privacyMode ? 'Privacy Mode On' : 'Privacy Mode Off'}
-                >
-                  {privacyMode ? (
-                    <Lock size={13} strokeWidth={2.2} />
-                  ) : (
-                    <Unlock size={13} strokeWidth={1.8} />
-                  )}
-                </motion.button>
-
-                {/* Scrapling Health Badge */}
-                <div
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/40 border border-border text-[9px] font-extrabold uppercase tracking-wider text-muted-foreground select-none cursor-pointer"
-                  title={`Scrapling Health: ${scraplingStatus === 'running' ? 'Running & Healthy' : scraplingStatus === 'restarting' ? 'Restarting...' : scraplingStatus === 'offline' ? 'Offline (using fallback)' : 'Checking Status...'}`}
-                  onClick={() => toast.info(`Scrapling status is: ${scraplingStatus}`)}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-md ${
-                      scraplingStatus === 'running'
-                        ? 'bg-emerald-400'
-                        : scraplingStatus === 'restarting'
-                          ? 'bg-yellow-400 animate-pulse'
-                          : scraplingStatus === 'checking'
-                            ? 'bg-muted-foreground/50'
-                            : 'bg-red-400'
-                    }`}
-                  />
-                  Search
-                </div>
-
-                {/* Share & Export */}
-                <ShareMenu onExport={onExportChat} title={sessionTitle} onShareChat={onShareChat} />
-
-                {/* Clear */}
-                <motion.button
-                  whileHover={{
-                    scale: 1.05,
-                    backgroundColor: 'rgba(239,68,68,0.08)',
-                    borderColor: 'rgba(239,68,68,0.2)',
-                  }}
-                  whileTap={{ scale: 0.94 }}
-                  onClick={onClear}
-                  className="p-2 rounded-md text-muted-foreground hover:text-destructive border border-transparent hover:border-border transition-all cursor-pointer"
-                  title="Clear chat"
-                >
-                  <Trash2 size={13} strokeWidth={1.8} />
-                </motion.button>
-
-                {/* More menu (mobile model selector + shortcuts) */}
-                <div className="sm:hidden relative">
-                  <motion.button
-                    whileHover={{ scale: 1.05, backgroundColor: 'var(--input)' }}
-                    whileTap={{ scale: 0.94 }}
-                    onClick={() => setShowShortcuts(!showShortcuts)}
-                    className="p-2 rounded-md text-muted-foreground hover:text-foreground border border-transparent hover:border-border transition-all cursor-pointer"
-                  >
-                    <MoreHorizontal size={13} />
-                  </motion.button>
-
-                  <AnimatePresence>
-                    {showShortcuts && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="absolute top-full right-0 mt-1 w-48 bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden z-50 p-2"
-                      >
-                        <div className="text-[10px] text-muted-foreground px-2 py-1 uppercase tracking-wider">
-                          Shortcuts
-                        </div>
-                        <div className="flex items-center justify-between px-2 py-1">
-                          <span className="text-[11px] text-muted-foreground font-medium">
-                            New chat
-                          </span>
-                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
-                            ⌘K
-                          </kbd>
-                        </div>
-                        <div className="flex items-center justify-between px-2 py-1">
-                          <span className="text-[11px] text-muted-foreground">Stop gen</span>
-                          <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
-                            Esc
-                          </kbd>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </>
+            {/* Attach files */}
+            {onAttachFiles && (
+              <div className="hidden sm:block">
+                <AttachmentButton onAttach={onAttachFiles} disabled={isLoading} />
+              </div>
             )}
-          </AnimatePresence>
+
+            {/* Agent Lightning */}
+            {onOpenLightning && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={onOpenLightning}
+                className="w-8 h-8 flex items-center justify-center rounded-md text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/10 transition-colors cursor-pointer shrink-0"
+                title="Agent Lightning"
+              >
+                <Zap size={15} fill="currentColor" strokeWidth={1.8} />
+              </motion.button>
+            )}
+
+            {/* Privacy */}
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={handlePrivacyToggle}
+              className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer shrink-0 ${privacyMode
+                  ? 'text-red-500 bg-red-500/10 hover:bg-red-500/20'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                }`}
+              title={privacyMode ? 'Privacy Mode On' : 'Privacy Mode Off'}
+            >
+              {privacyMode ? (
+                <Lock size={15} strokeWidth={2.2} />
+              ) : (
+                <Unlock size={15} strokeWidth={1.8} />
+              )}
+            </motion.button>
+
+            {/* Share & Export */}
+            <ShareMenu onExport={onExportChat} title={sessionTitle} onShareChat={onShareChat} />
+
+            {/* Clear */}
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={onClear}
+              className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
+              title="Clear chat"
+            >
+              <Trash2 size={15} strokeWidth={1.8} />
+            </motion.button>
+
+            {/* More menu (mobile shortcuts) */}
+            <div className="sm:hidden relative shrink-0">
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowShortcuts(!showShortcuts)}
+                className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+              >
+                <MoreHorizontal size={15} />
+              </motion.button>
+
+              <AnimatePresence>
+                {showShortcuts && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="absolute top-full right-0 mt-1 w-48 bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden z-50 p-2"
+                  >
+                    <div className="text-[10px] text-muted-foreground px-2 py-1 uppercase tracking-wider">
+                      Shortcuts
+                    </div>
+                    <div className="flex items-center justify-between px-2 py-1">
+                      <span className="text-[11px] text-muted-foreground font-medium">
+                        New chat
+                      </span>
+                      <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
+                        ⌘K
+                      </kbd>
+                    </div>
+                    <div className="flex items-center justify-between px-2 py-1">
+                      <span className="text-[11px] text-muted-foreground">Stop gen</span>
+                      <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
+                        Esc
+                      </kbd>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
       </div>
     </header>

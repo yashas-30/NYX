@@ -29,7 +29,7 @@ function getIcon(provider: string | undefined, size: number, className: string):
         <Cpu
           size={size}
           strokeWidth={1.5}
-          className={`${className} text-[#FF3366] animate-pulse`}
+          className={`${className} text-primary animate-pulse`}
         />
       );
     default:

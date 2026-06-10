@@ -15,8 +15,8 @@ const ModelComparisonView = lazy(() => import('@src/views/ModelComparisonView'))
 const WorkspaceCanvas = lazy(() => import('@src/components/workspace/Canvas').then(m => ({ default: m.InfiniteCanvas })));
 
 const LoadingFallback = () => (
-  <div className="flex items-center justify-center h-full bg-[#0B0E14]">
-    <div className="w-6 h-6 border-2 border-[#FF3366] border-t-transparent rounded-md animate-spin" />
+  <div className="flex items-center justify-center h-full bg-background">
+    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-md animate-spin" />
   </div>
 );
 

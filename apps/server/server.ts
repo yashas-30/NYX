@@ -35,7 +35,6 @@ async function startServer() {
   }
 
   await initializeDatabaseAndPlugins();
-  await runDependencyHealthChecks();
   const { clearHealthChecks } = spawnBackgroundServices();
 
   // Build Fastify (registers all plugins, routes — but does NOT listen yet)
@@ -47,6 +46,14 @@ async function startServer() {
   // Single server, single port — Vite proxies /api and /ws directly here
   await app.listen({ port: PORT, host: '127.0.0.1' });
   logger.info(`🚀 NYX Server running on http://localhost:${PORT}`);
+
+  // Run dependency health checks AFTER we're listening — they're informational only
+  // and should not block the server from accepting connections
+  setImmediate(() => {
+    runDependencyHealthChecks().catch((err) =>
+      logger.warn({ err }, '[DepCheck] Background dependency check failed (non-fatal)')
+    );
+  });
 
   registerShutdownHandlers(app, clearHealthChecks);
 }

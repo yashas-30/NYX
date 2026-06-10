@@ -56,7 +56,7 @@ export interface DirectClientResult {
 // Configuration & State
 // ---------------------------------------------------------------------------
 
-const DEFAULT_TIMEOUT_MS = 120000;
+const DEFAULT_TIMEOUT_MS = 600000; // Increased to 10 minutes to support long requests like 20k words
 const MAX_RETRIES = 3;
 // fallow-ignore-next-line code-duplication
 const BASE_DELAY_MS = 1000;
@@ -102,10 +102,10 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
 
 async function fetchWithRetry(
   url: string,
-  init: RequestInit & { timeout?: number },
+  init: RequestInit & { timeout?: number; isStream?: boolean },
   attempt = 1
 ): Promise<Response> {
-  const { timeout = DEFAULT_TIMEOUT_MS, signal: userSignal, ...fetchInit } = init;
+  const { timeout = 600000, isStream, signal: userSignal, ...fetchInit } = init; // Increased to 10 minutes
   const signal = mergeSignals(userSignal, createTimeoutSignal(timeout));
 
   try {
@@ -173,14 +173,13 @@ async function parseError(response: Response): Promise<Error> {
   return error;
 }
 
-// Helper to resolve Gemini models
 function resolveRealGeminiModel(model: string): string {
   const modelMap: Record<string, string> = {
     'gemini-3-flash': 'gemini-3-flash',
     'gemini-3-flash-lite': 'gemini-3-flash-lite',
     'gemini-2.5-flash': 'gemini-2.5-flash',
-    'gemma-4-31b-it': 'gemma-4-31b-it',
-    'gemma-4-27b-it': 'gemma-4-27b-it',
+    'gemma-4-31b-it': 'gemma-4-31b-it', // Map to real Google API model
+    'gemma-4-26b-it': 'gemma-4-26b-a4b-it', // Map to real Google API model
   };
   return modelMap[model] || model;
 }
@@ -271,14 +270,42 @@ export async function directFetch(
   const requestBody: any = { contents };
 
   // Fix: System instruction without role field
-  if (options.systemInstruction) {
-    requestBody.systemInstruction = {
-      parts: [{ text: options.systemInstruction }],
-    };
+  let finalSystemInstruction = options.systemInstruction || '';
+
+  // Apply Fix 1 for Gemma models: forbid reasoning traces
+  if (model.toLowerCase().includes('gemma')) {
+    const suppressReasoningInstruction = `You are a helpful AI assistant. Respond directly to the user. 
+Do NOT show your internal reasoning, planning, or thought process. 
+Do NOT include sections like "Intent:", "Identity:", "Drafting:", or "Refining:". 
+Just give the final answer in a natural, conversational tone.`;
+
+    if (finalSystemInstruction) {
+      finalSystemInstruction += `\n\n${suppressReasoningInstruction}`;
+    } else {
+      finalSystemInstruction = suppressReasoningInstruction;
+    }
   }
 
+  if (finalSystemInstruction) {
+    if (model.toLowerCase().includes('gemma')) {
+      // The Gemini API currently ignores systemInstruction for Gemma models.
+      // We must inject it directly into the first user message.
+      if (contents.length > 0 && contents[0].role === 'user') {
+        contents[0].parts.unshift({ text: `System Instruction:\n${finalSystemInstruction}\n\n` });
+      } else {
+        // Fallback in case the first message isn't 'user' (rare)
+        contents.unshift({ role: 'user', parts: [{ text: `System Instruction:\n${finalSystemInstruction}` }] });
+        contents.unshift({ role: 'model', parts: [{ text: 'Acknowledged.' }] });
+      }
+    } else {
+      requestBody.systemInstruction = {
+        parts: [{ text: finalSystemInstruction }],
+      };
+    }
+  }
+
+  requestBody.generationConfig = {};
   if (options.settings) {
-    requestBody.generationConfig = {};
     if (options.settings.temperature !== undefined)
       requestBody.generationConfig.temperature = options.settings.temperature;
     if (options.settings.topP !== undefined)
@@ -286,6 +313,15 @@ export async function directFetch(
     if (options.settings.maxTokens !== undefined)
       requestBody.generationConfig.maxOutputTokens = options.settings.maxTokens;
   }
+
+  // Apply Fix 2 for Gemma models: overwrite sensitive sampling parameters
+  if (model.toLowerCase().includes('gemma')) {
+    requestBody.generationConfig.temperature = 0.7;
+    requestBody.generationConfig.topP = 0.95;
+    requestBody.generationConfig.topK = 40;
+    requestBody.generationConfig.maxOutputTokens = 2048;
+  }
+
 
   // Add tools if provided
   if (options.tools && options.tools.length > 0) {
@@ -347,13 +383,13 @@ export async function directFetch(
 
     const parsed = await parseSSEStream(response, {
       signal: options.signal,
-      timeoutMs: DEFAULT_TIMEOUT_MS,
+      timeoutMs: 600000,
       onChunk: (delta, accumulated) => {
         fullText = accumulated;
-        options.onStream?.({ type: 'text', content: accumulated });
+        options.onStream?.({ type: 'text', content: delta, metadata: { accumulated } });
       },
       onReasoning: (delta, accumulated) => {
-        options.onStream?.({ type: 'reasoning', content: accumulated });
+        options.onStream?.({ type: 'reasoning', content: delta, metadata: { accumulated } });
       },
       onToolCall: (delta, accumulated) => {
         options.onStream?.({ type: 'tool_call', content: JSON.stringify(accumulated) });
@@ -394,7 +430,12 @@ export async function directFetch(
   if (!response.ok) throw await parseError(response);
 
   const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const text = parts
+    .filter((part: any) => !part.thought)
+    .map((part: any) => part.text)
+    .filter(Boolean)
+    .join('');
   const finishReason = data.candidates?.[0]?.finishReason;
 
   if (!text) {

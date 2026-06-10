@@ -86,10 +86,10 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         <header
-          className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-background transition-all duration-300`}
+          className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 py-1.5 px-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-card transition-all duration-300`}
         >
           <div className="flex items-center gap-2">
-            <Package size={16} weight="duotone" className="text-[#FF3366]" />
+            <Package size={16} weight="duotone" className="text-primary" />
             <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">
               Model Registry
             </h2>
@@ -100,7 +100,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
               <MagnifyingGlass
                 size={12}
                 weight="bold"
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/30 transition-colors group-focus-within:text-[#FF3366]"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/30 transition-colors group-focus-within:text-primary"
               />
               <input
                 type="text"
@@ -117,7 +117,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   bg-background border border-border rounded-md
                   text-[11px] font-medium text-foreground
                   pl-8 pr-3 py-1.5 w-full sm:w-48
-                  outline-none focus:border-[#FF3366]/30
+                  outline-none focus:border-primary/30
                   transition-all placeholder:text-muted-foreground/20
                 "
               />
@@ -132,7 +132,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     flex-1 sm:flex-none px-3 py-1 rounded-md text-[11px] font-bold uppercase tracking-tight transition-all text-center
                     ${
                       filter === f
-                        ? 'bg-[#FF3366] text-black'
+                        ? 'bg-primary text-primary-foreground'
                         : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted'
                     }
                   `}

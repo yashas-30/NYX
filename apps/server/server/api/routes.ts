@@ -25,6 +25,7 @@ import { promptTemplatesRouter } from '../features/prompt-templates/prompt-templ
 import { geminiRouter } from '../features/ai-providers/gemini.router.js';
 import { terminalRouter } from '../features/terminal/terminal.router.js';
 import { agentsRouter } from '../features/agents/agents.router.js';
+import { mcpRouter } from '../features/mcp/mcp.router.js';
 import { localModelsRouter } from '../features/local-models/localModels.router.js';
 import { nyxRouter } from '../features/nyx/nyx.router.js';
 import { graphqlRouter } from '../features/graphql/graphql.router.js';
@@ -156,6 +157,7 @@ export async function setupRoutes(app: FastifyInstance) {
 
       v1.register(terminalRouter, { prefix: '/terminal' });
       v1.register(agentsRouter, { prefix: '/agents' });
+      v1.register(mcpRouter, { prefix: '/mcp' });
       v1.register(localModelsRouter, { prefix: '/nyx/local-models' });
       v1.register(nyxRouter, { prefix: '/nyx' });
       v1.register(graphqlRouter, { prefix: '/graphql' });

@@ -18,7 +18,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ memories }) => {
   return (
     <div className="flex flex-col bg-[#09090B] border border-[rgba(255,255,255,0.06)] rounded-md mb-4 overflow-hidden">
       <div className="flex items-center px-3 py-2 bg-[#0e1416] border-b border-[rgba(255,255,255,0.06)]">
-        <Database className="w-3.5 h-3.5 text-[#FF3366] mr-2" />
+        <Database className="w-3.5 h-3.5 text-primary mr-2" />
         <span className="text-[12px] font-mono text-[#F8FAFC]">Active Memory Context</span>
       </div>
       <div className="p-2 space-y-1 max-h-40 overflow-y-auto">

@@ -65,14 +65,10 @@ function createWorker(): Worker {
   }
 
   if (workerPath.endsWith('.ts')) {
-    // Load TS worker dynamically in ts-node/tsx/vitest environments
-    return new Worker(`
-      const path = require('path');
-      try {
-        require('ts-node').register({ transpileOnly: true });
-      } catch (e) {}
-      require(path.resolve('${workerPath.replace(/\\/g, '\\\\')}'));
-    `, { eval: true });
+    // Load TS worker dynamically using tsx for ESM environments
+    return new Worker(workerPath, {
+      execArgv: ['--import', 'tsx']
+    });
   }
 
   return new Worker(workerPath);

@@ -65,7 +65,7 @@ export const InlineREPL: React.FC<InlineREPLProps> = ({ onClose }) => {
     <div className="flex flex-col h-full bg-black border-t border-white/5 font-mono text-[11px] text-zinc-300 relative">
       <div className="flex items-center justify-between px-4 py-2 bg-[#111622] border-b border-white/5 select-none">
         <div className="flex items-center gap-2 font-black uppercase tracking-wider text-zinc-400">
-          <Terminal size={12} className="text-[#FF3366]" />
+          <Terminal size={12} className="text-primary" />
           <span>Terminal REPL</span>
         </div>
         <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export const InlineREPL: React.FC<InlineREPLProps> = ({ onClose }) => {
         {history.map((item, idx) => (
           <div key={idx} className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-cyan-400 font-bold">
-              <span className="text-[#FF3366]">$</span>
+              <span className="text-primary">$</span>
               <span>{item.command}</span>
             </div>
             <pre className={`whitespace-pre-wrap break-all ${item.status === 'error' ? 'text-red-400' : 'text-zinc-300'}`}>
@@ -97,7 +97,7 @@ export const InlineREPL: React.FC<InlineREPLProps> = ({ onClose }) => {
         ))}
         {isRunning && (
           <div className="flex items-center gap-2 text-zinc-500 animate-pulse">
-            <span className="text-[#FF3366]">$</span>
+            <span className="text-primary">$</span>
             <span>Running...</span>
           </div>
         )}
@@ -105,7 +105,7 @@ export const InlineREPL: React.FC<InlineREPLProps> = ({ onClose }) => {
       </div>
       
       <div className="px-4 py-3 bg-[#0B0E14] border-t border-white/5 flex items-center gap-2">
-        <span className="text-[#FF3366] font-bold select-none">$</span>
+        <span className="text-primary font-bold select-none">$</span>
         <input
           ref={inputRef}
           type="text"

@@ -29,6 +29,22 @@ export const useStreamProcessor = ({
             });
             break;
 
+          case 'meta':
+            if (chunk.metadata?.antigravity_id) {
+              updateHistory((prev) => {
+                const h = [...prev];
+                const last = h[h.length - 1];
+                if (last?.role === 'assistant') {
+                  last.metadata = {
+                    ...(last.metadata || {}),
+                    antigravity_id: chunk.metadata.antigravity_id,
+                  };
+                }
+                return h;
+              });
+            }
+            break;
+
           case 'file_write':
             if (
               chunk.content &&

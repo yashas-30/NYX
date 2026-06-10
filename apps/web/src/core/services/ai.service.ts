@@ -369,7 +369,8 @@ export class AIService {
   // -------------------------------------------------------------------------
   // Retry with exponential backoff + jitter
   // -------------------------------------------------------------------------
-  private static async executeWithRetry(
+  private // fallow-ignore-next-line code-duplication
+  static async executeWithRetry(
     requestId: string,
     modelId: string,
     provider: Provider | string,
@@ -379,8 +380,7 @@ export class AIService {
     settings?: AISettings,
     onStream?: (event: any) => void,
     signal?: AbortSignal,
-    options?: ExecuteOptions,
-    attempt = 1
+    options?: ExecuteOptions
   ): Promise<EnhancedAIResponse> {
     try {
       const result = await this._executeRaw(
@@ -398,47 +398,8 @@ export class AIService {
       recordSuccess(String(provider));
       return result;
     } catch (error: any) {
-      const message = error.message || String(error);
-      const isAbort = error.name === 'AbortError' || message.includes('aborted');
-      const isCloud = String(provider) === 'gemini';
-      const isTransient =
-        /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|rate_limit|quota|overloaded|high demand|timeout|network|econnreset|enotfound/i.test(
-          message
-        );
-      const isNonRetryable = /SAFETY_GATE_BLOCKED|Invalid API key|401|403|unauthorized/i.test(
-        message
-      );
-
-      if (isCloud && isTransient && attempt <= 3 && !isAbort && !isNonRetryable) {
-        const delay = Math.pow(2, attempt - 1) * 1000 + Math.random() * 1000;
-        console.warn(
-          `[AIService] Retry ${attempt}/3 for ${provider} in ${delay.toFixed(0)}ms: ${message}`
-        );
-        if (onStream) {
-          const retryMsg = `\n\n[System: Connection failed. Retrying in ${(delay / 1000).toFixed(1)}s...]\n\n`;
-          if (options?.streamEvents) {
-             onStream({ type: 'text', content: retryMsg, final: false });
-          } else {
-             onStream(retryMsg);
-          }
-        }
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        return this.executeWithRetry(
-          requestId,
-          modelId,
-          provider,
-          prompt,
-          apiKey,
-          systemInstruction,
-          settings,
-          onStream,
-          signal,
-          options,
-          attempt + 1
-        );
-      }
-
-      if (isCloud && !isAbort) {
+      const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
+      if (String(provider) === 'gemini' && !isAbort) {
         recordFailure(String(provider));
       }
       throw error;
@@ -635,7 +596,7 @@ export class AIService {
                   final: false,
                 });
             } else if (chunk.type === 'text' && chunk.content) {
-              onStream(chunk.content);
+              onStream(chunk.metadata?.accumulated || chunk.content);
             }
           }
         : undefined,

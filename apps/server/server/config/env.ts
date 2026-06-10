@@ -21,6 +21,7 @@ const envSchema = z.object({
   CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
   CLOUDFLARE_GATEWAY_NAME: z.string().optional(),
   USE_CLOUDFLARE_GATEWAY: z.string().default('false').transform((val) => val === 'true'),
+  ENABLE_ANTIGRAVITY_PREPROCESSING: z.string().default('true').transform((val) => val === 'true'),
   GEMINI_API_KEY: z.string().optional(),
   LLM_API_KEY: z.string().optional(),
   SLACK_WEBHOOK_URL: z.string().url().optional().or(z.literal('')),

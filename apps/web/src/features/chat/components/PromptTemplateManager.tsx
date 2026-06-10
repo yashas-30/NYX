@@ -97,13 +97,13 @@ export const PromptTemplateManager: React.FC<{
                     placeholder="Title"
                     value={editForm.title}
                     onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                    className="w-full bg-transparent border-b border-white/10 text-xs text-white p-1 mb-2 outline-none focus:border-[#FF3366]/50"
+                    className="w-full bg-transparent border-b border-white/10 text-xs text-white p-1 mb-2 outline-none focus:border-primary/50"
                   />
                   <textarea
                     placeholder="Prompt content..."
                     value={editForm.content}
                     onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
-                    className="w-full bg-black/20 border border-white/5 rounded text-xs text-white p-2 min-h-[60px] outline-none focus:border-[#FF3366]/50 resize-none"
+                    className="w-full bg-black/20 border border-white/5 rounded text-xs text-white p-2 min-h-[60px] outline-none focus:border-primary/50 resize-none"
                   />
                   <div className="flex justify-end gap-2 mt-2">
                     <button onClick={() => setIsEditing(null)} className="text-zinc-500 hover:text-white">

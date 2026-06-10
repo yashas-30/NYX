@@ -29,6 +29,8 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { ContextManager } from '../utils/ContextManager';
 import { formatProviderError } from '@src/infrastructure/api/streamParser';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useUsageStore } from '@src/core/stores/useUsageStore';
+import { AVAILABLE_MODELS } from '@src/shared/config/models';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,7 +54,8 @@ interface ChatPipelineProps {
     task: string,
     response: string,
     spans?: any[],
-    initialReward?: number | null
+    initialReward?: number | null,
+    antigravityId?: string
   ) => string;
   webSearchEnabled?: boolean;
   onStream?: (event: StreamEvent) => void;
@@ -79,7 +82,8 @@ interface StreamChunk {
     | 'finish'
     | 'done'
     | 'artifact'
-    | 'error';
+    | 'error'
+    | 'meta';
   content?: string;
   metadata?: any;
 }
@@ -398,6 +402,27 @@ export const useChatPipeline = ({
               break;
             }
 
+            case 'meta': {
+              const metaId = (chunk as any).antigravity_id || chunk.metadata?.antigravity_id;
+              if (metaId) {
+                safeUpdateHistory((prev) => {
+                  const next = [...prev];
+                  const last = next[next.length - 1];
+                  if (last?.role === 'assistant') {
+                    next[next.length - 1] = {
+                      ...last,
+                      metadata: {
+                        ...(last.metadata || {}),
+                        antigravity_id: metaId,
+                      },
+                    };
+                  }
+                  return next;
+                });
+              }
+              break;
+            }
+
             case 'done':
             case 'finish': {
               if (chunk.metadata?.finish_reason) {
@@ -498,6 +523,37 @@ export const useChatPipeline = ({
 
       console.log('[Chat Pipeline] Provider:', nyxProvider, 'Has API key:', !!nyxApiKey);
 
+      const modelConfig = AVAILABLE_MODELS.find(m => m.id === nyxModel);
+      if (modelConfig && modelConfig.limits) {
+        const limitCheck = useUsageStore.getState().checkLimit(nyxModel, nyxApiKey, modelConfig.limits);
+        if (limitCheck !== 'ok') {
+          const limitNames = {
+            rpm: 'requests per minute',
+            tpm: 'tokens per minute',
+            rpd: 'requests per day',
+          };
+          const limitMessage = `You have reached your limit. You are requesting more ${limitNames[limitCheck]} than the limit of the model. Please wait for a certain amount of time and retry.`;
+          
+          safeUpdateHistory((prev) => [
+            ...prev,
+            {
+              role: 'user',
+              content: sanitizedPrompt,
+              timestamp: Date.now(),
+              images,
+            },
+            {
+              role: 'assistant',
+              content: limitMessage,
+              timestamp: Date.now(),
+              status: 'error',
+              model: nyxModel,
+            }
+          ]);
+          return;
+        }
+      }
+
       // Cancel any existing request
       if (controllerRef.current) {
         controllerRef.current.abort();
@@ -553,6 +609,7 @@ export const useChatPipeline = ({
             content: '',
             timestamp: Date.now(),
             status: 'loading',
+            model: nyxModel,
           },
         ]);
 
@@ -632,7 +689,7 @@ export const useChatPipeline = ({
               } else if (executionMode === 'ab-test') {
                 const variants = configs.map((c) => ({ weight: 0.5, config: c }));
                 const res = await AIService.executeABTest(compressedPrompt, variants, baseOptions);
-                responseText = `[A/B Test Chose: ${res.model}]\n\n${res.text}`;
+                responseText = res.text;
                 metadata = res.metrics || metadata;
               }
 
@@ -651,7 +708,7 @@ export const useChatPipeline = ({
           streamTimeoutHandle = setTimeout(() => {
             controller.abort();
             reject(
-              new Error('Stream response timeout after 60 seconds - no data received from model')
+              new Error('Stream response timeout after 10 minutes - no data received from model')
             );
           }, 600000); // 10 minutes total safety timeout
         });
@@ -713,9 +770,21 @@ export const useChatPipeline = ({
 
           updateMetrics(finalMetrics);
           trackUsage(nyxProvider, finalMetrics.tokens);
+          useUsageStore.getState().recordUsage(nyxModel, nyxApiKey, finalMetrics.tokens);
 
           // 8. Log rollout
           if (logRollout && text) {
+            let antigravityId: string | undefined;
+            // Get the last assistant message
+            safeUpdateHistory((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (last?.role === 'assistant' && last.metadata?.antigravity_id) {
+                antigravityId = last.metadata.antigravity_id;
+              }
+              return next;
+            });
+            
             logRollout(
               'chat',
               sanitizedPrompt,
@@ -732,7 +801,9 @@ export const useChatPipeline = ({
                       finishReason,
                     },
                   ]
-                : []
+                : [],
+              null,
+              antigravityId
             );
           }
 
@@ -773,11 +844,23 @@ export const useChatPipeline = ({
         }
       } catch (error: any) {
         const isAborted = error?.name === 'AbortError' || controller.signal.aborted;
+        
+        let rateLimitReason: 'rpm' | 'tpm' | 'rpd' | null = null;
+        if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
+           rateLimitReason = 'rpm'; // Default to rpm since it's the most common 429
+           if (error?.message?.toLowerCase().includes('token')) rateLimitReason = 'tpm';
+           if (error?.message?.toLowerCase().includes('day') || error?.message?.toLowerCase().includes('daily')) rateLimitReason = 'rpd';
+           
+           const modelConfig = AVAILABLE_MODELS.find(m => m.id === nyxModel);
+           if (modelConfig && modelConfig.limits) {
+             useUsageStore.getState().setLimitHit(nyxModel, nyxApiKey, rateLimitReason, modelConfig.limits);
+           }
+        }
 
         if (!isAborted) console.error('[Chat Pipeline] Error:', error);
 
-        // Show error toast to user immediately
-        if (!isAborted) {
+        // Show error toast to user immediately if not a rate limit (rate limits are handled via chat message)
+        if (!isAborted && !rateLimitReason) {
           const errorMsg = formatProviderError(
             error.message ||
               'Error: Generation failed. Please check your model settings or connection.'
@@ -792,12 +875,22 @@ export const useChatPipeline = ({
             // Preserve any partial content
             const partialContent = last.content || '';
             const errorMsg = error?.message || 'Generation failed.';
+            
+            let finalContent = partialContent || (isAborted ? 'Generation stopped.' : `Error: ${errorMsg}`);
+            
+            if (rateLimitReason) {
+              const limitNames = {
+                rpm: 'requests per minute',
+                tpm: 'tokens per minute',
+                rpd: 'requests per day',
+              };
+              finalContent = `You have reached your limit. You are requesting more ${limitNames[rateLimitReason]} than the limit of the model. Please wait for a certain amount of time and retry.`;
+            }
+
             next[next.length - 1] = {
               ...last,
               status: isAborted ? 'stopped' : 'error',
-              content:
-                partialContent ||
-                (isAborted ? 'Generation stopped.' : `Error: ${errorMsg}`),
+              content: finalContent,
               metrics: {
                 ...(last.metrics || {}),
                 finishReason: isAborted ? 'stopped' : 'error',

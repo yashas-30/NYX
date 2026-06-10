@@ -61,7 +61,7 @@ export default function ModelComparisonView() {
   return (
     <div className="h-full flex flex-col bg-background text-foreground overflow-y-auto p-6 scrollbar-none">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/[0.04]">
+      <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/[0.04]">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}

@@ -27,7 +27,7 @@ export const CitationCard: React.FC<CitationCardProps> = ({
       `}
     >
       <div className="flex items-start justify-between">
-        <div className="flex items-center gap-2 text-[#FF3366]">
+        <div className="flex items-center gap-2 text-primary">
           <span className="text-[11px] font-mono bg-[#00363e] text-[#a2eeff] px-1.5 py-0.5 rounded-sm">
             [{id}]
           </span>
@@ -40,7 +40,7 @@ export const CitationCard: React.FC<CitationCardProps> = ({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[#4A5059] hover:text-[#FF3366] transition-colors"
+            className="text-[#4A5059] hover:text-primary transition-colors"
             onClick={(e) => e.stopPropagation()}
           >
             <ExternalLink className="w-3.5 h-3.5" />

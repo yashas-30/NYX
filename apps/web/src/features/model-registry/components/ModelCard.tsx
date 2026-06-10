@@ -82,7 +82,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
         {(features || pros || cons) && (
           <button 
             onClick={onToggleExpand} 
-            className={`p-1.5 rounded-md transition-colors shrink-0 ${isExpanded ? 'bg-[#FF3366]/20 text-[#FF3366]' : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'}`}
+            className={`p-1.5 rounded-md transition-colors shrink-0 ${isExpanded ? 'bg-primary/20 text-primary' : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'}`}
             title="View Details"
           >
             <Info size={16} weight={isExpanded ? "fill" : "regular"} />
@@ -173,10 +173,10 @@ export const ModelCard: React.FC<ModelCardProps> = ({
               )}
               {cons && cons.length > 0 && (
                 <div>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-[#FF3366]/80">Bad</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-destructive/80">Bad</span>
                   <ul className="list-disc list-outside ml-3 mt-1 space-y-0.5">
                     {cons.map((c, i) => (
-                      <li key={i} className="text-[10px] text-[#FF3366]/90 leading-snug">{c}</li>
+                      <li key={i} className="text-[10px] text-destructive/90 leading-snug">{c}</li>
                     ))}
                   </ul>
                 </div>

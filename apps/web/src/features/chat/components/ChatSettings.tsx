@@ -1,5 +1,6 @@
 import React from 'react';
-import { X, Settings2, Sliders, Zap, Database } from 'lucide-react';
+import { X, Settings2, Sliders, Zap, Database, BrainCircuit, Maximize } from 'lucide-react';
+import { useSettingsStore } from '../../../core/stores/useSettingsStore';
 
 interface ChatSettingsProps {
   isOpen: boolean;
@@ -7,13 +8,15 @@ interface ChatSettingsProps {
 }
 
 export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) => {
+  const { chatSettings, updateChatSettings } = useSettingsStore();
+
   if (!isOpen) return null;
 
   return (
     <div className="absolute top-0 right-0 w-80 h-full bg-[#09090B] border-l border-[rgba(255,255,255,0.06)] shadow-sm border border-border z-40 flex flex-col transform transition-transform duration-300">
       <div className="flex items-center justify-between p-4 border-b border-[rgba(255,255,255,0.06)] bg-[#0e1416]">
         <div className="flex items-center gap-2 text-[#F8FAFC]">
-          <Settings2 className="w-5 h-5 text-[#FF3366]" />
+          <Settings2 className="w-5 h-5 text-primary" />
           <span className="font-medium">Model Settings</span>
         </div>
         <button
@@ -32,15 +35,16 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
               <Sliders className="w-4 h-4 text-[#4A5059]" />
               Temperature
             </label>
-            <span className="text-[12px] font-mono text-[#FF3366]">0.7</span>
+            <span className="text-[12px] font-mono text-primary">{chatSettings.temperature ?? 0.7}</span>
           </div>
           <input
             type="range"
             min="0"
             max="1"
             step="0.1"
-            defaultValue="0.7"
-            className="w-full accent-[#FF3366] h-1 bg-[#18181B] rounded-md appearance-none cursor-pointer"
+            value={chatSettings.temperature ?? 0.7}
+            onChange={(e) => updateChatSettings({ temperature: parseFloat(e.target.value) })}
+            className="w-full accent-primary h-1 bg-[#18181B] rounded-md appearance-none cursor-pointer"
           />
           <p className="text-[11px] text-[#4A5059] leading-relaxed">
             Controls randomness: Lower values are more deterministic, higher values are more
@@ -53,17 +57,45 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
           <div className="flex items-center justify-between">
             <label className="text-[13px] font-medium text-[#F8FAFC] flex items-center gap-2">
               <Database className="w-4 h-4 text-[#4A5059]" />
-              Context Window
+              Max Output Tokens
             </label>
-            <span className="text-[12px] font-mono text-[#FF3366]">8K</span>
+            <span className="text-[12px] font-mono text-primary">{chatSettings.maxTokens ?? 8192}</span>
           </div>
-          <select className="w-full bg-[#18181B] border border-[rgba(255,255,255,0.06)] rounded text-[13px] text-[#F8FAFC] p-2 focus:outline-none focus:border-[#FF3366]">
-            <option>4096 tokens</option>
-            <option selected>8192 tokens</option>
-            <option>16384 tokens</option>
-            <option>32768 tokens</option>
+          <select 
+            value={chatSettings.maxTokens ?? 8192}
+            onChange={(e) => updateChatSettings({ maxTokens: parseInt(e.target.value) })}
+            className="w-full bg-[#18181B] border border-[rgba(255,255,255,0.06)] rounded text-[13px] text-[#F8FAFC] p-2 focus:outline-none focus:border-primary"
+          >
+            <option value="4096">4096 tokens</option>
+            <option value="8192">8192 tokens</option>
+            <option value="16384">16384 tokens</option>
+            <option value="32768">32768 tokens</option>
           </select>
         </div>
+
+        {/* Context Optimizer Mode */}
+        <div className="space-y-3 pt-4 border-t border-[rgba(255,255,255,0.06)]">
+          <div className="flex items-center justify-between">
+            <label className="text-[13px] font-medium text-[#F8FAFC] flex items-center gap-2">
+              <BrainCircuit className="w-4 h-4 text-[#4A5059]" />
+              Context Optimizer
+            </label>
+          </div>
+          <select 
+            value={chatSettings.contextMode ?? 'prune'}
+            onChange={(e) => updateChatSettings({ contextMode: e.target.value as 'off' | 'prune' | 'summarize' })}
+            className="w-full bg-[#18181B] border border-[rgba(255,255,255,0.06)] rounded text-[13px] text-[#F8FAFC] p-2 focus:outline-none focus:border-primary"
+          >
+            <option value="off">Off (Fixed Context)</option>
+            <option value="prune">Prune Middle (Fast)</option>
+            <option value="summarize">Summarize Middle (Smart)</option>
+          </select>
+          <p className="text-[11px] text-[#4A5059] leading-relaxed">
+            Dynamic context management. "Prune" drops old messages. "Summarize" uses AI to dense old context.
+          </p>
+        </div>
+
+
 
         {/* Features Toggle */}
         <div className="space-y-4 pt-4 border-t border-[rgba(255,255,255,0.06)]">
@@ -78,7 +110,7 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
             </span>
             <input
               type="checkbox"
-              className="accent-[#FF3366] w-4 h-4 bg-[#18181B] border-[rgba(255,255,255,0.06)]"
+              className="accent-primary w-4 h-4 bg-[#18181B] border-[rgba(255,255,255,0.06)]"
               defaultChecked
             />
           </label>
@@ -89,8 +121,9 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
             </span>
             <input
               type="checkbox"
-              className="accent-[#FF3366] w-4 h-4 bg-[#18181B] border-[rgba(255,255,255,0.06)]"
-              defaultChecked
+              checked={chatSettings.antigravity ?? true}
+              onChange={(e) => updateChatSettings({ antigravity: e.target.checked })}
+              className="accent-primary w-4 h-4 bg-[#18181B] border-[rgba(255,255,255,0.06)]"
             />
           </label>
         </div>

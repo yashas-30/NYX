@@ -16,7 +16,7 @@ describe('modelUtils', () => {
       expect(resolveRealGeminiModel('gemini-3-flash')).toBe('gemini-3-flash-preview');
       expect(resolveRealGeminiModel('gemini-3.1-pro')).toBe('gemini-3.1-pro-preview');
       expect(resolveRealGeminiModel('gemini-2.5-pro')).toBe('gemini-2.5-pro');
-      expect(resolveRealGeminiModel('gemma-4-27b-it')).toBe('gemma-4-26b-a4b-it');
+      expect(resolveRealGeminiModel('gemma-4-26b-it')).toBe('gemma-4-26b-a4b-it');
     });
 
     it('should pass through unknown model IDs unchanged', () => {

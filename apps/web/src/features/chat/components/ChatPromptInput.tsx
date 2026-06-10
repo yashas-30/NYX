@@ -34,6 +34,9 @@ import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { PromptTemplateManager } from './PromptTemplateManager';
 import { SectionLabel, ParamSlider, ToolButton } from '@shared/components/PromptInputSubcomponents';
 import { LocalModelSettingsPanel } from '@shared/components/LocalModelSettingsPanel';
+import { initVoiceMode } from '@src/features/voice/vad';
+import { SpeechToTextHelper } from '@src/features/voice/speechToText';
+
 
 interface ChatPromptInputProps {
   prompt: string;
@@ -125,6 +128,78 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const [isFocused, setIsFocused] = useState(false);
   const isSubmitting = useRef(false);
   const localSettings = modelSettings;
+
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [voiceEngine, setVoiceEngine] = useState<'browser' | 'vad'>('browser');
+  const [showVoiceMenu, setShowVoiceMenu] = useState(false);
+  const vadRef = useRef<any>(null);
+  const sttRef = useRef<any>(null);
+  const basePromptRef = useRef('');
+
+  useEffect(() => {
+    return () => {
+      if (vadRef.current) vadRef.current.pause();
+      if (sttRef.current) sttRef.current.stop();
+    };
+  }, []);
+
+  const toggleVoice = useCallback(async () => {
+    if (isVoiceActive) {
+      if (voiceEngine === 'vad') {
+        if (vadRef.current) {
+          vadRef.current.pause();
+          vadRef.current = null;
+        }
+      } else {
+        if (sttRef.current) {
+          sttRef.current.stop();
+          sttRef.current = null;
+        }
+      }
+      setIsVoiceActive(false);
+      toast.info('Voice input stopped');
+    } else {
+      setIsVoiceActive(true);
+      basePromptRef.current = prompt;
+
+      if (voiceEngine === 'vad') {
+        toast.success('Local VAD Listening... Start speaking');
+        try {
+          const myvad = await initVoiceMode((audio) => {
+            toast.info('Processing speech (Local VAD)...');
+            onPromptChange(basePromptRef.current + (basePromptRef.current ? ' ' : '') + '[Voice Input Captured]');
+          });
+          vadRef.current = myvad;
+          if (myvad) myvad.start();
+        } catch (err) {
+          toast.error('Failed to initialize microphone');
+          setIsVoiceActive(false);
+        }
+      } else {
+        toast.success('Speech-to-Text active... Speak now');
+        try {
+          const helper = new SpeechToTextHelper({
+            onResult: (text, isFinal) => {
+              onPromptChange(basePromptRef.current + (basePromptRef.current ? ' ' : '') + text);
+            },
+            onEnd: () => {
+              setIsVoiceActive(false);
+            },
+            onError: (err) => {
+              toast.error(err);
+              setIsVoiceActive(false);
+            }
+          });
+          sttRef.current = helper;
+          helper.start();
+        } catch (err) {
+          toast.error('Speech Recognition not supported or failed');
+          setIsVoiceActive(false);
+        }
+      }
+    }
+  }, [isVoiceActive, voiceEngine, prompt, onPromptChange]);
+
 
   const [visibleTemplates, setVisibleTemplates] = useState<PromptTemplate[]>([]);
   const [templateSelectedIndex, setTemplateSelectedIndex] = useState(0);
@@ -300,11 +375,11 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     const ta = textareaRef.current;
     if (!ta) return;
     if (reset) {
-      ta.style.height = '56px';
+      ta.style.height = '36px';
       return;
     }
-    ta.style.height = '56px';
-    ta.style.height = `${Math.max(56, Math.min(ta.scrollHeight, 150))}px`;
+    ta.style.height = '36px';
+    ta.style.height = `${Math.max(36, Math.min(ta.scrollHeight, 150))}px`;
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -375,8 +450,8 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     localSettings.gpuLayers === 0
       ? 'text-zinc-400'
       : localSettings.gpuLayers < 50
-        ? 'text-[#FF3366]/70'
-        : 'text-[#FF3366]';
+        ? 'text-primary/70'
+        : 'text-primary';
 
   return (
     <div className="shrink-0 w-full flex flex-col items-center px-4 pb-4 pt-2 bg-background z-30 gap-2">
@@ -508,9 +583,97 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   </span>
                   <span className="text-[9.5px] font-bold tracking-tight">Reset context</span>
                 </motion.button>
+
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Voice Input Tag with Dropdown */}
+                <div className="relative flex items-center shrink-0">
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1.5, scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={toggleVoice}
+                    className={`flex items-center justify-center w-6 h-6 rounded-l-md border transition-all cursor-pointer shrink-0 ${
+                      isVoiceActive
+                        ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400 font-bold'
+                        : 'bg-secondary border-border text-muted-foreground hover:text-foreground'
+                    }`}
+                    title={isVoiceActive ? 'Stop Voice Input' : 'Voice Input'}
+                  >
+                    <Mic size={11} className={isVoiceActive ? 'animate-pulse text-emerald-500 dark:text-emerald-400' : 'text-muted-foreground'} />
+                  </motion.button>
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1.5, scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={() => setShowVoiceMenu((prev) => !prev)}
+                    className={`flex items-center justify-center w-4 h-6 rounded-r-md border-y border-r transition-all cursor-pointer shrink-0 ${
+                      isVoiceActive
+                        ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-secondary border-border text-muted-foreground hover:text-foreground'
+                    }`}
+                    title="Choose Voice Engine"
+                  >
+                    <ChevronDown size={8} />
+                  </motion.button>
+
+                  <AnimatePresence>
+                    {showVoiceMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setShowVoiceMenu(false)}
+                        />
+                        <motion.div
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          className="absolute bottom-full mb-2 right-0 w-48 bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.12)] z-50 p-1 flex flex-col gap-0.5"
+                        >
+                          <div className="px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/40 mb-1">
+                            Voice Engine
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVoiceEngine('browser');
+                              setShowVoiceMenu(false);
+                              toast.info('Switched to Browser Speech API');
+                            }}
+                            className={`flex items-center justify-between px-2.5 py-1.5 rounded text-[10px] text-left transition-colors ${
+                              voiceEngine === 'browser'
+                                ? 'bg-accent/10 text-foreground font-semibold'
+                                : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                            }`}
+                          >
+                            <span>Browser Speech API (Native)</span>
+                            {voiceEngine === 'browser' && <Check size={10} className="text-accent" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVoiceEngine('vad');
+                              setShowVoiceMenu(false);
+                              toast.info('Switched to Local VAD');
+                            }}
+                            className={`flex items-center justify-between px-2.5 py-1.5 rounded text-[10px] text-left transition-colors ${
+                              voiceEngine === 'vad'
+                                ? 'bg-accent/10 text-foreground font-semibold'
+                                : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                            }`}
+                          >
+                            <span>Local VAD (Model-based)</span>
+                            {voiceEngine === 'vad' && <Check size={10} className="text-accent" />}
+                          </button>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+
                 {isLocalModel && (
                   <motion.button
                     variants={tagItemVariants}
@@ -569,24 +732,18 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   ))}
                 </div>
               )}
-              {/* Microphone dictation button - absolute top right */}
-              <div className="absolute top-2 right-2 flex items-center gap-1.5 group/mic z-10 select-none">
-                <div className="flex items-center gap-[1.5px] h-2.5 opacity-0 group-hover/mic:opacity-100 transition-opacity duration-300 pointer-events-none">
-                  <span className="w-[1.5px] h-full bg-emerald-500 rounded-md animate-[bounce_0.6s_infinite_100ms]" />
-                  <span className="w-[1.5px] h-full bg-emerald-500 rounded-md animate-[bounce_0.6s_infinite_300ms]" />
-                  <span className="w-[1.5px] h-full bg-emerald-500 rounded-md animate-[bounce_0.6s_infinite_200ms]" />
+              {/* Voice indicator animation if listening */}
+              {isVoiceActive && (
+                <div className="absolute top-2 right-2 flex items-center gap-[2px] h-3 z-10 select-none pointer-events-none bg-background/80 px-1.5 py-0.5 rounded-full border border-emerald-500/20">
+                  <span className="w-1 h-1 bg-emerald-500 rounded-full animate-ping" />
+                  <span className="text-[8px] text-emerald-500 font-bold uppercase tracking-wider font-mono">REC</span>
+                  <div className="flex items-center gap-[1px] h-1.5 ml-1">
+                    <span className="w-[1px] h-full bg-emerald-500 rounded-md animate-[bounce_0.5s_infinite_100ms]" />
+                    <span className="w-[1px] h-full bg-emerald-500 rounded-md animate-[bounce_0.5s_infinite_200ms]" />
+                    <span className="w-[1px] h-full bg-emerald-500 rounded-md animate-[bounce_0.5s_infinite_300ms]" />
+                  </div>
                 </div>
-
-                <motion.button
-                  whileHover={{ scale: 1.08, color: 'var(--foreground)' }}
-                  whileTap={{ scale: 0.9 }}
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground transition-all cursor-pointer p-1"
-                  title="Voice Input"
-                >
-                  <Mic size={14} />
-                </motion.button>
-              </div>
+              )}
 
               {/* Submit / Stop button - absolute bottom right */}
               <div className="absolute bottom-2 right-2 z-10 select-none">
@@ -640,7 +797,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder="Ask anything..."
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1 px-1 resize-none min-h-[80px] max-h-[150px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/40 focus:outline-none"
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1 px-1 resize-none min-h-[36px] max-h-[150px] font-medium outline-none text-foreground/90 placeholder:text-muted-foreground/40 focus:outline-none"
                   style={{ scrollbarWidth: 'none' }}
                 />
               </div>

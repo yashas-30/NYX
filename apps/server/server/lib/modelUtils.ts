@@ -14,7 +14,7 @@ export const ABSTENTION_INSTRUCTION = `IMPORTANT: If you are unsure about an API
 // This is the single source of truth — import from here instead of duplicating.
 const GEMINI_MODEL_MAP: Record<string, string> = {
   'gemma-4-31b-it': 'gemma-4-31b-it',
-  'gemma-4-27b-it': 'gemma-4-26b-a4b-it',
+  'gemma-4-26b-it': 'gemma-4-26b-a4b-it',
   'gemini-3.5-flash': 'gemini-3.5-flash',
   'gemini-3-flash': 'gemini-3-flash-preview',
   'gemini-3-flash-preview': 'gemini-3-flash-preview',

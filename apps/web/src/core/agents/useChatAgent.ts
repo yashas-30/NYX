@@ -123,7 +123,7 @@ export function useChatAgent() {
           analysis,
           new AbortController().signal,
           undefined,
-          images as unknown as File[]
+          images as any
         );
 
         for await (const event of stream) {

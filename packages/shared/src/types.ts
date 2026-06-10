@@ -47,9 +47,11 @@ export const ChatMessageSchema = z.object({
     url: z.string().optional(),
   })).optional(),
   reasoning: z.string().optional(),
+  model: z.string().optional(),
   toolCalls: z.array(z.any()).optional(),
   citations: z.array(z.any()).optional(),
   artifacts: z.array(z.any()).optional(),
+  metadata: z.any().optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
@@ -79,6 +81,11 @@ export const ModelOptionSchema = z.object({
   features: z.array(z.string()).optional(),
   pros: z.array(z.string()).optional(),
   cons: z.array(z.string()).optional(),
+  limits: z.object({
+    rpm: z.number().nullable(),
+    tpm: z.number().nullable(),
+    rpd: z.number().nullable(),
+  }).optional(),
 });
 export type ModelOption = z.infer<typeof ModelOptionSchema>;
 
