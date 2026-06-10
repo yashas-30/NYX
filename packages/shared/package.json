@@ -13,11 +13,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "zod": "^3.22.4"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@nyx/config": "workspace:*",
     "tsup": "^8.0.2",
-    "typescript": "~5.8.2"
+    "typescript": "~6.0.3"
   }
 }
