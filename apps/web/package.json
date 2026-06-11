@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wait-on tcp:3001 -t 120000 && vite",
+    "dev": "wait-on tcp:3001 -t 300000 && vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -101,6 +101,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^5.2.0",
     "@vitest/coverage-v8": "^4.1.8",
+    "@zerostep/playwright": "^0.1.5",
     "autoprefixer": "^10.5.0",
     "jsdom": "^29.1.1",
     "msw": "^2.14.6",

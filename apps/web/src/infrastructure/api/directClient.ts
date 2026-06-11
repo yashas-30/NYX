@@ -111,10 +111,10 @@ async function fetchWithRetry(
   try {
     const response = await fetch(url, { ...fetchInit, signal });
 
-    // Retry on rate limit or server error
+    // Retry on server error, but NOT on rate limit (429) per user request
     if (
       !response.ok &&
-      (response.status === 429 || response.status >= 500) &&
+      response.status >= 500 &&
       attempt <= MAX_RETRIES
     ) {
       const retryAfter = response.headers.get('Retry-After');
@@ -319,7 +319,8 @@ Just give the final answer in a natural, conversational tone.`;
     requestBody.generationConfig.temperature = 0.7;
     requestBody.generationConfig.topP = 0.95;
     requestBody.generationConfig.topK = 40;
-    requestBody.generationConfig.maxOutputTokens = 2048;
+    // No maxOutputTokens cap — Gemma models support unlimited output natively
+    delete requestBody.generationConfig.maxOutputTokens;
   }
 
 
@@ -438,18 +439,25 @@ Just give the final answer in a natural, conversational tone.`;
     .join('');
   const finishReason = data.candidates?.[0]?.finishReason;
 
-  if (!text) {
+  const reasoning = parts
+    .filter((part: any) => part.thought)
+    .map((part: any) => part.text)
+    .filter(Boolean)
+    .join('');
+
+  if (!text && !reasoning) {
     throw new Error('Gemini API returned no response text.');
   }
 
   const latency = Math.round(performance.now() - startTime);
   const inputTokens = Math.ceil(prompt.length / 4); // heuristic
-  const outputTokens = Math.ceil(text.length / 4);
+  const outputTokens = Math.ceil((text || reasoning).length / 4);
   const tokens = inputTokens + outputTokens;
   const cost = estimateCost(realModel, inputTokens, outputTokens);
 
   return {
     text,
+    reasoning: reasoning || undefined,
     metrics: {
       latency,
       tokens,

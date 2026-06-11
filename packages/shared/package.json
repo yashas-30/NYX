@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --no-dts && tsc --emitDeclarationOnly --declaration --declarationDir dist --declarationMap",
+    "build": "tsup src/index.ts --format cjs,esm --dts",
     "build:dev": "tsup src/index.ts --format cjs,esm --no-dts",
     "dev": "tsup src/index.ts --format cjs,esm --no-dts --watch",
     "typecheck": "tsc --noEmit"

@@ -111,7 +111,7 @@ export class ChatService {
       for (const h of history) {
         if (h.parts) {
           messages.push({ role: h.role, content: h.parts.map((p: any) => p.text).join('') });
-        } else if (h.content) {
+        } else if (h.content !== undefined && h.content !== null) {
           messages.push({ role: h.role, content: h.content });
         }
       }

@@ -11,6 +11,7 @@ export interface ChatRequest {
   stream?: boolean;
   images?: Array<{ mimeType?: string; dataUrl?: string; data?: string; base64?: string }>;
   webSearch?: boolean;
+  cachedContentName?: string;
 }
 
 export interface ProviderAdapter {

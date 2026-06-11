@@ -228,6 +228,44 @@ export const useChatPipeline = ({
       let hasReceivedFirstChunk = false;
       const streamStartTime = Date.now();
 
+      // Web Worker Setup
+      const worker = new Worker(new URL('../workers/streamProcessor.worker.ts', import.meta.url), { type: 'module' });
+      worker.postMessage({ type: 'reset' });
+
+      let resolveSync: (() => void) | null = null;
+      const syncPromise = new Promise<void>((resolve) => {
+        resolveSync = resolve;
+      });
+
+      worker.onmessage = (event) => {
+        if (event.data.type === 'update') {
+          const { text, reasoning, originalChunk } = event.data.payload;
+          accumulatedText = text;
+          accumulatedReasoning = reasoning;
+          
+          safeUpdateHistory((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = {
+                ...last,
+                content: text,
+                reasoning: reasoning || last.reasoning,
+              };
+            }
+            return next;
+          });
+
+          if (originalChunk.type === 'text') {
+             onStreamRef.current?.({ type: 'text', content: text } as any);
+          } else if (originalChunk.type === 'thinking' || originalChunk.type === 'reasoning') {
+             onStreamRef.current?.({ type: 'thinking', content: reasoning } as any);
+          }
+        } else if (event.data.type === 'sync_done') {
+          resolveSync?.();
+        }
+      };
+
       try {
         for await (const chunk of generator) {
           if (!hasReceivedFirstChunk) {
@@ -242,56 +280,15 @@ export const useChatPipeline = ({
             continue;
           }
 
+          // Send to worker for processing
+          worker.postMessage({ type: 'chunk', payload: chunk });
+
           switch (chunk.type) {
-            case 'text': {
-              const delta = chunk.content || '';
-              // fallow-ignore-next-line code-duplication
-              // fallow-ignore-next-line code-duplication
-              accumulatedText += delta;
-
-              safeUpdateHistory((prev) => {
-                const next = [...prev];
-                const last = next[next.length - 1];
-                if (last?.role === 'assistant') {
-                  next[next.length - 1] = {
-                    ...last,
-                    content: accumulatedText,
-                  };
-                }
-                return next;
-              });
-
-              onStreamRef.current?.({
-                type: 'text',
-                content: accumulatedText,
-              } as any);
-              break;
-            }
-
+            case 'text': 
             case 'thinking':
-            case 'reasoning': {
-              const delta = chunk.content || '';
-              // fallow-ignore-next-line code-duplication
-              accumulatedReasoning += delta;
-
-              safeUpdateHistory((prev) => {
-                const next = [...prev];
-                const last = next[next.length - 1];
-                if (last?.role === 'assistant') {
-                  next[next.length - 1] = {
-                    ...last,
-                    reasoning: accumulatedReasoning,
-                  };
-                }
-                return next;
-              });
-
-              onStreamRef.current?.({
-                type: 'thinking',
-                content: accumulatedReasoning,
-              } as any);
+            case 'reasoning':
+              // Handled by worker
               break;
-            }
 
             case 'tool_call': {
               const tc = chunk.metadata as ToolCall;
@@ -435,12 +432,18 @@ export const useChatPipeline = ({
               break;
           }
         }
+
+        // Wait for worker to finish processing all chunks
+        worker.postMessage({ type: 'sync' });
+        await syncPromise;
       } catch (err: any) {
         const isAbort = err?.name === 'AbortError' || signal.aborted;
         if (!isAbort) {
           console.error('[Chat Pipeline] Stream processing error:', err);
         }
         throw err;
+      } finally {
+        worker.terminate();
       }
 
       return { text: accumulatedText, metrics: finalMetrics, finishReason };

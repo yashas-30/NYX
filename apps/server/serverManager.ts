@@ -122,11 +122,9 @@ async function spawnNewServer(projectHash: string, configHash: string): Promise<
   // To avoid Vite Windows Proxy issues with pipes, we can allocate a dynamic port or use 3010
   const port = 3001; 
 
-  const command = process.platform === 'win32' ? 'npx' : 'npx';
-  const serverProcess = spawn(command, [
-    'tsx', 'watch', '--ignore', '../web/**', 'server.ts'
-  ], {
-    shell: process.platform === 'win32',
+  const command = process.execPath;
+  const args = ['--import', 'tsx', 'server.ts'];
+  const serverProcess = spawn(command, args, {
     detached: false, 
     stdio: 'inherit',
     env: {
@@ -159,7 +157,7 @@ async function spawnNewServer(projectHash: string, configHash: string): Promise<
   };
 
   let bound = false;
-  for (let i = 0; i < 120; i++) { // Wait up to 60s — tsx + heavy imports take time
+  for (let i = 0; i < 600; i++) { // Wait up to 300s — tsx + heavy imports take time
     if (await isServerHealthy(serverInfo)) {
       bound = true;
       break;

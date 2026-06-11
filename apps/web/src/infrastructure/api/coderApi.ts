@@ -11,7 +11,7 @@ import { AIService } from '@src/core/services/ai.service';
 // ---------------------------------------------------------------------------
 
 const DEFAULT_TIMEOUT_MS = 30000;
-const RETRYABLE_STATUSES = [429, 502, 503, 504];
+const RETRYABLE_STATUSES = [502, 503, 504];
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 500;
 
@@ -101,9 +101,9 @@ async function withRetry<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise
     } catch (error: any) {
       lastError = error;
 
-      // Don't retry user aborts or client errors (4xx except 429)
+      // Don't retry user aborts or client errors (4xx)
       if (signal?.aborted || error.name === 'AbortError') throw error;
-      if (error.status && error.status >= 400 && error.status < 500 && error.status !== 429) {
+      if (error.status && error.status >= 400 && error.status < 500) {
         throw error;
       }
 

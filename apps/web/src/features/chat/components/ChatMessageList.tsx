@@ -322,7 +322,9 @@ const MarkdownContent: React.FC<{
   isStreaming?: boolean;
   citations?: Citation[];
 }> = memo(({ content, isStreaming, citations }) => {
-  let processedContent = content;
+  const deferredContent = React.useDeferredValue(content);
+  
+  let processedContent = deferredContent;
   if (citations && citations.length > 0) {
     processedContent = content.replace(/\[(\d+)\]/g, (match, id) => {
       const cite = citations.find((c) => c.id === id);
@@ -724,7 +726,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               }
 
               return (
-                <div className="flex items-baseline gap-2 mb-2.5 select-none pl-16">
+                <div className="flex items-baseline gap-2 mb-1 select-none pl-[68px]">
                   <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
                     {displayName}
                   </span>
@@ -732,13 +734,13 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               );
             })()}
 
-            <div className="flex w-full gap-2 items-start">
+            <div className="flex w-full gap-1 items-start">
               <div className="flex-shrink-0 pt-0.5 select-none">
-                <div className="w-14 h-14 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
+                <div className="w-16 h-16 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
                   {isLoadingIcon ? (
-                    <NyxLoader size={24} className="text-foreground animate-spin" />
+                    <NyxLoader size={28} className="text-foreground animate-spin" />
                   ) : (
-                    <AnimatedLogo size={56} className="animate-fade-in" />
+                    <AnimatedLogo size={64} className="animate-fade-in" />
                   )}
                 </div>
               </div>

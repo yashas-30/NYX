@@ -27,8 +27,8 @@ const AGENT_REGISTRY: Record<string, AgentConfig> = {
     name: 'Code Reviewer',
     systemPrompt: `You are a meticulous code reviewer. Check for bugs, security issues, performance problems, and style violations.`,
     capabilities: ['review', 'security', 'performance', 'best-practices'],
-    model: 'claude-sonnet-4',
-    provider: 'openrouter',
+    model: 'gemini-2.5-pro',
+    provider: 'gemini',
     maxTokens: 4096,
     temperature: 0.1
   },

@@ -74,14 +74,10 @@ export function createTimeoutController(timeoutMs: number): AbortController {
 // ---------------------------------------------------------------------------
 
 const TRANSIENT_PATTERNS = [
-  /429/,
   /502/,
   /503/,
   /504/,
-  /RESOURCE_EXHAUSTED/,
   /UNAVAILABLE/,
-  /rate_limit/i,
-  /quota/i,
   /overloaded/i,
   /high demand/i,
   /timeout/i,
@@ -255,6 +251,15 @@ function extractContent(parsed: any): ExtractedContent {
       .join('');
     if (textParts) {
       result.text = textParts;
+    }
+
+    const thoughtParts = geminiParts
+      .filter((p: any) => p.thought)
+      .map((p: any) => p.text)
+      .filter(Boolean)
+      .join('');
+    if (thoughtParts) {
+      result.reasoning = thoughtParts;
     }
   }
 

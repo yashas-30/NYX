@@ -119,24 +119,45 @@ export class AIEngine {
     let delay = 1000;
     
     while (retries >= 0) {
+      const isGemma = realModel.toLowerCase().includes('gemma');
+      const requestBody: any = {
+        contents,
+        generationConfig: {
+          temperature: settings?.temperature ?? 0.1,
+          // Gemma models: no cap — let the API use the model's native maximum output.
+          // Other Gemini models default to 8192 to prevent runaway costs.
+          maxOutputTokens: isGemma ? undefined : (settings?.maxTokens ?? 8192),
+          topP: settings?.topP ?? 0.9,
+          topK: settings?.topK ?? 20,
+        },
+        tools: tools && tools.length > 0 ? tools : undefined,
+        cachedContent: cachedContent ? cachedContent : undefined,
+      };
+
+
+
+      if (!isGemma) {
+        requestBody.systemInstruction = systemInstruction
+          ? { role: 'system', parts: [{ text: systemInstruction + '\n\n' + ABSTENTION_INSTRUCTION }] }
+          : { role: 'system', parts: [{ text: ABSTENTION_INSTRUCTION }] };
+      } else if (systemInstruction || ABSTENTION_INSTRUCTION) {
+        // Manually prepend to the first user message
+        const combinedSystem = (systemInstruction ? systemInstruction + '\n\n' : '') + ABSTENTION_INSTRUCTION;
+        if (contents.length > 0 && contents[0].role === 'user') {
+          contents[0].parts[0].text = `System Instruction:\n${combinedSystem}\n\n${contents[0].parts[0].text}`;
+        } else {
+          contents.unshift({ role: 'user', parts: [{ text: `System Instruction:\n${combinedSystem}` }] });
+          if (contents.length > 1 && contents[1].role === 'user') {
+            contents.splice(1, 0, { role: 'model', parts: [{ text: 'Acknowledged.' }] });
+          }
+        }
+      }
+
       response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // fallow-ignore-next-line code-duplication
-        body: JSON.stringify({
-          contents,
-          systemInstruction: systemInstruction
-            ? { parts: [{ text: systemInstruction + '\n\n' + ABSTENTION_INSTRUCTION }] }
-            : { parts: [{ text: ABSTENTION_INSTRUCTION }] },
-          generationConfig: {
-            temperature: settings?.temperature ?? 0.1, // Near-greedy for code accuracy
-            maxOutputTokens: settings?.maxTokens,
-            topP: settings?.topP ?? 0.9,
-            topK: settings?.topK ?? 20,
-          },
-          tools: tools && tools.length > 0 ? tools : undefined,
-          cachedContent: cachedContent ? cachedContent : undefined,
-        }),
+        body: JSON.stringify(requestBody),
         signal,
       });
 

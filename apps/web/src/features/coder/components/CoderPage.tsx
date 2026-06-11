@@ -575,7 +575,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
             </div>
           ) : workspacePath ? (
             <div className="flex-1 w-full flex flex-row overflow-hidden bg-background">
-              <div className="w-64 flex flex-col border-r border-border bg-card">
+              <div className="w-[clamp(200px,20vw,300px)] shrink-0 flex flex-col border-r border-border bg-card">
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <WorkspaceSidebar />
                 </div>
@@ -610,7 +610,7 @@ export const CoderPage: React.FC<CoderPageProps> = ({
                   </div>
                 )}
               </div>
-              <div className="w-[400px] shrink-0 flex flex-col h-full bg-card">
+              <div className="w-[clamp(300px,30vw,450px)] shrink-0 flex flex-col h-full bg-card">
                 <ErrorBoundary
                   fallback={
                     <div className="flex-1 p-4 text-red-400 text-sm">

@@ -29,7 +29,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
   return (
     <div
-      className="w-[240px] h-full bg-secondary/30 border-r border-border flex flex-col flex-shrink-0 transition-all duration-300"
+      className="w-[clamp(200px,20vw,280px)] h-full bg-secondary/30 border-r border-border flex flex-col flex-shrink-0 transition-all duration-300"
       aria-label="Chat Sidebar"
       role="complementary"
     >

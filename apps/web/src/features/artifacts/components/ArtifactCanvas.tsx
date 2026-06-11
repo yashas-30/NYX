@@ -56,7 +56,7 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: 20 }}
         className={`bg-card border-l border-border flex flex-col transition-all duration-300 ${
-          isFullscreen ? 'fixed inset-0 z-50 w-full h-full' : 'w-[500px] h-full relative'
+          isFullscreen ? 'fixed inset-0 z-50 w-full h-full' : 'w-[clamp(350px,40vw,600px)] h-full relative'
         }`}
       >
         <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">

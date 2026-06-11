@@ -1112,11 +1112,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                 <div className="relative flex items-center shrink-0">
                   <motion.button
                     variants={tagItemVariants}
-                    whileHover={{ y: -1.5, scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     type="button"
                     onClick={toggleVoice}
-                    className={`flex items-center justify-center w-6 h-6 rounded-l-md border transition-all cursor-pointer shrink-0 ${
+                    className={`flex items-center justify-center w-6 h-6 rounded-l-md border transition-all cursor-pointer shrink-0 hover:scale-105 hover:-translate-y-[1px] ${
                       isVoiceActive
                         ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400 font-bold'
                         : 'bg-emerald-500/[0.03] border-emerald-500/10 text-emerald-100 hover:text-emerald-50'
@@ -1127,11 +1126,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
                   </motion.button>
                   <motion.button
                     variants={tagItemVariants}
-                    whileHover={{ y: -1.5, scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     type="button"
                     onClick={() => setShowVoiceMenu((prev) => !prev)}
-                    className={`flex items-center justify-center w-4 h-6 rounded-r-md border-y border-r transition-all cursor-pointer shrink-0 ${
+                    className={`flex items-center justify-center w-4 h-6 rounded-r-md border-y border-r transition-all cursor-pointer shrink-0 hover:scale-105 hover:-translate-y-[1px] ${
                       isVoiceActive
                         ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-400'
                         : 'bg-emerald-500/[0.03] border-emerald-500/10 text-emerald-100 hover:text-emerald-50'

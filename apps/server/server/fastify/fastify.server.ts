@@ -10,6 +10,7 @@ import { ProviderAdapter, ChatRequest } from './adapters/base.adapter.js';
 import { modelCache } from './modelCache.service.js';
 import { keyManager } from './keyManager.service.js';
 import { webhookService } from './webhook.service.js';
+import { vectorStore } from '../features/rag/vectorStore.js';
 import logger from '../lib/logger.js';
 
 const registry = new promClient.Registry();
@@ -140,37 +141,75 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     }
   });
 
+  const MODEL_FALLBACKS: Record<string, string[]> = {
+    // Gemini 1.5 Pro
+    'gemini-1.5-pro': ['gemini-1.5-flash', 'gemini-1.5-flash-8b'],
+    'gemini-1.5-pro-latest': ['gemini-1.5-flash-latest', 'gemini-1.5-flash-8b-latest'],
+    'gemini-1.5-pro-exp-0827': ['gemini-1.5-flash-exp-0827'],
+    
+    // Gemini 1.5 Flash
+    'gemini-1.5-flash': ['gemini-1.5-flash-8b'],
+    'gemini-1.5-flash-latest': ['gemini-1.5-flash-8b-latest'],
+
+    // Gemini 2.0 (Hypothetical / Newer)
+    'gemini-2.0-flash-exp': ['gemini-1.5-flash'],
+    'gemini-2.0-pro-exp-0205': ['gemini-2.0-flash-exp', 'gemini-1.5-pro'],
+    'gemini-2.0-flash-thinking-exp-01-21': ['gemini-2.0-flash-exp'],
+
+    // The user specifically requested examples
+    'gemini-3.5-flash': ['gemini-3.1-flash-lite', 'gemini-1.5-flash'],
+    'gemini/gemini-3.5-flash': ['gemini/gemini-3.1-flash-lite', 'gemini/gemini-1.5-flash']
+  };
+
   /**
-   * Helper function for executing a chat stream with Queue/Retry logic
+   * Helper function for executing a chat stream without retry logic (fails fast on rate limit)
    */
   async function* executeWithRetry(
     adapter: ProviderAdapter,
     chatReq: ChatRequest,
     provider: string,
-    maxRetries = 3
+    maxRetries = 1 // Kept for signature compatibility
   ): AsyncGenerator<string, void, unknown> {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const apiKey = keyManager.getNextKey(provider);
+    const apiKey = keyManager.getNextKey(provider);
+    
+    const fallbackChain = [chatReq.model];
+    // Try to find fallbacks for either exact model string or without provider prefix
+    const rawModelName = chatReq.model.replace(provider + '/', '');
+    const mappedFallbacks = MODEL_FALLBACKS[chatReq.model] || MODEL_FALLBACKS[rawModelName];
+    
+    if (mappedFallbacks) {
+      // Re-add provider prefix if it was present
+      const hasPrefix = chatReq.model.startsWith(provider + '/');
+      const formattedFallbacks = hasPrefix 
+        ? mappedFallbacks.map(m => m.startsWith(provider + '/') ? m : `${provider}/${m}`)
+        : mappedFallbacks;
+        
+      fallbackChain.push(...formattedFallbacks);
+    }
+    
+    let lastError: Error | null = null;
+
+    for (const modelAttempt of fallbackChain) {
       try {
-        const stream = adapter.streamChat(chatReq, apiKey);
+        const stream = adapter.streamChat({ ...chatReq, model: modelAttempt }, apiKey);
         for await (const chunk of stream) {
           yield chunk;
         }
-        return; // Success, exit retry loop
+        return; // Success
       } catch (err: any) {
+        lastError = err;
         if (err.message && err.message.includes('429')) {
           keyManager.markRateLimited(provider, apiKey, 60);
-          logger.warn(`[Fastify] Rate limited on attempt ${attempt} for ${provider}. Retrying...`);
-          if (attempt === maxRetries) {
-            throw new Error(`Rate limit exceeded after ${maxRetries} attempts.`);
+          logger.warn(`[Fastify] Rate limited for model ${modelAttempt}. Attempting fallback if available.`);
+          if (modelAttempt === fallbackChain[fallbackChain.length - 1]) {
+            throw new Error(`Server is busy or rate limit exceeded for ${provider} models. Please try again later.`);
           }
-          // Exponential backoff
-          await new Promise((res) => setTimeout(res, 1000 * Math.pow(2, attempt)));
         } else {
-          throw err; // Not a rate limit error, throw immediately
+          throw err;
         }
       }
     }
+    if (lastError) throw lastError;
   }
 
   app.post('/api/models/stream', async (request, reply) => {
@@ -182,6 +221,36 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     const { initFastifySse } = await import('../lib/sseHelpers.js');
     initFastifySse(reply);
     try {
+      // 1. Find the last user message to use as the search query
+      const lastMessage = chatReq.messages[chatReq.messages.length - 1];
+      if (lastMessage && lastMessage.role === 'user') {
+        const queryText = typeof lastMessage.content === 'string' 
+          ? lastMessage.content 
+          : Array.isArray(lastMessage.content) 
+            ? lastMessage.content.map((c: any) => c.type === 'text' ? c.text : '').join(' ')
+            : '';
+        
+        // 2. Search LanceDB using the selected provider's embedding model
+        if (queryText && (provider === 'gemini' || provider === 'ollama')) {
+          try {
+            const results = await vectorStore.similaritySearch(queryText, provider, 3);
+            if (results && results.length > 0) {
+              const contextText = results.map(r => `Source: ${r.source}\nContent: ${r.text}`).join('\n\n');
+              
+              // 3. Inject context into the system message
+              const systemMessage = {
+                role: 'system',
+                content: `You have access to the following reference documents. Use them to answer the user's question.\n\n[RAG CONTEXT]\n${contextText}\n[/RAG CONTEXT]`
+              };
+              
+              chatReq.messages.unshift(systemMessage);
+            }
+          } catch (ragErr: any) {
+            logger.warn({ err: ragErr.message }, '[RAG] Failed to retrieve context or table missing.');
+          }
+        }
+      }
+
       const adapter = adapters[provider];
       const cacheKey = generateCacheKey(provider, chatReq.model, chatReq.messages);
       let active = activeStreams.get(cacheKey);

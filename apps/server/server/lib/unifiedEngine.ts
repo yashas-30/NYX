@@ -339,7 +339,7 @@ export class UnifiedEngine {
             NyxTelemetry.recordRequest(currentProv.provider, currentProv.model, durationMs, tokenCount);
 
             // Cache if eligible (Phase 5.5)
-            if (!isToolRequest && tokenCount < 500 && accumulatedText) {
+            if (!isToolRequest && tokenCount < 500 && accumulatedText.trim()) {
               await CacheServer.setWithTTL(cacheKey, accumulatedText, currentProv.provider, currentProv.model, 300_000); // 5 minutes
             }
 

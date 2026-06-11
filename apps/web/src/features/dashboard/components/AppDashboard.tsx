@@ -118,7 +118,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   );
 
   const sidebarVariants = {
-    open: { width: 200, opacity: 1 },
+    open: { width: 'clamp(200px, 20vw, 280px)', opacity: 1 },
     closed: { width: 0, opacity: 0 },
   };
 
@@ -146,9 +146,9 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           initial="open"
           animate={sidebarOpen ? 'open' : 'closed'}
           transition={{ type: 'spring', stiffness: 380, damping: 35 }}
-          className={`h-full overflow-hidden flex flex-col bg-card border-r border-border relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-sm border border-border w-[200px]' : 'flex-none z-20'}`}
+          className={`h-full overflow-hidden flex flex-col bg-card border-r border-border relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-sm border border-border w-3/4 max-w-[280px]' : 'flex-none z-20 w-[clamp(200px,20vw,280px)]'}`}
         >
-          <div className="flex flex-col h-full min-w-[200px] bg-card">
+          <div className="flex flex-col h-full min-w-full bg-card">
             {/* Sidebar Top Header */}
             <div className="h-10 px-4 flex items-center select-none border-b border-border shrink-0">
               {/* Toolbar: Sidebar Toggle + Back/Forward Arrows */}

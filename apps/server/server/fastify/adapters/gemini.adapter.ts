@@ -1,4 +1,6 @@
 import { ProviderAdapter, ChatRequest } from './base.adapter.js';
+import { GoogleGenAI } from '@google/genai';
+import { resolveRealGeminiModel } from '../../lib/modelUtils.js';
 
 export function geminiContentBuilder(messages: any[], images?: any[]) {
   const contents = messages.map((m) => ({
@@ -28,13 +30,17 @@ export class GeminiAdapter implements ProviderAdapter {
   async listModels(apiKey?: string): Promise<string[]> {
     if (!apiKey) return [];
     try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
-      );
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data as any).models.map((m: any) => `gemini/${m.name.replace('models/', '')}`);
-    } catch {
+      const ai = new GoogleGenAI({ apiKey });
+      const models: string[] = [];
+      const response = await ai.models.list();
+      for await (const m of response) {
+        if (m.name) {
+          models.push(`gemini/${m.name.replace('models/', '')}`);
+        }
+      }
+      return models;
+    } catch (err) {
+      console.error('[GeminiAdapter] listModels error:', err);
       return [];
     }
   }
@@ -45,8 +51,9 @@ export class GeminiAdapter implements ProviderAdapter {
 
   async *streamChat(request: ChatRequest, apiKey?: string): AsyncGenerator<string, void, unknown> {
     if (!apiKey) throw new Error('Gemini API Key required');
-    const model = request.model.replace('gemini/', '');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+    const ai = new GoogleGenAI({ apiKey });
+    const rawModel = request.model.replace('gemini/', '');
+    const model = resolveRealGeminiModel(rawModel);
 
     let contents = geminiContentBuilder(request.messages, request.images);
 
@@ -62,7 +69,11 @@ export class GeminiAdapter implements ProviderAdapter {
       systemText = systemText ? `${systemText}\n\n${suppressReasoningInstruction}` : suppressReasoningInstruction;
       
       if (contents.length > 0 && contents[0].role === 'user') {
-        contents[0].parts.unshift({ text: `System Instruction:\n${systemText}\n\n` });
+        if (contents[0].parts && contents[0].parts.length > 0 && contents[0].parts[0].text) {
+            contents[0].parts[0].text = `System Instruction:\n${systemText}\n\n${contents[0].parts[0].text}`;
+        } else {
+            contents[0].parts.unshift({ text: `System Instruction:\n${systemText}\n\n` });
+        }
       } else {
         contents.unshift({ role: 'user', parts: [{ text: `System Instruction:\n${systemText}` }] });
         // To maintain alternating roles, insert a dummy model response if next is user
@@ -72,73 +83,72 @@ export class GeminiAdapter implements ProviderAdapter {
       }
     }
 
-    // fallow-ignore-next-line code-duplication
-    const payload: any = {
-      contents,
-      generationConfig: {
-        temperature: request.temperature ?? 0.7,
-      },
+    const isGemma = model.toLowerCase().includes('gemma');
+
+    const config: any = {
+      temperature: request.temperature ?? 0.7,
+      // Gemma models have no artificial output cap — let the API use the model's native maximum.
+      // Other Gemini models default to 8192 if not specified by the request.
+      maxOutputTokens: isGemma ? undefined : (request.max_tokens ?? 8192),
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+      ]
     };
 
-    if (systemText && !model.toLowerCase().includes('gemma')) {
-      payload.systemInstruction = {
-        parts: [{ text: systemText }]
-      };
+    if (systemText && !isGemma) {
+      config.systemInstruction = systemText;
+    }
+
+    if (request.cachedContentName) {
+      config.cachedContent = request.cachedContentName;
     }
 
     if (request.webSearch) {
-      payload.tools = [
+      config.tools = [
         {
-          googleSearchRetrieval: {
-            dynamicRetrievalConfig: {
-              mode: 'MODE_DYNAMIC',
-              dynamicThreshold: 0.7,
-            },
-          },
-        },
+          googleSearch: {}
+        }
       ];
     }
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
+    const responseStream = await ai.models.generateContentStream({
+        model: model,
+        contents: contents,
+        config: config
     });
 
-    if (!res.ok) {
-      throw new Error(`Gemini API Error ${res.status}: ${res.statusText}`);
+    let yieldedText = false;
+    let finishReason: string | undefined = '';
+    const rawChunks: any[] = [];
+
+    for await (const chunk of responseStream) {
+        rawChunks.push(chunk);
+        
+        let chunkText: string | undefined = '';
+        try { chunkText = chunk.text; } catch (e) {}
+
+        if (chunkText) {
+            yieldedText = true;
+            yield chunkText;
+        }
+        if (chunk.candidates && chunk.candidates[0]?.finishReason) {
+            finishReason = chunk.candidates[0].finishReason;
+        }
     }
 
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder('utf-8');
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.replace('data: ', '').trim();
-            if (!dataStr) continue;
-
-            try {
-              const data = JSON.parse(dataStr);
-              if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-                yield data.candidates[0].content.parts[0].text;
-              }
-            } catch (error: any) {
-              // ignore parse errors for partial chunks
-            }
-          }
+    if (!yieldedText) {
+        let blockReason = '';
+        if (rawChunks[0]?.promptFeedback?.blockReason) {
+            blockReason = `Prompt blocked: ${rawChunks[0].promptFeedback.blockReason}`;
         }
-      }
-    } finally {
-      reader.releaseLock();
+        if (finishReason) {
+            throw new Error(`Gemini API returned no text. Finish reason: ${finishReason}. Chunks: ${JSON.stringify(rawChunks)}`);
+        } else {
+            throw new Error(`Gemini API returned no response text. ${blockReason} Chunks: ${JSON.stringify(rawChunks)}`);
+        }
     }
   }
 }

@@ -248,9 +248,37 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
       const file = files[0];
 
       if (file.size > 10 * 1024 * 1024) {
-        toast.error('Image size must be less than 10MB');
+        toast.error('File size must be less than 10MB');
         return;
       }
+
+      const isImage = file.type.startsWith('image/');
+
+      if (!isImage) {
+        // Document upload for RAG
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        // Let's assume the user is using the current selected model provider, or default to gemini
+        const providerStr = String(currentModel?.provider || 'gemini');
+        
+        const res = await fetchWithAuth(`/api/rag/ingest?provider=${providerStr}`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!res.ok) {
+          throw new Error(`Failed to ingest document: ${res.statusText}`);
+        }
+
+        const data = await res.json();
+        toast.success(`Document "${file.name}" ingested into RAG memory successfully!`);
+        setIsUploadingImage(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      // Existing image upload flow
 
       const reader = new FileReader();
       reader.onload = async (event) => {
@@ -591,11 +619,10 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                 <div className="relative flex items-center shrink-0">
                   <motion.button
                     variants={tagItemVariants}
-                    whileHover={{ y: -1.5, scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     type="button"
                     onClick={toggleVoice}
-                    className={`flex items-center justify-center w-6 h-6 rounded-l-md border transition-all cursor-pointer shrink-0 ${
+                    className={`flex items-center justify-center w-6 h-6 rounded-l-md border transition-all cursor-pointer shrink-0 hover:scale-105 hover:-translate-y-[1px] ${
                       isVoiceActive
                         ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400 font-bold'
                         : 'bg-secondary border-border text-muted-foreground hover:text-foreground'
@@ -606,11 +633,10 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   </motion.button>
                   <motion.button
                     variants={tagItemVariants}
-                    whileHover={{ y: -1.5, scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     type="button"
                     onClick={() => setShowVoiceMenu((prev) => !prev)}
-                    className={`flex items-center justify-center w-4 h-6 rounded-r-md border-y border-r transition-all cursor-pointer shrink-0 ${
+                    className={`flex items-center justify-center w-4 h-6 rounded-r-md border-y border-r transition-all cursor-pointer shrink-0 hover:scale-105 hover:-translate-y-[1px] ${
                       isVoiceActive
                         ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400'
                         : 'bg-secondary border-border text-muted-foreground hover:text-foreground'

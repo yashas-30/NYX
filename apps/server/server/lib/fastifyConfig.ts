@@ -17,6 +17,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import logger from './logger.js';
+import { ragRoutes } from '../fastify/routes/rag.routes.js';
 import { env } from '../config/env.js';
 import { isProd, UPLOADS_DIR } from './paths.js';
 import { requestIdMiddleware } from '../middleware/requestId.js';
@@ -56,6 +57,7 @@ function sanitizePayload(payload: any): any {
 
 export async function buildFastifyServer(): Promise<FastifyInstance> {
   const app = fastify({
+    bodyLimit: 52428800, // 50MB
     logger: {
       transport: {
         target: 'pino/file',
@@ -316,6 +318,7 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
 
   // Mount model and application routes
   await app.register(fastifyModelRoutes);
+  await app.register(ragRoutes);
   await registerRoutes(app);
 
   await setupOpenApi(app);

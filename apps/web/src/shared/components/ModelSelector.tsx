@@ -298,7 +298,7 @@ export const ModelSelector: React.FC<Props> = ({
         {/* Main Content Split Area */}
         <div className="flex flex-1 min-h-0 gap-1.5 p-1.5 overflow-hidden">
           {/* Left Box: Providers (Gateways) */}
-          <div className="w-[120px] shrink-0 bg-muted/30 border border-border rounded-md flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar">
+          <div className="w-[clamp(100px,25%,120px)] shrink-0 bg-muted/30 border border-border rounded-md flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar">
             <span className="px-1 py-0.5 text-[6.5px] font-black uppercase tracking-[0.2em] text-muted-foreground">
               Gateways
             </span>
