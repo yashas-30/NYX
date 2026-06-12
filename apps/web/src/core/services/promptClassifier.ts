@@ -59,7 +59,7 @@ export interface ConversationState {
 }
 
 export interface AgentRoute {
-  agent: 'chat' | 'coder' | 'architect';
+  agent: 'chat' | 'architect';
   reasoning: string;
   shouldUseSubagents: boolean;
   systemPrompt: string;
@@ -895,11 +895,10 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
 
   if (analysis.intent === 'continuation' && state?.lastIntent) {
     return {
-      agent: state.lastIntent === 'general_chat' ? 'chat' : 'coder',
+      agent: 'chat',
       reasoning: `Continuing previous ${state.lastIntent} task`,
       shouldUseSubagents: false,
-      systemPrompt:
-        state.lastIntent === 'general_chat' ? SYSTEM_PROMPTS.chat : SYSTEM_PROMPTS.coder,
+      systemPrompt: SYSTEM_PROMPTS.chat,
       tools: [],
       modelTier: analysis.suggestedModel,
       temperature: 0.3, // Lower temp for consistency in continuation
@@ -909,10 +908,10 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
 
   if (analysis.intent === 'correction') {
     return {
-      agent: state?.lastIntent === 'general_chat' ? 'chat' : 'coder',
+      agent: 'chat',
       reasoning: 'User is correcting previous output — need to adapt',
       shouldUseSubagents: false,
-      systemPrompt: SYSTEM_PROMPTS.coder, // Always use coder for corrections (can handle both)
+      systemPrompt: SYSTEM_PROMPTS.coder, // Temporarily retaining the prompt string itself for structural guidance, though the agent is 'chat'
       tools:
         state?.lastIntent &&
         ['code_debug', 'code_generation', 'refactor'].includes(state.lastIntent)
@@ -987,7 +986,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
           : 1024;
 
   return {
-    agent: shouldUseSubagents ? 'architect' : 'coder',
+    agent: shouldUseSubagents ? 'architect' : 'chat',
     reasoning: `${analysis.intent} (${analysis.complexity})${analysis.multiIntent ? ` + [${analysis.multiIntent.join(', ')}]` : ''}`,
     shouldUseSubagents,
     systemPrompt: SYSTEM_PROMPTS.coder,

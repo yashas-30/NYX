@@ -1,7 +1,7 @@
 /**
  * @file src/hooks/useDashboardState.ts
  * @description Monolithic state hook refactored to manage state for AppDashboard, registry, and settings.
- * NYX is the sole agent — no Claude agent switching.
+ * NYX is the sole agent — no Coder agent switching.
  */
 
 import { useState, useEffect } from 'react';
@@ -25,16 +25,16 @@ export const useDashboardState = (onExit?: () => void) => {
     if (path === '/settings') return 'settings';
     if (path === '/compare') return 'compare';
     if (path === '/workspace') return 'workspace';
-    return 'coder';
+    return 'chat';
   })();
 
-  const setActiveMode = (mode: 'settings' | 'registry' | 'coder' | 'chat' | 'compare' | 'workspace') => {
+  const setActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare' | 'workspace') => {
     if (mode === 'chat') navigate('/chat');
     else if (mode === 'registry') navigate('/models');
     else if (mode === 'settings') navigate('/settings');
     else if (mode === 'compare') navigate('/compare');
     else if (mode === 'workspace') navigate('/workspace');
-    else navigate('/');
+    else navigate('/chat');
   };
   const [chatSettings, setChatSettings] = useState(() => {
     const saved = localStorage.getItem('nyx_chat_settings');
@@ -57,38 +57,8 @@ export const useDashboardState = (onExit?: () => void) => {
     };
   });
 
-  const [coderSettings, setCoderSettings] = useState(() => {
-    const saved = localStorage.getItem('nyx_coder_settings');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {}
-    }
-    // Fallback to legacy settings if present
-    const legacy = localStorage.getItem('nyx_model_settings');
-    if (legacy) {
-      try {
-        return JSON.parse(legacy);
-      } catch {}
-    }
-    return {
-      temperature: 0.2,
-      maxTokens: 16384,
-      topP: 0.95,
-      topK: 40,
-      gpuLayers: 99,
-      threads: 4,
-      contextSize: 2048,
-      batchSize: 512,
-      repeatPenalty: 1.1,
-      mirostat: 0,
-    };
-  });
-
-  // Split models for conversational general chat ('chat') and coding ('coder')
-  const [models, setModels] = useState<Record<'chat' | 'coder', string>>({
+  const [models, setModels] = useState<Record<'chat', string>>({
     chat: '',
-    coder: '',
   });
 
   const { usage, updateUsage: trackUsage, refreshProviderQuota } = useTokenUsage();
@@ -115,15 +85,16 @@ export const useDashboardState = (onExit?: () => void) => {
   // ── Initialization Logic ───────────────────────────────────────────────
   useEffect(() => {
     // Register global mode switch helper
-    (window as any).nyxSwitchActiveMode = (mode: 'settings' | 'registry' | 'coder' | 'chat' | 'compare' | 'workspace') => {
+    (window as any).nyxSwitchActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare' | 'workspace') => {
       setActiveMode(mode);
     };
 
     // Purge old localStorage keys to ensure compliance with vault policy
     localStorage.removeItem('llm_ref_api_keys');
     localStorage.removeItem('llm_ref_api_key');
+    localStorage.removeItem('nyx_coder_settings');
 
-    const savedModels = localStorage.getItem('nyx_coder_models_v3');
+    const savedModels = localStorage.getItem('nyx_chat_models');
     const savedLocalModelsEnabled = localStorage.getItem('llm_ref_local_models_enabled');
     if (savedLocalModelsEnabled !== null) {
       setLocalModelsEnabled(savedLocalModelsEnabled === 'true');
@@ -134,21 +105,18 @@ export const useDashboardState = (onExit?: () => void) => {
         const parsed = JSON.parse(savedModels);
         setModels({
           chat: parsed.chat || '',
-          coder: parsed.coder || '',
         });
       } catch (e: any) {
         console.error('Models load fail', e);
       }
     } else {
       // Migrate from old state if exists
-      const oldModels = localStorage.getItem('nyx_coder_models_v2');
+      const oldModels = localStorage.getItem('nyx_coder_models_v3');
       if (oldModels) {
         try {
           const parsed = JSON.parse(oldModels);
-          const legacyModel = parsed.nyx || '';
           setModels({
-            chat: legacyModel,
-            coder: legacyModel,
+            chat: parsed.chat || parsed.coder || '',
           });
         } catch {}
       }
@@ -199,7 +167,7 @@ export const useDashboardState = (onExit?: () => void) => {
   }, [localModelsEnabled]);
 
   useEffect(() => {
-    localStorage.setItem('nyx_coder_models_v3', JSON.stringify(models));
+    localStorage.setItem('nyx_chat_models', JSON.stringify(models));
   }, [models]);
 
 
@@ -208,15 +176,10 @@ export const useDashboardState = (onExit?: () => void) => {
     localStorage.setItem('nyx_chat_settings', JSON.stringify(chatSettings));
   }, [chatSettings]);
 
-  useEffect(() => {
-    localStorage.setItem('nyx_coder_settings', JSON.stringify(coderSettings));
-  }, [coderSettings]);
-
   const setModel = (mid: string) => {
-    const targetKey = activeMode === 'chat' ? 'chat' : 'coder';
     setModels((prev) => ({
       ...prev,
-      [targetKey]: mid,
+      chat: mid,
     }));
   };
 
@@ -226,13 +189,11 @@ export const useDashboardState = (onExit?: () => void) => {
     setActiveMode,
     chatSettings,
     setChatSettings,
-    coderSettings,
-    setCoderSettings,
     onExit,
 
     // Coder states — NYX only
     activeAgent: 'nyx' as const,
-    models: { nyx: models[activeMode === 'chat' ? 'chat' : 'coder'] } as Record<'nyx', string>,
+    models: { nyx: models.chat } as Record<'nyx', string>,
     modelsState: models,
     setModels,
     setModel,

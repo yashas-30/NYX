@@ -7,7 +7,6 @@ import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 
-const CoderView = lazy(() => import('@src/views/CoderView'));
 const ChatView = lazy(() => import('@src/views/ChatView'));
 const ModelRegistryView = lazy(() => import('@src/views/ModelRegistryView'));
 const SettingsView = lazy(() => import('@src/views/SettingsView'));
@@ -41,13 +40,11 @@ export interface ChatSessionHookResult {
 }
 
 interface AppRouterProps {
-  activeMode: 'chat' | 'coder' | 'registry' | 'settings' | 'compare' | 'workspace';
-  setActiveMode: (mode: 'chat' | 'coder' | 'registry' | 'settings' | 'compare' | 'workspace') => void;
+  activeMode: 'chat' | 'registry' | 'settings' | 'compare' | 'workspace';
+  setActiveMode: (mode: 'chat' | 'registry' | 'settings' | 'compare' | 'workspace') => void;
   apiKeys: Record<string, string>;
   chatSettings: ModelSettings;
   setChatSettings: (settings: ModelSettings) => void;
-  coderSettings: ModelSettings;
-  setCoderSettings: (settings: ModelSettings) => void;
   trackUsage: (provider: string, tokens: number) => void;
   statuses: Record<string, 'online' | 'offline' | 'no-key'>;
   chatSessions: ChatSessionHookResult;
@@ -57,8 +54,8 @@ interface AppRouterProps {
   setModel: (modelId: string) => void;
   updateApiKey: (provider: string, key: string) => void;
   clearApiKeys: () => void;
-  modelsState: { chat: string; coder: string };
-  setModelsState: React.Dispatch<React.SetStateAction<{ chat: string; coder: string }>>;
+  modelsState: { chat: string };
+  setModelsState: React.Dispatch<React.SetStateAction<{ chat: string }>>;
   lightningState: any;
   allModels: any[];
   onOpenLightning?: () => void;
@@ -80,8 +77,6 @@ export function AppRouter({
   apiKeys,
   chatSettings,
   setChatSettings,
-  coderSettings,
-  setCoderSettings,
   trackUsage,
   statuses,
   chatSessions,
@@ -101,33 +96,6 @@ export function AppRouter({
     <Routes>
       <Route
         path="/"
-        element={
-          <LazyRoute name="CoderPage">
-            <CoderView
-              allModels={allModels}
-              apiKeys={apiKeys}
-              modelSettings={coderSettings}
-              trackUsage={trackUsage}
-              setModelSettings={setCoderSettings}
-              providerStatuses={statuses}
-              chatSessions={chatSessions}
-              sidebarOpen={sidebarOpen}
-              onToggleSidebar={onToggleSidebar}
-              activeMode="coder"
-              setActiveMode={setActiveMode as any}
-              onOpenLightning={onOpenLightning}
-              models={{ nyx: modelsState.coder }}
-              setModel={(mid) => setModelsState((prev: any) => ({ ...prev, coder: mid }))}
-              lightningEnabled={lightningState.lightningEnabledCoder}
-              lightningDirectives={lightningState.apoDirectives.coder}
-              logRollout={lightningState.logRollout}
-              submitReward={lightningState.submitReward}
-            />
-          </LazyRoute>
-        }
-      />
-      <Route
-        path="/chat"
         element={
           <LazyRoute name="ChatPage">
             <ChatView
@@ -153,6 +121,7 @@ export function AppRouter({
           </LazyRoute>
         }
       />
+      <Route path="/chat" element={<Navigate to="/" replace />} />
       <Route
         path="/models"
         element={

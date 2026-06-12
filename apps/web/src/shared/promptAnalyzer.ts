@@ -1,6 +1,3 @@
-// Re-export prompt analyzer functions from coder services
-export { PromptAnalyzerService } from '@src/features/coder/services/promptAnalyzer';
-
 // Helper function for quick regex analysis
 export function analyzePrompt(prompt: string): any {
   // Simple heuristic analysis
@@ -97,10 +94,3 @@ export function isMissingDebugDetails(prompt: string, mode: string): boolean {
 
   return true;
 }
-
-export const MISSING_DEBUG_DETAILS_RESPONSE = `I need more information to help you debug. Please provide:
-- The error message or stack trace
-- The relevant code snippet
-- A description of what you expected vs what happened
-
-This will help me diagnose the issue more effectively.`;

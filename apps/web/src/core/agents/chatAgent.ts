@@ -120,6 +120,7 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
         gatewayUrls: (this.config.settings as any)?.gatewayUrls,
         settings: this.config.settings,
         images: images || [],
+        agentType: 'opencode',
       }),
       signal,
     });
@@ -165,6 +166,9 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
 
             if (parsed.chunk) {
               yield { type: 'text', content: parsed.chunk };
+            }
+            if (parsed.type === 'thinking') {
+              yield { type: 'thinking', content: parsed.content };
             }
             if (parsed.tool_call) {
               yield { type: 'tool_call', content: 'Calling tool...', metadata: parsed.tool_call };

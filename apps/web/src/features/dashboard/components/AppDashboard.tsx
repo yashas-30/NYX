@@ -1,8 +1,8 @@
 // @ts-nocheck
 /**
  * @file src/components/AppDashboard.tsx
- * @description Claude Desktop-style dashboard with a warm-slate sidebar, Chat/Coder pages,
- *              main chat canvas, and top-level view routing (chat / coder / registry / settings).
+ * @description Claude Desktop-style dashboard with a warm-slate sidebar, Chat page,
+ *              main chat canvas, and top-level view routing (chat / registry / settings).
  */
 
 import React, { useState } from 'react';
@@ -18,7 +18,6 @@ import {
   PanelLeftOpen,
   Plus,
   MessageSquare,
-  Box,
   Settings,
   Trash2,
   ChevronRight,
@@ -49,104 +48,97 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      if (mobile) {
-        setSidebarOpen(false);
-      } else {
-        setSidebarOpen(true);
-      }
+      if (mobile) setSidebarOpen(false);
     };
     window.addEventListener('resize', handleResize);
-    handleResize();
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const {
     activeMode,
     setActiveMode,
-    apiKeys,
     chatSettings,
     setChatSettings,
-    coderSettings,
-    setCoderSettings,
-    trackUsage,
-    statuses,
-    models,
-    setModels,
-    setModel,
-    modelsState,
+    apiKeys,
     updateApiKey,
     clearApiKeys,
+    statuses,
+    models,
+    setModel,
+    modelsState,
+    setModels,
+    localModelsEnabled,
+    setLocalModelsEnabled,
     localLibraryModels,
+    trackUsage,
   } = useDashboardState(onExit);
-
-  const allModels = React.useMemo(() => {
-    const seen = new Set();
-    const filteredAvailable = AVAILABLE_MODELS.filter((m) => m.provider !== 'ollama');
-    const merged = [...localLibraryModels, ...filteredAvailable];
-    return merged.filter((m) => {
-      if (seen.has(m.id)) return false;
-      seen.add(m.id);
-      return true;
-    });
-  }, [localLibraryModels]);
 
   const { theme } = useTheme();
 
-  // Instantiate two completely separate session pools
+  // Load standard Chat sessions
   const chatSessions = useChatSessions('chat');
-  const coderSessions = useChatSessions('coder');
 
-  // Agent Lightning state
-  const lightningState = useAgentLightning();
+  // We only have one session list now
+  const activeSessions = chatSessions;
 
-  // Select active sessions list depending on active page mode
-  const activeSessions = activeMode === 'coder' ? coderSessions : chatSessions;
   const {
     sessions,
-    folders,
     activeSid,
-    deleteSession,
+    createSession: createNewSession,
     switchSession,
-    createSession,
+    deleteSession,
+    updateSessionMeta,
     createFolder,
     deleteFolder,
-    updateSessionMeta,
+    folders,
   } = activeSessions;
 
-  const filteredSessions = sessions.filter((s) =>
-    s.title.toLowerCase().includes(searchQuery.toLowerCase())
+  // Global search filtering
+  const filteredSessions = sessions.filter(
+    (s) =>
+      s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.messages &&
+        s.messages.some((m) => m.content.toLowerCase().includes(searchQuery.toLowerCase())))
   );
 
-  const sidebarVariants = {
-    open: { width: 'clamp(200px, 20vw, 280px)', opacity: 1 },
-    closed: { width: 0, opacity: 0 },
+  const createSession = (msgs: any[]) => {
+    const newId = createNewSession();
+    switchSession(newId);
   };
 
-  return (
-    <ErrorBoundary>
-      <main
-        className={`h-[100dvh] w-screen overflow-hidden flex bg-background text-foreground antialiased selection:bg-primary/20 ${theme === 'dark' ? 'dark' : ''}`}
-      >
-        {/* Backdrop for mobile */}
-        <AnimatePresence>
-          {isMobile && sidebarOpen && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-xs z-25"
-            />
-          )}
-        </AnimatePresence>
+  const allModels = [...AVAILABLE_MODELS, ...localLibraryModels];
+  const lightningState = useAgentLightning();
 
-        {/* ── Collapsible Sidebar ────────────────────── */}
+  return (
+    <ErrorBoundary name="AppDashboard">
+      <main className="flex h-[100dvh] w-full overflow-hidden bg-background text-foreground font-sans relative selection:bg-primary/20">
+        
+        {lightningState.isLightningOpen && (
+          <AgentLightningPanel
+            onClose={lightningState.toggleLightning}
+            agentMode={activeMode === 'chat' ? 'chat' : 'coder'}
+            directives={lightningState.apoDirectives[activeMode === 'chat' ? 'chat' : 'coder']}
+            onSaveDirectives={(dirs) =>
+              lightningState.setApoDirectives({
+                ...lightningState.apoDirectives,
+                [activeMode === 'chat' ? 'chat' : 'coder']: dirs,
+              })
+            }
+            logRollout={lightningState.logRollout}
+          />
+        )}
+
+        {/* ── Desktop/Tablet Sidebar ──────────────────────────────────────── */}
         <motion.aside
-          variants={sidebarVariants}
-          initial="open"
-          animate={sidebarOpen ? 'open' : 'closed'}
-          transition={{ type: 'spring', stiffness: 380, damping: 35 }}
-          className={`h-full overflow-hidden flex flex-col bg-card border-r border-border relative z-30 ${isMobile ? 'fixed inset-y-0 left-0 shadow-sm border border-border w-3/4 max-w-[280px]' : 'flex-none z-20 w-[clamp(200px,20vw,280px)]'}`}
+          initial={false}
+          animate={{
+            width: sidebarOpen ? 260 : 0,
+            opacity: sidebarOpen ? 1 : 0,
+          }}
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          className={`flex-shrink-0 flex border-r border-border h-full bg-card overflow-hidden z-20 ${
+            isMobile && sidebarOpen ? 'absolute left-0 top-0 bottom-0 shadow-2xl' : 'relative'
+          }`}
         >
           <div className="flex flex-col h-full min-w-full bg-card">
             {/* Sidebar Top Header */}
@@ -186,8 +178,8 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 whileTap={{ scale: 0.98 }}
                 onClick={() => {
                   createSession([]);
-                  if (activeMode !== 'coder' && activeMode !== 'chat') {
-                    setActiveMode('coder');
+                  if (activeMode !== 'chat') {
+                    setActiveMode('chat');
                   }
                 }}
                 className="w-full flex items-center justify-start gap-2 px-3 py-2 rounded-md text-xs font-medium tracking-wide transition-all duration-200 cursor-pointer border border-border text-foreground bg-background mb-1 hover:bg-muted"
@@ -211,20 +203,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 <span>NYX</span>
               </button>
 
-              <button
-                onClick={() => { setActiveMode('coder'); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
-                  activeMode === 'coder'
-                    ? 'text-foreground bg-muted border border-border font-semibold'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-                }`}
-              >
-                <Box
-                  size={13}
-                  className={activeMode === 'coder' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>NYX Coder</span>
-              </button>
               <button
                 onClick={() => { setActiveMode('workspace'); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
@@ -272,8 +250,8 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         onDeleteFolder={() => deleteFolder(folder.id)}
                         onSelectSession={(id) => {
                           switchSession(id);
-                          if (activeMode !== 'coder' && activeMode !== 'chat')
-                            setActiveMode('coder');
+                          if (activeMode !== 'chat')
+                            setActiveMode('chat');
                         }}
                         onDeleteSession={deleteSession}
                         updateSessionMeta={updateSessionMeta}
@@ -291,8 +269,8 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         isActive={session.id === activeSid}
                         onClick={() => {
                           switchSession(session.id);
-                          if (activeMode !== 'coder' && activeMode !== 'chat') {
-                            setActiveMode('coder');
+                          if (activeMode !== 'chat') {
+                            setActiveMode('chat');
                           }
                         }}
                         onDelete={() => deleteSession(session.id)}
@@ -364,7 +342,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         {/* ── Collapsed Sidebar Toggle (Floating trigger) ───────────────── */}
         <AnimatePresence>
-          {!sidebarOpen && activeMode !== 'coder' && activeMode !== 'chat' && (
+          {!sidebarOpen && activeMode !== 'chat' && (
             <motion.button
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
@@ -388,8 +366,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               apiKeys={apiKeys}
               chatSettings={chatSettings}
               setChatSettings={setChatSettings}
-              coderSettings={coderSettings}
-              setCoderSettings={setCoderSettings}
               trackUsage={trackUsage}
               statuses={statuses}
               chatSessions={activeSessions}
@@ -448,188 +424,39 @@ const SideNavButton: React.FC<{
   </motion.button>
 );
 
-/* ── Recent Chat Session Item ──────────────────────────────────────────── */
-const SessionItem: React.FC<{
-  session: { id: string; title: string; updatedAt: number; folderId?: string | null };
-  isActive: boolean;
-  onClick: () => void;
-  onDelete: () => void;
-  folders?: { id: string; name: string }[];
-  onMoveToFolder?: (folderId: string | null) => void;
-}> = ({ session, isActive, onClick, onDelete, folders, onMoveToFolder }) => {
-  const [hovered, setHovered] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+/* ── Sub-components for Sidebar ──────────────── */
 
-  const timeAgo = (timestamp: number) => {
-    const diff = Date.now() - timestamp;
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'now';
-    if (mins < 60) return `${mins}m`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.floor(hours / 24);
-    return `${days}d`;
-  };
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.96 }}
-      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => {
-        setHovered(false);
-        setMenuOpen(false);
-      }}
-      className={`group relative flex items-center justify-between px-3 py-1.5 rounded-md cursor-pointer transition-all ${
-        isActive
-          ? 'text-foreground font-semibold bg-muted border border-border'
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-      }`}
-      onClick={onClick}
-    >
-      <span className="flex-1 text-[11px] truncate tracking-normal font-medium">
-        {session.title}
-      </span>
-
-      <div className="flex items-center gap-2 shrink-0 select-none ml-2 relative">
-        {(hovered || menuOpen) && onMoveToFolder && folders && folders.length > 0 && (
-          <div className="relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuOpen(!menuOpen);
-              }}
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all cursor-pointer"
-              title="Move to Folder"
-            >
-              <MoreHorizontal size={9} />
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-32 bg-popover border border-border rounded-md shadow-md py-1 z-50">
-                <div className="px-2 py-1 text-[9px] font-semibold text-muted-foreground uppercase">
-                  Move to...
-                </div>
-                {session.folderId && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMoveToFolder(null);
-                      setMenuOpen(false);
-                    }}
-                    className="w-full text-left px-3 py-1.5 text-[11px] text-foreground hover:bg-muted"
-                  >
-                    Remove from Folder
-                  </button>
-                )}
-                {folders
-                  .filter((f) => f.id !== session.folderId)
-                  .map((f) => (
-                    <button
-                      key={f.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onMoveToFolder(f.id);
-                        setMenuOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-1.5 text-[11px] text-foreground hover:bg-muted truncate"
-                    >
-                      {f.name}
-                    </button>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {hovered ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="p-1 rounded bg-destructive/10 text-destructive/60 hover:text-destructive hover:bg-destructive/20 transition-all cursor-pointer"
-            title="Delete Chat"
-          >
-            <Trash2 size={9} />
-          </button>
-        ) : isActive ? (
-          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-        ) : (
-          <span className="text-[9px] text-muted-foreground font-mono tracking-tighter">
-            {timeAgo(session.updatedAt)}
-          </span>
-        )}
-      </div>
-    </motion.div>
-  );
-};
-
-/* ── Folder Item ──────────────────────────────────────────── */
-const FolderItem: React.FC<{
-  folder: { id: string; name: string };
-  sessions: any[];
-  activeSid: string | null;
-  onDeleteFolder: () => void;
-  onSelectSession: (id: string) => void;
-  onDeleteSession: (id: string) => void;
-  updateSessionMeta: (id: string, meta: any) => void;
-  allFolders: { id: string; name: string }[];
-}> = ({
-  folder,
-  sessions,
-  activeSid,
-  onDeleteFolder,
-  onSelectSession,
-  onDeleteSession,
-  updateSessionMeta,
-  allFolders,
-}) => {
+const FolderItem = ({ folder, sessions, activeSid, onDeleteFolder, onSelectSession, onDeleteSession, updateSessionMeta, allFolders }: any) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [hovered, setHovered] = useState(false);
-
-  // Auto-open if active session is in this folder
-  React.useEffect(() => {
-    if (sessions.some((s) => s.id === activeSid)) setIsOpen(true);
-  }, [activeSid, sessions]);
-
+  
   return (
     <div className="mb-1">
-      <motion.div
-        layout
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        className="group flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+      <div 
+        className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-muted/50 cursor-pointer group transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <div className="flex items-center gap-2">
-          <Folder size={12} className={isOpen ? 'text-primary' : 'text-muted-foreground'} />
-          <span className="text-[11px] font-semibold">{folder.name}</span>
+        <div className="flex items-center gap-2 overflow-hidden">
+          <ChevronRight size={12} className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+          <Folder size={12} className="text-muted-foreground flex-shrink-0" />
+          <span className="text-[11px] font-medium truncate opacity-80">{folder.name}</span>
         </div>
-        {hovered && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeleteFolder();
-            }}
-            className="p-1 rounded bg-destructive/10 text-destructive/60 hover:text-destructive hover:bg-destructive/20 transition-all cursor-pointer"
-            title="Delete Folder"
-          >
-            <Trash2 size={9} />
-          </button>
-        )}
-      </motion.div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDeleteFolder(); }}
+          className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-400 transition-all"
+        >
+          <Trash2 size={10} />
+        </button>
+      </div>
+      
       <AnimatePresence>
         {isOpen && (
-          <motion.div
+          <motion.div 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden pl-3 border-l border-border ml-3 mt-0.5 space-y-0.5"
+            className="pl-4 mt-0.5 space-y-0.5 border-l border-border/40 ml-2.5 overflow-hidden"
           >
-            {sessions.map((session) => (
+            {sessions.length > 0 ? sessions.map((session: any) => (
               <SessionItem
                 key={session.id}
                 session={session}
@@ -637,15 +464,86 @@ const FolderItem: React.FC<{
                 onClick={() => onSelectSession(session.id)}
                 onDelete={() => onDeleteSession(session.id)}
                 folders={allFolders}
-                onMoveToFolder={(folderId) => updateSessionMeta(session.id, { folderId })}
+                onMoveToFolder={(folderId: string) => updateSessionMeta(session.id, { folderId })}
+                isNested
               />
-            ))}
-            {sessions.length === 0 && (
-              <div className="px-3 py-1.5 text-[9px] text-zinc-600">Empty</div>
+            )) : (
+              <div className="py-1 px-2 text-[10px] text-muted-foreground/50 italic">Empty folder</div>
             )}
           </motion.div>
         )}
       </AnimatePresence>
     </div>
+  );
+};
+
+const SessionItem = ({ session, isActive, onClick, onDelete, folders, onMoveToFolder, isNested = false }: any) => {
+  const [showMenu, setShowMenu] = useState(false);
+
+  return (
+    <motion.div
+      layout="position"
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.15 }}
+      className="relative group"
+      onMouseLeave={() => setShowMenu(false)}
+    >
+      <button
+        onClick={onClick}
+        className={`w-full flex items-center justify-between ${isNested ? 'px-2 py-1.5' : 'px-2.5 py-1.5'} rounded-md text-[11px] transition-all cursor-pointer ${
+          isActive
+            ? 'bg-muted/80 text-foreground font-medium shadow-sm border border-border/50'
+            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground border border-transparent'
+        }`}
+      >
+        <span className="truncate pr-2 opacity-90">{session.title || 'New Chat'}</span>
+      </button>
+
+      {/* Action buttons appear on hover */}
+      <div className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? 'opacity-100' : ''}`}>
+        <div className="relative">
+          <button 
+            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+            className={`p-1 rounded text-muted-foreground hover:text-foreground hover:bg-background shadow-sm transition-colors ${isActive ? 'bg-background/50' : ''}`}
+          >
+            <MoreHorizontal size={11} />
+          </button>
+          
+          {showMenu && (
+            <div className="absolute right-0 top-full mt-1 w-32 py-1 bg-popover border border-border rounded-md shadow-lg z-50 overflow-hidden">
+              <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-wider bg-muted/30">Move to</div>
+              <button 
+                onClick={(e) => { e.stopPropagation(); onMoveToFolder(null); setShowMenu(false); }}
+                className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-muted transition-colors"
+              >
+                No Folder
+              </button>
+              {folders?.map((f: any) => (
+                <button 
+                  key={f.id}
+                  onClick={(e) => { e.stopPropagation(); onMoveToFolder(f.id); setShowMenu(false); }}
+                  className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-muted transition-colors truncate"
+                >
+                  {f.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className={`p-1 rounded text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors ${isActive ? 'bg-background/50' : ''}`}
+          title="Delete Conversation"
+        >
+          <Trash2 size={11} />
+        </button>
+      </div>
+    </motion.div>
   );
 };

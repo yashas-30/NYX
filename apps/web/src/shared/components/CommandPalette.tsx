@@ -19,8 +19,8 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 
 interface CommandPaletteProps {
-  activeMode: 'coder' | 'registry' | 'settings' | 'chat';
-  setActiveMode: (mode: 'coder' | 'registry' | 'settings' | 'chat') => void;
+  activeMode: 'registry' | 'settings' | 'chat' | 'compare' | 'workspace';
+  setActiveMode: (mode: 'registry' | 'settings' | 'chat' | 'compare' | 'workspace') => void;
   createSession: (initialMessages?: any[]) => string;
   clearHistory: () => void;
   models: Record<'nyx', string>;
@@ -74,7 +74,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       if (cmdOrCtrl && e.key.toLowerCase() === 'n' && !e.shiftKey) {
         e.preventDefault();
         createSession([]);
-        setActiveMode(activeMode === 'chat' ? 'chat' : 'coder');
+        setActiveMode('chat');
         toast.success('Started a new conversation');
         setOpen(false);
       }
@@ -137,7 +137,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         shortcut: ['⌘', 'N'],
         action: () => {
           createSession([]);
-          setActiveMode(activeMode === 'chat' ? 'chat' : 'coder');
+          setActiveMode('chat');
           toast.success('New conversation started');
         },
       },
@@ -183,15 +183,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         icon: <MessageSquare size={16} />,
         action: () => {
           setActiveMode('chat');
-        },
-      },
-      {
-        id: 'go_coder',
-        title: 'Go to NYX Coder',
-        subtitle: 'Open the code editing and chat workspace',
-        icon: <MessageSquare size={16} />,
-        action: () => {
-          setActiveMode('coder');
         },
       },
       {
@@ -249,8 +240,25 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       setSelectedIndex((prev) => (prev - 1 + listLength) % listLength);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (listLength > 0) {
-        triggerItem(selectedIndex);
+      if (listLength === 0) return;
+
+      if (view === 'commands') {
+        const cmd = commands[selectedIndex];
+        if (cmd) {
+          cmd.action();
+          if (cmd.id !== 'switch_model') {
+            setOpen(false);
+            setQuery('');
+          }
+        }
+      } else {
+        const mdl = filteredModels[selectedIndex];
+        if (mdl) {
+          setModel(mdl.id);
+          toast.success(`Switched to ${mdl.name}`);
+          setOpen(false);
+          setQuery('');
+        }
       }
     } else if (e.key === 'Backspace' && query === '' && view === 'models') {
       e.preventDefault();
@@ -258,74 +266,54 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     }
   };
 
-  const triggerItem = (index: number) => {
-    if (view === 'commands') {
-      const cmd = commands[index];
-      if (cmd) {
-        cmd.action();
-        if (cmd.id !== 'switch_model') {
-          setOpen(false);
-          setQuery('');
-        }
-      }
-    } else if (view === 'models') {
-      const model = filteredModels[index];
-      if (model) {
-        setModel(model.id);
-        toast.success(`Active model set to: ${model.name}`);
-        setOpen(false);
-        setQuery('');
-      }
-    }
-  };
-
-  // Scroll active item into view
+  // Keep selected item in view
   useEffect(() => {
-    if (listRef.current) {
-      const activeEl = listRef.current.querySelector('[data-active="true"]');
-      if (activeEl) {
-        activeEl.scrollIntoView({ block: 'nearest' });
+    if (listRef.current && listRef.current.children.length > 0) {
+      const selectedEl = listRef.current.children[selectedIndex] as HTMLElement;
+      if (selectedEl) {
+        selectedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }
-  }, [selectedIndex]);
+  }, [selectedIndex, view, query]);
 
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] px-4">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0 }}
-            onClick={() => {
-              setOpen(false);
-              setQuery('');
-            }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-[4px]"
+            transition={{ duration: 0.15 }}
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            onClick={() => setOpen(false)}
           />
 
-          {/* Modal Container */}
+          {/* Palette Modal */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.97, y: -8 }}
+            initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: -8 }}
-            transition={{ duration: 0 }}
-            className="w-full max-w-lg overflow-hidden rounded-md bg-zinc-950 border border-white/[0.08] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] flex flex-col relative"
+            exit={{ opacity: 0, scale: 0.96, y: 10 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="relative w-full max-w-[600px] rounded-xl border border-border bg-card shadow-2xl overflow-hidden font-sans"
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Input Bar */}
-            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/[0.05]">
+            {/* Header / Input Area */}
+            <div className="flex items-center px-4 py-3 border-b border-border bg-muted/30">
               {view === 'models' ? (
                 <button
-                  onClick={() => setView('commands')}
-                  className="p-1 rounded-md text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
-                  title="Back to commands"
+                  onClick={() => {
+                    setView('commands');
+                    setQuery('');
+                  }}
+                  className="mr-3 p-1 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                  title="Back to Commands (Backspace)"
                 >
                   <ArrowLeft size={16} />
                 </button>
               ) : (
-                <Search size={18} className="text-zinc-500" />
+                <Search size={18} className="text-muted-foreground mr-3" />
               )}
               <input
                 ref={inputRef}
@@ -333,61 +321,76 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={view === 'models' ? 'Search models...' : 'Type a command or search...'}
-                className="flex-1 bg-transparent border-0 outline-0 text-sm text-zinc-100 placeholder-zinc-500 focus:ring-0"
+                placeholder={
+                  view === 'commands'
+                    ? 'Type a command or search...'
+                    : 'Search for an AI model...'
+                }
+                className="flex-1 bg-transparent border-none outline-none text-[15px] placeholder:text-muted-foreground/60 text-foreground py-1"
+                spellCheck={false}
+                autoComplete="off"
               />
-              <span className="text-[10px] font-bold text-zinc-600 bg-white/5 px-2 py-0.5 rounded border border-white/[0.02] uppercase tracking-wider select-none">
-                esc
-              </span>
+              <div className="flex items-center gap-1.5 ml-3">
+                <kbd className="hidden sm:inline-flex items-center justify-center h-5 px-1.5 rounded bg-muted border border-border text-[10px] font-medium text-muted-foreground uppercase shadow-sm">
+                  ESC
+                </kbd>
+                <span className="text-[10px] text-muted-foreground/60 hidden sm:inline">
+                  to close
+                </span>
+              </div>
             </div>
 
-            {/* List Content */}
+            {/* Results List */}
             <div
               ref={listRef}
-              className="max-h-[320px] overflow-y-auto p-2 space-y-0.5 scrollbar-thin scrollbar-thumb-white/5"
+              className="max-h-[340px] overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent"
             >
-              {view === 'commands' && (
-                <>
-                  {commands.length === 0 ? (
-                    <div className="text-center py-8 text-zinc-500 text-xs">
-                      No matching commands found.
-                    </div>
-                  ) : (
-                    commands.map((cmd, idx) => (
+              {view === 'commands' && commands.length > 0 && (
+                <div className="space-y-1">
+                  {commands.map((cmd, idx) => {
+                    const isSelected = idx === selectedIndex;
+                    return (
                       <div
                         key={cmd.id}
-                        data-active={idx === selectedIndex}
-                        onClick={() => triggerItem(idx)}
                         onMouseEnter={() => setSelectedIndex(idx)}
-                        className={`flex items-center justify-between px-3.5 py-2.5 rounded-md cursor-pointer transition-all ${
-                          idx === selectedIndex
-                            ? 'bg-white/[0.06] text-white'
-                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.02]'
+                        onClick={() => {
+                          cmd.action();
+                          if (cmd.id !== 'switch_model') {
+                            setOpen(false);
+                            setQuery('');
+                          }
+                        }}
+                        className={`flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+                          isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <span
-                            className={`p-1.5 rounded-md border transition-all ${
-                              idx === selectedIndex
-                                ? 'bg-white/10 border-white/10 text-white animate-pulse'
-                                : 'bg-white/[0.02] border-white/[0.03] text-zinc-500'
+                          <div
+                            className={`flex items-center justify-center w-7 h-7 rounded-md ${
+                              isSelected ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
                             }`}
                           >
                             {cmd.icon}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold">{cmd.title}</p>
-                            <p className="text-[10px] text-zinc-500 truncate mt-0.5">
+                          </div>
+                          <div className="flex flex-col truncate">
+                            <span className={`text-[13px] font-medium ${isSelected ? 'text-primary' : ''}`}>
+                              {cmd.title}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground truncate">
                               {cmd.subtitle}
-                            </p>
+                            </span>
                           </div>
                         </div>
                         {cmd.shortcut && (
-                          <div className="flex gap-0.5 select-none pl-2">
+                          <div className="flex items-center gap-1 ml-4 shrink-0">
                             {cmd.shortcut.map((key, i) => (
                               <kbd
                                 key={i}
-                                className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/5 text-zinc-500 border border-white/[0.02]"
+                                className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded border text-[11px] font-medium shadow-sm ${
+                                  isSelected
+                                    ? 'bg-primary/20 border-primary/30 text-primary'
+                                    : 'bg-background border-border text-muted-foreground'
+                                }`}
                               >
                                 {key}
                               </kbd>
@@ -395,94 +398,116 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                           </div>
                         )}
                       </div>
-                    ))
-                  )}
-                </>
+                    );
+                  })}
+                </div>
               )}
 
-              {view === 'models' && (
-                <>
-                  {filteredModels.length === 0 ? (
-                    <div className="text-center py-8 text-zinc-500 text-xs">
-                      No matching models found.
-                    </div>
-                  ) : (
-                    filteredModels.map((model, idx) => {
-                      const isSelected = model.id === currentModelId;
-                      return (
-                        <div
-                          key={model.id}
-                          data-active={idx === selectedIndex}
-                          onClick={() => triggerItem(idx)}
-                          onMouseEnter={() => setSelectedIndex(idx)}
-                          className={`flex items-center justify-between px-3.5 py-2.5 rounded-md cursor-pointer transition-all ${
-                            idx === selectedIndex
-                              ? 'bg-white/[0.06] text-white'
-                              : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.02]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
+              {view === 'models' && filteredModels.length > 0 && (
+                <div className="space-y-1">
+                  {filteredModels.map((mdl, idx) => {
+                    const isSelected = idx === selectedIndex;
+                    const isActive = currentModelId === mdl.id;
+                    return (
+                      <div
+                        key={mdl.id}
+                        onMouseEnter={() => setSelectedIndex(idx)}
+                        onClick={() => {
+                          setModel(mdl.id);
+                          toast.success(`Switched to ${mdl.name}`);
+                          setOpen(false);
+                          setQuery('');
+                        }}
+                        className={`flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+                          isSelected ? 'bg-primary/10' : 'hover:bg-muted'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`flex items-center justify-center w-7 h-7 rounded-md ${
+                              isActive
+                                ? 'bg-green-500/20 text-green-500'
+                                : isSelected
+                                ? 'bg-primary/20 text-primary'
+                                : 'bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            <Cpu size={14} />
+                          </div>
+                          <div className="flex flex-col truncate">
                             <span
-                              className={`p-1.5 rounded-md border transition-all ${
-                                idx === selectedIndex
-                                  ? 'bg-primary/10 border-primary/20 text-primary'
-                                  : 'bg-white/[0.02] border-white/[0.03] text-zinc-500'
+                              className={`text-[13px] font-medium flex items-center gap-2 ${
+                                isSelected ? 'text-primary' : 'text-foreground'
                               }`}
                             >
-                              <Cpu size={16} />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold flex items-center gap-1.5">
-                                <span>{model.name}</span>
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500 bg-white/5 px-1 py-0.2 rounded border border-white/[0.02]">
-                                  {model.provider}
+                              {mdl.name}
+                              {isActive && (
+                                <span className="text-[9px] uppercase tracking-widest font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">
+                                  Active
                                 </span>
-                              </p>
-                              <p className="text-[10px] text-zinc-500 truncate mt-0.5">
-                                {model.description}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 select-none">
-                            {isSelected && <Check size={14} className="text-primary" />}
-                            {idx === selectedIndex && (
-                              <CornerDownLeft size={10} className="text-zinc-500 opacity-60" />
-                            )}
+                              )}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground truncate uppercase tracking-wide">
+                              {mdl.provider} • {mdl.contextSize ? `${Math.round(mdl.contextSize / 1024)}k ctx` : 'Unknown ctx'}
+                            </span>
                           </div>
                         </div>
-                      );
-                    })
-                  )}
-                </>
+                        {isSelected && (
+                          <div className="text-primary ml-4 shrink-0 flex items-center gap-1.5 text-[11px] font-medium">
+                            <span>Select</span>
+                            <CornerDownLeft size={12} />
+                          </div>
+                        )}
+                        {isActive && !isSelected && (
+                          <div className="text-green-500 ml-4 shrink-0">
+                            <Check size={16} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Empty States */}
+              {view === 'commands' && commands.length === 0 && (
+                <div className="py-12 flex flex-col items-center justify-center text-muted-foreground">
+                  <Search size={24} className="mb-2 opacity-20" />
+                  <p className="text-[13px] font-medium">No commands found</p>
+                  <p className="text-[11px] opacity-60">Try searching for something else</p>
+                </div>
+              )}
+
+              {view === 'models' && filteredModels.length === 0 && (
+                <div className="py-12 flex flex-col items-center justify-center text-muted-foreground">
+                  <Cpu size={24} className="mb-2 opacity-20" />
+                  <p className="text-[13px] font-medium">No models found</p>
+                  <p className="text-[11px] opacity-60">Try a different search term</p>
+                </div>
               )}
             </div>
 
-            {/* Bottom Help Bar */}
-            <div className="flex items-center justify-between px-4 py-2 bg-white/[0.01] border-t border-white/[0.03] text-[10px] text-zinc-500 select-none">
+            {/* Footer */}
+            <div className="px-4 py-2 border-t border-border bg-muted/30 flex items-center justify-between text-[10px] text-muted-foreground/70 font-medium">
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1 py-0.2 rounded bg-white/5 border border-white/[0.02]">
-                    ↑↓
-                  </kbd>{' '}
-                  Navigate
+                  <kbd className="inline-flex items-center justify-center h-4 px-1 rounded border border-border/50 bg-background text-[9px] shadow-sm font-sans">
+                    ↑
+                  </kbd>
+                  <kbd className="inline-flex items-center justify-center h-4 px-1 rounded border border-border/50 bg-background text-[9px] shadow-sm font-sans">
+                    ↓
+                  </kbd>
+                  <span>Navigate</span>
                 </span>
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1 py-0.2 rounded bg-white/5 border border-white/[0.02]">
-                    Enter
-                  </kbd>{' '}
-                  Select
+                  <kbd className="inline-flex items-center justify-center h-4 px-1 rounded border border-border/50 bg-background text-[9px] shadow-sm font-sans">
+                    ↵
+                  </kbd>
+                  <span>Select</span>
                 </span>
-                {view === 'models' && (
-                  <span className="flex items-center gap-1">
-                    <kbd className="px-1 py-0.2 rounded bg-white/5 border border-white/[0.02]">
-                      Backspace
-                    </kbd>{' '}
-                    Back
-                  </span>
-                )}
               </div>
-              <div className="text-[9px] uppercase tracking-wider text-zinc-600 font-bold">
-                NYX Quick Commands
+              <div className="flex items-center gap-1">
+                <span>NYX Command Menu</span>
               </div>
             </div>
           </motion.div>

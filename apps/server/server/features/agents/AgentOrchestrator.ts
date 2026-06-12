@@ -1,238 +1,266 @@
-import { AgentConfig, Task, ExecutionPlan } from './types.js';
 import { UnifiedEngine } from '../../lib/aiEngine.js';
+import logger from '../../lib/logger.js';
+
+export interface AgentConfig {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  capabilities: string[];
+  maxTokens: number;
+  temperature: number;
+}
 
 const AGENT_REGISTRY: Record<string, AgentConfig> = {
-  architect: {
-    id: 'architect',
-    name: 'System Architect',
-    systemPrompt: `You are a system architect. Design high-level architecture, data models, and API contracts. Output structured JSON plans.`,
-    capabilities: ['architecture', 'system-design', 'api-design', 'data-modeling'],
-    model: 'gemini-2.5-pro',
-    provider: 'gemini',
+  web_explorer: {
+    id: 'web_explorer',
+    name: 'Web Explorer',
+    systemPrompt: `You are an elite research assistant. Your job is to extract exact search keywords from the user's prompt, evaluate the top 3 web results for credibility, and synthesize the facts into a clean summary with source links.`,
+    capabilities: ['search', 'fact-checking', 'research'],
     maxTokens: 4096,
     temperature: 0.2
   },
-  coder: {
-    id: 'coder',
-    name: 'Implementation Engineer',
-    systemPrompt: `You are a senior software engineer. Write complete, production-ready code. Follow the architecture provided.`,
-    capabilities: ['coding', 'implementation', 'testing', 'debugging'],
-    model: 'gemini-2.5-flash',
-    provider: 'gemini',
+  doc_cruncher: {
+    id: 'doc_cruncher',
+    name: 'Document Cruncher',
+    systemPrompt: `You are a document analysis specialist. When given an uploaded file and a question, pinpoint the exact sections of the document that answer the query. Do not assume or extrapolate beyond the provided text.`,
+    capabilities: ['rag', 'long-context', 'parsing'],
     maxTokens: 8192,
     temperature: 0.1
   },
-  reviewer: {
-    id: 'reviewer',
-    name: 'Code Reviewer',
-    systemPrompt: `You are a meticulous code reviewer. Check for bugs, security issues, performance problems, and style violations.`,
-    capabilities: ['review', 'security', 'performance', 'best-practices'],
-    model: 'gemini-2.5-pro',
-    provider: 'gemini',
+  code_interpreter: {
+    id: 'code_interpreter',
+    name: 'Code Interpreter',
+    systemPrompt: `You are a senior software engineer and statistician. If a query requires calculations or coding, write clean, executable script blocks, run them in your environment, and use the exact output to answer the user.`,
+    capabilities: ['coding', 'math', 'data-analysis', 'logic'],
     maxTokens: 4096,
     temperature: 0.1
   },
-  tester: {
-    id: 'tester',
-    name: 'QA Engineer',
-    systemPrompt: `You are a QA engineer. Write comprehensive tests, identify edge cases, and verify correctness.`,
-    capabilities: ['testing', 'edge-cases', 'verification'],
-    model: 'gemini-2.5-flash',
-    provider: 'gemini',
+  deep_planner: {
+    id: 'deep_planner',
+    name: 'Deep Planner',
+    systemPrompt: `You are a strategic planner. Do not answer immediately. First, break the user's request into a logical, multi-step checklist. Execute each step sequentially, evaluating your progress at each turn before moving forward.`,
+    capabilities: ['reasoning', 'planning', 'chain-of-thought'],
     maxTokens: 4096,
-    temperature: 0.2
+    temperature: 0.3
   },
-  optimizer: {
-    id: 'optimizer',
-    name: 'Performance Engineer',
-    systemPrompt: `You are a performance engineer. Optimize code for speed, memory, and scalability.`,
-    capabilities: ['optimization', 'performance', 'refactoring'],
-    model: 'gemini-2.5-pro',
-    provider: 'gemini',
-    maxTokens: 4096,
-    temperature: 0.1
+  persona_polisher: {
+    id: 'persona_polisher',
+    name: 'Persona & Polisher',
+    systemPrompt: `You are a master communicator. Take the raw factual information provided by the other agents and rewrite it to match the user's emotional state, expertise level, and requested format (e.g., table, bullet points, casual chat, formal essay).`,
+    capabilities: ['formatting', 'tone', 'synthesis'],
+    maxTokens: 8192,
+    temperature: 0.4
   }
 };
 
 export class AgentOrchestrator {
-  async createExecutionPlan(task: Task): Promise<ExecutionPlan> {
-    const requiredAgents = this.selectAgents(task);
-    const dependencies = this.buildDependencyGraph(requiredAgents);
-    const costEstimate = this.estimateCost(requiredAgents, task);
-
-    return {
-      agents: requiredAgents,
-      dependencies,
-      estimatedCost: costEstimate,
-      estimatedTime: this.estimateTime(requiredAgents),
-      parallelGroups: this.findParallelGroups(dependencies)
-    };
-  }
-
-  async executePlan(plan: ExecutionPlan, context: any): Promise<any> {
-    const results: Record<string, any> = {};
-
-    for (const group of plan.parallelGroups) {
-      const groupResults = await Promise.all(
-        group.map(async (agentId) => {
-          const agent = AGENT_REGISTRY[agentId];
-          const input = this.prepareAgentInput(agent, context, results);
-          const result = await this.runAgent(agent, input);
-          results[agentId] = result;
-          return result;
-        })
-      );
-    }
-
-    return results;
-  }
-
-  private selectAgents(task: Task): string[] {
-    const selected: string[] = [];
-    if (task.type === 'feature' || task.type === 'system-design') {
-      selected.push('architect');
-    }
-    selected.push('coder');
-    if (task.requirements?.includes('production')) {
-      selected.push('reviewer');
-    }
-    if (task.requirements?.includes('tests')) {
-      selected.push('tester');
-    }
-    if (task.requirements?.includes('performance')) {
-      selected.push('optimizer');
-    }
-    return selected;
-  }
-
-  private buildDependencyGraph(agents: string[]): Map<string, string[]> {
-    const graph = new Map<string, string[]>();
-    if (agents.includes('coder') && agents.includes('architect')) {
-      graph.set('coder', ['architect']);
-    }
-    if (agents.includes('reviewer') && agents.includes('coder')) {
-      graph.set('reviewer', ['coder']);
-    }
-    if (agents.includes('tester') && agents.includes('coder')) {
-      graph.set('tester', ['coder']);
-    }
-    if (agents.includes('optimizer')) {
-      const deps = ['coder'];
-      if (agents.includes('reviewer')) deps.push('reviewer');
-      graph.set('optimizer', deps);
-    }
-    return graph;
-  }
-
-  private findParallelGroups(dependencies: Map<string, string[]>): string[][] {
-    const inDegree = new Map<string, number>();
-    const adjList = new Map<string, string[]>();
-
-    for (const [agent, deps] of dependencies) {
-      inDegree.set(agent, deps.length);
-      for (const dep of deps) {
-        if (!adjList.has(dep)) adjList.set(dep, []);
-        adjList.get(dep)!.push(agent);
-      }
-    }
-
-    const allAgents = new Set<string>();
-    for (const [agent, deps] of dependencies) {
-      allAgents.add(agent);
-      for (const dep of deps) allAgents.add(dep);
-    }
-
-    for (const agent of allAgents) {
-      if (!inDegree.has(agent)) inDegree.set(agent, 0);
-    }
-
-    const groups: string[][] = [];
-    let current = Array.from(inDegree.entries())
-      .filter(([, degree]) => degree === 0)
-      .map(([agent]) => agent);
-
-    while (current.length > 0) {
-      groups.push(current);
-      const next: string[] = [];
-
-      for (const agent of current) {
-        for (const dependent of adjList.get(agent) || []) {
-          const newDegree = (inDegree.get(dependent) || 0) - 1;
-          inDegree.set(dependent, newDegree);
-          if (newDegree === 0) next.push(dependent);
-        }
-      }
-
-      current = next;
-    }
-
-    return groups;
-  }
-
-  private async runAgent(agent: AgentConfig, input: any): Promise<any> {
-    const messages = [
-      { role: 'system', content: agent.systemPrompt },
-      { role: 'user', content: input.prompt }
-    ];
-
-    let fullText = '';
+  
+  /**
+   * Supervisor LLM decides the routing.
+   */
+  async orchestrateSupervisor(
+    prompt: string, 
+    context: any,
+    onChunk: (chunk: any) => void
+  ): Promise<string> {
+    logger.info(`[Supervisor] Analyzing prompt: ${prompt.substring(0, 50)}...`);
     
-    // Override provider and model if provided in context (e.g., local model selection)
-    const providerToUse = input.provider || agent.provider;
-    const modelToUse = input.model || agent.model;
-    
+    const supervisorPrompt = `
+You are the Supervisor Agent. Your job is to analyze the user's request and decide which sub-agents to invoke.
+Available Agents:
+- deep_planner: for highly complex, multi-step tasks (e.g., itineraries, project plans).
+- web_explorer: for real-time information, news, search, fact-checking.
+- doc_cruncher: if there are large files or documents uploaded (assume standard text processing otherwise).
+- code_interpreter: for math, coding, logic puzzles, data analysis.
+- persona_polisher: ALWAYS run this agent last to format the final output.
+
+Respond ONLY with a JSON array of agent IDs in the order they should execute. 
+Example: ["deep_planner", "web_explorer", "persona_polisher"]
+
+User Request: "${prompt}"
+    `;
+
+    let routingPlanRaw = '';
     await new Promise<void>((resolve, reject) => {
       UnifiedEngine.executeStream(
         {
-          provider: providerToUse as any,
-          model: modelToUse,
-          messages: messages as any[],
-          apiKey: input.apiKey,
-          settings: { temperature: agent.temperature, maxTokens: agent.maxTokens }
+          provider: context.provider,
+          model: context.model,
+          messages: [{ role: 'user', content: supervisorPrompt }],
+          apiKey: context.apiKey,
+          settings: { temperature: 0.1, maxTokens: 500 }
         },
-        (chunk: any) => {
-          fullText += chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '';
-        },
-        () => {
-          resolve();
-        }
+        (chunk: any) => { routingPlanRaw += chunk.chunk || ''; },
+        () => resolve()
       ).catch(reject);
     });
 
-    return {
-      agent: agent.id,
-      output: fullText,
-    };
-  }
-
-  private estimateCost(agents: string[], task: Task): number {
-    return agents.reduce((sum, id) => {
-      return sum + 0.002;
-    }, 0);
-  }
-
-  private estimateTime(agents: string[]): number {
-    const groups = this.findParallelGroups(this.buildDependencyGraph(agents));
-    return groups.length * 5000;
-  }
-
-  private prepareAgentInput(agent: AgentConfig, context: any, previousResults: Record<string, any>): any {
-    let contextPrompt = context.prompt;
-    if (Object.keys(previousResults).length > 0) {
-      contextPrompt += '\n\nPrevious Agent Results:\n' + JSON.stringify(previousResults, null, 2);
+    let executionOrder: string[] = [];
+    try {
+      const match = routingPlanRaw.match(/\\[.*\\]/s) || routingPlanRaw.match(/\[.*\]/s);
+      if (match) {
+        executionOrder = JSON.parse(match[0]);
+      } else {
+        executionOrder = JSON.parse(routingPlanRaw);
+      }
+    } catch (e) {
+      logger.warn('[Supervisor] Failed to parse routing plan, defaulting to [web_explorer, persona_polisher]. Raw: ' + routingPlanRaw);
+      executionOrder = ['web_explorer', 'persona_polisher'];
     }
+
+    logger.info(`[Supervisor] Execution Plan: ${executionOrder.join(' -> ')}`);
     
-    // Resolve apiKey dynamically based on the provider we end up using
-    const overrideProvider = context.provider || agent.provider;
+    let scratchpad = '';
     
-    return {
-      prompt: contextPrompt,
-      apiKey: context.apiKeys?.[overrideProvider] || '',
-      provider: context.provider,
-      model: context.modelId || context.model,
-      previousResults,
-      codebase: context.codebase,
-      requirements: context.requirements
-    };
+    for (const agentId of executionOrder) {
+      if (!AGENT_REGISTRY[agentId]) continue;
+      
+      const agent = AGENT_REGISTRY[agentId];
+      // Stream intermediate thoughts to the UI
+      onChunk({ type: 'thinking', content: `[Supervisor] Delegating to ${agent.name}...` });
+      
+      const agentInput = scratchpad 
+        ? `Original Request: ${prompt}\n\nContext from previous agents:\n${scratchpad}\n\nPlease proceed with your specific task.`
+        : `Original Request: ${prompt}`;
+
+      const agentResult = await this.runAgent(agent, agentInput, context, onChunk);
+      
+      if (agentId === 'persona_polisher') {
+         // Final output streaming back to UI handled by runAgent chunking
+         return agentResult; 
+      } else {
+         scratchpad += `\n\n--- Output from ${agent.name} ---\n${agentResult}`;
+      }
+    }
+
+    return scratchpad;
+  }
+
+  private async runAgent(agent: AgentConfig, input: string, context: any, onChunk: (chunk: any) => void): Promise<string> {
+    const messages: any[] = [
+      { role: 'system', content: agent.systemPrompt },
+      { role: 'user', content: input }
+    ];
+
+    let fullText = '';
+    const tools = this.getToolsForAgent(agent.id);
+    
+    let isLooping = true;
+    let loopCount = 0;
+    
+    if (tools.length === 0) {
+      await new Promise<void>((resolve, reject) => {
+        UnifiedEngine.executeStream(
+          {
+            provider: context.provider,
+            model: context.model,
+            messages,
+            apiKey: context.apiKey,
+            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens }
+          },
+          (chunk: any) => {
+            if (chunk.chunk) {
+              fullText += chunk.chunk;
+              // Only stream chunks for persona polisher to the UI
+              if (agent.id === 'persona_polisher') {
+                onChunk({ chunk: chunk.chunk });
+              }
+            }
+          },
+          () => resolve()
+        ).catch(reject);
+      });
+      return fullText;
+    }
+
+    // Tool loop
+    while (isLooping && loopCount < 5) {
+      loopCount++;
+      const pendingToolCalls: any[] = [];
+      let stepText = '';
+
+      await new Promise<void>((resolve, reject) => {
+        UnifiedEngine.executeStream(
+          {
+            provider: context.provider,
+            model: context.model,
+            messages,
+            apiKey: context.apiKey,
+            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens },
+            tools
+          },
+          (chunk: any) => {
+            if (chunk.tool_call) {
+              pendingToolCalls.push(chunk.tool_call);
+              onChunk({ type: 'thinking', content: `[${agent.name}] Calling tool: ${chunk.tool_call.name}` });
+            } else if (chunk.chunk) {
+              stepText += chunk.chunk;
+              if (agent.id === 'persona_polisher') {
+                onChunk({ chunk: chunk.chunk });
+              }
+            }
+          },
+          () => resolve()
+        ).catch(reject);
+      });
+
+      fullText += stepText;
+
+      if (pendingToolCalls.length === 0) {
+        isLooping = false;
+        break;
+      }
+
+      for (const tc of pendingToolCalls) {
+        messages.push({ role: 'assistant', functionCall: tc });
+        const result = await context.executeToolCallback(tc.name, tc.arguments || tc.args);
+        messages.push({ role: 'function', functionResponse: { name: tc.name, response: result } });
+      }
+    }
+
+    return fullText;
+  }
+
+  private getToolsForAgent(agentId: string): any[] {
+    if (agentId === 'web_explorer') {
+      return [{
+        functionDeclarations: [{
+          name: 'searchWeb',
+          description: 'Search the web for real-time information.',
+          parameters: {
+            type: 'OBJECT',
+            properties: { query: { type: 'STRING' } },
+            required: ['query'],
+          },
+        }],
+      }];
+    }
+    if (agentId === 'code_interpreter') {
+      return [{
+        functionDeclarations: [{
+          name: 'execute_command',
+          description: 'Execute a terminal command',
+          parameters: {
+            type: 'OBJECT',
+            properties: { command: { type: 'STRING' } },
+            required: ['command']
+          }
+        }]
+      }];
+    }
+    if (agentId === 'doc_cruncher') {
+      return [{
+        functionDeclarations: [{
+          name: 'read_file',
+          description: 'Read a file content',
+          parameters: {
+            type: 'OBJECT',
+            properties: { path: { type: 'STRING' } },
+            required: ['path']
+          }
+        }]
+      }];
+    }
+    return [];
   }
 }

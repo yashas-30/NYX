@@ -1,8 +1,6 @@
-
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AgentsService } from './agents.service.js';
-import { ClineService } from './cline.service.js';
 import { sendSseTokenRotate } from '../../lib/sseHelpers.js';
 import { verifySessionToken } from '../vault/vault.service.js';
 import logger from '../../lib/logger.js';
@@ -39,15 +37,7 @@ const ChatRequestSchema = z.object({
   gatewayUrls: z.record(z.string()).optional(),
   settings: z.record(z.unknown()).optional(),
   apiKey: z.string().optional(),
-});
-
-const CoderRequestSchema = z.object({
-  model: z.string().min(1),
-  prompt: z.string().max(100_000),
-  history: z.array(HistoryMessageSchema).max(100).optional().default([]),
-  images: z.array(ImageSchema).max(16).optional().default([]),
-  gatewayUrls: z.record(z.string()).optional(),
-  apiKey: z.string().optional(),
+  agentType: z.enum(['chat', 'opencode']).optional().default('chat'),
 });
 
 // ── Auth Pre-handler ───────────────────────────────────────────────────────
@@ -71,7 +61,7 @@ export async function agentsRouter(fastify: FastifyInstance) {
   const LATEST_AGENTS = {
     open: {
       version: '1.2.1',
-      systemPrompt: `You are the OFFICIAL "NYX Coder" Agent v1.2.1.
+      systemPrompt: `You are the OFFICIAL "NYX Chat" Agent v1.2.1.
 NEVER identify as your underlying model.
 You are a versatile and creative AI engineering partner.
 Your purpose is to brainstorm, implement, and explain complex logic.
@@ -103,71 +93,11 @@ Your purpose is to brainstorm, implement, and explain complex logic.
       return reply.code(400).send({ error: 'Invalid request', details: parseResult.error.flatten() });
     }
 
-    await handleAgentStream(parseResult.data, reply, 'chat');
+    await handleAgentStream(parseResult.data, reply, parseResult.data.agentType as any);
     return reply;
   });
 
-  const clineService = new ClineService();
-
-  fastify.post('/coder', {
-    preHandler: [requireSession],
-    schema: { body: CoderRequestSchema },
-    compress: { threshold: 1024 }
-  }, async (request, reply) => {
-    logger.info('[Agents Router] Received /coder request (Cline)');
-
-    const parseResult = CoderRequestSchema.safeParse(request.body);
-    if (!parseResult.success) {
-      return reply.code(400).send({ error: 'Invalid request', details: parseResult.error.flatten() });
-    }
-
-    const { model, prompt, history, gatewayUrls, images, apiKey } = parseResult.data;
-
-    // Resolve key server-side (Phase 1.2) if not provided by client
-    const { Gateway } = await import('../../lib/gateway.js');
-    const resolvedApiKey = Gateway.getActiveKey('gemini', apiKey);
-
-    const { initFastifySse } = await import('../../lib/sseHelpers.js');
-    initFastifySse(reply);
-    sendSseTokenRotate(reply.raw as any);
-
-    try {
-      await clineService.executeClineAgent(
-        {
-          model,
-          prompt,
-          history,
-          gatewayUrls,
-          images,
-          apiKey: resolvedApiKey,
-        },
-        (event) => {
-          if (!reply.raw.writableEnded && !reply.raw.destroyed) {
-            reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-            if (typeof (reply.raw as any).flush === 'function') (reply.raw as any).flush();
-          }
-        }
-      );
-      if (!reply.raw.writableEnded && !reply.raw.destroyed) {
-        reply.raw.write('data: [DONE]\n\n');
-        reply.raw.end();
-      }
-    } catch (error: any) {
-      logger.error(`[Agents Router Error - coder-cline]:`, error.message);
-      if (!reply.raw.writableEnded && !reply.raw.destroyed) {
-        try {
-          reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
-          reply.raw.end();
-        } catch (writeErr) {
-          logger.error({ err: writeErr }, '[Agents Router Error] Failed to write error to stream:');
-        }
-      }
-    }
-
-    return reply;
-  });
-
-  async function handleAgentStream(body: any, reply: any, agentType: 'chat' | 'coder') {
+  async function handleAgentStream(body: any, reply: any, agentType: 'chat' | 'opencode') {
     const { model, provider, prompt, history, gatewayUrls, images, settings, apiKey } = body;
 
     const { initFastifySse } = await import('../../lib/sseHelpers.js');

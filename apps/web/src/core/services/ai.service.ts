@@ -965,7 +965,7 @@ interface ProviderConfig {
   tools?: AIServiceToolDefinition[];
   responseFormat?: ExecuteOptions['responseFormat'];
   reasoning?: boolean;
-  agentMode?: 'chat' | 'coder';
+  agentMode?: 'chat';
   webSearch?: boolean;
   streamEvents?: boolean;
 }

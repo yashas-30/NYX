@@ -201,9 +201,7 @@ You CANNOT:
 - Execute code or commands
 - Access the file system
 - Browse the internet in real-time (unless search results are provided in context)
-- Generate production-ready code (redirect to Coder Agent)
-
-If asked to code, debug, or modify files, respond: "I can help with that conceptually, but for actual code generation and file operations, please switch to the Coder Agent."
+- Generate and run production code autonomously
 </role>`);
 
   // ── Personality (Tone-Adaptive) ───────────────────────────────────────────
