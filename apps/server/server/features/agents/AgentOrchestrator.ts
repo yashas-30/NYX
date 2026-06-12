@@ -97,40 +97,57 @@ User Request: "${prompt}"
 
     let executionOrder: string[] = [];
     try {
-      const match = routingPlanRaw.match(/\\[.*\\]/s) || routingPlanRaw.match(/\[.*\]/s);
+      const jsonStr = routingPlanRaw.replace(/```json/g, '').replace(/```/g, '').trim();
+      const match = jsonStr.match(/\[(.*?)\]/s);
       if (match) {
-        executionOrder = JSON.parse(match[0]);
+        executionOrder = JSON.parse(`[${match[1]}]`);
       } else {
-        executionOrder = JSON.parse(routingPlanRaw);
+        executionOrder = JSON.parse(jsonStr);
       }
     } catch (e) {
-      logger.warn('[Supervisor] Failed to parse routing plan, defaulting to [web_explorer, persona_polisher]. Raw: ' + routingPlanRaw);
-      executionOrder = ['web_explorer', 'persona_polisher'];
+      logger.warn('[Supervisor] Failed to parse routing plan, attempting fallback extraction. Raw: ' + routingPlanRaw);
+      const possibleAgents = Object.keys(AGENT_REGISTRY);
+      executionOrder = possibleAgents.filter(agent => routingPlanRaw.includes(agent));
+      if (executionOrder.length === 0) {
+        executionOrder = ['web_explorer', 'persona_polisher'];
+      }
     }
 
     logger.info(`[Supervisor] Execution Plan: ${executionOrder.join(' -> ')}`);
     
+    const parallelAgents = executionOrder.filter(id => id !== 'persona_polisher');
+    const hasPolisher = executionOrder.includes('persona_polisher');
+
     let scratchpad = '';
     
-    for (const agentId of executionOrder) {
-      if (!AGENT_REGISTRY[agentId]) continue;
+    // Run parallel agents
+    if (parallelAgents.length > 0) {
+      onChunk({ type: 'thinking', content: `[Supervisor] Delegating to parallel agents: ${parallelAgents.join(', ')}...` });
+      const parallelPromises = parallelAgents.map(async (agentId) => {
+        if (!AGENT_REGISTRY[agentId]) return null;
+        const agent = AGENT_REGISTRY[agentId];
+        const agentInput = `Original Request: ${prompt}`;
+        const result = await this.runAgent(agent, agentInput, context, onChunk);
+        return { name: agent.name, result };
+      });
       
-      const agent = AGENT_REGISTRY[agentId];
-      // Stream intermediate thoughts to the UI
-      onChunk({ type: 'thinking', content: `[Supervisor] Delegating to ${agent.name}...` });
+      const results = await Promise.all(parallelPromises);
+      for (const res of results) {
+        if (res) {
+          scratchpad += `\n\n--- Output from ${res.name} ---\n${res.result}`;
+        }
+      }
+    }
+
+    if (hasPolisher && AGENT_REGISTRY['persona_polisher']) {
+      const polisher = AGENT_REGISTRY['persona_polisher'];
+      onChunk({ type: 'thinking', content: `[Supervisor] Finalizing output with ${polisher.name}...` });
       
-      const agentInput = scratchpad 
+      const polisherInput = scratchpad 
         ? `Original Request: ${prompt}\n\nContext from previous agents:\n${scratchpad}\n\nPlease proceed with your specific task.`
         : `Original Request: ${prompt}`;
 
-      const agentResult = await this.runAgent(agent, agentInput, context, onChunk);
-      
-      if (agentId === 'persona_polisher') {
-         // Final output streaming back to UI handled by runAgent chunking
-         return agentResult; 
-      } else {
-         scratchpad += `\n\n--- Output from ${agent.name} ---\n${agentResult}`;
-      }
+      return await this.runAgent(polisher, polisherInput, context, onChunk);
     }
 
     return scratchpad;
@@ -224,41 +241,44 @@ User Request: "${prompt}"
   private getToolsForAgent(agentId: string): any[] {
     if (agentId === 'web_explorer') {
       return [{
-        functionDeclarations: [{
+        type: 'function',
+        function: {
           name: 'searchWeb',
           description: 'Search the web for real-time information.',
           parameters: {
-            type: 'OBJECT',
-            properties: { query: { type: 'STRING' } },
+            type: 'object',
+            properties: { query: { type: 'string' } },
             required: ['query'],
           },
-        }],
+        }
       }];
     }
     if (agentId === 'code_interpreter') {
       return [{
-        functionDeclarations: [{
+        type: 'function',
+        function: {
           name: 'execute_command',
           description: 'Execute a terminal command',
           parameters: {
-            type: 'OBJECT',
-            properties: { command: { type: 'STRING' } },
+            type: 'object',
+            properties: { command: { type: 'string' } },
             required: ['command']
           }
-        }]
+        }
       }];
     }
     if (agentId === 'doc_cruncher') {
       return [{
-        functionDeclarations: [{
+        type: 'function',
+        function: {
           name: 'read_file',
           description: 'Read a file content',
           parameters: {
-            type: 'OBJECT',
-            properties: { path: { type: 'STRING' } },
+            type: 'object',
+            properties: { path: { type: 'string' } },
             required: ['path']
           }
-        }]
+        }
       }];
     }
     return [];

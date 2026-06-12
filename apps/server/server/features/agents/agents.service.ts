@@ -203,8 +203,19 @@ export class AgentsService {
       const args = typeof argsStr === 'string' ? JSON.parse(argsStr) : argsStr;
       
       if (name === 'execute_command') {
-        logger.info(`Executing command: ${args.command}`);
-        const { stdout, stderr } = await execAsync(args.command, { cwd: process.cwd() });
+        const cmd = args.command.trim();
+        logger.info(`Executing command: ${cmd}`);
+        
+        // Safety boundary: block highly destructive commands in autonomous mode
+        const destructivePatterns = [/^(rm|del)\s+-rf?/i, /^(mkfs|fdisk|dd)\b/i, /^sudo\s+(rm|del|mkfs|fdisk|dd)\b/i];
+        for (const pattern of destructivePatterns) {
+          if (pattern.test(cmd)) {
+            logger.warn(`Blocked destructive command: ${cmd}`);
+            return { error: 'Command blocked by safety boundary: Destructive commands are not permitted.' };
+          }
+        }
+        
+        const { stdout, stderr } = await execAsync(cmd, { cwd: process.cwd() });
         return { stdout: stdout.slice(0, 5000), stderr: stderr.slice(0, 5000) };
       }
       

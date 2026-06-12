@@ -64,11 +64,11 @@ export function countTokens(text: string): number {
 // ---------------------------------------------------------------------------
 const activeControllers = new Map<string, { controller: AbortController; timestamp: number }>();
 
-// Periodic cleanup of stale controllers (older than 5 minutes)
+// Periodic cleanup of stale controllers (older than 10 minutes)
 setInterval(() => {
   const now = Date.now();
   for (const [id, data] of activeControllers.entries()) {
-    if (now - data.timestamp > 300000) {
+    if (now - data.timestamp > 600000) {
       data.controller.abort();
       activeControllers.delete(id);
 
