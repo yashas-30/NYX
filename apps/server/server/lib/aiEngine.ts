@@ -6,6 +6,7 @@
 import { Gateway, Provider, ChatMessage, AISettings } from './gateway.js';
 import { env } from '../config/env.js';
 import { ABSTENTION_INSTRUCTION, resolveRealGeminiModel } from './modelUtils.js';
+import { resolveThinkingBudget } from './thinkingBudget.js';
 
 // ── Ollama keep-alive: prevents cold-start latency by keeping models loaded ─────
 // The interval uses .unref() so it won't prevent clean Node.js shutdown.
@@ -134,7 +135,19 @@ export class AIEngine {
         cachedContent: cachedContent ? cachedContent : undefined,
       };
 
-
+      // Enable thinking tokens for Gemini 2.5+ models (non-Gemma)
+      const supportsThinking = realModel.includes('2.5') || realModel.includes('3.1-pro') || realModel.includes('3.5');
+      if (supportsThinking && !isGemma) {
+        requestBody.generationConfig = {
+          ...requestBody.generationConfig,
+          thinkingConfig: {
+            includeThoughts: true,
+            thinkingBudget: settings?.thinkingBudget ?? resolveThinkingBudget(
+              messages[messages.length - 1]?.content || ''
+            ),
+          },
+        };
+      }
 
       if (!isGemma) {
         requestBody.systemInstruction = systemInstruction
@@ -183,7 +196,10 @@ export class AIEngine {
         if (typeof data === 'string') {
           write({ chunk: data });
         } else if (data && typeof data === 'object') {
-          if (data.functionCall) {
+          if (data.thinking) {
+            // Pass thinking content as a thinking chunk
+            write({ type: 'thinking', content: data.thinking });
+          } else if (data.functionCall) {
             write({ tool_call: data.functionCall });
           } else {
             write(data);
@@ -239,6 +255,42 @@ export class AIEngine {
   }
 
   /**
+   * Creates a Gemini cached content entry for a large system prompt.
+   * This allows reusing the prefix computation across multiple requests.
+   * @returns cacheId string or null if caching failed/unavailable
+   */
+  static async createCachedContent(
+    systemContent: string,
+    apiKey: string,
+    model: string = 'gemini-3.5-flash',
+    ttlSeconds: number = 3600
+  ): Promise<string | null> {
+    // Minimum 32K tokens to make caching worthwhile (~128K chars)
+    if (!apiKey || systemContent.length < 4096) return null;
+    try {
+      const { resolveRealGeminiModel } = await import('./modelUtils.js');
+      const realModel = resolveRealGeminiModel(model);
+      const url = `https://generativelanguage.googleapis.com/v1beta/cachedContents?key=${apiKey}`;
+      const body = {
+        model: `models/${realModel}`,
+        contents: [{ role: 'user', parts: [{ text: systemContent }] }],
+        ttl: `${ttlSeconds}s`,
+      };
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) return null;
+      const data: any = await res.json();
+      return data.name || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Streams responses from a local Ollama instance (OpenAI-compatible API).
    */
   private static async streamOllama(
@@ -286,8 +338,17 @@ export class AIEngine {
           if (typeof data === 'string') {
             write({ chunk: data });
           } else if (data && typeof data === 'object') {
-            if (data.functionCall) write({ tool_call: data.functionCall });
-            else write(data);
+            // Gemini-style functionCall
+            if (data.functionCall) {
+              write({ tool_call: data.functionCall });
+            // OpenAI-style tool_calls array (Ollama)
+            } else if (data.tool_calls && Array.isArray(data.tool_calls)) {
+              for (const tc of data.tool_calls) {
+                write({ tool_call: { name: tc.function?.name, args: tc.function?.arguments } });
+              }
+            } else {
+              write(data);
+            }
           }
         },
         onDone: done,
@@ -321,8 +382,9 @@ export class AIEngine {
     }
 
     try {
+      const lmstudioPort = process.env.LMSTUDIO_PORT || '1234';
       const formattedMessages = Gateway.formatMessages(messages, 'lmstudio');
-      const response = await fetch('http://127.0.0.1:1234/v1/chat/completions', {
+      const response = await fetch(`http://127.0.0.1:${lmstudioPort}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -338,7 +400,7 @@ export class AIEngine {
       });
 
       if (!response.ok) {
-        throw new Error(`LM Studio API Error: ${response.status} ${response.statusText}. Ensure LM Studio server is running on port 1234.`);
+        throw new Error(`LM Studio API Error: ${response.status} ${response.statusText}. Ensure LM Studio server is running on port ${lmstudioPort}.`);
       }
 
       await Gateway.processSSEStream(response, {

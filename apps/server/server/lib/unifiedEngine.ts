@@ -17,7 +17,10 @@ export interface ModelSettings {
   topP?: number;
   topK?: number;
   antigravity?: boolean;
+  /** Adaptive thinking token budget (M1). Range: 256–24576. Resolved by thinkingBudget.ts. */
+  thinkingBudget?: number;
 }
+
 
 export interface StreamChunk {
   chunk?: string;
@@ -168,6 +171,7 @@ export class UnifiedEngine {
       }
 
       const activeKey = apiKey || Gateway.getActiveKey(provider as Provider, apiKey);
+      logger.info({ provider, apiKeyLength: apiKey?.length, activeKeyLength: activeKey?.length, activeKeyPrefix: activeKey ? activeKey.substring(0, 10) : 'none' }, '[UnifiedEngine] Resolved activeKey');
 
       // Token-based history slicing (Phase 5.1)
       const MAX_HISTORY_TOKENS = 80_000;
@@ -321,7 +325,7 @@ export class UnifiedEngine {
               signal: options.signal,
             },
             (chunkEvent: any) => {
-              if (chunkEvent.chunk) {
+              if (chunkEvent.chunk && chunkEvent.type !== 'thinking') {
                 accumulatedText += chunkEvent.chunk;
               }
               onChunk(chunkEvent);

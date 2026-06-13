@@ -26,6 +26,7 @@ export const AISettingsSchema = z.object({
   batchSize: z.number().optional(),
   mirostat: z.number().optional(),
   antigravity: z.boolean().optional(),
+  thinkingBudget: z.number().optional(),
 });
 export type AISettings = z.infer<typeof AISettingsSchema>;
 
@@ -81,6 +82,7 @@ export const ModelOptionSchema = z.object({
   features: z.array(z.string()).optional(),
   pros: z.array(z.string()).optional(),
   cons: z.array(z.string()).optional(),
+  supportsThinking: z.boolean().optional(),
   limits: z.object({
     rpm: z.number().nullable(),
     tpm: z.number().nullable(),

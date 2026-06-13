@@ -68,6 +68,28 @@ describe('API Integration', () => {
     }
   });
 
+  test('POST /api/v1/agents/chat returns SSE and propagates auth failure', async () => {
+    const response = await request(app.server)
+      .post('/api/v1/agents/chat')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        model: 'gemini-3.5-flash',
+        provider: 'gemini',
+        prompt: 'Hello',
+        apiKey: 'test-key',
+        settings: { temperature: 0.7 }
+      })
+      .set('Accept', 'text/event-stream');
+
+    expect(response.status).toBe(200);
+    const contentType = response.headers['content-type'];
+    if (contentType) {
+      expect(contentType).toContain('text/event-stream');
+    }
+    // Ensure the stream output contains the Google API key validation error details
+    expect(response.text).toContain('API key not valid');
+  });
+
   test('POST /api/v1/nyx/write-file creates file', async () => {
     const response = await request(app.server)
       .post('/api/v1/nyx/write-file')

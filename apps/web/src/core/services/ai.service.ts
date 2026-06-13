@@ -889,7 +889,7 @@ export class AIService {
       apiKey?: string;
       systemInstruction?: string;
       settings?: AISettings;
-      options?: ExecuteOptions;
+      options?: ExecuteOptions & { onStream?: (event: any) => void; signal?: AbortSignal };
     }
   ): Promise<EnhancedAIResponse> {
     const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0);
@@ -911,8 +911,8 @@ export class AIService {
       baseOptions.apiKey,
       baseOptions.systemInstruction,
       baseOptions.settings,
-      undefined,
-      undefined,
+      baseOptions.options?.onStream,
+      baseOptions.options?.signal,
       baseOptions.options
     );
   }

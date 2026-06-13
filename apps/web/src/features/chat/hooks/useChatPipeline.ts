@@ -85,6 +85,7 @@ interface StreamChunk {
     | 'error'
     | 'meta';
   content?: string;
+  error?: string;
   metadata?: any;
 }
 
@@ -193,13 +194,23 @@ export const useChatPipeline = ({
       if (!isMountedRef.current) return;
 
       updateHistory((prev) => {
-        const cloned = prev.map((m) => ({
-          ...m,
-          toolCalls: m.toolCalls ? m.toolCalls.map((t) => ({ ...t })) : undefined,
-          citations: m.citations ? [...m.citations] : undefined,
-          artifacts: m.artifacts ? [...m.artifacts] : undefined,
-        }));
-        const nextHistory = updater(cloned);
+        if (prev.length === 0) return updater([]);
+        
+        // SOTA Optimization (Claude Parity): Instead of O(N^2) deep cloning of the entire 
+        // conversation array on every chunk, we shallow clone the array and only deep clone 
+        // the VERY LAST message (which is the only one actively streaming/mutating).
+        const next = [...prev];
+        const lastIdx = next.length - 1;
+        const lastMsg = next[lastIdx];
+        
+        next[lastIdx] = {
+          ...lastMsg,
+          toolCalls: lastMsg.toolCalls ? [...lastMsg.toolCalls] : undefined,
+          citations: lastMsg.citations ? [...lastMsg.citations] : undefined,
+          artifacts: lastMsg.artifacts ? [...lastMsg.artifacts] : undefined,
+        };
+        
+        const nextHistory = updater(next);
         historySnapshotRef.current = nextHistory;
         return nextHistory;
       });
@@ -237,29 +248,50 @@ export const useChatPipeline = ({
         resolveSync = resolve;
       });
 
+      // If the worker crashes, resolve so we don't hang forever
+      worker.onerror = (err) => {
+        console.error('[Chat Pipeline] Stream worker error:', err);
+        resolveSync?.();
+      };
+
       worker.onmessage = (event) => {
         if (event.data.type === 'update') {
           const { text, reasoning, originalChunk } = event.data.payload;
+          const textChanged = text !== accumulatedText;
+          const reasoningChanged = reasoning !== accumulatedReasoning;
+          
           accumulatedText = text;
           accumulatedReasoning = reasoning;
           
+          // CRITICAL FIX: Must return a NEW array with a NEW object for React to detect the change.
+          // The old code mutated `last.content` directly and returned the same `prev` reference,
+          // which caused React to skip re-renders entirely — responses only showed in ThinkingBlock.
           safeUpdateHistory((prev) => {
             const next = [...prev];
-            const last = next[next.length - 1];
+            const lastIdx = next.length - 1;
+            const last = next[lastIdx];
             if (last?.role === 'assistant') {
-              next[next.length - 1] = {
+              next[lastIdx] = {
                 ...last,
                 content: text,
-                reasoning: reasoning || last.reasoning,
+                reasoning: reasoning !== undefined ? reasoning : last.reasoning,
               };
             }
             return next;
           });
 
-          if (originalChunk.type === 'text') {
+          if (textChanged) {
              onStreamRef.current?.({ type: 'text', content: text } as any);
-          } else if (originalChunk.type === 'thinking' || originalChunk.type === 'reasoning') {
+          }
+          if (reasoningChanged) {
              onStreamRef.current?.({ type: 'thinking', content: reasoning } as any);
+          }
+          
+          if (
+            originalChunk?.type === 'tool_call' || 
+            originalChunk?.type === 'tool_result'
+          ) {
+             onStreamRef.current?.(originalChunk);
           }
         } else if (event.data.type === 'sync_done') {
           resolveSync?.();
@@ -372,7 +404,7 @@ export const useChatPipeline = ({
 
             case 'error': {
               finishReason = 'error';
-              throw new Error(chunk.content || 'Stream error from agent');
+              throw new Error(chunk.error || chunk.content || 'Stream error from agent');
             }
 
             case 'metrics': {
@@ -661,43 +693,84 @@ export const useChatPipeline = ({
         } else {
           // Adapter generator for parallel, ensemble, ab-test
           generator = (async function* () {
-            yield { type: 'thinking', content: `Starting ${executionMode} execution...` };
+            const queue: any[] = [];
+            let resolveNext: (() => void) | null = null;
+            let isDone = false;
+
+            const onStream = (event: any) => {
+              queue.push(event);
+              if (resolveNext) {
+                resolveNext();
+                resolveNext = null;
+              }
+            };
+
             try {
-              const baseOptions = { apiKey: nyxApiKey, settings: modelSettings };
+              const baseOptions: any = { 
+                apiKey: nyxApiKey, 
+                settings: modelSettings,
+                options: { onStream, streamEvents: true, signal: controller.signal }
+              };
+              
               let responseText = '';
               let metadata: any = { latency: 0, tokens: 0, tps: 0 };
-
               const configs = [{ modelId: nyxModel, provider: nyxProvider }];
 
+              let executionPromise;
+
               if (executionMode === 'parallel') {
-                const results = await AIService.executeParallel(
+                executionPromise = AIService.executeParallel(
                   configs,
                   compressedPrompt,
                   baseOptions
-                );
-                responseText = results
-                  .map((r) => `### Response from ${r.model}:\n${r.text}`)
-                  .join('\n\n---\n\n');
-                metadata = results[0]?.metrics || metadata;
+                ).then((results) => {
+                  responseText = results
+                    .map((r) => `### Response from ${r.model}:\n${r.text}`)
+                    .join('\n\n---\n\n');
+                  metadata = results[0]?.metrics || metadata;
+                  queue.push({ type: 'text', content: responseText });
+                  if (metadata) queue.push({ type: 'metrics', metadata });
+                });
               } else if (executionMode === 'ensemble') {
                 const synthesizer = { modelId: nyxModel, provider: nyxProvider };
-                const res = await AIService.executeEnsemble(
+                executionPromise = AIService.executeEnsemble(
                   configs,
                   synthesizer,
                   compressedPrompt,
                   baseOptions
-                );
-                responseText = res.text;
-                metadata = res.metrics || metadata;
+                ).then((res) => {
+                  responseText = res.text;
+                  metadata = res.metrics || metadata;
+                  queue.push({ type: 'text', content: responseText });
+                  if (metadata) queue.push({ type: 'metrics', metadata });
+                });
               } else if (executionMode === 'ab-test') {
                 const variants = configs.map((c) => ({ weight: 0.5, config: c }));
-                const res = await AIService.executeABTest(compressedPrompt, variants, baseOptions);
-                responseText = res.text;
-                metadata = res.metrics || metadata;
+                executionPromise = AIService.executeABTest(compressedPrompt, variants, baseOptions).then((res) => {
+                  metadata = res.metrics || metadata;
+                  if (metadata) queue.push({ type: 'metrics', metadata });
+                });
               }
 
-              yield { type: 'text', content: responseText };
-              if (metadata) yield { type: 'metrics', metadata };
+              if (executionPromise) {
+                executionPromise.catch((err: any) => {
+                  queue.push({ type: 'error', content: err.message });
+                }).finally(() => {
+                  isDone = true;
+                  if (resolveNext) resolveNext();
+                });
+              } else {
+                isDone = true;
+              }
+
+              while (!isDone || queue.length > 0) {
+                if (queue.length > 0) {
+                  yield queue.shift();
+                } else {
+                  await new Promise<void>(r => resolveNext = r);
+                }
+              }
+
               yield { type: 'done' };
             } catch (err: any) {
               yield { type: 'error', content: err.message };

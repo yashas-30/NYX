@@ -656,13 +656,14 @@ const MessageBubble = React.memo<MessageBubbleProps>(
   }) => {
     const isUser = msg.role === 'user';
     const msgId = `${msg.timestamp}-${index}`;
-    // Used for the reasoning text loading state if there are no tool calls
+    // Show "Thinking..." spinner ONLY when streaming has started but no content or reasoning yet
     const isThinking =
-      ((msg.status === 'loading' && !msg.content) || (isStreaming && !msg.content && msg.reasoning)) &&
-      (!msg.toolCalls || msg.toolCalls.length === 0);
+      isStreaming && !msg.content && !msg.reasoning &&
+      (!msg.toolCalls || msg.toolCalls.length === 0) &&
+      (msg.status === 'loading' || msg.status === undefined);
       
     // Used to show the animated loader instead of the cat icon during response generation
-    const isLoadingIcon = msg.status === 'loading' || (isStreaming && isLast);
+    const isLoadingIcon = (msg.status === 'loading' || msg.status === undefined) && (isStreaming && isLast);
 
     return (
       <motion.div
@@ -726,7 +727,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               }
 
               return (
-                <div className="flex items-baseline gap-2 mb-1 select-none pl-[68px]">
+                <div className="flex items-baseline gap-2 mb-1 select-none pl-[92px]">
                   <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
                     {displayName}
                   </span>
@@ -734,25 +735,40 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               );
             })()}
 
-            <div className="flex w-full gap-1 items-start">
-              <div className="flex-shrink-0 pt-0.5 select-none">
-                <div className="w-16 h-16 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
+            <div className="flex w-full gap-3 items-start">
+              <div className="flex-shrink-0 -mt-3 select-none">
+                <div className="w-20 h-20 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
                   {isLoadingIcon ? (
-                    <NyxLoader size={28} className="text-foreground animate-spin" />
+                    <NyxLoader size={36} className="text-foreground animate-spin" />
                   ) : (
-                    <AnimatedLogo size={64} className="animate-fade-in" />
+                    <AnimatedLogo size={80} className="animate-fade-in" />
                   )}
                 </div>
               </div>
               <div className="flex-1 min-w-0">
                 {/* Error state */}
                 {msg.status === 'error' && (
-                  <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-red-500/5 border border-red-500/10">
-                    <AlertTriangle size={14} className="text-red-400 shrink-0" />
-                    <p className="text-sm text-red-400/90 font-medium">
-                      Error: Generation failed. Please check your model settings or connection.
-                    </p>
-                  </div>
+                  (() => {
+                    const isHighDemand = msg.content && (msg.content.includes('[UNAVAILABLE]') || msg.content.toLowerCase().includes('high demand') || msg.content.includes('429'));
+                    if (isHighDemand) {
+                      return (
+                        <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-orange-500/5 border border-orange-500/10">
+                          <AlertTriangle size={14} className="text-orange-400 shrink-0" />
+                          <p className="text-sm text-orange-400/90 font-medium">
+                            Server is in high demand. Please retry in a few minutes.
+                          </p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-red-500/5 border border-red-500/10">
+                        <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                        <p className="text-sm text-red-400/90 font-medium">
+                          Error: Generation failed. Please check your model settings or connection.
+                        </p>
+                      </div>
+                    );
+                  })()
                 )}
 
                 {/* Stopped state */}
@@ -764,7 +780,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                 )}
 
                 {/* Loading / Thinking state (during reasoning or initial Formulation) */}
-                {isThinking && (
+                {isThinking && !msg.reasoning && (
                   <div className="flex items-center gap-2.5 py-1 select-none h-14">
                     <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.15em] animate-pulse">
                       Thinking...
@@ -773,9 +789,12 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                 )}
 
                 {/* Content rendering */}
-                {(msg.content || (msg.toolCalls && msg.toolCalls.length > 0)) && (
+                {(msg.content || (msg.toolCalls && msg.toolCalls.length > 0) || msg.reasoning) && (
                   <div className="pl-0">
-                    {/* Reasoning block is hidden to keep the response page clean as requested */}
+                    {/* Reasoning block */}
+                    {msg.reasoning && (
+                      <ThinkingBlock content={msg.reasoning} isComplete={!isThinking && msg.status !== 'loading'} />
+                    )}
 
                     {/* Tool calls */}
                     {msg.toolCalls && msg.toolCalls.length > 0 && (
@@ -795,7 +814,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     )}
 
                     {/* Main content */}
-                    {msg.content && (
+                    {msg.content && !(msg.status === 'error' && (msg.content.includes('[UNAVAILABLE]') || msg.content.toLowerCase().includes('high demand') || msg.content.includes('429'))) && (
                       <MarkdownContent
                         content={msg.content}
                         isStreaming={isStreaming && isLast}

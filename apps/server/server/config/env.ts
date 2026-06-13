@@ -1,4 +1,15 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load from apps/server/.env if exists
+dotenv.config();
+// Load from workspace root .env if exists
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+
 import { z } from 'zod';
 import { PORTS, LOCAL_MODEL_PORT } from '@nyx/shared';
 

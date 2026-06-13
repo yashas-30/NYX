@@ -12,13 +12,16 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI()
 
-# Check for google-generativeai availability safely
+# Check for google-genai availability safely (new unified SDK)
 HAS_GENAI = False
 try:
     from google import genai
     HAS_GENAI = True
 except ImportError:
     print("[Antigravity SDK] warning: google-genai package not found. AI preprocessing falls back to standard instructions.")
+
+# Default model — use the latest fast Gemini model
+DEFAULT_GENAI_MODEL = os.environ.get("ANTIGRAVITY_MODEL", "gemini-2.5-flash")
 
 OPTIMIZATION_TEMPLATES = {
     "coding": [
@@ -71,7 +74,7 @@ OPTIMIZATION_TEMPLATES = {
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "genai_available": HAS_GENAI, "default_model": DEFAULT_GENAI_MODEL}
 
 @app.post("/list")
 def list_models():
@@ -99,13 +102,12 @@ async def preprocess(request: Request):
         optimized_prompt = f"Optimize and answer: {prompt}"
         
         if HAS_GENAI:
-            key = api_key or os.environ.get("GEMINI_API_KEY", "")
+            key = api_key or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("ANTIGRAVITY_API_KEY", "")
             if key:
                 try:
                     client = genai.Client(api_key=key)
-                    
                     response = await client.aio.models.generate_content(
-                        model="gemini-1.5-flash",
+                        model=DEFAULT_GENAI_MODEL,
                         contents=instruction
                     )
                     if response.text:
@@ -115,7 +117,7 @@ async def preprocess(request: Request):
             else:
                 print("[Antigravity SDK Preprocess Warning] No API key available for prompt optimization. Falling back to default.")
         else:
-            print("[Antigravity SDK Preprocess Warning] google-generativeai not installed. Falling back to default.")
+            print("[Antigravity SDK Preprocess Warning] google-genai not installed. Falling back to default.")
             
         print(f"[Antigravity SDK] Prompt preprocessed successfully (domain: {domain}, version: {version}).")
         return {
@@ -128,34 +130,34 @@ async def preprocess(request: Request):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 async def generate_with_sdk(prompt: str, model: str, api_key: str):
-    print(f"[Antigravity SDK] Checking prompt: {prompt[:50]}...")
+    print(f"[Antigravity SDK] Generating for model: {model}, prompt: {prompt[:60]}...")
     
     try:
         if not HAS_GENAI:
-            raise Exception("google-genai package not installed")
+            raise Exception("google-genai package not installed. Run: pip install google-genai")
 
-        client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY", ""))
+        key = api_key or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("ANTIGRAVITY_API_KEY", "")
+        if not key:
+            raise Exception("No API key provided. Pass apiKey in request body or set GEMINI_API_KEY env var.")
+
+        client = genai.Client(api_key=key)
         
-        # Route to requested model, rely on actual model sent
-        actual_model = model if model and model != "unknown" else os.environ.get("DEFAULT_MODEL", "gemini-1.5-pro")
-        print(f"[Antigravity] Routing for model: {actual_model}")
-        
-        # Send prefix
-        yield f"data: {{ \"chunk\": \"[Antigravity SDK Routed to: {actual_model}]\\n\" }}\n\n"
+        # Use requested model if valid, fall back to default
+        actual_model = model if model and model != "unknown" else DEFAULT_GENAI_MODEL
+        print(f"[Antigravity SDK] Routing to model: {actual_model}")
         
         response = await client.aio.models.generate_content_stream(
             model=actual_model,
             contents=prompt
         )
         
-        # Directly yield chunks without arbitrary 10ms delays
         async for chunk in response:
             if chunk.text:
-                yield f"data: {{ \"chunk\": {json.dumps(chunk.text)} }}\n\n"
+                yield f"data: {json.dumps({'chunk': chunk.text})}\n\n"
                 
     except Exception as e:
         print(f"[Antigravity SDK Error] {e}")
-        yield f"data: {{ \"chunk\": \"Error from Antigravity SDK: {str(e)}\" }}\n\n"
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"
         
     yield "data: [DONE]\n\n"
 
@@ -185,5 +187,5 @@ if __name__ == "__main__":
         os._exit(0)
     threading.Thread(target=monitor_parent, daemon=True).start()
 
-    print("[Antigravity Service] READY")
+    print(f"[Antigravity Service] READY — model: {DEFAULT_GENAI_MODEL}, genai: {HAS_GENAI}")
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")

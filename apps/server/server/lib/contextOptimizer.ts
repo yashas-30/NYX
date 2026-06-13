@@ -39,7 +39,7 @@ export class ContextOptimizer {
     const {
       maxTokens = 32000,
       preservationTurns = 6,
-      mode = 'prune',
+      mode = 'summarize',
       provider = 'gemini', // Fallback, but ChatService passes the real one
       modelId = 'gemini-3.5-flash', // Fallback, but ChatService passes the real one
     } = options;
@@ -51,8 +51,8 @@ export class ContextOptimizer {
     const currentTokens = this.estimateMessageTokens(messages);
     logger.info(`[ContextOptimizer] Current tokens: ~${currentTokens}/${maxTokens}`);
 
-    if (currentTokens <= maxTokens || messages.length <= preservationTurns + 2) {
-      // Under limit or too few messages to compress safely
+    if (currentTokens <= maxTokens * 0.6 || messages.length <= preservationTurns + 2) {
+      // Under 60% threshold or too few messages to compress safely
       return messages;
     }
 
@@ -73,22 +73,29 @@ export class ContextOptimizer {
     const middleMessages = conversation.slice(0, -preservationTurns);
 
     if (mode === 'prune') {
-      // Hard prune: just drop the middle messages
-      logger.info(`[ContextOptimizer] Pruned ${middleMessages.length} messages.`);
-      return [...systemMessages, ...recentMessages];
+      // Keep important messages from the middle, drop unimportant ones
+      const importantMiddle = middleMessages.filter(m => this.isImportantMessage(m));
+      logger.info(`[ContextOptimizer] Pruned ${middleMessages.length - importantMiddle.length} unimportant messages, kept ${importantMiddle.length} important.`);
+      return [...systemMessages, ...importantMiddle, ...recentMessages];
     }
 
     if (mode === 'summarize') {
       try {
-        const summary = await this.summarizeMiddleContext(middleMessages, provider, modelId);
-        logger.info(`[ContextOptimizer] Generated summary for ${middleMessages.length} messages.`);
-        
-        const summaryMessage = {
-          role: 'assistant',
-          content: `[System Note: Summary of previous conversation]\n${summary}`,
-        };
+        // Only summarize unimportant messages; preserve important ones verbatim
+        const importantMiddle = middleMessages.filter(m => this.isImportantMessage(m));
+        const unimportantMiddle = middleMessages.filter(m => !this.isImportantMessage(m));
 
-        return [...systemMessages, summaryMessage, ...recentMessages];
+        let summaryMessages: any[] = [];
+        if (unimportantMiddle.length > 0) {
+          const summary = await this.summarizeMiddleContext(unimportantMiddle, provider, modelId);
+          logger.info(`[ContextOptimizer] Generated summary for ${unimportantMiddle.length} messages; kept ${importantMiddle.length} important messages verbatim.`);
+          summaryMessages = [{
+            role: 'assistant',
+            content: `[System Note: Summary of previous conversation]\n${summary}`,
+          }];
+        }
+
+        return [...systemMessages, ...summaryMessages, ...importantMiddle, ...recentMessages];
       } catch (e: any) {
         logger.warn(`[ContextOptimizer] Summarization failed, falling back to prune: ${e.message}`);
         return [...systemMessages, ...recentMessages];
@@ -96,6 +103,20 @@ export class ContextOptimizer {
     }
 
     return messages;
+  }
+
+  /**
+   * Returns true if a message contains high-value content that should be
+   * preserved verbatim during context compression.
+   */
+  static isImportantMessage(msg: any): boolean {
+    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+    // Code blocks, tool results, system notes are important
+    return content.includes('```') ||
+      content.includes('[System Note') ||
+      content.includes('Error:') ||
+      content.startsWith('function') ||
+      (msg.toolCalls && msg.toolCalls.length > 0);
   }
 
   private static async summarizeMiddleContext(

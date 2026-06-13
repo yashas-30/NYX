@@ -27,6 +27,7 @@ export const VALID_GEMINI_MODELS = [
   'gemini-2.5-flash-lite',
   // Open models
   'gemma-4-31b-it',
+  'gemma-4-26b-it',
   'gemma-4-26b-a4b-it',
   'gemma-4-e4b-it',
   'gemma-4-e2b-it',
@@ -106,7 +107,7 @@ const PROVIDER_URLS: Record<Provider, string> = {
 
 export class Gateway {
   private static SYSTEM_KEYS: Record<string, string> = {
-    gemini: env.GEMINI_API_KEY || env.LLM_API_KEY || '',
+    gemini: env.GEMINI_API_KEY || env.LLM_API_KEY || env.ANTIGRAVITY_API_KEY || '',
   };
 
   /**
@@ -292,28 +293,34 @@ export class Gateway {
                   return;
                 }
 
-                // Standard formats
+                // Standard OpenAI-compatible formats
                 let chunk = data.choices?.[0]?.delta?.content;
                 if (!chunk) chunk = data.choices?.[0]?.delta?.message?.content;
                 if (!chunk) chunk = data.choices?.[0]?.message?.content;
-                // Gemini format
-                if (!chunk && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                  chunk = data.candidates[0].content.parts[0].text;
-                }
-
-                let functionCall = data.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+                if (!chunk && typeof data.chunk === 'string') chunk = data.chunk;
 
                 if (chunk) {
                   callbacks.onChunk(chunk);
                 }
-                if (functionCall) {
-                  callbacks.onChunk({ functionCall });
+
+                // Gemini format: iterate all parts to handle thinking + text + functionCall
+                const parts = data.candidates?.[0]?.content?.parts;
+                if (Array.isArray(parts)) {
+                  console.log('[DEBUG] Gemini parts:', JSON.stringify(parts));
+                  for (const part of parts) {
+                    if (part.thought === true || part.thought === 'true') {
+                      // Thinking token — dispatch as thinking object
+                      if (part.text) callbacks.onChunk({ thinking: part.text });
+                    } else if (part.functionCall) {
+                      callbacks.onChunk({ functionCall: part.functionCall });
+                    } else if (part.text) {
+                      callbacks.onChunk(part.text);
+                    }
+                  }
                 }
 
                 if (data.usageMetadata || data.usage) {
                   callbacks.onChunk({ type: 'metrics', metadata: data.usageMetadata || data.usage });
-                  callbacks.onDone();
-                  return;
                 }
 
                 const finishReason = data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason;

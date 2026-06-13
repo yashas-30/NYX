@@ -34,8 +34,8 @@ const ChatRequestSchema = z.object({
   prompt: z.string().max(100_000),
   history: z.array(HistoryMessageSchema).max(100).optional().default([]),
   images: z.array(ImageSchema).max(16).optional().default([]),
-  gatewayUrls: z.record(z.string()).optional(),
-  settings: z.record(z.unknown()).optional(),
+  gatewayUrls: z.record(z.string(), z.string()).optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
   apiKey: z.string().optional(),
   agentType: z.enum(['chat', 'opencode']).optional().default('chat'),
 });

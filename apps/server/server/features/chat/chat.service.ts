@@ -3,11 +3,15 @@ import { getKeysSync } from '../vault/vault.service.js';
 import { LOCAL_MODEL_PORT } from '@nyx/shared';
 import { SearchService } from '../nyx/search.service.js';
 import { env } from '../../config/env.js';
-import { initVectorStore } from '../../lib/memory/vectorStore.js';
+import { initVectorStore, embedText, searchMemory } from '../../lib/memory/vectorStore.js';
 import { mcpClientManager } from '../../lib/mcp/McpClientManager.js';
 import { ContextOptimizer } from '../../lib/contextOptimizer.js';
+import { semanticCache } from '../../lib/semanticCache.js';
 
 const searchService = new SearchService();
+
+// Initialize semantic cache with embedding function
+semanticCache.init(embedText).catch(() => {});
 
 export interface ChatStreamParams {
   provider?: string;
@@ -43,6 +47,22 @@ export class ChatService {
     let finalPrompt = prompt;
     let webContext = '';
 
+    // Check semantic cache first (skip for very short prompts)
+    if (prompt.length > 20) {
+      const cached = await semanticCache.get(prompt);
+      if (cached) {
+        logger.info('[ChatService] Serving from semantic cache');
+        onChunk('[Cached Response] ');
+        // Stream cached response in chunks for better UX
+        const words = cached.split(' ');
+        for (let i = 0; i < words.length; i += 5) {
+          onChunk(words.slice(i, i + 5).join(' ') + (i + 5 < words.length ? ' ' : ''));
+        }
+        onDone();
+        return;
+      }
+    }
+
     // Agent Graph unconditionally removed to prevent stream hanging
 
     const searchKeywords = /\b(search|find|latest|current|news|who is|what is the price|today)\b/i;
@@ -72,31 +92,9 @@ export class ChatService {
     }
 
     try {
-      logger.info('[ChatService] Querying LanceDB for memory context...');
-      const memoryTable = await initVectorStore();
-      
-      let embedding: number[];
-      try {
-        const { pipeline } = await import('@xenova/transformers');
-        const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-        const output = await extractor(prompt, { pooling: 'mean', normalize: true });
-        embedding = Array.from(output.data);
-      } catch (e) {
-        logger.warn('Failed to embed query, using fallback zeros');
-        embedding = new Array(384).fill(0);
-      }
-      
-      const results = await memoryTable.search(embedding).limit(3).execute();
-      
-      if (results && results.length > 0) {
-        const memoryContext = results
-          .filter(r => r.id !== 'init')
-          .map(r => `Past Memory: ${r.content}`)
-          .join('\n');
-        
-        if (memoryContext) {
-          finalPrompt += `\n\n[Long-Term Memory]:\n${memoryContext}`;
-        }
+      const memoryContext = await searchMemory(prompt, 3);
+      if (memoryContext) {
+        finalPrompt += `\n\n[Long-Term Memory]:\n${memoryContext}`;
       }
     } catch (err: any) {
       logger.warn(`[ChatService] Memory retrieval failed: ${err.message}`);
@@ -133,6 +131,7 @@ export class ChatService {
 
     const keys = getKeysSync();
     const apiKey = keys[provider || ''] || '';
+    logger.info({ apiKeyLength: apiKey?.length, apiKeyPrefix: apiKey ? apiKey.substring(0, 10) : 'none' }, '[ChatService] Resolved API key');
 
     try {
       // Fetch available MCP tools dynamically
@@ -148,6 +147,7 @@ export class ChatService {
       }
 
       const { UnifiedEngine } = await import('../../lib/unifiedEngine.js');
+      let fullResponse = '';
       await UnifiedEngine.executeStream(
         {
           provider: provider || 'gemini',
@@ -160,12 +160,21 @@ export class ChatService {
         (chunk: any) => {
           if (chunk.tool_call) {
             onChunk({ tool_call: chunk.tool_call });
+          } else if (chunk.type === 'thinking' || chunk.thinking) {
+            const thinkingText = chunk.thinking || chunk.content || '';
+            onChunk({ type: 'thinking', content: thinkingText });
           } else {
-            onChunk(chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '');
+            const text = chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '';
+            fullResponse += text;
+            onChunk(text);
           }
         },
         () => {
           onDone();
+          // Store in semantic cache for future similar prompts
+          if (fullResponse.length > 50) {
+            semanticCache.set(prompt, fullResponse).catch(() => {});
+          }
         }
       );
     } catch (err: any) {

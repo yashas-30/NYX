@@ -167,6 +167,9 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
             if (parsed.chunk) {
               yield { type: 'text', content: parsed.chunk };
             }
+            if (parsed.type === 'text') {
+              yield { type: 'text', content: parsed.content };
+            }
             if (parsed.type === 'thinking') {
               yield { type: 'thinking', content: parsed.content };
             }

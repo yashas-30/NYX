@@ -115,7 +115,7 @@ export class SearchService {
 
   private async extractQueryWithLLM(rawQuery: string): Promise<string> {
     const keys = getKeysSync();
-    const apiKey = keys['GEMINI_API_KEY'] || env.GEMINI_API_KEY;
+    const apiKey = keys['GEMINI_API_KEY'] || env.GEMINI_API_KEY || env.ANTIGRAVITY_API_KEY;
     if (!apiKey) return rawQuery; // fallback to raw
 
     try {
@@ -154,7 +154,7 @@ export class SearchService {
 
   private async summarizeWithLLM(content: string, query: string): Promise<string> {
     const keys = getKeysSync();
-    const apiKey = keys['GEMINI_API_KEY'] || env.GEMINI_API_KEY;
+    const apiKey = keys['GEMINI_API_KEY'] || env.GEMINI_API_KEY || env.ANTIGRAVITY_API_KEY;
     if (!apiKey || content.trim().length < 500) return content;
 
     try {

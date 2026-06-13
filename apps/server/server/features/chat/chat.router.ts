@@ -14,7 +14,7 @@ const chatStreamSchema = z.object({
   history: z.array(z.any()).optional(),
   provider: z.string().optional(),
   modelId: z.string().optional(),
-  settings: z.record(z.any()).optional(),
+  settings: z.record(z.string(), z.any()).optional(),
   systemInstruction: z.string().optional(),
   enableWebSearch: z.boolean().optional(),
   images: z.array(z.any()).optional(),

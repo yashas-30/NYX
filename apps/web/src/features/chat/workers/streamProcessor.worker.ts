@@ -18,6 +18,7 @@ self.onmessage = (event) => {
   }
 
   if (type === 'sync') {
+    // Always flush on sync so no text is lost
     self.postMessage({
       type: 'update',
       payload: {
@@ -34,15 +35,36 @@ self.onmessage = (event) => {
   if (type === 'chunk') {
     const chunk = payload;
     let shouldFlush = false;
+    let hasNewContent = false;
 
     if (chunk.type === 'text') {
-      accumulatedText += (chunk.content || '');
+      const delta = chunk.content || '';
+      if (delta) {
+        accumulatedText += delta;
+        hasNewContent = true;
+      }
     } else if (chunk.type === 'thinking' || chunk.type === 'reasoning') {
-      accumulatedReasoning += (chunk.content || '');
+      const delta = chunk.content || '';
+      if (delta) {
+        accumulatedReasoning += delta;
+        hasNewContent = true;
+      }
+    } else if (chunk.chunk) {
+      // Fallback: handle raw { chunk: "..." } format (server may emit this directly)
+      const delta = chunk.chunk || '';
+      if (delta) {
+        accumulatedText += delta;
+        hasNewContent = true;
+      }
     }
 
     const now = Date.now();
-    if (now - lastFlushTime >= FLUSH_INTERVAL_MS || chunk.type === 'done' || chunk.type === 'finish') {
+    if (
+      hasNewContent &&
+      (now - lastFlushTime >= FLUSH_INTERVAL_MS ||
+        chunk.type === 'done' ||
+        chunk.type === 'finish')
+    ) {
       shouldFlush = true;
       lastFlushTime = now;
     }
