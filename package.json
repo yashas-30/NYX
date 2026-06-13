@@ -37,7 +37,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/ui": "^4.1.8",
     "concurrently": "^10.0.3",
-    "happy-dom": "^20.10.2",
+    "happy-dom": "^20.10.3",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
     "msw": "^2.14.6",
