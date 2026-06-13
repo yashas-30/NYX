@@ -65,56 +65,6 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     limits: { rpm: 15, tpm: null, rpd: 1500 },
   },
 
-  {
-    id: 'gemini-2.5-pro',
-    name: 'Gemini 2.5 Pro',
-    provider: 'gemini',
-    description: 'Most capable Gemini 2.5 model with extended thinking.',
-    status: 'ga',
-    supportsThinking: true,
-    specs: { contextWindow: '1M', trainingData: '2025', maxOutput: '64K', modality: 'Multimodal' },
-    features: ['Extended thinking for complex reasoning', 'State-of-the-art coding and math', 'Deep research capability'],
-    pros: ['Highest intelligence in 2.5 series', 'Extended thinking for hard problems', 'Best for complex coding'],
-    cons: ['Higher cost than Flash', 'Slower response times'],
-    limits: { rpm: 5, tpm: 250000, rpd: 25 },
-  },
-  {
-    id: 'gemini-3.1-pro-preview',
-    name: 'Gemini 3.1 Pro Preview',
-    provider: 'gemini',
-    description: 'Most powerful Gemini 3.1 model for complex tasks.',
-    status: 'preview',
-    supportsThinking: true,
-    specs: { contextWindow: '2M', trainingData: '2026', maxOutput: '64K', modality: 'Multimodal' },
-    features: ['2M context window', 'Deep reasoning', 'Multimodal understanding'],
-    pros: ['Largest context window', 'Best reasoning depth', 'Frontier-level intelligence'],
-    cons: ['Slower', 'Higher cost'],
-    limits: { rpm: 2, tpm: 100000, rpd: 10 },
-  },
-  {
-    id: 'gemma-4-e2b-it',
-    name: 'Gemma 4 2B Edge (Local)',
-    provider: 'gemini',
-    description: 'Ultra-lightweight Gemma for local/edge deployment.',
-    status: 'ga',
-    specs: { contextWindow: '32K', trainingData: '2026', maxOutput: '4K', modality: 'Text' },
-    features: ['Edge-optimized', 'Minimal VRAM usage (~2GB)', 'Fast local inference'],
-    pros: ['Runs on any GPU', 'Zero cost', 'Private'],
-    cons: ['Limited capability', 'Smaller context'],
-    limits: { rpm: 30, tpm: null, rpd: 3000 },
-  },
-  {
-    id: 'gemma-4-e4b-it',
-    name: 'Gemma 4 4B Edge (Local)',
-    provider: 'gemini',
-    description: 'Small but capable Gemma 4 model.',
-    status: 'ga',
-    specs: { contextWindow: '64K', trainingData: '2026', maxOutput: '8K', modality: 'Text' },
-    features: ['Balance of size and capability', '~4GB VRAM', 'Good instruction following'],
-    pros: ['Efficient', 'Open weights', 'Good for chat'],
-    cons: ['Weaker than larger models'],
-    limits: { rpm: 30, tpm: null, rpd: 3000 },
-  },
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // LOCAL PROVIDERS (OLLAMA & LM STUDIO)
@@ -171,7 +121,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
 ];
 
 // Deduplicate by ID to prevent duplicate entries in the model selector
-const ALLOWED_PROVIDERS = ['gemini', 'ollama', 'lmstudio', 'antigravity-sdk'];
+const ALLOWED_PROVIDERS = ['gemini', 'ollama', 'lmstudio'];
 const _seen = new Set<string>();
 export const AVAILABLE_MODELS: ModelOption[] = RAW_AVAILABLE_MODELS.filter((m) =>
   ALLOWED_PROVIDERS.includes(m.provider)

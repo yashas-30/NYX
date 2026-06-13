@@ -81,13 +81,13 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                           const vramGB = (sys.vram || 0) / (1024 * 1024 * 1024);
 
                           let newGpu = 10;
-                          let recommendedModel = currentModelId || 'nyx-gemma-4-e2b-it';
+                          let recommendedModel = currentModelId || 'qwen2.5-coder-1.5b-native';
                           let message = '';
 
                           if (sys.optimalLayers) {
                             newGpu = sys.optimalLayers.gpuLayers;
                             message = sys.optimalLayers.message;
-                            if (vramGB >= 8 && currentModelId === 'nyx-gemma-4-e2b-it') {
+                            if (vramGB >= 8 && currentModelId === 'qwen2.5-coder-1.5b-native') {
                               recommendedModel = 'qwen2.5-coder-3b-native';
                               message += ` High VRAM detected, switching to qwen2.5-coder-3b-native for optimal code generation.`;
                             }
@@ -98,7 +98,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                               message = `High VRAM detected (${Math.round(vramGB)}GB). Optimal settings applied.`;
                             } else if (vramGB > 0) {
                               newGpu = Math.floor(vramGB * 10);
-                              recommendedModel = 'nyx-gemma-4-e2b-it';
+                              recommendedModel = 'qwen2.5-coder-1.5b-native';
                               message = `VRAM detected (${vramGB.toFixed(1)}GB). Optimal settings applied.`;
                             } else if (ramGB >= 24) {
                               newGpu = 99;

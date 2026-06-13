@@ -11,15 +11,15 @@ export const PROVIDER_LABELS: Record<string, string> = {
   terminal: 'Terminal',
   'ollama': 'Ollama',
   'lmstudio': 'LM Studio',
-  'antigravity-sdk': 'Antigravity SDK',
+
 };
 
-export const CLOUD_PROVIDERS: string[] = ['gemini', 'antigravity-sdk'];
+export const CLOUD_PROVIDERS: string[] = ['gemini'];
 
 export const LOCAL_PROVIDERS: string[] = ['ollama', 'lmstudio'];
 
 const LOCAL_MODEL_IDS = new Set([
-  'nyx-gemma-4-e2b-it',
+
   'gemma-2-2b-it',
   'gemma-2-9b-it',
   'gemma-3-4b-it',
@@ -166,11 +166,7 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
     contextWindow: 8192,
   };
 
-  if (lowerId.includes('gemini-2.5-pro')) {
-    caps.supportsVision = true;
-    caps.supportsTools = true;
-    caps.contextWindow = 2097152; // 2M
-  } else if (lowerId.includes('gemini-2.5-flash')) {
+  if (lowerId.includes('gemini-2.5-flash')) {
     caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576; // 1M
@@ -189,11 +185,7 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
   } else if (lowerId.includes('gemini')) {
     caps.supportsVision = true;
     caps.supportsTools = true;
-    if (lowerId.includes('3.1-pro')) {
-      caps.contextWindow = 2097152;
-    } else {
-      caps.contextWindow = 1048576;
-    }
+    caps.contextWindow = 1048576;
   } else if (lowerId.includes('gemma-4')) {
     caps.supportsVision = false;
     caps.supportsTools = true;

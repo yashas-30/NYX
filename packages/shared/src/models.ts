@@ -25,14 +25,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     description: 'Balanced speed and capability Flash model (preview).',
     specs: { contextWindow: '1M', trainingData: '2025', maxOutput: '32K', modality: 'Multimodal' },
   },
-  {
-    id: 'gemini-3.1-pro-preview',
-    name: 'Gemini 3.1 Pro',
-    provider: 'gemini',
-    status: 'preview',
-    description: 'Cutting-edge Pro model for advanced reasoning and coding (preview).',
-    specs: { contextWindow: '2M', trainingData: '2026', maxOutput: '64K', modality: 'Multimodal' },
-  },
+
   {
     id: 'gemini-3.1-flash-lite',
     name: 'Gemini 3.1 Flash Lite',
@@ -56,15 +49,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     specs: { contextWindow: '1M', trainingData: '2025', maxOutput: '32K', modality: 'Multimodal' },
     limits: { rpm: 5, tpm: 250000, rpd: 20 },
   },
-  {
-    id: 'gemini-2.5-pro',
-    name: 'Gemini 2.5 Pro',
-    provider: 'gemini',
-    status: 'deprecated',
-    shutdownDate: '2026-10-16',
-    description: 'Advanced Pro model. Deprecated — migrating to 3.x series.',
-    specs: { contextWindow: '2M', trainingData: '2025', maxOutput: '64K', modality: 'Multimodal' },
-  },
+
   {
     id: 'gemini-2.5-flash-lite',
     name: 'Gemini 2.5 Flash Lite',
@@ -147,7 +132,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
 ];
 
 // Deduplicate by ID to prevent duplicate entries in the model selector
-const ALLOWED_PROVIDERS = ['gemini', 'ollama', 'lmstudio', 'antigravity-sdk'];
+const ALLOWED_PROVIDERS = ['gemini', 'ollama', 'lmstudio'];
 const _seen = new Set<string>();
 export const AVAILABLE_MODELS: ModelOption[] = RAW_AVAILABLE_MODELS.filter((m) =>
   ALLOWED_PROVIDERS.includes(m.provider)

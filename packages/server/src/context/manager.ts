@@ -19,7 +19,7 @@ export class ContextWindowManager {
   constructor(modelId: string) {
     // Map model to appropriate encoding
     const encodingMap: Record<string, string> = {
-      'gemini-2.5-pro': 'cl100k_base',
+
       'gemini-2.5-flash': 'cl100k_base',
       'claude-sonnet-4': 'cl100k_base',
       'gpt-4': 'cl100k_base',

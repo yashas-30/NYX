@@ -208,9 +208,9 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
 
     let routingPlanRaw = '';
     await new Promise<void>((resolve, reject) => {
-      // Use gemini-2.5-flash for routing decisions to save tokens
+      // Use gemini-2.5-flash for routing decisions to save tokens and prevent Gemma 500 errors
       UnifiedEngine.executeStream(
-        { provider: subagentContext.provider, model: subagentContext.model, messages: supervisorMessages, apiKey: context.apiKey, settings: { temperature: 0.0, maxTokens: 300 } },
+        { provider: 'gemini', model: 'gemini-2.5-flash', messages: supervisorMessages, apiKey: context.apiKey, settings: { temperature: 0.0, maxTokens: 300 } },
         (chunk: any) => { routingPlanRaw += chunk.chunk || ''; },
         () => resolve()
       ).catch(reject);
@@ -257,13 +257,21 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     logger.info(`[Supervisor] Execution Plan: ${planStr}`);
     onChunk({ type: 'thinking', content: `\n🗺️  Plan: ${planStr}\n` });
 
+    const isGemma = context.model && context.model.toLowerCase().includes('gemma-4');
+
     // ── M6: Adaptive MAX_LOOPS based on complexity ─────────────────────────────
     const complexityScore = scoreComplexity(promptMessage);
-    const SWARM_MAX_LOOPS = complexityScore >= 4 ? 300 :
+    let SWARM_MAX_LOOPS = complexityScore >= 4 ? 300 :
                             complexityScore >= 3 ? 150 :
                             complexityScore >= 2 ? 75 :
                             40;
-    onChunk({ type: 'thinking', content: `⚡ Complexity: ${complexityScore}/5 → Loop budget: ${SWARM_MAX_LOOPS}\n` });
+    
+    if (isGemma) {
+      SWARM_MAX_LOOPS = 3;
+      onChunk({ type: 'thinking', content: `\n🛡️ [Gemma Protocol] Limiting max reasoning loops to ${SWARM_MAX_LOOPS} to prevent hallucinations.\n` });
+    } else {
+      onChunk({ type: 'thinking', content: `⚡ Complexity: ${complexityScore}/5 → Loop budget: ${SWARM_MAX_LOOPS}\n` });
+    }
 
     const completedTasks: string[] = [];
     const swarmSessionId = `swarm_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -403,9 +411,16 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
   ): Promise<string> {
     const lastMsg = messages[messages.length - 1];
     
+    const isGemma = context.model && context.model.toLowerCase().includes('gemma-4');
+    
     let instructions = assignedTask ? `[CEO ASSIGNED TASK]\n${assignedTask}\n\n` : '';
     if (swarmMemory) {
-      instructions += `[INSTRUCTIONS] Read the Swarm Memory below. Build upon their findings. Do not repeat their work.\n\n[USER REQUEST]\n${lastMsg.content}\n\n[PREVIOUS SWARM MEMORY]\n${swarmMemory}\n\n`;
+      let memoryToInject = swarmMemory;
+      // Gemma mitigation: aggressive context truncation to prevent hallucination loops
+      if (isGemma && swarmMemory.length > 8000) {
+        memoryToInject = "... [EARLIER MEMORY TRUNCATED FOR CONTEXT LIMITS] ...\n" + swarmMemory.slice(-8000);
+      }
+      instructions += `[INSTRUCTIONS] Read the Swarm Memory below. Build upon their findings. Do not repeat their work.\n\n[USER REQUEST]\n${lastMsg.content}\n\n[PREVIOUS SWARM MEMORY]\n${memoryToInject}\n\n`;
     } else {
       instructions += `[USER REQUEST]\n${lastMsg.content}\n\n`;
     }
@@ -414,8 +429,10 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
 
     const finalContent = instructions;
 
+    const gemmaProtocol = isGemma ? `\n\n[GEMMA PROTOCOL]\n1. No Skipping: You must follow a strict step-by-step checklist.\n2. STOP AND WAIT: Before completing a subtask, stop and verify your reasoning.\n3. NEVER hallucinate tool outputs. If a tool fails, state the failure instead of fabricating a result.` : '';
+
     const agentMessages: any[] = [
-      { role: 'system', content: agent.systemPrompt },
+      { role: 'system', content: agent.systemPrompt + gemmaProtocol },
       ...messages.slice(0, -1),
       { role: 'user', content: finalContent }
     ];

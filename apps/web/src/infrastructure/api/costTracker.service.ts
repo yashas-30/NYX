@@ -9,7 +9,7 @@ export interface ModelPricing {
 export const PRICING_MATRIX: Record<string, ModelPricing> = {
   'gemini/gemini-3.5-flash': { inputPer1M: 0.075, outputPer1M: 0.3 },
   'gemini/gemini-3-flash': { inputPer1M: 0.075, outputPer1M: 0.3 },
-  'gemini/gemini-3.1-pro': { inputPer1M: 3.5, outputPer1M: 10.5 },
+
   'gemini/gemini-2.5-flash': { inputPer1M: 0.075, outputPer1M: 0.3 },
   'gemini/gemma-4-31b-it': { inputPer1M: 0.1, outputPer1M: 0.2 },
   'gemini/gemma-4-26b-it': { inputPer1M: 0.1, outputPer1M: 0.2 },

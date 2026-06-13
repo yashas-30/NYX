@@ -15,7 +15,7 @@ export const VALID_GEMINI_MODELS = [
   'gemini-3.5-flash',
   // Preview
   'gemini-3-flash-preview',
-  'gemini-3.1-pro-preview',
+
   'gemini-3.1-flash-lite',
   'gemini-3.1-flash-live-preview',
   'gemini-3.1-flash-image',
@@ -23,14 +23,13 @@ export const VALID_GEMINI_MODELS = [
   'gemini-3.1-pro-preview-customtools',
   // Deprecated (shutting down Oct 16, 2026)
   'gemini-2.5-flash',
-  'gemini-2.5-pro',
+
   'gemini-2.5-flash-lite',
   // Open models
   'gemma-4-31b-it',
   'gemma-4-26b-it',
   'gemma-4-26b-a4b-it',
-  'gemma-4-e4b-it',
-  'gemma-4-e2b-it',
+
   // Aliases
   'gemini-flash-latest',
   'gemini-pro-latest',
@@ -97,12 +96,13 @@ const getCloudflareGateway = (provider: Provider): AIGatewayConfig => {
 };
 
 // Provider URL configuration
+const CLOUD_PROVIDERS = ['gemini'];
 const PROVIDER_URLS: Record<Provider, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta', // Kept for backwards compatibility
   ollama: '',
   lmstudio: '',
-  'antigravity-sdk': '',
   terminal: '',
+  'antigravity-sdk': ''
 };
 
 export class Gateway {

@@ -7,6 +7,7 @@ import { Gateway, Provider, ChatMessage, AISettings } from './gateway.js';
 import { env } from '../config/env.js';
 import { ABSTENTION_INSTRUCTION, resolveRealGeminiModel } from './modelUtils.js';
 import { resolveThinkingBudget } from './thinkingBudget.js';
+import { GoogleGenAI } from '@google/genai';
 
 // ── Ollama keep-alive: prevents cold-start latency by keeping models loaded ─────
 // The interval uses .unref() so it won't prevent clean Node.js shutdown.
@@ -74,8 +75,6 @@ export class AIEngine {
       case 'lmstudio':
         return this.streamLMStudio(model, messages, settings, req.signal, tools, writeChunk, onDone);
 
-      case 'antigravity-sdk':
-        return this.streamAntigravitySdk(model, messages, apiKey || '', req.signal, writeChunk, onDone);
 
       default:
         throw new Error(`Unsupported provider: ${provider}`);
@@ -108,109 +107,185 @@ export class AIEngine {
     done: () => void
   ): Promise<void> {
     const realModel = resolveRealGeminiModel(model);
-    const { url } = Gateway.buildUrl(
-      'gemini',
-      `/models/${realModel}:streamGenerateContent?alt=sse&key=${apiKey}`,
-      customGatewayUrls
-    );
+    const isGemma = realModel.toLowerCase().includes('gemma');
+
+    // Prepare ai client
+    let httpOptions: any = undefined;
+    if (customGatewayUrls && customGatewayUrls['gemini']) {
+      httpOptions = { baseUrl: customGatewayUrls['gemini'] };
+    }
+    const ai = new GoogleGenAI({ apiKey, httpOptions });
+
+    // Format messages
     const { contents, systemInstruction } = Gateway.formatMessages(messages, 'gemini');
 
-    let response: Response | null = null;
+    const config: any = {
+      temperature: settings?.temperature ?? 0.1,
+      // Gemma models: no cap — let the API use the model's native maximum output.
+      // Other Gemini models default to 8192 to prevent runaway costs.
+      maxOutputTokens: isGemma ? undefined : (settings?.maxTokens ?? 8192),
+      topP: settings?.topP ?? 0.9,
+      topK: isGemma ? undefined : (settings?.topK ?? 20),
+      tools: (tools && tools.length > 0 && !isGemma) ? tools : undefined,
+    };
+
+    if (cachedContent) {
+      config.cachedContent = cachedContent;
+    }
+
+    // Enable thinking tokens for Gemini 2.5+ models (non-Gemma)
+    const supportsThinking = realModel.includes('2.5') || realModel.includes('3.1-pro') || realModel.includes('3.5');
+    if (supportsThinking && !isGemma) {
+      config.thinkingConfig = {
+        includeThoughts: true,
+        thinkingBudget: settings?.thinkingBudget ?? resolveThinkingBudget(
+          messages[messages.length - 1]?.content || ''
+        ),
+      };
+    }
+
+    if (!isGemma) {
+      config.systemInstruction = systemInstruction
+        ? systemInstruction + '\n\n' + ABSTENTION_INSTRUCTION
+        : ABSTENTION_INSTRUCTION;
+    } else if (systemInstruction || ABSTENTION_INSTRUCTION) {
+      // Manually prepend to the first user message for Gemma
+      const combinedSystem = (systemInstruction ? systemInstruction + '\n\n' : '') + ABSTENTION_INSTRUCTION;
+      if (contents.length > 0 && contents[0].role === 'user') {
+        contents[0].parts[0].text = `System Instruction:\n${combinedSystem}\n\n${contents[0].parts[0].text}`;
+      } else {
+        contents.unshift({ role: 'user', parts: [{ text: `System Instruction:\n${combinedSystem}` }] });
+        if (contents.length > 1 && contents[1].role === 'user') {
+          contents.splice(1, 0, { role: 'model', parts: [{ text: 'Acknowledged.' }] });
+        }
+      }
+    }
+
     let retries = 3;
     let delay = 1000;
-    
+    let responseStream: any = null;
+
     while (retries >= 0) {
-      const isGemma = realModel.toLowerCase().includes('gemma');
-      const requestBody: any = {
-        contents,
-        generationConfig: {
-          temperature: settings?.temperature ?? 0.1,
-          // Gemma models: no cap — let the API use the model's native maximum output.
-          // Other Gemini models default to 8192 to prevent runaway costs.
-          maxOutputTokens: isGemma ? undefined : (settings?.maxTokens ?? 8192),
-          topP: settings?.topP ?? 0.9,
-          topK: settings?.topK ?? 20,
-        },
-        tools: tools && tools.length > 0 ? tools : undefined,
-        cachedContent: cachedContent ? cachedContent : undefined,
-      };
-
-      // Enable thinking tokens for Gemini 2.5+ models (non-Gemma)
-      const supportsThinking = realModel.includes('2.5') || realModel.includes('3.1-pro') || realModel.includes('3.5');
-      if (supportsThinking && !isGemma) {
-        requestBody.generationConfig = {
-          ...requestBody.generationConfig,
-          thinkingConfig: {
-            includeThoughts: true,
-            thinkingBudget: settings?.thinkingBudget ?? resolveThinkingBudget(
-              messages[messages.length - 1]?.content || ''
-            ),
-          },
-        };
+      try {
+        responseStream = await ai.models.generateContentStream({
+          model: realModel,
+          contents,
+          config
+        });
+        break;
+      } catch (err: any) {
+        if (retries > 0 && err.status && (err.status === 503 || err.status === 429)) {
+          retries--;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          delay *= 2;
+          continue;
+        }
+        throw new Error(`Gemini API Error: ${err.message}`);
       }
+    }
 
-      if (!isGemma) {
-        requestBody.systemInstruction = systemInstruction
-          ? { role: 'system', parts: [{ text: systemInstruction + '\n\n' + ABSTENTION_INSTRUCTION }] }
-          : { role: 'system', parts: [{ text: ABSTENTION_INSTRUCTION }] };
-      } else if (systemInstruction || ABSTENTION_INSTRUCTION) {
-        // Manually prepend to the first user message
-        const combinedSystem = (systemInstruction ? systemInstruction + '\n\n' : '') + ABSTENTION_INSTRUCTION;
-        if (contents.length > 0 && contents[0].role === 'user') {
-          contents[0].parts[0].text = `System Instruction:\n${combinedSystem}\n\n${contents[0].parts[0].text}`;
+    if (!responseStream) {
+      throw new Error(`Gemini API Error: Failed to generate stream.`);
+    }
+
+    let buffer = '';
+    let inThinkBlock = false;
+
+    try {
+      for await (const chunk of responseStream) {
+        if (signal?.aborted) break;
+
+        // Process standard Gemini thinking parts
+        if (!isGemma && chunk.candidates && chunk.candidates[0]?.content?.parts) {
+          for (const part of chunk.candidates[0].content.parts) {
+            if ((part as any).thought === true || (part as any).thought === 'true') {
+              if (part.text) write({ type: 'thinking', content: part.text });
+            } else if ((part as any).functionCall) {
+              write({ tool_call: (part as any).functionCall });
+            } else if (part.text) {
+              write({ chunk: part.text });
+            }
+          }
+        } 
+        // Process Gemma 4 <think> parsing
+        else if (isGemma) {
+          let text = '';
+          try { text = chunk.text || ''; } catch (e) {}
+          if (!text) continue;
+          buffer += text;
+          
+          while (buffer.length > 0) {
+            if (!inThinkBlock) {
+              const thinkIndex = buffer.indexOf('<think>');
+              if (thinkIndex !== -1) {
+                if (thinkIndex > 0) {
+                  write({ chunk: buffer.slice(0, thinkIndex) });
+                }
+                buffer = buffer.slice(thinkIndex + 7);
+                inThinkBlock = true;
+              } else {
+                const lastBracket = buffer.lastIndexOf('<');
+                if (lastBracket !== -1 && lastBracket >= buffer.length - 7) {
+                  if (lastBracket > 0) write({ chunk: buffer.slice(0, lastBracket) });
+                  buffer = buffer.slice(lastBracket);
+                  break;
+                } else {
+                  write({ chunk: buffer });
+                  buffer = '';
+                }
+              }
+            } else {
+              const endThinkIndex = buffer.indexOf('</think>');
+              if (endThinkIndex !== -1) {
+                if (endThinkIndex > 0) {
+                  write({ type: 'thinking', content: buffer.slice(0, endThinkIndex) });
+                }
+                buffer = buffer.slice(endThinkIndex + 8);
+                inThinkBlock = false;
+              } else {
+                const lastBracket = buffer.lastIndexOf('<');
+                if (lastBracket !== -1 && lastBracket >= buffer.length - 8) {
+                  if (lastBracket > 0) write({ type: 'thinking', content: buffer.slice(0, lastBracket) });
+                  buffer = buffer.slice(lastBracket);
+                  break;
+                } else {
+                  write({ type: 'thinking', content: buffer });
+                  buffer = '';
+                }
+              }
+            }
+          }
         } else {
-          contents.unshift({ role: 'user', parts: [{ text: `System Instruction:\n${combinedSystem}` }] });
-          if (contents.length > 1 && contents[1].role === 'user') {
-            contents.splice(1, 0, { role: 'model', parts: [{ text: 'Acknowledged.' }] });
+          // Fallback if parts processing didn't trigger
+          let text = '';
+          try { text = chunk.text || ''; } catch (e) {}
+          if (text) write({ chunk: text });
+          
+          if ((chunk as any).functionCalls && (chunk as any).functionCalls.length > 0) {
+            for (const fc of (chunk as any).functionCalls) {
+              write({ tool_call: fc });
+            }
           }
         }
       }
-
-      response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // fallow-ignore-next-line code-duplication
-        body: JSON.stringify(requestBody),
-        signal,
-      });
-
-      if (response.ok) break;
-
-      if ((response.status === 503 || response.status === 429) && retries > 0) {
-        retries--;
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        delay *= 2;
-        continue;
-      }
-
-      const errorText = await response.text().catch(() => '');
-      throw new Error(`Gemini API Error: ${response.status} ${errorText}`);
-    }
-
-    if (!response || !response.ok) {
-      throw new Error(`Gemini API Error: ${response?.status}`);
-    }
-
-    await Gateway.processSSEStream(response, {
-      onChunk: (data) => {
-        if (typeof data === 'string') {
-          write({ chunk: data });
-        } else if (data && typeof data === 'object') {
-          if (data.thinking) {
-            // Pass thinking content as a thinking chunk
-            write({ type: 'thinking', content: data.thinking });
-          } else if (data.functionCall) {
-            write({ tool_call: data.functionCall });
-          } else {
-            write(data);
-          }
+      
+      // Flush remaining buffer
+      if (buffer.length > 0) {
+        if (inThinkBlock) {
+          write({ type: 'thinking', content: buffer });
+        } else {
+          write({ chunk: buffer });
         }
-      },
-      onDone: done,
-      onError: (err) => {
-        throw new Error(err);
-      },
-    });
+      }
+      
+      done();
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        done();
+        return;
+      }
+      throw new Error(`Stream processing failed: ${err.message}`);
+    }
   }
 
   /**

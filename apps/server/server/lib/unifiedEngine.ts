@@ -132,7 +132,7 @@ export class UnifiedEngine {
         apiKeys[provider] = apiKey;
       }
 
-      if (provider !== 'ollama' && provider !== 'lmstudio' && provider !== 'antigravity-sdk') {
+      if (provider !== 'ollama' && provider !== 'lmstudio') {
         try {
           const prompt = messages[messages.length - 1]?.content || '';
           const decision = await smartRouter.route(prompt, {
@@ -215,6 +215,7 @@ export class UnifiedEngine {
                 prompt: originalPrompt,
                 apiKey: activeGeminiKey,
                 domain,
+                model: model // Pass user-selected model
               }),
               signal: controller.signal,
             });

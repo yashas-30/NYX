@@ -164,7 +164,7 @@ export class AgentsService {
     };
 
     const orchestrator = new AgentOrchestrator();
-    
+
     try {
       const finalResponse = await orchestrator.orchestrateSupervisor(initialMessages, orchestratorContext, onChunk);
 

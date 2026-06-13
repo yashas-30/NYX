@@ -10,7 +10,6 @@ import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 const ChatView = lazy(() => import('@src/views/ChatView'));
 const ModelRegistryView = lazy(() => import('@src/views/ModelRegistryView'));
 const SettingsView = lazy(() => import('@src/views/SettingsView'));
-const ModelComparisonView = lazy(() => import('@src/views/ModelComparisonView'));
 const WorkspaceCanvas = lazy(() => import('@src/components/workspace/Canvas').then(m => ({ default: m.InfiniteCanvas })));
 
 const LoadingFallback = () => (
@@ -153,14 +152,7 @@ export function AppRouter({
           </LazyRoute>
         }
       />
-      <Route
-        path="/compare"
-        element={
-          <LazyRoute name="ModelComparisonView">
-            <ModelComparisonView />
-          </LazyRoute>
-        }
-      />
+
       <Route
         path="/workspace"
         element={

@@ -258,8 +258,9 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
+      initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.15, ease: 'easeOut' }}
       className="my-2 relative group/image"
     >
       <div
@@ -316,17 +317,19 @@ StreamingCursor.displayName = 'StreamingCursor';
 // ---------------------------------------------------------------------------
 // Markdown Renderer
 // ---------------------------------------------------------------------------
+import { useSmoothTypewriter } from '../hooks/useSmoothTypewriter';
 
 const MarkdownContent: React.FC<{
   content: string;
   isStreaming?: boolean;
   citations?: Citation[];
 }> = memo(({ content, isStreaming, citations }) => {
-  const deferredContent = React.useDeferredValue(content);
+  const smoothContent = useSmoothTypewriter(content, isStreaming || false);
+  const deferredContent = React.useDeferredValue(smoothContent);
   
   let processedContent = deferredContent;
   if (citations && citations.length > 0) {
-    processedContent = content.replace(/\[(\d+)\]/g, (match, id) => {
+    processedContent = smoothContent.replace(/\[(\d+)\]/g, (match, id) => {
       const cite = citations.find((c) => c.id === id);
       if (cite) {
         return `[${match}](#cite-${id})`;
@@ -667,14 +670,14 @@ const MessageBubble = React.memo<MessageBubbleProps>(
 
     return (
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
+        initial={{ opacity: 0, y: 4 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
         className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} group`}
       >
         {isUser ? (
           <div className="max-w-[85%] sm:max-w-[75%]">
-            <div className="py-3.5 px-5 bg-muted/10 border border-border rounded-md hover:bg-muted/20 transition-all">
+            <div className="py-3.5 px-5 bg-muted/10 border border-border rounded-2xl hover:bg-muted/20 transition-all shadow-sm">
               <div className="text-[14px] font-normal leading-relaxed text-foreground select-text whitespace-pre-wrap">
                 {msg.content}
               </div>
@@ -793,7 +796,14 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                   <div className="pl-0">
                     {/* Reasoning block */}
                     {msg.reasoning && (
-                      <ThinkingBlock content={msg.reasoning} isComplete={!isThinking && msg.status !== 'loading'} />
+                      <ThinkingBlock 
+                        content={msg.reasoning} 
+                        isComplete={
+                          (!isStreaming && msg.status !== 'loading') || 
+                          (!!msg.content && msg.content.length > 0) || 
+                          (!!msg.toolCalls && msg.toolCalls.length > 0)
+                        } 
+                      />
                     )}
 
                     {/* Tool calls */}
@@ -913,9 +923,9 @@ const EmptyState: React.FC<{
   onSuggestedPromptClick?: (prompt: string) => void;
 }> = memo(({ suggestedPrompts, onSuggestedPromptClick }) => (
   <motion.div
-    initial={{ opacity: 0, y: 15 }}
+    initial={{ opacity: 0, y: 8 }}
     animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+    transition={{ duration: 0.2, ease: 'easeOut' }}
     className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
   >
     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-primary/[0.02] rounded-md blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
@@ -1028,7 +1038,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     getItemKey: useCallback(
       (index: number) => {
         const msg = history[index];
-        return msg ? `${msg.timestamp}-${index}-${msg.content?.length || 0}` : index;
+        // Use a stable key that doesn't change when content length changes
+        // to prevent React from unmounting and resetting useSmoothTypewriter state
+        return msg ? `${msg.timestamp}-${index}` : index;
       },
       [history]
     ),
@@ -1038,16 +1050,23 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   useEffect(() => {
     if (history.length > lastHistoryLength.current) {
       // New message added
-      if (autoScroll) {
+      if (isNearBottom.current) {
         requestAnimationFrame(() => {
           rowVirtualizer.scrollToIndex(history.length - 1, { align: 'end' });
         });
       }
-    } else if (isLoading && autoScroll) {
+    } else if (isLoading) {
       // Streaming content update
-      requestAnimationFrame(() => {
-        rowVirtualizer.scrollToIndex(history.length - 1, { align: 'end' });
-      });
+      if (isNearBottom.current && autoScroll) {
+        requestAnimationFrame(() => {
+          if (containerRef.current) {
+            // Using a slightly smoother scroll approach for streaming
+            // We only force scroll if we are actively tracking the bottom
+            const el = containerRef.current;
+            el.scrollTop = el.scrollHeight;
+          }
+        });
+      }
     }
     lastHistoryLength.current = history.length;
   }, [history, isLoading, autoScroll, rowVirtualizer]);
@@ -1055,10 +1074,23 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    const threshold = 100;
-    isNearBottom.current = scrollHeight - scrollTop - clientHeight < threshold;
-    setAutoScroll(isNearBottom.current);
-    setShowJumpToBottom(!isNearBottom.current && history.length > 2);
+    
+    // Use a larger threshold to avoid false positives when content grows rapidly
+    const threshold = 150; 
+    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+    const isAtBottom = distanceToBottom < threshold;
+    
+    isNearBottom.current = isAtBottom;
+    
+    // Only turn off autoScroll if the user explicitly scrolled UP away from the bottom
+    // This prevents content growth from randomly disabling auto-scroll
+    if (!isAtBottom) {
+      setAutoScroll(false);
+      setShowJumpToBottom(history.length > 2);
+    } else {
+      setAutoScroll(true);
+      setShowJumpToBottom(false);
+    }
   }, [history.length]);
 
   const jumpToBottom = useCallback(() => {

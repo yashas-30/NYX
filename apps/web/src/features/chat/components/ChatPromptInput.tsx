@@ -95,12 +95,12 @@ interface PromptTemplate {
 }
 
 const tagItemVariants = {
-  hidden: { opacity: 0, x: -10, scale: 0.95 },
+  hidden: { opacity: 0, x: -10, scale: 0.98 },
   visible: {
     opacity: 1,
     x: 0,
     scale: 1,
-    transition: { type: 'spring' as const, stiffness: 350, damping: 25 },
+    transition: { duration: 0.2, ease: 'easeOut' },
   },
 };
 
@@ -504,11 +504,11 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
         <motion.form
           onSubmit={handleSubmit}
           layout
-          transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
           className="relative w-full"
         >
           {visibleTemplates.length > 0 && prompt.startsWith('/') && (
-            <div className="absolute bottom-[calc(100%+8px)] left-0 w-full max-h-60 overflow-y-auto bg-popover/90 backdrop-blur-xl border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] z-50 flex flex-col p-2 scrollbar-none">
+            <div className="absolute bottom-[calc(100%+8px)] left-0 w-full max-h-60 overflow-y-auto bg-popover/90 backdrop-blur-xl border border-border rounded-md shadow-sm z-50 flex flex-col p-2 scrollbar-none">
               <div className="px-3 py-2 border-b border-border/40 flex items-center gap-2">
                 <Layers size={14} className="text-muted-foreground" />
                 <span className="text-xs font-bold text-foreground/80">Prompt Templates</span>
@@ -537,7 +537,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
             </div>
           )}
 
-          <div className="w-full flex flex-col bg-card/60 backdrop-blur-xl border border-border focus-within:border-accent/40 rounded-md p-1 shadow-[0_8px_32px_rgba(0,0,0,0.04)]">
+          <div className="w-full flex flex-col bg-card/60 backdrop-blur-xl border border-border focus-within:border-accent/40 rounded-2xl p-1.5 shadow-sm transition-colors duration-200">
             <motion.div
               variants={tagContainerVariants}
               initial="hidden"

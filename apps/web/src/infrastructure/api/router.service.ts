@@ -25,7 +25,7 @@ export class AutoRouterService {
       ];
     } else if (this.costVsQuality > 0.7) {
       return [
-        { provider: 'gemini', modelId: 'gemini/gemini-3.1-pro' },
+        { provider: 'gemini', modelId: 'gemini/gemini-3.5-flash' },
         { provider: 'gemini', modelId: 'gemini/gemma-4-31b-it' },
         { provider: 'lmstudio', modelId: 'lmstudio/qwen2.5-coder-7b' },
       ];
@@ -33,7 +33,7 @@ export class AutoRouterService {
       // Balanced
       if (complexity === 'high') {
         return [
-          { provider: 'gemini', modelId: 'gemini/gemini-3.1-pro' },
+          { provider: 'gemini', modelId: 'gemini/gemini-3.5-flash' },
           { provider: 'ollama', modelId: 'ollama/qwen2.5-coder-7b' },
         ];
       }

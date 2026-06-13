@@ -13,7 +13,9 @@ type ThinkingPhase = 'analyzing' | 'tool_evaluating' | 'synthesizing' | 'complet
 
 function detectPhase(content: string): ThinkingPhase {
   if (!content || content.length < 10) return 'analyzing';
-  const lower = content.toLowerCase();
+  // Only process the last 1500 chars to avoid main thread blocking on huge strings
+  const scanArea = content.length > 2000 ? content.slice(-1500) : content;
+  const lower = scanArea.toLowerCase();
   
   const toolIdx = Math.max(
     lower.lastIndexOf('tool'),
@@ -80,6 +82,11 @@ function normalizeAgent(name: string): string {
 }
 
 function parseThinking(raw: string): Segment[] {
+  // Fast path for massive strings without our custom agent markers to avoid freezing the UI
+  if (raw.length > 500 && !raw.includes('━━━') && !raw.includes('┌─') && !raw.includes('⚡') && !raw.includes('📋') && !raw.includes('Plan:')) {
+    return [{ type: 'text', content: raw }];
+  }
+
   const lines = raw.split('\n');
   const segments: Segment[] = [];
   for (const line of lines) {
@@ -286,15 +293,18 @@ const PlainText: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
+import { useSmoothTypewriter } from '../hooks/useSmoothTypewriter';
+
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplete = true, startedAt }) => {
   const [isExpanded, setIsExpanded] = useState(!isComplete);
-  const segments = useMemo(() => parseThinking(content), [content]);
+  const smoothContent = useSmoothTypewriter(content, !isComplete);
+  const segments = useMemo(() => parseThinking(smoothContent), [smoothContent]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentPhase: ThinkingPhase = useMemo(() => {
     if (isComplete) return 'complete';
-    return detectPhase(content);
-  }, [content, isComplete]);
+    return detectPhase(smoothContent);
+  }, [smoothContent, isComplete]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -303,18 +313,16 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplet
   }, [segments, isExpanded]);
 
   if (!content?.trim()) return null;
-  const spring = { type: 'spring' as const, bounce: 0, duration: 0.38 };
+  const spring = { duration: 0.2, ease: 'easeOut' as const };
   return (
     <motion.div
-      layout="position"
       initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
-      className="my-3 overflow-hidden rounded-xl border"
-      style={{ background: 'rgba(9,9,11,0.92)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255,255,255,0.07)', boxShadow: '0 4px 24px rgba(0,0,0,0.4)' }}
+      className="my-3 overflow-hidden rounded-xl border bg-card/60 backdrop-blur-md"
+      style={{ borderColor: 'var(--border)' }}
     >
       <motion.button
-        layout="position"
         onClick={() => setIsExpanded(v => !v)}
         whileHover={{ backgroundColor: 'rgba(255,255,255,0.025)' }}
         whileTap={{ scale: 0.995 }}

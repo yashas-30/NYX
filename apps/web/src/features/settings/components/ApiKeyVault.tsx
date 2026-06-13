@@ -41,9 +41,6 @@ interface ApiKeyVaultProps {
   setKeysInput: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   expandedProvider: string | null;
   toggleExpanded: (providerId: string) => void;
-  showGateways: boolean;
-  gatewayUrls?: Record<string, string>;
-  updateGatewayUrl?: (provider: string, url: string) => void;
   fetchVaultStatus: () => Promise<void>;
   clearApiKeys: () => void;
 }
@@ -55,9 +52,6 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   setKeysInput,
   expandedProvider,
   toggleExpanded,
-  showGateways,
-  gatewayUrls = {},
-  updateGatewayUrl = () => {},
   fetchVaultStatus,
   clearApiKeys,
 }) => {
@@ -82,7 +76,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   }));
 
   const getGatewayUrl = (provider: string): string => {
-    return gatewayUrls[provider] || DEFAULT_GATEWAY_URLS[provider] || '';
+    return DEFAULT_GATEWAY_URLS[provider] || '';
   };
 
   const validateGeminiKey = async (key: string): Promise<{ valid: boolean; error?: string }> => {
@@ -256,7 +250,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   return (
     <div className="space-y-4">
       {/* Remember Keys Opt-in */}
-      <div className="p-4 rounded-md bg-secondary/40 border border-border flex items-center justify-between gap-4 select-none">
+      <div className="p-4 rounded-xl bg-secondary/40 border border-border flex items-center justify-between gap-4 select-none">
         <div className="flex-1">
           <p className="text-[10px] font-black uppercase tracking-[0.1em] text-foreground/80">
             Remember Keys on this Device
@@ -293,7 +287,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
           return (
             <div
               key={p.id}
-              className="group p-3.5 rounded-md bg-card border border-border hover:border-accent/30 transition-all duration-300 shadow-sm hover:shadow-sm"
+              className="group p-4 rounded-xl bg-card border border-border hover:border-accent/30 transition-all duration-300 shadow-sm hover:shadow-sm"
             >
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 shrink-0 rounded-[10px] flex items-center justify-center text-[10px] font-black uppercase bg-accent/10 text-accent border border-accent/20">
@@ -431,7 +425,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                       <button
                         type="button"
                         onClick={() => toggleExpanded(p.id)}
-                        className={`p-2 rounded-md border transition-all cursor-pointer ${
+                        className={`p-2 rounded-xl border transition-all cursor-pointer ${
                           isExpanded
                             ? 'bg-accent/10 border-accent/40 text-accent'
                             : 'bg-secondary border-border text-muted-foreground/40 hover:text-foreground'
@@ -482,33 +476,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                 )}
               </AnimatePresence>
 
-              {showGateways && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="mt-3 pt-3 border-t border-border"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Network size={10} className="text-accent/60" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">
-                      Gateway URL
-                    </span>
-                  </div>
-                  <input
-                    type="text"
-                    value={getGatewayUrl(p.id)}
-                    onChange={(e) => updateGatewayUrl(p.id, e.target.value)}
-                    placeholder={DEFAULT_GATEWAY_URLS[p.id]}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        e.currentTarget.blur();
-                      }
-                    }}
-                    className="w-full bg-background border border-border rounded-md px-3.5 py-2 text-[10px] font-mono text-muted-foreground/85 focus:border-accent/50 focus:text-foreground transition-all outline-none"
-                  />
-                </motion.div>
-              )}
+
             </div>
           );
         })}

@@ -41,14 +41,14 @@ describe('Gateway Auth & Router', () => {
 
     it('demands keys for gemini when not configured', () => {
       vi.mocked(getKeysSync).mockReturnValue({});
-      const auth = Gateway.validateAuth('gemini', 'gemini-2.5-pro', undefined);
+      const auth = Gateway.validateAuth('gemini', 'gemini-3.5-flash', undefined);
       expect(auth.valid).toBe(false);
       expect(auth.error).toContain('No API key detected for gemini');
     });
 
     it('permits gemini when key is configured', () => {
       vi.mocked(getKeysSync).mockReturnValue({ gemini: 'some-key' });
-      const auth = Gateway.validateAuth('gemini', 'gemini-2.5-pro', undefined);
+      const auth = Gateway.validateAuth('gemini', 'gemini-3.5-flash', undefined);
       expect(auth.valid).toBe(true);
     });
   });

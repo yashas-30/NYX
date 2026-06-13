@@ -19,6 +19,7 @@ interface ModelCardProps {
   shutdownDate?: string;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
+  index?: number;
 }
 
 /** Pure display model card — library view only, no add functionality */
@@ -37,14 +38,17 @@ export const ModelCard: React.FC<ModelCardProps> = ({
   shutdownDate,
   isExpanded = false,
   onToggleExpand,
+  index = 0,
 }) => {
   const providerLabel = provider;
 
   return (
     <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -2, scale: 1.01 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-      className="group relative p-4 rounded-xl flex flex-col transform-gpu transition-[transform,background-color,border-color,box-shadow] duration-500 overflow-hidden shadow-sm glass-panel hover:border-accent/30 hover:bg-secondary/30 hover:shadow-md"
+      transition={{ duration: 0.2, ease: 'easeOut', delay: index * 0.04 }}
+      className="group relative p-4 rounded-xl flex flex-col transform-gpu transition-[transform,background-color,border-color,box-shadow] duration-500 overflow-hidden border border-border bg-card/50 hover:bg-card hover:border-accent/30 shadow-sm hover:shadow-md"
       style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
     >
       {/* Provider badge + status */}

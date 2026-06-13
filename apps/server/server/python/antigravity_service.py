@@ -91,6 +91,7 @@ async def preprocess(request: Request):
         prompt = data.get("prompt", "")
         api_key = data.get("apiKey", "")
         domain = data.get("domain", "general")
+        model = data.get("model", "")
         
         if domain not in OPTIMIZATION_TEMPLATES:
             domain = "general"
@@ -105,9 +106,10 @@ async def preprocess(request: Request):
             key = api_key or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("ANTIGRAVITY_API_KEY", "")
             if key:
                 try:
+                    actual_model = model if model and model != "unknown" else DEFAULT_GENAI_MODEL
                     client = genai.Client(api_key=key)
                     response = await client.aio.models.generate_content(
-                        model=DEFAULT_GENAI_MODEL,
+                        model=actual_model,
                         contents=instruction
                     )
                     if response.text:

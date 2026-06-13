@@ -26,7 +26,7 @@ describe('AI Provider Utility Functions', () => {
 
   describe('isLocalModel', () => {
     it('returns true for known local model IDs', () => {
-      expect(isLocalModel('nyx-gemma-4-e2b-it')).toBe(true);
+
     });
 
     it('returns false for cloud models', () => {

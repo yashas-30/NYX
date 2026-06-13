@@ -232,6 +232,12 @@ function extractContent(parsed: any): ExtractedContent {
   if (typeof parsed.chunk === 'string') {
     result.text = parsed.chunk;
   }
+  if (typeof parsed.thinking === 'string') {
+    result.reasoning = parsed.thinking;
+  }
+  if (typeof parsed.reasoning === 'string') {
+    result.reasoning = parsed.reasoning;
+  }
 
   // Ollama formats
   if (parsed.message?.content) {
@@ -520,8 +526,11 @@ export async function parseSSEStream(
 
         // Accumulate text with <think> tag support
         if (extracted.text) {
-          // Gemini sends full text each time, not deltas - extract only new text
-          const delta = extracted.text.slice(lastGeminiText.length);
+          // Gemini sends full text each time, not deltas - extract only new text if it's an accumulator
+          let delta = extracted.text;
+          if (extracted.text.length > lastGeminiText.length && extracted.text.startsWith(lastGeminiText)) {
+             delta = extracted.text.slice(lastGeminiText.length);
+          }
           if (delta) {
             streamBuffer += delta;
             processStreamBuffer();

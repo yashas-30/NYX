@@ -516,6 +516,7 @@ export class AIService {
         break;
       case 'ollama':
       case 'lmstudio':
+
         result = await this.executeLocal({ ...providerConfig, provider: String(provider) } as any);
         break;
       default:

@@ -78,10 +78,10 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   return (
     <motion.div
       key="registry"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20, scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
@@ -147,15 +147,15 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
           {showLocal && (
             <div className="flex flex-col gap-6">
-              <section className="space-y-4 p-5 rounded-md bg-card border border-border mt-6">
+              <section className="space-y-4 p-6 rounded-2xl bg-card border border-border mt-6 shadow-sm">
                 <SectionHeader
                   icon={<Cpu size={18} weight="duotone" className="text-orange-500" />}
                   title="Ollama Local Library"
                   subtitle="Models hosted by your local Ollama instance"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                  {ollamaModels.map(m => (
-                     <ModelCard key={m.id} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={undefined} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
+                  {ollamaModels.map((m, idx) => (
+                     <ModelCard key={m.id} index={idx} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={undefined} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
                   ))}
                   {ollamaModels.length === 0 && (
                      <div className="col-span-full">
@@ -165,15 +165,15 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                 </div>
               </section>
               
-              <section className="space-y-4 p-5 rounded-md bg-card border border-border mt-6">
+              <section className="space-y-4 p-6 rounded-2xl bg-card border border-border mt-6 shadow-sm">
                 <SectionHeader
                   icon={<Cpu size={18} weight="duotone" className="text-blue-500" />}
                   title="LM Studio Local Library"
                   subtitle="Models hosted by your local LM Studio instance"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                  {lmstudioModels.map(m => (
-                     <ModelCard key={m.id} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={undefined} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
+                  {lmstudioModels.map((m, idx) => (
+                     <ModelCard key={m.id} index={idx} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={undefined} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
                   ))}
                   {lmstudioModels.length === 0 && (
                      <div className="col-span-full">
@@ -186,7 +186,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
           )}
 
           {showCloud && (
-            <section className="space-y-5 p-5 rounded-md bg-card border border-border">
+            <section className="space-y-6 p-6 rounded-2xl bg-card border border-border shadow-sm">
               <SectionHeader
                 icon={<Globe size={18} weight="duotone" />}
                 title="Cloud Models"
@@ -203,9 +203,10 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                    {models.map((m) => (
+                    {models.map((m, idx) => (
                       <ModelCard
                         key={m.id}
+                        index={idx}
                         name={m.name}
                         provider={m.provider}
                         description={m.description}

@@ -104,9 +104,6 @@
   * {
     border-color: var(--border);
     outline-color: var(--ring);
-    transition-property: background-color, border-color, color, fill, stroke, box-shadow, outline-color;
-    transition-timing-function: var(--ease-apple);
-    transition-duration: var(--duration-normal);
   }
 
   html {
@@ -498,24 +495,24 @@
 
 /* ── Custom Glassmorphism & Neon Spells ────────────────────── */
 .glass-panel {
-  background: rgba(17, 22, 34, 0.65) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(17, 22, 34, 0.45) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
 }
 
 .neon-border {
   border-color: rgba(204, 120, 92, 0.3) !important;
-  box-shadow: 0 0 15px rgba(204, 120, 92, 0.05);
 }
 
 .neon-glow-cyan, .neon-glow-flame {
-  text-shadow: 0 0 8px rgba(204, 120, 92, 0.5);
+  text-shadow: none !important;
 }
 
 .btn-tech {
   @apply px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-md transition-all duration-200 border cursor-pointer flex items-center justify-center gap-1.5;
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
   color: var(--foreground);
 }
@@ -524,11 +521,10 @@
   background: rgba(204, 120, 92, 0.08);
   border-color: rgba(204, 120, 92, 0.3);
   color: var(--primary);
-  box-shadow: 0 0 12px rgba(204, 120, 92, 0.05);
 }
 
 .btn-tech:active {
-  transform: translateY(1px);
+  transform: scale(0.98);
 }
 
 /* ── Mobile-first Sizing and Touch Targets ─────────────────── */
