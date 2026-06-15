@@ -7,6 +7,7 @@ import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { invoke } from '@tauri-apps/api/core';
 
 interface ProviderConfig {
   id: string;
@@ -198,19 +199,44 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
       return;
     }
 
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     try {
-      const res = await fetchWithAuth('/api/v1/vault/store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keys: keysToSave }),
-      });
-      if (res.ok) {
+      let allSuccess = true;
+      if (isTauri) {
         for (const provider of Object.keys(keysToSave)) {
           const val = keysToSave[provider];
           if (val !== undefined && val.trim().length > 0) {
-            await updateApiKey(provider, val);
+            const res: any = await invoke('vault_store_key', { payload: { provider, key: val } });
+            if (res.success) {
+              await updateApiKey(provider, val);
+            } else {
+              allSuccess = false;
+              toast.error(`Failed to save ${provider} key: ${res.error}`);
+            }
+          } else if (val === '') {
+            await invoke('vault_delete_key', { payload: { provider } });
           }
         }
+      } else {
+        const res = await fetchWithAuth('/api/v1/vault/store', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys: keysToSave }),
+        });
+        if (res.ok) {
+          for (const provider of Object.keys(keysToSave)) {
+            const val = keysToSave[provider];
+            if (val !== undefined && val.trim().length > 0) {
+              await updateApiKey(provider, val);
+            }
+          }
+        } else {
+          allSuccess = false;
+          toast.error('Failed to save keys to server vault.');
+        }
+      }
+
+      if (allSuccess) {
         toast.success('API keys successfully saved to secure server vault!');
         setKeysInput((prev) => {
           const next = { ...prev };
@@ -218,8 +244,6 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
           return next;
         });
         await fetchVaultStatus();
-      } else {
-        toast.error('Failed to save keys to server vault.');
       }
     } catch (error: any) {
       toast.error(`Error saving keys: ${error.message}`);
@@ -228,18 +252,28 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
 
   const handlePurgeVault = async () => {
     if (confirm('Delete all keys from server vault?')) {
+      const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
       try {
-        const res = await fetchWithAuth('/api/v1/vault/store', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: { gemini: '', scrapling: '', scrapling_url: '' } }),
-        });
-        if (res.ok) {
+        if (isTauri) {
+          await invoke('vault_delete_key', { payload: { provider: 'gemini' } });
+          await invoke('vault_delete_key', { payload: { provider: 'scrapling' } });
+          await invoke('vault_delete_key', { payload: { provider: 'scrapling_url' } });
           toast.success('All API keys removed from server vault');
           await fetchVaultStatus();
           clearApiKeys();
         } else {
-          toast.error('Failed to purge server vault.');
+          const res = await fetchWithAuth('/api/v1/vault/store', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keys: { gemini: '', scrapling: '', scrapling_url: '' } }),
+          });
+          if (res.ok) {
+            toast.success('All API keys removed from server vault');
+            await fetchVaultStatus();
+            clearApiKeys();
+          } else {
+            toast.error('Failed to purge server vault.');
+          }
         }
       } catch (error: any) {
         toast.error(`Error: ${error.message}`);

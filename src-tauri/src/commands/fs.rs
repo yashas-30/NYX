@@ -66,3 +66,47 @@ pub async fn fs_watch_stop(
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn fs_parse_and_chunk_file(
+    path: String,
+    chunk_size: usize,
+    overlap: usize,
+) -> Result<Vec<String>, String> {
+    use std::fs::File;
+    use std::io::{Read, BufReader};
+
+    let file = File::open(&path).map_err(|e| e.to_string())?;
+    let mut reader = BufReader::new(file);
+    let mut contents = String::new();
+    reader.read_to_string(&mut contents).map_err(|e| e.to_string())?;
+
+    if contents.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // A simple text chunking implementation
+    let mut chunks = Vec::new();
+    let chars: Vec<char> = contents.chars().collect();
+    
+    if chunk_size == 0 || chars.len() <= chunk_size {
+        chunks.push(contents);
+        return Ok(chunks);
+    }
+
+    let step = if chunk_size > overlap { chunk_size - overlap } else { 1 };
+    let mut i = 0;
+
+    while i < chars.len() {
+        let end = std::cmp::min(i + chunk_size, chars.len());
+        let chunk: String = chars[i..end].iter().collect();
+        chunks.push(chunk);
+        
+        if end == chars.len() {
+            break;
+        }
+        i += step;
+    }
+
+    Ok(chunks)
+}

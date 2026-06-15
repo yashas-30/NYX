@@ -40,7 +40,7 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { toast } from '@src/shared/components/ui/sonner';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
 import { Logo, NyxLoader, CatLoader, AnimatedLogo } from '@src/assets/icons/icons';
@@ -99,6 +99,36 @@ interface MessageBubbleProps {
 // Tool Call Visualizer
 // ---------------------------------------------------------------------------
 
+const formatToolAction = (name: string, argsStr: string, status: string) => {
+  let args: any = {};
+  try { args = JSON.parse(argsStr || '{}'); } catch {}
+
+  const isDone = status === 'completed';
+  const prefix = isDone ? 'Finished' : (status === 'error' ? 'Failed to' : 'Using');
+
+  switch (name) {
+    case 'searchWeb':
+      return isDone ? 'Searched the web' : 'Searching the web...';
+    case 'agent_handoff':
+      return isDone ? `Received context from ${args.agent}` : `Handed off task to ${args.agent}...`;
+    case 'calculator':
+      return isDone ? 'Calculated result' : 'Calculating...';
+    case 'getWeather':
+      return isDone ? `Checked weather for ${args.location || 'location'}` : `Checking weather for ${args.location || 'location'}...`;
+    case 'run_python':
+    case 'python':
+      return isDone ? 'Ran Python code' : 'Running Python code...';
+    case 'read_file':
+      return isDone ? 'Read file contents' : 'Reading file...';
+    case 'list_dir':
+      return isDone ? 'Listed directory contents' : 'Listing directory...';
+    default:
+      // Generic fallback: "searchWeb" -> "Search web"
+      const formattedName = name.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim();
+      return `${prefix} ${formattedName.toLowerCase()}...`;
+  }
+};
+
 const ToolCallCard: React.FC<{
   tool: ToolCall;
   status: 'pending' | 'running' | 'completed' | 'error';
@@ -106,48 +136,34 @@ const ToolCallCard: React.FC<{
   const [expanded, setExpanded] = useState(false);
   const isRunning = status === 'running';
   const isError = status === 'error';
+  const isDone = status === 'completed';
+
+  const actionText = formatToolAction(tool.function.name, tool.function.arguments, status);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`my-2 rounded-md border overflow-hidden ${
-        isError
-          ? 'bg-red-500/5 border-red-500/20'
-          : isRunning
-            ? 'bg-sky-500/5 border-sky-500/20'
-            : 'bg-card border-border'
-      }`}
+      className="my-3 flex flex-col group"
     >
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-muted/40 transition-colors"
+        className="w-fit flex items-center gap-2 px-3 py-1.5 rounded-full text-left cursor-pointer bg-muted/30 hover:bg-muted/60 transition-colors border border-border/50"
       >
         {isRunning ? (
-          <Loader2 size={13} className="text-sky-400 animate-spin shrink-0" />
+          <Loader2 size={12} className="text-muted-foreground animate-spin shrink-0" />
         ) : isError ? (
-          <AlertTriangle size={13} className="text-red-400 shrink-0" />
+          <AlertTriangle size={12} className="text-red-400 shrink-0" />
         ) : (
-          <Wrench size={13} className="text-emerald-400 shrink-0" />
+          <Wrench size={12} className="text-muted-foreground shrink-0" />
         )}
-        <span className="text-[11px] font-semibold text-foreground/90 truncate">
-          {tool.function.name}
-        </span>
-        <span
-          className={`text-[9px] px-1.5 py-0.5 rounded-md font-medium uppercase tracking-wider ml-auto shrink-0 ${
-            isRunning
-              ? 'bg-sky-500/10 text-sky-400'
-              : isError
-                ? 'bg-red-500/10 text-red-400'
-                : 'bg-emerald-500/10 text-emerald-400'
-          }`}
-        >
-          {status}
+        <span className="text-[12px] font-medium text-muted-foreground truncate max-w-[250px]">
+          {actionText}
         </span>
         {expanded ? (
-          <ChevronDown size={12} className="text-muted-foreground shrink-0" />
+          <ChevronDown size={12} className="text-muted-foreground/60 shrink-0 ml-1" />
         ) : (
-          <ChevronRight size={12} className="text-muted-foreground shrink-0" />
+          <ChevronRight size={12} className="text-muted-foreground/60 shrink-0 ml-1" />
         )}
       </button>
 
@@ -158,11 +174,13 @@ const ToolCallCard: React.FC<{
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden"
+            className="overflow-hidden w-full mt-2"
           >
-            <div className="px-3.5 pb-3 pt-1 border-t border-border">
-              <div className="text-[10px] text-muted-foreground font-mono mb-1.5">Arguments:</div>
-              <pre className="text-[11px] font-mono text-foreground/90 bg-muted/50 rounded-md p-2.5 overflow-x-auto">
+            <div className="pl-4 border-l-2 border-border/40 ml-2 py-1">
+              <div className="text-[10px] text-muted-foreground/80 font-mono mb-1 uppercase tracking-wider">
+                {tool.function.name}
+              </div>
+              <pre className="text-[11px] font-mono text-foreground/80 bg-muted/20 rounded-md p-3 overflow-x-auto border border-border/30">
                 {JSON.stringify(JSON.parse(tool.function.arguments || '{}'), null, 2)}
               </pre>
             </div>
@@ -1312,89 +1330,13 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-  const lastHistoryLength = useRef(history.length);
-  const isNearBottom = useRef(true);
-
-  // Virtualizer with dynamic sizing
-  const rowVirtualizer = useVirtualizer({
-    count: history.length,
-    getScrollElement: () => containerRef.current,
-    estimateSize: useCallback(() => 200, []),
-    overscan: 3,
-    measureElement: (el) => el.getBoundingClientRect().height,
-    getItemKey: useCallback(
-      (index: number) => {
-        const msg = history[index];
-        // Use a stable key that doesn't change when content length changes
-        // to prevent React from unmounting and resetting useSmoothTypewriter state
-        return msg ? `${msg.timestamp}-${index}` : index;
-      },
-      [history]
-    ),
-  });
-
-  const lastScrollTop = useRef(0);
-
-  // Smart scroll: auto-scroll only if user was near bottom
-  useEffect(() => {
-    if (history.length > lastHistoryLength.current) {
-      // New message added
-      if (isNearBottom.current) {
-        requestAnimationFrame(() => {
-          rowVirtualizer.scrollToIndex(history.length - 1, { align: 'end' });
-        });
-      }
-    } else if (isLoading) {
-      // Streaming content update
-      if (isNearBottom.current && autoScroll) {
-        requestAnimationFrame(() => {
-          if (containerRef.current) {
-            // Using a slightly smoother scroll approach for streaming
-            // We only force scroll if we are actively tracking the bottom
-            const el = containerRef.current;
-            el.scrollTop = el.scrollHeight;
-          }
-        });
-      }
-    }
-    lastHistoryLength.current = history.length;
-  }, [history, isLoading, autoScroll, rowVirtualizer, streamingContent, streamingReasoning, streamingToolCalls]);
-
-  const handleScroll = useCallback(() => {
-    if (!containerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    
-    const isScrollingUp = scrollTop < lastScrollTop.current;
-    lastScrollTop.current = scrollTop;
-    
-    // 10px threshold is enough to allow for subpixel rendering differences
-    const distanceToBottom = Math.ceil(scrollHeight - scrollTop - clientHeight);
-    const isAtBottom = distanceToBottom <= 10;
-    
-    // Only turn off autoScroll if the user explicitly scrolled UP away from the bottom
-    // This prevents content growth from randomly disabling auto-scroll
-    if (isScrollingUp && !isAtBottom) {
-      setAutoScroll(false);
-      setShowJumpToBottom(true);
-      isNearBottom.current = false;
-    } else if (isAtBottom) {
-      setAutoScroll(true);
-      setShowJumpToBottom(false);
-      isNearBottom.current = true;
-    }
-  }, []);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
 
   const jumpToBottom = useCallback(() => {
-    if (history.length > 0) {
-      rowVirtualizer.scrollToIndex(history.length - 1, { align: 'end' });
-      setAutoScroll(true);
-      isNearBottom.current = true;
-      if (containerRef.current) {
-        containerRef.current.scrollTop = containerRef.current.scrollHeight;
-        lastScrollTop.current = containerRef.current.scrollTop;
-      }
-    }
-  }, [history.length, rowVirtualizer]);
+    virtuosoRef.current?.scrollToIndex({ index: history.length - 1, behavior: 'smooth' });
+    setAutoScroll(true);
+    setShowJumpToBottom(false);
+  }, [history.length]);
 
   // Keyboard shortcut: Escape to stop auto-scroll
   useEffect(() => {
@@ -1407,26 +1349,35 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const virtualItems = rowVirtualizer.getVirtualItems();
-  const totalSize = rowVirtualizer.getTotalSize();
-
   return (
     <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-background">
       <div
         ref={containerRef}
-        onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative px-0 md:px-24"
+        className="flex-1 min-h-0 relative"
         aria-live="polite"
         aria-atomic="false"
       >
         {history.length === 0 ? (
           isLoading ? (
-            <div className="flex-1 flex flex-col items-center justify-center min-h-[65vh] gap-4">
-              <NyxLoader size={20} className="text-zinc-500" />
-              <span className="text-xs text-zinc-500 tracking-widest uppercase font-semibold">
-                Initializing...
-              </span>
-            </div>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.98 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              className="flex-1 flex flex-col items-center justify-center min-h-[65vh] gap-6"
+            >
+              <div className="relative flex items-center justify-center">
+                <div className="absolute w-12 h-12 border-2 border-primary/20 rounded-full animate-ping" />
+                <div className="w-12 h-12 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
+                <Sparkles className="absolute text-primary/60 w-4 h-4" />
+              </div>
+              <motion.span 
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="text-sm text-muted-foreground/80 tracking-wide font-medium"
+              >
+                Connecting to NYX Intelligence...
+              </motion.span>
+            </motion.div>
           ) : (
             <EmptyState
               suggestedPrompts={suggestedPrompts}
@@ -1434,15 +1385,24 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             />
           )
         ) : (
-          <div
-            className="w-full max-w-3xl mx-auto px-4 md:px-0 pb-6 pt-4 relative"
-            style={{ height: `${totalSize}px` }}
-          >
-            {virtualItems.map((virtualItem) => {
-              const msg = history[virtualItem.index];
+          <Virtuoso
+            ref={virtuosoRef}
+            data={history}
+            className="w-full h-full custom-scrollbar"
+            atBottomStateChange={(atBottom) => {
+              if (atBottom) {
+                setAutoScroll(true);
+                setShowJumpToBottom(false);
+              } else {
+                setAutoScroll(false);
+                setShowJumpToBottom(true);
+              }
+            }}
+            followOutput={autoScroll ? "smooth" : false}
+            itemContent={(index, msg) => {
               if (!msg) return null;
 
-              const isLast = virtualItem.index === history.length - 1;
+              const isLast = index === history.length - 1;
               const isStreaming = isLast && isLoading;
 
               // Merge streaming state into last message
@@ -1456,37 +1416,26 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                 : msg;
 
               return (
-                <div
-                  key={virtualItem.key}
-                  data-index={virtualItem.index}
-                  ref={rowVirtualizer.measureElement}
-                  className="absolute left-0 w-full px-4"
-                  style={{
-                    top: 0,
-                    transform: `translateY(${virtualItem.start}px)`,
-                  }}
-                >
-                  <div className="py-3">
-                    <MessageBubble
-                      msg={displayMsg}
-                      index={virtualItem.index}
-                      isLast={isLast}
-                      isStreaming={isStreaming}
-                      onCopy={onCopy}
-                      copiedId={copiedId}
-                      submitReward={submitReward}
-                      onEdit={onEditMessage}
-                      onRegenerate={onRegenerate}
-                      onBranch={onBranchFromMessage}
-                      onBranchChange={onBranchChange}
-                      activeModel={activeModel}
-                      onArtifactClick={onArtifactClick}
-                    />
-                  </div>
+                <div className="py-3 px-4 md:px-6 max-w-4xl mx-auto w-full">
+                  <MessageBubble
+                    msg={displayMsg}
+                    index={index}
+                    isLast={isLast}
+                    isStreaming={isStreaming}
+                    onCopy={onCopy}
+                    copiedId={copiedId}
+                    submitReward={submitReward}
+                    onEdit={onEditMessage}
+                    onRegenerate={onRegenerate}
+                    onBranch={onBranchFromMessage}
+                    onBranchChange={onBranchChange}
+                    activeModel={activeModel}
+                    onArtifactClick={onArtifactClick}
+                  />
                 </div>
               );
-            })}
-          </div>
+            }}
+          />
         )}
       </div>
 

@@ -477,7 +477,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
         UnifiedEngine.executeStream(
           {
             provider: context.provider,
-            model: context.model,
+            model: fastModel, // Stream-first: use fastModel instead of context.model to reduce TTFT
             messages: supervisorMessages,
             apiKey: context.apiKey,
             settings: {
@@ -488,7 +488,17 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
               jsonSchema: ledgerSchema
             }
           },
-          (chunk: any) => { routingPlanRaw += chunk.chunk || ''; },
+          (chunk: any) => { 
+            if (chunk.chunk) {
+              routingPlanRaw += chunk.chunk;
+              // Stream the JSON chunks as thinking output so the UI shows immediate activity
+              onChunk({ type: 'thinking', content: chunk.chunk });
+            } else if (chunk.type === 'thinking') {
+              onChunk(chunk);
+            } else if (chunk.thinking) {
+              onChunk({ type: 'thinking', content: chunk.thinking });
+            }
+          },
           () => resolve()
         ).catch(reject);
       });
@@ -672,7 +682,21 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
         elapsed: Date.now() - swarmStartTime,
       });
       onChunk({ type: 'thinking', content: `\n━━━ [Swarm Queue] Spawning parallel batch: [${batchDesc}] ━━━\n` });
-      batch.forEach((step, i) => onChunk({ type: 'thinking', content: `┌─ Task ${i + 1} (${step.agent}): ${step.task}\n` }));
+      batch.forEach((step, i) => {
+        onChunk({ type: 'thinking', content: `┌─ Task ${i + 1} (${step.agent}): ${step.task}\n` });
+        onChunk({
+          type: 'tool_start',
+          content: `Handing off task to ${step.agent}`,
+          toolCall: {
+            id: `swarm-${swarmSessionId}-${step.agent}-${i}`,
+            name: 'agent_handoff',
+            arguments: {
+              agent: AGENT_REGISTRY[step.agent]?.name || step.agent,
+              task: step.task
+            }
+          }
+        });
+      });
 
       // Run batch in parallel to enable multi-agent swarm logic
       const results: PromiseSettledResult<any>[] = await Promise.allSettled(
@@ -734,6 +758,17 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
 
         // Write to Shared Context Pool
         await SharedContextPool.writeContext(swarmSessionId, agent?.name || step.agent, step.task, resultOutput);
+
+        onChunk({
+          type: 'tool_result',
+          content: resultOutput,
+          toolResult: {
+            toolCallId: `swarm-${swarmSessionId}-${step.agent}-${i}`,
+            name: 'agent_handoff',
+            result: resultOutput,
+            isError: res.status !== 'fulfilled'
+          }
+        });
       }
 
       // Compress swarm memory asynchronously if it exceeds our context budget threshold

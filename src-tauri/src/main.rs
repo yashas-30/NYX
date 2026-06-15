@@ -84,17 +84,17 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             dialog_open_directory,
-            vault_store_key, vault_get_key, vault_delete_key, vault_list_keys,
+            vault_store_key, vault_get_key, vault_delete_key, vault_status,
             window_minimize, window_maximize, window_close, window_show, window_hide,
             system_gpu_info, system_info, system_get_userdata,
             server_get_ports, server_restart,
             app_get_version, app_open_external,
             proxy_request, proxy_stream_request,
             execute_computer_action,
-            mcp_start_server, mcp_send_request,
+            mcp_start_server, mcp_send_request, mcp_stop_server, mcp_list_servers,
             llm_stream_request,
             pty_spawn, pty_write, pty_resize, pty_close,
-            fs_watch_start, fs_watch_stop,
+            fs_watch_start, fs_watch_stop, fs_parse_and_chunk_file,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -116,6 +116,7 @@ async fn setup_app(handle: &tauri::AppHandle) {
 
     // Create the window immediately with default ports so UI is instant
     let window = create_main_window(handle, 3010).await;
+    let spotlight = create_spotlight_window(handle, 3010).await;
     tray::create_tray(handle, &window).expect("Failed to create tray");
     setup_menus(handle);
 
@@ -124,10 +125,16 @@ async fn setup_app(handle: &tauri::AppHandle) {
     let _ = window.set_focus();
 
     #[cfg(target_os = "macos")]
-    let _ = window_vibrancy::apply_vibrancy(&window, window_vibrancy::NSVisualEffectMaterial::HudWindow, None, None);
+    {
+        let _ = window_vibrancy::apply_vibrancy(&window, window_vibrancy::NSVisualEffectMaterial::HudWindow, None, None);
+        let _ = window_vibrancy::apply_vibrancy(&spotlight, window_vibrancy::NSVisualEffectMaterial::HudWindow, None, None);
+    }
 
     #[cfg(target_os = "windows")]
-    let _ = window_vibrancy::apply_blur(&window, Some((18, 18, 18, 125))); // Dark blur
+    {
+        let _ = window_vibrancy::apply_blur(&window, Some((18, 18, 18, 125))); // Dark blur
+        let _ = window_vibrancy::apply_blur(&spotlight, Some((18, 18, 18, 125))); // Dark blur
+    }
 
     // Spawn server start in background
     let handle_clone = handle.clone();
@@ -210,6 +217,29 @@ async fn create_main_window(handle: &tauri::AppHandle, port: u16) -> tauri::Webv
             .expect("Failed to create window")
         }
     }
+}
+
+async fn create_spotlight_window(handle: &tauri::AppHandle, port: u16) -> tauri::WebviewWindow {
+    if let Some(window) = handle.get_webview_window("spotlight") {
+        return window;
+    }
+    
+    let url = if cfg!(debug_assertions) {
+        WebviewUrl::External("http://localhost:3000/spotlight".parse().unwrap())
+    } else {
+        WebviewUrl::External(format!("http://127.0.0.1:{}/spotlight", port).parse().unwrap())
+    };
+
+    WebviewWindowBuilder::new(handle, "spotlight", url)
+        .title("NYX Spotlight")
+        .inner_size(800.0, 600.0)
+        .center()
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .visible(false)
+        .build()
+        .expect("Failed to create spotlight window")
 }
 
 fn setup_menus(handle: &tauri::AppHandle) {

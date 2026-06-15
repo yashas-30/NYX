@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
-import { Store } from '@tauri-apps/plugin-store';
+import { LazyStore as Store } from '@tauri-apps/plugin-store';
 
 const settingsStore = new Store('nyx_settings.bin');
 
@@ -50,18 +50,28 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
   const [systemPrompt, setSystemPrompt] = useState('');
   const [promptSaving, setPromptSaving] = useState(false);
 
+  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
   useEffect(() => {
     if (!currentModelId) return;
     const loadPrompt = async () => {
       try {
-        const prompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
+        let prompts: Record<string, string> = {};
+        if (isTauri) {
+          prompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
+        } else {
+          const stored = localStorage.getItem('nyx_model_prompts');
+          if (stored) {
+            try { prompts = JSON.parse(stored); } catch (e) {}
+          }
+        }
         setSystemPrompt(prompts[currentModelId] || '');
       } catch (e) {
         console.error('Failed to load system prompt:', e);
       }
     };
     loadPrompt();
-  }, [currentModelId]);
+  }, [currentModelId, isTauri]);
 
   const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setSystemPrompt(e.target.value);
@@ -71,10 +81,20 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
     if (!currentModelId) return;
     setPromptSaving(true);
     try {
-      const prompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
-      prompts[currentModelId] = systemPrompt;
-      await settingsStore.set('modelSystemPrompts', prompts);
-      await settingsStore.save();
+      let prompts: Record<string, string> = {};
+      if (isTauri) {
+        prompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
+        prompts[currentModelId] = systemPrompt;
+        await settingsStore.set('modelSystemPrompts', prompts);
+        await settingsStore.save();
+      } else {
+        const stored = localStorage.getItem('nyx_model_prompts');
+        if (stored) {
+          try { prompts = JSON.parse(stored); } catch (e) {}
+        }
+        prompts[currentModelId] = systemPrompt;
+        localStorage.setItem('nyx_model_prompts', JSON.stringify(prompts));
+      }
       toast.success('System prompt saved for ' + currentModelId);
     } catch (e) {
       console.error('Failed to save system prompt:', e);

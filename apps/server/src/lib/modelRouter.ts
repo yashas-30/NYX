@@ -74,3 +74,42 @@ export function selectModel(task: TaskProfile, prompt?: string): ModelRecommenda
     fallbacks: scores.slice(1, 3).map(s => s.model)
   };
 }
+
+/**
+ * Dynamic Context Compression
+ * Trims older context messages if they exceed the maxTokens limit,
+ * ensuring the model never crashes due to context window limits.
+ */
+export async function compressContext(
+  messages: Array<{ role: string; content: string }>,
+  maxTokens: number
+): Promise<Array<{ role: string; content: string }>> {
+  if (!messages || messages.length === 0) return messages;
+
+  const { getEncoding } = await import('js-tiktoken');
+  const enc = getEncoding('cl100k_base'); // standard for most models
+
+  let currentTokens = 0;
+  const compressed: Array<{ role: string; content: string }> = [];
+
+  // Always keep the system prompt (usually the first message)
+  let startIndex = 0;
+  if (messages[0].role === 'system') {
+    currentTokens += enc.encode(messages[0].content).length;
+    compressed.push(messages[0]);
+    startIndex = 1;
+  }
+
+  // Iterate backwards to keep the most recent context
+  const recentMessages: Array<{ role: string; content: string }> = [];
+  for (let i = messages.length - 1; i >= startIndex; i--) {
+    const msgTokens = enc.encode(messages[i].content).length;
+    if (currentTokens + msgTokens > maxTokens) {
+      break; // Stop adding more context
+    }
+    currentTokens += msgTokens;
+    recentMessages.unshift(messages[i]);
+  }
+
+  return [...compressed, ...recentMessages];
+}

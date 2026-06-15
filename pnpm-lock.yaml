@@ -37,7 +37,7 @@ importers:
         version: 7.2.0
       '@vitejs/plugin-react':
         specifier: ^6.0.2
-        version: 6.0.2(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 6.0.2(vite@8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
       '@vitest/ui':
         specifier: ^4.1.8
         version: 4.1.8(vitest@4.1.8)
@@ -76,7 +76,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^4.1.8
-        version: 4.1.8(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(happy-dom@20.10.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.3)(typescript@6.0.3))(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.8(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(happy-dom@20.10.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.3)(typescript@6.0.3))(vite@8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
       wait-on:
         specifier: ^9.0.10
         version: 9.0.10
@@ -142,7 +142,7 @@ importers:
         version: 6.0.0
       '@fastify/vite':
         specifier: ^9.0.2
-        version: 9.0.2(fastify@5.8.5)(vite@8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 9.0.2(fastify@5.8.5)(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
       '@fastify/websocket':
         specifier: ^11.2.0
         version: 11.2.0
@@ -479,7 +479,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^4.1.8
-        version: 4.1.8(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(happy-dom@20.10.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.3)(typescript@6.0.3))(vite@8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.8(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(happy-dom@20.10.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.3)(typescript@6.0.3))(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   apps/web:
     dependencies:
@@ -573,6 +573,9 @@ importers:
       '@tauri-apps/plugin-http':
         specifier: ^2.5.9
         version: 2.5.9
+      '@tauri-apps/plugin-store':
+        specifier: ^2.4.3
+        version: 2.4.3
       '@types/katex':
         specifier: ^0.16.8
         version: 0.16.8
@@ -624,6 +627,9 @@ importers:
       mermaid:
         specifier: ^11.15.0
         version: 11.15.0
+      monaco-editor:
+        specifier: ^0.55.1
+        version: 0.55.1
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -657,6 +663,9 @@ importers:
       react-syntax-highlighter:
         specifier: ^16.1.1
         version: 16.1.1(react@19.2.7)
+      react-virtuoso:
+        specifier: ^4.18.7
+        version: 4.18.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react-window:
         specifier: ^2.2.7
         version: 2.2.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -6743,6 +6752,9 @@ packages:
 
   '@tauri-apps/plugin-http@2.5.9':
     resolution: {integrity: sha512-lCiY0+vs4HvIUSvZrBs8TC3TiCB0MOPRmiUjTq4prW7SlcJE2jdLeT6KBsJrT9Tlplufl7W1pY6SFAO3gCWxDA==}
+
+  '@tauri-apps/plugin-store@2.4.3':
+    resolution: {integrity: sha512-9LWPj9yMphRi9czEtUv87XHbl1b6xgd9EXpPrUnq6nG7+nbtoF84d4Kwz9xhAv/Hf30sr58pq7EOlyI936y8qw==}
 
   '@tavily/core@0.7.6':
     resolution: {integrity: sha512-swNz2RaietpfXWrA+y/ERSQ9H3bq0mNu0hcp2OcVKqTrUUcdygEXIXr67o6qQ1XSjgBbB3FNQtAkrPPB8bYkaA==}
@@ -13458,6 +13470,12 @@ packages:
     peerDependencies:
       react: '>= 0.14.0'
 
+  react-virtuoso@4.18.7:
+    resolution: {integrity: sha512-xNF5zDGEEIMB7cKwcen/pLig0YDf6OnfFrVgKFa7sHPf9fRem0CaLshyObbBcP88jzn0enavL39EgplgdyT21g==}
+    peerDependencies:
+      react: '>=16 || >=17 || >= 18 || >= 19'
+      react-dom: '>=16 || >=17 || >= 18 || >=19'
+
   react-window-infinite-loader@2.0.1:
     resolution: {integrity: sha512-+Deq2JkxfDr5N6WAwKQJLECiBARZ1yvVv9rElSXPO6yaMt3YTIs2y8TpsH67lIWGYFMnESvO6mgvETEZuCCjuw==}
     peerDependencies:
@@ -18550,7 +18568,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@fastify/vite@9.0.2(fastify@5.8.5)(vite@8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))':
+  '@fastify/vite@9.0.2(fastify@5.8.5)(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))':
     dependencies:
       '@fastify/deepmerge': 3.2.1
       '@fastify/middie': 9.3.2
@@ -18560,7 +18578,7 @@ snapshots:
       fs-extra: 11.3.5
       klaw: 4.1.0
       package-directory: 8.2.0
-      vite: 8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0)
+      vite: 8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0)
 
   '@fastify/websocket@11.2.0':
     dependencies:
@@ -22576,6 +22594,10 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.11.0
 
+  '@tauri-apps/plugin-store@2.4.3':
+    dependencies:
+      '@tauri-apps/api': 2.11.0
+
   '@tavily/core@0.7.6':
     dependencies:
       axios: 1.17.0
@@ -23479,6 +23501,11 @@ snapshots:
       json-schema-to-ts: 1.6.4
       ts-morph: 12.0.0
 
+  '@vitejs/plugin-react@6.0.2(vite@8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))':
+    dependencies:
+      '@rolldown/pluginutils': 1.0.1
+      vite: 8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0)
+
   '@vitejs/plugin-react@6.0.2(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
@@ -23496,7 +23523,7 @@ snapshots:
       obug: 2.1.2
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.8(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(happy-dom@20.10.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.3)(typescript@6.0.3))(vite@8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+      vitest: 4.1.8(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(happy-dom@20.10.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.3)(typescript@6.0.3))(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   '@vitest/expect@4.1.8':
     dependencies:
@@ -23552,7 +23579,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vitest: 4.1.8(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(happy-dom@20.10.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.3)(typescript@6.0.3))(vite@8.0.16(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+      vitest: 4.1.8(@edge-runtime/vm@3.2.0)(@opentelemetry/api@1.9.1)(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(@vitest/ui@4.1.8)(happy-dom@20.10.2)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.3)(typescript@6.0.3))(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   '@vitest/utils@4.1.8':
     dependencies:
@@ -30647,6 +30674,11 @@ snapshots:
       prismjs: 1.30.0
       react: 19.2.7
       refractor: 5.0.0
+
+  react-virtuoso@4.18.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+    dependencies:
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
 
   react-window-infinite-loader@2.0.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:

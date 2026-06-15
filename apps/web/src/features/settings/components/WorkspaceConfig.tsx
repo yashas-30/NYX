@@ -10,20 +10,37 @@ interface WorkspaceConfigProps {
   setWorkspacePath: React.Dispatch<React.SetStateAction<string>>;
 }
 
+import { invoke } from '@tauri-apps/api/core';
+
 export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
   workspacePath,
   setWorkspacePath,
 }) => {
   const handleSelectWorkspace = async () => {
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     try {
-      const res = await fetchWithAuth('/api/v1/workspace/select', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.workspace) {
+      let selectedPath: string | null = null;
+      if (isTauri) {
+        // Use Tauri native directory picker
+        selectedPath = await invoke('dialog_open_directory');
+      } else {
+        selectedPath = window.prompt("Native directory picker unavailable in browser. Please enter the absolute path to your workspace directory:");
+      }
+      
+      if (selectedPath) {
+        // Send the selected path to the Node backend
+        const res = await fetchWithAuth('/api/v1/workspace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: selectedPath }),
+        });
+        if (res.ok) {
+          const data = await res.json();
           setWorkspacePath(data.workspace);
           toast.success(`Active workspace updated: ${data.workspace}`);
-        } else if (data.fallback) {
-          toast.info('Please enter the workspace directory path in the text field.');
+        } else {
+          const err = await res.json();
+          toast.error(`Error updating workspace on server: ${err.error}`);
         }
       }
     } catch (error: any) {

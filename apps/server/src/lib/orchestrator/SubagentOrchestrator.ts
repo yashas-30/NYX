@@ -41,18 +41,18 @@ export class SubagentOrchestrator {
 
     // Stage 1: Planner
     taskQueue.emit('agent_status', { taskId: task.id, agent: 'Planner', status: 'thinking' });
-    const plan = await this.invokePlanner(prompt, provider, model, apiKey);
+    const plan = await this.invokePlanner(task.id, prompt, provider, model, apiKey);
     taskQueue.emit('agent_status', { taskId: task.id, agent: 'Planner', status: 'done', result: plan });
 
     // Stage 2: Coder — receives the plan
     taskQueue.emit('agent_status', { taskId: task.id, agent: 'Coder', status: 'coding', plan });
     const planWithContext = `Implementation Plan:\n${plan}\n\nUser's Original Request:\n${prompt}`;
-    const code = await this.invokeCoder(planWithContext, provider, model, apiKey);
+    const code = await this.invokeCoder(task.id, planWithContext, provider, model, apiKey);
     taskQueue.emit('agent_status', { taskId: task.id, agent: 'Coder', status: 'done', result: code });
 
     // Stage 3: Optimizer — receives the code
     taskQueue.emit('agent_status', { taskId: task.id, agent: 'Optimizer', status: 'refining' });
-    const finalResult = await this.invokeOptimizer(code, provider, model, apiKey);
+    const finalResult = await this.invokeOptimizer(task.id, code, provider, model, apiKey);
     taskQueue.emit('agent_status', { taskId: task.id, agent: 'Optimizer', status: 'done', result: finalResult });
   }
 
@@ -66,6 +66,8 @@ export class SubagentOrchestrator {
 
     taskQueue.emit('agent_status', { taskId: task.id, agent: 'Reviewer', status: 'reviewing' });
     const reviewJson = await this.invokeAgent(
+      task.id,
+      'Reviewer',
       REVIEWER_SYSTEM_PROMPT,
       reviewInput,
       provider,
@@ -89,7 +91,7 @@ export class SubagentOrchestrator {
 
     const systemPrompt = systemPromptMap[type] || PLANNER_SYSTEM_PROMPT;
     taskQueue.emit('agent_status', { taskId: task.id, agent: type, status: 'running' });
-    const result = await this.invokeAgent(systemPrompt, prompt, provider, model, apiKey);
+    const result = await this.invokeAgent(task.id, type, systemPrompt, prompt, provider, model, apiKey);
     taskQueue.emit('agent_status', { taskId: task.id, agent: type, status: 'done', result });
   }
 
@@ -97,8 +99,11 @@ export class SubagentOrchestrator {
 
   /**
    * Core helper: streams a UnifiedEngine response and collects it into a string.
+   * Emits intermediate chunks to taskQueue to provide zero-delay TTFT for subagents.
    */
   static async invokeAgent(
+    taskId: string,
+    agentName: string,
     systemPrompt: string,
     userContent: string,
     provider: string,
@@ -124,7 +129,10 @@ export class SubagentOrchestrator {
         },
         (chunk: any) => {
           const text = chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '';
-          if (typeof text === 'string') output += text;
+          if (typeof text === 'string') {
+            output += text;
+            taskQueue.emit('agent_chunk', { taskId, agent: agentName, chunk: text });
+          }
         },
         () => resolve(output)
       ).catch(reject);
@@ -132,29 +140,32 @@ export class SubagentOrchestrator {
   }
 
   private static async invokePlanner(
+    taskId: string,
     prompt: string,
     provider: string,
     model: string,
     apiKey: string
   ): Promise<string> {
-    return this.invokeAgent(PLANNER_SYSTEM_PROMPT, prompt, provider, model, apiKey);
+    return this.invokeAgent(taskId, 'Planner', PLANNER_SYSTEM_PROMPT, prompt, provider, model, apiKey);
   }
 
   private static async invokeCoder(
+    taskId: string,
     plan: string,
     provider: string,
     model: string,
     apiKey: string
   ): Promise<string> {
-    return this.invokeAgent(CODER_SYSTEM_PROMPT, plan, provider, model, apiKey);
+    return this.invokeAgent(taskId, 'Coder', CODER_SYSTEM_PROMPT, plan, provider, model, apiKey);
   }
 
   private static async invokeOptimizer(
+    taskId: string,
     code: string,
     provider: string,
     model: string,
     apiKey: string
   ): Promise<string> {
-    return this.invokeAgent(OPTIMIZER_SYSTEM_PROMPT, code, provider, model, apiKey);
+    return this.invokeAgent(taskId, 'Optimizer', OPTIMIZER_SYSTEM_PROMPT, code, provider, model, apiKey);
   }
 }

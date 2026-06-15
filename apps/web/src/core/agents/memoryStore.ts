@@ -1,4 +1,4 @@
-import { Store } from '@tauri-apps/plugin-store';
+import { LazyStore as Store } from '@tauri-apps/plugin-store';
 
 const store = new Store('nyx_agent_memory.bin');
 
@@ -21,8 +21,12 @@ export class MemoryStore {
     };
     
     facts.push(newFact);
-    await store.set('facts', facts);
-    await store.save();
+    if (this.isTauri()) {
+      await store.set('facts', facts);
+      await store.save();
+    } else {
+      localStorage.setItem('nyx_agent_memory_facts', JSON.stringify(facts));
+    }
     
     return newFact;
   }
@@ -37,12 +41,20 @@ export class MemoryStore {
     const newFacts = facts.filter(f => f.id !== idOrFact && f.fact !== idOrFact);
     
     if (newFacts.length !== initialLength) {
-      await store.set('facts', newFacts);
-      await store.save();
+      if (this.isTauri()) {
+        await store.set('facts', newFacts);
+        await store.save();
+      } else {
+        localStorage.setItem('nyx_agent_memory_facts', JSON.stringify(newFacts));
+      }
       return true;
     }
     
     return false;
+  }
+
+  static isTauri() {
+    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
   }
 
   /**
@@ -50,8 +62,13 @@ export class MemoryStore {
    */
   static async getFacts(): Promise<MemoryFact[]> {
     try {
-      const facts = await store.get<MemoryFact[]>('facts');
-      return facts || [];
+      if (this.isTauri()) {
+        const facts = await store.get<MemoryFact[]>('facts');
+        return facts || [];
+      } else {
+        const data = localStorage.getItem('nyx_agent_memory_facts');
+        return data ? JSON.parse(data) : [];
+      }
     } catch (err) {
       console.error('Failed to load memory facts', err);
       return [];

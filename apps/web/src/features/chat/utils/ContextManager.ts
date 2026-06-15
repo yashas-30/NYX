@@ -11,11 +11,11 @@ export class ContextManager {
    * @param minPreservedMessages Number of recent messages that must not be dropped
    * @returns Optimized array of chat messages
    */
-  static optimizeContextWindow(
+  static async optimizeContextWindow(
     history: ChatMessage[],
     maxTokens: number = 8192,
     minPreservedMessages: number = 5
-  ): ChatMessage[] {
+  ): Promise<ChatMessage[]> {
     if (!history || history.length === 0) return [];
 
     let currentTokens = 0;
@@ -23,6 +23,11 @@ export class ContextManager {
 
     // Traverse history from newest to oldest
     for (let i = history.length - 1; i >= 0; i--) {
+      // Yield to main thread every 500 messages to prevent UI lockup
+      if ((history.length - i) % 500 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
       const msg = history[i];
       // Basic token estimation: ~4 chars per token
       const contentTokens = msg.content ? Math.ceil(msg.content.length / 4) : 0;

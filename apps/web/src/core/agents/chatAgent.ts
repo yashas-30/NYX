@@ -5,7 +5,11 @@ import { io, Socket } from 'socket.io-client';
 import { getOrFetchSessionToken } from '@src/infrastructure/api/authFetch';
 import { runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
 import { MemoryStore } from './memoryStore';
-import { Store } from '@tauri-apps/plugin-store';
+import { LazyStore as Store } from '@tauri-apps/plugin-store';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
+
+const isTauriEnv = !!(window as any).__TAURI_INTERNALS__;
 
 const settingsStore = new Store('nyx_settings.bin');
 
@@ -52,8 +56,6 @@ async function acquireSocket(baseUrl: string): Promise<Socket> {
   const socket = io(`${baseUrl}/ai`, {
     path: '/ws/socket.io',
     auth: { token },
-    // Prefer WebSocket — skip the long-polling upgrade handshake
-    transports: ['websocket'],
     reconnection: true,
     reconnectionAttempts: 3,
     reconnectionDelay: 1000,
@@ -183,7 +185,23 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
 
     // Fix 13 & 15: Inject Memory and Per-Model Custom Prompts
     const memoryPrompt = await MemoryStore.getMemoryPrompt();
-    const modelCustomPrompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    let modelCustomPrompts: Record<string, string> = {};
+    if (isTauri) {
+      try {
+        modelCustomPrompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
+      } catch (e) {
+        console.warn('Failed to load custom prompts from store', e);
+      }
+    } else {
+      const stored = localStorage.getItem('nyx_model_prompts');
+      if (stored) {
+        try {
+          modelCustomPrompts = JSON.parse(stored);
+        } catch (e) {}
+      }
+    }
+
     const customPrompt = modelCustomPrompts[this.config.modelId] || '';
 
     let systemInstructions = '';
@@ -196,31 +214,6 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
         content: systemInstructions.trim(),
         timestamp: Date.now()
       });
-    }
-
-    if (searchContextPromise) {
-      const searchContext = await searchContextPromise;
-      if (searchContext) {
-        processedHistory.push({
-          role: 'user',
-          content: `Web Search Context: ${searchContext}`,
-          timestamp: Date.now(),
-        });
-      }
-    }
-
-    // Fix 10: Delegate to Agent Loop if enabled
-    if (this.config.enableToolLoop) {
-      yield* runAgentLoop(prompt, {
-        modelId: this.config.modelId,
-        provider: this.config.provider,
-        apiKey: this.config.apiKey || '',
-        settings: this.config.settings,
-        history: processedHistory,
-        tools: this.config.tools || BUILTIN_TOOLS,
-        signal,
-      });
-      return;
     }
 
     const queue: StreamEvent[] = [];
@@ -238,17 +231,50 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
 
     const base = (window as any).__NYX_BACKEND_URL__ || '';
 
-    // Fix 4: use pooled persistent socket instead of creating a new one per message
+    // Fix 4 & Concurrent Socket: Acquire socket and resolve search context concurrently
+    const [socketResult, searchContext] = await Promise.allSettled([
+      acquireSocket(base),
+      searchContextPromise || Promise.resolve('')
+    ]);
+
     let socket: Socket;
-    try {
-      socket = await acquireSocket(base);
-    } catch (err: any) {
-      yield { type: 'error', content: `Failed to connect: ${err.message}` };
+    if (socketResult.status === 'fulfilled') {
+      socket = socketResult.value;
+    } else {
+      yield { type: 'error', content: `Failed to connect: ${socketResult.reason.message || socketResult.reason}` };
+      return;
+    }
+
+    if (searchContext && searchContext.status === 'fulfilled' && searchContext.value) {
+      processedHistory.push({
+        role: 'user',
+        content: `Web Search Context: ${searchContext.value}`,
+        timestamp: Date.now(),
+      });
+    }
+
+    // Fix 10: Delegate to Agent Loop if enabled
+    if (this.config.enableToolLoop) {
+      yield* runAgentLoop(prompt, {
+        modelId: this.config.modelId,
+        provider: this.config.provider,
+        apiKey: this.config.apiKey || '',
+        settings: this.config.settings,
+        history: processedHistory,
+        tools: this.config.tools || BUILTIN_TOOLS,
+        signal,
+      }) as unknown as AsyncGenerator<StreamEvent>;
+      return;
+    }
+
+    if (isTauriEnv && ['ollama', 'lmstudio', 'gemini', 'openai', 'anthropic'].includes(this.config.provider)) {
+      yield* this.streamTauriResponse(prompt, processedHistory, signal);
       return;
     }
 
     // Unique request ID to namespace events on a shared socket
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
 
     const onChunk = (data: any) => {
       // Filter to only events for this request
@@ -336,6 +362,91 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
       socket.off('disconnect', onDisconnect);
       signal.removeEventListener('abort', onAbort);
       releaseSocket(base);
+    }
+  }
+
+  private async *streamTauriResponse(
+    prompt: string,
+    history: ChatMessage[],
+    signal: AbortSignal
+  ): AsyncGenerator<StreamEvent> {
+    const queue: StreamEvent[] = [];
+    let resolveNext: (() => void) | null = null;
+    let isDone = false;
+    let error: Error | null = null;
+
+    const push = (event: StreamEvent) => {
+      queue.push(event);
+      if (resolveNext) {
+        resolveNext();
+        resolveNext = null;
+      }
+    };
+
+    const eventName = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    let unlisten: UnlistenFn | null = null;
+
+    try {
+      unlisten = await listen<{ chunk: string; done: boolean; error?: string }>(eventName, (event) => {
+        if (event.payload.error) {
+          error = new Error(event.payload.error);
+          isDone = true;
+          if (resolveNext) resolveNext();
+          return;
+        }
+
+        if (event.payload.done) {
+          isDone = true;
+          if (resolveNext) resolveNext();
+          return;
+        }
+
+        if (event.payload.chunk) {
+          push({ type: 'text', content: event.payload.chunk });
+        }
+      });
+
+      const req = {
+        provider: this.config.provider,
+        model_id: this.config.modelId,
+        messages: history.map(m => ({ role: m.role, content: m.content || '' })),
+        api_key: this.config.apiKey || '',
+        temperature: this.config.settings?.temperature ?? 0.7,
+        max_tokens: this.config.settings?.maxTokens,
+        event_name: eventName,
+      };
+      
+      req.messages.push({ role: 'user', content: prompt });
+
+      // Trigger the Tauri native backend
+      invoke('llm_stream_request', { req }).catch((err) => {
+        error = new Error(err.toString());
+        isDone = true;
+        if (resolveNext) resolveNext();
+      });
+
+      const onAbort = () => {
+        isDone = true;
+        if (resolveNext) resolveNext();
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+
+      while (true) {
+        if (queue.length > 0) {
+          yield queue.shift()!;
+        } else if (isDone) {
+          if (error) throw error;
+          break;
+        } else if (signal.aborted) {
+          break;
+        } else {
+          await new Promise<void>((resolve) => {
+            resolveNext = resolve;
+          });
+        }
+      }
+    } finally {
+      if (unlisten) unlisten();
     }
   }
 }

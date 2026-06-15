@@ -105,7 +105,8 @@ pub async fn llm_stream_request(
                     "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
                     "openrouter" => "https://openrouter.ai/api/v1/chat/completions".to_string(),
                     "deepseek" => "https://api.deepseek.com/v1/chat/completions".to_string(),
-                    _ => "http://127.0.0.1:11434/api/chat".to_string(),
+                    "lmstudio" => "http://127.0.0.1:1234/v1/chat/completions".to_string(),
+                    _ => "http://127.0.0.1:11434/v1/chat/completions".to_string(),
                 }
             });
 

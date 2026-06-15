@@ -54,7 +54,26 @@ pub async fn vault_delete_key(payload: ProviderPayload) -> VaultResult<()> {
     }
 }
 
-#[tauri::command(rename = "vault:list-keys")]
-pub async fn vault_list_keys() -> VaultResult<Vec<String>> {
-    VaultResult { success: true, data: Some(vec![]), error: None }
+#[derive(Serialize)]
+pub struct VaultStatus {
+    pub gemini: bool,
+    pub scrapling: bool,
+}
+
+#[tauri::command(rename = "vault:status")]
+pub async fn vault_status() -> VaultResult<VaultStatus> {
+    let gemini_entry = Entry::new(SERVICE_NAME, "gemini").ok();
+    let scrapling_entry = Entry::new(SERVICE_NAME, "scrapling").ok();
+
+    let has_gemini = gemini_entry.and_then(|e| e.get_password().ok()).is_some();
+    let has_scrapling = scrapling_entry.and_then(|e| e.get_password().ok()).is_some();
+
+    VaultResult {
+        success: true,
+        data: Some(VaultStatus {
+            gemini: has_gemini,
+            scrapling: has_scrapling,
+        }),
+        error: None,
+    }
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { invoke } from '@tauri-apps/api/core';
 import {
   Network,
   HelpCircle,
@@ -65,11 +66,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [activeTab, setActiveTab] = useState<string>('api-keys');
 
   const fetchVaultStatus = async () => {
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     try {
-      const res = await fetch('/api/v1/vault/status');
-      if (res.ok) {
-        const data = await res.json();
-        setVaultStatus(data);
+      if (isTauri) {
+        const res: any = await invoke('vault_status');
+        if (res.success && res.data) {
+          setVaultStatus(res.data);
+        }
+      } else {
+        const res = await fetch('/api/v1/vault/status');
+        if (res.ok) {
+          const data = await res.json();
+          setVaultStatus(data);
+        }
       }
     } catch (e: any) {
       console.error('Failed to fetch vault status:', e);

@@ -1,6 +1,6 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
 import { runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
-import { StreamEvent } from '../services/promptEngine.service';
+import { StreamEvent } from '@src/infrastructure/types';
 import { MemoryStore } from './memoryStore';
 
 export interface ResearchAgentConfig extends BaseAgentConfig {
@@ -54,6 +54,6 @@ export class ResearchAgent extends BaseAgent<ResearchAgentConfig, StreamEvent> {
       tools: this.config.tools || BUILTIN_TOOLS,
       signal,
       maxIterations: this.config.maxDepth || 15,
-    });
+    }) as unknown as AsyncGenerator<StreamEvent>;
   }
 }

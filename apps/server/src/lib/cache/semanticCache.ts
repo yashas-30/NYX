@@ -36,7 +36,7 @@ export class SemanticCache {
     }
   }
 
-  async get(query: string, queryEmbedding: number[]): Promise<string | null> {
+  async get(query: string, queryEmbedding?: number[]): Promise<string | null> {
     // L1: Memory Cache
     const memResult = this.memoryCache.get(query);
     if (memResult) return memResult;
@@ -51,24 +51,45 @@ export class SemanticCache {
     }
 
     // L3: Semantic Vector Search
-    // Assuming vectorStore is globally available LanceDB instance
-    /*
-    const similar = await vectorStore.search(queryEmbedding).limit(5).toArray();
-    for (const result of similar) {
-      if (cosineSimilarity(queryEmbedding, result.embedding) > 0.95) {
-        return result.response;
+    try {
+      const { pipeline } = await import('@xenova/transformers');
+      const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      let qEmbedding = queryEmbedding;
+      if (!qEmbedding) {
+        const output = await extractor(query, { pooling: 'mean', normalize: true });
+        qEmbedding = Array.from(output.data);
       }
+
+      // In-memory linear scan of recent queries for semantic similarity
+      for (const [key, value] of this.memoryCache.entries()) {
+        if (typeof value === 'object' && value.embedding && value.response) {
+          const sim = cosineSimilarity(qEmbedding as number[], value.embedding);
+          if (sim > 0.95) {
+            return value.response;
+          }
+        }
+      }
+    } catch (err) {
+      // Ignore embedding failures, fallback to no cache
     }
-    */
 
     return null;
   }
 
   async set(query: string, response: string, embedding?: number[]) {
-    this.memoryCache.set(query, response);
+    let qEmbedding = embedding;
+    if (!qEmbedding) {
+      try {
+        const { pipeline } = await import('@xenova/transformers');
+        const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+        const output = await extractor(query, { pooling: 'mean', normalize: true });
+        qEmbedding = Array.from(output.data);
+      } catch (err) {}
+    }
+    
+    this.memoryCache.set(query, { response, embedding: qEmbedding });
     if (this.redisCache) {
       await this.redisCache.set(`cache:${query}`, response, 'EX', 3600); // 1 hour
     }
-    // L3 save skipped here for simplicity
   }
 }

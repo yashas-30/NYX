@@ -23,9 +23,14 @@ pub struct McpResponse {
     pub error: Option<serde_json::Value>,
 }
 
+pub struct McpProcess {
+    pub stdin: tokio::process::ChildStdin,
+    pub process: tokio::process::Child,
+}
+
 pub struct McpManager {
-    // Map of server name to child process stdin
-    pub servers: Mutex<HashMap<String, tokio::process::ChildStdin>>,
+    // Map of server name to child process wrapper
+    pub servers: Mutex<HashMap<String, McpProcess>>,
 }
 
 impl Default for McpManager {
@@ -41,25 +46,34 @@ pub async fn mcp_start_server(
     name: String,
     command: String,
     args: Vec<String>,
+    env: Option<HashMap<String, String>>,
     mcp_manager: State<'_, Arc<McpManager>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     tracing::info!("Starting MCP server '{}': {} {:?}", name, command, args);
     
-    let mut child = Command::new(command)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn MCP process: {}", e))?;
+    let mut cmd = Command::new(command);
+    cmd.args(args)
+       .stdin(Stdio::piped())
+       .stdout(Stdio::piped())
+       .stderr(Stdio::piped())
+       .kill_on_drop(true);
+
+    if let Some(envs) = env {
+        cmd.envs(envs);
+    }
+       
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn MCP process: {}", e))?;
 
     let stdin = child.stdin.take().ok_or("Failed to open stdin")?;
     let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to open stderr")?;
 
-    // Store stdin to send requests later
-    mcp_manager.servers.lock().await.insert(name.clone(), stdin);
+    // Store process to send requests and manage lifecycle
+    mcp_manager.servers.lock().await.insert(name.clone(), McpProcess {
+        stdin,
+        process: child,
+    });
 
     let name_clone = name.clone();
     let app_clone = app_handle.clone();
@@ -94,12 +108,34 @@ pub async fn mcp_send_request(
     mcp_manager: State<'_, Arc<McpManager>>,
 ) -> Result<(), String> {
     let mut servers = mcp_manager.servers.lock().await;
-    if let Some(stdin) = servers.get_mut(&name) {
+    if let Some(mcp) = servers.get_mut(&name) {
         let req_str = serde_json::to_string(&request).map_err(|e| e.to_string())? + "\n";
-        stdin.write_all(req_str.as_bytes()).await.map_err(|e| e.to_string())?;
-        stdin.flush().await.map_err(|e| e.to_string())?;
+        mcp.stdin.write_all(req_str.as_bytes()).await.map_err(|e| e.to_string())?;
+        mcp.stdin.flush().await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
         Err(format!("MCP server '{}' not found", name))
     }
+}
+
+#[tauri::command]
+pub async fn mcp_stop_server(
+    name: String,
+    mcp_manager: State<'_, Arc<McpManager>>,
+) -> Result<(), String> {
+    let mut servers = mcp_manager.servers.lock().await;
+    if let Some(mut mcp) = servers.remove(&name) {
+        mcp.process.kill().await.map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err(format!("MCP server '{}' not found", name))
+    }
+}
+
+#[tauri::command]
+pub async fn mcp_list_servers(
+    mcp_manager: State<'_, Arc<McpManager>>,
+) -> Result<Vec<String>, String> {
+    let servers = mcp_manager.servers.lock().await;
+    Ok(servers.keys().cloned().collect())
 }

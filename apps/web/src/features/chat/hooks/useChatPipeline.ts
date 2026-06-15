@@ -607,54 +607,8 @@ export const useChatPipeline = ({
   );
 
   // -------------------------------------------------------------------------
-  // Web search with progress
+  // Web search with progress (REMOVED - Handled by backend tools to avoid blocking)
   // -------------------------------------------------------------------------
-
-  const gatherSearchContext = useCallback(
-    async (
-      agent: ChatAgent,
-      prompt: string,
-      analysis: PromptAnalysis,
-      signal: AbortSignal
-    ): Promise<string> => {
-      // Skip web search if disabled
-      if (!webSearchEnabled || !agent.shouldSearchWeb(prompt, analysis)) return '';
-
-      setState((s) => ({ ...s, isSearching: true }));
-
-      try {
-        const searchPromise = new Promise<string>((resolve) => {
-          const worker = new Worker(new URL('../workers/searchWorker.ts', import.meta.url), {
-            type: 'module',
-          });
-          worker.onmessage = (e) => {
-            resolve(e.data.context || '');
-            worker.terminate();
-          };
-          worker.onerror = () => {
-            resolve('');
-            worker.terminate();
-          };
-          worker.postMessage({ prompt });
-        });
-
-        const timeoutPromise = new Promise<string>((_, reject) =>
-          setTimeout(() => reject(new Error('Web search timed out')), 10000)
-        );
-
-        return await Promise.race([searchPromise, timeoutPromise]);
-      } catch (error: any) {
-        console.warn('[Chat Pipeline] Search failed:', error.message);
-        // Don't show error toast - just continue without search context
-        return '';
-      } finally {
-        if (isMountedRef.current) {
-          setState((s) => ({ ...s, isSearching: false }));
-        }
-      }
-    },
-    [webSearchEnabled]
-  );
 
   // -------------------------------------------------------------------------
   // Main chat execution
@@ -769,7 +723,7 @@ export const useChatPipeline = ({
         ]);
 
         // Optimize conversation history
-        const optimizedHistory = ContextManager.optimizeContextWindow(
+        const optimizedHistory = await ContextManager.optimizeContextWindow(
           historySnapshotRef.current,
           8192,
           5
@@ -792,12 +746,9 @@ export const useChatPipeline = ({
         });
 
         // 5. Gather search context (non-blocking UI)
-        const searchContextPromise = gatherSearchContext(
-          agent,
-          compressedPrompt,
-          analysis,
-          controller.signal
-        );
+        const enableToolLoop = useNyxStore.getState().agentLoopEnabled;
+        const searchContextPromise = undefined;
+
 
         // 6. Stream response with timeout protection and Execution Mode handling
         const executionMode = useNyxStore.getState().executionMode || 'standard';
@@ -1122,7 +1073,6 @@ export const useChatPipeline = ({
       lightningDirectives,
       logRollout,
       maxRetries,
-      gatherSearchContext,
       processStream,
     ]
   );
