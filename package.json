@@ -8,9 +8,9 @@
   "type": "module",
   "packageManager": "pnpm@11.5.1",
   "scripts": {
-    "dev": "turbo run dev",
-    "dev:desktop": "tauri dev",
-    "dev:web": "pnpm --filter @nyx/web dev",
+    "dev": "node scripts/pre-dev.cjs && turbo run dev",
+    "dev:desktop": "node scripts/pre-dev.cjs && tauri dev",
+    "dev:web": "node scripts/pre-dev.cjs && pnpm --filter @nyx/web dev",
     "build": "turbo run build",
     "build:server": "pnpm --filter @nyx/server build",
     "build:web": "pnpm --filter @nyx/web build",
