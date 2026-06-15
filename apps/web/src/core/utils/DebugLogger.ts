@@ -103,7 +103,16 @@ class DebugLoggerService {
     const originalFetch = window.fetch;
     window.fetch = async (...args) => {
       const startTime = performance.now();
-      const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
+      let url = 'unknown';
+      if (typeof args[0] === 'string') {
+        url = args[0];
+      } else if (args[0] instanceof URL) {
+        url = args[0].href;
+      } else if (args[0] && typeof args[0] === 'object' && 'url' in args[0]) {
+        url = (args[0] as any).url;
+      } else if (args[0]) {
+        url = String(args[0]);
+      }
       const method = (args[1]?.method || 'GET').toUpperCase();
 
       try {
