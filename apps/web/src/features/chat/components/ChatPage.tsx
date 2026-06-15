@@ -6,11 +6,11 @@
  *   attachment sync, and coordinates chat sessions with edit/regenerate/branch capabilities.
  */
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ModelDefinition, ChatMessage, ToolCall } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
-
+import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { ChatHeader } from './ChatHeader';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatPromptInput } from './ChatPromptInput';
@@ -19,6 +19,8 @@ import { ChatSettings } from './ChatSettings';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useChatLogic } from '../hooks/useChatLogic';
 import { ArtifactCanvas } from '../../artifacts/components/ArtifactCanvas';
+import { ContextBar } from '@src/shared/components/ContextBar';
+import { MemoryPanel } from './MemoryPanel';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -119,9 +121,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingImages, setPendingImages] = useState<ChatImage[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   
   // --- Artifact State ---
   const [activeArtifact, setActiveArtifact] = useState<{
+    id?: string;
     content: string;
     language?: string;
     title?: string;
@@ -169,6 +174,31 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     submitReward,
     maxContextTokens: Math.floor(getModelContextWindow(currentModel) * 0.9),
   });
+
+  const hasAutoOpenedRef = useRef<Record<string, boolean>>({});
+
+  // Auto-open and sync streaming artifacts
+  useEffect(() => {
+    if (history.length === 0) return;
+    const lastMessage = history[history.length - 1];
+    if (lastMessage?.role === 'assistant' && lastMessage.artifacts && lastMessage.artifacts.length > 0) {
+      const latestArtifact = lastMessage.artifacts[lastMessage.artifacts.length - 1];
+      if (latestArtifact && latestArtifact.id) {
+        const alreadyOpened = hasAutoOpenedRef.current[latestArtifact.id];
+        
+        if (activeArtifact && (activeArtifact.id === latestArtifact.id || activeArtifact.title === latestArtifact.title)) {
+          // Sync content if it's already open and has updated
+          if (activeArtifact.content !== latestArtifact.content) {
+            setActiveArtifact(latestArtifact);
+          }
+        } else if (!activeArtifact && !alreadyOpened && isLoading) {
+          // Auto-open only if it's a new artifact, hasn't been auto-opened yet, and we are currently loading/streaming
+          hasAutoOpenedRef.current[latestArtifact.id] = true;
+          setActiveArtifact(latestArtifact);
+        }
+      }
+    }
+  }, [history, activeArtifact, isLoading]);
 
   const streaming = (rest as any).streaming;
 
@@ -220,9 +250,41 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       });
   }, []);
 
-  // --- Image attachment handlers ---
+  // --- Image & Document attachment handlers ---
   const handleAttachFiles = useCallback((files: File[]) => {
-    const promises = files.map((file) => {
+    const images: File[] = [];
+    const documents: File[] = [];
+
+    files.forEach((file) => {
+      if (file.type.startsWith('image/')) {
+        images.push(file);
+      } else {
+        documents.push(file);
+      }
+    });
+
+    // Handle Documents (RAG Ingestion)
+    documents.forEach(async (file) => {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`Document ${file.name} is too large (max 10MB)`);
+        return;
+      }
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetchWithAuth('/api/v1/documents/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        toast.success(`Document "${file.name}" ingested into RAG memory!`);
+      } catch (err: any) {
+        toast.error(`Failed to ingest ${file.name}: ${err.message}`);
+      }
+    });
+
+    // Handle Images
+    const promises = images.map((file) => {
       return new Promise<ChatImage>((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -236,10 +298,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       });
     });
 
-    Promise.all(promises).then((images) => {
-      setPendingImages((prev) => [...prev, ...images]);
-      toast.success(`Attached ${images.length} image(s)`);
-    });
+    if (images.length > 0) {
+      Promise.all(promises).then((newImages) => {
+        setPendingImages((prev) => [...prev, ...newImages]);
+        toast.success(`Attached ${newImages.length} image(s)`);
+      });
+    }
   }, []);
 
   const handleRemoveImage = useCallback((index: number) => {
@@ -341,6 +405,28 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   // Render
   // -------------------------------------------------------------------------
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDraggingOver(false);
+      const droppedFiles = Array.from(e.dataTransfer.files);
+      if (droppedFiles.length > 0) {
+        handleAttachFiles(droppedFiles);
+      }
+    },
+    [handleAttachFiles]
+  );
+
   return (
     <motion.div
       key="chat"
@@ -349,7 +435,23 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       exit={{ opacity: 0, y: -20 }}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       className="h-full w-full flex min-h-0 overflow-hidden bg-background relative"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
+      {isDraggingOver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary m-4 rounded-xl pointer-events-none">
+          <div className="flex flex-col items-center gap-4 text-primary">
+            <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+            </div>
+            <h2 className="text-2xl font-bold">Drop files to add to context</h2>
+            <p className="text-muted-foreground max-w-sm text-center">
+              Images will be attached to your next message. Documents will be ingested into memory for semantic search.
+            </p>
+          </div>
+        </div>
+      )}
       {/* Global sidebar is managed by AppDashboard */}
 
       <ChatSettings isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
@@ -389,6 +491,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onShareChat={handleShareChat}
           connectionStatus={connectionStatus}
           isNewChat={history.length === 0}
+          onToggleMemory={() => setMemoryPanelOpen(!memoryPanelOpen)}
         />
 
         {/* CHAT MESSAGE LIST */}
@@ -414,6 +517,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onArtifactClick={setActiveArtifact}
         />
 
+        {/* CONTEXT BAR */}
+        <ContextBar used={metrics.contextTokens} limit={metrics.contextLimit} />
+
         {/* CHAT PROMPT INPUT */}
         <ChatPromptInput
           prompt={prompt}
@@ -436,6 +542,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           pendingImages={pendingImages}
           onRemoveImage={handleRemoveImage}
           onImagesChange={setPendingImages}
+          onAttachFiles={handleAttachFiles}
         />
       </div>
 
@@ -446,8 +553,14 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         language={activeArtifact?.language}
         title={activeArtifact?.title}
         onClose={() => setActiveArtifact(null)}
+        onSubmitPrompt={(p) => handleSubmit(p)}
       />
 
+      {/* MEMORY MANAGER PANEL */}
+      <MemoryPanel
+        isOpen={memoryPanelOpen}
+        onClose={() => setMemoryPanelOpen(false)}
+      />
 
     </motion.div>
   );

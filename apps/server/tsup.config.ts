@@ -4,7 +4,8 @@ export default defineConfig({
   entry: {
     server: 'server.ts',
     worker: 'server/worker.ts',
-    'tokenEstimator.worker': 'server/lib/workers/tokenEstimator.worker.ts'
+    'tokenEstimator.worker': 'server/lib/workers/tokenEstimator.worker.ts',
+    'sse.worker': 'server/lib/workers/sse.worker.ts'
   },
   format: ['esm'],
   target: 'node22',

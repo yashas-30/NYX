@@ -1,63 +1,104 @@
-import React from 'react';
-import { ExternalLink, BookOpen } from 'lucide-react';
+/**
+ * @file CitationCard.tsx
+ * @description Hover-expandable citation card with source preview — Kimi/Perplexity parity.
+ */
+import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ExternalLink, Globe } from 'lucide-react';
 
-interface CitationCardProps {
+export interface Citation {
   id: string;
-  source: string;
-  title?: string;
-  url?: string;
-  snippet?: string;
-  onClick?: () => void;
+  index: number;
+  title: string;
+  url: string;
+  snippet: string;
+  domain?: string;
 }
 
-export const CitationCard: React.FC<CitationCardProps> = ({
-  id,
-  source,
-  title,
-  url,
-  snippet,
-  onClick,
-}) => {
+interface CitationCardProps {
+  citation: Citation;
+}
+
+function getDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace('www.', '');
+  } catch {
+    return url;
+  }
+}
+
+export const CitationCard: React.FC<CitationCardProps> = ({ citation }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const domain = citation.domain || getDomain(citation.url);
+
   return (
-    <div
-      onClick={onClick}
-      className={`
-        p-3 rounded-md bg-[#09090B] border border-[rgba(255,255,255,0.06)]
-        hover:bg-[#18181B] transition-colors cursor-pointer group flex flex-col gap-2
-      `}
-    >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-2 text-primary">
-          <span className="text-[11px] font-mono bg-[#00363e] text-[#a2eeff] px-1.5 py-0.5 rounded-sm">
-            [{id}]
-          </span>
-          <span className="text-[13px] font-medium font-sans truncate max-w-[200px]">
-            {title || source}
-          </span>
-        </div>
-        {url && (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[#4A5059] hover:text-primary transition-colors"
-            onClick={(e) => e.stopPropagation()}
+    <span className="relative inline-block">
+      <button
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className="inline-flex items-center justify-center w-4 h-4 text-[9px] font-bold rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/40 hover:text-indigo-300 transition-colors cursor-pointer align-middle mx-0.5"
+        style={{ verticalAlign: 'super', fontSize: '9px', lineHeight: 1 }}
+      >
+        {citation.index}
+      </button>
+
+      <AnimatePresence>
+        {isHovered && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.95 }}
+            transition={{ duration: 0.15 }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-72 bg-[#141618] border border-white/10 rounded-xl shadow-2xl p-3"
           >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+            {/* Source header */}
+            <div className="flex items-start gap-2 mb-2">
+              <div className="p-1 bg-white/5 rounded shrink-0">
+                <Globe className="w-3 h-3 text-white/40" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-white/90 leading-tight line-clamp-2">
+                  {citation.title || domain}
+                </p>
+                <p className="text-[10px] text-white/30 mt-0.5">{domain}</p>
+              </div>
+            </div>
+
+            {/* Snippet */}
+            {citation.snippet && (
+              <p className="text-[11px] text-white/50 leading-relaxed line-clamp-3 border-t border-white/5 pt-2 mt-2">
+                {citation.snippet}
+              </p>
+            )}
+
+            {/* Open link */}
+            <a
+              href={citation.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 mt-2 text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              <ExternalLink className="w-2.5 h-2.5" />
+              Open source
+            </a>
+
+            {/* Arrow */}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white/10" />
+          </motion.div>
         )}
-      </div>
-
-      {snippet && (
-        <p className="text-[13px] text-[#4A5059] line-clamp-2 leading-relaxed">{snippet}</p>
-      )}
-
-      {!snippet && url && (
-        <div className="flex items-center gap-1.5 text-[11px] text-[#4A5059] font-mono mt-1">
-          <BookOpen className="w-3 h-3" />
-          <span className="truncate">{url.replace(/^https?:\/\/(www\.)?/, '')}</span>
-        </div>
-      )}
-    </div>
+      </AnimatePresence>
+    </span>
   );
+};
+
+// Inline citation superscript renderer — call this in ChatMessageList
+export const CitationSuperscript: React.FC<{ index: number; citations: Citation[] }> = ({
+  index,
+  citations,
+}) => {
+  const citation = citations.find((c) => c.index === index);
+  if (!citation) return <sup>[{index}]</sup>;
+  return <CitationCard citation={citation} />;
 };

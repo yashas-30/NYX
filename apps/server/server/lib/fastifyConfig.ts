@@ -333,9 +333,9 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
   }
 
   app.ready(() => {
-    console.log("=== FASTIFY ROUTES ===");
-    console.log(app.printRoutes());
-    console.log("======================");
+    if (process.env.NODE_ENV === 'development') {
+      logger.debug({ routes: app.printRoutes() }, 'Registered Fastify routes');
+    }
   });
 
   app.setErrorHandler(errorHandler);

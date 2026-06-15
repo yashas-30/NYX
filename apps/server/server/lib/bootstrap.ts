@@ -9,7 +9,6 @@ import { fileURLToPath } from 'url';
 import logger from './logger.js';
 import { workerPool } from './workers/workerPool.js';
 import { cleanupProcesses, registerProcess } from './processRegistry.js';
-import { CodebaseScanner } from '../features/workspace/codebaseScanner.js';
 import { runMigrations } from '../db/migrator.js';
 
 import { pluginRegistry } from './pluginRegistry.js';
@@ -230,11 +229,7 @@ export function registerShutdownHandlers(app: any, clearHealthChecks?: () => voi
     logger.info('[Server] Gracefully shutting down...');
     cleanupProcesses();
     if (clearHealthChecks) clearHealthChecks();
-    try {
-      CodebaseScanner.dispose();
-    } catch (error: any) {
-      logger.error({ err: error }, '[Shutdown] Failed to dispose CodebaseScanner');
-    }
+
 
     // Gracefully shut down worker thread pool
     workerPool.shutdown().catch(() => {});
@@ -255,11 +250,7 @@ export function registerShutdownHandlers(app: any, clearHealthChecks?: () => voi
     logger.error({ err: e }, '[UnhandledRejection] Shutting down gracefully...');
     cleanupProcesses();
     if (clearHealthChecks) clearHealthChecks();
-    try {
-      CodebaseScanner.dispose();
-    } catch (error: any) {
-      logger.error({ error }, '[UnhandledRejection] Failed to dispose CodebaseScanner');
-    }
+
     app.close().then(() => {
       process.exit(1);
     }).catch((err: any) => {
@@ -279,11 +270,7 @@ export function registerShutdownHandlers(app: any, clearHealthChecks?: () => voi
     logger.error({ err: e }, '[UncaughtException]');
     cleanupProcesses();
     if (clearHealthChecks) clearHealthChecks();
-    try {
-      CodebaseScanner.dispose();
-    } catch (error: any) {
-      logger.error({ error }, '[UncaughtException] Failed to dispose CodebaseScanner');
-    }
+
     process.exit(1);
   });
 }

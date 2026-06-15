@@ -293,26 +293,7 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       required: ['path', 'content'],
     },
   },
-  {
-    name: 'search_codebase',
-    description:
-      'Perform keyword and fuzzy search across the codebase to find relevant code blocks, functions, or patterns.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'Natural language search query describing what you are looking for.',
-        },
-        limit: {
-          type: 'integer',
-          description: 'Maximum number of results to return.',
-          default: 10,
-        },
-      },
-      required: ['query'],
-    },
-  },
+
   {
     name: 'run_terminal',
     description:
@@ -669,20 +650,7 @@ export class ToolExecutor {
         return `Successfully created file: ${params.path}`;
       }
 
-      case 'search_codebase': {
-        const res = await fetchWithAuth('/api/v1/nyx/codebase-search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: params.query,
-            limit: params.limit ?? 10,
-          }),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Codebase search failed');
-        return data.results;
-      }
+
 
       case 'run_terminal': {
         validatePath(params.cwd);

@@ -1,4 +1,4 @@
-import { searchWeb, searchCodebase } from '@src/infrastructure/api/searchApi';
+import { searchWeb } from '@src/infrastructure/api/searchApi';
 import {
   readFile,
   writeFile,
@@ -35,21 +35,7 @@ export async function executeTool(
         };
       }
 
-      case 'search_codebase': {
-        const data = await searchCodebase(args.query, signal, {
-          topK: 10,
-          threshold: 0.3,
-        });
-        return {
-          success: data.success,
-          result:
-            data.results?.map((f: any) => ({
-              path: f.relativePath || f.path,
-              score: f.relevanceScore || f.score,
-              snippet: f.content?.slice(0, 500),
-            })) || [],
-        };
-      }
+
 
       case 'read_file': {
         const content = await readFile(args.path, signal);

@@ -11,7 +11,9 @@ import { semanticCache } from '../../lib/semanticCache.js';
 const searchService = new SearchService();
 
 // Initialize semantic cache with embedding function
-semanticCache.init(embedText).catch(() => {});
+semanticCache.init(embedText).catch((err) => {
+  logger.error({ err }, 'Failed to initialize semantic cache');
+});
 
 export interface ChatStreamParams {
   provider?: string;

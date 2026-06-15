@@ -35,6 +35,7 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
 import { useAgentLightning } from '@src/shared/hooks/useAgentLightning';
 import { AgentLightningPanel } from '@src/shared/components/AgentLightningPanel';
+import { LocalProviderStatus } from '@src/components/LocalProviderStatus';
 
 export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -291,7 +292,8 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             </div>
 
             {/* Bottom Section (Model Library & Settings) */}
-            <div className="px-4 py-3.5 border-t border-border mt-auto space-y-1">
+            <div className="px-4 py-3.5 border-t border-border mt-auto space-y-2">
+              <LocalProviderStatus />
               <button
                 onClick={() => { setActiveMode('registry'); }}
                 className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${

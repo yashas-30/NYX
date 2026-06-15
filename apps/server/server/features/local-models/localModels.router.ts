@@ -35,4 +35,28 @@ export async function localModelsRouter(fastify: FastifyInstance) {
       reply.code(500).send({ error: error.message });
     }
   });
+
+  // ==========================================
+  // LM STUDIO ROUTES
+  // ==========================================
+
+  fastify.get('/lmstudio/models', async (_req, reply) => {
+    try {
+      reply.send(await service.listLMStudioModels());
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  // ==========================================
+  // UNIFIED STATUS ROUTE
+  // ==========================================
+
+  fastify.get('/status', async (_req, reply) => {
+    try {
+      reply.send(await service.getLocalProviderStatus());
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
 }

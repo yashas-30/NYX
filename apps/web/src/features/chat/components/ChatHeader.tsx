@@ -8,6 +8,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Trash2,
+  Brain,
   PanelLeftOpen,
   PanelLeftClose,
   ChevronDown,
@@ -82,6 +83,7 @@ export interface ChatHeaderProps {
   connectionStatus?: 'online' | 'offline' | 'degraded';
   isNewChat?: boolean;
   onShareChat?: () => Promise<string>;
+  onToggleMemory?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +422,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   connectionStatus = 'online',
   isNewChat = false,
   onShareChat,
+  onToggleMemory,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState(sessionTitle);
@@ -629,7 +632,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               </div>
             )}
 
-            {/* Agent Lightning */}
+             {/* Agent Lightning */}
             {onOpenLightning && (
               <motion.button
                 whileTap={{ scale: 0.95 }}
@@ -638,6 +641,18 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 title="Agent Lightning"
               >
                 <Zap size={15} fill="currentColor" strokeWidth={1.8} />
+              </motion.button>
+            )}
+
+            {/* Memory Manager */}
+            {onToggleMemory && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={onToggleMemory}
+                className="w-8 h-8 flex items-center justify-center rounded-md text-violet-400 hover:text-violet-500 hover:bg-violet-500/10 transition-colors cursor-pointer shrink-0"
+                title="Memory Manager"
+              >
+                <Brain size={15} strokeWidth={1.8} />
               </motion.button>
             )}
 

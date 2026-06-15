@@ -1,6 +1,5 @@
 import { AISettings, ChatMessage } from '@src/infrastructure/types';
 
-export const HISTORY_SLICE_SIZE = 15;
 export interface BaseAgentConfig {
   modelId: string;
   provider: string;

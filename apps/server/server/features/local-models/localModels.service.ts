@@ -73,4 +73,64 @@ export class LocalModelsService {
       throw new Error(`Failed to delete Ollama model: ${error.message}`);
     }
   }
+
+  // ==========================================
+  // LM STUDIO MANAGEMENT
+  // ==========================================
+
+  public async listLMStudioModels(): Promise<any> {
+    const port = process.env.LMSTUDIO_PORT || '1234';
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/v1/models`, {
+        signal: AbortSignal.timeout(3000),
+        headers: { 'Content-Type': 'application/json' },
+      }).catch(() => null);
+      if (!response || !response.ok) {
+        return { models: [], connected: false, port };
+      }
+      const data = await response.json();
+      const models = (data.data || []).map((m: any) => ({
+        name: m.id,
+        id: m.id,
+        details: {
+          parameter_size: 'unknown',
+          family: m.object || 'llm',
+          format: 'gguf',
+        },
+      }));
+      return { models, connected: true, port };
+    } catch (error: any) {
+      return { models: [], connected: false, port, error: error.message };
+    }
+  }
+
+  // ==========================================
+  // UNIFIED STATUS
+  // ==========================================
+
+  public async getLocalProviderStatus(): Promise<{
+    ollama: { connected: boolean; models: any[]; port: string };
+    lmstudio: { connected: boolean; models: any[]; port: string };
+  }> {
+    const [ollamaResult, lmstudioResult] = await Promise.allSettled([
+      this.listOllamaModels().catch(() => ({ models: [], connected: false })),
+      this.listLMStudioModels(),
+    ]);
+
+    const ollamaData: any = ollamaResult.status === 'fulfilled' ? ollamaResult.value : { models: [], connected: false };
+    const lmstudioData: any = lmstudioResult.status === 'fulfilled' ? lmstudioResult.value : { models: [], connected: false };
+
+    return {
+      ollama: {
+        connected: !!(ollamaData.models?.length),
+        models: ollamaData.models || [],
+        port: '11434',
+      },
+      lmstudio: {
+        connected: lmstudioData.connected ?? false,
+        models: lmstudioData.models || [],
+        port: lmstudioData.port || '1234',
+      },
+    };
+  }
 }

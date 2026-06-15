@@ -42,8 +42,10 @@ export function useSmoothTypewriter(text: string, isStreaming: boolean): string 
         const remaining = targetLen - currentLen;
         
         // Elastic smooth catch-up over ~4 frames (~60ms)
-        // This provides an impeccable buttery-smooth flow without jumpy step functions
-        const charsToAdd = Math.max(1, Math.ceil(remaining / 4));
+        // If falling too far behind (e.g. fast local model streaming at 50+ tokens/sec),
+        // skip the typewriter animation and snap to the current length.
+        // This acts as a natural debounce, preventing massive React render lag.
+        const charsToAdd = remaining > 40 ? remaining : Math.max(1, Math.ceil(remaining / 4));
         
         const nextText = textRef.current.slice(0, currentLen + charsToAdd);
         displayedRef.current = nextText;

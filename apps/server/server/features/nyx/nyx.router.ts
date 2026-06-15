@@ -5,7 +5,6 @@ import {
   writeFileSchema,
   nyxCriticSchema,
   nyxSearchSchema,
-  codebaseSearchSchema,
 } from './nyx.schema.js';
 
 import { AgentService } from './agent.service.js';
@@ -163,26 +162,7 @@ export async function nyxRouter(fastify: FastifyInstance) {
     }
   });
 
-  // POST /api/nyx/codebase-search
-  fastify.post(
-    '/codebase-search',
-    {
-      preHandler: [validate(codebaseSearchSchema)],
-    },
-    async (request, reply) => {
-      const { query } = request.body as any;
-      if (!query) {
-        return reply.code(400).send({ error: 'Missing query parameters for codebase search.' });
-      }
-      try {
-        const result = await searchService.codebaseSearch(query);
-        reply.send({ success: true, ...result });
-      } catch (error: any) {
-        logger.error('[Nyx Router] Codebase search failed:', error);
-        reply.code(500).send({ error: error.message });
-      }
-    }
-  );
+
 
   // POST /api/nyx/search
   fastify.post(

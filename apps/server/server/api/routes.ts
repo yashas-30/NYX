@@ -32,6 +32,7 @@ import { graphqlRouter } from '../features/graphql/graphql.router.js';
 import { uploadRouter } from '../features/upload/upload.router.js';
 import { cacheRouter } from '../features/cache/cache.router.js';
 import { assistantRouter } from '../features/assistant/assistant.router.js';
+import { voiceRouter } from '../features/voice/voice.router.js';
 
 import { providerRateLimiter } from '../middleware/rateLimit.js';
 
@@ -162,6 +163,7 @@ export async function setupRoutes(app: FastifyInstance) {
       v1.register(nyxRouter, { prefix: '/nyx' });
       v1.register(graphqlRouter, { prefix: '/graphql' });
       v1.register(uploadRouter, { prefix: '/upload' });
+      v1.register(voiceRouter, { prefix: '/voice' });
     },
     { prefix: '/api/v1' }
   );

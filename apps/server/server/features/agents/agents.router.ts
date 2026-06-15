@@ -30,7 +30,7 @@ const HistoryMessageSchema = z.object({
 
 const ChatRequestSchema = z.object({
   model: z.string().min(1),
-  provider: z.enum(['gemini', 'ollama', 'lmstudio', 'terminal']).optional(),
+  provider: z.enum(['gemini', 'ollama', 'lmstudio', 'openai', 'groq', 'together', 'perplexity', 'anthropic', 'terminal']).optional(),
   prompt: z.string().max(100_000),
   history: z.array(HistoryMessageSchema).max(100).optional().default([]),
   images: z.array(ImageSchema).max(16).optional().default([]),

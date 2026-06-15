@@ -31,20 +31,36 @@ export class DocumentParser {
   }
 
   /**
-   * Splits text into smaller semantic chunks.
+   * Splits text into smaller semantic chunks with parent-child relationship.
    */
-  static async chunkText(doc: ParsedDocument): Promise<Array<{ id: string; text: string; source: string }>> {
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 1000,
+  static async chunkText(doc: ParsedDocument): Promise<Array<{ id: string; text: string; source: string; parentId: string; parentText: string }>> {
+    const parentSplitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 1200,
       chunkOverlap: 200,
     });
 
-    const chunks = await splitter.splitText(doc.text);
+    const childSplitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 200,
+      chunkOverlap: 40,
+    });
 
-    return chunks.map((chunk: string) => ({
-      id: uuidv4(),
-      text: chunk,
-      source: doc.source,
-    }));
+    const parentChunks = await parentSplitter.splitText(doc.text);
+    const results: Array<{ id: string; text: string; source: string; parentId: string; parentText: string }> = [];
+
+    for (const parentText of parentChunks) {
+      const parentId = uuidv4();
+      const childTexts = await childSplitter.splitText(parentText);
+      for (const childText of childTexts) {
+        results.push({
+          id: uuidv4(),
+          text: childText,
+          source: doc.source,
+          parentId,
+          parentText,
+        });
+      }
+    }
+
+    return results;
   }
 }

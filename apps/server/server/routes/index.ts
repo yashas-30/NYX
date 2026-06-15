@@ -33,6 +33,9 @@ import { uploadRouter } from '../features/upload/upload.router.js';
 import { cacheRouter } from '../features/cache/cache.router.js';
 import { assistantRouter } from '../features/assistant/assistant.router.js';
 import { sessionsRouter } from '../features/sessions/sessions.router.js';
+import { memoryRouter } from '../features/memory/memory.router.js';
+import { documentRouter } from '../features/upload/document.router.js';
+import { voiceRouter } from '../features/voice/voice.router.js';
 
 import { providerRateLimiter } from '../middleware/rateLimit.js';
 
@@ -149,6 +152,8 @@ export async function registerRoutes(app: FastifyInstance) {
       v1.register(modelProxyRouter, { prefix: '/models' });
       v1.register(promptTemplatesRouter, { prefix: '/prompt-templates' });
       v1.register(assistantRouter, { prefix: '/assistant' });
+      v1.register(memoryRouter, { prefix: '/' });
+      v1.register(documentRouter, { prefix: '/' });
 
       // For gemini router with providerRateLimiter
       v1.register(
@@ -166,6 +171,7 @@ export async function registerRoutes(app: FastifyInstance) {
       v1.register(nyxRouter, { prefix: '/nyx' });
       v1.register(graphqlRouter, { prefix: '/graphql' });
       v1.register(uploadRouter, { prefix: '/upload' });
+      v1.register(voiceRouter, { prefix: '/voice' });
     },
     { prefix: '/api/v1' }
   );

@@ -25,7 +25,7 @@ export const asyncJobWorker = new Worker(
   async (job) => {
     const { jobId, provider, chatReq, apiKey } = job.data;
     // Implementation of background job logic via BullMQ goes here when the adapter is available
-    console.log('Processing job from BullMQ', jobId);
+    logger.info({ jobId, provider }, 'Processing async job from BullMQ');
   },
   { connection: redisConnection }
 );

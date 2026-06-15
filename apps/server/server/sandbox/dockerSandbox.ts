@@ -21,7 +21,7 @@ export async function runInSandbox(
     ];
 
     const child = spawn(dockerCmd[0], dockerCmd.slice(1), {
-      timeout: timeoutMs,
+      signal: AbortSignal.timeout(timeoutMs),
       killSignal: 'SIGKILL'
     });
 

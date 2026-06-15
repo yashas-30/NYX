@@ -19,6 +19,7 @@ export interface UsageState {
   checkLimit: (modelId: string, apiKey: string | undefined, limits?: ModelOption['limits']) => LimitReason;
   setLimitHit: (modelId: string, apiKey: string | undefined, reason: 'rpm' | 'tpm' | 'rpd', limits: ModelOption['limits']) => void;
   refreshLimits: () => void;
+  resetLimitForModel: (modelId: string, apiKey: string | undefined) => void;
 }
 
 const getUsageKey = (modelId: string, apiKey: string | undefined) => {
@@ -118,6 +119,17 @@ export const useUsageStore = create<UsageState>()(
               }
             }
           }
+        });
+      },
+
+      resetLimitForModel: (modelId: string, apiKey: string | undefined) => {
+        set((state) => {
+          const key = getUsageKey(modelId, apiKey);
+          const newUsage = { ...state.usage };
+          delete newUsage[key];
+          return {
+            usage: newUsage
+          };
         });
       }
     }),

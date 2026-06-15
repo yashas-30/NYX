@@ -14,7 +14,7 @@ describe('modelUtils', () => {
     it('should resolve standard user-facing IDs to canonical Gemini API model IDs', () => {
       expect(resolveRealGeminiModel('gemini-3.5-flash')).toBe('gemini-3.5-flash');
       expect(resolveRealGeminiModel('gemini-3-flash')).toBe('gemini-3-flash-preview');
-      expect(resolveRealGeminiModel('gemini-3.5-flash')).toBe('gemini-3.5-flash');
+      expect(resolveRealGeminiModel('gemini-3.5-pro')).toBe('gemini-3.5-pro');
       expect(resolveRealGeminiModel('gemma-4-26b-it')).toBe('gemma-4-26b-a4b-it');
     });
 

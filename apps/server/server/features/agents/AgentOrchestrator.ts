@@ -1,8 +1,43 @@
 import { UnifiedEngine } from '../../lib/aiEngine.js';
 import logger from '../../lib/logger.js';
 import { resolveThinkingBudget, scoreComplexity } from '../../lib/thinkingBudget.js';
-import { searchMemory } from '../../lib/memory/vectorStore.js';
+import { searchMemory, embedText } from '../../lib/memory/vectorStore.js';
 import { extractArtifacts } from '../../lib/artifacts.js';
+import { EmbeddingService } from '../rag/embeddingService.js';
+import { MemoryService } from '../memory/memoryService.js';
+import { semanticCache } from '../../lib/semanticCache.js';
+import { traceActiveSpan } from '../../lib/otel.js';
+
+const MAX_AGENT_ITERATIONS = 12;
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts = 3,
+  onRetry?: (attempt: number, err: Error) => void
+): Promise<T> {
+  let lastError: Error = new Error('Max retry attempts exceeded');
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const isRetryable =
+        err?.message?.includes('429') ||
+        err?.message?.includes('503') ||
+        err?.message?.toLowerCase().includes('rate') ||
+        err?.message?.toLowerCase().includes('overloaded') ||
+        err?.message?.toLowerCase().includes('quota');
+      if (attempt < maxAttempts && isRetryable) {
+        const delayMs = 1000 * Math.pow(2, attempt - 1);
+        onRetry?.(attempt, lastError);
+        await new Promise(r => setTimeout(r, delayMs));
+      } else {
+        throw lastError;
+      }
+    }
+  }
+  throw lastError;
+}
 
 export interface AgentConfig {
   id: string;
@@ -34,7 +69,7 @@ const AGENT_REGISTRY: Record<string, AgentConfig> = {
     name: 'Document Cruncher',
     systemPrompt: `[ROLE] You are a highly precise Document Analyst.
 [RULES]
-1. Use read_file to read files and search_codebase to find relevant code snippets.
+1. Use read_file to read files.
 2. Pinpoint the exact sections of documents that answer the query.
 3. Do not hallucinate or extrapolate beyond the provided text.
 4. Always cite the source file as [Source: filename].
@@ -93,6 +128,116 @@ Do NOT skip the sources section.`,
     maxTokens: 16384,
     temperature: 0.1
   },
+  ui_designer: {
+    id: 'ui_designer',
+    name: 'UI/UX Visual Designer',
+    systemPrompt: `[ROLE] You are an elite Frontend UI/UX Designer.
+[RULES]
+1. Focus on aesthetic layouts, typography, responsiveness, and premium styling tokens.
+2. Use write_file to edit/create styles and markup, execute_command to run sandbox builds.
+3. Align all components to design system principles (CSS variables, Framer Motion transitions).
+[OUTPUT] Provide visual component code modifications and detail the UI styling improvements.`,
+    capabilities: ['ui', 'ux', 'styling', 'css', 'layout', 'components'],
+    maxTokens: 8192,
+    temperature: 0.3
+  },
+  qa_reviewer: {
+    id: 'qa_reviewer',
+    name: 'QA & Correctness Reviewer',
+    systemPrompt: `[ROLE] You are a meticulous QA & Code Reviewer.
+[RULES]
+1. Scan changes for logic flaws, syntax errors, and edge cases.
+2. Use execute_command to run unit and integration tests.
+3. Propose exact fixes for any errors or failed tests.
+[OUTPUT] Detail review feedback, test executions, and recommended code fixes.`,
+    capabilities: ['testing', 'qa', 'debugging', 'code-review', 'correctness'],
+    maxTokens: 8192,
+    temperature: 0.1
+  },
+  db_architect: {
+    id: 'db_architect',
+    name: 'Database Architect',
+    systemPrompt: `[ROLE] You are a Senior Database Engineer.
+[RULES]
+1. Design efficient relational schemas and database indexes (SQLite, Drizzle ORM, Prisma).
+2. Write schema files and database migration files.
+[OUTPUT] Return migration commands, schema definitions, and query optimizations.`,
+    capabilities: ['database', 'schema', 'migrations', 'sql', 'drizzle'],
+    maxTokens: 4096,
+    temperature: 0.1
+  },
+  security_auditor: {
+    id: 'security_auditor',
+    name: 'Security Auditor',
+    systemPrompt: `[ROLE] You are a Security & Compliance Engineer.
+[RULES]
+1. Scan code for OWASP top vulnerabilities (SQLi, XSS, SSRF, RCE, path traversal).
+2. Check for exposed secrets, api keys, or hardcoded credentials.
+[OUTPUT] Report potential security findings and exact remediation guidelines.`,
+    capabilities: ['security', 'auditing', 'compliance', 'secrets'],
+    maxTokens: 4096,
+    temperature: 0.1
+  },
+  performance_optimizer: {
+    id: 'performance_optimizer',
+    name: 'Performance Optimizer',
+    systemPrompt: `[ROLE] You are a Performance Tuning Specialist.
+[RULES]
+1. Review code and queries for performance bottlenecks (memory leaks, slow loops, bundle sizes).
+2. Optimize file reading, caching, and database query executions.
+[OUTPUT] Highlight performance bottlenecks and provide optimized code snippets.`,
+    capabilities: ['performance', 'optimization', 'profiling', 'caching'],
+    maxTokens: 4096,
+    temperature: 0.1
+  },
+  deployment_devops: {
+    id: 'deployment_devops',
+    name: 'DevOps & Deployment Engineer',
+    systemPrompt: `[ROLE] You are a DevOps Specialist.
+[RULES]
+1. Audit and create Dockerfiles, Docker Compose files, Kubernetes manifests, and CI/CD pipelines.
+2. Optimize build caching and verify environment setup.
+[OUTPUT] Docker configurations, workflow files, or deploy instructions.`,
+    capabilities: ['devops', 'deployment', 'docker', 'ci-cd', 'kubernetes'],
+    maxTokens: 4096,
+    temperature: 0.1
+  },
+  migration_expert: {
+    id: 'migration_expert',
+    name: 'Migration & Upgrades Expert',
+    systemPrompt: `[ROLE] You are a Dependency & Upgrades Specialist.
+[RULES]
+1. Resolve package installation errors, version conflicts, and module deprecations.
+2. Formulate step-by-step refactoring checklists to migrate legacy libraries.
+[OUTPUT] Output updated package configs or framework migration logs.`,
+    capabilities: ['migration', 'dependency', 'package-manager', 'refactoring'],
+    maxTokens: 8192,
+    temperature: 0.1
+  },
+  docs_generator: {
+    id: 'docs_generator',
+    name: 'Documentation Generator',
+    systemPrompt: `[ROLE] You are a Technical Writer.
+[RULES]
+1. Document the codebase, generate README files, OpenAPI specifications, or Swagger files.
+2. Create accurate JSDoc/TSDoc inline code annotations.
+[OUTPUT] Output formatted markdown documentations or API specs.`,
+    capabilities: ['documentation', 'technical-writing', 'readme', 'api-spec'],
+    maxTokens: 4096,
+    temperature: 0.2
+  },
+  git_collaborator: {
+    id: 'git_collaborator',
+    name: 'Git Collaborator',
+    systemPrompt: `[ROLE] You are a Git Release Manager.
+[RULES]
+1. Analyze git diffs, generate pull request descriptions, commit messages, or branch guides.
+2. Formulate resolutions for simple git merge conflicts.
+[OUTPUT] Return clear PR logs, commit messages, or conflict reviews.`,
+    capabilities: ['git', 'version-control', 'pull-request', 'commit-messages'],
+    maxTokens: 4096,
+    temperature: 0.2
+  },
   persona_polisher: {
     id: 'persona_polisher',
     name: 'Persona & Polisher',
@@ -113,6 +258,26 @@ Do NOT skip the sources section.`,
 
 export class AgentOrchestrator {
 
+  private static toolEmbeddingsCache = new Map<string, number[]>();
+
+  private static DIRECT_INTENTS = [
+    {
+      pattern: /^(?:search\s+(?:the\s+)?web\s+for|search\s+for|look\s+up|google)\s+(.+)$/i,
+      agent: 'web_explorer',
+      task: 'Search the web for: '
+    },
+    {
+      pattern: /^(?:read\s+file|view\s+file|show\s+file)\s+([^\s]+)$/i,
+      agent: 'doc_cruncher',
+      task: 'Read the contents of file: '
+    },
+    {
+      pattern: /^(?:review\s+code\s+in|check\s+code\s+in|review\s+file|check\s+file)\s+([^\s]+)$/i,
+      agent: 'qa_reviewer',
+      task: 'Review the code correctness and locate bugs in file: '
+    }
+  ];
+
   // Patterns that indicate casual/small-talk — these bypass multi-agent overhead
   private static CASUAL_PATTERNS = [
     /^(hi|hello|hey|sup|yo|hiya|howdy)[\s!?.]*$/i,
@@ -128,11 +293,31 @@ export class AgentOrchestrator {
     context: any,
     onChunk: (chunk: any) => void
   ): Promise<string> {
+    return traceActiveSpan('AgentOrchestrator.orchestrateSupervisor', async (span) => {
     const promptMessage = (messages[messages.length - 1]?.content || '').trim();
     logger.info(`[Supervisor] Analyzing prompt: ${promptMessage.substring(0, 80)}...`);
 
-    // ── Subagent context: use the user-selected model and provider for intermediate agents/subagents
-    const subagentContext = { ...context };
+    // ── Semantic cache check (avoid redundant LLM calls for similar prompts) ─────
+    try {
+      if (!semanticCache['embedder']) {
+        await semanticCache.init(async (text: string) => embedText(text));
+      }
+      const cached = await semanticCache.get(promptMessage);
+      if (cached) {
+        logger.info('[Supervisor] SemanticCache HIT — returning cached response');
+        onChunk({ type: 'thinking', content: `⚡ [Cache] Returning cached response (semantically equivalent prompt)\n` });
+        onChunk({ chunk: cached });
+        return cached;
+      }
+    } catch {
+      // Cache is always best-effort — never block on failure
+    }
+
+    // ── Subagent context: use the selected model for subagents
+    const subagentContext = {
+      ...context,
+      model: context.model
+    };
 
     // ── Fast path: casual/small-talk bypasses all agents ──────────────────────
     const isCasual = AgentOrchestrator.CASUAL_PATTERNS.some(p => p.test(promptMessage));
@@ -160,89 +345,165 @@ export class AgentOrchestrator {
 
     onChunk({ type: 'thinking', content: `━━━ [Supervisor] Routing request... ━━━\n` });
 
-    // ── M7: Inject long-term memory into swarm at start ───────────────────────
     let swarmMemory = '';
-    try {
-      const ltm = await searchMemory(promptMessage, 3);
-      if (ltm && ltm.trim()) {
-        swarmMemory = `[Long-Term Memory]\n${ltm}`;
-        onChunk({ type: 'thinking', content: `\n📚 Retrieved relevant memories from long-term storage\n` });
-        logger.info('[Supervisor] Injected long-term memory into swarm');
+    let taskLedger: { agent: string; task: string }[] = [];
+    let fastPathMatched = false;
+
+    // ── Fast path 2: direct intents bypass orchestrator CEO ──────────────────
+    for (const intent of AgentOrchestrator.DIRECT_INTENTS) {
+      const match = promptMessage.match(intent.pattern);
+      if (match) {
+        const queryText = match[1];
+        logger.info(`[Supervisor] Fast-path: direct intent matched for ${intent.agent}`);
+        onChunk({ type: 'thinking', content: `\n⚡ [Fast-Path Routing] Directly invoking ${AGENT_REGISTRY[intent.agent]?.name || intent.agent}...\n` });
+        
+        taskLedger = [
+          { agent: intent.agent, task: `${intent.task}${queryText}` },
+          { agent: 'persona_polisher', task: 'Synthesize the final answer' }
+        ];
+        fastPathMatched = true;
+        break;
       }
-    } catch (e: any) {
-      logger.warn('[Supervisor] LTM retrieval failed (non-fatal):', e.message);
     }
 
-    const supervisorPrompt = `
+    if (!fastPathMatched) {
+      // ── M7: Inject long-term memory into swarm at start ───────────────────────
+      try {
+        const ltm = await searchMemory(promptMessage, 3);
+        if (ltm && ltm.trim()) {
+          swarmMemory = `[Long-Term Memory]\n${ltm}`;
+          onChunk({ type: 'thinking', content: `\n📚 Retrieved relevant memories from long-term storage\n` });
+          logger.info('[Supervisor] Injected long-term memory into swarm');
+        }
+      } catch (e: any) {
+        logger.warn('[Supervisor] LTM retrieval failed (non-fatal):', e.message);
+      }
+
+      // Retrieve user personalization preferences
+      let personalizationMemory = '';
+      try {
+        const pm = await MemoryService.retrieveMemories(promptMessage, 5);
+        if (pm && pm.length > 0) {
+          personalizationMemory = `[User Personalization Preferences]\n${pm.map(f => `- ${f}`).join('\n')}\n\n`;
+          onChunk({ type: 'thinking', content: `👤 Applied user personalization profile\n` });
+          logger.info('[Supervisor] Applied user personalization memories');
+        }
+      } catch (e: any) {
+        logger.warn('[Supervisor] Personalization retrieval failed (non-fatal):', e.message);
+      }
+
+      const currentDateStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const supervisorPrompt = `
 You are the Supervisor Agent (The CEO). Analyze the user's request and break it down into a sequence of dependent subtasks. 
 Assign each subtask to the most appropriate agent.
 
-Available Agents:
-- deep_planner: reasoning, planning, strategy, multi-step analysis, writing, general knowledge
-- deep_research: COMPREHENSIVE research requiring multiple sources, citations, reports (use when user asks for research, analysis, or detailed fact-finding)
-- web_explorer: quick real-time info, news, current events, prices, weather — single topic lookup
-- doc_cruncher: reading uploaded files, code analysis, document questions
-- code_interpreter: coding tasks, debugging, math, running scripts, file operations
-- persona_polisher: ALWAYS include LAST to format and polish the final output
+[CURRENT TIME CONTEXT]
+The current date and time is: ${currentDateStr}. Use this context for real-time awareness and accurate routing.
 
-Routing Rules:
-1. For RESEARCH tasks (anything requiring multiple sources or deep investigation), use deep_research instead of web_explorer.
-2. Break complex tasks down. If coding is needed, ALWAYS run a deep_planner first to plan the logic.
-3. The ledger executes sequentially. Later agents will see the output of earlier agents.
-4. ALWAYS end the ledger with the persona_polisher to synthesize the final result.
+${personalizationMemory}
+Available Agents:
+- deep_planner: reasoning, planning, strategy, multi-step analysis, general logic
+- deep_research: COMPREHENSIVE multi-query web research, citations, reports
+- web_explorer: quick real-time single-query info, news, facts
+- doc_cruncher: reading uploaded files, file structure analysis, codebase exploration
+- code_interpreter: executing sandboxed code, shell commands, script execution, math
+- ui_designer: UI/UX, CSS styling, components, HTML structure, responsive layouts
+- qa_reviewer: code correctness, tests, bugs, syntax/type checks, debugging
+- db_architect: database schema design, migrations, ORM (Drizzle/Prisma) configs
+- security_auditor: checking for vulnerabilities (SQLi, XSS, SSRF, RCE), secrets exposure
+- performance_optimizer: memory leaks, slow loops, database index, page speed diagnostics
+- deployment_devops: CI/CD, Dockerfiles, Kubernetes, environment setup
+- migration_expert: framework version upgrades, package conflicts, legacy refactoring
+- docs_generator: README, API documentation, JSDoc/TSDoc, OpenAPI/Swagger specs
+- git_collaborator: PR descriptions, commit messages, git branch conflicts
+- persona_polisher: ALWAYS include LAST to format and polish final response
+
+Routing Rules (DYNAMIC MINI-ROUTING):
+1. MINIMIZE execution. You must only schedule the absolute minimum necessary subagents to resolve the request.
+2. If the user request is focused on a single specialty (e.g. styling, database schema, bug review, fast search), ONLY schedule that single specialized agent + persona_polisher. Do NOT schedule deep_planner or code_interpreter unless multi-step programming/strategy is required.
+3. Never route to agents that have nothing to do with the prompt properties.
+4. Always end the ledger with the persona_polisher to synthesize the final result.
 
 Respond ONLY with a JSON object in this exact format:
 {
-  "reasoning": "Briefly explain step-by-step why you chose this sequence.",
+  "reasoning": "Briefly explain step-by-step why you chose this minimal sequence.",
   "ledger": [
-    { "agent": "agent_1", "task": "Specific instructions for agent_1 based on the goal" },
-    { "agent": "agent_2", "task": "Specific instructions for agent_2..." },
-    { "agent": "persona_polisher", "task": "Synthesize the final answer" }
+    { "agent": "agent_id", "task": "Specific task instructions" }
   ]
 }
 
 User Request: "${promptMessage.replace(/"/g, "'")}"
-    `;
+      `;
 
-    const supervisorMessages = [...messages.slice(0, -1), { role: 'user', content: supervisorPrompt }];
+      const supervisorMessages = [...messages.slice(0, -1), { role: 'user' as const, content: supervisorPrompt }];
 
-    let routingPlanRaw = '';
-    await new Promise<void>((resolve, reject) => {
-      // Use gemini-2.5-flash for routing decisions to save tokens and prevent Gemma 500 errors
-      UnifiedEngine.executeStream(
-        { provider: 'gemini', model: 'gemini-2.5-flash', messages: supervisorMessages, apiKey: context.apiKey, settings: { temperature: 0.0, maxTokens: 300 } },
-        (chunk: any) => { routingPlanRaw += chunk.chunk || ''; },
-        () => resolve()
-      ).catch(reject);
-    });
+      const ledgerSchema = {
+        type: 'OBJECT',
+        properties: {
+          reasoning: { type: 'STRING' },
+          ledger: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                agent: { type: 'STRING' },
+                task: { type: 'STRING' }
+              },
+              required: ['agent', 'task']
+            }
+          }
+        },
+        required: ['reasoning', 'ledger']
+      };
 
+      let routingPlanRaw = '';
+      await new Promise<void>((resolve, reject) => {
+        // Use user's selected provider and model with JSON mode & schema for reliable structured output
+        UnifiedEngine.executeStream(
+          {
+            provider: context.provider,
+            model: context.model,
+            messages: supervisorMessages,
+            apiKey: context.apiKey,
+            settings: {
+              temperature: 0.0,
+              maxTokens: 1000,
+              antigravity: false,
+              jsonMode: true,
+              jsonSchema: ledgerSchema
+            }
+          },
+          (chunk: any) => { routingPlanRaw += chunk.chunk || ''; },
+          () => resolve()
+        ).catch(reject);
+      });
 
-    let taskLedger: { agent: string; task: string }[] = [];
-    try {
-      const cleaned = routingPlanRaw.replace(/```(json)?[\s\S]*?```/g, (match) => {
-        return match.replace(/```(json)?/, '').replace(/```/, '');
-      }).trim();
-      const startIndex = cleaned.indexOf('{');
-      const endIndex = cleaned.lastIndexOf('}');
-      if (startIndex !== -1 && endIndex !== -1) {
-        const jsonStr = cleaned.slice(startIndex, endIndex + 1);
-        const plan = JSON.parse(jsonStr);
-        taskLedger = plan.ledger || [];
-        onChunk({ type: 'thinking', content: `\n💡 [Supervisor Reasoning]: ${plan.reasoning}\n` });
-      } else {
-        throw new Error('No JSON object found');
-      }
-      taskLedger = taskLedger.filter((l: any) => AGENT_REGISTRY[l.agent]);
-    } catch (e) {
-      logger.warn('[Supervisor] Failed to parse routing plan, using fallback. Raw: ' + routingPlanRaw);
-      const executionOrder = Object.keys(AGENT_REGISTRY).filter(id => routingPlanRaw.includes(id));
-      if (executionOrder.length === 0) {
-        taskLedger = [
-          { agent: 'deep_planner', task: 'Analyze the request' },
-          { agent: 'persona_polisher', task: 'Format final response' }
-        ];
-      } else {
-        taskLedger = executionOrder.map(id => ({ agent: id, task: 'Proceed with task' }));
+      try {
+        const cleaned = routingPlanRaw.replace(/```(json)?[\s\S]*?```/g, (match) => {
+          return match.replace(/```(json)?/, '').replace(/```/, '');
+        }).trim();
+        const startIndex = cleaned.indexOf('{');
+        const endIndex = cleaned.lastIndexOf('}');
+        if (startIndex !== -1 && endIndex !== -1) {
+          const jsonStr = cleaned.slice(startIndex, endIndex + 1);
+          const plan = JSON.parse(jsonStr);
+          taskLedger = plan.ledger || [];
+          onChunk({ type: 'thinking', content: `\n💡 [Supervisor Reasoning]: ${plan.reasoning}\n` });
+        } else {
+          throw new Error('No JSON object found');
+        }
+        taskLedger = taskLedger.filter((l: any) => AGENT_REGISTRY[l.agent]);
+      } catch (e) {
+        logger.warn('[Supervisor] Failed to parse routing plan, using fallback. Raw: ' + routingPlanRaw);
+        const executionOrder = Object.keys(AGENT_REGISTRY).filter(id => routingPlanRaw.includes(id));
+        if (executionOrder.length === 0) {
+          taskLedger = [
+            { agent: 'deep_planner', task: 'Analyze the request' },
+            { agent: 'persona_polisher', task: 'Format final response' }
+          ];
+        } else {
+          taskLedger = executionOrder.map(id => ({ agent: id, task: 'Proceed with task' }));
+        }
       }
     }
 
@@ -256,6 +517,18 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     const planStr = taskLedger.map(l => l.agent).join(' → ');
     logger.info(`[Supervisor] Execution Plan: ${planStr}`);
     onChunk({ type: 'thinking', content: `\n🗺️  Plan: ${planStr}\n` });
+
+    // Emit initial progress metadata for the frontend progress bar
+    const totalSteps = taskLedger.length;
+    const swarmStartTime = Date.now();
+    let currentStep = 0;
+    onChunk({
+      type: 'agent_progress',
+      step: 0,
+      total: totalSteps,
+      agents: taskLedger.map(l => l.agent),
+      elapsed: 0,
+    });
 
     const isGemma = context.model && context.model.toLowerCase().includes('gemma-4');
 
@@ -279,10 +552,20 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     // Import redis dynamically to persist state without breaking if redis is offline
     import('../../redis.js').then(({ default: redis }) => {
       redis.set(`swarm_state:${swarmSessionId}`, JSON.stringify({ status: 'started', ledger: taskLedger })).catch(() => {});
-    });
+    }).catch(() => {});
+
+    let totalExecutions = 0;
+    const MAX_TOTAL_EXECUTIONS = 15; // Hard limit on total subagent runs to prevent runaway loops
 
     // ── M6: Cross-agent parallel batch execution ───────────────────────────────
     while (taskLedger.length > 0) {
+      if (totalExecutions >= MAX_TOTAL_EXECUTIONS) {
+        logger.warn(`[Orchestrator] Swarm execution limit reached (${MAX_TOTAL_EXECUTIONS} executions). Forcing termination.`);
+        onChunk({ type: 'thinking', content: `\n⚠️ [Supervisor WARNING]: Swarm execution limit reached (${MAX_TOTAL_EXECUTIONS} executions). Forcing response synthesis to prevent runaway loop.\n` });
+        const polisher = taskLedger.find(l => l.agent === 'persona_polisher');
+        taskLedger = polisher ? [polisher] : [{ agent: 'persona_polisher', task: 'Synthesize the final answer with all citations preserved' }];
+      }
+
       // Collect all leading independent tasks that can run in parallel.
       // Independence rule: tasks are parallel if none of them is persona_polisher
       // and they don't read from memos written by another task in the same batch.
@@ -292,27 +575,59 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
         // Run polisher immediately — it needs all previous output
         // persona_polisher uses the user's ORIGINAL model for the final visible response
         const step = taskLedger.shift()!;
+        totalExecutions++;
         const agent = AGENT_REGISTRY[step.agent];
         onChunk({ type: 'thinking', content: `\n━━━ [Persona & Polisher] Crafting final response... ━━━\n` });
-        const finalAnswer = await this.runAgent(agent, messages, context, onChunk, swarmMemory, step.task, SWARM_MAX_LOOPS);
-        
-        // ── M5: Extract artifacts from final answer ────────────────────────────
-        const { text: cleanText, artifacts } = extractArtifacts(finalAnswer);
-        for (const artifact of artifacts) {
-          onChunk({ type: 'artifact', artifact });
-          logger.info(`[Orchestrator] Emitting artifact: ${artifact.id} (${artifact.type})`);
+
+        // Instantiate StreamingArtifactParser to extract artifacts token-by-token
+        const { StreamingArtifactParser } = await import('../../lib/streamingArtifactParser.js');
+        const parser = new StreamingArtifactParser();
+        let cleanedResponse = '';
+
+        const finalAnswer = await this.runAgent(
+          agent,
+          messages,
+          context,
+          (chunk: any) => {
+            if (chunk.chunk) {
+              const { textChunk, activeArtifact } = parser.ingest(chunk.chunk);
+              if (textChunk) {
+                cleanedResponse += textChunk;
+                onChunk({ chunk: textChunk });
+              }
+              if (activeArtifact) {
+                onChunk({ type: 'artifact', artifact: activeArtifact });
+              }
+            } else {
+              onChunk(chunk);
+            }
+          },
+          swarmMemory,
+          step.task,
+          SWARM_MAX_LOOPS
+        );
+
+        // Flush remaining buffer in the parser
+        const { textChunk, activeArtifact } = parser.flush();
+        if (textChunk) {
+          cleanedResponse += textChunk;
+          onChunk({ chunk: textChunk });
+        }
+        if (activeArtifact) {
+          onChunk({ type: 'artifact', artifact: activeArtifact });
         }
 
         import('../../redis.js').then(({ default: redis }) => {
           redis.set(`swarm_state:${swarmSessionId}`, JSON.stringify({ status: 'completed', memory: swarmMemory })).catch(() => {});
-        });
-        return artifacts.length > 0 ? cleanText : finalAnswer;
+        }).catch(() => {});
+        return cleanedResponse || finalAnswer;
       }
 
       // Batch all consecutive non-polisher tasks
       while (taskLedger.length > 0 && taskLedger[0].agent !== 'persona_polisher') {
         batch.push(taskLedger.shift()!);
       }
+      totalExecutions += batch.length;
 
       // Group by agent for logging
       const agentCounts = batch.reduce((acc, s) => {
@@ -320,23 +635,49 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
         return acc;
       }, {} as Record<string, number>);
       const batchDesc = Object.entries(agentCounts).map(([a, n]) => `${n}x ${AGENT_REGISTRY[a]?.name || a}`).join(', ');
+      currentStep++;
+      onChunk({
+        type: 'agent_progress',
+        step: currentStep,
+        total: totalSteps,
+        currentAgent: batch[0]?.agent,
+        elapsed: Date.now() - swarmStartTime,
+      });
       onChunk({ type: 'thinking', content: `\n━━━ [Swarm Queue] Spawning parallel batch: [${batchDesc}] ━━━\n` });
       batch.forEach((step, i) => onChunk({ type: 'thinking', content: `┌─ Task ${i + 1} (${step.agent}): ${step.task}\n` }));
 
-      // Run batch in parallel using Promise.allSettled
-      // Non-polisher subagents use gemini-2.5-flash (subagentContext) to save tokens
-      const promises = batch.map(step => {
-        const agent = AGENT_REGISTRY[step.agent];
-        if (!agent) return Promise.resolve(`[Skipped: unknown agent ${step.agent}]`);
-        return this.runAgent(agent, messages, subagentContext, onChunk, swarmMemory, step.task, SWARM_MAX_LOOPS);
-      });
-      const results = await Promise.allSettled(promises);
+      // Run batch in parallel to enable multi-agent swarm logic
+      const results: PromiseSettledResult<any>[] = await Promise.allSettled(
+        batch.map(async (step) => {
+          const agent = AGENT_REGISTRY[step.agent];
+          if (!agent) {
+            return `[Skipped: unknown agent ${step.agent}]`;
+          }
+          return withRetry(
+            () => this.runAgent(agent, messages, subagentContext, onChunk, swarmMemory, step.task, SWARM_MAX_LOOPS),
+            3,
+            (attempt, err) => {
+              onChunk({ type: 'thinking', content: `\n⚠️ [${agent.name}] Retry ${attempt}/3 — ${err.message}\n` });
+            }
+          );
+        })
+      );
 
       for (let i = 0; i < results.length; i++) {
         const res = results[i];
         const step = batch[i];
         const agent = AGENT_REGISTRY[step.agent];
-        let resultOutput = res.status === 'fulfilled' ? res.value : `Error: ${res.reason}`;
+        let resultOutput: string;
+        if (res.status === 'fulfilled') {
+          resultOutput = res.value;
+        } else {
+          const errMsg = res.reason instanceof Error ? res.reason.message : String(res.reason);
+          const isBudgetError = errMsg.includes('429') || errMsg.toLowerCase().includes('rate') || errMsg.toLowerCase().includes('quota');
+          resultOutput = isBudgetError
+            ? `[AGENT_SKIPPED: ${agent?.name || step.agent} — Rate limited after 3 retries. Note in the final response that some information could not be retrieved.]`
+            : `[AGENT_FAILED: ${agent?.name || step.agent} — ${errMsg}. Proceed without this agent's output and do not fabricate its findings.]`;
+          onChunk({ type: 'thinking', content: `\n❌ [${agent?.name || step.agent}] Failed permanently: ${errMsg}\n` });
+        }
 
         // Kimi Parity: Dynamic Agent Spawning
         const spawnRegex = /\[SPAWN:\s*([^:]+):\s*([^\]]+)\]/g;
@@ -360,12 +701,15 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
         completedTasks.push(`[${agent?.name || step.agent}]: ${step.task}`);
       }
 
+      // Compress swarm memory asynchronously if it exceeds our context budget threshold
+      swarmMemory = await this.compressMemory(swarmMemory, subagentContext);
+
       onChunk({ type: 'thinking', content: `└─ Batch complete.\n` });
 
       // Periodically update state
       import('../../redis.js').then(({ default: redis }) => {
         redis.set(`swarm_state:${swarmSessionId}`, JSON.stringify({ status: 'running', ledger: taskLedger, memory: swarmMemory })).catch(() => {});
-      });
+      }).catch(() => {});
     }
 
     // Fallback inline synthesis when no polisher was routed
@@ -373,14 +717,20 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
       onChunk({ type: 'thinking', content: `\n━━━ [Synthesis] Formatting final response... ━━━\n` });
       const lastMsg = messages[messages.length - 1];
       const synthesisMessages = [
-        { role: 'system', content: 'Synthesize the provided agent outputs into a single, clean, well-formatted response to the user. Remove all section dividers, agent headers, and meta-text. Preserve all [Source-N: URL] citations. Output only the final answer.' },
+        { role: 'system' as const, content: 'Synthesize the provided agent outputs into a single, clean, well-formatted response to the user. Remove all section dividers, agent headers, and meta-text. Preserve all [Source-N: URL] citations. Output only the final answer.' },
         ...messages.slice(0, -1),
-        { role: 'user', content: `User Request: ${lastMsg.content}\n\nAgent Outputs:\n${swarmMemory}` }
+        { role: 'user' as const, content: `User Request: ${lastMsg.content}\n\nAgent Outputs:\n${swarmMemory}` }
       ];
       let synthesized = '';
       await new Promise<void>((resolve, reject) => {
         UnifiedEngine.executeStream(
-          { provider: context.provider, model: context.model, messages: synthesisMessages, apiKey: context.apiKey, settings: { temperature: 0.2, maxTokens: 4096 } },
+          { 
+            provider: context.provider, 
+            model: context.model, 
+            messages: synthesisMessages, 
+            apiKey: context.apiKey, 
+            settings: { temperature: 0.2, maxTokens: 4096, antigravity: false } 
+          },
           (chunk: any) => { 
             if (chunk.chunk) { 
               synthesized += chunk.chunk; 
@@ -398,6 +748,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     }
 
     return swarmMemory;
+    });
   }
 
   private async runAgent(
@@ -409,6 +760,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     assignedTask?: string,
     maxLoops: number = 150
   ): Promise<string> {
+    return traceActiveSpan(`AgentOrchestrator.runAgent.${agent.id}`, async (span) => {
     const lastMsg = messages[messages.length - 1];
     
     const isGemma = context.model && context.model.toLowerCase().includes('gemma-4');
@@ -425,20 +777,23 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
       instructions += `[USER REQUEST]\n${lastMsg.content}\n\n`;
     }
 
-    instructions += `[SWARM CAPABILITIES]\nIf you realize this task requires another agent to complete a sub-step, you can dynamically spawn them by outputting the exact string: \`[SPAWN: agent_id: specific task instructions]\` anywhere in your output. Available agents: deep_planner, deep_research, web_explorer, doc_cruncher, code_interpreter.\n\nUsing this context, please proceed with your specific task.`;
+    instructions += `[SWARM CAPABILITIES]\nIf you realize this task requires another agent to complete a sub-step, you can dynamically spawn them by outputting the exact string: \`[SPAWN: agent_id: specific task instructions]\` anywhere in your output. Available agents: deep_planner, deep_research, web_explorer, doc_cruncher, code_interpreter, ui_designer, qa_reviewer, db_architect, security_auditor, performance_optimizer, deployment_devops, migration_expert, docs_generator, git_collaborator.\n\nUsing this context, please proceed with your specific task.`;
 
     const finalContent = instructions;
 
     const gemmaProtocol = isGemma ? `\n\n[GEMMA PROTOCOL]\n1. No Skipping: You must follow a strict step-by-step checklist.\n2. STOP AND WAIT: Before completing a subtask, stop and verify your reasoning.\n3. NEVER hallucinate tool outputs. If a tool fails, state the failure instead of fabricating a result.` : '';
 
+    const currentDateStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const timeContext = `\n\n[CURRENT TIME CONTEXT]\nThe current date and time is: ${currentDateStr}. Use this for any real-time web searches or time-sensitive data analysis.`;
+
     const agentMessages: any[] = [
-      { role: 'system', content: agent.systemPrompt + gemmaProtocol },
+      { role: 'system', content: agent.systemPrompt + gemmaProtocol + timeContext },
       ...messages.slice(0, -1),
       { role: 'user', content: finalContent }
     ];
 
     let fullText = '';
-    const tools = this.getToolsForAgent(agent.id, context);
+    const tools = await this.selectToolsSemantically(agent.id, assignedTask || '', context);
     let isLooping = true;
     let loopCount = 0;
 
@@ -453,7 +808,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
             model: context.model,
             messages: agentMessages,
             apiKey: context.apiKey,
-            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens, thinkingBudget }
+            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens, thinkingBudget, antigravity: false }
           },
           (chunk: any) => {
             const isThinking = chunk.thinking || chunk.type === 'thinking';
@@ -486,6 +841,9 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     // reflection step assesses the result before proceeding to the next action.
     while (isLooping && loopCount < maxLoops) {
       loopCount++;
+      if (loopCount > MAX_AGENT_ITERATIONS) {
+        throw new Error(`[AgentOrchestrator] Agent ${agent.name} exceeded maximum tool call iterations of ${MAX_AGENT_ITERATIONS}`);
+      }
       const pendingToolCalls: any[] = [];
       let stepText = '';
 
@@ -503,7 +861,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
             model: context.model,
             messages: agentMessages,
             apiKey: context.apiKey,
-            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens, thinkingBudget },
+            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens, thinkingBudget, antigravity: false },
             tools
           },
           (chunk: any) => {
@@ -567,6 +925,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     }
 
     return fullText;
+    });
   }
 
   private getToolsForAgent(agentId: string, context: any): any[] {
@@ -578,12 +937,121 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     if (agentId === 'deep_research') {
       return allTools.filter(t => ['web_search', 'multi_search', 'scrape_url', 'memo_write', 'memo_read'].includes(t.function?.name));
     }
-    if (agentId === 'code_interpreter' || agentId === 'deep_planner') {
+    if (
+      agentId === 'code_interpreter' ||
+      agentId === 'deep_planner' ||
+      agentId === 'ui_designer' ||
+      agentId === 'qa_reviewer' ||
+      agentId === 'db_architect' ||
+      agentId === 'security_auditor' ||
+      agentId === 'performance_optimizer' ||
+      agentId === 'deployment_devops' ||
+      agentId === 'migration_expert' ||
+      agentId === 'git_collaborator'
+    ) {
       return allTools; // Full access
     }
     if (agentId === 'doc_cruncher') {
-      return allTools.filter(t => ['read_file', 'search_codebase', 'memo_read'].includes(t.function?.name));
+      return allTools.filter(t => ['read_file', 'memo_read'].includes(t.function?.name));
     }
     return []; // persona_polisher needs no tools
+  }
+
+  private async selectToolsSemantically(agentId: string, assignedTask: string, context: any): Promise<any[]> {
+    const allTools: any[] = context?.tools || [];
+    if (allTools.length === 0) return [];
+    if (agentId === 'persona_polisher') return [];
+
+    // Always include core memo/state tools
+    const baseTools = allTools.filter(t => ['memo_read', 'memo_write'].includes(t.function?.name));
+    
+    if (!assignedTask) {
+      return this.getToolsForAgent(agentId, context);
+    }
+
+    try {
+      // Use gemini for embeddings here as it's the primary provider
+      const taskEmbedding = await EmbeddingService.embedText(assignedTask, { provider: 'gemini' });
+      
+      const scoredTools = await Promise.all(allTools.map(async (t) => {
+        const name = t.function?.name || '';
+        const desc = `${name}: ${t.function?.description || ''}`;
+        
+        let toolEmbedding = AgentOrchestrator.toolEmbeddingsCache.get(name);
+        if (!toolEmbedding) {
+          toolEmbedding = await EmbeddingService.embedText(desc, { provider: 'gemini' });
+          AgentOrchestrator.toolEmbeddingsCache.set(name, toolEmbedding);
+        }
+        
+        let dotProduct = 0;
+        let normA = 0;
+        let normB = 0;
+        for (let i = 0; i < taskEmbedding.length; i++) {
+          dotProduct += taskEmbedding[i] * toolEmbedding[i];
+          normA += taskEmbedding[i] * taskEmbedding[i];
+          normB += toolEmbedding[i] * toolEmbedding[i];
+        }
+        const score = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+        return { tool: t, score };
+      }));
+
+      // Filter tools with similarity score > 0.35 (excluding already added base tools)
+      const relevantTools = scoredTools
+        .filter(st => st.score > 0.35 && !['memo_read', 'memo_write'].includes(st.tool.function?.name))
+        .map(st => st.tool);
+
+      const merged = [...baseTools];
+      for (const t of relevantTools) {
+        if (!merged.some(m => m.function?.name === t.function?.name)) {
+          merged.push(t);
+        }
+      }
+      
+      logger.info(`[SemanticToolRouter] Routed ${merged.length} tools for agent ${agentId} on task: "${assignedTask.slice(0, 50)}..."`);
+      return merged;
+    } catch (err: any) {
+      logger.warn(`[SemanticToolRouter] Semantic matching failed (${err.message}). Using legacy fallback.`);
+      return this.getToolsForAgent(agentId, context);
+    }
+  }
+
+  private async compressMemory(memory: string, context: any): Promise<string> {
+    return traceActiveSpan('AgentOrchestrator.compressMemory', async (span) => {
+    if (memory.length < 4000) return memory;
+    logger.info('[Supervisor] Swarm memory is too large, performing compression...');
+    
+    const compressionMessages = [
+      {
+        role: 'system' as const,
+        content: 'You are an elite research summarizer. Condense the provided swarm memory into a highly structured, dense, bulleted list of key findings, decisions made, code files modified, and tool results. Keep all Source-N URLs exactly as cited. Keep all crucial code paths and values. Remove all fluff, descriptions, or redundant summaries. Output only the condensed memory.'
+      },
+      {
+        role: 'user' as const,
+        content: `Swarm Memory to condense:\n\n${memory}`
+      }
+    ];
+
+    let compressed = '';
+    try {
+      await new Promise<void>((resolve, reject) => {
+        UnifiedEngine.executeStream(
+          {
+            provider: context.provider,
+            model: context.model,
+            messages: compressionMessages,
+            apiKey: context.apiKey,
+            settings: { temperature: 0.1, maxTokens: 2048, antigravity: false }
+          },
+          (chunk: any) => { if (chunk.chunk) compressed += chunk.chunk; },
+          () => resolve()
+        ).catch(reject);
+      });
+      logger.info(`[Supervisor] Memory compressed from ${memory.length} to ${compressed.length} chars.`);
+      return compressed;
+    } catch (err: any) {
+      logger.warn('[Supervisor] Memory compression failed (non-fatal):', err.message);
+      return memory; // Fallback to raw memory on failure
+    }
+    });
   }
 }

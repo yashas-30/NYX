@@ -24,29 +24,6 @@ export const NYX_TOOLS = [
     },
   },
 
-  // ── Codebase Search ──
-  {
-    name: 'search_codebase',
-    description:
-      'Search the current workspace codebase for files, functions, classes, or patterns. Use for: finding existing code, understanding project structure.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        query: {
-          type: Type.STRING,
-          description:
-            'Search query for codebase. Example: "user authentication hook" or "function handleLogin"',
-        },
-        fileType: {
-          type: Type.STRING,
-          enum: ['ts', 'tsx', 'js', 'jsx', 'py', 'go', 'rs', 'any'],
-          description: 'Filter by file type',
-        },
-      },
-      required: ['query'],
-    },
-  },
-
   // ── File Read ──
   {
     name: 'read_file',

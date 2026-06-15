@@ -8,6 +8,10 @@ import { getKeysSync } from '../features/vault/vault.service.js';
 import logger from './logger.js';
 import { Provider, ChatMessage, AISettings } from '@nyx/shared';
 import { env } from '../config/env.js';
+import { Worker } from 'worker_threads';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import fs from 'fs';
 export type { Provider, ChatMessage, AISettings };
 
 export const VALID_GEMINI_MODELS = [
@@ -96,13 +100,17 @@ const getCloudflareGateway = (provider: Provider): AIGatewayConfig => {
 };
 
 // Provider URL configuration
-const CLOUD_PROVIDERS = ['gemini'];
+const CLOUD_PROVIDERS = ['gemini', 'openai', 'groq', 'together', 'perplexity', 'anthropic'];
 const PROVIDER_URLS: Record<Provider, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta', // Kept for backwards compatibility
   ollama: '',
   lmstudio: '',
   terminal: '',
-  'antigravity-sdk': ''
+  openai: 'https://api.openai.com/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  together: 'https://api.together.xyz/v1',
+  perplexity: 'https://api.perplexity.ai',
+  anthropic: 'https://api.anthropic.com',
 };
 
 export class Gateway {
@@ -248,112 +256,94 @@ export class Gateway {
     }
 
     const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    
+    const currentFilename = fileURLToPath(import.meta.url);
+    const currentDirname = path.dirname(currentFilename);
+    const isTs = currentFilename.endsWith('.ts');
+    const ext = isTs ? '.ts' : '.js';
+    
+    let workerPath = path.join(currentDirname, 'workers', `sse.worker${ext}`);
+    if (!fs.existsSync(workerPath)) {
+      const altExt = ext === '.ts' ? '.js' : '.ts';
+      const altPath = path.join(currentDirname, 'workers', `sse.worker${altExt}`);
+      if (fs.existsSync(altPath)) {
+        workerPath = altPath;
+      }
+    }
 
-    try {
-      while (true) {
-        if (callbacks.isPaused?.()) {
-          await callbacks.waitForResume?.();
+    let worker: Worker;
+    if (workerPath.endsWith('.ts')) {
+      worker = new Worker(workerPath, { execArgv: ['--import', 'tsx'] });
+    } else {
+      worker = new Worker(workerPath);
+    }
+
+    let isDone = false;
+
+    return new Promise<void>((resolve) => {
+      const cleanup = () => {
+        if (!isDone) {
+          isDone = true;
+          worker.terminate();
+          reader.cancel().catch(() => {});
+          resolve();
         }
+      };
 
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        
-        let start = 0;
-        let eventData: string[] = [];
-
-        while (start < buffer.length) {
-          const end = buffer.indexOf('\n', start);
-          if (end === -1) break;
-
-          const line = buffer.substring(start, end).replace(/\r$/, '');
-          start = end + 1;
-
-          if (line === '') {
-            // End of an event
-            if (eventData.length > 0) {
-              const fullData = eventData.join('\n');
-              eventData = [];
-              
-              if (fullData === '[DONE]' || fullData === '[done]') {
-                callbacks.onDone();
-                return;
-              }
-
-              // Process JSON chunk
-              try {
-                const data = JSON.parse(fullData);
-
-                if (data.error) {
-                  const msg = typeof data.error === 'object' ? data.error.message || JSON.stringify(data.error) : data.error;
-                  callbacks.onError(msg);
-                  return;
-                }
-
-                // Standard OpenAI-compatible formats
-                let chunk = data.choices?.[0]?.delta?.content;
-                if (!chunk) chunk = data.choices?.[0]?.delta?.message?.content;
-                if (!chunk) chunk = data.choices?.[0]?.message?.content;
-                if (!chunk && typeof data.chunk === 'string') chunk = data.chunk;
-
-                if (chunk) {
-                  callbacks.onChunk(chunk);
-                }
-
-                // Gemini format: iterate all parts to handle thinking + text + functionCall
-                const parts = data.candidates?.[0]?.content?.parts;
-                if (Array.isArray(parts)) {
-                  console.log('[DEBUG] Gemini parts:', JSON.stringify(parts));
-                  for (const part of parts) {
-                    if (part.thought === true || part.thought === 'true') {
-                      // Thinking token — dispatch as thinking object
-                      if (part.text) callbacks.onChunk({ thinking: part.text });
-                    } else if (part.functionCall) {
-                      callbacks.onChunk({ functionCall: part.functionCall });
-                    } else if (part.text) {
-                      callbacks.onChunk(part.text);
-                    }
-                  }
-                }
-
-                if (data.usageMetadata || data.usage) {
-                  callbacks.onChunk({ type: 'metrics', metadata: data.usageMetadata || data.usage });
-                }
-
-                const finishReason = data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason;
-                if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'STOP') {
-                  callbacks.onDone();
-                  return;
-                }
-              } catch {
-                // Ignore parsing errors for partial/malformed chunks
-              }
-            }
-          } else if (line.startsWith('data:')) {
-            const dataStr = line.substring(5).replace(/^ /, ''); // Remove at most one leading space per spec
-            eventData.push(dataStr);
-          } else if (line.startsWith('error:')) {
-             callbacks.onError(line.substring(6).trimStart());
-             return;
+      worker.on('message', (msg) => {
+        if (msg.type === 'chunk') {
+          callbacks.onChunk(msg.data);
+        } else if (msg.type === 'done') {
+          if (!isDone) {
+            callbacks.onDone();
+            cleanup();
+          }
+        } else if (msg.type === 'error') {
+          if (!isDone) {
+            callbacks.onError(msg.message);
+            cleanup();
           }
         }
-        
-        buffer = buffer.substring(start);
-      }
-      callbacks.onDone();
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        callbacks.onDone();
-        return;
-      }
-      logger.error({ err: error }, '[Gateway.processSSEStream] Stream error');
-      callbacks.onError(error.message || 'Stream processing failed');
-    } finally {
-      reader.cancel().catch(() => {});
-    }
+      });
+
+      worker.on('error', (err) => {
+        if (!isDone) {
+          logger.error({ err }, '[Gateway.processSSEStream] Worker error');
+          callbacks.onError(err.message || 'Worker thread failed');
+          cleanup();
+        }
+      });
+
+      (async () => {
+        try {
+          while (!isDone) {
+            if (callbacks.isPaused?.()) {
+              await callbacks.waitForResume?.();
+            }
+
+            const { done, value } = await reader.read();
+            if (isDone) break;
+
+            if (done) {
+              worker.postMessage({ type: 'end' });
+              break;
+            }
+
+            worker.postMessage({ type: 'chunk', value });
+          }
+        } catch (error: any) {
+          if (!isDone) {
+            if (error.name === 'AbortError') {
+              callbacks.onDone();
+            } else {
+              logger.error({ err: error }, '[Gateway.processSSEStream] Stream error');
+              callbacks.onError(error.message || 'Stream processing failed');
+            }
+            cleanup();
+          }
+        }
+      })();
+    });
   }
 
   static formatMessages(messages: ChatMessage[], provider: Provider): any {

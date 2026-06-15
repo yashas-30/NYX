@@ -6,10 +6,14 @@ export const PROVIDER_LABELS: Record<string, string> = {
   terminal: 'Terminal',
   ollama: 'Ollama',
   lmstudio: 'LM Studio',
-
+  openai: 'OpenAI',
+  groq: 'Groq',
+  together: 'Together AI',
+  perplexity: 'Perplexity',
+  anthropic: 'Anthropic',
 };
 
-export const CLOUD_PROVIDERS: string[] = ['gemini'];
+export const CLOUD_PROVIDERS: string[] = ['gemini', 'openai', 'groq', 'together', 'perplexity', 'anthropic'];
 
 export const LOCAL_PROVIDERS: string[] = ['ollama', 'lmstudio'];
 
@@ -53,6 +57,8 @@ export const detectProvider = (modelId: string): Provider => {
 
   if (modelId.startsWith('ollama/') || modelId.startsWith('ollama:')) return 'ollama';
   if (modelId.startsWith('lmstudio/')) return 'lmstudio';
+  if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3')) return 'openai';
+  if (modelId.startsWith('claude-')) return 'anthropic';
 
   // 1. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {
@@ -100,6 +106,8 @@ export const getProviderForModel = (modelId: string): Provider => {
 
   if (modelId.startsWith('ollama/') || modelId.startsWith('ollama:')) return 'ollama';
   if (modelId.startsWith('lmstudio/')) return 'lmstudio';
+  if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3')) return 'openai';
+  if (modelId.startsWith('claude-')) return 'anthropic';
 
   // 1. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {

@@ -22,6 +22,24 @@ export class SmartRouter {
   private providerHealth: Map<Provider, { status: 'up' | 'down'; lastChecked: number; avgLatency: number }> = new Map();
 
   async route(prompt: string, config: RouterConfig, apiKeys: Record<string, string> = {}): Promise<RoutingDecision> {
+    const primaryModel = config.primary;
+    const primaryKey = apiKeys[primaryModel.provider] || '';
+    const primaryHealth = this.providerHealth.get(primaryModel.provider);
+    
+    const isPrimaryDown = primaryHealth?.status === 'down' && Date.now() - primaryHealth.lastChecked < 60000;
+    const hasPrimaryKey = !!primaryKey || (primaryModel.provider as string) === 'pollinations' || primaryModel.provider === 'ollama' || primaryModel.provider === 'lmstudio';
+    
+    if (hasPrimaryKey && !isPrimaryDown) {
+      return {
+        provider: primaryModel.provider,
+        modelId: primaryModel.id,
+        apiKey: primaryKey,
+        estimatedCost: this.estimateCost(primaryModel, prompt),
+        estimatedLatency: primaryHealth?.avgLatency || this.estimateLatency(primaryModel),
+        confidence: 1.0
+      };
+    }
+
     const candidates = [config.primary, ...config.fallbacks];
 
     // Score each candidate

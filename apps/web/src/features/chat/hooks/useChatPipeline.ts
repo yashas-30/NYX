@@ -384,9 +384,13 @@ export const useChatPipeline = ({
 
             case 'artifact': {
               const artifact = chunk.metadata;
-              if (artifact) {
-                // fallow-ignore-next-line code-duplication
-                artifacts.push(artifact);
+              if (artifact && artifact.id) {
+                const idx = artifacts.findIndex((a) => a.id === artifact.id);
+                if (idx >= 0) {
+                  artifacts[idx] = { ...artifacts[idx], ...artifact };
+                } else {
+                  artifacts.push(artifact);
+                }
                 safeUpdateHistory((prev) => {
                   const next = [...prev];
                   const last = next[next.length - 1];
@@ -467,7 +471,10 @@ export const useChatPipeline = ({
 
         // Wait for worker to finish processing all chunks
         worker.postMessage({ type: 'sync' });
-        await syncPromise;
+        await Promise.race([
+          syncPromise,
+          new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+        ]);
       } catch (err: any) {
         const isAbort = err?.name === 'AbortError' || signal.aborted;
         if (!isAbort) {
@@ -551,12 +558,10 @@ export const useChatPipeline = ({
         return;
       }
 
-      console.log('[Chat Pipeline] Starting chat with model:', nyxModel);
 
       const nyxProvider = detectProvider(nyxModel);
       const nyxApiKey = getEffectiveApiKey(nyxProvider, apiKeys) || '';
 
-      console.log('[Chat Pipeline] Provider:', nyxProvider, 'Has API key:', !!nyxApiKey);
 
       const modelConfig = AVAILABLE_MODELS.find(m => m.id === nyxModel);
       if (modelConfig && modelConfig.limits) {
@@ -605,7 +610,6 @@ export const useChatPipeline = ({
           );
         }
 
-        console.log('[Chat Pipeline] Starting chat initialization...');
 
         // Reset state
         setState({
@@ -852,14 +856,10 @@ export const useChatPipeline = ({
           if (logRollout && text) {
             let antigravityId: string | undefined;
             // Get the last assistant message
-            safeUpdateHistory((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              if (last?.role === 'assistant' && last.metadata?.antigravity_id) {
-                antigravityId = last.metadata.antigravity_id;
-              }
-              return next;
-            });
+            const lastMsg = historySnapshotRef.current[historySnapshotRef.current.length - 1];
+            if (lastMsg?.role === 'assistant' && lastMsg.metadata?.antigravity_id) {
+              antigravityId = lastMsg.metadata.antigravity_id;
+            }
             
             logRollout(
               'chat',

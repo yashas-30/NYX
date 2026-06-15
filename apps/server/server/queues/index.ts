@@ -52,6 +52,7 @@ function makeQueue(name: string): Queue | null {
 export const criticQueue   = makeQueue('critic');
 export const downloadQueue = makeQueue('download');
 export const fileWriteQueue = makeQueue('file-write');
+export const memoryQueue   = makeQueue('memory-consolidation');
 
 // ── Workers ───────────────────────────────────────────────────────────────────
 // Workers are fire-and-forget; failures are logged but don't crash the process.
@@ -79,4 +80,12 @@ if (r) {
   // Suppress BullMQ worker internal error noise
   criticWorker.on('error',    (err) => logger.debug({ err: err.message }, '[Worker:critic] error'));
   fileWriteWorker.on('error', (err) => logger.debug({ err: err.message }, '[Worker:file-write] error'));
+
+  // Memory consolidation worker — runs async after each chat session
+  const { MemoryService } = await import('../features/memory/memoryService.js');
+  const memoryWorker = new Worker('memory-consolidation', async (job) => {
+    const { sessionId, messages, context } = job.data;
+    await MemoryService.consolidateSession(sessionId, messages, context);
+  }, { connection: r as ConnectionOptions, concurrency: 1 });
+  memoryWorker.on('error', (err) => logger.debug({ err: err.message }, '[Worker:memory-consolidation] error'));
 }

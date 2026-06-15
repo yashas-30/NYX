@@ -1,7 +1,5 @@
 // @ts-nocheck
 import logger from '../../lib/logger.js';
-import { CodebaseScanner } from '../workspace/codebaseScanner.js';
-import { CodebaseRAG, buildIndex } from '../rag/index.js';
 import { getWorkspaceRoot } from '../../lib/paths.js';
 import { getKeysSync } from '../vault/vault.service.js';
 // fetch is available globally in Node.js 18+ — no import needed
@@ -11,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { db } from '../../db/client.js';
 import { searchQueries, searchResults } from '../../db/schema.js';
 import { env } from '../../config/env.js';
+import { tavily } from '@tavily/core';
 
 interface SearchCacheEntry {
   results: any[];
@@ -21,7 +20,6 @@ const CACHE_FILE = path.join(process.cwd(), 'server', 'data', 'search_cache.json
 
 export class SearchService {
   private searchCache = new Map<string, SearchCacheEntry>();
-  private rag: CodebaseRAG | null = null;
 
   constructor() {
     this.loadCacheFromDisk();
@@ -69,9 +67,11 @@ export class SearchService {
 
   getSearchBackends() {
     const keys = getKeysSync();
+    const active = keys['TAVILY_API_KEY'] ? 'Tavily' : keys['SERPAPI_KEY'] ? 'SerpAPI' : 'DuckDuckGo';
     return {
-      activeBackend: keys['SERPAPI_KEY'] ? 'SerpAPI' : 'DuckDuckGo',
+      activeBackend: active,
       backends: {
+        tavily: { configured: !!keys['TAVILY_API_KEY'] },
         serpapi: { configured: !!keys['SERPAPI_KEY'] },
         duckduckgo: { configured: true, fallback: true },
         brave: { configured: !!keys['BRAVE_API_KEY'] },
@@ -80,38 +80,7 @@ export class SearchService {
     };
   }
 
-  async codebaseSearch(query: string): Promise<{ results: any[]; directoryStructure: any; fallback?: boolean }> {
-    try {
-      if (!this.rag) {
-        this.rag = new CodebaseRAG();
-        await this.rag.initialize(getWorkspaceRoot());
-      }
 
-      // Check if index exists, if not build it
-      const stats = await this.rag.getIndexStats();
-      if (stats.documentCount === 0) {
-        logger.info('[CodebaseSearch] Building vector index...');
-        await buildIndex(this.rag, getWorkspaceRoot());
-      }
-
-      const results = await this.rag.search(query, 5);
-      const directoryStructure = CodebaseScanner.getDirectoryStructure();
-
-      return {
-        results,
-        directoryStructure,
-      };
-    } catch (e: any) {
-      logger.error(`[Codebase Search] Error: ${e}`);
-      // Fallback to old scanner
-      const results = await CodebaseScanner.search(query, 5);
-      return {
-        results,
-        directoryStructure: CodebaseScanner.getDirectoryStructure(),
-        fallback: true
-      };
-    }
-  }
 
   private async extractQueryWithLLM(rawQuery: string): Promise<string> {
     const keys = getKeysSync();
@@ -247,8 +216,35 @@ export class SearchService {
       score: number;
     }> = [];
 
-    const scraplingPort = env.SCRAPLING_PORT || 3002;
-    logger.info('[Web Search] Calling Scrapling server...');
+    const keys = getKeysSync();
+    const tavilyKey = keys['TAVILY_API_KEY'] || process.env.TAVILY_API_KEY || '';
+
+    if (tavilyKey) {
+      logger.info('[Web Search] Calling Tavily API...');
+      try {
+        const tvly = tavily({ apiKey: tavilyKey });
+        const response = await tvly.search(query, {
+          searchDepth: 'advanced',
+          maxResults: 5,
+          includeRawContent: false,
+        });
+
+        const tavilyResults = response.results || [];
+        results = tavilyResults.map((r: any, idx: number) => ({
+          title: r.title || '',
+          link: r.url || '',
+          snippet: r.content || '',
+          content: r.content || '',
+          score: (r.score || (1 - idx * 0.1)) * 10,
+        }));
+      } catch (tavilyError: any) {
+        logger.warn(`[Web Search] Tavily search failed, falling back: ${tavilyError.message}`);
+      }
+    }
+
+    if (results.length === 0) {
+      const scraplingPort = env.SCRAPLING_PORT || 3002;
+      logger.info('[Web Search] Calling Scrapling server...');
 
       try {
         const response = await fetch(`http://127.0.0.1:${scraplingPort}/v1/search`, {
@@ -318,6 +314,7 @@ export class SearchService {
           });
         }
       }
+    }
 
     // Process and summarize content
     for (let i = 0; i < results.length; i++) {

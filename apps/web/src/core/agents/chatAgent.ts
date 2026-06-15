@@ -1,6 +1,6 @@
 import { ChatMessage, StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
-import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from './baseAgent';
+import { BaseAgent, BaseAgentConfig } from './baseAgent';
 
 export interface ChatAgentConfig extends BaseAgentConfig {
   updateHistory?: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
@@ -172,6 +172,12 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
             }
             if (parsed.type === 'thinking') {
               yield { type: 'thinking', content: parsed.content };
+            }
+            if (parsed.type === 'citation' && parsed.citation) {
+              yield { type: 'citation', content: '', metadata: parsed.citation };
+            }
+            if (parsed.type === 'artifact' && parsed.artifact) {
+              yield { type: 'artifact', content: '', metadata: parsed.artifact };
             }
             if (parsed.tool_call) {
               yield { type: 'tool_call', content: 'Calling tool...', metadata: parsed.tool_call };

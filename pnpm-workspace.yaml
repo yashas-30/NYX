@@ -9,6 +9,7 @@ allowBuilds:
   bcrypt: true
   better-sqlite3: true
   cpu-features: true
+  es5-ext: set this to true or false
   esbuild: true
   isolated-vm: set this to true or false
   keytar: true

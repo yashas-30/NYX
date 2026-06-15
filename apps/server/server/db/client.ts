@@ -33,6 +33,7 @@ if (isPg) {
   sqliteInstance.pragma('temp_store = MEMORY');
   sqliteInstance.pragma('foreign_keys = ON');
   sqliteInstance.pragma('cache_size = 10000');
+  sqliteInstance.pragma('busy_timeout = 5000'); // Prevent SQLITE_BUSY on concurrent writes
   dbInstance = sqliteDrizzle(sqliteInstance, { schema });
 }
 

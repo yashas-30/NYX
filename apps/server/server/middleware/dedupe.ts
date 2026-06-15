@@ -14,7 +14,6 @@ export const requestDedupeMiddleware = async (request: FastifyRequest, reply: Fa
     path.endsWith('/keyword-index') ||
     path.endsWith('/claude-md-hierarchy') ||
     path.endsWith('/memory-index') ||
-    path.endsWith('/codebase-search') ||
     path.endsWith('/search') ||
     path.endsWith('/read-file') ||
     path.endsWith('/list-directory') ||

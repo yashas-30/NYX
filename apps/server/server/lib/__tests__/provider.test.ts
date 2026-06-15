@@ -26,7 +26,8 @@ describe('AI Provider Utility Functions', () => {
 
   describe('isLocalModel', () => {
     it('returns true for known local model IDs', () => {
-
+      expect(isLocalModel('llama3:latest')).toBe(true);
+      expect(isLocalModel('lmstudio-community')).toBe(true);
     });
 
     it('returns false for cloud models', () => {

@@ -11,10 +11,6 @@ export const nyxSearchSchema = z.object({
   query: z.string().min(1).max(1024).trim(),
 });
 
-export const codebaseSearchSchema = z.object({
-  query: z.string().min(1).max(1024).trim(),
-});
-
 export const writeFileSchema = z.object({
   filePath: z.string().min(1).max(1024),
   content: z.string().max(10 * 1024 * 1024), // 10MB max file write

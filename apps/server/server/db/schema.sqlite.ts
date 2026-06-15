@@ -347,3 +347,14 @@ export const telemetryEvents = sqliteTable(
     timestampIdx: index('idx_telemetry_timestamp').on(table.timestamp),
   })
 );
+
+// Cross-Session User profile memory table
+export const userMemories = sqliteTable('user_memories', {
+  id: text('id').primaryKey(),
+  fact: text('fact').notNull(),
+  category: text('category').default('general'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  sessionId: text('session_id'),
+});
+

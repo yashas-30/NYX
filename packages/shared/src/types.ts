@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Provider definition
-export type ModelProvider = 'gemini' | 'terminal' | 'ollama' | 'lmstudio';
+export type ModelProvider = 'gemini' | 'terminal' | 'ollama' | 'lmstudio' | 'openai' | 'groq' | 'together' | 'perplexity' | 'anthropic';
 export type Provider = ModelProvider;
 
 // Telemetry Metrics schema and type
@@ -27,6 +27,12 @@ export const AISettingsSchema = z.object({
   mirostat: z.number().optional(),
   antigravity: z.boolean().optional(),
   thinkingBudget: z.number().optional(),
+  /** Gemini: force structured JSON output. Incompatible with thinking tokens. */
+  jsonMode: z.boolean().optional(),
+  /** Gemini: response schema for structured JSON (paired with jsonMode). */
+  jsonSchema: z.record(z.string(), z.unknown()).optional(),
+  /** Gemini: enable native Google Search grounding (not supported on Gemma). */
+  useGoogleSearch: z.boolean().optional(),
 });
 export type AISettings = z.infer<typeof AISettingsSchema>;
 
@@ -47,12 +53,21 @@ export const ChatMessageSchema = z.object({
     data: z.string().optional(), // base64
     url: z.string().optional(),
   })).optional(),
+  attachments: z.array(z.object({
+    name: z.string(),
+    url: z.string().optional(),
+    type: z.string().optional(),
+    size: z.number().optional(),
+    mimeType: z.string().optional(),
+  })).optional(),
   reasoning: z.string().optional(),
   model: z.string().optional(),
   toolCalls: z.array(z.any()).optional(),
   citations: z.array(z.any()).optional(),
   artifacts: z.array(z.any()).optional(),
   metadata: z.any().optional(),
+  siblingCount: z.number().optional(),
+  currentIndex: z.number().optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
@@ -73,7 +88,7 @@ export type ModelStatus = 'ga' | 'preview' | 'deprecated' | 'alias';
 export const ModelOptionSchema = z.object({
   id: z.string(),
   name: z.string(),
-  provider: z.enum(['gemini', 'terminal', 'ollama', 'lmstudio']),
+  provider: z.enum(['gemini', 'terminal', 'ollama', 'lmstudio', 'openai', 'groq', 'together', 'perplexity', 'anthropic']),
   description: z.string(),
   isLocal: z.boolean().optional(),
   status: z.enum(['ga', 'preview', 'deprecated', 'alias']).optional().default('ga'),

@@ -20,7 +20,6 @@ import {
   ChevronDown,
   ChevronRight,
   Wrench,
-  Search,
   FileText,
   Image as ImageIcon,
   X,
@@ -28,13 +27,17 @@ import {
   Clock,
   AlertTriangle,
   Loader2,
-  Globe,
   Square,
   Download,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -43,23 +46,18 @@ import { AVAILABLE_MODELS } from '@src/shared/config/models';
 import { Logo, NyxLoader, CatLoader, AnimatedLogo } from '@src/assets/icons/icons';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ArtifactPanel } from './ArtifactPanel';
-import { CitationCard } from './CitationCard';
+import { Citation } from './CitationCard';
 import { SearchResultsPanel } from './SearchResultsPanel';
 import { MemoryPanel } from './MemoryPanel';
 import { ArtifactViewer } from '../../../components/artifacts/ArtifactViewer';
+import { tts } from '@src/features/voice/tts';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface Citation {
-  id?: string;
-  source?: string;
-  quote?: string;
-  url?: string;
-  title?: string;
-  snippet?: string;
-}
+// Citation is imported from CitationCard — re-export for consumers that import it from here
+export type { Citation };
 
 export interface ChatMessageListProps {
   history: ChatMessage[];
@@ -73,6 +71,7 @@ export interface ChatMessageListProps {
   onEditMessage?: (index: number, newContent: string) => void;
   onRegenerate?: (index: number) => void;
   onBranchFromMessage?: (index: number) => void;
+  onBranchChange?: (index: number, branchOffset: number) => void;
   streamingContent?: string;
   streamingReasoning?: string;
   streamingToolCalls?: ToolCall[];
@@ -92,6 +91,7 @@ interface MessageBubbleProps {
   onRegenerate?: (index: number) => void;
   onBranch?: (index: number) => void;
   activeModel?: string;
+  onBranchChange?: (index: number, branchOffset: number) => void;
   onArtifactClick?: (artifact: any) => void;
 }
 
@@ -173,6 +173,88 @@ const ToolCallCard: React.FC<{
   );
 });
 ToolCallCard.displayName = 'ToolCallCard';
+
+// ---------------------------------------------------------------------------
+// Context Ingestion Card (Kimi AI Style)
+// ---------------------------------------------------------------------------
+
+const ContextIngestionCard: React.FC<{
+  tools: { tool: ToolCall; status: string }[];
+}> = memo(({ tools }) => {
+  const [expanded, setExpanded] = useState(false);
+  const isRunning = tools.some(t => t.status === 'running');
+  const isError = tools.some(t => t.status === 'error');
+
+  if (tools.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`my-2 rounded-md border overflow-hidden ${
+        isError
+          ? 'bg-red-500/5 border-red-500/20'
+          : isRunning
+            ? 'bg-sky-500/5 border-sky-500/20'
+            : 'bg-emerald-500/5 border-emerald-500/20'
+      }`}
+    >
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-muted/40 transition-colors"
+      >
+        {isRunning ? (
+          <Loader2 size={13} className="text-sky-400 animate-spin shrink-0" />
+        ) : isError ? (
+          <AlertTriangle size={13} className="text-red-400 shrink-0" />
+        ) : (
+          <Sparkles size={13} className="text-emerald-400 shrink-0" />
+        )}
+        <span className="text-[11px] font-semibold text-foreground/90 truncate">
+          Read {tools.length} document{tools.length !== 1 ? 's' : ''}
+        </span>
+        <span
+          className={`text-[9px] px-1.5 py-0.5 rounded-md font-medium uppercase tracking-wider ml-auto shrink-0 ${
+            isRunning
+              ? 'bg-sky-500/10 text-sky-400'
+              : isError
+                ? 'bg-red-500/10 text-red-400'
+                : 'bg-emerald-500/10 text-emerald-400'
+          }`}
+        >
+          {isRunning ? 'Reading...' : isError ? 'Error' : 'Analyzed'}
+        </span>
+        {expanded ? (
+          <ChevronDown size={12} className="text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight size={12} className="text-muted-foreground shrink-0" />
+        )}
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-3.5 pb-3 pt-1 border-t border-border flex flex-col gap-2">
+              {tools.map((t, i) => (
+                <div key={i} className="text-[11px] font-mono text-foreground/80 bg-muted/30 rounded px-2 py-1 flex justify-between items-center">
+                  <span className="truncate">{t.tool.function.name}</span>
+                  <span className="text-[9px] text-muted-foreground/50 shrink-0">{t.status}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+});
+ContextIngestionCard.displayName = 'ContextIngestionCard';
 
 // ---------------------------------------------------------------------------
 // Code Block with Syntax Highlighting
@@ -304,6 +386,39 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
 ImageAttachment.displayName = 'ImageAttachment';
 
 // ---------------------------------------------------------------------------
+// File Attachment Display (Claude Style)
+// ---------------------------------------------------------------------------
+
+const FileAttachment: React.FC<{ name: string; size?: number; type?: string; mimeType?: string }> = memo(({ name, size, type, mimeType }) => {
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex items-center gap-3 px-3 py-2 bg-muted/30 border border-border rounded-lg max-w-[280px] shadow-sm mb-2"
+    >
+      <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-primary/10 text-primary rounded-md">
+        <FileText size={16} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[12px] font-semibold text-foreground truncate">{name}</p>
+        <p className="text-[10px] text-muted-foreground uppercase tracking-wide truncate">
+          {type || mimeType?.split('/')[1] || 'FILE'} {size ? `• ${formatSize(size)}` : ''}
+        </p>
+      </div>
+    </motion.div>
+  );
+});
+FileAttachment.displayName = 'FileAttachment';
+
+
+// ---------------------------------------------------------------------------
 // Streaming Cursor
 // ---------------------------------------------------------------------------
 
@@ -401,7 +516,7 @@ const MarkdownContent: React.FC<{
               href={cite?.url || '#'}
               target="_blank"
               rel="noopener noreferrer"
-              title={cite?.source || cite?.url}
+              title={cite?.title || cite?.url}
               className="inline-flex items-center justify-center min-w-[16px] h-4 ml-0.5 px-1 text-[9px] font-bold text-primary bg-primary/10 rounded-md hover:bg-primary/20 hover:scale-110 transition-all align-super no-underline cursor-pointer"
               onClick={(e) => {
                 if (!cite?.url) e.preventDefault();
@@ -442,7 +557,7 @@ const MarkdownContent: React.FC<{
 
   return (
     <div className="prose-nyx w-full">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={components}>
         {processedContent}
       </ReactMarkdown>
       {isStreaming && <StreamingCursor />}
@@ -450,6 +565,27 @@ const MarkdownContent: React.FC<{
   );
 });
 MarkdownContent.displayName = 'MarkdownContent';
+
+// ---------------------------------------------------------------------------
+// TTS Speaker Button
+// ---------------------------------------------------------------------------
+
+const TtsSpeakerButton: React.FC<{
+  isSpeaking: boolean;
+  onToggle: () => void;
+}> = memo(({ isSpeaking, onToggle }) => {
+  return (
+    <button
+      onClick={onToggle}
+      title={isSpeaking ? 'Stop reading' : 'Read aloud'}
+      className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+    >
+      {isSpeaking ? <VolumeX size={10} /> : <Volume2 size={10} />}
+      <span>{isSpeaking ? 'Stop' : 'Listen'}</span>
+    </button>
+  );
+});
+TtsSpeakerButton.displayName = 'TtsSpeakerButton';
 
 // ---------------------------------------------------------------------------
 // Message Actions (Edit, Regenerate, Branch)
@@ -466,6 +602,9 @@ const MessageActions: React.FC<{
   msgId: string;
   isUser: boolean;
   activeModel?: string;
+  siblingCount?: number;
+  currentIndex?: number;
+  onBranchChange?: (index: number, branchOffset: number) => void;
 }> = memo(
   ({
     index,
@@ -478,10 +617,24 @@ const MessageActions: React.FC<{
     msgId,
     isUser,
     activeModel,
+    siblingCount,
+    currentIndex,
+    onBranchChange,
   }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editValue, setEditValue] = useState(content);
     const editRef = useRef<HTMLTextAreaElement>(null);
+    const [isSpeaking, setIsSpeaking] = useState(false);
+
+    const handleTtsToggle = useCallback(() => {
+      if (isSpeaking) {
+        tts.stop();
+        setIsSpeaking(false);
+      } else {
+        setIsSpeaking(true);
+        tts.speak(content).finally(() => setIsSpeaking(false));
+      }
+    }, [content, isSpeaking]);
 
     useEffect(() => {
       if (isEditing) {
@@ -530,7 +683,28 @@ const MessageActions: React.FC<{
     }
 
     return (
-      <div className="mt-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
+      <div className={`mt-3 flex items-center gap-1 focus-within:opacity-100 transition-opacity duration-200 ${isSpeaking ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+        {siblingCount && siblingCount > 1 && currentIndex !== undefined && (
+          <div className="flex items-center gap-1 mr-2 px-1 py-1 rounded-md bg-muted/30 border border-border/50">
+            <button
+              onClick={() => onBranchChange?.(index, -1)}
+              disabled={currentIndex <= 0}
+              className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              <ChevronDown size={12} className="rotate-90" />
+            </button>
+            <span className="text-[10px] font-mono font-medium text-muted-foreground px-1 select-none">
+              {currentIndex + 1} / {siblingCount}
+            </span>
+            <button
+              onClick={() => onBranchChange?.(index, 1)}
+              disabled={currentIndex >= siblingCount - 1}
+              className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              <ChevronDown size={12} className="-rotate-90" />
+            </button>
+          </div>
+        )}
         <button
           onClick={() => onCopy(content, msgId)}
           className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
@@ -578,6 +752,8 @@ const MessageActions: React.FC<{
             <span>Branch</span>
           </button>
         )}
+
+        {!isUser && content && <TtsSpeakerButton isSpeaking={isSpeaking} onToggle={handleTtsToggle} />}
       </div>
     );
   }
@@ -654,10 +830,12 @@ const MessageBubble = React.memo<MessageBubbleProps>(
     onEdit,
     onRegenerate,
     onBranch,
+    onBranchChange,
     activeModel,
     onArtifactClick,
   }) => {
     const isUser = msg.role === 'user';
+    const [isExpanded, setIsExpanded] = useState(false);
     const msgId = `${msg.timestamp}-${index}`;
     // Show "Thinking..." spinner ONLY when streaming has started but no content or reasoning yet
     const isThinking =
@@ -678,9 +856,44 @@ const MessageBubble = React.memo<MessageBubbleProps>(
         {isUser ? (
           <div className="max-w-[85%] sm:max-w-[75%]">
             <div className="py-3.5 px-5 bg-muted/10 border border-border rounded-2xl hover:bg-muted/20 transition-all shadow-sm">
-              <div className="text-[14px] font-normal leading-relaxed text-foreground select-text whitespace-pre-wrap">
-                {msg.content}
-              </div>
+              {msg.attachments && msg.attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {msg.attachments.map((att, i) => (
+                    <FileAttachment
+                      key={i}
+                      name={att.name}
+                      size={att.size}
+                      type={att.type}
+                      mimeType={att.mimeType}
+                    />
+                  ))}
+                </div>
+              )}
+              {(() => {
+                const shouldCollapse = msg.content.length > 350;
+                const displayText = shouldCollapse && !isExpanded 
+                  ? msg.content.slice(0, 300) + '...' 
+                  : msg.content;
+                return (
+                  <>
+                    <div className="text-[14px] font-normal leading-relaxed text-foreground select-text whitespace-pre-wrap">
+                      {displayText}
+                    </div>
+                    {shouldCollapse && (
+                      <button
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="mt-2 text-[10px] font-mono font-bold uppercase tracking-wider text-accent hover:text-accent/80 transition-all cursor-pointer flex items-center gap-1.5 outline-none select-none"
+                      >
+                        <span>{isExpanded ? 'Show Less' : 'Show More'}</span>
+                        <ChevronDown
+                          size={10}
+                          className={`transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : 'rotate-0'}`}
+                        />
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
               {msg.images && msg.images.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {msg.images.map((img, i) => (
@@ -708,10 +921,13 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               copiedId={copiedId}
               msgId={msgId}
               isUser={true}
+              siblingCount={msg.siblingCount}
+              currentIndex={msg.currentIndex}
+              onBranchChange={onBranchChange}
             />
           </div>
         ) : (
-          <div className="flex flex-col w-full animate-fade-in">
+          <div className="flex flex-col w-full animate-fade-in relative">
             {/* Clean Header with Message-Specific Model Resolution */}
             {(() => {
               const messageModel = msg.model || activeModel;
@@ -730,7 +946,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               }
 
               return (
-                <div className="flex items-baseline gap-2 mb-1 select-none pl-[92px]">
+                <div className="flex items-baseline gap-2 mb-1 select-none pl-[92px] md:pl-0">
                   <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
                     {displayName}
                   </span>
@@ -738,8 +954,8 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               );
             })()}
 
-            <div className="flex w-full gap-3 items-start">
-              <div className="flex-shrink-0 -mt-3 select-none">
+            <div className="flex w-full gap-3 md:gap-0 items-start relative">
+              <div className="md:absolute md:-left-[92px] md:top-0 flex-shrink-0 -mt-3 select-none">
                 <div className="w-20 h-20 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
                   {isLoadingIcon ? (
                     <NyxLoader size={36} className="text-foreground animate-spin" />
@@ -786,7 +1002,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                 {isThinking && !msg.reasoning && (
                   <div className="flex items-center gap-2.5 py-1 select-none h-14">
                     <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.15em] animate-pulse">
-                      Thinking...
+                      Starting reasoning...
                     </span>
                   </div>
                 )}
@@ -809,17 +1025,35 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     {/* Tool calls */}
                     {msg.toolCalls && msg.toolCalls.length > 0 && (
                       <div className="space-y-1">
-                        {msg.toolCalls.map((tool, i) => (
-                          <ToolCallCard
-                            key={tool.id || i}
-                            tool={tool}
-                            status={
-                              isStreaming && isLast && i === msg.toolCalls!.length - 1
-                                ? 'running'
-                                : 'completed'
-                            }
-                          />
-                        ))}
+                        {(() => {
+                          const retrievalNames = ['search', 'read', 'memory', 'query', 'retrieve'];
+                          const isRetrieval = (name: string) => retrievalNames.some(rn => name.toLowerCase().includes(rn));
+                          
+                          const retrievalTools = msg.toolCalls!.map((tool, i) => ({
+                            tool,
+                            status: isStreaming && isLast && i === msg.toolCalls!.length - 1 ? 'running' : 'completed',
+                            index: i
+                          })).filter(t => isRetrieval(t.tool.function.name));
+
+                          const otherTools = msg.toolCalls!.map((tool, i) => ({
+                            tool,
+                            status: isStreaming && isLast && i === msg.toolCalls!.length - 1 ? 'running' : 'completed',
+                            index: i
+                          })).filter(t => !isRetrieval(t.tool.function.name));
+
+                          return (
+                            <>
+                              {retrievalTools.length > 0 && <ContextIngestionCard tools={retrievalTools} />}
+                              {otherTools.map(t => (
+                                <ToolCallCard
+                                  key={t.tool.id || t.index}
+                                  tool={t.tool}
+                                  status={t.status as any}
+                                />
+                              ))}
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
 
@@ -833,45 +1067,76 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     )}
 
                     {/* Artifacts */}
-                    {msg.artifacts && msg.artifacts.length > 0 && (
-                      <div className="space-y-1 mt-2">
-                        {msg.artifacts.map((artifact, i) => (
-                          <div 
-                            key={artifact.id || i}
-                            onClick={() => onArtifactClick?.(artifact)}
-                            className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all rounded-md"
-                          >
-                            <ArtifactViewer artifact={artifact as any} />
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {(() => {
+                      const completeArtifacts = msg.artifacts || [];
+                      let streamingArtifacts: any[] = [];
+                      if (isStreaming && isLast && msg.content) {
+                        const codeBlockRegex = /```(\w*)\n([\s\S]*?)(?:```|$)/g;
+                        let match;
+                        while ((match = codeBlockRegex.exec(msg.content)) !== null) {
+                          const isClosed = msg.content.substring(match.index).includes('```', match[1].length + 3);
+                          if (!isClosed) {
+                            const lang = match[1]?.toLowerCase();
+                            const isArtifactLang = ['html', 'htm', 'react', 'tsx', 'jsx', 'ts', 'js', 'typescript', 'javascript', 'python', 'json', 'csv', 'mermaid', 'svg', 'markdown', 'md'].includes(lang);
+                            if (isArtifactLang) {
+                              streamingArtifacts.push({ id: 'streaming-artifact', type: 'code', title: 'Generating...', content: '' });
+                            }
+                          }
+                        }
+                      }
+                      
+                      const allArtifacts = [...completeArtifacts, ...streamingArtifacts];
+                      if (allArtifacts.length === 0) return null;
+                      
+                      return (
+                        <div className="space-y-1 mt-2">
+                          {allArtifacts.map((artifact, i) => {
+                            const isArtifactStreaming = artifact.id === 'streaming-artifact';
 
-                    {/* Citations */}
+                            if (isArtifactStreaming) {
+                              return (
+                                <div key={`streaming-${i}`} className="rounded-md border border-border bg-surface overflow-hidden flex flex-col my-4 shadow-sm w-full max-w-4xl p-4 cursor-default">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                                      <NyxLoader size={16} className="text-primary/70 animate-pulse" />
+                                    </div>
+                                    <div className="flex flex-col gap-1.5 flex-1">
+                                      <div className="h-4 bg-muted/60 animate-pulse rounded w-1/3" />
+                                      <div className="h-3 bg-muted/60 animate-pulse rounded w-1/4" />
+                                    </div>
+                                    <div className="text-xs text-primary/70 font-semibold animate-pulse uppercase tracking-wider">
+                                      Generating Artifact...
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div 
+                                key={artifact.id || i}
+                                onClick={() => onArtifactClick?.(artifact)}
+                                className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all rounded-md"
+                              >
+                                <ArtifactViewer artifact={artifact as any} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Citations — rendered via SearchResultsPanel */}
                     {msg.citations && msg.citations.length > 0 && (
-                      <div className="mt-3 pt-2 border-t border-border">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
-                          <Search size={10} />
-                          Sources
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {msg.citations.map((cite, i) => (
-                            <a
-                              key={i}
-                              id={`cite-${cite.id}`}
-                              href={cite.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card border border-border text-[10px] text-muted-foreground hover:text-primary hover:border-primary/20 transition-all"
-                            >
-                              <Globe size={9} />
-                              <span className="truncate max-w-[200px]">
-                                {cite.source || cite.title || cite.url}
-                              </span>
-                            </a>
-                          ))}
-                        </div>
-                      </div>
+                      <SearchResultsPanel
+                        citations={msg.citations.map((cite, i) => ({
+                          id: cite.id ?? String(i),
+                          index: i + 1,
+                          title: cite.title || cite.source || '',
+                          url: cite.url || '',
+                          snippet: cite.snippet || cite.quote || '',
+                        }))}
+                      />
                     )}
 
                     {/* Actions */}
@@ -879,7 +1144,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       <>
                         <MessageActions
                           index={index}
-                          content={msg.content}
+                          content={msg.content || ''}
                           onCopy={onCopy}
                           copiedId={copiedId}
                           msgId={msgId}
@@ -887,6 +1152,8 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           onRegenerate={onRegenerate}
                           onBranch={onBranch}
                           activeModel={activeModel}
+                          siblingCount={msg.siblingCount}
+                          currentIndex={msg.currentIndex}
                         />
                         <FeedbackButtons msg={msg} submitReward={submitReward} />
                       </>
@@ -976,7 +1243,7 @@ const EmptyState: React.FC<{
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5, duration: 0.5 }}
-        className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl w-full mt-4"
+        className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full mt-4"
       >
         {suggestedPrompts.slice(0, 4).map((p, idx) => (
           <motion.button
@@ -1021,6 +1288,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   streamingToolCalls,
   activeModel,
   onArtifactClick,
+  onBranchChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -1046,6 +1314,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     ),
   });
 
+  const lastScrollTop = useRef(0);
+
   // Smart scroll: auto-scroll only if user was near bottom
   useEffect(() => {
     if (history.length > lastHistoryLength.current) {
@@ -1069,35 +1339,41 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       }
     }
     lastHistoryLength.current = history.length;
-  }, [history, isLoading, autoScroll, rowVirtualizer]);
+  }, [history, isLoading, autoScroll, rowVirtualizer, streamingContent, streamingReasoning, streamingToolCalls]);
 
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     
-    // Use a larger threshold to avoid false positives when content grows rapidly
-    const threshold = 150; 
-    const distanceToBottom = scrollHeight - scrollTop - clientHeight;
-    const isAtBottom = distanceToBottom < threshold;
+    const isScrollingUp = scrollTop < lastScrollTop.current;
+    lastScrollTop.current = scrollTop;
     
-    isNearBottom.current = isAtBottom;
+    // 10px threshold is enough to allow for subpixel rendering differences
+    const distanceToBottom = Math.ceil(scrollHeight - scrollTop - clientHeight);
+    const isAtBottom = distanceToBottom <= 10;
     
     // Only turn off autoScroll if the user explicitly scrolled UP away from the bottom
     // This prevents content growth from randomly disabling auto-scroll
-    if (!isAtBottom) {
+    if (isScrollingUp && !isAtBottom) {
       setAutoScroll(false);
-      setShowJumpToBottom(history.length > 2);
-    } else {
+      setShowJumpToBottom(true);
+      isNearBottom.current = false;
+    } else if (isAtBottom) {
       setAutoScroll(true);
       setShowJumpToBottom(false);
+      isNearBottom.current = true;
     }
-  }, [history.length]);
+  }, []);
 
   const jumpToBottom = useCallback(() => {
     if (history.length > 0) {
       rowVirtualizer.scrollToIndex(history.length - 1, { align: 'end' });
       setAutoScroll(true);
       isNearBottom.current = true;
+      if (containerRef.current) {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight;
+        lastScrollTop.current = containerRef.current.scrollTop;
+      }
     }
   }, [history.length, rowVirtualizer]);
 
@@ -1120,7 +1396,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative"
+        className="flex-1 min-h-0 overflow-y-auto custom-scrollbar relative px-0 md:px-24"
         aria-live="polite"
         aria-atomic="false"
       >
@@ -1140,7 +1416,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
           )
         ) : (
           <div
-            className="w-full max-w-3xl mx-auto px-4 pb-6 pt-4 relative"
+            className="w-full max-w-3xl mx-auto px-4 md:px-0 pb-6 pt-4 relative"
             style={{ height: `${totalSize}px` }}
           >
             {virtualItems.map((virtualItem) => {
@@ -1183,6 +1459,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                       onEdit={onEditMessage}
                       onRegenerate={onRegenerate}
                       onBranch={onBranchFromMessage}
+                      onBranchChange={onBranchChange}
                       activeModel={activeModel}
                       onArtifactClick={onArtifactClick}
                     />

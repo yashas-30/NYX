@@ -11,6 +11,8 @@ import { useChatPipeline } from './useChatPipeline';
 import { cancelRequest, cancelAllRequests } from '@src/core/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
 import { getSessionToken } from '@src/infrastructure/api/authFetch';
+import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
+import { useUsageStore } from '@src/core/stores/useUsageStore';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -225,6 +227,15 @@ export const useChatLogic = ({
   useEffect(() => {
     historyRef.current = history;
   }, [history]);
+
+  // Reset usage limit when the model changes to prevent stale rate limits from locking the model selector
+  useEffect(() => {
+    if (models?.nyx) {
+      const provider = detectProvider(models.nyx);
+      const apiKey = getEffectiveApiKey(provider, apiKeys) || '';
+      useUsageStore.getState().resetLimitForModel(models.nyx, apiKey);
+    }
+  }, [models?.nyx, apiKeys]);
 
   // --- Session tracking ---
   const activeSidRef = useRef<string | null>(null);

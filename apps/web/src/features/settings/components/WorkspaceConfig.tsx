@@ -103,7 +103,7 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
         </div>
 
         <p className="text-[10px] text-muted-foreground/80 leading-relaxed mt-1">
-          Specifies the root directory for RAG codebase search indexing and terminal execution.
+          Specifies the root directory for terminal execution and file operations.
           Clicking "Select Directory" opens the native OS folder picker.
         </p>
       </div>

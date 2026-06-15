@@ -1,5 +1,4 @@
 // fallow-ignore-file code-duplication
-// @ts-nocheck
 /**
  * @file src/features/chat/components/ChatPromptInput.tsx
  * @description Prompt pill with inference settings panel, tailored specifically for the Chat Agent.
@@ -28,14 +27,15 @@ import {
 
 import { ModelDefinition } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
-import { analyzePrompt } from '@shared/promptAnalyzer';
-const optimizePromptText = async (text: string) => text;
+import { analyzePrompt, optimizePromptText } from '@nyx/shared';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { PromptTemplateManager } from './PromptTemplateManager';
 import { SectionLabel, ParamSlider, ToolButton } from '@shared/components/PromptInputSubcomponents';
 import { LocalModelSettingsPanel } from '@shared/components/LocalModelSettingsPanel';
 import { initVoiceMode } from '@src/features/voice/vad';
+import { VoiceOverlay } from '@src/features/voice/VoiceOverlay';
 import { SpeechToTextHelper } from '@src/features/voice/speechToText';
+import { MicVAD } from '@ricky0123/vad-web';
 
 
 interface ChatPromptInputProps {
@@ -62,6 +62,7 @@ interface ChatPromptInputProps {
   pendingImages?: { name: string; mimeType: string; data: string }[];
   onRemoveImage?: (index: number) => void;
   onImagesChange?: (images: { name: string; mimeType: string; data: string }[]) => void;
+  onAttachFiles: (files: File[]) => void;
 }
 
 interface LocalInferenceSettings {
@@ -100,7 +101,7 @@ const tagItemVariants = {
     opacity: 1,
     x: 0,
     scale: 1,
-    transition: { duration: 0.2, ease: 'easeOut' },
+    transition: { duration: 0.2, ease: 'easeOut' as const },
   },
 };
 
@@ -123,6 +124,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   pendingImages,
   onRemoveImage,
   onImagesChange,
+  onAttachFiles,
 }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -132,8 +134,8 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [voiceEngine, setVoiceEngine] = useState<'browser' | 'vad'>('browser');
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
-  const vadRef = useRef<any>(null);
-  const sttRef = useRef<any>(null);
+  const vadRef = useRef<MicVAD | null>(null);
+  const sttRef = useRef<SpeechToTextHelper | null>(null);
   const basePromptRef = useRef('');
 
   useEffect(() => {
@@ -142,6 +144,10 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
       if (sttRef.current) sttRef.current.stop();
     };
   }, []);
+
+  const [voiceStatus, setVoiceStatus] = useState<'listening' | 'processing' | 'transcribing' | 'error'>('listening');
+  const [voiceError, setVoiceError] = useState('');
+  const [voiceTranscript, setVoiceTranscript] = useState('');
 
   const toggleVoice = useCallback(async () => {
     if (isVoiceActive) {
@@ -163,12 +169,45 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
       basePromptRef.current = prompt;
 
       if (voiceEngine === 'vad') {
-        toast.success('Local VAD Listening... Start speaking');
+        setVoiceStatus('listening');
+        setVoiceError('');
+        setVoiceTranscript('');
+        
         try {
-          const myvad = await initVoiceMode((audio) => {
-            toast.info('Processing speech (Local VAD)...');
-            onPromptChange(basePromptRef.current + (basePromptRef.current ? ' ' : '') + '[Voice Input Captured]');
-          });
+          const myvad = await initVoiceMode(
+            // onSpeechStart
+            () => {
+              setVoiceStatus('listening');
+            },
+            // onSpeechEnd
+            (text: string) => {
+              setVoiceStatus('transcribing');
+              if (text.trim()) {
+                setVoiceTranscript(text);
+                onPromptChange(basePromptRef.current + (basePromptRef.current ? ' ' : '') + text);
+                toast.success('Speech transcribed successfully');
+              }
+              // Wait 1.5s then automatically close
+              setTimeout(() => {
+                setIsVoiceActive(false);
+                if (vadRef.current) {
+                  vadRef.current.pause();
+                  vadRef.current = null;
+                }
+              }, 1500);
+            },
+            // onMisfire
+            () => {
+              toast.info('VAD misfire (no clear speech detected)');
+            },
+            // onError
+            (err: string) => {
+              setVoiceStatus('error');
+              setVoiceError(err);
+              toast.error(err);
+              setIsVoiceActive(false);
+            }
+          );
           vadRef.current = myvad;
           if (myvad) myvad.start();
         } catch (err) {
@@ -245,88 +284,12 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
 
     setIsUploadingImage(true);
     try {
-      const file = files[0];
-
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('File size must be less than 10MB');
-        return;
-      }
-
-      const isImage = file.type.startsWith('image/');
-
-      if (!isImage) {
-        // Document upload for RAG
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        // Let's assume the user is using the current selected model provider, or default to gemini
-        const providerStr = String(currentModel?.provider || 'gemini');
-        
-        const res = await fetchWithAuth(`/api/rag/ingest?provider=${providerStr}`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!res.ok) {
-          throw new Error(`Failed to ingest document: ${res.statusText}`);
-        }
-
-        const data = await res.json();
-        toast.success(`Document "${file.name}" ingested into RAG memory successfully!`);
-        setIsUploadingImage(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        return;
-      }
-
-      // Existing image upload flow
-
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const rawBase64 = event.target?.result as string;
-          const base64Data = rawBase64.split(',')[1];
-
-          const res = await fetchWithAuth('/api/v1/files/upload', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              name: file.name,
-              mimeType: file.type,
-              data: base64Data,
-            }),
-          });
-
-          if (!res.ok) {
-            throw new Error(`Failed to upload: ${res.statusText}`);
-          }
-
-          const data = await res.json();
-          if (data.success) {
-            updateImages((prev) => [
-              ...prev,
-              {
-                name: data.name,
-                mimeType: data.mimeType,
-                data: base64Data, // Use local base64Data since server response does not contain it
-              },
-            ]);
-            toast.success(`File "${file.name}" attached successfully`);
-          } else {
-            throw new Error(data.error || 'Upload failed');
-          }
-        } catch (error: any) {
-          toast.error(`File upload failed: ${error.message}`);
-        } finally {
-          setIsUploadingImage(false);
-        }
-      };
-      reader.readAsDataURL(file);
+      // Delegate to the shared file handler which handles both images and documents
+      onAttachFiles(Array.from(files));
     } catch (error: any) {
-      toast.error(`File reading failed: ${error.message}`);
-      setIsUploadingImage(false);
+      toast.error(`File attach failed: ${error.message}`);
     } finally {
+      setIsUploadingImage(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -379,7 +342,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   }, [isLoading, onStop, onClearHistory]);
 
   const updateLocal = useCallback(
-    <K extends string>(key: K, value: LocalInferenceSettings[K]) => {
+    (key: string, value: any) => {
       onModelSettingsChange({ ...modelSettings, [key]: value });
     },
     [modelSettings, onModelSettingsChange]
@@ -482,9 +445,9 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
         : 'text-primary';
 
   return (
-    <div className="shrink-0 w-full flex flex-col items-center px-4 pb-4 pt-2 bg-background z-30 gap-2">
+    <div className="shrink-0 w-full flex flex-col items-center pb-4 pt-2 bg-background z-30 gap-2 px-0 md:px-24">
       <div
-        className={`relative w-full transition-all duration-500 ease-out ${prompt.trim().length > 0 ? 'max-w-2xl' : 'max-w-xl'}`}
+        className={`relative w-full transition-all duration-500 ease-out max-w-3xl px-4 md:px-0`}
       >
         {/* ── Settings Panel ────────────────────────────────────────── */}
         <LocalModelSettingsPanel
@@ -559,6 +522,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                 </motion.button>
                 <input
                   type="file"
+                  multiple
                   ref={fileInputRef}
                   onChange={handleImageChange}
                   className="hidden"
@@ -831,6 +795,21 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
           </div>
         </motion.form>
       </div>
+      
+      {/* Voice Activity Detection Overlay */}
+      <VoiceOverlay
+        isOpen={isVoiceActive && voiceEngine === 'vad'}
+        onClose={() => {
+          setIsVoiceActive(false);
+          if (vadRef.current) {
+            vadRef.current.pause();
+            vadRef.current = null;
+          }
+        }}
+        status={voiceStatus}
+        errorMessage={voiceError}
+        transcript={voiceTranscript}
+      />
     </div>
   );
 };

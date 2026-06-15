@@ -71,7 +71,6 @@ export interface AgentRoute {
 
 type ToolCapability =
   | 'web_search'
-  | 'codebase_search'
   | 'terminal'
   | 'file_write'
   | 'file_read'
@@ -915,7 +914,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
       tools:
         state?.lastIntent &&
         ['code_debug', 'code_generation', 'refactor'].includes(state.lastIntent)
-          ? ['codebase_search', 'file_read']
+          ? ['file_read']
           : [],
       modelTier: analysis.suggestedModel,
       temperature: 0.4,
@@ -952,7 +951,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
 
   // Code-related routing
   const tools: ToolCapability[] = [];
-  if (analysis.requiresContext) tools.push('codebase_search', 'file_read');
+  if (analysis.requiresContext) tools.push('file_read');
   if (analysis.requiresExecution) tools.push('terminal', 'file_write');
   if (analysis.complexity === 'enterprise' || analysis.confidence < 0.6) tools.push('web_search');
   if (analysis.detectedLanguages.includes('typescript') && analysis.frameworks.includes('react')) {

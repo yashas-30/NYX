@@ -1,11 +1,21 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CaretDown } from '@phosphor-icons/react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 interface ThinkingBlockProps {
   content: string;
   isComplete?: boolean;
   startedAt?: number;
+  agentProgress?: {
+    step: number;
+    total: number;
+    currentAgent?: string;
+    elapsed?: number;
+  };
 }
 
 // ─── Phase detection ───────────────────────────────────────────────────────────
@@ -63,6 +73,7 @@ type Segment =
   | { type: 'tool_call'; agent: string; tool: string; args: string }
   | { type: 'tool_result'; preview: string }
   | { type: 'plan'; agents: string[] }
+  | { type: 'agent_progress'; step: number; total: number; agents?: string[]; currentAgent?: string; elapsed?: number }
   | { type: 'text'; content: string };
 
 const AGENT_MAPPING: Record<string, string> = {
@@ -287,27 +298,120 @@ const ToolResultRow: React.FC<{ preview: string }> = ({ preview }) => (
 const PlainText: React.FC<{ content: string }> = ({ content }) => {
   if (!content.trim()) return null;
   return (
-    <p className="text-[11px] font-mono leading-relaxed py-0.5 whitespace-pre-wrap animate-fade-in" style={{ color: 'rgba(255,255,255,0.28)' }}>
-      {content}
-    </p>
+    <div className="text-[11px] font-mono leading-relaxed py-0.5 animate-fade-in prose prose-invert prose-p:my-1 prose-pre:my-1 max-w-none" style={{ color: 'rgba(255,255,255,0.45)' }}>
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm, remarkMath]} 
+        rehypePlugins={[rehypeKatex]}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
   );
 };
 
 import { useSmoothTypewriter } from '../hooks/useSmoothTypewriter';
 
-export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplete = true, startedAt }) => {
+function AgentProgressBar({
+  step,
+  total,
+  currentAgent,
+  elapsed,
+}: {
+  step: number;
+  total: number;
+  currentAgent?: string;
+  elapsed?: number;
+}) {
+  const pct = total > 0 ? Math.round((step / total) * 100) : 0;
+  const elapsedSec = elapsed ? Math.round(elapsed / 1000) : 0;
+  const agentLabel = currentAgent?.replace(/_/g, ' ') ?? '';
+
+  return (
+    <div className="my-2 mx-1 px-3 py-2 rounded-lg bg-zinc-900/70 border border-white/[0.06]">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[11px] text-zinc-400">
+          Agent {step}/{total}
+          {agentLabel && (
+            <span className="ml-2 text-violet-400 capitalize">{agentLabel}</span>
+          )}
+        </span>
+        {elapsedSec > 0 && (
+          <span className="text-[11px] text-zinc-600 font-mono">{elapsedSec}s</span>
+        )}
+      </div>
+      <div className="h-[3px] bg-zinc-800 rounded-full overflow-hidden">
+        <motion.div
+          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500"
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+        />
+      </div>
+    </div>
+  );
+}
+
+export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplete = true, startedAt, agentProgress }) => {
   const [isExpanded, setIsExpanded] = useState(!isComplete);
   const smoothContent = useSmoothTypewriter(content, !isComplete);
   const segments = useMemo(() => parseThinking(smoothContent), [smoothContent]);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const [internalStartedAt] = useState(() => startedAt || Date.now());
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    if (isComplete) return;
+    const interval = setInterval(() => {
+      setElapsedMs(Date.now() - internalStartedAt);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isComplete, internalStartedAt]);
 
   const currentPhase: ThinkingPhase = useMemo(() => {
     if (isComplete) return 'complete';
     return detectPhase(smoothContent);
   }, [smoothContent, isComplete]);
 
+  const currentStatusText = useMemo(() => {
+    if (isComplete) return 'Complete';
+    
+    // Find the most recent active agent, tool, or text
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const s = segments[i];
+      if (s.type === 'tool_call') {
+        return `${s.agent} running ${s.tool}...`;
+      }
+      if (s.type === 'agent_start') {
+        return `${s.agent} is working...`;
+      }
+      if (s.type === 'dynamic_spawn') {
+        return `Spawning ${s.agent}...`;
+      }
+      if (s.type === 'text' && s.content.trim()) {
+        const clean = s.content.replace(/\s+/g, ' ').trim();
+        
+        // Skip system/backend connection messages from the dynamic header
+        if (clean.includes('Connecting to backend agent service')) continue;
+        
+        if (clean.length <= 60) return clean;
+        return '...' + clean.slice(-55).trim();
+      }
+    }
+    
+    return PHASE_CONFIG[currentPhase].label;
+  }, [segments, isComplete, currentPhase]);
+
+  const userScrolledUp = useRef(false);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    userScrolledUp.current = distanceFromBottom > 50;
+  };
+
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && !userScrolledUp.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [segments, isExpanded]);
@@ -341,33 +445,28 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplet
           <div className="flex flex-col">
             <span className="text-[11px] font-mono font-medium tracking-tight"
               style={{ color: !isComplete ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.3)' }}>
-              {!isComplete ? 'Thinking…' : 'Reasoning process'}
+              {!isComplete ? `${PHASE_CONFIG[currentPhase].label}…` : 'Reasoning process'}
             </span>
-            {!isComplete && (
-              <motion.div
-                initial={{ opacity: 0, y: 2 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-1.5 mt-0.5"
-              >
-                <motion.span
-                  animate={{ opacity: [1, 0.4, 1] }}
-                  transition={{ duration: 1.2, repeat: Infinity }}
-                  style={{ color: PHASE_CONFIG[currentPhase].color, fontSize: 9 }}
-                >
-                  {PHASE_CONFIG[currentPhase].icon}
-                </motion.span>
-                <span style={{ color: PHASE_CONFIG[currentPhase].color, fontSize: 9, fontFamily: 'monospace' }}>
-                  {PHASE_CONFIG[currentPhase].label}
-                </span>
-              </motion.div>
-            )}
+
           </div>
         </div>
         <div className="flex items-center">
           {isComplete && content && (
             <div className="flex items-center gap-2 mr-2">
+              {elapsedMs > 0 && (
+                <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)' }}>
+                  Thought for {(elapsedMs / 1000).toFixed(1)}s
+                </span>
+              )}
               <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.2)' }}>
                 ~{Math.round(content.length / 4).toLocaleString()} tokens
+              </span>
+            </div>
+          )}
+          {!isComplete && elapsedMs > 0 && (
+            <div className="flex items-center gap-2 mr-2">
+              <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)' }}>
+                {(elapsedMs / 1000).toFixed(1)}s
               </span>
             </div>
           )}
@@ -385,7 +484,15 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplet
             transition={spring}
             className="overflow-hidden"
           >
-            <div ref={scrollRef} className="px-4 pb-4 pt-2 space-y-0.5 max-h-[600px] overflow-y-auto overscroll-contain" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            {agentProgress && agentProgress.total > 0 && (
+              <AgentProgressBar
+                step={agentProgress.step}
+                total={agentProgress.total}
+                currentAgent={agentProgress.currentAgent}
+                elapsed={agentProgress.elapsed}
+              />
+            )}
+            <div ref={scrollRef} onScroll={handleScroll} className="px-4 pb-4 pt-2 space-y-0.5 max-h-[600px] overflow-y-auto overscroll-contain" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
               {segments.map((seg, i) => {
                 switch (seg.type) {
                   case 'section':    return <SectionHeader key={i} icon={seg.icon} label={seg.label} />;

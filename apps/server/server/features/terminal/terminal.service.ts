@@ -47,7 +47,9 @@ function logSecurityBlock(command: string, reason: string): void {
       category: 'terminal_command',
       event: { command, reason },
       status: 'blocked',
-    }).catch(() => {});
+    }).catch((err) => {
+      logger.error({ err }, 'AuditLog failed to log blocked command');
+    });
   } catch (err: any) {
     logger.error('[Sandbox] Failed to write security blocks log:', err);
   }
@@ -129,7 +131,7 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
 
   // Strict Command Whitelist (Option D)
   const ALLOWED_COMMANDS = new Set([
-    'npm', 'node', 'python', 'python3', 'git', 'gcc', 'make', 'npx', 'yarn', 'pnpm', 'tsc', 'vitest', 'jest'
+    'npm', 'node', 'python', 'python3', 'git', 'gcc', 'make', 'npx', 'yarn', 'pnpm', 'tsc', 'vitest', 'jest', 'bash', 'sh', 'cmd', 'powershell'
   ]);
   const baseCmd = trimmedCmd.split(' ')[0];
   if (!ALLOWED_COMMANDS.has(baseCmd)) {
@@ -189,7 +191,9 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
       category: 'terminal_command',
       event: { command: trimmedCmd, cwd: resolvedCwd },
       status: 'success',
-    }).catch(() => {});
+    }).catch((err) => {
+      logger.error({ err }, 'AuditLog failed to log native command spawn');
+    });
 
     const child = spawn(wrapper.bin, wrapper.args, {
       cwd: resolvedCwd,
@@ -250,7 +254,9 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
     category: 'terminal_command',
     event: { command: trimmedCmd, mode: 'docker_sandbox' },
     status: 'success',
-  }).catch(() => {});
+  }).catch((err) => {
+    logger.error({ err }, 'AuditLog failed to log docker command spawn');
+  });
 
   const child = spawn('docker', dockerArgs, {
     cwd: resolvedCwd,
@@ -266,6 +272,61 @@ export async function spawnSandbox(command: string, cwd?: string): Promise<Sandb
 export class TerminalService {
   private static pendingExecutions = new Map<string, { command: string; cwd?: string }>();
   private static legacyTasks = new Map<string, { output: string; isFinished: boolean }>();
+  private static persistentSessions = new Map<string, ChildProcess>();
+
+  static async getPersistentSession(sessionId: string, cwd?: string): Promise<ChildProcess> {
+    if (this.persistentSessions.has(sessionId)) {
+      return this.persistentSessions.get(sessionId)!;
+    }
+    const isWin = os.platform() === 'win32';
+    const shellCmd = isWin ? 'powershell' : 'bash';
+    const { child, error } = await spawnSandbox(shellCmd, cwd);
+    if (error || !child) throw new Error(error || 'Failed to start persistent shell');
+    this.persistentSessions.set(sessionId, child);
+    
+    child.on('exit', () => this.persistentSessions.delete(sessionId));
+    
+    return child;
+  }
+
+  static async executeInSession(sessionId: string, command: string, cwd?: string): Promise<string> {
+    const child = await this.getPersistentSession(sessionId, cwd);
+    return new Promise((resolve, reject) => {
+      const isWin = os.platform() === 'win32';
+      const endMarker = `__NYX_CMD_END_${Date.now()}__`;
+      let output = '';
+      
+      const onData = (data: Buffer | string) => {
+        output += data.toString();
+        if (output.includes(endMarker)) {
+          cleanup();
+          const cleanOutput = output.split(endMarker)[0].trim();
+          resolve(cleanOutput);
+        }
+      };
+      
+      const onError = (err: Error) => {
+        cleanup();
+        reject(err);
+      };
+      
+      const cleanup = () => {
+        child.stdout?.removeListener('data', onData);
+        child.stderr?.removeListener('data', onData);
+        child.removeListener('error', onError);
+      };
+
+      child.stdout?.on('data', onData);
+      child.stderr?.on('data', onData);
+      child.on('error', onError);
+
+      const shellInput = isWin 
+        ? `${command}\r\nWrite-Output "${endMarker}"\r\n`
+        : `${command}\necho "${endMarker}"\n`;
+      
+      child.stdin?.write(shellInput);
+    });
+  }
 
   static async spawn(command: string, cwd?: string) {
     return await spawnSandbox(command, cwd);
