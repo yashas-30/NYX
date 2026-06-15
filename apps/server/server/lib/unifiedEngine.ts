@@ -19,6 +19,12 @@ export interface ModelSettings {
   antigravity?: boolean;
   /** Adaptive thinking token budget (M1). Range: 256–24576. Resolved by thinkingBudget.ts. */
   thinkingBudget?: number;
+  /** Gemini structured output: forces response to valid JSON. Incompatible with thinking tokens. */
+  jsonMode?: boolean;
+  /** Gemini response schema for structured JSON output (used with jsonMode). */
+  jsonSchema?: Record<string, unknown>;
+  /** Gemini native Google Search grounding. Not supported on Gemma models. */
+  useGoogleSearch?: boolean;
 }
 
 
@@ -278,15 +284,30 @@ export class UnifiedEngine {
 
       // 3. Response Caching check (Phase 5.5)
       const isToolRequest = !!(tools && tools.length > 0);
+      const currentPrompt = processedMessages[processedMessages.length - 1]?.content || '';
       const cacheKey = CacheServer.generateKey({
         provider,
         model,
-        prompt: processedMessages[processedMessages.length - 1]?.content || '',
+        prompt: currentPrompt,
         history: processedMessages,
       });
 
       if (!isToolRequest) {
-        const cached = await CacheServer.get(cacheKey);
+        let cached = await CacheServer.get(cacheKey);
+        
+        // Semantic Cache Check for single-turn conversations (System + User)
+        if (!cached && processedMessages.length <= 2) {
+          try {
+            const { checkSemanticCache } = await import('./memory/vectorStore.js');
+            const semanticCacheKey = await checkSemanticCache(currentPrompt, provider as string, model, 0.95);
+            if (semanticCacheKey) {
+              cached = await CacheServer.get(semanticCacheKey);
+            }
+          } catch (e: any) {
+            logger.warn('[UnifiedEngine] Semantic Cache check skipped:', e.message);
+          }
+        }
+
         if (cached) {
           logger.info({ cacheKey }, '[UnifiedEngine] Caching hit!');
           onChunk({ chunk: cached });
@@ -314,16 +335,67 @@ export class UnifiedEngine {
         try {
           const provKey = currentProv.provider === provider ? activeKey : Gateway.getActiveKey(currentProv.provider as Provider);
           
+          let cacheName: string | undefined;
+          let finalMessagesToStream = processedMessages;
+
+          if (currentProv.provider === 'gemini' && !isToolRequest) {
+            const historyPrefix = processedMessages.slice(0, -1);
+            
+            let prefixTokens = 0;
+            for (const m of historyPrefix) {
+              prefixTokens += Math.ceil((m.content || '').length / 4);
+              if (m.images && Array.isArray(m.images)) {
+                prefixTokens += m.images.length * 258;
+              }
+            }
+
+            if (prefixTokens > 32768) {
+              try {
+                const { GeminiCacheManager } = await import('./geminiCacheManager.js');
+                
+                const systemIdx = historyPrefix.findIndex(m => m.role === 'system');
+                let systemInstruction: string | undefined;
+                let messagesForCachingLookup = historyPrefix;
+                
+                if (systemIdx >= 0) {
+                  systemInstruction = historyPrefix[systemIdx].content;
+                  messagesForCachingLookup = historyPrefix.filter((_, idx) => idx !== systemIdx);
+                }
+
+                const matchingCache = GeminiCacheManager.findMatchingCache(messagesForCachingLookup, currentProv.model);
+                
+                if (matchingCache) {
+                  cacheName = matchingCache.cacheName;
+                  const uncachedMessages = messagesForCachingLookup.slice(matchingCache.messageCount);
+                  finalMessagesToStream = [...uncachedMessages, processedMessages[processedMessages.length - 1]];
+                  logger.info(`[UnifiedEngine] Prefix cache hit! Reusing cache: ${cacheName}. Sending ${finalMessagesToStream.length} uncached messages.`);
+                } else {
+                  const cacheResult = await GeminiCacheManager.getOrCreateCache(
+                    messagesForCachingLookup,
+                    systemInstruction,
+                    currentProv.model,
+                    provKey
+                  );
+                  cacheName = cacheResult.cacheName;
+                  finalMessagesToStream = [processedMessages[processedMessages.length - 1]];
+                }
+              } catch (cacheErr: any) {
+                logger.warn('[UnifiedEngine] Gemini Context Caching failed (falling back to standard stream):', cacheErr.message);
+              }
+            }
+          }
+
           await AIEngine.stream(
             {
               provider: currentProv.provider as Provider,
               model: currentProv.model,
-              messages: processedMessages,
+              messages: finalMessagesToStream,
               apiKey: provKey,
               settings,
               customGatewayUrls,
               tools,
               signal: options.signal,
+              cachedContent: cacheName,
             },
             (chunkEvent: any) => {
               if (chunkEvent.chunk && chunkEvent.type !== 'thinking') {
@@ -346,6 +418,15 @@ export class UnifiedEngine {
             // Cache if eligible (Phase 5.5)
             if (!isToolRequest && tokenCount < 500 && accumulatedText.trim()) {
               await CacheServer.setWithTTL(cacheKey, accumulatedText, currentProv.provider, currentProv.model, 300_000); // 5 minutes
+              
+              if (processedMessages.length <= 2) {
+                try {
+                  const { storeSemanticCache } = await import('./memory/vectorStore.js');
+                  await storeSemanticCache(currentPrompt, cacheKey, currentProv.provider, currentProv.model);
+                } catch (e: any) {
+                  // ignore error
+                }
+              }
             }
 
             break; // Break the fallback loop on success

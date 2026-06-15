@@ -25,13 +25,17 @@ async function getEmbedder() {
 
 export async function embedText(text: string): Promise<number[]> {
   const embedder = await getEmbedder();
-  if (!embedder) return new Array(384).fill(0);
+  if (!embedder) throw new Error('[VectorStore] Embedding model unavailable — skipping vector op');
   try {
     const output = await embedder(text, { pooling: 'mean', normalize: true });
-    return Array.from(output.data as Float32Array);
+    const vec = Array.from(output.data as Float32Array);
+    // Sanity-check: a zero vector means the model silently failed
+    const isZero = vec.every(v => v === 0);
+    if (isZero) throw new Error('[VectorStore] Embedder returned zero vector');
+    return vec;
   } catch (e: any) {
     logger.warn('[VectorStore] Embedding failed:', e.message);
-    return new Array(384).fill(0);
+    throw e; // Propagate so callers can skip storage rather than write garbage
   }
 }
 
@@ -51,17 +55,65 @@ export async function initVectorStore() {
   return _table;
 }
 
+let _semanticTable: any = null;
+
+export async function initSemanticCacheTable() {
+  if (_semanticTable) return _semanticTable;
+  const db = await lancedb.connect(path.join(_dirname, '../../../.nyx-memory'));
+  const tableNames = await db.tableNames();
+  if (!tableNames.includes('semantic_cache')) {
+    _semanticTable = await db.createTable('semantic_cache', [
+      { id: 'init', prompt: 'init', embedding: new Array(384).fill(0), provider: 'system', model: 'system', timestamp: Date.now() }
+    ]);
+  } else {
+    _semanticTable = await db.openTable('semantic_cache');
+  }
+  return _semanticTable;
+}
+
+export async function storeSemanticCache(prompt: string, cacheKey: string, provider: string, model: string) {
+  try {
+    const table = await initSemanticCacheTable();
+    const embedding = await embedText(prompt);
+    await table.add([{ id: cacheKey, prompt, embedding, provider, model, timestamp: Date.now() }]);
+  } catch (e: any) {
+    logger.warn('[VectorStore] storeSemanticCache skipped:', e.message);
+  }
+}
+
+export async function checkSemanticCache(prompt: string, provider: string, model: string, threshold = 0.95): Promise<string | null> {
+  try {
+    const table = await initSemanticCacheTable();
+    const embedding = await embedText(prompt);
+    // LanceDB cosine metric returns distance (1 - cosine_similarity).
+    // So similarity > 0.95 means distance < 0.05
+    const results = await table.search(embedding).metricType('cosine').limit(1).execute();
+    if (results.length > 0 && results[0].id !== 'init') {
+      const distance = results[0]._distance as number;
+      if (distance < (1 - threshold) && results[0].provider === provider && results[0].model === model) {
+        logger.info(`[VectorStore] Semantic Cache hit! Distance: ${distance.toFixed(4)}`);
+        return results[0].id as string; // returns cacheKey
+      }
+    }
+    return null;
+  } catch (e: any) {
+    logger.warn('[VectorStore] checkSemanticCache failed:', e.message);
+    return null;
+  }
+}
+
 
 export async function storeMemory(content: string, sessionId: string, type: string = 'conversation') {
   try {
     const table = await initVectorStore();
-    const embedding = await embedText(content);
+    const embedding = await embedText(content); // throws if embedder unavailable — caught below
     const id = `${sessionId}-${Date.now()}`;
     await table.add([{ id, content, embedding, timestamp: Date.now(), sessionId, type }]);
     hybridRetriever.addDocument(id, content, sessionId);
     return id;
   } catch (e: any) {
-    logger.warn('[VectorStore] storeMemory failed:', e.message);
+    // Silently skip — never write zero-vector garbage to the store
+    logger.warn('[VectorStore] storeMemory skipped (embedder unavailable or zero-vector):', e.message);
     return null;
   }
 }
