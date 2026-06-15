@@ -31,6 +31,7 @@ interface RequestRecord {
   provider: string;
   model: string;
   durationMs: number;
+  ttftMs?: number;       // Time-to-first-token
   tokensGenerated?: number;
   timestamp: number;
 }
@@ -48,11 +49,13 @@ class NyxTelemetryClass {
   private totalTokens = 0;
   private recentRequests: RequestRecord[] = [];
   private recentErrors: ErrorRecord[] = [];
+  /** Ring buffer of recent TTFT samples (ms). */
+  private recentTtft: number[] = [];
 
-  /** Maximum recent events kept in-memory (ring buffer style). */
+  /** Maximum recent events kept in-memory. */
   private readonly MAX_RECENT = 500;
 
-  recordRequest(provider: string, model: string, durationMs: number, tokensGenerated?: number): void {
+  recordRequest(provider: string, model: string, durationMs: number, tokensGenerated?: number, ttftMs?: number): void {
     this.totalRequests++;
     if (tokensGenerated) this.totalTokens += tokensGenerated;
 
@@ -60,6 +63,7 @@ class NyxTelemetryClass {
       provider,
       model,
       durationMs,
+      ttftMs,
       tokensGenerated,
       timestamp: Date.now(),
     };
@@ -69,8 +73,28 @@ class NyxTelemetryClass {
       this.recentRequests.shift();
     }
 
+    // Track TTFT samples
+    if (ttftMs !== undefined) {
+      this.recentTtft.push(ttftMs);
+      if (this.recentTtft.length > this.MAX_RECENT) {
+        this.recentTtft.shift();
+      }
+    }
+
     // Persist to DB asynchronously (non-blocking)
     this.persistRequestAsync(record);
+  }
+
+  /**
+   * Record TTFT only — call this as soon as the first token arrives,
+   * before the full response has finished streaming.
+   */
+  recordTTFT(provider: string, model: string, ttftMs: number): void {
+    this.recentTtft.push(ttftMs);
+    if (this.recentTtft.length > this.MAX_RECENT) {
+      this.recentTtft.shift();
+    }
+    logger.debug({ provider, model, ttftMs }, '[Telemetry] TTFT recorded');
   }
 
   recordError(provider: string, model: string, errorType: string): void {
@@ -86,11 +110,32 @@ class NyxTelemetryClass {
   }
 
   getStats() {
+    // Compute TTFT percentiles from the in-memory ring buffer
+    const ttftSamples = [...this.recentTtft].sort((a, b) => a - b);
+    const avgTtftMs = ttftSamples.length > 0
+      ? Math.round(ttftSamples.reduce((s, v) => s + v, 0) / ttftSamples.length)
+      : null;
+    const p95TtftMs = ttftSamples.length > 0
+      ? ttftSamples[Math.floor(ttftSamples.length * 0.95)]
+      : null;
+
+    // Compute avg total latency from recent requests
+    const latencySamples = this.recentRequests.map(r => r.durationMs);
+    const avgLatencyMs = latencySamples.length > 0
+      ? Math.round(latencySamples.reduce((s, v) => s + v, 0) / latencySamples.length)
+      : null;
+
     return {
       totalRequests: this.totalRequests,
       totalErrors: this.totalErrors,
       totalTokens: this.totalTokens,
       errorRate: this.totalRequests > 0 ? this.totalErrors / this.totalRequests : 0,
+      latency: {
+        avgMs: avgLatencyMs,
+        ttftSampleCount: ttftSamples.length,
+        avgTtftMs,
+        p95TtftMs,
+      },
       recentRequests: this.recentRequests.slice(-10),
       recentErrors: this.recentErrors.slice(-10),
     };

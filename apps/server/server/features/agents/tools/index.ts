@@ -105,17 +105,20 @@ function _buildTools(memos: Map<string, string>) {
 
   // ── Web Search (single query, with citation) ─────────────────────────────────
   {
-    name: 'web_search',
+    name: 'search_web',
     description: 'Search the web for current information on a topic',
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'The search query' }
+        query: { type: 'string', description: 'The search query' },
+        queries: { type: 'array', items: { type: 'string' }, description: 'Fallback for array of queries' }
       },
       required: ['query']
     },
-    handler: async ({ query }: { query: string }) => {
-      const rawResults = await searchService.performWebSearch(query);
+    handler: async ({ query, queries }: { query?: string, queries?: string[] }) => {
+      const q = query || (queries && queries.length > 0 ? queries[0] : '');
+      if (!q) throw new Error('Missing query parameter');
+      const rawResults = await searchService.performWebSearch(q);
       const results = Array.isArray(rawResults) ? rawResults : [];
       return {
         results: results.map((r: any, i: number) => ({
@@ -196,7 +199,7 @@ function _buildTools(memos: Map<string, string>) {
            return { error: `HTTP ${res.status} from Scrapling proxy`, url };
         }
 
-        const jsonRes = await res.json();
+        const jsonRes: any = await res.json();
         if (!jsonRes.success) {
            return { error: `Scrape failed or returned empty`, url };
         }

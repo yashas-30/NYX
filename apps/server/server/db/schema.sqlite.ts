@@ -358,3 +358,14 @@ export const userMemories = sqliteTable('user_memories', {
   sessionId: text('session_id'),
 });
 
+// Shared Context Pool for Agent Swarms
+export const swarmContextPool = sqliteTable('swarm_context_pool', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull(),
+  agentId: text('agent_id').notNull(),
+  task: text('task').notNull(),
+  content: text('content').notNull(),
+  timestamp: integer('timestamp').notNull(),
+});
+
+

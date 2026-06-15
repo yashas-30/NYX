@@ -596,28 +596,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
         {/* Right zone: Actions */}
         <div className="flex items-center gap-1 sm:gap-2 min-w-0 shrink-0 justify-end">
-          {/* Response metrics */}
-          <div className="hidden lg:flex items-center gap-4 px-2 py-1 text-muted-foreground font-mono text-[11px] mr-2 shrink-0">
-            <div className="flex items-center gap-1.5" title="Response latency">
-              <Wifi size={13} className="text-muted-foreground/60" />
-              <span>{displayLatency > 0 ? formatLatency(displayLatency) : '0ms'}</span>
-            </div>
-            <div className="flex items-center gap-1.5" title="Tokens per second">
-              <Zap size={13} className="text-muted-foreground/60" />
-              <span>{metrics.tps} tok/s</span>
-            </div>
-            {metrics.estimatedCostUsd !== undefined && metrics.estimatedCostUsd > 0 && (
-              <div className="flex items-center gap-1.5" title="Estimated Cost">
-                <span className="text-emerald-500/80 font-medium">
-                  ${metrics.estimatedCostUsd.toFixed(5)}
-                </span>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5" title="Tokens generated">
-              <HardDrive size={13} className="text-muted-foreground/60" />
-              <span>{formatTokens(metrics.tokens)} tok</span>
-            </div>
-          </div>
+
 
           <div className="flex items-center gap-1 shrink-0">
             {/* Model Usage Indicator */}

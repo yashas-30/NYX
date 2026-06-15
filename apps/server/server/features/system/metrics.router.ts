@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { SystemService } from './system.service.js';
 import promClient from 'prom-client';
+import { NyxTelemetry } from '../../lib/telemetry.js';
 
 export async function metricsRouter(fastify: FastifyInstance) {
   const service = new SystemService();
@@ -85,12 +86,12 @@ export async function metricsRouter(fastify: FastifyInstance) {
           hitRate,
           ...cacheStats,
         },
-
         system: {
           uptime,
           memory,
         },
         health,
+        telemetry: NyxTelemetry.getStats(),
       });
     } catch (error: any) {
       reply.code(500).send({ error: error.message });

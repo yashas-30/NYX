@@ -184,7 +184,7 @@ export class SystemService {
     // 4. Check AI Providers health (Gemini / OpenRouter etc.)
     try {
       const keys = await loadKeys();
-      const hasGemini = !!(keys.gemini && keys.gemini.trim().length > 0) || !!(env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim().length > 0) || !!(env.ANTIGRAVITY_API_KEY && env.ANTIGRAVITY_API_KEY.trim().length > 0);
+      const hasGemini = !!(keys.gemini && typeof keys.gemini === 'string' && keys.gemini.trim().length > 0) || !!(env.GEMINI_API_KEY && typeof env.GEMINI_API_KEY === 'string' && env.GEMINI_API_KEY.trim().length > 0);
       checks.dependencies.aiProviders = hasGemini ? 'ok' : 'degraded';
     } catch (error: any) {
       checks.dependencies.aiProviders = 'down';

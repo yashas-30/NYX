@@ -185,9 +185,11 @@ export class AgentsService {
       executeToolCallback: async (name: string, args: any) => {
         logger.info(`[Tool] Executing: ${name}`);
         onChunk({ type: 'thinking', content: `\n⚙️  Running tool: \`${name}\`...\n` });
+        onChunk({ type: 'tool_start', name, args });
         try {
           const res = await executeCanonicalTool(name, args, sessionId);
           onChunk({ type: 'thinking', content: `✅  Tool \`${name}\` completed.\n` });
+          onChunk({ type: 'tool_done', name, result: typeof res === 'string' ? res : JSON.stringify(res) });
 
           // ── Emit citation SSE events from web_search and multi_search results ──
           const isSearchTool = name === 'web_search' || name === 'multi_search' || name === 'deep_research_web';
@@ -212,6 +214,7 @@ export class AgentsService {
         } catch (err: any) {
           logger.error(`[Tool] Error in ${name}: ${err.message}`);
           onChunk({ type: 'thinking', content: `❌  Tool \`${name}\` failed: ${err.message}\n` });
+          onChunk({ type: 'tool_error', name, error: err.message });
           return { error: err.message };
         }
       }

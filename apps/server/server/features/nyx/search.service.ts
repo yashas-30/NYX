@@ -98,7 +98,7 @@ export class SearchService {
               {
                 parts: [
                   {
-                    text: `Extract a search-engine optimized query from the following conversational prompt. Respond ONLY with the optimized query keywords, no quotes, no conversational text.\n\nPrompt: ${rawQuery}`,
+                    text: `Extract a search-engine optimized query from the following conversational prompt. The current date is ${new Date().toISOString().split('T')[0]}. If the prompt asks for current, latest, or up-to-date information, automatically append the current year and month to the search query to ensure fresh results. Respond ONLY with the optimized query keywords, no quotes, no conversational text.\n\nPrompt: ${rawQuery}`,
                   },
                 ],
               },
@@ -270,6 +270,10 @@ export class SearchService {
           content: r.markdown || '',
           score: r.rank ? 10 - r.rank : 0,
         }));
+        
+        if (results.length === 0) {
+          throw new Error('Scrapling returned 0 results');
+        }
       } catch (scraplingError) {
         logger.warn(`[Web Search] Scrapling failed, falling back to Cheerio DDG scraper: ${scraplingError}`);
         

@@ -130,7 +130,7 @@ async function spawnNewServer(projectHash: string, configHash: string): Promise<
     env: {
       ...process.env,
       NODE_ENV: 'development',
-      NODE_OPTIONS: '--max-old-space-size=2048',
+      NODE_OPTIONS: '--max-old-space-size=512 --expose-gc --no-warnings',
       NYX_PARENT_PID: process.pid.toString(),
       NYX_MANAGED_PORT: port.toString()
     }

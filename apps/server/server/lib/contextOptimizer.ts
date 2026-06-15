@@ -87,12 +87,20 @@ export class ContextOptimizer {
 
         let summaryMessages: any[] = [];
         if (unimportantMiddle.length > 0) {
-          const summary = await this.summarizeMiddleContext(unimportantMiddle, provider, modelId);
-          logger.info(`[ContextOptimizer] Generated summary for ${unimportantMiddle.length} messages; kept ${importantMiddle.length} important messages verbatim.`);
-          summaryMessages = [{
-            role: 'assistant',
-            content: `[System Note: Summary of previous conversation]\n${summary}`,
-          }];
+          const { RollingSummarizer } = await import('../features/memory/RollingSummarizer.js');
+          const keys = getKeysSync();
+          const apiKey = keys[provider] || '';
+          const summary = await RollingSummarizer.summarizeContext(unimportantMiddle, { apiKey });
+          
+          if (summary) {
+            logger.info(`[ContextOptimizer] Generated summary for ${unimportantMiddle.length} messages; kept ${importantMiddle.length} important messages verbatim.`);
+            summaryMessages = [{
+              role: 'assistant',
+              content: `[System Note: Summary of previous conversation]\n${summary}`,
+            }];
+          } else {
+             logger.warn('[ContextOptimizer] RollingSummarizer returned null, falling back to prune.');
+          }
         }
 
         return [...systemMessages, ...summaryMessages, ...importantMiddle, ...recentMessages];
@@ -117,41 +125,5 @@ export class ContextOptimizer {
       content.includes('Error:') ||
       content.startsWith('function') ||
       (msg.toolCalls && msg.toolCalls.length > 0);
-  }
-
-  private static async summarizeMiddleContext(
-    messages: any[],
-    provider: string,
-    modelId: string
-  ): Promise<string> {
-    const keys = getKeysSync();
-    const apiKey = keys[provider] || '';
-
-    logger.info(`[ContextOptimizer] Using ${provider}/${modelId} for summarization`);
-
-    const transcript = messages
-      .map((m) => `${m.role.toUpperCase()}: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`)
-      .join('\n\n');
-
-    const prompt = `Summarize the following conversation segment concisely. Focus on the core topics discussed, any facts established, and decisions made. Keep it very brief.\n\nConversation:\n${transcript}`;
-
-    return new Promise((resolve, reject) => {
-      let summary = '';
-      UnifiedEngine.executeStream(
-        {
-          provider,
-          model: modelId,
-          messages: [{ role: 'user', content: prompt }],
-          settings: { temperature: 0.2, maxTokens: 500 },
-          apiKey,
-        },
-        (chunk: any) => {
-          summary += chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '';
-        },
-        () => {
-          resolve(summary.trim());
-        }
-      ).catch(reject);
-    });
   }
 }

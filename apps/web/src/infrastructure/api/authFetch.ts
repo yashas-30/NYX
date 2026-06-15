@@ -116,7 +116,7 @@ async function fetchFreshToken(isStream = false, attempt = 0): Promise<{ token: 
   }
 }
 
-async function getOrFetchSessionToken(isStream = false): Promise<string> {
+export async function getOrFetchSessionToken(isStream = false): Promise<string> {
   // Fast path: valid cached token
   if (!isStream && isTokenValid()) {
     return sessionToken!;

@@ -56,21 +56,27 @@ export function initializeWebSocket(fastify: FastifyInstance): SocketIOServer {
       prompt: string;
       settings?: Record<string, any>;
       history?: import('@nyx/shared').ChatMessage[];
+      agentType?: 'chat' | 'opencode';
     }) => {
-      const { modelId, provider, prompt, settings, history } = data;
+      const { modelId, provider, prompt, settings, history, agentType } = data;
       try {
-        await UnifiedEngine.executeStream(
+        const { AgentsService } = await import('../features/agents/agents.service.js');
+        const agentService = new AgentsService();
+        
+        await agentService.executeAgentStream(
           {
-            provider: provider as any,
             model: modelId,
-            messages: [...(history || []), { role: 'user', content: prompt }] as import('@nyx/shared').ChatMessage[],
+            provider,
+            prompt,
+            history,
             settings,
+            agentType: agentType || 'chat',
           },
           (chunk: any) => {
-            socket.emit('stream-chunk', { text: chunk.text, done: chunk.done ?? false });
+            socket.emit('stream-chunk', chunk);
           },
           () => {
-            socket.emit('stream-chunk', { text: '', done: true });
+            socket.emit('stream-chunk', { done: true });
           }
         );
       } catch (error: any) {

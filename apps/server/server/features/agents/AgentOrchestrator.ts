@@ -7,6 +7,7 @@ import { EmbeddingService } from '../rag/embeddingService.js';
 import { MemoryService } from '../memory/memoryService.js';
 import { semanticCache } from '../../lib/semanticCache.js';
 import { traceActiveSpan } from '../../lib/otel.js';
+import { SharedContextPool } from './SharedContextPool.js';
 
 const MAX_AGENT_ITERATIONS = 12;
 
@@ -54,7 +55,7 @@ const AGENT_REGISTRY: Record<string, AgentConfig> = {
     name: 'Web Explorer',
     systemPrompt: `[ROLE] You are an elite Web Research Assistant.
 [RULES]
-1. Use the web_search tool to find real, current information. Do not guess facts.
+1. Use the 'search_web' tool to find real, current information. Do not guess facts or versions. ALWAYS search if the query involves time-sensitive data, news, or model releases.
 2. Extract exact search keywords from the user's prompt.
 3. Read the scratchpad to see what previous agents found so you don't repeat work.
 4. If you hit a paywall or irrelevant site, search again with different terms.
@@ -313,10 +314,22 @@ export class AgentOrchestrator {
       // Cache is always best-effort — never block on failure
     }
 
-    // ── Subagent context: use the selected model for subagents
+    // ── Subagent context: use a lightweight model for parallel tool execution
+    // M3: Parallel Subagent Routing - Use a fast local/cloud model for subagents
+    let fastModel = context.model;
+    if (context.provider === 'gemini') {
+      fastModel = 'gemini-2.5-flash';
+    } else if (context.provider === 'ollama' || context.provider === 'lmstudio') {
+      fastModel = process.env.OLLAMA_FAST_MODEL || 'qwen2.5:1.5b'; // Default lightweight local model
+    } else if (context.provider === 'anthropic') {
+      fastModel = 'claude-3-5-haiku-20241022';
+    } else if (context.provider === 'openai') {
+      fastModel = 'gpt-4o-mini';
+    }
+
     const subagentContext = {
       ...context,
-      model: context.model
+      model: fastModel
     };
 
     // ── Fast path: casual/small-talk bypasses all agents ──────────────────────
@@ -326,7 +339,7 @@ export class AgentOrchestrator {
       let reply = '';
       await new Promise<void>((resolve, reject) => {
         UnifiedEngine.executeStream(
-          { provider: context.provider, model: context.model, messages, apiKey: context.apiKey, settings: { temperature: 0.7, maxTokens: 256, antigravity: false } },
+          { provider: context.provider, model: context.model, messages, apiKey: context.apiKey, settings: { temperature: 0.7, maxTokens: 256 } },
           (chunk: any) => { 
             if (chunk.chunk) { 
               reply += chunk.chunk; 
@@ -346,7 +359,7 @@ export class AgentOrchestrator {
     onChunk({ type: 'thinking', content: `━━━ [Supervisor] Routing request... ━━━\n` });
 
     let swarmMemory = '';
-    let taskLedger: { agent: string; task: string }[] = [];
+    let taskLedger: { id?: string; agent: string; task: string; depends_on?: string[] }[] = [];
     let fastPathMatched = false;
 
     // ── Fast path 2: direct intents bypass orchestrator CEO ──────────────────
@@ -428,7 +441,7 @@ Respond ONLY with a JSON object in this exact format:
 {
   "reasoning": "Briefly explain step-by-step why you chose this minimal sequence.",
   "ledger": [
-    { "agent": "agent_id", "task": "Specific task instructions" }
+    { "id": "task_1", "agent": "agent_id", "task": "Specific task instructions", "depends_on": [] }
   ]
 }
 
@@ -446,10 +459,12 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
             items: {
               type: 'OBJECT',
               properties: {
+                id: { type: 'STRING' },
                 agent: { type: 'STRING' },
-                task: { type: 'STRING' }
+                task: { type: 'STRING' },
+                depends_on: { type: 'ARRAY', items: { type: 'STRING' } }
               },
-              required: ['agent', 'task']
+              required: ['id', 'agent', 'task', 'depends_on']
             }
           }
         },
@@ -468,7 +483,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
             settings: {
               temperature: 0.0,
               maxTokens: 1000,
-              antigravity: false,
+              
               jsonMode: true,
               jsonSchema: ledgerSchema
             }
@@ -558,6 +573,8 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     const MAX_TOTAL_EXECUTIONS = 15; // Hard limit on total subagent runs to prevent runaway loops
 
     // ── M6: Cross-agent parallel batch execution ───────────────────────────────
+    let completedTaskIds = new Set<string>();
+
     while (taskLedger.length > 0) {
       if (totalExecutions >= MAX_TOTAL_EXECUTIONS) {
         logger.warn(`[Orchestrator] Swarm execution limit reached (${MAX_TOTAL_EXECUTIONS} executions). Forcing termination.`);
@@ -566,15 +583,26 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
         taskLedger = polisher ? [polisher] : [{ agent: 'persona_polisher', task: 'Synthesize the final answer with all citations preserved' }];
       }
 
-      // Collect all leading independent tasks that can run in parallel.
-      // Independence rule: tasks are parallel if none of them is persona_polisher
-      // and they don't read from memos written by another task in the same batch.
       const batch: typeof taskLedger = [];
       
-      if (taskLedger[0].agent === 'persona_polisher') {
+      // Determine what tasks are executable (dependencies met)
+      const executableTasks = taskLedger.filter(t => 
+        t.agent === 'persona_polisher' ? taskLedger.length === 1 : (t.depends_on || []).every(dep => completedTaskIds.has(dep))
+      );
+
+      if (executableTasks.length === 0) {
+        // Fallback: circular dependency or missing deps, just take the first task
+        logger.warn('[Supervisor] Dependency stall detected! Forcing execution of the first pending task.');
+        executableTasks.push(taskLedger[0]);
+      }
+
+      const polisherStep = executableTasks.find(t => t.agent === 'persona_polisher');
+      
+      if (polisherStep) {
         // Run polisher immediately — it needs all previous output
         // persona_polisher uses the user's ORIGINAL model for the final visible response
-        const step = taskLedger.shift()!;
+        const step = polisherStep;
+        taskLedger = taskLedger.filter(t => t !== step);
         totalExecutions++;
         const agent = AGENT_REGISTRY[step.agent];
         onChunk({ type: 'thinking', content: `\n━━━ [Persona & Polisher] Crafting final response... ━━━\n` });
@@ -623,10 +651,10 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
         return cleanedResponse || finalAnswer;
       }
 
-      // Batch all consecutive non-polisher tasks
-      while (taskLedger.length > 0 && taskLedger[0].agent !== 'persona_polisher') {
-        batch.push(taskLedger.shift()!);
-      }
+      // Batch all non-polisher tasks that are executable
+      batch.push(...executableTasks);
+      taskLedger = taskLedger.filter(t => !batch.includes(t));
+      
       totalExecutions += batch.length;
 
       // Group by agent for logging
@@ -699,6 +727,13 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
         resultOutput = resultOutput.replace(spawnRegex, '').trim();
         swarmMemory += `\n\n--- Memory from ${agent?.name || step.agent} (Task: ${step.task}) ---\n${resultOutput}`;
         completedTasks.push(`[${agent?.name || step.agent}]: ${step.task}`);
+
+        if (step.id) {
+          completedTaskIds.add(step.id);
+        }
+
+        // Write to Shared Context Pool
+        await SharedContextPool.writeContext(swarmSessionId, agent?.name || step.agent, step.task, resultOutput);
       }
 
       // Compress swarm memory asynchronously if it exceeds our context budget threshold
@@ -729,7 +764,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
             model: context.model, 
             messages: synthesisMessages, 
             apiKey: context.apiKey, 
-            settings: { temperature: 0.2, maxTokens: 4096, antigravity: false } 
+            settings: { temperature: 0.2, maxTokens: 4096 } 
           },
           (chunk: any) => { 
             if (chunk.chunk) { 
@@ -808,7 +843,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
             model: context.model,
             messages: agentMessages,
             apiKey: context.apiKey,
-            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens, thinkingBudget, antigravity: false }
+            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens, thinkingBudget }
           },
           (chunk: any) => {
             const isThinking = chunk.thinking || chunk.type === 'thinking';
@@ -861,7 +896,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
             model: context.model,
             messages: agentMessages,
             apiKey: context.apiKey,
-            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens, thinkingBudget, antigravity: false },
+            settings: { temperature: agent.temperature, maxTokens: agent.maxTokens, thinkingBudget },
             tools
           },
           (chunk: any) => {
@@ -932,10 +967,10 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
     const allTools: any[] = context?.tools || [];
 
     if (agentId === 'web_explorer') {
-      return allTools.filter(t => ['web_search', 'searchWeb'].includes(t.function?.name));
+      return allTools.filter(t => ['search_web', 'searchWeb'].includes(t.function?.name));
     }
     if (agentId === 'deep_research') {
-      return allTools.filter(t => ['web_search', 'multi_search', 'scrape_url', 'memo_write', 'memo_read'].includes(t.function?.name));
+      return allTools.filter(t => ['search_web', 'multi_search', 'scrape_url', 'memo_write', 'memo_read'].includes(t.function?.name));
     }
     if (
       agentId === 'code_interpreter' ||
@@ -1040,7 +1075,7 @@ User Request: "${promptMessage.replace(/"/g, "'")}"
             model: context.model,
             messages: compressionMessages,
             apiKey: context.apiKey,
-            settings: { temperature: 0.1, maxTokens: 2048, antigravity: false }
+            settings: { temperature: 0.1, maxTokens: 2048 }
           },
           (chunk: any) => { if (chunk.chunk) compressed += chunk.chunk; },
           () => resolve()

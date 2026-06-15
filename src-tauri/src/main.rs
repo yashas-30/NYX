@@ -17,6 +17,8 @@ use server_sidecar::ServerManager;
 #[derive(Default)]
 pub struct AppState {
     pub server_manager: Arc<Mutex<Option<ServerManager>>>,
+    pub mcp_manager: Arc<commands::mcp::McpManager>,
+    pub pty_state: Arc<Mutex<std::collections::HashMap<String, commands::pty::PtySession>>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -32,7 +34,7 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
                     if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        if let Some(window) = app.get_webview_window("main") {
+                        if let Some(window) = app.get_webview_window("spotlight") {
                             if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
                                 let _ = window.hide();
                             } else {
@@ -56,7 +58,13 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(AppState::default())
+        .manage(AppState {
+            server_manager: Arc::new(Mutex::new(None)),
+            mcp_manager: Arc::new(commands::mcp::McpManager::default()),
+            pty_state: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        })
+        .manage(commands::pty::PtyState::default())
+        .manage(commands::fs::WatcherState::default())
         .setup(|app| {
             let handle = app.handle().clone();
             
@@ -81,8 +89,12 @@ pub fn run() {
             system_gpu_info, system_info, system_get_userdata,
             server_get_ports, server_restart,
             app_get_version, app_open_external,
-            proxy_request,
+            proxy_request, proxy_stream_request,
             execute_computer_action,
+            mcp_start_server, mcp_send_request,
+            llm_stream_request,
+            pty_spawn, pty_write, pty_resize, pty_close,
+            fs_watch_start, fs_watch_stop,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -102,36 +114,8 @@ pub fn run() {
 async fn setup_app(handle: &tauri::AppHandle) {
     tracing::info!("🚀 NYX Tauri boot sequence starting...");
 
-    let mut server_manager = ServerManager::new(handle.clone()).await;
-    let ports = match server_manager.start().await {
-        Ok(p) => {
-            tracing::info!("✅ Backend server started on port {}", p.express_port);
-            p
-        }
-        Err(e) => {
-            tracing::error!("❌ Failed to start server: {}", e);
-            // Show error dialog but keep the app open so user can see what happened
-            let _ = tauri_plugin_dialog::DialogExt::dialog(handle)
-                .message(format!("NYX backend server failed to start:\n\n{}\n\nThe app will open but AI features may not work. Try restarting the app.", e))
-                .kind(tauri_plugin_dialog::MessageDialogKind::Error)
-                .title("Backend Server Error")
-                .blocking_show();
-            // Use fallback default ports so the window still opens
-            server_sidecar::ServerPorts {
-                express_port: 3010,
-                fastify_port: 3011,
-                scrapling_port: 3012,
-            }
-        }
-    };
-
-    {
-        let state = handle.state::<AppState>();
-        let mut mgr = state.server_manager.lock().await;
-        *mgr = Some(server_manager);
-    }
-
-    let window = create_main_window(handle, ports.express_port).await;
+    // Create the window immediately with default ports so UI is instant
+    let window = create_main_window(handle, 3010).await;
     tray::create_tray(handle, &window).expect("Failed to create tray");
     setup_menus(handle);
 
@@ -144,6 +128,38 @@ async fn setup_app(handle: &tauri::AppHandle) {
 
     #[cfg(target_os = "windows")]
     let _ = window_vibrancy::apply_blur(&window, Some((18, 18, 18, 125))); // Dark blur
+
+    // Spawn server start in background
+    let handle_clone = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut server_manager = ServerManager::new(handle_clone.clone()).await;
+        let ports = match server_manager.start().await {
+            Ok(p) => {
+                tracing::info!("✅ Backend server started on port {}", p.express_port);
+                p
+            }
+            Err(e) => {
+                tracing::error!("❌ Failed to start server: {}", e);
+                let _ = tauri_plugin_dialog::DialogExt::dialog(&handle_clone)
+                    .message(format!("NYX backend server failed to start:\n\n{}\n\nThe app will open but AI features may not work. Try restarting the app.", e))
+                    .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+                    .title("Backend Server Error")
+                    .blocking_show();
+                
+                server_sidecar::ServerPorts {
+                    express_port: 3010,
+                    fastify_port: 3011,
+                    scrapling_port: 3012,
+                }
+            }
+        };
+
+        {
+            let state = handle_clone.state::<AppState>();
+            let mut mgr = state.server_manager.lock().await;
+            *mgr = Some(server_manager);
+        }
+    });
 
     tracing::info!("✅ NYX Tauri fully initialized");
 }
@@ -166,6 +182,8 @@ async fn create_main_window(handle: &tauri::AppHandle, port: u16) -> tauri::Webv
         .inner_size(1440.0, 900.0)
         .min_inner_size(900.0, 600.0)
         .center()
+        .decorations(false)
+        .shadow(true)
         .transparent(true)
         .visible(false)
         .build()
@@ -184,6 +202,8 @@ async fn create_main_window(handle: &tauri::AppHandle, port: u16) -> tauri::Webv
             .inner_size(1440.0, 900.0)
             .min_inner_size(900.0, 600.0)
             .center()
+            .decorations(false)
+            .shadow(true)
             .transparent(true)
             .visible(false)
             .build()

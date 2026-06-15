@@ -1031,13 +1031,13 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           
                           const retrievalTools = msg.toolCalls!.map((tool, i) => ({
                             tool,
-                            status: isStreaming && isLast && i === msg.toolCalls!.length - 1 ? 'running' : 'completed',
+                            status: tool.status || (isStreaming && isLast && i === msg.toolCalls!.length - 1 ? 'running' : 'completed'),
                             index: i
                           })).filter(t => isRetrieval(t.tool.function.name));
 
                           const otherTools = msg.toolCalls!.map((tool, i) => ({
                             tool,
-                            status: isStreaming && isLast && i === msg.toolCalls!.length - 1 ? 'running' : 'completed',
+                            status: tool.status || (isStreaming && isLast && i === msg.toolCalls!.length - 1 ? 'running' : 'completed'),
                             index: i
                           })).filter(t => !isRetrieval(t.tool.function.name));
 
@@ -1116,9 +1116,28 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                               <div 
                                 key={artifact.id || i}
                                 onClick={() => onArtifactClick?.(artifact)}
-                                className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all rounded-md"
+                                className="cursor-pointer group flex items-center justify-between p-3.5 my-3 rounded-xl border border-border/60 bg-surface hover:bg-muted/30 hover:border-primary/40 hover:shadow-sm transition-all max-w-4xl"
                               >
-                                <ArtifactViewer artifact={artifact as any} />
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                  <div className="flex items-center justify-center w-9 h-9 rounded-md bg-primary/10 text-primary">
+                                    {artifact.type === 'html' || artifact.type === 'react' || artifact.type === 'code' ? (
+                                      <Terminal className="w-4.5 h-4.5" />
+                                    ) : (
+                                      <FileText className="w-4.5 h-4.5" />
+                                    )}
+                                  </div>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="text-sm font-semibold text-foreground truncate">
+                                      {artifact.title || 'Generated Artifact'}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                                      {artifact.type === 'code' ? artifact.language || 'code' : artifact.type}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-xs font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity pr-2">
+                                  Click to open
+                                </div>
                               </div>
                             );
                           })}

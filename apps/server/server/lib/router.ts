@@ -161,4 +161,16 @@ export class SmartRouter {
       avgLatency
     });
   }
+
+  /**
+   * Returns true if the provider is currently marked as down
+   * (within the 60-second cooldown window).
+   */
+  isDown(provider: Provider): boolean {
+    const h = this.providerHealth.get(provider);
+    return h?.status === 'down' && Date.now() - h.lastChecked < 60_000;
+  }
 }
+
+/** Singleton smart router shared across the process. */
+export const smartRouterInstance = new SmartRouter();

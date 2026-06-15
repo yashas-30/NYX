@@ -336,47 +336,6 @@ export class AIEngine {
   }
 
   /**
-   * Streams responses from the Python Antigravity SDK service.
-   */
-  private static async streamAntigravitySdk(
-    model: string,
-    messages: ChatMessage[],
-    apiKey: string,
-    signal: AbortSignal | undefined,
-    write: (chunk: any) => void,
-    done: () => void
-  ): Promise<void> {
-    const port = env.ANTIGRAVITY_PORT || 3003;
-    const lastUserMessage = messages.filter((m) => m.role === 'user').pop();
-    const prompt = lastUserMessage ? lastUserMessage.content : '';
-
-    const response = await fetch(`http://127.0.0.1:${port}/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // fallow-ignore-next-line code-duplication
-      body: JSON.stringify({ prompt, model, apiKey }),
-      signal,
-    });
-
-    if (!response.ok) throw new Error(`Antigravity SDK Error: ${response.status}`);
-
-    await Gateway.processSSEStream(response, {
-      onChunk: (data) => {
-        if (typeof data === 'string') {
-          write({ chunk: data });
-        } else if (data && typeof data === 'object') {
-          if (data.functionCall) write({ tool_call: data.functionCall });
-          else write(data);
-        }
-      },
-      onDone: done,
-      onError: (err) => {
-        throw new Error(err);
-      },
-    });
-  }
-
-  /**
    * Creates a Gemini cached content entry for a large system prompt.
    * This allows reusing the prefix computation across multiple requests.
    * @returns cacheId string or null if caching failed/unavailable
@@ -435,6 +394,34 @@ export class AIEngine {
     }
 
     try {
+      let ollamaFormat: any = undefined;
+      if (tools && tools.length > 0) {
+        // Enforce GBNF constraints for Ollama to reliably output valid JSON tool calls
+        ollamaFormat = {
+          type: "object",
+          properties: {
+            tool_calls: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  function: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string", enum: tools.map(t => t.function.name) },
+                      arguments: { type: "object" }
+                    },
+                    required: ["name", "arguments"]
+                  }
+                },
+                required: ["function"]
+              }
+            }
+          },
+          required: ["tool_calls"]
+        };
+      }
+
       const formattedMessages = Gateway.formatMessages(messages, 'ollama');
       const response = await fetch('http://127.0.0.1:11434/v1/chat/completions', {
         method: 'POST',
@@ -447,6 +434,7 @@ export class AIEngine {
           max_tokens: settings?.maxTokens ?? 4096,
           top_p: settings?.topP ?? 1.0,
           tools: tools && tools.length > 0 ? tools : undefined,
+          format: ollamaFormat
         }),
         signal: abortController.signal,
       });
@@ -628,6 +616,23 @@ export class AIEngine {
     const resolvedModel = model || 'claude-opus-4-5';
     const modelInstance = anthropicProvider(resolvedModel);
     const coreMessages = mapMessagesToModelMessages(messages);
+
+    // Apply Anthropic Prompt Caching to system message and latest context boundary
+    if (coreMessages.length > 0) {
+      const systemMessage = coreMessages.find(m => m.role === 'system');
+      if (systemMessage) {
+        (systemMessage as any).experimental_providerMetadata = {
+          anthropic: { cacheControl: { type: 'ephemeral' } }
+        };
+      }
+      
+      if (coreMessages.length > 3) {
+        const cacheTarget = coreMessages[coreMessages.length - 2];
+        (cacheTarget as any).experimental_providerMetadata = {
+          anthropic: { cacheControl: { type: 'ephemeral' } }
+        };
+      }
+    }
 
     try {
       const result = await streamText({

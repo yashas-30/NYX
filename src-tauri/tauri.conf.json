@@ -20,6 +20,18 @@
         "center": true,
         "transparent": true,
         "visible": false
+      },
+      {
+        "title": "NYX Spotlight",
+        "label": "spotlight",
+        "width": 700,
+        "height": 450,
+        "center": true,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "visible": false,
+        "skipTaskbar": true
       }
     ],
     "security": {

@@ -77,6 +77,10 @@ interface StreamChunk {
     | 'thinking'
     | 'reasoning'
     | 'tool_call'
+    | 'tool_start'
+    | 'tool_running'
+    | 'tool_done'
+    | 'tool_error'
     | 'citation'
     | 'metrics'
     | 'finish'
@@ -87,6 +91,9 @@ interface StreamChunk {
   content?: string;
   error?: string;
   metadata?: any;
+  tool_call?: any;
+  name?: string;
+  result?: any;
 }
 
 interface PipelineState {
@@ -322,6 +329,115 @@ export const useChatPipeline = ({
               // Handled by worker
               break;
 
+            case 'tool_start': {
+              const tc = chunk.tool_call;
+              if (!tc?.id) break;
+
+              toolCallsMap.set(tc.id, {
+                id: tc.id,
+                type: 'function',
+                index: toolCallsMap.size,
+                function: {
+                  name: tc.name || '',
+                  arguments: typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args || {}),
+                },
+                status: 'pending',
+              });
+
+              const calls = Array.from(toolCallsMap.values());
+              safeUpdateHistory((prev) => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last?.role === 'assistant') {
+                  next[next.length - 1] = {
+                    ...last,
+                    toolCalls: calls,
+                  };
+                }
+                return next;
+              });
+
+              onStreamRef.current?.({
+                type: 'tool_use',
+                content: JSON.stringify(calls),
+              } as any);
+              break;
+            }
+
+            case 'tool_running': {
+              const name = chunk.name;
+              // Find the latest pending tool with this name
+              const calls = Array.from(toolCallsMap.values());
+              const target = calls.slice().reverse().find(c => c.function.name === name && c.status === 'pending');
+              if (target) {
+                target.status = 'running';
+                toolCallsMap.set(target.id, target);
+                
+                safeUpdateHistory((prev) => {
+                  const next = [...prev];
+                  const last = next[next.length - 1];
+                  if (last?.role === 'assistant') {
+                    next[next.length - 1] = {
+                      ...last,
+                      toolCalls: Array.from(toolCallsMap.values()),
+                    };
+                  }
+                  return next;
+                });
+              }
+              break;
+            }
+
+            case 'tool_done': {
+              const name = chunk.name;
+              const result = chunk.result;
+              const calls = Array.from(toolCallsMap.values());
+              const target = calls.slice().reverse().find(c => c.function.name === name && c.status === 'running');
+              if (target) {
+                target.status = 'success';
+                target.result = result;
+                toolCallsMap.set(target.id, target);
+                
+                safeUpdateHistory((prev) => {
+                  const next = [...prev];
+                  const last = next[next.length - 1];
+                  if (last?.role === 'assistant') {
+                    next[next.length - 1] = {
+                      ...last,
+                      toolCalls: Array.from(toolCallsMap.values()),
+                    };
+                  }
+                  return next;
+                });
+              }
+              break;
+            }
+
+            case 'tool_error': {
+              const name = chunk.name;
+              const error = chunk.error;
+              const calls = Array.from(toolCallsMap.values());
+              const target = calls.slice().reverse().find(c => c.function.name === name && c.status === 'running');
+              if (target) {
+                target.status = 'error';
+                target.result = error;
+                toolCallsMap.set(target.id, target);
+                
+                safeUpdateHistory((prev) => {
+                  const next = [...prev];
+                  const last = next[next.length - 1];
+                  if (last?.role === 'assistant') {
+                    next[next.length - 1] = {
+                      ...last,
+                      toolCalls: Array.from(toolCallsMap.values()),
+                    };
+                  }
+                  return next;
+                });
+              }
+              break;
+            }
+
             case 'tool_call': {
               const tc = chunk.metadata as ToolCall;
               if (!tc?.id) break;
@@ -545,7 +661,7 @@ export const useChatPipeline = ({
   // -------------------------------------------------------------------------
 
   const runChat = useCallback(
-    async (prompt: string, images?: { name: string; mimeType: string; data: string }[]) => {
+    async (prompt: string, images?: { name: string; mimeType: string; data: string }[], options?: { agentType?: 'chat' | 'coder' }) => {
       // Prompt sanitization (prevent null byte injection and normalize whitespace)
       const sanitizedPrompt = prompt.replace(/\0/g, '').trim();
 
@@ -671,11 +787,12 @@ export const useChatPipeline = ({
           history: optimizedHistory,
           lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
           webSearchEnabled: webSearchEnabled,
-          // conversationState: conversationStateRef.current,
+          agentType: options?.agentType === 'coder' ? 'opencode' : 'chat',
+          enableToolLoop: useNyxStore.getState().agentLoopEnabled,
         });
 
         // 5. Gather search context (non-blocking UI)
-        const searchContext = await gatherSearchContext(
+        const searchContextPromise = gatherSearchContext(
           agent,
           compressedPrompt,
           analysis,
@@ -691,7 +808,7 @@ export const useChatPipeline = ({
             compressedPrompt,
             analysis,
             controller.signal,
-            searchContext,
+            searchContextPromise,
             images
           ) as AsyncGenerator<any>;
         } else {

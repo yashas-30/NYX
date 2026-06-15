@@ -1,10 +1,16 @@
 import * as lancedb from 'vectordb';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
+import fs from 'fs';
 import logger from '../logger.js';
 import { hybridRetriever } from './hybridRetriever.js';
 
 const _dirname = path.dirname(fileURLToPath(import.meta.url));
+const lancedbPath = path.join(os.homedir(), '.nyx', 'lancedb');
+if (!fs.existsSync(lancedbPath)) {
+  fs.mkdirSync(lancedbPath, { recursive: true });
+}
 
 let embeddingPipeline: any = null;
 
@@ -43,7 +49,7 @@ let _table: any = null;
 
 export async function initVectorStore() {
   if (_table) return _table;
-  const db = await lancedb.connect(path.join(_dirname, '../../../.nyx-memory'));
+  const db = await lancedb.connect(lancedbPath);
   const tableNames = await db.tableNames();
   if (!tableNames.includes('conversations')) {
     _table = await db.createTable('conversations', [
@@ -59,7 +65,7 @@ let _semanticTable: any = null;
 
 export async function initSemanticCacheTable() {
   if (_semanticTable) return _semanticTable;
-  const db = await lancedb.connect(path.join(_dirname, '../../../.nyx-memory'));
+  const db = await lancedb.connect(lancedbPath);
   const tableNames = await db.tableNames();
   if (!tableNames.includes('semantic_cache')) {
     _semanticTable = await db.createTable('semantic_cache', [

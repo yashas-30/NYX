@@ -36,6 +36,7 @@ import { initVoiceMode } from '@src/features/voice/vad';
 import { VoiceOverlay } from '@src/features/voice/VoiceOverlay';
 import { SpeechToTextHelper } from '@src/features/voice/speechToText';
 import { MicVAD } from '@ricky0123/vad-web';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 
 
 interface ChatPromptInputProps {
@@ -130,6 +131,8 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const [isFocused, setIsFocused] = useState(false);
   const isSubmitting = useRef(false);
   const localSettings = modelSettings;
+  const agentLoopEnabled = useNyxStore((state) => state.agentLoopEnabled);
+  const setAgentLoopEnabled = useNyxStore((state) => state.setAgentLoopEnabled);
 
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [voiceEngine, setVoiceEngine] = useState<'browser' | 'vad'>('browser');
@@ -663,6 +666,24 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     )}
                   </AnimatePresence>
                 </div>
+
+                {/* Agent Loop Toggle */}
+                <motion.button
+                  variants={tagItemVariants}
+                  whileHover={{ y: -1.5, scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="button"
+                  onClick={() => setAgentLoopEnabled(!agentLoopEnabled)}
+                  className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[9.5px] font-bold transition-all cursor-pointer ${
+                    agentLoopEnabled
+                      ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                      : 'bg-secondary border border-border text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={agentLoopEnabled ? "Agent Loop Enabled" : "Enable Agent Loop"}
+                >
+                  <Bot size={11} className={agentLoopEnabled ? "animate-pulse" : ""} />
+                  <span>Agent Loop</span>
+                </motion.button>
 
                 {isLocalModel && (
                   <motion.button

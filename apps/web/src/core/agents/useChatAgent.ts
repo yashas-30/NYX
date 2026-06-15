@@ -33,6 +33,8 @@ export function useChatAgent() {
   const agentRef = useRef<ChatAgent | null>(null);
   const messagesRef = useRef<ChatMessageUI[]>([]);
   messagesRef.current = messages;
+  // Fix 3: store the AbortController so stopGeneration() can actually cancel the stream
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
@@ -118,10 +120,14 @@ export function useChatAgent() {
       let metrics: StreamMetrics | undefined;
 
       try {
+        // Create a controller we can actually cancel via stopGeneration()
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         const stream = agent.streamResponse(
           prompt,
           analysis,
-          new AbortController().signal,
+          controller.signal,
           undefined,
           images as any
         );
@@ -229,6 +235,7 @@ export function useChatAgent() {
       } finally {
         setIsLoading(false);
         agentRef.current = null;
+        abortControllerRef.current = null;
       }
     },
     [isLoading]
@@ -237,6 +244,9 @@ export function useChatAgent() {
   // ── Stop ──────────────────────────────────────────────────────────────────
 
   const stopGeneration = useCallback(() => {
+    // Cancel the HTTP/socket stream via the stored AbortController
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     agentRef.current?.abort();
     setIsLoading(false);
     setMessages((prev) => {

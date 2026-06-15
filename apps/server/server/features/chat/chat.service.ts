@@ -7,6 +7,7 @@ import { initVectorStore, embedText, searchMemory } from '../../lib/memory/vecto
 import { mcpClientManager } from '../../lib/mcp/McpClientManager.js';
 import { ContextOptimizer } from '../../lib/contextOptimizer.js';
 import { semanticCache } from '../../lib/semanticCache.js';
+import { enqueueEnrichment } from '../../lib/backgroundEnricher.js';
 
 const searchService = new SearchService();
 
@@ -24,6 +25,7 @@ export interface ChatStreamParams {
   settings?: any;
   enableWebSearch?: boolean;
   images?: { name: string; mimeType: string; data: string }[];
+  conversationId?: string;
 }
 
 export class ChatService {
@@ -42,6 +44,7 @@ export class ChatService {
       settings,
       enableWebSearch = true,
       images = [],
+      conversationId,
     } = params;
 
     logger.info({ modelId, provider, enableWebSearch }, '[ChatService] Starting chat stream...');
@@ -49,16 +52,17 @@ export class ChatService {
     let finalPrompt = prompt;
     let webContext = '';
 
-    // Check semantic cache first (skip for very short prompts)
-    if (prompt.length > 20) {
+    // ── Semantic Cache (first-turn only, no '[Cached Response]' prefix) ──────────
+    // Only cache first-turn queries — multi-turn context makes stale responses harmful
+    if (prompt.length > 20 && history.length === 0) {
       const cached = await semanticCache.get(prompt);
       if (cached) {
         logger.info('[ChatService] Serving from semantic cache');
-        onChunk('[Cached Response] ');
-        // Stream cached response in chunks for better UX
+        // Stream naturally — no prefix that breaks UX
         const words = cached.split(' ');
-        for (let i = 0; i < words.length; i += 5) {
-          onChunk(words.slice(i, i + 5).join(' ') + (i + 5 < words.length ? ' ' : ''));
+        for (let i = 0; i < words.length; i += 10) {
+          onChunk(words.slice(i, i + 10).join(' ') + (i + 10 < words.length ? ' ' : ''));
+          await new Promise(r => setImmediate(r)); // yield event loop
         }
         onDone();
         return;
@@ -93,8 +97,12 @@ export class ChatService {
       }
     }
 
+    // ── Memory Retrieval (non-blocking, 300ms race) ────────────────────────────
     try {
-      const memoryContext = await searchMemory(prompt, 3);
+      const memoryContext = await Promise.race([
+        searchMemory(prompt, 3),
+        new Promise<string>((resolve) => setTimeout(() => resolve(''), 300)),
+      ]);
       if (memoryContext) {
         finalPrompt += `\n\n[Long-Term Memory]:\n${memoryContext}`;
       }
@@ -124,7 +132,7 @@ export class ChatService {
     });
 
     const optimizedMessages = await ContextOptimizer.compressHistory(messages, {
-      maxTokens: settings?.maxContextTokens || 32000,
+      maxTokens: settings?.maxContextTokens || 80_000,
       preservationTurns: settings?.preservationTurns || 6,
       mode: settings?.contextMode || 'prune',
       provider: provider || 'gemini',
@@ -135,50 +143,167 @@ export class ChatService {
     const apiKey = keys[provider || ''] || '';
     logger.info({ apiKeyLength: apiKey?.length, apiKeyPrefix: apiKey ? apiKey.substring(0, 10) : 'none' }, '[ChatService] Resolved API key');
 
+    // ── Background enrichment for next turn ────────────────────────────────
+    if (conversationId) {
+      enqueueEnrichment(conversationId, prompt, provider || 'gemini', modelId || '', apiKey);
+    }
+
+    // ── Load MCP Tools ──────────────────────────────────────────────────
+    let tools: any[] | undefined = undefined;
     try {
-      // Fetch available MCP tools dynamically
-      let tools: any[] | undefined = undefined;
-      try {
-        const mcpTools = await mcpClientManager.getAvailableTools();
-        if (mcpTools && mcpTools.length > 0) {
-          tools = mcpTools;
-          logger.info(`[ChatService] Loaded ${mcpTools.length} MCP tools.`);
+      const mcpTools = await mcpClientManager.getAvailableTools();
+      if (mcpTools && mcpTools.length > 0) {
+        tools = mcpTools;
+        logger.info(`[ChatService] Loaded ${mcpTools.length} MCP tools.`);
+      }
+    } catch (e: any) {
+      logger.warn({ err: e.message }, 'Failed to fetch MCP tools');
+    }
+
+    // Append Native Tools
+    const nativeTools = [
+      {
+        type: 'function',
+        function: {
+          name: 'search_web',
+          description: 'Search the web for real-time or up-to-date information.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'The search query' }
+            },
+            required: ['query']
+          }
         }
-      } catch (e: any) {
-        logger.warn({ err: e.message }, 'Failed to fetch MCP tools');
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'scrape_url',
+          description: 'Extract clean markdown content from a specific URL.',
+          parameters: {
+            type: 'object',
+            properties: {
+              url: { type: 'string', description: 'The absolute URL to crawl' }
+            },
+            required: ['url']
+          }
+        }
+      }
+    ];
+    tools = [...(tools || []), ...nativeTools];
+
+
+    // ── Agentic Stream Loop with Server-Side Tool Execution ─────────────────
+    try {
+      const { UnifiedEngine } = await import('../../lib/unifiedEngine.js');
+
+      const MAX_TOOL_ITERATIONS = 10;
+      let currentMessages = [...optimizedMessages];
+      let fullResponse = '';
+      let iteration = 0;
+      let streamDone = false;
+
+      while (iteration++ < MAX_TOOL_ITERATIONS && !streamDone) {
+        const toolCallsThisTurn: any[] = [];
+        let assistantText = '';
+
+        await UnifiedEngine.executeStream(
+          {
+            provider: provider || 'gemini',
+            model: modelId || '',
+            messages: currentMessages,
+            settings: settings || { temperature: 0.7, maxTokens: 4096 },
+            apiKey,
+            tools,
+            signal,
+          },
+          (chunk: any) => {
+            if (chunk.tool_call || chunk.functionCall) {
+              // Collect tool calls for server-side execution
+              const toolCall = chunk.tool_call || {
+                name: chunk.functionCall?.name,
+                args: chunk.functionCall?.args || {},
+                id: `call_${Date.now()}`,
+              };
+              toolCallsThisTurn.push(toolCall);
+              onChunk({ type: 'tool_start', tool_call: toolCall });
+            } else if (chunk.type === 'thinking' || chunk.thinking) {
+              const thinkingText = chunk.thinking || chunk.content || '';
+              onChunk({ type: 'thinking', content: thinkingText });
+            } else {
+              const text = chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '';
+              assistantText += text;
+              fullResponse += text;
+              onChunk(text);
+            }
+          },
+          () => { /* iteration stream done */ }
+        );
+
+        // No tool calls = final answer, exit loop
+        if (toolCallsThisTurn.length === 0) {
+          streamDone = true;
+          break;
+        }
+
+        // Append assistant turn with tool calls
+        currentMessages.push({
+          role: 'assistant',
+          content: assistantText || null,
+          tool_calls: toolCallsThisTurn.map(tc => ({
+            id: tc.id,
+            type: 'function',
+            function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) },
+          })),
+        });
+
+        // Execute ALL tool calls in parallel (ChatGPT parity)
+        const toolResults = await Promise.all(
+          toolCallsThisTurn.map(async (tc) => {
+            try {
+              onChunk({ type: 'tool_running', name: tc.name });
+              let result;
+              
+              if (tc.name === 'search_web') {
+                result = await searchService.performWebSearch(tc.args?.query || '');
+              } else if (tc.name === 'scrape_url') {
+                // Dynamically import to avoid top-level cyclic issues
+                const { scrapeUrl } = await import('../tools/webScraper.js');
+                result = await scrapeUrl(tc.args?.url || '');
+              } else {
+                result = await mcpClientManager.executeTool(tc.name, tc.args || {});
+              }
+              
+              const resultText = typeof result === 'string' ? result : JSON.stringify(result);
+              onChunk({ type: 'tool_done', name: tc.name, result: resultText });
+              return { id: tc.id, name: tc.name, content: resultText };
+            } catch (err: any) {
+              const errMsg = `Error executing tool ${tc.name}: ${err.message}`;
+              onChunk({ type: 'tool_error', name: tc.name, error: err.message });
+              return { id: tc.id, name: tc.name, content: errMsg };
+            }
+          })
+        );
+
+        // Append tool results so the model sees them
+        for (const r of toolResults) {
+          currentMessages.push({
+            role: 'tool',
+            tool_call_id: r.id,
+            content: r.content,
+          });
+        }
+        // Loop: model generates next response with tool context
       }
 
-      const { UnifiedEngine } = await import('../../lib/unifiedEngine.js');
-      let fullResponse = '';
-      await UnifiedEngine.executeStream(
-        {
-          provider: provider || 'gemini',
-          model: modelId || '',
-          messages: optimizedMessages,
-          settings: settings || { temperature: 0.7, maxTokens: 4096 },
-          apiKey,
-          tools, // Pass dynamically loaded MCP tools
-        },
-        (chunk: any) => {
-          if (chunk.tool_call) {
-            onChunk({ tool_call: chunk.tool_call });
-          } else if (chunk.type === 'thinking' || chunk.thinking) {
-            const thinkingText = chunk.thinking || chunk.content || '';
-            onChunk({ type: 'thinking', content: thinkingText });
-          } else {
-            const text = chunk.chunk || chunk.token || chunk.choices?.[0]?.delta?.content || '';
-            fullResponse += text;
-            onChunk(text);
-          }
-        },
-        () => {
-          onDone();
-          // Store in semantic cache for future similar prompts
-          if (fullResponse.length > 50) {
-            semanticCache.set(prompt, fullResponse).catch(() => {});
-          }
-        }
-      );
+      onDone();
+
+      // Cache response for future first-turn identical queries
+      if (fullResponse.length > 50 && history.length === 0) {
+        semanticCache.set(prompt, fullResponse).catch(() => {});
+      }
+
     } catch (err: any) {
       logger.error({ err }, 'UnifiedEngine stream failed');
       throw new Error(`UnifiedEngine execution failed: ${err.message}`);

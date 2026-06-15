@@ -115,9 +115,6 @@ export function spawnBackgroundServices() {
   const SCRAPLING_PORT = env.SCRAPLING_PORT;
   let scraplingProc: ReturnType<typeof spawn> | null = null;
 
-  const ANTIGRAVITY_PORT = env.ANTIGRAVITY_PORT;
-  let antigravityProc: ReturnType<typeof spawn> | null = null;
-
   async function spawnScrapling() {
     try {
       const isAvailable = await checkPortAvailable(SCRAPLING_PORT);
@@ -146,42 +143,7 @@ export function spawnBackgroundServices() {
     }
   }
 
-  async function spawnAntigravity() {
-    try {
-      const isAvailable = await checkPortAvailable(ANTIGRAVITY_PORT);
-      if (!isAvailable) {
-        logger.warn(
-          `[Antigravity] Port ${ANTIGRAVITY_PORT} is already in use. Skipping spawn to avoid crash-loop.`
-        );
-        return;
-      }
-      const pythonPath = findPythonPath();
-      const antigravityScriptPath = path.join(
-        appsServerDir,
-        'server',
-        'python',
-        'antigravity_service.py'
-      );
-      const proc = spawn(pythonPath, [antigravityScriptPath, '--port', String(ANTIGRAVITY_PORT)], {
-        cwd: path.dirname(antigravityScriptPath),
-        detached: false,
-        stdio: ['pipe', 'inherit', 'inherit'],
-      });
-      registerProcess(proc);
-      antigravityProc = proc;
-      proc.on('exit', () => {
-        antigravityProc = null;
-      });
-    } catch (error: any) {
-      logger.error(
-        { error: error.message },
-        '[Antigravity] Failed to spawn Antigravity local service'
-      );
-    }
-  }
-
   spawnScrapling();
-  spawnAntigravity();
 
   // Health checks
   const scraplingHealthInterval = setInterval(async () => {
@@ -200,26 +162,9 @@ export function spawnBackgroundServices() {
   }, 15_000);
   scraplingHealthInterval.unref();
 
-  const antigravityHealthInterval = setInterval(async () => {
-    try {
-      await performHealthCheck(`http://127.0.0.1:${ANTIGRAVITY_PORT}/health`, 5000);
-    } catch (err: any) {
-      logger.warn({ error: err?.message || err }, '[Antigravity] Health check failed — restarting Antigravity service...');
-      if (antigravityProc) {
-        try {
-          antigravityProc.kill('SIGTERM');
-        } catch {}
-        antigravityProc = null;
-      }
-      setTimeout(() => spawnAntigravity(), 2000);
-    }
-  }, 15_000);
-  antigravityHealthInterval.unref();
-
   return {
     clearHealthChecks: () => {
       clearInterval(scraplingHealthInterval);
-      clearInterval(antigravityHealthInterval);
     }
   };
 }

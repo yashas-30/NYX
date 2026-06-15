@@ -17,7 +17,7 @@ export class GeminiCacheManager {
   /**
    * Generates a SHA-256 hash of a messages array to uniquely identify context.
    */
-  static hashMessages(messages: any[]): string {
+  static hashMessages(messages: any[], tools?: any[]): string {
     const hash = crypto.createHash('sha256');
     for (const msg of messages) {
       hash.update(msg.role || '');
@@ -29,13 +29,16 @@ export class GeminiCacheManager {
         }
       }
     }
+    if (tools && tools.length > 0) {
+      hash.update(JSON.stringify(tools));
+    }
     return hash.digest('hex');
   }
 
   /**
    * Finds the longest active cached prefix that matches the beginning of the messages array.
    */
-  static findMatchingCache(messages: any[], model: string): CacheEntry | null {
+  static findMatchingCache(messages: any[], model: string, tools?: any[]): CacheEntry | null {
     const now = Date.now();
     // Clean up expired cache entries (5-minute TTL)
     for (const [key, entry] of this.activeCaches.entries()) {
@@ -52,7 +55,7 @@ export class GeminiCacheManager {
       // The cache must represent a subset/prefix of the messages
       if (entry.messageCount <= messages.length && entry.messageCount > maxCount) {
         const prefix = messages.slice(0, entry.messageCount);
-        const prefixHash = this.hashMessages(prefix);
+        const prefixHash = this.hashMessages(prefix, tools);
         if (prefixHash === entry.hash) {
           bestMatch = entry;
           maxCount = entry.messageCount;
@@ -70,9 +73,10 @@ export class GeminiCacheManager {
     messages: any[],
     systemInstruction: string | undefined,
     model: string,
-    apiKey: string
+    apiKey: string,
+    tools?: any[]
   ): Promise<{ cacheName: string; cachedCount: number }> {
-    const prefixHash = this.hashMessages(messages);
+    const prefixHash = this.hashMessages(messages, tools);
     
     const existing = this.activeCaches.get(prefixHash);
     if (existing && Date.now() - existing.createdAt < 300000) {
@@ -85,13 +89,30 @@ export class GeminiCacheManager {
     const ai = new GoogleGenAI({ apiKey });
     const { contents } = Gateway.formatMessages(messages, 'gemini');
 
+    const config: any = {
+      contents,
+      systemInstruction,
+      ttl: '300s', // 5 minutes TTL
+    };
+
+    if (tools && tools.length > 0) {
+      // Format tools for @google/genai SDK
+      const formattedTools = tools.map(t => {
+        const fn = t.function || t;
+        return {
+          functionDeclarations: [{
+            name: fn.name,
+            description: fn.description || '',
+            parameters: fn.parameters || { type: 'object', properties: {} }
+          }]
+        };
+      });
+      config.tools = formattedTools;
+    }
+
     const cache = await ai.caches.create({
       model: model,
-      config: {
-        contents,
-        systemInstruction,
-        ttl: '300s', // 5 minutes TTL
-      },
+      config,
     });
 
     if (!cache.name) {

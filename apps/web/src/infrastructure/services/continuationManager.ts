@@ -56,6 +56,17 @@ export class ContinuationManager {
         ? prompt
         : `Continue exactly from where you left off. Do not repeat any previously generated content. Start immediately with the next character/token after this:\n\n${baseText.slice(-500)}`;
 
+      const currentOptions = isFirst
+        ? options
+        : {
+            ...options,
+            history: [
+              ...(options?.history || []),
+              { role: 'user', content: prompt } as ChatMessage,
+              { role: 'assistant', content: baseText } as ChatMessage,
+            ],
+          };
+
       const result = await executeFn(
         modelId,
         provider,
@@ -68,7 +79,7 @@ export class ContinuationManager {
           onStream?.(displayText);
         },
         signal,
-        options
+        currentOptions
       );
 
       totalTokens += result.metrics.tokens;
@@ -112,18 +123,20 @@ export class ContinuationManager {
     modelId: string,
     settings?: AISettings
   ): number {
-    if (settings?.maxTokens) return settings.maxTokens;
-
-    if (provider === 'ollama' || provider === 'lmstudio') {
-      return 4096;
-    }
+    let limit = settings?.maxTokens;
 
     if (provider === 'gemini') {
-      if (modelId.includes('pro')) return 8192;
-      return 4096;
+      const isGemma = modelId.toLowerCase().includes('gemma');
+      const isPro = modelId.toLowerCase().includes('pro');
+      const hardLimit = isPro ? 8192 : 8192; // Default to 8192 for Gemini 1.5/3.1
+      if (!isGemma) {
+        limit = limit ? Math.min(limit, hardLimit) : hardLimit;
+      }
+    } else if (provider === 'ollama' || provider === 'lmstudio') {
+      limit = limit ? Math.min(limit, 8192) : 4096;
     }
 
-    return 2048;
+    return limit || 4096;
   }
 
   private static isTruncated(text: string, maxTokens: number, usedTokens: number): boolean {
@@ -141,14 +154,21 @@ export class ContinuationManager {
     // Common truncation patterns
     if (trimmed.endsWith('...')) return true;
 
+    // Near token limit check using characters
+    // Since usedTokens is often a rough Math.ceil(length/4), we check raw character length.
+    // Code tokens average around ~3.2 characters per token.
+    if (maxTokens > 0) {
+      const estimatedCharLimit = maxTokens * 3.2;
+      if (trimmed.length >= estimatedCharLimit * 0.92) {
+        return true;
+      }
+    }
+
     // Ends mid-identifier (last char is alphanumeric or underscore — no sentence terminator)
     const lastChar = trimmed.slice(-1);
     const terminalChars = /[.!?;}\])"'`]$/;
     const endsWithCodeBlock = trimmed.endsWith('```');
     if (!terminalChars.test(lastChar) && !endsWithCodeBlock) return true;
-
-    // Near token limit — 95% of estimated max
-    if (maxTokens > 0 && usedTokens >= Math.floor(maxTokens * 0.95)) return true;
 
     return false;
   }

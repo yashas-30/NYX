@@ -61,15 +61,25 @@ export function decryptText(encryptedText: string): string {
   return decrypted;
 }
 
+// ── In-memory key cache (30-second TTL) ─────────────────────────────────────
 let cachedKeys: Record<string, string> | null = null;
+let cachedKeysExpiresAt = 0;
+const KEY_CACHE_TTL_MS = 30_000;
+
+/** Bust the in-memory key cache. Call after any write to vault. */
+export function bustKeyCache(): void {
+  cachedKeys = null;
+  cachedKeysExpiresAt = 0;
+}
 
 export function getKeysSync(): Record<string, string> {
-  if (cachedKeys) return cachedKeys;
+  if (cachedKeys && Date.now() < cachedKeysExpiresAt) return cachedKeys;
   if (!fs.existsSync(VAULT_FILE)) return {};
   try {
     const encryptedData = fs.readFileSync(VAULT_FILE, 'utf8');
     const decryptedJson = decryptText(encryptedData);
     cachedKeys = JSON.parse(decryptedJson);
+    cachedKeysExpiresAt = Date.now() + KEY_CACHE_TTL_MS;
     return cachedKeys!;
   } catch {
     return {};
@@ -77,10 +87,14 @@ export function getKeysSync(): Record<string, string> {
 }
 
 export async function loadKeys(): Promise<Record<string, string>> {
+  // Serve from in-memory cache if still fresh
+  if (cachedKeys && Date.now() < cachedKeysExpiresAt) return cachedKeys;
+
   try {
     const stored = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_API);
     if (stored) {
       cachedKeys = JSON.parse(stored);
+      cachedKeysExpiresAt = Date.now() + KEY_CACHE_TTL_MS;
       return cachedKeys!;
     }
   } catch (err: any) {
@@ -94,6 +108,7 @@ export async function loadKeys(): Promise<Record<string, string>> {
     const encryptedData = fs.readFileSync(VAULT_FILE, 'utf8');
     const decryptedJson = decryptText(encryptedData);
     cachedKeys = JSON.parse(decryptedJson);
+    cachedKeysExpiresAt = Date.now() + KEY_CACHE_TTL_MS;
     return cachedKeys!;
   } catch (error: any) {
     logger.error('[KeyVault] Failed to decrypt vault keys:', error.message);
@@ -102,7 +117,9 @@ export async function loadKeys(): Promise<Record<string, string>> {
 }
 
 export async function saveKeys(keys: Record<string, string>): Promise<void> {
+  // Update cache immediately with new values and reset TTL
   cachedKeys = keys;
+  cachedKeysExpiresAt = Date.now() + KEY_CACHE_TTL_MS;
   const jsonStr = JSON.stringify(keys);
   try {
     await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_API, jsonStr);

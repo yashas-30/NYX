@@ -88,7 +88,7 @@ export class LocalModelsService {
       if (!response || !response.ok) {
         return { models: [], connected: false, port };
       }
-      const data = await response.json();
+      const data: any = await response.json();
       const models = (data.data || []).map((m: any) => ({
         name: m.id,
         id: m.id,

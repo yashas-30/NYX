@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { Store } from '@tauri-apps/plugin-store';
+
+const settingsStore = new Store('nyx_settings.bin');
 
 const QUANT_TIERS = [
   {
@@ -41,6 +45,44 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
   setSelectedQuant,
 }) => {
   const [quantSaving, setQuantSaving] = useState(false);
+  
+  const currentModelId = useNyxStore((state) => state.models.nyx);
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [promptSaving, setPromptSaving] = useState(false);
+
+  useEffect(() => {
+    if (!currentModelId) return;
+    const loadPrompt = async () => {
+      try {
+        const prompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
+        setSystemPrompt(prompts[currentModelId] || '');
+      } catch (e) {
+        console.error('Failed to load system prompt:', e);
+      }
+    };
+    loadPrompt();
+  }, [currentModelId]);
+
+  const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setSystemPrompt(e.target.value);
+  };
+
+  const saveSystemPrompt = async () => {
+    if (!currentModelId) return;
+    setPromptSaving(true);
+    try {
+      const prompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
+      prompts[currentModelId] = systemPrompt;
+      await settingsStore.set('modelSystemPrompts', prompts);
+      await settingsStore.save();
+      toast.success('System prompt saved for ' + currentModelId);
+    } catch (e) {
+      console.error('Failed to save system prompt:', e);
+      toast.error('Failed to save system prompt');
+    } finally {
+      setPromptSaving(false);
+    }
+  };
 
   const handleQuantChange = async (quantId: QuantTierId) => {
     setSelectedQuant(quantId);
@@ -141,11 +183,52 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
         </div>
       )}
 
-      <p className="text-[10px] text-muted-foreground/80 leading-relaxed">
+      <p className="text-[10px] text-muted-foreground/80 leading-relaxed mb-8">
         Quantization controls model weight precision. Higher quality tiers reduce hallucinations in
         code generation. Q5_K_M is the recommended minimum for coding tasks. Takes effect on next
         model load.
       </p>
+
+      {/* Per-model System Prompts */}
+      <div className="pt-4 border-t border-white/[0.05]">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-accent">
+              MODEL BEHAVIOR
+            </p>
+            <h3 className="text-xs font-bold text-foreground mt-0.5">Custom System Prompt</h3>
+          </div>
+          {currentModelId && (
+            <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border border-accent/20 text-accent bg-accent/10">
+              {currentModelId}
+            </span>
+          )}
+        </div>
+        
+        {currentModelId ? (
+          <div className="flex flex-col gap-2">
+            <textarea
+              className="w-full bg-background border border-border rounded-md p-3 text-sm min-h-[120px] focus:outline-none focus:border-accent/50 text-foreground resize-y custom-scrollbar"
+              placeholder="Enter specific instructions to always prepend for this model..."
+              value={systemPrompt}
+              onChange={handlePromptChange}
+            />
+            <div className="flex justify-end">
+              <button
+                onClick={saveSystemPrompt}
+                disabled={promptSaving}
+                className="px-4 py-1.5 text-xs font-bold rounded-md bg-accent/20 hover:bg-accent/30 text-accent transition-colors disabled:opacity-50"
+              >
+                {promptSaving ? 'Saving...' : 'Save Instructions'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 rounded-md border border-border/50 bg-background/50 text-xs text-muted-foreground text-center">
+            Select a model first to configure its system prompt.
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -25,7 +25,6 @@ export const AISettingsSchema = z.object({
   contextSize: z.number().optional(),
   batchSize: z.number().optional(),
   mirostat: z.number().optional(),
-  antigravity: z.boolean().optional(),
   thinkingBudget: z.number().optional(),
   /** Gemini: force structured JSON output. Incompatible with thinking tokens. */
   jsonMode: z.boolean().optional(),
@@ -112,7 +111,6 @@ export const PORTS = {
   API: 3010,
   FASTIFY: 3001,
   SCRAPLING: 3002,
-  ANTIGRAVITY: 3003,
   FALLBACK: 12345,
 };
 

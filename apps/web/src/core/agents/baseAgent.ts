@@ -1,4 +1,5 @@
 import { AISettings, ChatMessage } from '@src/infrastructure/types';
+import type { ToolDefinition } from './agentLoop';
 
 export interface BaseAgentConfig {
   modelId: string;
@@ -9,12 +10,17 @@ export interface BaseAgentConfig {
   lightningDirectives?: string[];
   webSearchEnabled?: boolean;
   maxContextTokens?: number;
+  /** Tools available to this agent. Defaults to BUILTIN_TOOLS if undefined. */
+  tools?: ToolDefinition[];
+  /** Whether to enable agentic tool use loop. Default: true when tools are configured. */
+  enableToolLoop?: boolean;
 }
 
 export class TokenBudget {
   constructor(
     private maxTokens: number,
-    private reservedForResponse: number = 4000
+    // Raised from 4000 to 8000 — matches our new raised max_tokens defaults
+    private reservedForResponse: number = 8_000
   ) {}
 
   get availableForContext(): number {

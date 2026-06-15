@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * @file src/core/services/ai.service.ts
  * @description Enterprise-grade unified AI inference service with streaming,
@@ -282,13 +281,17 @@ export class AIService {
     settings?: AISettings
   ): Promise<EnhancedAIResponse> {
     // Wrapper around executeWithFallback for multimodal
-    const prompt = Array.isArray(message) ? message : [message];
+    const prompt = (Array.isArray(message) ? message.join(' ') : message) as string;
     return this.executeWithFallback(
       modelId,
       provider,
       prompt,
-      settings,
-      { apiKeys: apiKey ? { [provider]: apiKey } : {} }
+      apiKey,       // 4th arg = apiKey
+      undefined,    // 5th arg = systemInstruction
+      settings,     // 6th arg = settings
+      undefined,
+      undefined,
+      {}
     );
   }
 
@@ -369,8 +372,8 @@ export class AIService {
   // -------------------------------------------------------------------------
   // Retry with exponential backoff + jitter
   // -------------------------------------------------------------------------
-  private // fallow-ignore-next-line code-duplication
-  static async executeWithRetry(
+  // fallow-ignore-next-line code-duplication
+  private static async executeWithRetry(
     requestId: string,
     modelId: string,
     provider: Provider | string,
@@ -503,7 +506,7 @@ export class AIService {
       tools: options.tools,
       responseFormat: options.responseFormat,
       reasoning: options.reasoning,
-      agentMode: options.agentMode,
+      agentMode: (options.agentMode === 'coder' ? 'chat' : options.agentMode) as 'chat' | undefined,
       webSearch: options.webSearch,
       streamEvents: options.streamEvents,
     };
@@ -576,10 +579,10 @@ export class AIService {
       apiKey: apiKey || '',
       settings,
       systemInstruction,
-      history,
+      history: history as any,
       signal,
       gatewayUrls,
-      images,
+      images: images?.map((img: any) => ({ mimeType: img.mimeType, base64: img.data || img.base64 || '' })) as any,
       tools: tools as any,
       responseFormat: responseFormat as any,
       webSearch: config.webSearch,
@@ -627,9 +630,78 @@ export class AIService {
       webSearch,
       streamEvents,
       provider,
+      apiKey,
     } = config;
 
     const messages = this.buildMessages(prompt, systemInstruction, history);
+
+    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    if (isTauri) {
+      let resolvedApiKey = apiKey || '';
+      if (!resolvedApiKey && ['openai', 'anthropic', 'deepseek', 'openrouter'].includes(provider)) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const res: any = await invoke('vault:get-key', { payload: { provider } });
+          if (res.success && res.data) {
+            resolvedApiKey = res.data;
+          }
+        } catch (e) {
+          console.warn(`[AIService] Failed to get key for ${provider} from Tauri vault`, e);
+        }
+      }
+
+      try {
+        const { tauriLlmStream } = await import('@src/infrastructure/api/tauriLlmClient');
+        const parsed = await tauriLlmStream({
+          provider,
+          model_id: modelId,
+          messages,
+          system_instruction: systemInstruction,
+          api_key: resolvedApiKey,
+          temperature: settings?.temperature ?? 0.7,
+        }, {
+          signal,
+          timeoutMs: 120000,
+          onChunk: (delta, accumulated) => {
+            if (onStream) {
+              if (streamEvents) {
+                onStream({ type: 'text', content: delta, final: false });
+              } else {
+                onStream(accumulated);
+              }
+            }
+          },
+          onReasoning: (delta, accumulated) => {
+            if (onStream && streamEvents) {
+              onStream({ type: 'reasoning', content: delta, final: false });
+            }
+          },
+        });
+
+        if (onStream) {
+          if (streamEvents) {
+            onStream({ type: 'text', content: parsed.text, final: true });
+            if (parsed.reasoning) {
+              onStream({ type: 'reasoning', content: parsed.reasoning, final: true });
+            }
+          } else {
+            onStream(parsed.text);
+          }
+        }
+
+        return {
+          text: parsed.text || '',
+          model: modelId,
+          provider,
+          reasoning: parsed.reasoning ? [{ content: parsed.reasoning, type: 'thinking' }] : undefined,
+          finishReason: parsed.finishReason as any,
+          metrics: this.computeMetrics(parsed.text, Date.now() - (parsed.metrics.latencyMs || 0)),
+        };
+      } catch (err) {
+        console.warn('[AIService] Tauri native streaming failed, falling back to backend stream', err);
+      }
+    }
+
     const response = await this.fetchWithAuth('/api/v1/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -638,7 +710,7 @@ export class AIService {
         provider: provider,
         messages,
         temperature: settings?.temperature ?? 0.7,
-        max_tokens: settings?.maxTokens ?? 4096,
+        max_tokens: settings?.maxTokens ?? getDefaultMaxTokens(String(provider)),
         top_p: settings?.topP,
         top_k: settings?.topK,
         repeat_penalty: settings?.repeatPenalty,
@@ -946,6 +1018,53 @@ export class AIService {
       text: res.text,
       metrics: res.metrics,
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Provider-specific defaults (Fix 8: per-provider max tokens + token estimation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the appropriate max_tokens default for each provider.
+ * These mirror the limits in the Rust llm.rs command.
+ */
+function getDefaultMaxTokens(provider: string): number {
+  switch (provider) {
+    case 'anthropic':
+      return 32_768;  // Claude Sonnet/Opus support 64K+; use 32K as safe default
+    case 'openai':
+    case 'openrouter':
+    case 'deepseek':
+      return 16_384;
+    case 'gemini':
+      return 8_192;
+    case 'ollama':
+    case 'lmstudio':
+      return 8_192;   // Local models — conservative to avoid OOM
+    default:
+      return 8_192;
+  }
+}
+
+/**
+ * Provider-specific characters-per-token ratios for accurate context budgeting.
+ * Using GPT-4's cl100k tokenizer for all providers (as was done before) gives
+ * 15-30% wrong counts for Gemini (SentencePiece) and Claude (BPE variant).
+ */
+export function estimateTokens(text: string, provider: string): number {
+  const len = text.length;
+  switch (provider) {
+    case 'gemini':
+      return Math.ceil(len / 3.5);   // Gemini SentencePiece: ~3.5 chars/token
+    case 'anthropic':
+      return Math.ceil(len / 3.7);   // Claude BPE variant: ~3.7 chars/token
+    case 'openai':
+    case 'openrouter':
+    case 'deepseek':
+      return Math.ceil(len / 4.0);   // GPT-4 cl100k: ~4 chars/token
+    default:
+      return Math.ceil(len / 3.8);   // Conservative middle ground
   }
 }
 

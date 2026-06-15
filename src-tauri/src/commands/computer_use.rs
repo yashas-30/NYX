@@ -3,7 +3,7 @@ use enigo::{Enigo, Mouse, Keyboard, Coordinate, Button, Direction, Settings};
 use xcap::Monitor;
 use base64::{Engine as _, engine::general_purpose};
 use std::io::Cursor;
-use image::ImageOutputFormat;
+use image::ImageFormat;
 use std::thread;
 use std::time::Duration;
 
@@ -23,7 +23,7 @@ pub async fn execute_computer_action(action: String, params: String) -> Result<S
             let monitors = Monitor::all().map_err(|e| e.to_string())?;
             // Use the primary monitor or the first one available
             let monitor = monitors.into_iter()
-                .find(|m| m.is_primary())
+                .find(|m| m.is_primary().unwrap_or(false))
                 .or_else(|| Monitor::all().unwrap_or_default().into_iter().next())
                 .ok_or("No monitor found")?;
 
@@ -32,7 +32,7 @@ pub async fn execute_computer_action(action: String, params: String) -> Result<S
             // Resize image if it's too large to save token costs (optional)
             // For now, return the raw screenshot encoded in base64 as JPEG
             let mut buf = Cursor::new(Vec::new());
-            image.write_to(&mut buf, ImageOutputFormat::Jpeg(80)).map_err(|e| e.to_string())?;
+            image.write_to(&mut buf, ImageFormat::Jpeg).map_err(|e| e.to_string())?;
             
             let b64 = general_purpose::STANDARD.encode(buf.into_inner());
             Ok(b64)

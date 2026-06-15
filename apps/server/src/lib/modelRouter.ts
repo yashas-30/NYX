@@ -7,10 +7,11 @@ export interface ModelCapabilities {
   reasoningScore: number;
   creativityScore: number;
   isAvailable: boolean;
+  provider: string;
 }
 
 export interface TaskProfile {
-  type: 'coding' | 'reasoning' | 'creative';
+  type: 'coding' | 'reasoning' | 'creative' | 'search' | 'general';
   estimatedTokens: number;
   maxCost?: number;
   maxLatency?: number;
@@ -22,22 +23,43 @@ export interface ModelRecommendation {
 }
 
 const AVAILABLE_MODELS: ModelCapabilities[] = [
-
-  { id: 'gemini-3.5-flash', contextWindow: 1000000, costPer1kTokens: 0.001, avgLatency: 500, codingScore: 80, reasoningScore: 80, creativityScore: 85, isAvailable: true },
-  { id: 'gemini-3.1-flash-lite', contextWindow: 1000000, costPer1kTokens: 0.0005, avgLatency: 300, codingScore: 70, reasoningScore: 72, creativityScore: 75, isAvailable: true },
-
+  { id: 'gemini-3.5-flash', provider: 'gemini', contextWindow: 1000000, costPer1kTokens: 0.001, avgLatency: 500, codingScore: 80, reasoningScore: 80, creativityScore: 85, isAvailable: true },
+  { id: 'gemini-3.1-flash-lite', provider: 'gemini', contextWindow: 1000000, costPer1kTokens: 0.0005, avgLatency: 300, codingScore: 70, reasoningScore: 72, creativityScore: 75, isAvailable: true },
+  { id: 'deepseek-r1', provider: 'local', contextWindow: 64000, costPer1kTokens: 0, avgLatency: 1200, codingScore: 98, reasoningScore: 99, creativityScore: 60, isAvailable: true },
+  { id: 'llama-3.1-8b', provider: 'local', contextWindow: 128000, costPer1kTokens: 0, avgLatency: 200, codingScore: 75, reasoningScore: 70, creativityScore: 80, isAvailable: true },
 ];
 
-export function selectModel(task: TaskProfile): ModelRecommendation {
+/**
+ * Lightweight intent classification to route to the best Mixture of Agents (MoA)
+ */
+export function classifyIntent(prompt: string): TaskProfile['type'] {
+  const lowerPrompt = prompt.toLowerCase();
+  if (lowerPrompt.includes('code') || lowerPrompt.includes('function') || lowerPrompt.includes('refactor') || lowerPrompt.includes('bug')) {
+    return 'coding';
+  }
+  if (lowerPrompt.includes('think') || lowerPrompt.includes('analyze') || lowerPrompt.includes('why') || lowerPrompt.includes('plan')) {
+    return 'reasoning';
+  }
+  if (lowerPrompt.includes('search') || lowerPrompt.includes('find') || lowerPrompt.includes('latest')) {
+    return 'search';
+  }
+  return 'general';
+}
+
+export function selectModel(task: TaskProfile, prompt?: string): ModelRecommendation {
+  const actualType = prompt ? classifyIntent(prompt) : task.type;
+
   const scores = AVAILABLE_MODELS.map(model => {
     let score = 0;
 
-    if (task.type === 'coding') score += model.codingScore;
-    if (task.type === 'reasoning') score += model.reasoningScore;
-    if (task.type === 'creative') score += model.creativityScore;
+    if (actualType === 'coding') score += model.codingScore * 1.5;
+    if (actualType === 'reasoning') score += model.reasoningScore * 1.5;
+    if (actualType === 'creative') score += model.creativityScore * 1.5;
+    if (actualType === 'search') score += (model.avgLatency < 400 ? 50 : 0); // Fast models for search
+    if (actualType === 'general') score += (model.avgLatency < 600 ? 30 : 0) + model.creativityScore;
 
-    if (task.estimatedTokens > model.contextWindow * 0.8) score -= 100;
-    else if (task.estimatedTokens < model.contextWindow * 0.3) score += 10;
+    if (task.estimatedTokens > model.contextWindow * 0.8) score -= 200;
+    else if (task.estimatedTokens < model.contextWindow * 0.3) score += 20;
 
     if (task.maxCost && model.costPer1kTokens * task.estimatedTokens > task.maxCost) score -= 1000;
     if (task.maxLatency && model.avgLatency > task.maxLatency) score -= 500;

@@ -42,7 +42,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     const base = (window as any).__NYX_BACKEND_URL__ || window.location.origin;
     const socket = io(`${base}${namespace ? `/${namespace}` : ''}`, {
       path: '/ws/socket.io',
-      auth: { token },
+      auth: (cb) => {
+        cb({ token: getToken() });
+      },
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 5,

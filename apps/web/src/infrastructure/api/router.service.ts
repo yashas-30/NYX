@@ -1,6 +1,35 @@
 import { AISettings, InferenceOptions, InferenceResult, callAI } from './inferenceClient';
 import { CostTrackerService } from './costTracker.service';
 
+// Fix 7: Inline provider health tracker (EWMA latency + failure counting)
+// Mirrors SmartRouter.updateProviderHealth() but lives in the browser bundle.
+interface ProviderHealth {
+  status: 'up' | 'down';
+  lastChecked: number;
+  avgLatency: number;
+  failures: number;
+}
+
+const providerHealth = new Map<string, ProviderHealth>();
+
+function recordProviderResult(provider: string, latencyMs: number, failed: boolean): void {
+  const existing = providerHealth.get(provider);
+  const avgLatency = existing
+    ? existing.avgLatency * 0.7 + latencyMs * 0.3   // EWMA: α=0.3
+    : latencyMs;
+  const failures = failed ? (existing?.failures ?? 0) + 1 : 0;
+  providerHealth.set(provider, {
+    status: failures >= 3 ? 'down' : 'up',
+    lastChecked: Date.now(),
+    avgLatency,
+    failures,
+  });
+}
+
+export function getProviderHealth(provider: string): ProviderHealth | undefined {
+  return providerHealth.get(provider);
+}
+
 export interface RouteConfig {
   provider: string;
   modelId: string;
@@ -86,6 +115,7 @@ export class AutoRouterService {
 
       try {
         console.log(`[AutoRouter] Attempting route: ${route.provider} - ${route.modelId}`);
+        const requestStart = Date.now();
         const result = await callAI(
           route.modelId,
           route.provider,
@@ -99,6 +129,9 @@ export class AutoRouterService {
           undefined,
           options
         );
+        // Fix 7: Record actual latency in the EWMA provider health tracker
+        const latency = Date.now() - requestStart;
+        recordProviderResult(route.provider, latency, false);
 
         // Record usage
         await CostTrackerService.recordUsage(
@@ -111,6 +144,8 @@ export class AutoRouterService {
         return result;
       } catch (err: any) {
         lastError = err;
+        // Fix 7: Record failure in the EWMA provider health tracker
+        recordProviderResult(route.provider, 30_000, true);
         console.warn(`[AutoRouter] Route ${route.provider} failed, failing over...`, err);
         // Break early if user aborted
         if (signal?.aborted) throw err;

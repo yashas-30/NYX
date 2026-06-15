@@ -42,17 +42,15 @@ export default async function healthRoutes(fastify: FastifyInstance) {
 
   /** Returns real-time availability of each background service. */
   fastify.get('/health/services', async (request, reply) => {
-    const ANTIGRAVITY_PORT = env.ANTIGRAVITY_PORT || 3003;
     const SCRAPLING_PORT = env.SCRAPLING_PORT || 3002;
 
-    const [antigravity, scrapling, ollama] = await Promise.all([
-      pingLocalService(`http://127.0.0.1:${ANTIGRAVITY_PORT}/health`),
+    const [scrapling, ollama] = await Promise.all([
       pingLocalService(`http://127.0.0.1:${SCRAPLING_PORT}/health`),
       pingLocalService('http://127.0.0.1:11434/api/tags'),
     ]);
 
     return {
-      antigravity,
+      antigravity: true, // Ported to native Node Addon
       scrapling,
       ollama,
       timestamp: Date.now(),

@@ -26,6 +26,7 @@ export interface NyxState {
   executionMode: ExecutionMode;
   workspacePath: string;
   localModelsEnabled: boolean;
+  agentLoopEnabled: boolean;
   modelSettings: ModelSettings;
   models: Record<'nyx', string>;
   apiKeys: Record<string, string>;
@@ -39,6 +40,7 @@ export interface NyxState {
   setExecutionMode: (mode: ExecutionMode) => void;
   setWorkspacePath: (path: string) => void;
   setLocalModelsEnabled: (enabled: boolean) => void;
+  setAgentLoopEnabled: (enabled: boolean) => void;
   updateModelSettings: (settings: Partial<ModelSettings>) => void;
   setModel: (mid: string) => void;
   setApiKeys: (keys: Record<string, string>) => void;
@@ -95,6 +97,7 @@ export const useNyxStore = create<NyxState>()(
       executionMode: 'standard',
       workspacePath: '',
       localModelsEnabled: false,
+      agentLoopEnabled: false,
       modelSettings: DEFAULT_SETTINGS,
       models: { nyx: '' },
       apiKeys: {},
@@ -107,6 +110,7 @@ export const useNyxStore = create<NyxState>()(
       setExecutionMode: (mode) => set({ executionMode: mode }),
       setWorkspacePath: (path) => set({ workspacePath: path }),
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
+      setAgentLoopEnabled: (enabled) => set({ agentLoopEnabled: enabled }),
       updateModelSettings: (settings) =>
         set((state) => ({
           modelSettings: { ...state.modelSettings, ...settings },

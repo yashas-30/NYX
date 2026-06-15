@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 import { Gateway } from './gateway.js';
 import logger from './logger.js';
 import { AIEngine } from './aiEngine.js';
-import { SmartRouter } from './router.js';
+import { SmartRouter, smartRouterInstance } from './router.js';
 import { loadKeys } from '../features/vault/vault.service.js';
 import { compressPrompt } from '../features/prompts/compression.js';
 import { workerPool } from './workers/workerPool.js';
@@ -11,12 +11,12 @@ import { NyxTelemetry } from './telemetry.js';
 import { CacheServer } from './cache.js';
 import { ABSTENTION_INSTRUCTION, resolveRealGeminiModel } from './modelUtils.js';
 
+
 export interface ModelSettings {
   temperature?: number;
   maxTokens?: number;
   topP?: number;
   topK?: number;
-  antigravity?: boolean;
   /** Adaptive thinking token budget (M1). Range: 256–24576. Resolved by thinkingBudget.ts. */
   thinkingBudget?: number;
   /** Gemini structured output: forces response to valid JSON. Incompatible with thinking tokens. */
@@ -34,7 +34,6 @@ export interface StreamChunk {
   token?: string;
   error?: string;
   type?: string;
-  antigravity_id?: string;
 }
 
 export interface UnifiedEngineExecuteParams {
@@ -81,13 +80,25 @@ function estimateTokens(text: string): number {
 function sliceHistoryByTokens(messages: ChatMessage[], maxTokens: number): ChatMessage[] {
   let total = 0;
   const result: ChatMessage[] = [];
+  let systemMessage: ChatMessage | null = null;
+
+  // Preserve the first message if it's a system prompt
+  if (messages.length > 0 && messages[0].role === 'system') {
+    systemMessage = messages[0];
+    total += estimateTokens(systemMessage.content || '');
+  }
   
-  // Iterate backwards from most recent
-  for (let i = messages.length - 1; i >= 0; i--) {
+  // Iterate backwards from most recent, stopping before the system message
+  const stopIdx = systemMessage ? 1 : 0;
+  for (let i = messages.length - 1; i >= stopIdx; i--) {
     const msgTokens = estimateTokens(messages[i].content || '');
     if (total + msgTokens > maxTokens) break;
     total += msgTokens;
     result.unshift(messages[i]);
+  }
+  
+  if (systemMessage) {
+    result.unshift(systemMessage);
   }
   
   return result;
@@ -108,7 +119,7 @@ function injectAbstentionInstruction(messages: ChatMessage[]): ChatMessage[] {
   return [{ role: 'system', content: ABSTENTION_INSTRUCTION }, ...messages];
 }
 
-const smartRouter = new SmartRouter();
+const smartRouter = smartRouterInstance;
 
 export class UnifiedEngine {
   static async executeStream(
@@ -131,29 +142,38 @@ export class UnifiedEngine {
     activeConnections[provider]++;
 
     try {
-      // 1. Resolve Provider via Router if necessary
+      // ── 1. Keys & Router fast-path ────────────────────────────────────────
+      // Load keys from the in-memory 30s TTL cache (no disk I/O on warm path)
       const apiKeys = await loadKeys();
 
       if (apiKey) {
         apiKeys[provider] = apiKey;
       }
 
+      // Only invoke the full router scoring when the primary provider
+      // has no key or is currently marked down. Otherwise return immediately.
       if (provider !== 'ollama' && provider !== 'lmstudio') {
-        try {
-          const prompt = messages[messages.length - 1]?.content || '';
-          const decision = await smartRouter.route(prompt, {
-            primary: { provider: provider as any, id: model, name: model, description: '', status: 'ga' },
-            fallbacks: [
-              { provider: 'gemini', id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', description: '', status: 'ga' },
-              { provider: 'gemini', id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', description: '', status: 'ga' }
-            ]
-          }, apiKeys);
+        const hasPrimaryKey = !!(apiKeys[provider] || apiKey)
+          || (provider as string) === 'pollinations';
+        const isPrimaryDown = smartRouter.isDown(provider as Provider);
 
-          provider = decision.provider;
-          model = decision.modelId;
-          apiKey = decision.apiKey;
-        } catch (err: any) {
-          logger.warn('[SmartRouter] Routing failed, falling back to original request:', err.message);
+        if (!hasPrimaryKey || isPrimaryDown) {
+          try {
+            const prompt = messages[messages.length - 1]?.content || '';
+            const decision = await smartRouter.route(prompt, {
+              primary: { provider: provider as any, id: model, name: model, description: '', status: 'ga' },
+              fallbacks: [
+                { provider: 'gemini', id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', description: '', status: 'ga' },
+                { provider: 'gemini', id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', description: '', status: 'ga' }
+              ]
+            }, apiKeys);
+
+            provider = decision.provider;
+            model = decision.modelId;
+            apiKey = decision.apiKey;
+          } catch (err: any) {
+            logger.warn('[SmartRouter] Routing failed, falling back to original request:', err.message);
+          }
         }
       }
 
@@ -170,7 +190,7 @@ export class UnifiedEngine {
         }
       }
 
-      // 2. Auth validation
+      // ── 2. Auth validation ───────────────────────────────────────────────
       const authResult = Gateway.validateAuth(provider as Provider, model, apiKey);
       if (!authResult.valid) {
         throw new Error(authResult.error);
@@ -179,93 +199,10 @@ export class UnifiedEngine {
       const activeKey = apiKey || Gateway.getActiveKey(provider as Provider, apiKey);
       logger.info({ provider, apiKeyLength: apiKey?.length, activeKeyLength: activeKey?.length, activeKeyPrefix: activeKey ? activeKey.substring(0, 10) : 'none' }, '[UnifiedEngine] Resolved activeKey');
 
-      // Token-based history slicing (Phase 5.1)
-      const MAX_HISTORY_TOKENS = 80_000;
-      let processedMessages = sliceHistoryByTokens(messages, MAX_HISTORY_TOKENS);
-
-      // Prompt pre-processing middleware using Antigravity service (Enabled globally as primary backend handler)
-      if (settings?.antigravity !== false && env.ENABLE_ANTIGRAVITY_PREPROCESSING) {
-        const userMessages = processedMessages.filter((m) => m.role === 'user');
-        if (userMessages.length > 0) {
-          const lastUserMessage = userMessages[userMessages.length - 1];
-          const originalPrompt = lastUserMessage.content;
-
-          try {
-            const port = env.ANTIGRAVITY_PORT || 3003;
-            const activeGeminiKey = Gateway.getActiveKey(
-              'gemini',
-              provider === 'gemini' ? apiKey : undefined
-            );
-
-            let domain = 'general';
-            if (
-              originalPrompt.includes('```') ||
-              originalPrompt.includes('function') ||
-              originalPrompt.includes('class')
-            ) {
-              domain = 'coding';
-            } else if (
-              originalPrompt.toLowerCase().includes('story') ||
-              originalPrompt.toLowerCase().includes('creative')
-            ) {
-              domain = 'creative';
-            }
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
-            const preprocessRes = await fetch(`http://127.0.0.1:${port}/preprocess`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                prompt: originalPrompt,
-                apiKey: activeGeminiKey,
-                domain,
-                model: model // Pass user-selected model
-              }),
-              signal: controller.signal,
-            });
-            clearTimeout(timeoutId);
-
-            if (preprocessRes.ok) {
-              const data: any = await preprocessRes.json();
-              if (data && typeof data.prompt === 'string') {
-                const lastUserIdx = processedMessages.map((m) => m.role).lastIndexOf('user');
-                if (lastUserIdx >= 0) {
-                  processedMessages = [...processedMessages];
-                  processedMessages[lastUserIdx] = {
-                    ...processedMessages[lastUserIdx],
-                    content: data.prompt,
-                  };
-
-                  try {
-                    const { db } = await import('../db/client.js');
-                    const { promptOptimizations } = await import('../db/schema.js');
-                    const { randomUUID } = await import('crypto');
-
-                    const optimizationId = randomUUID();
-                    await db.insert(promptOptimizations).values({
-                      id: optimizationId,
-                      originalPrompt,
-                      optimizedPrompt: data.prompt,
-                      domain: data.domain || domain,
-                      version: data.version || 'unknown',
-                      timestamp: Date.now(),
-                    });
-
-                    // Send as dedicated SSE event (Phase 2.3)
-                    onChunk({ type: 'meta', antigravity_id: optimizationId });
-                  } catch (dbErr: any) {
-                    logger.error({ err: dbErr }, '[Antigravity Middleware] Failed to log optimization:');
-                  }
-                }
-              }
-            }
-          } catch (err: any) {
-            logger.warn({ err }, '[Antigravity Middleware] Prompt preprocessing failed (non-fatal):');
-          }
-        }
-      }
+      // ── 3. Context — caller owns truncation; we just process what we receive ──────
+      // NOTE: ChatService already runs ContextOptimizer.compressHistory().
+      // Do NOT call sliceHistoryByTokens here — that would be double-processing.
+      let processedMessages = [...messages];
 
       // Apply Abstention Training
       processedMessages = injectAbstentionInstruction(processedMessages);
@@ -338,7 +275,7 @@ export class UnifiedEngine {
           let cacheName: string | undefined;
           let finalMessagesToStream = processedMessages;
 
-          if (currentProv.provider === 'gemini' && !isToolRequest) {
+          if (currentProv.provider === 'gemini') {
             const historyPrefix = processedMessages.slice(0, -1);
             
             let prefixTokens = 0;
@@ -362,7 +299,7 @@ export class UnifiedEngine {
                   messagesForCachingLookup = historyPrefix.filter((_, idx) => idx !== systemIdx);
                 }
 
-                const matchingCache = GeminiCacheManager.findMatchingCache(messagesForCachingLookup, currentProv.model);
+                const matchingCache = GeminiCacheManager.findMatchingCache(messagesForCachingLookup, currentProv.model, tools);
                 
                 if (matchingCache) {
                   cacheName = matchingCache.cacheName;
@@ -374,7 +311,8 @@ export class UnifiedEngine {
                     messagesForCachingLookup,
                     systemInstruction,
                     currentProv.model,
-                    provKey
+                    provKey,
+                    tools
                   );
                   cacheName = cacheResult.cacheName;
                   finalMessagesToStream = [processedMessages[processedMessages.length - 1]];
@@ -384,6 +322,8 @@ export class UnifiedEngine {
               }
             }
           }
+
+          let ttftMs: number | undefined;
 
           await AIEngine.stream(
             {
@@ -398,6 +338,11 @@ export class UnifiedEngine {
               cachedContent: cacheName,
             },
             (chunkEvent: any) => {
+              // Record TTFT on the very first real text chunk
+              if (ttftMs === undefined && (chunkEvent.chunk || typeof chunkEvent === 'string')) {
+                ttftMs = Date.now() - startTime;
+                NyxTelemetry.recordTTFT(currentProv.provider, currentProv.model, ttftMs);
+              }
               if (chunkEvent.chunk && chunkEvent.type !== 'thinking') {
                 accumulatedText += chunkEvent.chunk;
               }
@@ -412,8 +357,8 @@ export class UnifiedEngine {
             const durationMs = Date.now() - startTime;
             const tokenCount = estimateTokens(accumulatedText);
 
-            // Record telemetry stats (Phase 4.1)
-            NyxTelemetry.recordRequest(currentProv.provider, currentProv.model, durationMs, tokenCount);
+            // Record telemetry stats with TTFT (Phase 4.1)
+            NyxTelemetry.recordRequest(currentProv.provider, currentProv.model, durationMs, tokenCount, ttftMs);
 
             // Cache if eligible (Phase 5.5)
             if (!isToolRequest && tokenCount < 500 && accumulatedText.trim()) {

@@ -329,6 +329,11 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
           type: 'string',
           description: 'The web search query.',
         },
+        queries: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional fallback array of search queries.',
+        },
         numResults: {
           type: 'integer',
           description: 'Number of results to fetch.',
@@ -677,11 +682,13 @@ export class ToolExecutor {
       }
 
       case 'web_search': {
+        const q = params.query || (params.queries && params.queries.length > 0 ? params.queries[0] : '');
+        if (!q) throw new Error('Missing query parameter');
         const res = await fetchWithAuth('/api/v1/nyx/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            query: params.query,
+            query: q,
             numResults: params.numResults ?? 5,
           }),
           signal,

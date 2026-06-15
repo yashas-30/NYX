@@ -19,8 +19,12 @@ export const NYX_TOOLS = [
           enum: ['day', 'week', 'month', 'year'],
           description: 'How recent results should be',
         },
+        queries: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'Optional: array of search queries',
+        },
       },
-      required: ['query'],
     },
   },
 

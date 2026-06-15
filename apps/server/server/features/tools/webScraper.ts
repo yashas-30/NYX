@@ -1,15 +1,23 @@
-import { execSync } from 'child_process';
-// The 'crawl4ai' npm package is typically a wrapper or CLI tool for scraping.
-import crawl4ai from 'crawl4ai';
+import logger from '../../lib/logger.js';
 
 export async function scrapeUrl(url: string) {
   try {
-    // Utilize crawl4ai for extraction
-    const crawler = crawl4ai as any;
-    const result = await crawler.crawl(url);
-    return result;
-  } catch (error) {
-    console.error('Failed to crawl', url, error);
-    return null;
+    logger.info(`[WebScraper] Extracting content via crawl4ai for: ${url}`);
+    const response = await fetch('http://localhost:1122/crawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (response.ok) {
+      const data: any = await response.json();
+      return data.markdown || data.content || 'No content found at URL.';
+    } else {
+      throw new Error(`Crawl4AI returned ${response.status}`);
+    }
+  } catch (error: any) {
+    logger.error({ err: error.message, url }, '[WebScraper] Failed to crawl URL');
+    return `Error: Failed to crawl URL. ${error.message}`;
   }
 }

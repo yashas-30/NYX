@@ -8,11 +8,9 @@ import { getKeysSync } from '../features/vault/vault.service.js';
 import logger from './logger.js';
 import { Provider, ChatMessage, AISettings } from '@nyx/shared';
 import { env } from '../config/env.js';
-import { Worker } from 'worker_threads';
-import { fileURLToPath } from 'url';
-import path from 'path';
-import fs from 'fs';
+import WebSocket from 'ws';
 export type { Provider, ChatMessage, AISettings };
+
 
 export const VALID_GEMINI_MODELS = [
   // GA
@@ -115,7 +113,7 @@ const PROVIDER_URLS: Record<Provider, string> = {
 
 export class Gateway {
   private static SYSTEM_KEYS: Record<string, string> = {
-    gemini: env.GEMINI_API_KEY || env.LLM_API_KEY || env.ANTIGRAVITY_API_KEY || '',
+    gemini: env.GEMINI_API_KEY || env.LLM_API_KEY || '',
   };
 
   /**
@@ -244,10 +242,101 @@ export class Gateway {
   }
 
   /**
-   * Processes SSE stream response with robust chunk boundary and multiline parsing.
-   * Handles data: [DONE] markers and error payloads.
-   * @param response - The fetch Response object with streaming body
-   * @param callbacks - Stream callbacks for chunk, done, and error events
+   * Inline async generator that parses an SSE stream without spawning a Worker thread.
+   * Handles multi-line data blocks, [DONE] sentinel, Gemini candidates/thinking,
+   * OpenAI delta.content, usageMetadata, and error payloads.
+   */
+  static async *readSSEStream(response: Response): AsyncGenerator<any, void, unknown> {
+    if (!response.body) return;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let eventDataLines: string[] = [];
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let start = 0;
+        while (start < buffer.length) {
+          const end = buffer.indexOf('\n', start);
+          if (end === -1) break;
+
+          const line = buffer.substring(start, end).replace(/\r$/, '');
+          start = end + 1;
+
+          if (line === '') {
+            // Empty line = end of SSE event block
+            if (eventDataLines.length > 0) {
+              const fullData = eventDataLines.join('\n');
+              eventDataLines = [];
+
+              if (fullData === '[DONE]' || fullData === '[done]') return;
+
+              try {
+                const data = JSON.parse(fullData);
+
+                if (data.error) {
+                  const msg = typeof data.error === 'object'
+                    ? data.error.message || JSON.stringify(data.error)
+                    : data.error;
+                  yield { error: msg };
+                  return;
+                }
+
+                // OpenAI-compatible delta
+                let textChunk: string | undefined;
+                textChunk = data.choices?.[0]?.delta?.content
+                  ?? data.choices?.[0]?.delta?.message?.content
+                  ?? data.choices?.[0]?.message?.content;
+                if (typeof textChunk === 'string') { yield textChunk; }
+
+                // Gemini candidates / thinking parts
+                const parts = data.candidates?.[0]?.content?.parts;
+                if (Array.isArray(parts)) {
+                  for (const part of parts) {
+                    if (part.thought === true || part.thought === 'true') {
+                      if (part.text) yield { thinking: part.text };
+                    } else if (part.functionCall) {
+                      yield { functionCall: part.functionCall };
+                    } else if (part.text) {
+                      yield part.text;
+                    }
+                  }
+                }
+
+                // Usage metadata
+                if (data.usageMetadata || data.usage) {
+                  yield { type: 'metrics', metadata: data.usageMetadata || data.usage };
+                }
+
+                // Finish reasons
+                const finishReason = data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason;
+                if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'STOP') return;
+
+              } catch { /* skip malformed JSON */ }
+            }
+          } else if (line.startsWith('data:')) {
+            eventDataLines.push(line.substring(5).replace(/^ /, ''));
+          } else if (line.startsWith('error:')) {
+            yield { error: line.substring(6).trimStart() };
+            return;
+          }
+        }
+
+        buffer = buffer.substring(start);
+      }
+    } finally {
+      reader.cancel().catch(() => {});
+    }
+  }
+
+  /**
+   * Callback-based SSE processor — drives the readSSEStream generator.
+   * Kept for backward compatibility with Ollama/LMStudio callers.
    */
   static async processSSEStream(response: Response, callbacks: StreamCallbacks): Promise<void> {
     if (!response.body) {
@@ -255,95 +344,30 @@ export class Gateway {
       return;
     }
 
-    const reader = response.body.getReader();
-    
-    const currentFilename = fileURLToPath(import.meta.url);
-    const currentDirname = path.dirname(currentFilename);
-    const isTs = currentFilename.endsWith('.ts');
-    const ext = isTs ? '.ts' : '.js';
-    
-    let workerPath = path.join(currentDirname, 'workers', `sse.worker${ext}`);
-    if (!fs.existsSync(workerPath)) {
-      const altExt = ext === '.ts' ? '.js' : '.ts';
-      const altPath = path.join(currentDirname, 'workers', `sse.worker${altExt}`);
-      if (fs.existsSync(altPath)) {
-        workerPath = altPath;
+    try {
+      for await (const item of Gateway.readSSEStream(response)) {
+        if (callbacks.isPaused?.()) {
+          await callbacks.waitForResume?.();
+        }
+
+        if (typeof item === 'string') {
+          callbacks.onChunk(item);
+        } else if (item?.error) {
+          callbacks.onError(item.error);
+          return;
+        } else {
+          callbacks.onChunk(item);
+        }
+      }
+      callbacks.onDone();
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        callbacks.onDone();
+      } else {
+        logger.error({ err: error }, '[Gateway.processSSEStream] Stream error');
+        callbacks.onError(error.message || 'Stream processing failed');
       }
     }
-
-    let worker: Worker;
-    if (workerPath.endsWith('.ts')) {
-      worker = new Worker(workerPath, { execArgv: ['--import', 'tsx'] });
-    } else {
-      worker = new Worker(workerPath);
-    }
-
-    let isDone = false;
-
-    return new Promise<void>((resolve) => {
-      const cleanup = () => {
-        if (!isDone) {
-          isDone = true;
-          worker.terminate();
-          reader.cancel().catch(() => {});
-          resolve();
-        }
-      };
-
-      worker.on('message', (msg) => {
-        if (msg.type === 'chunk') {
-          callbacks.onChunk(msg.data);
-        } else if (msg.type === 'done') {
-          if (!isDone) {
-            callbacks.onDone();
-            cleanup();
-          }
-        } else if (msg.type === 'error') {
-          if (!isDone) {
-            callbacks.onError(msg.message);
-            cleanup();
-          }
-        }
-      });
-
-      worker.on('error', (err) => {
-        if (!isDone) {
-          logger.error({ err }, '[Gateway.processSSEStream] Worker error');
-          callbacks.onError(err.message || 'Worker thread failed');
-          cleanup();
-        }
-      });
-
-      (async () => {
-        try {
-          while (!isDone) {
-            if (callbacks.isPaused?.()) {
-              await callbacks.waitForResume?.();
-            }
-
-            const { done, value } = await reader.read();
-            if (isDone) break;
-
-            if (done) {
-              worker.postMessage({ type: 'end' });
-              break;
-            }
-
-            worker.postMessage({ type: 'chunk', value });
-          }
-        } catch (error: any) {
-          if (!isDone) {
-            if (error.name === 'AbortError') {
-              callbacks.onDone();
-            } else {
-              logger.error({ err: error }, '[Gateway.processSSEStream] Stream error');
-              callbacks.onError(error.message || 'Stream processing failed');
-            }
-            cleanup();
-          }
-        }
-      })();
-    });
   }
 
   static formatMessages(messages: ChatMessage[], provider: Provider): any {
@@ -399,5 +423,82 @@ export class Gateway {
       }
       return { role: m.role, content: m.content };
     });
+  }
+
+  /**
+   * Connects to a provider's WebSocket API for bidirectional streaming
+   * (e.g., Gemini Multimodal Live API or OpenAI Realtime API).
+   */
+  static connectWebSocket(
+    provider: Provider,
+    model: string,
+    apiKey: string,
+    callbacks: {
+      onOpen?: () => void;
+      onMessage: (data: any) => void;
+      onError: (error: string) => void;
+      onClose?: () => void;
+    }
+  ): WebSocket | null {
+    const activeKey = this.getActiveKey(provider, apiKey);
+    if (!activeKey) {
+      callbacks.onError(`No API key for ${provider}`);
+      return null;
+    }
+
+    let urlStr = '';
+
+    if (provider === 'gemini') {
+      const version = GEMINI_API_VERSION(model);
+      const host = 'generativelanguage.googleapis.com';
+      // The BidiGenerateContent endpoint format for Gemini
+      urlStr = `wss://${host}/ws/google.ai.generativelanguage.${version}.GenerativeService.BidiGenerateContent?key=${activeKey}`;
+    } else if (provider === 'openai') {
+      urlStr = `wss://api.openai.com/v1/realtime?model=${model}`;
+    } else {
+      callbacks.onError(`WebSocket streaming not supported for ${provider}`);
+      return null;
+    }
+
+    try {
+      const options = provider === 'openai' ? {
+        headers: {
+          'Authorization': `Bearer ${activeKey}`,
+          'OpenAI-Beta': 'realtime=v1'
+        }
+      } : undefined;
+
+      const ws = new WebSocket(urlStr, options);
+
+      ws.on('open', () => {
+        logger.info(`[Gateway] WebSocket connected to ${provider}`);
+        callbacks.onOpen?.();
+      });
+
+      ws.on('message', (data: Buffer | string) => {
+        try {
+          const parsed = JSON.parse(data.toString());
+          callbacks.onMessage(parsed);
+        } catch (e) {
+          // Pass raw string if not JSON
+          callbacks.onMessage(data.toString());
+        }
+      });
+
+      ws.on('error', (err: Error) => {
+        logger.error({ err }, `[Gateway] WebSocket error on ${provider}`);
+        callbacks.onError(err.message);
+      });
+
+      ws.on('close', () => {
+        logger.info(`[Gateway] WebSocket closed on ${provider}`);
+        callbacks.onClose?.();
+      });
+
+      return ws;
+    } catch (err: any) {
+      callbacks.onError(`Failed to open WebSocket: ${err.message}`);
+      return null;
+    }
   }
 }
