@@ -283,12 +283,23 @@ export async function writeFile(
 ): Promise<FileWriteResult> {
   validateFilePath(filePath);
 
-  const res = await apiFetch('/api/v1/nyx/write-file', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filePath, content, overwrite }),
-  });
-  return res.json();
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const result = await invoke<FileWriteResult>('fs_write_file', { 
+      path: filePath, 
+      content, 
+      overwrite: !!overwrite 
+    });
+    return result;
+  } catch {
+    // Fallback to HTTP API
+    const res = await apiFetch('/api/v1/nyx/write-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath, content, overwrite }),
+    });
+    return res.json();
+  }
 }
 
 /**
@@ -338,14 +349,21 @@ export async function writeFiles(
 export async function readFile(filePath: string, signal?: AbortSignal): Promise<string> {
   validateFilePath(filePath);
 
-  const res = await apiFetch('/api/v1/nyx/read-file', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filePath }),
-    signal,
-  });
-  const data = await res.json();
-  return data.content;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const content = await invoke<string>('fs_read_file', { path: filePath });
+    return content;
+  } catch {
+    // Fallback to HTTP API
+    const res = await apiFetch('/api/v1/nyx/read-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath }),
+      signal,
+    });
+    const data = await res.json();
+    return data.content;
+  }
 }
 
 /**
@@ -357,14 +375,21 @@ export async function listDirectory(
 ): Promise<Array<{ name: string; type: 'file' | 'directory'; size?: number }>> {
   validateFilePath(dirPath);
 
-  const res = await apiFetch('/api/v1/nyx/list-dir', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dirPath }),
-    signal,
-  });
-  const data = await res.json();
-  return data.files || [];
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const files = await invoke<Array<{ name: string; type: 'file' | 'directory'; size?: number }>>('fs_list_dir', { dirPath });
+    return files;
+  } catch {
+    // Fallback to HTTP API
+    const res = await apiFetch('/api/v1/nyx/list-dir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dirPath }),
+      signal,
+    });
+    const data = await res.json();
+    return data.files || [];
+  }
 }
 
 /**
@@ -378,27 +403,37 @@ export async function executeCommand(
   timeout?: number
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   try {
-    const res = await apiFetch('/api/v1/terminal/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command, cwd }),
-      signal,
-      timeout: timeout || 60000,
+    const { invoke } = await import('@tauri-apps/api/core');
+    const result = await invoke<{ stdout: string; stderr: string; exitCode: number }>('execute_command', {
+      command,
+      cwd: cwd || '',
     });
-    const data = await res.json();
-    return { ...data, exitCode: 0 };
-  } catch (error: any) {
-    // Re-throw with appropriate format or extract stderr if present in response
-    let stderr = error.message;
-    if (error.response) {
-      try {
-        const body = await error.response.clone().json();
-        if (body.stderr) stderr = body.stderr;
-      } catch {
-        // ignore
+    return result;
+  } catch {
+    // Fallback to HTTP API
+    try {
+      const res = await apiFetch('/api/v1/terminal/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command, cwd }),
+        signal,
+        timeout: timeout || 60000,
+      });
+      const data = await res.json();
+      return { ...data, exitCode: 0 };
+    } catch (error: any) {
+      // Re-throw with appropriate format or extract stderr if present in response
+      let stderr = error.message;
+      if (error.response) {
+        try {
+          const body = await error.response.clone().json();
+          if (body.stderr) stderr = body.stderr;
+        } catch {
+          // ignore
+        }
       }
+      throw new Error(stderr);
     }
-    throw new Error(stderr);
   }
 }
 

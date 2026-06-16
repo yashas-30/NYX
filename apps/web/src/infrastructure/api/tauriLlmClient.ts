@@ -23,6 +23,7 @@ export interface TauriLlmRequest {
   /** Override the per-provider default max output tokens. */
   max_tokens?: number;
   endpoint_override?: string;
+  tools?: any[];
 }
 
 export async function tauriLlmStream(
@@ -34,88 +35,116 @@ export async function tauriLlmStream(
   // Resolve max_tokens: caller > provider default
   const max_tokens = req.max_tokens ?? PROVIDER_MAX_TOKENS[req.provider] ?? 8_192;
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      let unlisten: UnlistenFn | undefined;
+  let accumulatedText = '';
+  let accumulatedReasoning = '';
+  let finishReason: any = null;
+  const toolCalls: any[] = [];
+  const metrics: any = { latencyMs: 0 };
+  const startTime = Date.now();
 
-      // Timeout support — abort stream if no response within timeoutMs
-      const timeoutId = options.timeoutMs
-        ? setTimeout(() => {
-            controller.error(new Error(`Stream timeout after ${options.timeoutMs}ms`));
-            unlisten?.();
-          }, options.timeoutMs)
-        : null;
+  return new Promise<ParseResult>(async (resolve, reject) => {
+    let unlisten: UnlistenFn | undefined;
 
-      // AbortSignal support
-      const onAbort = () => {
-        clearTimeout(timeoutId ?? undefined);
-        controller.close();
-        unlisten?.();
-      };
-      options.signal?.addEventListener('abort', onAbort, { once: true });
+    // Timeout support — abort stream if no response within timeoutMs
+    const timeoutId = options.timeoutMs
+      ? setTimeout(() => {
+          unlisten?.();
+          reject(new Error(`Stream timeout after ${options.timeoutMs}ms`));
+        }, options.timeoutMs)
+      : null;
 
-      try {
-        unlisten = await listen<{ chunk: string; done?: boolean; error?: string }>(
-          eventName,
-          (event) => {
-            const payload = event.payload;
+    // AbortSignal support
+    const onAbort = () => {
+      clearTimeout(timeoutId ?? undefined);
+      unlisten?.();
+      resolve({
+        text: accumulatedText,
+        reasoning: accumulatedReasoning,
+        toolCalls,
+        metrics: { ...metrics, latencyMs: Date.now() - startTime },
+        finishReason: 'stop',
+      });
+    };
+    options.signal?.addEventListener('abort', onAbort, { once: true });
 
-            if (payload.error) {
-              clearTimeout(timeoutId ?? undefined);
-              controller.error(new Error(payload.error));
-              unlisten?.();
-              return;
-            }
+    try {
+      unlisten = await listen<any>(eventName, (event) => {
+        const payload = event.payload;
 
-            if (payload.done) {
-              clearTimeout(timeoutId ?? undefined);
-              // Signal end of SSE stream
-              controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
-              controller.close();
-              unlisten?.();
-              return;
-            }
+        if (payload.error) {
+          clearTimeout(timeoutId ?? undefined);
+          options.onError?.(payload.error);
+          unlisten?.();
+          reject(new Error(payload.error));
+          return;
+        }
 
-            // Fix 1: The Rust command now emits pre-parsed text deltas,
-            // but we still need to wrap in SSE format for parseSSEStream.
-            // Handle both old raw-SSE and new parsed-delta formats.
-            const chunk = payload.chunk;
-            if (chunk) {
-              // If it looks like an already-parsed delta (no SSE prefix), wrap it
-              if (!chunk.startsWith('data:') && !chunk.startsWith('event:')) {
-                // Emit as a synthetic OpenAI-style SSE chunk so parseSSEStream handles it
-                const synthetic = JSON.stringify({ choices: [{ delta: { content: chunk } }] });
-                controller.enqueue(new TextEncoder().encode(`data: ${synthetic}\n\n`));
-              } else {
-                controller.enqueue(new TextEncoder().encode(chunk));
-              }
-            }
+        if (payload.done || payload.type === 'done') {
+          clearTimeout(timeoutId ?? undefined);
+          finishReason = 'stop';
+          options.onFinish?.(finishReason);
+          unlisten?.();
+          resolve({
+            text: accumulatedText,
+            reasoning: accumulatedReasoning,
+            toolCalls,
+            metrics: { ...metrics, latencyMs: Date.now() - startTime },
+            finishReason,
+          });
+          return;
+        }
+
+        // Handle pre-parsed events from Rust
+        if (payload.type === 'text' && payload.content) {
+          // Handle Anthropic interleaved thinking
+          if (payload.content.startsWith('\x00THINK\x00')) {
+             const thinking = payload.content.replace('\x00THINK\x00', '');
+             accumulatedReasoning += thinking;
+             options.onReasoning?.(thinking, accumulatedReasoning);
+          } else {
+             accumulatedText += payload.content;
+             options.onChunk?.(payload.content, accumulatedText);
           }
-        );
+        } else if (payload.type === 'thinking' && payload.content) {
+          accumulatedReasoning += payload.content;
+          options.onReasoning?.(payload.content, accumulatedReasoning);
+        } else if (payload.type === 'tool_start') {
+          // Rust sends: tool_call: { id: ... }, name: ...
+          const newTool = {
+             index: toolCalls.length,
+             id: payload.tool_call?.id || `call_${Date.now()}`,
+             type: 'function',
+             function: {
+               name: payload.name || 'unknown',
+               arguments: ''
+             }
+          };
+          toolCalls.push(newTool);
+          options.onToolCall?.(newTool as any, toolCalls);
+        } else if (payload.type === 'tool_call' && payload.content) {
+          // Rust sends tool arguments in content
+          if (toolCalls.length > 0) {
+            const current = toolCalls[toolCalls.length - 1];
+            current.function.arguments += payload.content;
+            options.onToolCall?.({ index: current.index, function: { arguments: payload.content } } as any, toolCalls);
+          }
+        }
+      });
 
-        // Trigger the Rust backend command
-        await invoke('llm_stream_request', {
-          req: {
-            ...req,
-            max_tokens,
-            event_name: eventName,
-          },
-        });
-      } catch (err: any) {
-        clearTimeout(timeoutId ?? undefined);
-        controller.error(err);
-        unlisten?.();
-      }
-    },
-    cancel() {
-      // Stream cancelled by consumer — nothing to do, the Rust side
-      // will stop when the process context is dropped
-    },
+      // Trigger the Rust backend command
+      await invoke('llm_stream_request', {
+        req: {
+          ...req,
+          max_tokens,
+          event_name: eventName,
+        },
+      });
+    } catch (err: any) {
+      clearTimeout(timeoutId ?? undefined);
+      options.onError?.(err.message || String(err));
+      unlisten?.();
+      reject(err);
+    }
   });
-
-  const mockResponse = new Response(stream, {
-    headers: { 'Content-Type': 'text/event-stream' },
-  });
-
-  return parseSSEStream(mockResponse, options);
 }
+

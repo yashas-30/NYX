@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { ChatAgent } from './chatAgent';
+import { ChatAgent } from './ChatAgent';
+import { MemoryStore } from './memoryStore';
 import {
   StreamEvent,
   Artifact,
@@ -124,8 +125,9 @@ export function useChatAgent() {
         const controller = new AbortController();
         abortControllerRef.current = controller;
 
-        const stream = agent.streamResponse(
-          prompt,
+        let enrichedPrompt = prompt;
+        const stream = await agent.streamResponse(
+          enrichedPrompt,
           analysis,
           controller.signal,
           undefined,
@@ -217,6 +219,10 @@ export function useChatAgent() {
             };
           }
           messagesRef.current = next;
+          
+          // Trigger implicit background memory extraction
+          MemoryStore.extractImplicitMemory(next).catch(console.error);
+          
           return next;
         });
       } catch (error: any) {

@@ -4,7 +4,6 @@ use xcap::Monitor;
 use base64::{Engine as _, engine::general_purpose};
 use std::io::Cursor;
 use image::ImageFormat;
-use std::thread;
 use std::time::Duration;
 
 #[command]
@@ -16,7 +15,7 @@ pub async fn execute_computer_action(action: String, params: String) -> Result<S
         .unwrap_or(serde_json::Value::Null);
 
     // Default delay to allow UI to settle before taking screenshots or acting
-    thread::sleep(Duration::from_millis(100));
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     match action.as_str() {
         "screenshot" => {
@@ -71,7 +70,7 @@ pub async fn execute_computer_action(action: String, params: String) -> Result<S
         "double_click" => {
             let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
             enigo.button(Button::Left, Direction::Click).map_err(|e| e.to_string())?;
-            thread::sleep(Duration::from_millis(100));
+            tokio::time::sleep(Duration::from_millis(100)).await;
             enigo.button(Button::Left, Direction::Click).map_err(|e| e.to_string())?;
             Ok("Double-clicked".to_string())
         },

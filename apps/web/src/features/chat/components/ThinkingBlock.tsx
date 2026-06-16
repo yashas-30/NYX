@@ -94,7 +94,7 @@ function normalizeAgent(name: string): string {
 
 function parseThinking(raw: string): Segment[] {
   // Fast path for massive strings without our custom agent markers to avoid freezing the UI
-  if (raw.length > 500 && !raw.includes('━━━') && !raw.includes('┌─') && !raw.includes('⚡') && !raw.includes('📋') && !raw.includes('Plan:')) {
+  if (raw.length > 10000 && !raw.includes('━━━') && !raw.includes('┌─') && !raw.includes('⚡') && !raw.includes('📋') && !raw.includes('Plan:') && !raw.includes('Agent turn') && !raw.includes('Executing tool')) {
     return [{ type: 'text', content: raw }];
   }
 
@@ -103,6 +103,47 @@ function parseThinking(raw: string): Segment[] {
   for (const line of lines) {
     const t = line.trim();
     if (!t) continue;
+
+    // Agent turn header: Agent turn 1/15…
+    const turnMatch = t.match(/^Agent\s+turn\s+(\d+)\/(\d+)/i);
+    if (turnMatch) {
+      segments.push({ type: 'section', label: `Agent Turn ${turnMatch[1]}/${turnMatch[2]}`, icon: '🔄' });
+      continue;
+    }
+
+    // Tool call: Executing tool: web_search...
+    const execToolMatch = t.match(/^Executing\s+tool:\s*(\w+)/i);
+    if (execToolMatch) {
+      segments.push({ type: 'tool_call', agent: 'Agent', tool: execToolMatch[1], args: '' });
+      continue;
+    }
+
+    // Tool result: Tool result received.
+    if (t.toLowerCase().includes('tool result received')) {
+      segments.push({ type: 'tool_result', preview: 'Result received successfully.' });
+      continue;
+    }
+
+    // Section header: 🔄 [ReAct Loop] Iteration 1
+    const reactLoopMatch = t.match(/🔄\s+\[ReAct\s+Loop\]\s+Iteration\s+(\d+)/i);
+    if (reactLoopMatch) {
+      segments.push({ type: 'section', label: `ReAct Loop Iteration ${reactLoopMatch[1]}`, icon: '🔄' });
+      continue;
+    }
+
+    // Tool call: 🛠️ [Executing Tool] web_search ({...})
+    const tauriExecToolMatch = t.match(/🛠️\s+\[Executing\s+Tool\]\s+(\w+)\s*\((.*?)\)/i);
+    if (tauriExecToolMatch) {
+      segments.push({ type: 'tool_call', agent: 'Agent', tool: tauriExecToolMatch[1], args: tauriExecToolMatch[2] || '' });
+      continue;
+    }
+
+    // Connection messages
+    if (t.toLowerCase().includes('connecting to backend') || t.toLowerCase().includes('calling ai service')) {
+      segments.push({ type: 'section', label: t, icon: '🌐' });
+      continue;
+    }
+
     // section header: ━━━ [Label] Text ━━━
     const sec = t.match(/^[━]+\s+\[(.+?)\]\s+(.+?)\s+[━]+$/);
     if (sec) {
@@ -298,7 +339,7 @@ const ToolResultRow: React.FC<{ preview: string }> = ({ preview }) => (
 const PlainText: React.FC<{ content: string }> = ({ content }) => {
   if (!content.trim()) return null;
   return (
-    <div className="text-[11px] font-mono leading-relaxed py-0.5 animate-fade-in prose-nyx prose-p:my-1 prose-pre:my-1 max-w-none" style={{ color: 'rgba(255,255,255,0.45)' }}>
+    <div className="text-[13px] font-sans leading-relaxed py-1 animate-fade-in text-muted-foreground border-l-2 border-muted-foreground/20 pl-3 ml-1" style={{ whiteSpace: 'pre-wrap' }}>
       <ReactMarkdown 
         remarkPlugins={[remarkGfm, remarkMath]} 
         rehypePlugins={[rehypeKatex]}
@@ -423,57 +464,51 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplet
       initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
-      className="my-3 overflow-hidden rounded-xl border bg-card/60 backdrop-blur-md"
-      style={{ borderColor: 'var(--border)' }}
+      className="my-2 mb-4 overflow-hidden"
     >
       <motion.button
         onClick={() => setIsExpanded(v => !v)}
-        whileHover={{ backgroundColor: 'rgba(255,255,255,0.025)' }}
+        whileHover={{ opacity: 0.8 }}
         whileTap={{ scale: 0.995 }}
         transition={spring}
-        className="w-full flex items-center justify-between px-4 py-2.5 text-left outline-none cursor-pointer"
+        className="flex items-center gap-2 outline-none cursor-pointer group"
       >
-        <div className="flex items-center gap-2.5">
-          {!isComplete && (
+        <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted/40 group-hover:bg-muted/60 transition-colors">
+          {!isComplete ? (
             <motion.div
-              animate={{ opacity: [1, 0.3, 1] }}
+              animate={{ opacity: [1, 0.3, 1], scale: [1, 0.85, 1] }}
               transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
               className="w-1.5 h-1.5 rounded-full"
               style={{ background: PHASE_CONFIG[currentPhase].color }}
             />
+          ) : (
+            <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={spring}>
+              <CaretDown weight="bold" className="w-3 h-3 text-muted-foreground" />
+            </motion.div>
           )}
-          <div className="flex flex-col">
-            <span className="text-[11px] font-mono font-medium tracking-tight"
-              style={{ color: !isComplete ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.3)' }}>
-              {!isComplete ? `${PHASE_CONFIG[currentPhase].label}…` : 'Reasoning process'}
-            </span>
+        </div>
+        
+        <div className="flex flex-col text-left">
+          <span className="text-[13px] font-sans font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+            {!isComplete ? currentStatusText : 'Thinking Process'}
+          </span>
+        </div>
 
+        {isComplete && content && elapsedMs > 0 && (
+          <div className="flex items-center gap-2 ml-1">
+            <span className="text-[11px] font-sans text-muted-foreground/60">
+              {(elapsedMs / 1000).toFixed(1)}s
+            </span>
           </div>
-        </div>
-        <div className="flex items-center">
-          {isComplete && content && (
-            <div className="flex items-center gap-2 mr-2">
-              {elapsedMs > 0 && (
-                <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)' }}>
-                  Thought for {(elapsedMs / 1000).toFixed(1)}s
-                </span>
-              )}
-              <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.2)' }}>
-                ~{Math.round(content.length / 4).toLocaleString()} tokens
-              </span>
-            </div>
-          )}
-          {!isComplete && elapsedMs > 0 && (
-            <div className="flex items-center gap-2 mr-2">
-              <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)' }}>
-                {(elapsedMs / 1000).toFixed(1)}s
-              </span>
-            </div>
-          )}
-          <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={spring}>
-            <CaretDown weight="bold" className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.2)' }} />
-          </motion.div>
-        </div>
+        )}
+
+        {!isComplete && elapsedMs > 0 && (
+          <div className="flex items-center gap-2 ml-1">
+            <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)' }}>
+              {(elapsedMs / 1000).toFixed(1)}s
+            </span>
+          </div>
+        )}
       </motion.button>
       <AnimatePresence initial={false}>
         {isExpanded && (
@@ -492,7 +527,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplet
                 elapsed={agentProgress.elapsed}
               />
             )}
-            <div ref={scrollRef} onScroll={handleScroll} className="px-4 pb-4 pt-2 space-y-0.5 max-h-[600px] overflow-y-auto overscroll-contain" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            <div ref={scrollRef} onScroll={handleScroll} className="ml-2.5 pl-4 pb-2 pt-2 mt-2 space-y-1 max-h-[600px] overflow-y-auto overscroll-contain border-l border-border/40">
               {segments.map((seg, i) => {
                 switch (seg.type) {
                   case 'section':    return <SectionHeader key={i} icon={seg.icon} label={seg.label} />;

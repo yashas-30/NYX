@@ -29,7 +29,8 @@ export type PromptIntent =
   | 'codebase_query'
   | 'clarification' // "What do you mean by..."
   | 'correction' // "No, I meant..."
-  | 'continuation'; // "Continue" / "Go on"
+  | 'continuation' // "Continue" / "Go on"
+  | 'data_analysis'; // "Analyze this data"
 
 export interface PromptAnalysis {
   intent: PromptIntent;
@@ -333,6 +334,17 @@ const INTENT_EMBEDDINGS: IntentEmbedding[] = [
     keywords: ['who are you', 'what can you do', 'tell me about', 'what is', 'how does', 'explain'],
     antiKeywords: ['code', 'function', 'bug', 'error', 'file', 'component'],
     weight: 1,
+  },
+  {
+    intent: 'data_analysis',
+    vectors: [
+      'user wants to analyze data summarize calculate metrics',
+      'plot graph visualize chart data insights',
+      'csv json database export analysis statistics',
+    ],
+    keywords: ['analyze', 'data', 'metrics', 'plot', 'visualize', 'chart', 'statistics', 'csv'],
+    antiKeywords: ['code', 'bug', 'deploy', 'terminal', 'git'],
+    weight: 7,
   },
 ];
 
@@ -935,6 +947,34 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
     };
   }
 
+  // Data Analysis
+  if (analysis.intent === 'data_analysis') {
+    return {
+      agent: 'chat',
+      reasoning: 'Data analysis and visualization task',
+      shouldUseSubagents: false,
+      systemPrompt: SYSTEM_PROMPTS.analyst,
+      tools: ['web_search'], // Allow fetching current data if needed
+      modelTier: 'powerful', // Complex logic requires powerful model
+      temperature: 0.2, // Low temp for accurate statistics
+      maxTokens: 4096,
+    };
+  }
+
+  // Code Generation & Refactoring (Coding Agent)
+  if (analysis.intent === 'code_generation' || analysis.intent === 'refactor') {
+    return {
+      agent: 'chat', // Wait, earlier I saw it was 'chat' but using SYSTEM_PROMPTS.coder. Let's make it correct.
+      reasoning: 'Code generation/refactoring requires coder persona',
+      shouldUseSubagents: false,
+      systemPrompt: SYSTEM_PROMPTS.coder,
+      tools: ['file_write', 'file_read', 'terminal'],
+      modelTier: 'powerful',
+      temperature: 0.2,
+      maxTokens: 8192,
+    };
+  }
+
   // General chat routing
   if (analysis.intent === 'general_chat' && analysis.complexity === 'trivial') {
     return {
@@ -962,17 +1002,16 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
   const shouldUseSubagents =
     analysis.complexity === 'enterprise' ||
     (analysis.complexity === 'complex' && analysis.requiresExecution) ||
-    analysis.intent === 'architecture_design';
+    analysis.intent === 'architecture_design' ||
+    (analysis.multiIntent && analysis.multiIntent.length > 1);
 
   // Temperature tuning based on intent
   const temperature =
-    analysis.intent === 'code_generation'
-      ? 0.2
-      : analysis.intent === 'code_debug'
-        ? 0.1
-        : analysis.intent === 'architecture_design'
-          ? 0.6
-          : 0.3;
+    analysis.intent === 'code_debug'
+      ? 0.1
+      : analysis.intent === 'architecture_design'
+        ? 0.6
+        : 0.3;
 
   // Max tokens based on complexity
   const maxTokens =
@@ -987,7 +1026,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
   return {
     agent: shouldUseSubagents ? 'architect' : 'chat',
     reasoning: `${analysis.intent} (${analysis.complexity})${analysis.multiIntent ? ` + [${analysis.multiIntent.join(', ')}]` : ''}`,
-    shouldUseSubagents,
+    shouldUseSubagents: !!shouldUseSubagents,
     systemPrompt: SYSTEM_PROMPTS.coder,
     tools,
     modelTier: analysis.suggestedModel,
@@ -1068,6 +1107,17 @@ OUTPUT:
    - Deployment considerations
 
 Output your analysis as structured markdown, then implement exactly to the plan.`,
+
+  analyst: `You are NYX, a Data Analysis and Visualization Expert.
+
+YOUR GOAL: Provide clear, accurate, and actionable insights from data.
+
+PROTOCOLS:
+1. When asked to analyze data, always outline your methodology first.
+2. If writing code for analysis (e.g., Python Pandas, Matplotlib), ensure it is robust, handles missing values, and is well-commented.
+3. For visualizations, recommend the most appropriate chart type and justify your choice.
+4. When summarizing metrics, highlight statistical significance and potential anomalies.
+5. Do NOT hallucinate data. If information is missing, explicitly state what is needed.`,
 };
 
 // ---------------------------------------------------------------------------
@@ -1094,6 +1144,7 @@ Categories:
 - clarification: asking about previous response
 - correction: correcting previous misunderstanding
 - continuation: asking to continue previous response
+- data_analysis: analyze data, metrics, plot, visualize
 
 Respond ONLY with a JSON object:
 {"intent": "category_name", "confidence": 0.0-1.0, "reasoning": "brief explanation"}`;

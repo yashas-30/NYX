@@ -43,12 +43,29 @@ export class ContextManager {
 
       // If adding this message exceeds max tokens, we stop adding older ones
       if (currentTokens + msgTokens > maxTokens) {
-        // Optionally insert a system message indicating context truncation
+        // Here we summarize or persist the dropped context to memory.
+        const droppedMessages = history.slice(0, i + 1);
+        
+        // Extract key information to compress
+        const summary = droppedMessages
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => `[${m.role.toUpperCase()}]: ${m.content?.substring(0, 100)}...`)
+          .join('\\n');
+
+        // Persist to cognitive memory asynchronously without blocking
+        import('@src/infrastructure/services/workspaceIntelligence').then(({ WorkspaceIntelligence }) => {
+          WorkspaceIntelligence.addMemory(
+            `Summarized conversation history: ${summary}`,
+            'user',
+            ['conversation', 'summary', 'context-drop']
+          );
+        }).catch(err => console.warn('Failed to persist memory:', err));
+
         optimizedHistory.unshift({
           id: 'sys-truncation',
           role: 'system',
           content:
-            '[System: Earlier conversation context has been truncated to optimize token limits]',
+            `[System: Earlier conversation context has been truncated to optimize token limits. Summary of dropped context:\\n${summary}]`,
           timestamp: Date.now(),
         });
         break;

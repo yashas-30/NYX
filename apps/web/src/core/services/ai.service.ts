@@ -641,6 +641,7 @@ export class AIService {
       streamEvents,
       provider,
       apiKey,
+      tools,
     } = config;
 
     const messages = this.buildMessages(prompt, systemInstruction, history);
@@ -669,6 +670,7 @@ export class AIService {
           system_instruction: systemInstruction,
           api_key: resolvedApiKey,
           temperature: settings?.temperature ?? 0.7,
+          tools,
         }, {
           signal,
           timeoutMs: 120000,
@@ -805,14 +807,36 @@ export class AIService {
     prompt: string,
     systemInstruction?: string,
     history?: ChatMessage[]
-  ): Array<{ role: string; content: string }> {
-    const messages: Array<{ role: string; content: string }> = [];
+  ): Array<{ role: string; content: string | any[] }> {
+    const messages: Array<{ role: string; content: string | any[] }> = [];
     if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
     if (history?.length) {
       messages.push(...history.map((m) => ({ role: m.role, content: m.content })));
     }
     messages.push({ role: 'user', content: prompt });
-    return messages;
+
+    // Auto-inject cache markers for long contexts (e.g. Anthropic Ephemeral Caching)
+    const totalTokens = countTokens(JSON.stringify(messages));
+    if (totalTokens > 4000) {
+      // Also cache the system instruction
+      if (messages[0]?.role === 'system' && typeof messages[0].content === 'string') {
+          messages[0].content = [
+              { type: 'text', text: messages[0].content, cache_control: { type: 'ephemeral' } }
+          ];
+      }
+      // Find the last large message and add a cache marker
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m.role === 'user' && typeof m.content === 'string' && m.content.length > 8000) {
+           m.content = [
+             { type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }
+           ];
+           break;
+        }
+      }
+    }
+
+    return messages as any;
   }
 
   private static computeMetrics(text: string, startTime: number): AIResponse['metrics'] {

@@ -48,9 +48,24 @@ export default defineConfig(({ mode }) => {
                 res.statusCode = 200;
                 res.end(JSON.stringify({ success: true }));
               }
+            } else if (req.url && req.url.includes('/conversations')) {
+              res.statusCode = 200;
+              res.end(JSON.stringify([]));
+            } else if (req.url && req.url.includes('/sessions')) {
+              res.statusCode = 200;
+              res.end(JSON.stringify([]));
+            } else if (req.url && req.url.includes('/nyx/local-models')) {
+              res.statusCode = 200;
+              res.end(JSON.stringify({ models: [], status: 'offline', success: true }));
+            } else if (req.url && req.url.includes('/vault/status')) {
+              res.statusCode = 200;
+              res.end(JSON.stringify({ configured: false, success: true }));
+            } else if (req.url && req.url.includes('/cache/stats')) {
+              res.statusCode = 200;
+              res.end(JSON.stringify({ size: 0, count: 0, success: true }));
             } else {
-              res.statusCode = 404;
-              res.end(JSON.stringify({ error: 'Backend mock offline' }));
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, message: 'Backend mock default success fallback' }));
             }
           });
         }

@@ -20,9 +20,20 @@
 import { AIService } from '@src/core/services/ai.service';
 import { AISettings, ChatMessage } from '@src/infrastructure/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
-import { invoke } from '@tauri-apps/api/core';
 import { MemoryStore } from './memoryStore';
 import { TrajectoryLogger } from '@src/infrastructure/services/trajectoryLogger';
+import { BrowserService } from '@src/core/services/browserService';
+
+// Runtime environment detection
+const isTauriEnv = typeof window !== 'undefined' &&
+  ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+
+// Lazy Tauri invoke — returns an error string if not in Tauri
+async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (!isTauriEnv) throw new Error(`Tauri not available for command: ${cmd}`);
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(cmd, args);
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,11 +66,17 @@ export interface AgentLoopEvent {
     | 'text'
     | 'tool_start'
     | 'tool_result'
+    | 'tool_running'
+    | 'tool_done'
+    | 'tool_error'
     | 'error'
     | 'done';
   content: string;
   toolCall?: ToolCall;
   toolResult?: ToolResult;
+  name?: string;
+  result?: any;
+  error?: string;
 }
 
 export interface AgentLoopConfig {
@@ -71,6 +88,8 @@ export interface AgentLoopConfig {
   history?: ChatMessage[];
   tools?: ToolDefinition[];
   maxIterations?: number;
+  agentType?: string;
+  isFastIntent?: boolean;
   signal?: AbortSignal;
 }
 
@@ -91,6 +110,17 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'browser_read_page',
+    description: 'Fetch the live HTML content of a URL and parse it into clean Markdown using readability algorithms. Crucial for deep RAG or exploring documentation links.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'The fully qualified URL to browse (e.g. https://example.com)' },
+      },
+      required: ['url'],
     },
   },
   {
@@ -214,18 +244,26 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       case 'web_search': {
         const query = String(args.query || '');
         const numResults = Number(args.num_results || 5);
-        const res = await fetchWithAuth(
-          `/api/v1/search?q=${encodeURIComponent(query)}&n=${numResults}`
-        );
-        if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-        const data = await res.json();
-        const formatted = (data.results || [])
-          .slice(0, numResults)
-          .map(
-            (r: { title: string; url: string; snippet: string }, i: number) =>
-              `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`
-          )
-          .join('\n\n');
+        let formatted = '';
+        
+        const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+        if (isTauri) {
+          formatted = await tauriInvoke<string>('search_web_command', { query, numResults });
+        } else {
+          const res = await fetchWithAuth(
+            `/api/v1/search?q=${encodeURIComponent(query)}&n=${numResults}`
+          );
+          if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+          const data = await res.json();
+          formatted = (data.results || [])
+            .slice(0, numResults)
+            .map(
+              (r: { title: string; url: string; snippet: string }, i: number) =>
+                `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`
+            )
+            .join('\n\n');
+        }
+
         return {
           toolCallId: toolCall.id,
           name: toolCall.name,
@@ -234,9 +272,23 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
         };
       }
 
+      case 'browser_read_page': {
+        const url = String(args.url || '');
+        if (!url) throw new Error('URL is required for browser_read_page');
+        const markdown = await BrowserService.readPage(url);
+        return {
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          result: markdown,
+          isError: false,
+        };
+      }
+
       case 'read_file': {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const content = await invoke<string>('fs_read_file', {
+        if (!isTauriEnv) {
+          return { toolCallId: toolCall.id, name: toolCall.name, result: 'read_file is only available in the desktop app.', isError: true };
+        }
+        const content = await tauriInvoke<string>('fs_read_file', {
           path: String(args.path || ''),
         });
         return {
@@ -279,8 +331,11 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
           // ignore
         }
         
+        if (!isTauriEnv) {
+          return { toolCallId: toolCall.id, name: toolCall.name, result: 'MCP calls are only available in the desktop app.', isError: true };
+        }
         try {
-          const mcpResult = await invoke('mcp_send_request', {
+          const mcpResult = await tauriInvoke('mcp_send_request', {
             serverName: server,
             request: {
               method: 'tools/call',
@@ -288,7 +343,7 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
                 name: tool,
                 arguments: toolArgs,
               },
-            },
+            } as any,
           });
           return { toolCallId: toolCall.id, name: toolCall.name, result: JSON.stringify(mcpResult), isError: false };
         } catch (err: any) {
@@ -313,10 +368,13 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       }
 
       case 'computer_action': {
+        if (!isTauriEnv) {
+          return { toolCallId: toolCall.id, name: toolCall.name, result: 'Computer actions are only available in the desktop app.', isError: true };
+        }
         const action = String(args.action || '');
         const params = String(args.params || '{}');
         try {
-          const compResult = await invoke<string>('execute_computer_action', { action, params });
+          const compResult = await tauriInvoke<string>('execute_computer_action', { action, params });
           if (action === 'screenshot') {
             return { toolCallId: toolCall.id, name: toolCall.name, result: `Screenshot taken successfully. Base64 length: ${compResult.length}`, isError: false };
           }
@@ -326,12 +384,39 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
         }
       }
 
+      case 'computer': {
+        // Handle native Anthropic computer_20241022 block
+        const action = String(args.action || '');
+        const text = String(args.text || '');
+        const coordinate = args.coordinate as number[];
+        
+        let params: any = {};
+        if (action === 'type') params = { text };
+        else if (action === 'key') params = { text };
+        else if (coordinate) params = { x: coordinate[0], y: coordinate[1] };
+        
+        if (!isTauriEnv) {
+          return { toolCallId: toolCall.id, name: toolCall.name, result: 'Computer actions are only available in the desktop app.', isError: true };
+        }
+        
+        try {
+          const compResult = await tauriInvoke<string>('execute_computer_action', { action, params: JSON.stringify(params) });
+          if (action === 'screenshot') {
+             return { toolCallId: toolCall.id, name: toolCall.name, result: `SCREENSHOT_BASE64:${compResult}`, isError: false };
+          }
+          return { toolCallId: toolCall.id, name: toolCall.name, result: compResult, isError: false };
+        } catch (err: any) {
+          return { toolCallId: toolCall.id, name: toolCall.name, result: `Computer action failed: ${err.message || String(err)}`, isError: true };
+        }
+      }
+
       case 'run_terminal_command': {
+        if (!isTauriEnv) {
+          return { toolCallId: toolCall.id, name: toolCall.name, result: 'Terminal commands are only available in the desktop app.', isError: true };
+        }
         const command = String(args.command || '');
         try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          // Assumes a general 'execute_command' binding exists in NYX tauri app, or fallback
-          const output = await invoke<string>('execute_command', { command });
+          const output = await tauriInvoke<string>('execute_command', { command });
           return { toolCallId: toolCall.id, name: toolCall.name, result: output || 'Command succeeded with no output.', isError: false };
         } catch (err: any) {
           return { toolCallId: toolCall.id, name: toolCall.name, result: `Command failed: ${err.message || String(err)}`, isError: true };
@@ -339,11 +424,13 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       }
 
       case 'write_file': {
+        if (!isTauriEnv) {
+          return { toolCallId: toolCall.id, name: toolCall.name, result: 'write_file is only available in the desktop app.', isError: true };
+        }
         const path = String(args.path || '');
         const content = String(args.content || '');
         try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('fs_write_file', { path, content });
+          await tauriInvoke('fs_write_file', { path, content });
           return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully wrote to ${path}`, isError: false };
         } catch (err: any) {
           return { toolCallId: toolCall.id, name: toolCall.name, result: `Failed to write file: ${err.message || String(err)}`, isError: true };
@@ -397,11 +484,26 @@ export async function* runAgentLoop(
     signal,
   } = config;
 
+  // Dynamically inject native Anthropic computer use tool if applicable
+  let activeTools = [...(tools || [])];
+  if (provider === 'anthropic' || modelId.includes('claude')) {
+    activeTools.push({
+      type: 'computer_20241022',
+      name: 'computer',
+      display_width_px: 1920,
+      display_height_px: 1080,
+      display_number: 1,
+    } as any);
+  }
+
   // Build the message history for the first turn
   const messages: ChatMessage[] = [
     ...history,
     { role: 'user', content: prompt, timestamp: Date.now() },
   ];
+
+  // BUG 3 FIX: Store the original prompt to prevent LLM from forgetting it
+  const originalPrompt = prompt;
 
   let iterations = 0;
 
@@ -423,8 +525,8 @@ export async function* runAgentLoop(
       await AIService.execute(
         modelId,
         provider,
-        // Pass the full message array; last item is what we want the LLM to respond to
-        messages[messages.length - 1].content,
+        // BUG 3 FIX: Always pass the original user query as the "prompt", not the last tool result
+        originalPrompt,
         apiKey,
         systemInstruction,
         settings,
@@ -453,7 +555,7 @@ export async function* runAgentLoop(
         signal,
         {
           history: messages.slice(0, -1), // exclude current prompt (it's the actual prompt arg)
-          tools: tools as any,
+          tools: activeTools as any,
           streamEvents: true,
         }
       );
@@ -466,17 +568,22 @@ export async function* runAgentLoop(
     // Emit whatever text was generated this turn
     if (accumulatedText) {
       yield { type: 'text', content: accumulatedText };
+    }
+
+    if (accumulatedText || pendingToolCalls.length > 0) {
       // Push assistant turn into history
       messages.push({
         role: 'assistant',
-        content: accumulatedText,
+        content: accumulatedText || '',
+        toolCalls: pendingToolCalls.length > 0 ? pendingToolCalls : undefined,
         timestamp: Date.now(),
       });
     }
 
     // ── Tool execution ───────────────────────────────────────────────────────
     if (pendingToolCalls.length === 0) {
-      // No tools called — LLM gave a final answer, we're done
+      // BUG 1 FIX: No tools called — LLM gave an answer, we're done immediately!
+      // This stops the 15-iteration infinite loop for simple conversational prompts like "hi".
       yield { type: 'done', content: '' };
       return;
     }
@@ -490,30 +597,40 @@ export async function* runAgentLoop(
       pendingToolCalls.map((tc) => executeTool(tc))
     );
 
-    // Emit results and add them to message history
-    const toolResultContent = toolResults
-      .map((tr) => {
-        // Yield result event
-        return `[${tr.name}]: ${tr.result}`;
-      })
-      .join('\n\n');
-
     for (const tr of toolResults) {
       yield { type: 'tool_result', content: tr.result, toolResult: tr };
     }
 
-    // Inject tool results back into history as a user message
-    // (This is the standard way for all providers that support tool use)
-    messages.push({
-      role: 'user',
-      content: `Tool results:\n\n${toolResultContent}\n\nContinue based on these results.`,
-      timestamp: Date.now(),
-    });
+    for (const tr of toolResults) {
+      if (tr.result.startsWith('SCREENSHOT_BASE64:')) {
+         const b64 = tr.result.split(':')[1];
+         messages.push({
+           role: 'tool',
+           name: tr.name,
+           tool_call_id: tr.toolCallId,
+           content: [
+             { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }
+           ],
+           timestamp: Date.now(),
+         } as any);
+      } else {
+         messages.push({
+           role: 'tool',
+           name: tr.name,
+           tool_call_id: tr.toolCallId,
+           content: tr.result,
+           timestamp: Date.now(),
+         } as any);
+      }
+    }
 
     // Log the trajectory
+    const toolResultContent = toolResults
+      .map((tr) => `[${tr.name}]: ${tr.result}`)
+      .join('\n\n');
     TrajectoryLogger.getInstance().logInteraction({
       timestamp: Date.now(),
-      prompt: messages[messages.length - 2]?.content || prompt,
+      prompt: messages[messages.length - toolResults.length - 2]?.content || prompt,
       action: pendingToolCalls[0] || null,
       observation: toolResultContent,
       success: toolResults.every(r => !r.isError)
@@ -528,6 +645,123 @@ export async function* runAgentLoop(
 }
 
 // ── Convenience hook ──────────────────────────────────────────────────────────
+
+/**
+ * Runs the agent loop entirely in the Rust backend via `orchestrate_supervisor`
+ * for zero-latency execution.
+ */
+export async function* runTauriAgentLoop(
+  prompt: string,
+  config: AgentLoopConfig
+): AsyncGenerator<AgentLoopEvent> {
+  if (!isTauriEnv) {
+    // Graceful fallback: route to the standard TS agent loop
+    yield* runAgentLoop(prompt, config);
+    return;
+  }
+
+  // Lazy-import Tauri APIs
+  const { invoke } = await import('@tauri-apps/api/core');
+  const { listen } = await import('@tauri-apps/api/event');
+
+  const eventName = `agent_stream_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+  // Set up the listener
+  const eventQueue: AgentLoopEvent[] = [];
+  let resolveNextEvent: (() => void) | null = null;
+  let isDone = false;
+  let streamError: Error | null = null;
+
+  const unlisten = await listen<any>(eventName, (event) => {
+    const payload = event.payload;
+
+    if (payload.type === 'error') {
+      streamError = new Error(payload.content || payload.error || 'Unknown error');
+      isDone = true;
+      if (resolveNextEvent) resolveNextEvent();
+      return;
+    }
+
+    if (payload.type === 'done' || payload.done) {
+      isDone = true;
+      if (resolveNextEvent) resolveNextEvent();
+      return;
+    }
+
+    // Map payload to AgentLoopEvent
+    const loopEvent: AgentLoopEvent = {
+      type: payload.type as any || payload.event_type as any || 'text',
+      content: payload.content || '',
+    };
+
+    if (payload.tool_call) {
+      loopEvent.toolCall = payload.tool_call;
+    }
+    if (payload.result) {
+      loopEvent.toolResult = payload.result;
+    }
+    if (payload.name) {
+      loopEvent.name = payload.name;
+    }
+    if (payload.error) {
+      loopEvent.error = payload.error;
+    }
+    if (payload.result) {
+      loopEvent.result = payload.result;
+    }
+
+    eventQueue.push(loopEvent);
+    if (resolveNextEvent) resolveNextEvent();
+  });
+
+  // Call the Rust orchestrator
+  // We don't await this directly because we want to yield events as they come
+  const messages = [...(config.history || []), { role: 'user', content: prompt }];
+  
+  const invokePromise = invoke('orchestrate_supervisor', {
+    messages,
+    context: {
+      request_id: `req_${Date.now()}`,
+      session_id: AIService.getSessionToken() || 'default_session',
+      provider: config.provider,
+      model: config.modelId,
+      api_key: config.apiKey || '',
+      max_iterations: config.maxIterations || 10,
+      system_instruction: config.systemInstruction || '',
+      agent_type: config.agentType || 'default',
+      is_fast_intent: config.isFastIntent || false,
+    },
+    event_name: eventName,
+  }).catch((err: any) => {
+    streamError = err instanceof Error ? err : new Error(String(err));
+    isDone = true;
+    if (resolveNextEvent) resolveNextEvent();
+  }).finally(() => {
+    isDone = true;
+    if (resolveNextEvent) resolveNextEvent();
+  });
+
+  try {
+    while (!isDone || eventQueue.length > 0) {
+      if (eventQueue.length > 0) {
+        yield eventQueue.shift()!;
+      } else {
+        // Wait for next event
+        await new Promise<void>((resolve) => {
+          resolveNextEvent = resolve;
+        });
+        resolveNextEvent = null;
+      }
+    }
+    if (streamError as any) {
+      const err = streamError as any;
+      yield { type: 'error', content: err.message || String(err) };
+    }
+  } finally {
+    unlisten();
+    await invokePromise;
+  }
+}
 
 /**
  * React hook to run an agent loop and collect streaming events.

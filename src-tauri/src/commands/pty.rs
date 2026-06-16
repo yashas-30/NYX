@@ -39,7 +39,7 @@ pub async fn pty_spawn(
 
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     
-    let mut master = pair.master;
+    let master = pair.master;
     let reader = master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = master.take_writer().map_err(|e| e.to_string())?;
 

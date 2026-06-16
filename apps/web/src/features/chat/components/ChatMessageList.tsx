@@ -49,9 +49,7 @@ export interface ChatMessageListProps {
   onRegenerate?: (index: number) => void;
   onBranchFromMessage?: (index: number) => void;
   onBranchChange?: (index: number, branchOffset: number) => void;
-  streamingContent?: string;
-  streamingReasoning?: string;
-  streamingToolCalls?: ToolCall[];
+
   activeModel?: string;
   onArtifactClick?: (artifact: any) => void;
 }
@@ -429,7 +427,7 @@ StreamingCursor.displayName = 'StreamingCursor';
 // ---------------------------------------------------------------------------
 import { useSmoothTypewriter } from '../hooks/useSmoothTypewriter';
 
-const MarkdownContent: React.FC<{
+const MemoizedMarkdownBlock: React.FC<{
   content: string;
   isStreaming?: boolean;
   citations?: Citation[];
@@ -468,22 +466,22 @@ const MarkdownContent: React.FC<{
         );
       },
       h1: ({ children }: any) => (
-        <h1 className="text-lg font-serif font-medium tracking-tight text-foreground mt-6 mb-3 pb-2 border-b border-border animate-smooth-reveal">
+        <h1 className="text-xl font-sans font-semibold tracking-tight text-foreground mt-6 mb-3 pb-2 border-b border-border animate-smooth-reveal">
           {children}
         </h1>
       ),
       h2: ({ children }: any) => (
-        <h2 className="text-[16px] font-serif font-medium tracking-tight text-foreground mt-5 mb-3 animate-smooth-reveal">
+        <h2 className="text-lg font-sans font-semibold tracking-tight text-foreground mt-5 mb-3 animate-smooth-reveal">
           {children}
         </h2>
       ),
       h3: ({ children }: any) => (
-        <h3 className="text-[15px] font-serif font-medium tracking-tight text-foreground/90 mt-4 mb-2 animate-smooth-reveal">
+        <h3 className="text-base font-sans font-semibold tracking-tight text-foreground/90 mt-4 mb-2 animate-smooth-reveal">
           {children}
         </h3>
       ),
       p: ({ children }: any) => (
-        <p className="text-[15px] md:text-[16px] font-sans antialiased leading-[1.85] tracking-[0.015em] text-foreground/90 my-3 animate-smooth-reveal">{children}</p>
+        <p className="text-[15px] md:text-[16px] font-sans antialiased leading-[1.75] tracking-[0.01em] text-foreground/90 my-3 animate-smooth-reveal">{children}</p>
       ),
       ul: ({ children }: any) => (
         <ul className="list-disc pl-6 space-y-2 my-4 text-[15px] md:text-[16px] font-sans antialiased text-foreground/85 animate-smooth-reveal">{children}</ul>
@@ -547,24 +545,60 @@ const MarkdownContent: React.FC<{
         <td className="px-3 py-2 text-foreground/80 border-b border-border">{children}</td>
       ),
     }),
-    []
+    [citations]
   );
 
   return (
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={components}>
+      {processedContent}
+    </ReactMarkdown>
+  );
+},
+(prevProps, nextProps) => {
+  if (prevProps.content !== nextProps.content) return false;
+  if (prevProps.isStreaming !== nextProps.isStreaming) return false;
+  // Only re-render if citations count changes
+  if ((prevProps.citations?.length || 0) !== (nextProps.citations?.length || 0)) return false;
+  return true;
+});
+MemoizedMarkdownBlock.displayName = 'MemoizedMarkdownBlock';
+
+const MarkdownContent: React.FC<{
+  content: string;
+  blocks?: string[];
+  isStreaming?: boolean;
+  citations?: Citation[];
+}> = memo(({ content, blocks, isStreaming, citations }) => {
+  const blocksToRender = blocks?.length ? blocks : [content];
+  
+  return (
     <div className="prose-nyx w-full">
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={components}>
-        {processedContent}
-      </ReactMarkdown>
+      {blocksToRender.map((block, idx) => {
+        const isLastBlock = idx === blocksToRender.length - 1;
+        return (
+          <MemoizedMarkdownBlock
+            key={idx}
+            content={block}
+            isStreaming={isStreaming && isLastBlock}
+            citations={citations}
+          />
+        );
+      })}
       {isStreaming && <StreamingCursor />}
     </div>
   );
+},
+(prevProps, nextProps) => {
+  if (prevProps.content !== nextProps.content) return false;
+  if (prevProps.isStreaming !== nextProps.isStreaming) return false;
+  if (prevProps.blocks?.length !== nextProps.blocks?.length) return false;
+  if ((prevProps.citations?.length || 0) !== (nextProps.citations?.length || 0)) return false;
+  return true;
 });
 MarkdownContent.displayName = 'MarkdownContent';
 
 // ---------------------------------------------------------------------------
 // TTS Speaker Button
-// ---------------------------------------------------------------------------
-
 const TtsSpeakerButton: React.FC<{
   isSpeaking: boolean;
   onToggle: () => void;
@@ -950,12 +984,12 @@ const MessageBubble = React.memo<MessageBubbleProps>(
             })()}
 
             <div className="flex w-full gap-3 md:gap-0 items-start relative">
-              <div className="md:absolute md:-left-[92px] md:top-0 flex-shrink-0 -mt-3 select-none">
-                <div className="w-20 h-20 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
+              <div className="md:absolute md:-left-[92px] md:top-0 flex-shrink-0 mt-0.5 select-none">
+                <div className="w-16 h-16 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
                   {isLoadingIcon ? (
                     <NyxLoader size={36} className="text-foreground animate-spin" />
                   ) : (
-                    <AnimatedLogo size={80} className="animate-fade-in" />
+                    <AnimatedLogo size={64} className="animate-fade-in" />
                   )}
                 </div>
               </div>
@@ -974,11 +1008,15 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                         </div>
                       );
                     }
+                    const errorMessage = msg.content || "Error: Generation failed. Please check your model settings or connection.";
+                    const cleanErrorMessage = errorMessage.startsWith("Error: Error:") 
+                      ? errorMessage.substring(7) 
+                      : errorMessage;
                     return (
                       <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-red-500/5 border border-red-500/10">
                         <AlertTriangle size={14} className="text-red-400 shrink-0" />
                         <p className="text-sm text-red-400/90 font-medium">
-                          Error: Generation failed. Please check your model settings or connection.
+                          {cleanErrorMessage}
                         </p>
                       </div>
                     );
@@ -1053,9 +1091,10 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     )}
 
                     {/* Main content */}
-                    {msg.content && !(msg.status === 'error' && (msg.content.includes('[UNAVAILABLE]') || msg.content.toLowerCase().includes('high demand') || msg.content.includes('429'))) && (
+                    {msg.content && msg.status !== 'error' && (
                       <MarkdownContent
                         content={msg.content}
+                        blocks={(msg as any).blocks}
                         isStreaming={isStreaming && isLast}
                         citations={msg.citations}
                       />
@@ -1191,6 +1230,16 @@ const MessageBubble = React.memo<MessageBubbleProps>(
         )}
       </motion.div>
     );
+  },
+  (prevProps, nextProps) => {
+    // Custom equality check to prevent re-renders when history array gets cloned during streaming
+    if (prevProps.msg !== nextProps.msg) return false;
+    if (prevProps.isLast !== nextProps.isLast) return false;
+    if (prevProps.isStreaming !== nextProps.isStreaming) return false;
+    if (prevProps.index !== nextProps.index) return false;
+    if (prevProps.copiedId !== nextProps.copiedId) return false;
+    if (prevProps.activeModel !== nextProps.activeModel) return false;
+    return true; // functions are ignored
   }
 );
 MessageBubble.displayName = 'MessageBubble';
@@ -1297,9 +1346,6 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   onEditMessage,
   onRegenerate,
   onBranchFromMessage,
-  streamingContent,
-  streamingReasoning,
-  streamingToolCalls,
   activeModel,
   onArtifactClick,
   onBranchChange,
@@ -1382,20 +1428,10 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
               const isLast = index === history.length - 1;
               const isStreaming = isLast && isLoading;
 
-              // Merge streaming state into last message
-              const displayMsg = isStreaming
-                ? {
-                    ...msg,
-                    content: streamingContent || msg.content,
-                    reasoning: streamingReasoning || msg.reasoning,
-                    toolCalls: streamingToolCalls || msg.toolCalls,
-                  }
-                : msg;
-
               return (
                 <div className="py-3 px-4 md:px-6 max-w-4xl mx-auto w-full">
                   <MessageBubble
-                    msg={displayMsg}
+                    msg={msg}
                     index={index}
                     isLast={isLast}
                     isStreaming={isStreaming}
@@ -1444,3 +1480,4 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     </div>
   );
 };
+

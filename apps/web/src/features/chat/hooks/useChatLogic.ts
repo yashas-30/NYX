@@ -590,7 +590,7 @@ export const useChatLogic = ({
         .filter((img) => !!img.data);
 
       // Auto-regenerate assistant response
-      runChatRef.current?.(newContent, mappedImages);
+      runChatRef.current?.(newContent, mappedImages, { skipUserMessage: true });
     },
     [persistHistory]
   );
@@ -620,7 +620,7 @@ export const useChatLogic = ({
         }))
         .filter((img) => !!img.data);
 
-      runChatRef.current?.(userMsg.content, mappedImages);
+      runChatRef.current?.(userMsg.content, mappedImages, { skipUserMessage: true });
     },
     [persistHistory]
   );

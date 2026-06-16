@@ -1,5 +1,5 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
-import { runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
+import { runTauriAgentLoop, runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
 import { StreamEvent } from '@src/infrastructure/types';
 import { MemoryStore } from './memoryStore';
 
@@ -25,15 +25,18 @@ Workflow:
 - Only return your final report once the research is absolutely complete.
 `;
 
+const isTauriEnv = typeof window !== 'undefined' &&
+  ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+
 export class ResearchAgent extends BaseAgent<ResearchAgentConfig, StreamEvent> {
   async *streamResponse(
     prompt: string,
     signal: AbortSignal
   ): AsyncGenerator<StreamEvent> {
-    
+
     let processedHistory = [...this.config.history];
     const memoryPrompt = await MemoryStore.getMemoryPrompt();
-    
+
     let finalSystemPrompt = RESEARCH_SYSTEM_PROMPT;
     if (memoryPrompt) {
       finalSystemPrompt += `\n\nUser Context:\n${memoryPrompt}`;
@@ -45,7 +48,7 @@ export class ResearchAgent extends BaseAgent<ResearchAgentConfig, StreamEvent> {
       timestamp: Date.now()
     });
 
-    yield* runAgentLoop(prompt, {
+    const loopConfig = {
       modelId: this.config.modelId,
       provider: this.config.provider,
       apiKey: this.config.apiKey || '',
@@ -54,6 +57,12 @@ export class ResearchAgent extends BaseAgent<ResearchAgentConfig, StreamEvent> {
       tools: this.config.tools || BUILTIN_TOOLS,
       signal,
       maxIterations: this.config.maxDepth || 15,
-    }) as unknown as AsyncGenerator<StreamEvent>;
+    };
+
+    const loop = isTauriEnv
+      ? runTauriAgentLoop(prompt, loopConfig)
+      : runAgentLoop(prompt, loopConfig);
+
+    yield* loop as unknown as AsyncGenerator<StreamEvent>;
   }
 }

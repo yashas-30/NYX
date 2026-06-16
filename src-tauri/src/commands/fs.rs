@@ -1,8 +1,7 @@
-use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
 pub struct WatcherState {
@@ -59,7 +58,7 @@ pub async fn fs_watch_stop(
     id: String,
 ) -> Result<(), String> {
     let mut watchers = state.watchers.lock().unwrap();
-    if let Some(mut watcher) = watchers.remove(&id) {
+    if let Some(_watcher) = watchers.remove(&id) {
         // Drop the watcher to stop watching
         // But before drop, unwatch isn't strictly necessary, but good practice if needed
         // The Drop trait handles cleanup.
@@ -85,28 +84,105 @@ pub async fn fs_parse_and_chunk_file(
         return Ok(Vec::new());
     }
 
-    // A simple text chunking implementation
+    // Step 3.3: Layout-Aware Parsing (Structural Chunking)
+    // Instead of dumb token splitting, we split by paragraphs/headers.
     let mut chunks = Vec::new();
-    let chars: Vec<char> = contents.chars().collect();
+    let paragraphs: Vec<&str> = contents.split("\n\n").collect();
     
-    if chunk_size == 0 || chars.len() <= chunk_size {
-        chunks.push(contents);
-        return Ok(chunks);
+    let mut current_chunk = String::new();
+    let mut current_header = String::new();
+
+    for paragraph in paragraphs {
+        let para_trimmed = paragraph.trim();
+        if para_trimmed.is_empty() {
+            continue;
+        }
+
+        // Track the current markdown header to prepend to orphaned chunks
+        if para_trimmed.starts_with('#') {
+            let first_line = para_trimmed.lines().next().unwrap_or("");
+            if first_line.starts_with('#') {
+                current_header = first_line.to_string();
+            }
+        }
+
+        // If adding this paragraph exceeds chunk size, push current_chunk and start new
+        if current_chunk.len() + para_trimmed.len() > chunk_size && !current_chunk.is_empty() {
+            chunks.push(current_chunk.trim().to_string());
+            current_chunk = String::new();
+            
+            // Add overlap or structural context (the header) to the new chunk
+            if !current_header.is_empty() && !para_trimmed.starts_with(&current_header) {
+                current_chunk.push_str(&current_header);
+                current_chunk.push_str("\n\n");
+            }
+        }
+
+        current_chunk.push_str(para_trimmed);
+        current_chunk.push_str("\n\n");
     }
 
-    let step = if chunk_size > overlap { chunk_size - overlap } else { 1 };
-    let mut i = 0;
-
-    while i < chars.len() {
-        let end = std::cmp::min(i + chunk_size, chars.len());
-        let chunk: String = chars[i..end].iter().collect();
-        chunks.push(chunk);
-        
-        if end == chars.len() {
-            break;
-        }
-        i += step;
+    if !current_chunk.trim().is_empty() {
+        chunks.push(current_chunk.trim().to_string());
     }
 
     Ok(chunks)
+}
+
+#[derive(serde::Serialize)]
+pub struct FileInfo {
+    name: String,
+    #[serde(rename = "type")]
+    file_type: String,
+    size: Option<u64>,
+}
+
+#[tauri::command]
+pub async fn fs_read_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct FileWriteResult {
+    success: bool,
+    path: String,
+    #[serde(rename = "bytesWritten")]
+    bytes_written: u64,
+    existed: bool,
+}
+
+#[tauri::command]
+pub async fn fs_write_file(path: String, content: String, overwrite: bool) -> Result<FileWriteResult, String> {
+    let existed = std::path::Path::new(&path).exists();
+    if existed && !overwrite {
+        return Err(format!("File {} already exists and overwrite is false", path));
+    }
+    
+    std::fs::write(&path, &content).map_err(|e| e.to_string())?;
+    
+    Ok(FileWriteResult {
+        success: true,
+        path,
+        bytes_written: content.len() as u64,
+        existed,
+    })
+}
+
+#[tauri::command]
+pub async fn fs_list_dir(dir_path: String) -> Result<Vec<FileInfo>, String> {
+    let mut result = Vec::new();
+    let entries = std::fs::read_dir(&dir_path).map_err(|e| e.to_string())?;
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let meta = entry.metadata().map_err(|e| e.to_string())?;
+            let is_dir = meta.is_dir();
+            result.push(FileInfo {
+                name: entry.file_name().to_string_lossy().to_string(),
+                file_type: if is_dir { "directory".to_string() } else { "file".to_string() },
+                size: if is_dir { None } else { Some(meta.len()) },
+            });
+        }
+    }
+    Ok(result)
 }

@@ -150,3 +150,42 @@ pub async fn execute_tool(name: &str, args_json: &str) -> String {
         _ => format!("Unknown tool: {}", name),
     }
 }
+
+#[tauri::command]
+pub async fn fetch_page_html_command(url: String) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client.get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Fetch failed with status: {}", res.status()));
+    }
+
+    let html = res.text().await.map_err(|e| e.to_string())?;
+    Ok(html)
+}
+
+#[tauri::command]
+pub async fn search_web_command(query: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let url = format!("https://lite.duckduckgo.com/lite/");
+    
+    let res = client.post(&url)
+        .form(&[("q", query.as_str())])
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("Search failed with status: {}", res.status()));
+    }
+
+    let html = res.text().await.map_err(|e| e.to_string())?;
+    Ok(html)
+}

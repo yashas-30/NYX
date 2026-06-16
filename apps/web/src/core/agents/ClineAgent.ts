@@ -3,11 +3,11 @@ import { runTauriAgentLoop, runAgentLoop } from './agentLoop';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 
-export interface ChatAgentConfig extends BaseAgentConfig {
+export interface ClineAgentConfig extends BaseAgentConfig {
   enableToolLoop?: boolean;
 }
 
-export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
+export class ClineAgent extends BaseAgent<ClineAgentConfig, StreamEvent> {
   async *streamResponse(
     prompt: string,
     analysis: PromptAnalysis,
@@ -17,16 +17,25 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
   ): AsyncGenerator<StreamEvent> {
     const isTauriEnv = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
     
-    const systemInstruction = `You are the NYX Chat Agent, a highly intelligent conversational assistant.
-Your primary role is to answer user queries accurately, empathetically, and concisely.
-You have access to a specific set of tools: web_search, browser_read_page, read_file, and store_memory.
+    const systemInstruction = `<role>
+You are the NYX Cline Agent, a system task and terminal automation expert.
+Your primary role is to execute system commands, manage files, set up environments, and automate browser tasks.
+</role>
 
-CRITICAL INSTRUCTIONS:
-1. If the user asks about facts, recent events, or information outside your training data, you MUST use the web_search tool.
-2. If you need to read an article, documentation, or explore a URL returned by a web search, use the browser_read_page tool.
-3. Maintain conversational flow but prioritize factual accuracy.
-4. If the user asks you to remember something, use the store_memory tool.
-5. Keep answers relatively concise unless asked for a detailed explanation.`;
+<capabilities>
+You have access to powerful system-level tools.
+Tools: run_terminal_command, computer_action, browser_read_page, web_search.
+</capabilities>
+
+<safety_boundaries>
+1. NEVER execute terminal commands that could harm the system (e.g., rm -rf /).
+2. If a command or computer action fails, carefully read the error output and try to fix it. Do not blindly repeat the same action.
+3. Be transparent about the commands and actions you are running.
+</safety_boundaries>
+
+<reasoning>
+Before taking an action, explicitly state your goal and the expected outcome in a <think> block.
+</reasoning>`;
 
     const loopConfig = {
       modelId: this.config.modelId,
@@ -35,9 +44,9 @@ CRITICAL INSTRUCTIONS:
       settings: this.config.settings,
       systemInstruction,
       history: this.config.history,
-      maxIterations: 5, // Chat usually requires fewer iterations
+      maxIterations: 25,
       signal,
-      agentType: 'chat'
+      agentType: 'cline'
     };
 
     const generator = isTauriEnv ? runTauriAgentLoop(prompt, loopConfig as any) : runAgentLoop(prompt, loopConfig as any);

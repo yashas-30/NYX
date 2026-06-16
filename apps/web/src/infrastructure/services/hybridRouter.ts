@@ -372,6 +372,27 @@ export class HybridModelRouter {
     });
   }
 
+  async routeSimpleTask(
+    taskType: 'summarization' | 'naming',
+    apiKeys: Record<string, string>,
+    checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>
+  ): Promise<RoutingDecision> {
+    // Force routing to a local model if hot, or default to fast gemini
+    return this.selectModel({
+      task: {
+        type: taskType,
+        complexity: 'low',
+        description: `Simple ${taskType} task`,
+      } as any as SubagentTask,
+      apiKeys,
+      requiresStreaming: false,
+      requiresTools: false,
+      requiresVision: false,
+      maxLatencyMs: 1500, // Very strict latency for background tasks
+      preferredProviders: ['ollama', 'lmstudio', 'gemini'],
+    });
+  }
+
   async routeSubagent(
     task: SubagentTask,
     apiKeys: Record<string, string>,
@@ -605,6 +626,14 @@ export class HybridModelRouter {
     checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>
   ): Promise<RoutingDecision> {
     return getHybridRouter().routeSubagent(task, apiKeys, checkStatusFn);
+  }
+
+  static async routeSimpleTask(
+    taskType: 'summarization' | 'naming',
+    apiKeys: Record<string, string>,
+    checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>
+  ): Promise<RoutingDecision> {
+    return getHybridRouter().routeSimpleTask(taskType, apiKeys, checkStatusFn);
   }
 
   static async executeWithFallbackChain(

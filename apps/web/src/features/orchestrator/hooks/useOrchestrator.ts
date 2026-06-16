@@ -591,7 +591,7 @@ export function useOrchestrator(
       if (userIndex < 0) return;
 
       const userMsg = stateRef.current.messages[userIndex];
-      const truncated = stateRef.current.messages.slice(0, userIndex + 1);
+      const truncated = stateRef.current.messages.slice(0, userIndex);
 
       setState((prev) => ({ ...prev, messages: truncated }));
       await sendMessage(userMsg.content);

@@ -14,6 +14,8 @@ export interface BaseAgentConfig {
   tools?: ToolDefinition[];
   /** Whether to enable agentic tool use loop. Default: true when tools are configured. */
   enableToolLoop?: boolean;
+  /** Fast intent bypass flag for simple conversational queries */
+  isFastIntent?: boolean;
 }
 
 export class TokenBudget {

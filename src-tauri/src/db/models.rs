@@ -62,6 +62,7 @@ pub struct SwarmContextPool {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[allow(dead_code)]
 pub struct ModelConfig {
     pub id: String,
     pub provider: String,

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ChatMessage } from '@src/infrastructure/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface ChatSession {
   id: string;
@@ -382,3 +383,4 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     },
   };
 });
+

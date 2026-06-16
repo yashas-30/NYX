@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChatMessage } from '@src/infrastructure/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface ChatSession {
   id: string;
@@ -32,6 +33,8 @@ function deriveTitleFromMessages(messages: ChatMessage[]): string {
   const words = firstUser.content.trim().split(/\s+/).slice(0, 6).join(' ');
   return words.length > 0 ? words : 'New Chat';
 }
+
+const isTauriEnv = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
 
 export function useChatSessions(agentType?: 'chat' | 'coder') {
   const [regularSessions, setRegularSessions] = useState<ChatSession[]>([]);
@@ -69,14 +72,16 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
 
     async function loadSessions() {
       try {
-        const url = agentType
-          ? `/api/v1/conversations?agentType=${agentType}`
-          : '/api/v1/conversations';
-        const res = await fetchWithAuth(url);
-        if (res.ok) {
-          const serverSessions = await res.json();
-          // fallow-ignore-next-line code-duplication
-          if (Array.isArray(serverSessions) && activeToken) {
+        let serverSessions: any[] = [];
+        if (isTauriEnv) {
+          serverSessions = await invoke('db_get_all_chat_sessions');
+        } else {
+          const url = agentType ? `/api/v1/conversations?agentType=${agentType}` : '/api/v1/conversations';
+          const res = await fetchWithAuth(url);
+          if (res.ok) serverSessions = await res.json();
+        }
+        // fallow-ignore-next-line code-duplication
+        if (Array.isArray(serverSessions) && activeToken) {
             setRegularSessions((prev) => {
               const prevMap = new Map(prev.map((s) => [s.id, s]));
               const merged = [...prev];
@@ -98,7 +103,6 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
               });
             }
           }
-        }
       } catch (e: any) {
         console.warn('[useChatSessions] Backend fetch failed, falling back to localStorage:', e);
       }
@@ -106,11 +110,14 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
       // Load folders
       try {
         if (agentType === 'chat') {
-          const res = await fetchWithAuth('/api/v1/conversations/folders');
-          if (res.ok) {
-            const fetchedFolders = await res.json();
-            if (activeToken) setFolders(fetchedFolders);
+          let fetchedFolders: any[] = [];
+          if (isTauriEnv) {
+            fetchedFolders = await invoke('db_get_folders');
+          } else {
+            const res = await fetchWithAuth('/api/v1/conversations/folders');
+            if (res.ok) fetchedFolders = await res.json();
           }
+          if (activeToken) setFolders(fetchedFolders);
         }
       } catch (e: any) {
         console.warn('[useChatSessions] Folders fetch failed:', e);
@@ -194,14 +201,18 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
       setActiveSid(id);
 
       // Sync to backend
-      const url = agentType
-        ? `/api/v1/conversations?agentType=${agentType}`
-        : '/api/v1/conversations';
-      fetchWithAuth(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(session),
-      }).catch((err) => console.warn('[useChatSessions] Failed to sync session creation:', err));
+      if (isTauriEnv) {
+        invoke('db_save_chat_session', { session }).catch((err: any) => 
+          console.warn('[useChatSessions] Failed to sync session creation:', err)
+        );
+      } else {
+        const url = agentType ? `/api/v1/conversations?agentType=${agentType}` : '/api/v1/conversations';
+        fetchWithAuth(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(session),
+        }).catch((err: any) => console.warn('[useChatSessions] Failed to sync session creation:', err));
+      }
 
       return id;
     },
@@ -226,14 +237,18 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
 
       syncTimeoutRef.current = setTimeout(() => {
-        const url = agentType
-          ? `/api/v1/conversations?agentType=${agentType}`
-          : '/api/v1/conversations';
-        fetchWithAuth(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updated),
-        }).catch((err) => console.warn('[useChatSessions] Failed to sync session update:', err));
+        if (isTauriEnv) {
+          invoke('db_save_chat_session', { session: updated }).catch((err: any) => 
+            console.warn('[useChatSessions] Failed to sync session update:', err)
+          );
+        } else {
+          const url = agentType ? `/api/v1/conversations?agentType=${agentType}` : '/api/v1/conversations';
+          fetchWithAuth(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updated),
+          }).catch((err: any) => console.warn('[useChatSessions] Failed to sync session update:', err));
+        }
       }, 1000);
     },
     [agentType]
@@ -245,12 +260,16 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
       setActiveSid((prev) => (prev === sid ? null : prev));
 
       // Sync to backend
-      const url = agentType
-        ? `/api/v1/conversations/${sid}?agentType=${agentType}`
-        : `/api/v1/conversations/${sid}`;
-      fetchWithAuth(url, {
-        method: 'DELETE',
-      }).catch((err) => console.warn('[useChatSessions] Failed to sync session deletion:', err));
+      if (isTauriEnv) {
+        invoke('db_delete_chat_session', { id: sid }).catch((err: any) => 
+          console.warn('[useChatSessions] Failed to sync session deletion:', err)
+        );
+      } else {
+        const url = agentType ? `/api/v1/conversations/${sid}?agentType=${agentType}` : `/api/v1/conversations/${sid}`;
+        fetchWithAuth(url, { method: 'DELETE' }).catch((err: any) => 
+          console.warn('[useChatSessions] Failed to sync session deletion:', err)
+        );
+      }
     },
     [agentType]
   );
@@ -261,15 +280,22 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
 
   const createFolder = useCallback(async (name: string) => {
     try {
-      const res = await fetchWithAuth('/api/v1/conversations/folders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setFolders((prev) => [...prev, { id: data.id, name, createdAt: Date.now() }]);
-        return data.id;
+      if (isTauriEnv) {
+        const id = `folder-${Date.now()}`;
+        await invoke('db_create_folder', { id, name });
+        setFolders((prev) => [...prev, { id, name, createdAt: Date.now() }]);
+        return id;
+      } else {
+        const res = await fetchWithAuth('/api/v1/conversations/folders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setFolders((prev) => [...prev, { id: data.id, name, createdAt: Date.now() }]);
+          return data.id;
+        }
       }
     } catch (e) {
       console.error('[useChatSessions] Failed to create folder:', e);
@@ -278,11 +304,14 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
 
   const deleteFolder = useCallback(async (id: string) => {
     try {
-      const res = await fetchWithAuth(`/api/v1/conversations/folders/${id}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
+      if (isTauriEnv) {
+        await invoke('db_delete_folder', { id });
         setFolders((prev) => prev.filter((f) => f.id !== id));
+      } else {
+        const res = await fetchWithAuth(`/api/v1/conversations/folders/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          setFolders((prev) => prev.filter((f) => f.id !== id));
+        }
       }
     } catch (e) {
       console.error('[useChatSessions] Failed to delete folder:', e);
@@ -296,16 +325,24 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
           if (s.id === sid) {
             const updated = { ...s, ...meta };
             // Sync to backend
-            const url = agentType
-              ? `/api/v1/conversations?agentType=${agentType}`
-              : '/api/v1/conversations';
-            fetchWithAuth(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(updated),
-            }).catch((err) =>
-              console.warn('[useChatSessions] Failed to sync session meta update:', err)
-            );
+            if (isTauriEnv) {
+              invoke('db_update_chat_session_meta', {
+                id: sid,
+                folderId: meta.folderId || null,
+                tags: meta.tags || null,
+              }).catch((err: any) =>
+                console.warn('[useChatSessions] Failed to sync session meta update:', err)
+              );
+            } else {
+              const url = agentType ? `/api/v1/conversations?agentType=${agentType}` : '/api/v1/conversations';
+              fetchWithAuth(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updated),
+              }).catch((err: any) =>
+                console.warn('[useChatSessions] Failed to sync session meta update:', err)
+              );
+            }
             return updated;
           }
           return s;

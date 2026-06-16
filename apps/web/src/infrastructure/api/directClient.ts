@@ -235,21 +235,97 @@ export async function directFetch(
   const contents: any[] = [];
   if (options.history && Array.isArray(options.history)) {
     for (const m of options.history) {
-      const parts: any[] = [{ text: m.content }];
-      if (m.images && m.images.length > 0) {
-        for (const img of m.images) {
-          parts.push({
-            inlineData: {
-              mimeType: img.mimeType || 'image/png',
-              data: img.data || img.base64,
-            },
+      if (m.role === 'system') {
+        continue;
+      }
+
+      if (m.role === 'assistant' || m.role === 'model') {
+        const parts: any[] = [];
+        if (m.content) {
+          parts.push({ text: m.content });
+        }
+        const toolCalls = m.toolCalls || m.tool_calls;
+        if (toolCalls && Array.isArray(toolCalls)) {
+          for (const tc of toolCalls) {
+            const name = tc.name || tc.function?.name;
+            let args = tc.arguments || tc.function?.arguments || {};
+            if (typeof args === 'string') {
+              try {
+                args = JSON.parse(args);
+              } catch {
+                args = {};
+              }
+            }
+            parts.push({
+              functionCall: {
+                name,
+                args
+              }
+            });
+          }
+        }
+        if (parts.length > 0) {
+          contents.push({
+            role: 'model',
+            parts,
           });
         }
+      } else if (m.role === 'tool' || m.role === 'function') {
+        const name = m.name;
+        const output = m.content || m.result || '';
+        
+        let outputObj: any;
+        try {
+          outputObj = typeof output === 'string' ? JSON.parse(output) : output;
+        } catch {
+          outputObj = { output };
+        }
+        if (typeof outputObj !== 'object' || outputObj === null || Array.isArray(outputObj)) {
+          outputObj = { output: outputObj };
+        }
+        
+        const part = {
+          functionResponse: {
+            name,
+            response: outputObj
+          }
+        };
+        
+        let merged = false;
+        if (contents.length > 0) {
+          const lastMsg = contents[contents.length - 1];
+          if (lastMsg.role === 'user' && Array.isArray(lastMsg.parts)) {
+            const hasFuncResponse = lastMsg.parts.some((p: any) => p.functionResponse !== undefined);
+            if (hasFuncResponse) {
+              lastMsg.parts.push(part);
+              merged = true;
+            }
+          }
+        }
+        
+        if (!merged) {
+          contents.push({
+            role: 'user',
+            parts: [part]
+          });
+        }
+      } else {
+        const parts: any[] = [{ text: m.content }];
+        if (m.images && m.images.length > 0) {
+          for (const img of m.images) {
+            parts.push({
+              inlineData: {
+                mimeType: img.mimeType || 'image/png',
+                data: img.data || img.base64,
+              },
+            });
+          }
+        }
+        contents.push({
+          role: 'user',
+          parts,
+        });
       }
-      contents.push({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts,
-      });
     }
   }
 

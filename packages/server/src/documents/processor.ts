@@ -46,7 +46,7 @@ export class DocumentProcessor {
         content = file.toString('utf8');
     }
 
-    const chunks = this.chunkDocument(content);
+    const chunks = this.chunkDocument(content, type);
 
     return {
       id: crypto.randomUUID(),
@@ -94,19 +94,50 @@ export class DocumentProcessor {
     }
   }
 
-  private chunkDocument(content: string, chunkSize = 1000, overlap = 200): DocumentChunk[] {
+  private chunkDocument(content: string, type: string, chunkSize = 1000, overlap = 200): DocumentChunk[] {
     const chunks: DocumentChunk[] = [];
     let start = 0;
 
     if (!content) return chunks;
 
+    // Semantic Code Chunking (RAGFlow style)
+    if (type === 'code') {
+      // Split by common function/class declarations instead of arbitrary length
+      const functionOrClassRegex = /^(?:export\\s+)?(?:class|function|const|let|var|interface|type)\\s+\\w+/gm;
+      let match;
+      const indices = [0];
+      
+      while ((match = functionOrClassRegex.exec(content)) !== null) {
+        if (match.index > 0) indices.push(match.index);
+      }
+      indices.push(content.length);
+
+      for (let i = 0; i < indices.length - 1; i++) {
+        const chunkStart = indices[i];
+        const chunkEnd = indices[i+1];
+        const text = content.slice(chunkStart, chunkEnd).trim();
+        if (text.length > 50) { // Avoid tiny chunks
+           chunks.push({
+             id: crypto.randomUUID(),
+             content: text,
+             startIndex: chunkStart,
+             endIndex: chunkEnd
+           });
+        }
+      }
+      
+      if (chunks.length > 0) return chunks;
+      // Fallback to standard text chunking if no code structures found
+    }
+
+    // Standard text chunking
     while (start < content.length) {
       const end = Math.min(start + chunkSize, content.length);
       // Try to break at paragraph or sentence boundary
       let breakPoint = end;
       if (end < content.length) {
         const searchRange = content.slice(end - 100, end + 100);
-        const paragraphBreak = searchRange.lastIndexOf('\n\n');
+        const paragraphBreak = searchRange.lastIndexOf('\\n\\n');
         const sentenceBreak = searchRange.lastIndexOf('. ');
         if (paragraphBreak > 0) {
           breakPoint = end - 100 + paragraphBreak + 2;
@@ -122,7 +153,6 @@ export class DocumentProcessor {
         endIndex: breakPoint
       });
 
-      // Ensure we always advance forward, but handle the final chunk correctly
       if (breakPoint >= content.length) {
         break;
       }

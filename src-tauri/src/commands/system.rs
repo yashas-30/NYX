@@ -51,3 +51,40 @@ pub async fn system_get_userdata(app: AppHandle) -> SystemResult<String> {
         Err(err) => SystemResult { success: false, data: None, error: Some(err.to_string()) },
     }
 }
+
+#[derive(serde::Serialize)]
+pub struct CommandResult {
+    #[serde(rename = "stdout")]
+    pub stdout: String,
+    #[serde(rename = "stderr")]
+    pub stderr: String,
+    #[serde(rename = "exitCode")]
+    pub exit_code: i32,
+}
+
+#[tauri::command]
+pub async fn execute_command(command: String, cwd: String) -> Result<CommandResult, String> {
+    use std::process::Command;
+    
+    #[cfg(target_os = "windows")]
+    let mut cmd = Command::new("cmd");
+    #[cfg(target_os = "windows")]
+    cmd.args(["/C", &command]);
+
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = Command::new("sh");
+    #[cfg(not(target_os = "windows"))]
+    cmd.args(["-c", &command]);
+
+    if !cwd.is_empty() {
+        cmd.current_dir(cwd);
+    }
+
+    let output = cmd.output().map_err(|e| e.to_string())?;
+    
+    Ok(CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        exit_code: output.status.code().unwrap_or(-1),
+    })
+}

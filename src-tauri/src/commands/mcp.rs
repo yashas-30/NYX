@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use tauri::{State, Emitter};
@@ -16,6 +16,7 @@ pub struct McpRequest {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[allow(dead_code)]
 pub struct McpResponse {
     pub jsonrpc: String,
     pub id: u64,

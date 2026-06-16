@@ -511,9 +511,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onRegenerate={handleRegenerate}
           onBranchFromMessage={handleBranch}
           activeModel={currentModel?.name}
-          streamingContent={streaming?.content}
-          streamingReasoning={streaming?.reasoning}
-          streamingToolCalls={streaming?.toolCalls}
+
           onArtifactClick={setActiveArtifact}
         />
 

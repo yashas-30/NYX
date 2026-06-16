@@ -40,7 +40,7 @@ export class ContinuationManager {
     let totalTokens = 0;
     let totalLatency = 0;
     let attempts = 0;
-    const maxAttempts = 5;
+    const maxAttempts = 30; // Increased to 30 to support 10,000+ word outputs
 
     const maxTokens = this.estimateMaxTokens(provider, modelId, settings);
 
@@ -54,7 +54,7 @@ export class ContinuationManager {
       const isFirst = attempts === 1;
       const currentPrompt = isFirst
         ? prompt
-        : `Continue exactly from where you left off. Do not repeat any previously generated content. Start immediately with the next character/token after this:\n\n${baseText.slice(-500)}`;
+        : `Continue exactly from where you left off. Do not repeat any previously generated content. Start immediately with the next character/token after this:\n\n${baseText.slice(-1500)}`;
 
       const currentOptions = isFirst
         ? options
@@ -63,7 +63,8 @@ export class ContinuationManager {
             history: [
               ...(options?.history || []),
               { role: 'user', content: prompt } as ChatMessage,
-              { role: 'assistant', content: baseText } as ChatMessage,
+              // Kimi Sliding Context Window: Only feed the last 3000 chars of assistant response to avoid blowing input token limits
+              { role: 'assistant', content: baseText.length > 3000 ? `...[Truncated earlier parts]...\n\n${baseText.slice(-3000)}` : baseText } as ChatMessage,
             ],
           };
 
@@ -92,7 +93,10 @@ export class ContinuationManager {
       }
 
       const usedTokens = result.metrics.tokens;
-      if (!this.isTruncated(result.text, maxTokens, usedTokens)) {
+      // @ts-ignore: AIResponse might have finishReason depending on the exact type, using fallback
+      const finishReason = (result as any).finishReason;
+      
+      if (!this.isTruncated(result.text, maxTokens, usedTokens, finishReason)) {
         return {
           text: baseText,
           metrics: {
@@ -139,8 +143,16 @@ export class ContinuationManager {
     return limit || 4096;
   }
 
-  private static isTruncated(text: string, maxTokens: number, usedTokens: number): boolean {
+  private static isTruncated(text: string, maxTokens: number, usedTokens: number, finishReason?: string): boolean {
     if (!text || text.length === 0) return false;
+
+    // 1. Explicit model signal (Best, most reliable way like Kimi)
+    if (finishReason === 'length' || finishReason === 'max_tokens') {
+      return true;
+    }
+    if (finishReason === 'stop') {
+      return false; // Explicitly finished normally
+    }
 
     // Explicit protocol halt marker from the SSE stream parser
     if (text.includes('[PROTOCOL HALT]')) return true;

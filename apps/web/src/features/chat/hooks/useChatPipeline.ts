@@ -21,7 +21,7 @@ import {
   updateConversationState,
   ConversationState,
 } from '@src/core/services/promptClassifier';
-import { DeveloperAgent } from '@src/core/agents/DeveloperAgent';
+import { RouterAgent } from '@src/core/agents/RouterAgent';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
 import { AIService, countTokens } from '@src/core/services/ai.service';
@@ -263,7 +263,7 @@ export const useChatPipeline = ({
 
       worker.onmessage = (event) => {
         if (event.data.type === 'update') {
-          const { text, reasoning, originalChunk } = event.data.payload;
+          const { text, reasoning, blocks, originalChunk } = event.data.payload;
           const textChanged = text !== accumulatedText;
           const reasoningChanged = reasoning !== accumulatedReasoning;
           
@@ -282,7 +282,8 @@ export const useChatPipeline = ({
                 ...last,
                 content: text,
                 reasoning: reasoning !== undefined ? reasoning : last.reasoning,
-              };
+                blocks: blocks || [],
+              } as any;
             }
             return next;
           });
@@ -616,7 +617,7 @@ export const useChatPipeline = ({
   // -------------------------------------------------------------------------
 
   const runChat = useCallback(
-    async (prompt: string, images?: { name: string; mimeType: string; data: string }[], options?: { agentType?: 'chat' | 'coder' }) => {
+    async (prompt: string, images?: { name: string; mimeType: string; data: string }[], options?: { agentType?: 'chat' | 'coder', skipUserMessage?: boolean }) => {
       // Prompt sanitization (prevent null byte injection and normalize whitespace)
       const sanitizedPrompt = prompt.replace(/\0/g, '').trim();
 
@@ -695,14 +696,16 @@ export const useChatPipeline = ({
 
         const startTime = Date.now();
         // 1. Add user message
-        const userMsg: ChatMessage = {
-          role: 'user',
-          content: sanitizedPrompt,
-          timestamp: Date.now(),
-          images,
-        };
+        if (!options?.skipUserMessage) {
+          const userMsg: ChatMessage = {
+            role: 'user',
+            content: sanitizedPrompt,
+            timestamp: Date.now(),
+            images,
+          };
 
-        safeUpdateHistory((prev) => [...prev, userMsg]);
+          safeUpdateHistory((prev) => [...prev, userMsg]);
+        }
 
         // 2. Analyze prompt
         const analysis = analyzePrompt(sanitizedPrompt, conversationStateRef.current);
@@ -733,8 +736,11 @@ export const useChatPipeline = ({
         // Compress prompt to mitigate context overflows if it's too large
         const compressedPrompt = AIService.compressPrompt(sanitizedPrompt, 50000);
 
+        const fastIntents = ['greeting', 'farewell', 'gratitude', 'general_chat'];
+        const isFastIntent = fastIntents.includes(analysis.intent);
+
         // 4. Initialize agent with snapshot (not live ref)
-        const agent = new DeveloperAgent({
+        const agent = new RouterAgent({
           modelId: nyxModel,
           provider: nyxProvider,
           apiKey: nyxApiKey,
@@ -744,11 +750,42 @@ export const useChatPipeline = ({
           webSearchEnabled: webSearchEnabled,
           agentType: options?.agentType === 'coder' ? 'opencode' : 'chat',
           enableToolLoop: useNyxStore.getState().agentLoopEnabled,
+          isFastIntent,
         });
 
         // 5. Gather search context (non-blocking UI)
         const enableToolLoop = useNyxStore.getState().agentLoopEnabled;
-        const searchContextPromise = undefined;
+        
+        // BUG 2 FIX: Actually start the search if enabled, rather than hardcoding to undefined
+        let searchContextPromise: Promise<string> | undefined = undefined;
+        if (webSearchEnabled && !enableToolLoop) {
+           if (analysis.intent === 'web_search' || sanitizedPrompt.toLowerCase().includes('search')) {
+              searchContextPromise = (async () => {
+                try {
+                  const query = sanitizedPrompt;
+                  const numResults = 5;
+                  
+                  if (typeof window !== 'undefined' && '__TAURI__' in window) {
+                    const { invoke } = await import('@tauri-apps/api/core');
+                    return await invoke<string>('search_web_command', { query, numResults });
+                  } else {
+                    const res = await fetchWithAuth(
+                      `/api/v1/search?q=${encodeURIComponent(query)}&n=${numResults}`
+                    );
+                    if (!res.ok) throw new Error(`Search failed`);
+                    const data = await res.json();
+                    return (data.results || [])
+                      .slice(0, numResults)
+                      .map((r: any, i: number) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`)
+                      .join('\n\n');
+                  }
+                } catch (e) {
+                  console.warn('Pre-search failed:', e);
+                  return '';
+                }
+              })();
+           }
+        }
 
 
         // 6. Stream response with timeout protection and Execution Mode handling
@@ -798,7 +835,7 @@ export const useChatPipeline = ({
                   baseOptions
                 ).then((results) => {
                   responseText = results
-                    .map((r) => `### Response from ${r.model}:\n${r.text}`)
+                    .map((r) => r.text)
                     .join('\n\n---\n\n');
                   metadata = results[0]?.metrics || metadata;
                   queue.push({ type: 'text', content: responseText });
@@ -903,11 +940,18 @@ export const useChatPipeline = ({
             const next = [...prev];
             const last = next[next.length - 1];
             if (last?.role === 'assistant') {
+              const wasAborted = controller.signal.aborted;
+              const finalContent = wasAborted && text
+                ? `${text}\n\n[Response interrupted by user]`
+                : text;
               next[next.length - 1] = {
                 ...last,
-                content: text,
-                status: finishReason === 'error' ? 'error' : 'success',
-                metrics: enrichedMetrics,
+                content: finalContent,
+                status: wasAborted ? 'stopped' : (finishReason === 'error' ? 'error' : 'success'),
+                metrics: {
+                  ...enrichedMetrics,
+                  finishReason: wasAborted ? 'stopped' : finishReason,
+                },
                 reasoning: last.reasoning || undefined,
                 toolCalls: last.toolCalls || undefined,
                 citations: last.citations || undefined,
@@ -1021,7 +1065,9 @@ export const useChatPipeline = ({
             const partialContent = last.content || '';
             const errorMsg = error?.message || 'Generation failed.';
             
-            let finalContent = partialContent || (isAborted ? 'Generation stopped.' : `Error: ${errorMsg}`);
+            let finalContent = partialContent
+              ? (isAborted ? `${partialContent}\n\n[Response interrupted by user]` : partialContent)
+              : (isAborted ? 'Generation stopped.' : `Error: ${errorMsg}`);
             
             if (rateLimitReason) {
               const limitNames = {
