@@ -22,7 +22,6 @@
   "exclude": ["node_modules", "dist", "scratch", ".nyx-cache", ".nyx-models"],
   "include": [],
   "references": [
-    { "path": "./apps/server" },
     { "path": "./apps/web" },
     { "path": "./packages/shared" }
   ],

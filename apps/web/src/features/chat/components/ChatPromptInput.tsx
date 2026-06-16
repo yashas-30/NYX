@@ -6,24 +6,8 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Send,
-  StopCircle,
-  X,
-  Zap,
-  Info,
-  ChevronDown,
-  Bot,
-  Mic,
-  SlidersHorizontal,
-  MemoryStick,
-  Cpu,
-  Thermometer,
-  Layers,
-  RotateCcw,
-  Check,
-  Image as ImageIcon,
-} from 'lucide-react';
+import { SendIcon as Send, XIcon as X, ZapIcon as Zap, InfoIcon as Info, ChevronDownIcon as ChevronDown, MicIcon as Mic, SlidersHorizontalIcon as SlidersHorizontal, LayersIcon as Layers, CheckIcon as Check } from '@animateicons/react/lucide';
+import { StopCircle, Bot, MemoryStick, Cpu, Thermometer, RotateCcw, Image as ImageIcon } from 'lucide-react';
 
 import { ModelDefinition } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -788,7 +772,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                         : 'bg-muted border-transparent text-muted-foreground/30 cursor-not-allowed'
                     }`}
                   >
-                    <Send size={11} strokeWidth={2.5} />
+                    <Send size={11}  />
                   </motion.button>
                 )}
               </div>

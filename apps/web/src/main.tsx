@@ -309,6 +309,8 @@ function RootContainer() {
 
     const checkBackend = async () => {
       await initBackendUrl();
+      if (mounted) setIsBackendReady(true);
+      return; // TEMPORARY BYPASS: Skip backend health check while server is down
       while (mounted) {
         // Hard timeout guard
         const elapsed = Date.now() - startedAt;

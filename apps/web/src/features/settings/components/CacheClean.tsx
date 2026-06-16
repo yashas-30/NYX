@@ -1,7 +1,7 @@
 // fallow-ignore-file code-duplication
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Trash2 } from 'lucide-react';
+import { Trash2Icon as Trash2 } from '@animateicons/react/lucide';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 

@@ -12,7 +12,6 @@
     "dev:desktop": "node scripts/pre-dev.cjs && tauri dev",
     "dev:web": "node scripts/pre-dev.cjs && pnpm --filter @nyx/web dev",
     "build": "turbo run build",
-    "build:server": "pnpm --filter @nyx/server build",
     "build:web": "pnpm --filter @nyx/web build",
     "tauri": "tauri",
     "lint": "turbo run lint",

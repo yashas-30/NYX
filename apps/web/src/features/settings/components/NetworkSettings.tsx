@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Globe, Save } from 'lucide-react';
+import { GlobeIcon as Globe } from '@animateicons/react/lucide';
+import { Save } from 'lucide-react';
 
 export const NetworkSettings: React.FC = () => {
   const [proxy, setProxy] = useState('');

@@ -48,14 +48,14 @@ export function LocalProviderStatus() {
     );
   }
 
-  const providers: Array<{ key: keyof LocalStatus; label: string; data: ProviderStatus }> = [
+  const providers: Array<{ key: keyof LocalStatus; label: string; data: ProviderStatus | undefined }> = [
     { key: 'ollama', label: 'Ollama', data: status.ollama },
     { key: 'lmstudio', label: 'LM Studio', data: status.lmstudio },
   ];
 
   return (
     <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-zinc-900/50 border border-white/5 text-xs">
-      {providers.map(({ key, label, data }) => (
+      {providers.map(({ key, label, data }) => data ? (
         <div
           key={key}
           className="flex items-center gap-1.5"
@@ -83,7 +83,7 @@ export function LocalProviderStatus() {
             )}
           </span>
         </div>
-      ))}
+      ) : null)}
       <button
         onClick={fetchStatus}
         disabled={loading}

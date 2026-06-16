@@ -255,14 +255,15 @@ function logRequest(
   const isExpectedPollingError = 
     (url.includes('local-models/ollama/models') && status === 500) ||
     (url.includes('models/list') && status === 409) ||
-    (url.includes('local-models/ollama/models') && status === 503);
+    (url.includes('local-models/ollama/models') && status === 503) ||
+    status === 404; // TEMPORARY BYPASS: Silence mock-backend 404s
 
   if ((error || status >= 400) && !isExpectedPollingError) {
     console.error(
       `[AuthFetch] ${method} ${url} → ${status} (${latencyMs}ms)${error ? ` | ${error}` : ''}`
     );
   } else {
-    console.debug(`[AuthFetch] ${method} ${url} → ${status} (${latencyMs}ms)${error ? ` | ${error}` : ''}`);
+    // Suppressed: console.debug(`[AuthFetch] ${method} ${url} → ${status} (${latencyMs}ms)${error ? ` | ${error}` : ''}`);
   }
 }
 

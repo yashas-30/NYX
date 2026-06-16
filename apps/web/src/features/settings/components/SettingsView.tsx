@@ -1,22 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
-import {
-  Network,
-  HelpCircle,
-  BookOpen,
-  ExternalLink,
-  Cpu,
-  Zap,
-  Database,
-  Globe,
-  Settings as SettingsIcon,
-  ChevronUp,
-  ChevronDown,
-  Search,
-  User,
-  Palette,
-} from 'lucide-react';
+import { BookOpenIcon as BookOpen, ExternalLinkIcon as ExternalLink, ZapIcon as Zap, GlobeIcon as Globe, SettingsIcon as SettingsIcon, ChevronUpIcon as ChevronUp, ChevronDownIcon as ChevronDown, SearchIcon as Search, UserIcon as User } from '@animateicons/react/lucide';
+import { Network, HelpCircle, Cpu, Database, Palette } from 'lucide-react';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';

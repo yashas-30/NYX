@@ -1,7 +1,8 @@
 // @ts-nocheck
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, RotateCcw, Check, MemoryStick, Layers, Thermometer, Cpu } from 'lucide-react';
+import { ZapIcon as Zap, CheckIcon as Check, LayersIcon as Layers } from '@animateicons/react/lucide';
+import { RotateCcw, MemoryStick, Thermometer, Cpu } from 'lucide-react';
 import { toast } from 'sonner';
 import { SectionLabel, ParamSlider } from '@shared/components/PromptInputSubcomponents';
 

@@ -1,5 +1,6 @@
 import React from 'react';
-import { X, Settings2, Sliders, Zap, Database, BrainCircuit, Maximize } from 'lucide-react';
+import { XIcon as X, ZapIcon as Zap } from '@animateicons/react/lucide';
+import { Settings2, Sliders, Database, BrainCircuit, Maximize } from 'lucide-react';
 import { useSettingsStore } from '../../../core/stores/useSettingsStore';
 
 interface ChatSettingsProps {

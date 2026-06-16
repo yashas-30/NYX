@@ -21,7 +21,7 @@ import {
   updateConversationState,
   ConversationState,
 } from '@src/core/services/promptClassifier';
-import { ChatAgent } from '@src/core/agents/chatAgent';
+import { DeveloperAgent } from '@src/core/agents/DeveloperAgent';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
 import { AIService, countTokens } from '@src/core/services/ai.service';
@@ -368,7 +368,7 @@ export const useChatPipeline = ({
               const name = chunk.name;
               // Find the latest pending tool with this name
               const calls = Array.from(toolCallsMap.values());
-              const target = calls.slice().reverse().find(c => c.function.name === name && c.status === 'pending');
+              const target = calls.slice().reverse().find(c => c.function?.name === name && c.status === 'pending');
               if (target) {
                 target.status = 'running';
                 toolCallsMap.set(target.id, target);
@@ -392,7 +392,7 @@ export const useChatPipeline = ({
               const name = chunk.name;
               const result = chunk.result;
               const calls = Array.from(toolCallsMap.values());
-              const target = calls.slice().reverse().find(c => c.function.name === name && c.status === 'running');
+              const target = calls.slice().reverse().find(c => c.function?.name === name && c.status === 'running');
               if (target) {
                 target.status = 'success';
                 target.result = result;
@@ -417,7 +417,7 @@ export const useChatPipeline = ({
               const name = chunk.name;
               const error = chunk.error;
               const calls = Array.from(toolCallsMap.values());
-              const target = calls.slice().reverse().find(c => c.function.name === name && c.status === 'running');
+              const target = calls.slice().reverse().find(c => c.function?.name === name && c.status === 'running');
               if (target) {
                 target.status = 'error';
                 target.result = error;
@@ -439,20 +439,21 @@ export const useChatPipeline = ({
             }
 
             case 'tool_call': {
-              const tc = chunk.metadata as ToolCall;
-              if (!tc?.id) break;
+              const tc = chunk.metadata as any;
+              if (!tc?.id && !tc?.toolCallId) break;
 
-              const existing = toolCallsMap.get(tc.id);
+              const tcId = tc.id || tc.toolCallId;
+              const existing = toolCallsMap.get(tcId);
               if (existing) {
-                existing.function.arguments += tc.function.arguments || '';
+                existing.function.arguments += tc.function?.arguments || tc.args || '';
               } else {
-                toolCallsMap.set(tc.id, {
-                  id: tc.id,
+                toolCallsMap.set(tcId, {
+                  id: tcId,
                   type: 'function',
                   index: tc.index || toolCallsMap.size,
                   function: {
-                    name: tc.function.name,
-                    arguments: tc.function.arguments || '',
+                    name: tc.function?.name || tc.name || tc.toolName || '',
+                    arguments: tc.function?.arguments || tc.args || '',
                   },
                 });
               }
@@ -733,7 +734,7 @@ export const useChatPipeline = ({
         const compressedPrompt = AIService.compressPrompt(sanitizedPrompt, 50000);
 
         // 4. Initialize agent with snapshot (not live ref)
-        const agent = new ChatAgent({
+        const agent = new DeveloperAgent({
           modelId: nyxModel,
           provider: nyxProvider,
           apiKey: nyxApiKey,

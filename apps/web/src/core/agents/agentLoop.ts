@@ -22,6 +22,7 @@ import { AISettings, ChatMessage } from '@src/infrastructure/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { invoke } from '@tauri-apps/api/core';
 import { MemoryStore } from './memoryStore';
+import { TrajectoryLogger } from '@src/infrastructure/services/trajectoryLogger';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -178,6 +179,29 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       required: ['action', 'params'],
     },
   },
+  {
+    name: 'run_terminal_command',
+    description: 'Execute a terminal command (shell). Useful for compiling, testing, checking status, or generic OS interaction.',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'The exact command string to run.' }
+      },
+      required: ['command']
+    }
+  },
+  {
+    name: 'write_file',
+    description: 'Write string content to a file, completely replacing any existing content.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute or relative file path.' },
+        content: { type: 'string', description: 'The file contents to write.' }
+      },
+      required: ['path', 'content']
+    }
+  },
 ];
 
 // ── Tool executor ─────────────────────────────────────────────────────────────
@@ -302,6 +326,30 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
         }
       }
 
+      case 'run_terminal_command': {
+        const command = String(args.command || '');
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          // Assumes a general 'execute_command' binding exists in NYX tauri app, or fallback
+          const output = await invoke<string>('execute_command', { command });
+          return { toolCallId: toolCall.id, name: toolCall.name, result: output || 'Command succeeded with no output.', isError: false };
+        } catch (err: any) {
+          return { toolCallId: toolCall.id, name: toolCall.name, result: `Command failed: ${err.message || String(err)}`, isError: true };
+        }
+      }
+
+      case 'write_file': {
+        const path = String(args.path || '');
+        const content = String(args.content || '');
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('fs_write_file', { path, content });
+          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully wrote to ${path}`, isError: false };
+        } catch (err: any) {
+          return { toolCallId: toolCall.id, name: toolCall.name, result: `Failed to write file: ${err.message || String(err)}`, isError: true };
+        }
+      }
+
       default:
         return {
           toolCallId: toolCall.id,
@@ -380,11 +428,26 @@ export async function* runAgentLoop(
         apiKey,
         systemInstruction,
         settings,
-        (event: { type: string; content: string | ToolCall[]; final: boolean }) => {
+        (event: { type: string; content: string | any[]; final: boolean }) => {
           if (event.type === 'text' && typeof event.content === 'string') {
             accumulatedText += event.content;
           } else if (event.type === 'tool_calls' && Array.isArray(event.content)) {
-            pendingToolCalls = event.content as ToolCall[];
+            pendingToolCalls = event.content.map((tc: any) => {
+              const name = tc.name || tc.function?.name || 'unknown';
+              let args = tc.arguments || tc.function?.arguments || {};
+              if (typeof args === 'string') {
+                try {
+                  args = JSON.parse(args);
+                } catch {
+                  args = {};
+                }
+              }
+              return {
+                id: tc.id || `${name}_${Date.now()}`,
+                name,
+                arguments: args
+              } as ToolCall;
+            });
           }
         },
         signal,
@@ -446,6 +509,15 @@ export async function* runAgentLoop(
       content: `Tool results:\n\n${toolResultContent}\n\nContinue based on these results.`,
       timestamp: Date.now(),
     });
+
+    // Log the trajectory
+    TrajectoryLogger.getInstance().logInteraction({
+      timestamp: Date.now(),
+      prompt: messages[messages.length - 2]?.content || prompt,
+      action: pendingToolCalls[0] || null,
+      observation: toolResultContent,
+      success: toolResults.every(r => !r.isError)
+    }).catch(console.error);
   }
 
   // Safety: maxIterations reached

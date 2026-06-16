@@ -1,11 +1,6 @@
 import { Toaster as Sonner, type ToasterProps, toast as originalToast } from 'sonner';
-import {
-  CircleCheckIcon,
-  InfoIcon,
-  TriangleAlertIcon,
-  OctagonXIcon,
-  Loader2Icon,
-} from 'lucide-react';
+import { CircleCheckIcon, InfoIcon, TriangleAlertIcon } from '@animateicons/react/lucide';
+import { OctagonXIcon, Loader2Icon } from 'lucide-react';
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const theme = 'dark';

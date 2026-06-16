@@ -11,7 +11,8 @@ import ReactFlow, {
   useEdgesState,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { MessageSquare, Code, Image, StickyNote, Play, Edit } from 'lucide-react';
+import { CodeIcon as Code, PlayIcon as Play } from '@animateicons/react/lucide';
+import { MessageSquare, Image, StickyNote, Edit } from 'lucide-react';
 import { AIService } from '@src/core/services/ai.service';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';

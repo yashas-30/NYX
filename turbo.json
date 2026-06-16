@@ -23,9 +23,6 @@
     "clean": {
       "cache": false
     },
-    "@nyx/server#typecheck": {
-      "dependsOn": ["@nyx/shared#build"]
-    },
     "@nyx/web#typecheck": {
       "dependsOn": ["@nyx/shared#build"]
     },
@@ -38,11 +35,6 @@
       "outputs": ["dist/**"]
     },
     "@nyx/shared#dev": {
-      "dependsOn": ["@nyx/shared#build:dev"],
-      "cache": false,
-      "persistent": true
-    },
-    "@nyx/server#dev": {
       "dependsOn": ["@nyx/shared#build:dev"],
       "cache": false,
       "persistent": true

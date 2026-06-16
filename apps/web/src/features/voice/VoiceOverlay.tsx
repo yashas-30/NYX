@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Mic, MicOff, Volume2 } from 'lucide-react';
+import { XIcon as X, MicIcon as Mic, MicOffIcon as MicOff } from '@animateicons/react/lucide';
+import { Volume2 } from 'lucide-react';
 import { Button } from '@src/shared/components/ui/button';
 
 interface VoiceOverlayProps {

@@ -4,7 +4,7 @@
  */
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ExternalLink, Globe } from 'lucide-react';
+import { ExternalLinkIcon as ExternalLink, GlobeIcon as Globe } from '@animateicons/react/lucide';
 
 export interface Citation {
   id: string;

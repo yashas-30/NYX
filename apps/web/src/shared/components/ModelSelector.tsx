@@ -1,18 +1,7 @@
 // fallow-ignore-file code-duplication
 import React, { useMemo, useEffect, useRef } from 'react';
-import {
-  Search,
-  Check,
-  Info,
-  Bot,
-  RefreshCw,
-  X,
-  Sparkles,
-  Zap,
-  HardDrive,
-  Cpu,
-  AlertCircle,
-} from 'lucide-react';
+import { SearchIcon as Search, CheckIcon as Check, InfoIcon as Info, XIcon as X, SparklesIcon as Sparkles, ZapIcon as Zap } from '@animateicons/react/lucide';
+import { Bot, RefreshCw, HardDrive, Cpu, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { AVAILABLE_MODELS } from '@shared/config/models';

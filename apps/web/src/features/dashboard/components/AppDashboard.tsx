@@ -13,24 +13,8 @@ import { AppRouter } from '@src/app/router';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
-import {
-  PanelLeftClose,
-  PanelLeftOpen,
-  Plus,
-  MessageSquare,
-  Settings,
-  Trash2,
-  ChevronRight,
-  User,
-  Activity,
-  ArrowLeft,
-  ArrowRight,
-  Library,
-  Folder,
-  FolderPlus,
-  MoreHorizontal,
-  Layers,
-} from 'lucide-react';
+import { PlusIcon as Plus, SettingsIcon as Settings, Trash2Icon as Trash2, ChevronRightIcon as ChevronRight, UserIcon as User, ActivityIcon as Activity, FolderIcon as Folder, LayersIcon as Layers } from '@animateicons/react/lucide';
+import { PanelLeftClose, PanelLeftOpen, MessageSquare, ArrowLeft, ArrowRight, Library, FolderPlus, MoreHorizontal } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
 import { useAgentLightning } from '@src/shared/hooks/useAgentLightning';

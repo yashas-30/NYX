@@ -8,20 +8,20 @@ use tauri::{
 };
 
 mod commands;
-mod server_sidecar;
 mod tray;
+mod db;
 
 use commands::*;
-use server_sidecar::ServerManager;
 
 #[derive(Default)]
 pub struct AppState {
-    pub server_manager: Arc<Mutex<Option<ServerManager>>>,
     pub mcp_manager: Arc<commands::mcp::McpManager>,
     pub pty_state: Arc<Mutex<std::collections::HashMap<String, commands::pty::PtySession>>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+use crate::commands::agent_orchestrator::orchestrate_supervisor;
+
 pub fn run() {
     tracing_subscriber::fmt::init();
     tauri::Builder::default()
@@ -59,7 +59,6 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
-            server_manager: Arc::new(Mutex::new(None)),
             mcp_manager: Arc::new(commands::mcp::McpManager::default()),
             pty_state: Arc::new(Mutex::new(std::collections::HashMap::new())),
         })
@@ -69,14 +68,20 @@ pub fn run() {
             let handle = app.handle().clone();
             
             // Register global shortcut
-            use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
             use std::str::FromStr;
+            use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
             let shortcut = tauri_plugin_global_shortcut::Shortcut::from_str("Super+Space").unwrap_or_else(|_| tauri_plugin_global_shortcut::Shortcut::from_str("CmdOrCtrl+Space").unwrap());
             if let Err(e) = app.global_shortcut().register(shortcut) {
                 tracing::warn!("Failed to register global shortcut: {}", e);
             }
 
             tauri::async_runtime::spawn(async move {
+                // Initialize database pool
+                if let Ok(pool) = db::pool::init_db_pool().await {
+                    handle.manage(pool);
+                } else {
+                    tracing::error!("❌ Failed to initialize database pool");
+                }
                 setup_app(&handle).await;
             });
 
@@ -87,14 +92,18 @@ pub fn run() {
             vault_store_key, vault_get_key, vault_delete_key, vault_status,
             window_minimize, window_maximize, window_close, window_show, window_hide,
             system_gpu_info, system_info, system_get_userdata,
-            server_get_ports, server_restart,
             app_get_version, app_open_external,
-            proxy_request, proxy_stream_request,
             execute_computer_action,
             mcp_start_server, mcp_send_request, mcp_stop_server, mcp_list_servers,
             llm_stream_request,
             pty_spawn, pty_write, pty_resize, pty_close,
             fs_watch_start, fs_watch_stop, fs_parse_and_chunk_file,
+            db::commands::db_get_chat_conversations,
+            db::commands::db_get_chat_messages,
+            db::commands::db_get_db_sessions,
+            db::commands::db_get_db_messages,
+            db::commands::db_get_swarm_context,
+            orchestrate_supervisor,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -132,41 +141,9 @@ async fn setup_app(handle: &tauri::AppHandle) {
 
     #[cfg(target_os = "windows")]
     {
-        let _ = window_vibrancy::apply_blur(&window, Some((18, 18, 18, 125))); // Dark blur
-        let _ = window_vibrancy::apply_blur(&spotlight, Some((18, 18, 18, 125))); // Dark blur
+        let _ = window_vibrancy::apply_mica(&window, Some(true)); // Dark theme
+        let _ = window_vibrancy::apply_mica(&spotlight, Some(true));
     }
-
-    // Spawn server start in background
-    let handle_clone = handle.clone();
-    tauri::async_runtime::spawn(async move {
-        let mut server_manager = ServerManager::new(handle_clone.clone()).await;
-        let ports = match server_manager.start().await {
-            Ok(p) => {
-                tracing::info!("✅ Backend server started on port {}", p.express_port);
-                p
-            }
-            Err(e) => {
-                tracing::error!("❌ Failed to start server: {}", e);
-                let _ = tauri_plugin_dialog::DialogExt::dialog(&handle_clone)
-                    .message(format!("NYX backend server failed to start:\n\n{}\n\nThe app will open but AI features may not work. Try restarting the app.", e))
-                    .kind(tauri_plugin_dialog::MessageDialogKind::Error)
-                    .title("Backend Server Error")
-                    .blocking_show();
-                
-                server_sidecar::ServerPorts {
-                    express_port: 3010,
-                    fastify_port: 3011,
-                    scrapling_port: 3012,
-                }
-            }
-        };
-
-        {
-            let state = handle_clone.state::<AppState>();
-            let mut mgr = state.server_manager.lock().await;
-            *mgr = Some(server_manager);
-        }
-    });
 
     tracing::info!("✅ NYX Tauri fully initialized");
 }

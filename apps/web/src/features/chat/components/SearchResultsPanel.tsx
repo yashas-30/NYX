@@ -3,7 +3,7 @@
  * @description Sources panel rendered at the bottom of assistant messages that used web search.
  */
 import React, { useState } from 'react';
-import { Globe, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { GlobeIcon as Globe, ChevronDownIcon as ChevronDown, ChevronUpIcon as ChevronUp, ExternalLinkIcon as ExternalLink } from '@animateicons/react/lucide';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Citation } from './CitationCard';
 

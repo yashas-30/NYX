@@ -6,33 +6,8 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Trash2,
-  Brain,
-  PanelLeftOpen,
-  PanelLeftClose,
-  ChevronDown,
-  Share2,
-  Lock,
-  Unlock,
-  Zap,
-  Square,
-  Paperclip,
-  Bot,
-  Cpu,
-  Wifi,
-  WifiOff,
-  Clock,
-  MessageSquare,
-  FileText,
-  Download,
-  Check,
-  X,
-  MoreHorizontal,
-  Keyboard,
-  AlertCircle,
-  HardDrive,
-} from 'lucide-react';
+import { Trash2Icon as Trash2, BrainIcon as Brain, ChevronDownIcon as ChevronDown, LockIcon as Lock, ZapIcon as Zap, PaperclipIcon as Paperclip, WifiIcon as Wifi, WifiOffIcon as WifiOff, DownloadIcon as Download, CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
+import { PanelLeftOpen, PanelLeftClose, Share2, Unlock, Square, Bot, Cpu, Clock, MessageSquare, FileText, MoreHorizontal, Keyboard, AlertCircle, HardDrive } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { ModelSelector } from '@src/shared/components/ModelSelector';
@@ -208,7 +183,7 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
           } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
         title="Attach files (or drag & drop)"
       >
-        <Paperclip size={15} strokeWidth={1.8} />
+        <Paperclip size={15}  />
         {dragOver && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
@@ -261,7 +236,7 @@ const ShareMenu: React.FC<{
           }`}
         title="Share & Export"
       >
-        <Share2 size={15} strokeWidth={1.8} />
+        <Share2 size={15}  />
       </motion.button>
 
       <AnimatePresence>
@@ -619,7 +594,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 className="w-8 h-8 flex items-center justify-center rounded-md text-cyan-500 hover:text-cyan-600 hover:bg-cyan-500/10 transition-colors cursor-pointer shrink-0"
                 title="Agent Lightning"
               >
-                <Zap size={15} fill="currentColor" strokeWidth={1.8} />
+                <Zap size={15}   />
               </motion.button>
             )}
 
@@ -631,7 +606,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 className="w-8 h-8 flex items-center justify-center rounded-md text-violet-400 hover:text-violet-500 hover:bg-violet-500/10 transition-colors cursor-pointer shrink-0"
                 title="Memory Manager"
               >
-                <Brain size={15} strokeWidth={1.8} />
+                <Brain size={15}  />
               </motion.button>
             )}
 
@@ -646,9 +621,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               title={privacyMode ? 'Privacy Mode On' : 'Privacy Mode Off'}
             >
               {privacyMode ? (
-                <Lock size={15} strokeWidth={2.2} />
+                <Lock size={15}  />
               ) : (
-                <Unlock size={15} strokeWidth={1.8} />
+                <Unlock size={15}  />
               )}
             </motion.button>
 
@@ -662,7 +637,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
               title="Clear chat"
             >
-              <Trash2 size={15} strokeWidth={1.8} />
+              <Trash2 size={15}  />
             </motion.button>
 
             {/* More menu (mobile shortcuts) */}

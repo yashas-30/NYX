@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { MessageSquare, Plus, PanelLeftClose, Trash2 } from 'lucide-react';
+import { PlusIcon as Plus, Trash2Icon as Trash2 } from '@animateicons/react/lucide';
+import { MessageSquare, PanelLeftClose } from 'lucide-react';
 
 interface ChatSession {
   id: string;

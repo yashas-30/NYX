@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { X, Code2, Copy, Download, Maximize2, Minimize2, Play } from 'lucide-react';
+import { XIcon as X, CopyIcon as Copy, DownloadIcon as Download, PlayIcon as Play } from '@animateicons/react/lucide';
+import { Code2, Maximize2, Minimize2 } from 'lucide-react';
 import { Sandpack } from '@codesandbox/sandpack-react';
 import { PythonSandbox } from './PythonSandbox';
 

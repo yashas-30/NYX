@@ -6,21 +6,8 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Zap,
-  X,
-  ThumbsUp,
-  ThumbsDown,
-  Trash2,
-  ShieldAlert,
-  Clock,
-  GitCommit,
-  FileText,
-  Cpu,
-  Check,
-  AlertCircle,
-  RefreshCw,
-} from 'lucide-react';
+import { ZapIcon as Zap, XIcon as X, ThumbsUpIcon as ThumbsUp, ThumbsDownIcon as ThumbsDown, Trash2Icon as Trash2, CheckIcon as Check } from '@animateicons/react/lucide';
+import { ShieldAlert, Clock, GitCommit, FileText, Cpu, AlertCircle, RefreshCw } from 'lucide-react';
 import { LightningRollout } from '../hooks/useAgentLightning';
 
 interface AgentLightningPanelProps {
@@ -117,7 +104,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
             <div className="flex items-center justify-between p-5 border-b border-border bg-muted/20">
               <div className="flex items-center gap-2.5">
                 <span className="w-8 h-8 rounded-md bg-muted/50 border border-border flex items-center justify-center text-foreground animate-pulse">
-                  <Zap size={16} fill="currentColor" />
+                  <Zap size={16}  />
                 </span>
                 <div>
                   <h3 className="text-sm font-bold tracking-tight uppercase flex items-center gap-1.5 text-foreground">
@@ -221,15 +208,15 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                             <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
                           </linearGradient>
                         </defs>
-                        <path d={`${linePath} L 100 100 L 0 100 Z`} fill="url(#chartGrad)" />
+                        <path d={`${linePath} L 100 100 L 0 100 Z`}  />
                         <motion.path
                           initial={{ pathLength: 0 }}
                           animate={{ pathLength: 1 }}
                           transition={{ duration: 0.8, ease: 'easeOut' }}
                           d={linePath}
-                          fill="none"
+                          
                           stroke="#06b6d4"
-                          strokeWidth="2"
+                          
                         />
                       </>
                     )}
@@ -374,7 +361,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                             >
                               <ThumbsUp
                                 size={11}
-                                fill={rollout.reward === 1.0 ? 'currentColor' : 'none'}
+                                
                               />
                             </button>
                             <button
@@ -388,7 +375,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                             >
                               <ThumbsDown
                                 size={11}
-                                fill={rollout.reward === 0.0 ? 'currentColor' : 'none'}
+                                
                               />
                             </button>
                           </div>

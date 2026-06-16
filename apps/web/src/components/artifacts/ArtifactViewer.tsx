@@ -3,15 +3,8 @@ import * as Babel from '@babel/standalone';
 import { ErrorBoundary } from './ErrorBoundary';
 import { MermaidDiagram } from './MermaidDiagram';
 import { CodeBlock } from '../chat/CodeBlock';
-import { 
-  Edit as EditIcon, 
-  Download as DownloadIcon, 
-  Code as CodeIcon, 
-  FileText as FileTextIcon, 
-  Layout as LayoutIcon, 
-  Image as ImageIcon,
-  Check as CheckIcon
-} from 'lucide-react';
+import { DownloadIcon as DownloadIcon, CodeIcon as CodeIcon, CheckIcon as CheckIcon } from '@animateicons/react/lucide';
+import { Edit as EditIcon, FileText as FileTextIcon, Layout as LayoutIcon, Image as ImageIcon } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 

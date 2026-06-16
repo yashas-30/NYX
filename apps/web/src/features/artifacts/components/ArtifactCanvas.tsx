@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Maximize2, Minimize2, X, Code, Play, Send, ChevronRight, CheckCircle } from 'lucide-react';
+import { XIcon as X, CodeIcon as Code, PlayIcon as Play, SendIcon as Send, ChevronRightIcon as ChevronRight } from '@animateicons/react/lucide';
+import { Maximize2, Minimize2, CheckCircle } from 'lucide-react';
 import { Button } from '@src/shared/components/ui/button';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { Sandpack } from '@codesandbox/sandpack-react';

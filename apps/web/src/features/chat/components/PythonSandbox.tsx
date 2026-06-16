@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Terminal, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { PlayIcon as Play, TerminalIcon as Terminal } from '@animateicons/react/lucide';
+import { Image as ImageIcon, Loader2 } from 'lucide-react';
 
 interface PythonSandboxProps {
   code: string;

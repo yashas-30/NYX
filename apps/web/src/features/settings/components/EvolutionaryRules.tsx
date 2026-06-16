@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Brain, Trash2 } from 'lucide-react';
+import { BrainIcon as Brain, Trash2Icon as Trash2 } from '@animateicons/react/lucide';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 

@@ -18,25 +18,8 @@ import { Button } from '@src/shared/components/ui/button';
 import { ScrollArea } from '@src/shared/components/ui/scroll-area';
 import { Input } from '@src/shared/components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Send,
-  Square,
-  Trash2,
-  Copy,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  RefreshCw,
-  Bot,
-  Cpu,
-  Zap,
-  Clock,
-  Terminal,
-  FileCode,
-  Image as ImageIcon,
-  AlertCircle,
-  Sparkles,
-} from 'lucide-react';
+import { SendIcon as Send, Trash2Icon as Trash2, CopyIcon as Copy, CheckIcon as Check, ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, ZapIcon as Zap, TerminalIcon as Terminal, SparklesIcon as Sparkles } from '@animateicons/react/lucide';
+import { Square, RefreshCw, Bot, Cpu, Clock, FileCode, Image as ImageIcon, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -364,7 +347,7 @@ const MarkdownRenderer: React.FC<{ content: string; isStreaming?: boolean }> = m
     );
 
     return (
-      <div className="prose prose-invert max-w-none">
+      <div className="prose-nyx w-full max-w-none">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
           {content}
         </ReactMarkdown>
@@ -802,6 +785,12 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                       {analysis.requiresTools ? 'Required' : 'None'}
                     </span>
                   </div>
+
+                  {analysis.reasoning && (
+                    <p className="text-[#888] text-[11px] leading-relaxed pt-2 border-t border-[#2A2A2E]">
+                      {analysis.reasoning}
+                    </p>
+                  )}
                   {analysis.confidence && (
                     <div className="flex justify-between items-center">
                       <span className="text-[#888]">Confidence</span>
@@ -809,11 +798,6 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                         {Math.round(analysis.confidence * 100)}%
                       </span>
                     </div>
-                  )}
-                  {analysis.reasoning && (
-                    <p className="text-[#888] text-[11px] leading-relaxed pt-2 border-t border-[#2A2A2E]">
-                      {analysis.reasoning}
-                    </p>
                   )}
                 </div>
               </div>

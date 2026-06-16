@@ -12,6 +12,49 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [
+      {
+        name: 'mock-backend',
+        configureServer(server) {
+          server.middlewares.use('/api', (req, res, next) => {
+            res.setHeader('Content-Type', 'application/json');
+            if (req.url && (req.url.includes('/vault/token') || req.url.includes('/auth/session'))) {
+              res.statusCode = 200;
+              res.end(JSON.stringify({ 
+                token: 'mock-token-for-ui-testing', 
+                expiresAt: Date.now() + 10000000,
+                success: true
+              }));
+            } else if (req.url && req.url.includes('/vault/validate')) {
+              res.statusCode = 200;
+              res.end(JSON.stringify({ valid: true, error: null }));
+            } else if (req.url && req.url.includes('/vault/store')) {
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true }));
+            } else if (req.url && req.url.includes('/memory')) {
+              if (req.method === 'GET') {
+                res.statusCode = 200;
+                // Return some mock memory
+                res.end(JSON.stringify({
+                  memories: [
+                    { id: '1', fact: 'User prefers dark mode', category: 'preference', createdAt: Date.now() }
+                  ]
+                }));
+              } else if (req.method === 'POST') {
+                res.statusCode = 200;
+                res.end(JSON.stringify({
+                  memory: { id: Date.now().toString(), fact: 'New memory added', category: 'manual', createdAt: Date.now() }
+                }));
+              } else if (req.method === 'DELETE') {
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: true }));
+              }
+            } else {
+              res.statusCode = 404;
+              res.end(JSON.stringify({ error: 'Backend mock offline' }));
+            }
+          });
+        }
+      },
       react(),
       tailwindcss(),
       wasm(),
@@ -135,7 +178,7 @@ export default defineConfig(({ mode }) => {
       },
       port: 3000,
       strictPort: true,
-      proxy: process.env.FASTIFY_VITE_EMBEDDED ? undefined : {
+      proxy: undefined /* process.env.FASTIFY_VITE_EMBEDDED ? undefined : {
         '/uploads': {
           target: 'http://127.0.0.1:3001',
           changeOrigin: true,
@@ -172,7 +215,7 @@ export default defineConfig(({ mode }) => {
             });
           }
         },
-      },
+      } */,
     },
   };
 });

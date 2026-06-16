@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@src/shared/components/ui/card';
-import { Settings, Server, Plus, Trash2 } from 'lucide-react';
+import { SettingsIcon as Settings, PlusIcon as Plus, Trash2Icon as Trash2 } from '@animateicons/react/lucide';
+import { Server } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 

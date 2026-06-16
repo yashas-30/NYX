@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
+import { SettingsIcon as Settings, PlusIcon as Plus, Trash2Icon as Trash2, CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
+import { Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '@src/shared/components/ui/sonner';
 

@@ -328,10 +328,10 @@ Just give the final answer in a natural, conversational tone.`;
   if (options.tools && options.tools.length > 0) {
     requestBody.tools = [
       {
-        functionDeclarations: options.tools.map((t) => ({
-          name: t.function.name,
-          description: t.function.description,
-          parameters: t.function.parameters,
+        functionDeclarations: options.tools.map((t: any) => ({
+          name: t.name || t.function?.name,
+          description: t.description || t.function?.description,
+          parameters: t.parameters || t.function?.parameters,
         })),
       },
     ];

@@ -401,7 +401,7 @@ export class AIService {
       recordSuccess(String(provider));
       return result;
     } catch (error: any) {
-      const isAbort = error.name === 'AbortError' || error.message?.includes('aborted');
+      const isAbort = error?.name === 'AbortError' || error?.message?.includes('aborted');
       if (String(provider) === 'gemini' && !isAbort) {
         recordFailure(String(provider));
       }
@@ -513,17 +513,27 @@ export class AIService {
 
     let result: EnhancedAIResponse;
 
-    switch (provider) {
-      case 'gemini':
-        result = await this.executeGemini(providerConfig);
-        break;
-      case 'ollama':
-      case 'lmstudio':
+    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
 
-        result = await this.executeLocal({ ...providerConfig, provider: String(provider) } as any);
-        break;
-      default:
-        throw new Error(`Unsupported provider: ${provider}`);
+    if (isTauri) {
+      // Bypass Fastify entirely on Desktop and use native Rust IPC for zero-latency
+      result = await this.executeLocal({ ...providerConfig, provider: String(provider) } as any);
+    } else {
+      switch (provider) {
+        case 'gemini':
+          result = await this.executeGemini(providerConfig);
+          break;
+        case 'ollama':
+        case 'lmstudio':
+        case 'openai':
+        case 'anthropic':
+        case 'openrouter':
+        case 'deepseek':
+          result = await this.executeLocal({ ...providerConfig, provider: String(provider) } as any);
+          break;
+        default:
+          throw new Error(`Unsupported provider: ${provider}`);
+      }
     }
 
     // Cache write

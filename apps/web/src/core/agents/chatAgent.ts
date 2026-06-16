@@ -1,9 +1,7 @@
 import { ChatMessage, StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
-import { io, Socket } from 'socket.io-client';
 import { getOrFetchSessionToken } from '@src/infrastructure/api/authFetch';
-import { runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
 import { MemoryStore } from './memoryStore';
 import { LazyStore as Store } from '@tauri-apps/plugin-store';
 import { invoke } from '@tauri-apps/api/core';
@@ -19,70 +17,9 @@ export interface ChatAgentConfig extends BaseAgentConfig {
   enableAgentLoop?: boolean;
 }
 
-// ── Fix 4: Persistent Socket.IO connection pool ───────────────────────────────
-// Instead of creating a new socket per message (100-300ms handshake overhead),
-// we maintain one persistent socket per backend URL and reuse it.
-interface PooledSocket {
-  socket: Socket;
-  url: string;
-  refCount: number;
-  lastUsed: number;
-}
-
-const socketPool = new Map<string, PooledSocket>();
-const POOL_IDLE_TTL_MS = 5 * 60 * 1000; // release socket after 5 min idle
-
-// Periodic idle connection cleanup
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of socketPool.entries()) {
-    if (entry.refCount === 0 && now - entry.lastUsed > POOL_IDLE_TTL_MS) {
-      entry.socket.disconnect();
-      socketPool.delete(key);
-    }
-  }
-}, 60_000);
-
-async function acquireSocket(baseUrl: string): Promise<Socket> {
-  const existing = socketPool.get(baseUrl);
-  if (existing && existing.socket.connected) {
-    existing.refCount++;
-    existing.lastUsed = Date.now();
-    return existing.socket;
-  }
-
-  // Create a new persistent socket
-  const token = await getOrFetchSessionToken(true).catch(() => '');
-  const socket = io(`${baseUrl}/ai`, {
-    path: '/ws/socket.io',
-    auth: { token },
-    reconnection: true,
-    reconnectionAttempts: 3,
-    reconnectionDelay: 1000,
-    timeout: 10_000,
-  });
-
-  // Update auth token on reconnect (session may have rotated)
-  socket.on('connect', async () => {
-    try {
-      const freshToken = await getOrFetchSessionToken(true);
-      (socket.auth as Record<string, string>).token = freshToken;
-    } catch {
-      // token refresh failed — keep existing token
-    }
-  });
-
-  socketPool.set(baseUrl, { socket, url: baseUrl, refCount: 1, lastUsed: Date.now() });
-  return socket;
-}
-
-function releaseSocket(baseUrl: string): void {
-  const entry = socketPool.get(baseUrl);
-  if (entry) {
-    entry.refCount = Math.max(0, entry.refCount - 1);
-    entry.lastUsed = Date.now();
-  }
-}
+// ── Fix 4: Fallback Fetch Logic ───────────────────────────────
+// We use Tauri IPC native stream whenever possible.
+// This file is simplified because the full Agent Loop has been moved to Rust.
 
 // ── ChatAgent ─────────────────────────────────────────────────────────────────
 
@@ -231,138 +168,20 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
 
     const base = (window as any).__NYX_BACKEND_URL__ || '';
 
-    // Fix 4 & Concurrent Socket: Acquire socket and resolve search context concurrently
-    const [socketResult, searchContext] = await Promise.allSettled([
-      acquireSocket(base),
-      searchContextPromise || Promise.resolve('')
-    ]);
-
-    let socket: Socket;
-    if (socketResult.status === 'fulfilled') {
-      socket = socketResult.value;
-    } else {
-      yield { type: 'error', content: `Failed to connect: ${socketResult.reason.message || socketResult.reason}` };
-      return;
-    }
-
-    if (searchContext && searchContext.status === 'fulfilled' && searchContext.value) {
+    const searchContext = await (searchContextPromise || Promise.resolve(''));
+    
+    if (searchContext) {
       processedHistory.push({
         role: 'user',
-        content: `Web Search Context: ${searchContext.value}`,
+        content: `Web Search Context: ${searchContext}`,
         timestamp: Date.now(),
       });
     }
 
-    // Fix 10: Delegate to Agent Loop if enabled
-    if (this.config.enableToolLoop) {
-      yield* runAgentLoop(prompt, {
-        modelId: this.config.modelId,
-        provider: this.config.provider,
-        apiKey: this.config.apiKey || '',
-        settings: this.config.settings,
-        history: processedHistory,
-        tools: this.config.tools || BUILTIN_TOOLS,
-        signal,
-      }) as unknown as AsyncGenerator<StreamEvent>;
-      return;
-    }
-
-    if (isTauriEnv && ['ollama', 'lmstudio', 'gemini', 'openai', 'anthropic'].includes(this.config.provider)) {
-      yield* this.streamTauriResponse(prompt, processedHistory, signal);
-      return;
-    }
-
-    // Unique request ID to namespace events on a shared socket
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-
-    const onChunk = (data: any) => {
-      // Filter to only events for this request
-      if (data.requestId && data.requestId !== requestId) return;
-
-      if (data.done) {
-        isDone = true;
-        if (resolveNext) {
-          resolveNext();
-          resolveNext = null;
-        }
-        return;
-      }
-
-      if (typeof data.text === 'string' && data.text) {
-        push({ type: 'text', content: data.text });
-      } else if (data.chunk) {
-        push({ type: 'text', content: data.chunk });
-      } else if (data.type) {
-        push(data as StreamEvent);
-      }
-    };
-
-    const onConnectError = (err: Error) => {
-      error = err;
-      isDone = true;
-      if (resolveNext) {
-        resolveNext();
-        resolveNext = null;
-      }
-    };
-
-    const onDisconnect = () => {
-      isDone = true;
-      if (resolveNext) {
-        resolveNext();
-        resolveNext = null;
-      }
-    };
-
-    socket.on('stream-chunk', onChunk);
-    socket.on('connect_error', onConnectError);
-    socket.on('disconnect', onDisconnect);
-
-    // Emit the request with the requestId so the server can tag responses
-    socket.emit('stream-request', {
-      requestId,
-      modelId: this.config.modelId,
-      provider: this.config.provider,
-      prompt,
-      history: processedHistory,
-      settings: this.config.settings,
-      agentType: this.config.agentType || 'chat',
-    });
-
-    // Abort signal handler — detach listeners and mark done
-    const onAbort = () => {
-      isDone = true;
-      if (resolveNext) {
-        resolveNext();
-        resolveNext = null;
-      }
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-
-    try {
-      while (true) {
-        if (queue.length > 0) {
-          yield queue.shift()!;
-        } else if (isDone) {
-          if (error) throw error;
-          break;
-        } else if (signal.aborted) {
-          break;
-        } else {
-          await new Promise<void>((resolve) => {
-            resolveNext = resolve;
-          });
-        }
-      }
-    } finally {
-      // Detach listeners so shared socket doesn't accumulate handlers
-      socket.off('stream-chunk', onChunk);
-      socket.off('connect_error', onConnectError);
-      socket.off('disconnect', onDisconnect);
-      signal.removeEventListener('abort', onAbort);
-      releaseSocket(base);
-    }
+    // Tauri Native Agent execution:
+    // Rust now handles the multi-turn Tool Agent loop natively.
+    yield* this.streamTauriResponse(prompt, processedHistory, signal);
+    return;
   }
 
   private async *streamTauriResponse(
@@ -387,22 +206,25 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
     let unlisten: UnlistenFn | null = null;
 
     try {
-      unlisten = await listen<{ chunk: string; done: boolean; error?: string }>(eventName, (event) => {
-        if (event.payload.error) {
-          error = new Error(event.payload.error);
+      unlisten = await listen<any>(eventName, (event) => {
+        const payload = event.payload;
+        if (payload.error) {
+          error = new Error(payload.error);
           isDone = true;
           if (resolveNext) resolveNext();
           return;
         }
 
-        if (event.payload.done) {
+        if (payload.done || payload.type === 'done') {
           isDone = true;
           if (resolveNext) resolveNext();
           return;
         }
 
-        if (event.payload.chunk) {
-          push({ type: 'text', content: event.payload.chunk });
+        if (payload.type) {
+           push(payload as StreamEvent);
+        } else if (payload.chunk) {
+           push({ type: 'text', content: payload.chunk });
         }
       });
 
@@ -418,8 +240,26 @@ export class ChatAgent extends BaseAgent<ChatAgentConfig, StreamEvent> {
       
       req.messages.push({ role: 'user', content: prompt });
 
+      let invokeCmd = 'llm_stream_request';
+      let invokeArgs: any = { req };
+      
+      if (this.config.enableAgentLoop) {
+        invokeCmd = 'orchestrate_supervisor';
+        invokeArgs = {
+          messages: req.messages,
+          context: {
+            request_id: eventName,
+            session_id: 'chat_session',
+            provider: this.config.provider,
+            model: this.config.modelId,
+            api_key: this.config.apiKey || '',
+          },
+          event_name: eventName,
+        };
+      }
+      
       // Trigger the Tauri native backend
-      invoke('llm_stream_request', { req }).catch((err) => {
+      invoke(invokeCmd, invokeArgs).catch((err) => {
         error = new Error(err.toString());
         isDone = true;
         if (resolveNext) resolveNext();

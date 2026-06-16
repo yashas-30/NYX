@@ -1,19 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Search,
-  Plus,
-  Trash2,
-  Lock,
-  Unlock,
-  Cpu,
-  MessageSquare,
-  Library,
-  Settings,
-  Check,
-  CornerDownLeft,
-  ArrowLeft,
-} from 'lucide-react';
+import { SearchIcon as Search, PlusIcon as Plus, Trash2Icon as Trash2, LockIcon as Lock, SettingsIcon as Settings, CheckIcon as Check, CornerDownLeftIcon as CornerDownLeft } from '@animateicons/react/lucide';
+import { Unlock, Cpu, MessageSquare, Library, ArrowLeft } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { AVAILABLE_MODELS } from '@shared/config/models';

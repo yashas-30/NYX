@@ -298,7 +298,7 @@ const ToolResultRow: React.FC<{ preview: string }> = ({ preview }) => (
 const PlainText: React.FC<{ content: string }> = ({ content }) => {
   if (!content.trim()) return null;
   return (
-    <div className="text-[11px] font-mono leading-relaxed py-0.5 animate-fade-in prose prose-invert prose-p:my-1 prose-pre:my-1 max-w-none" style={{ color: 'rgba(255,255,255,0.45)' }}>
+    <div className="text-[11px] font-mono leading-relaxed py-0.5 animate-fade-in prose-nyx prose-p:my-1 prose-pre:my-1 max-w-none" style={{ color: 'rgba(255,255,255,0.45)' }}>
       <ReactMarkdown 
         remarkPlugins={[remarkGfm, remarkMath]} 
         rehypePlugins={[rehypeKatex]}

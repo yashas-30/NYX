@@ -7,31 +7,8 @@
 
 import React, { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Copy,
-  Check,
-  ArrowDown,
-  Terminal,
-  ThumbsUp,
-  ThumbsDown,
-  Pencil,
-  RefreshCw,
-  GitBranch,
-  ChevronDown,
-  ChevronRight,
-  Wrench,
-  FileText,
-  Image as ImageIcon,
-  X,
-  Sparkles,
-  Clock,
-  AlertTriangle,
-  Loader2,
-  Square,
-  Download,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+import { CopyIcon as Copy, CheckIcon as Check, TerminalIcon as Terminal, ThumbsUpIcon as ThumbsUp, ThumbsDownIcon as ThumbsDown, GitBranchIcon as GitBranch, ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, XIcon as X, SparklesIcon as Sparkles, DownloadIcon as Download } from '@animateicons/react/lucide';
+import { ArrowDown, Pencil, RefreshCw, Wrench, FileText, Image as ImageIcon, Clock, AlertTriangle, Loader2, Square, Volume2, VolumeX } from 'lucide-react';
 import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -1350,10 +1327,10 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }, []);
 
   return (
-    <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-background">
+    <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden w-full bg-background">
       <div
         ref={containerRef}
-        className="flex-1 min-h-0 relative"
+        className="flex-1 min-h-0 relative w-full"
         aria-live="polite"
         aria-atomic="false"
       >

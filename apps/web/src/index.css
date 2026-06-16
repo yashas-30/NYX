@@ -484,13 +484,96 @@
   }
 }
 
-/* ── Professional List Marker Overrides ─────────────────────── */
+/* ── Professional List Marker Overrides & Prose Formatting ─────────────────────── */
+.prose-nyx {
+  color: var(--foreground);
+  font-size: 0.9375rem; /* 15px */
+  line-height: 1.65;
+  word-wrap: break-word;
+}
+
+.prose-nyx p {
+  margin-top: 0;
+  margin-bottom: 1.25em;
+}
+
+.prose-nyx p:last-child {
+  margin-bottom: 0;
+}
+
+.prose-nyx a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.prose-nyx a:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.prose-nyx strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* Headings */
+.prose-nyx h1, .prose-nyx h2, .prose-nyx h3, .prose-nyx h4 {
+  color: var(--foreground);
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+
+.prose-nyx h1 { font-size: 1.5rem; }
+.prose-nyx h2 { font-size: 1.25rem; }
+.prose-nyx h3 { font-size: 1.125rem; }
+.prose-nyx h4 { font-size: 1rem; }
+
+/* Lists */
+.prose-nyx ul, .prose-nyx ol {
+  margin-top: 0;
+  margin-bottom: 1.25em;
+  padding-left: 1.625em;
+}
+
+.prose-nyx li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
 .prose-nyx ul li::marker {
-  color: color-mix(in srgb, currentColor 50%, transparent) !important;
+  color: color-mix(in srgb, currentColor 40%, transparent) !important;
 }
 
 .prose-nyx ol li::marker {
-  color: color-mix(in srgb, currentColor 70%, transparent) !important;
+  color: color-mix(in srgb, currentColor 60%, transparent) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inline Code */
+.prose-nyx code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background-color: rgba(255, 255, 255, 0.08);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  color: #e5e5e5;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+/* Blockquotes */
+.prose-nyx blockquote {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  padding-left: 1em;
+  border-left: 3px solid rgba(255, 255, 255, 0.15);
+  color: color-mix(in srgb, currentColor 75%, transparent);
+  font-style: italic;
 }
 
 /* ── Custom Glassmorphism & Neon Spells ────────────────────── */

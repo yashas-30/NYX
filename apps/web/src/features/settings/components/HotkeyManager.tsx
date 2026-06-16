@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Keyboard, Plus, X } from 'lucide-react';
+import { PlusIcon as Plus, XIcon as X } from '@animateicons/react/lucide';
+import { Keyboard } from 'lucide-react';
 import { useHotkeys } from 'react-hotkeys-hook';
 
 interface Hotkey {

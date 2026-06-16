@@ -31,15 +31,18 @@ pub struct UnifiedRequest {
     pub event_name: String,
 }
 
-/// Emitted for every parsed text delta and for final events.
+/// Rich stream event payload to match frontend `StreamEvent` exactly.
 #[derive(Serialize, Clone)]
 pub struct StreamChunkPayload {
-    /// Parsed text delta (never raw SSE protocol noise).
-    pub chunk: String,
-    /// `true` only on the terminal `[DONE]` event.
-    pub done: bool,
-    /// Non-empty when an error occurred.
+    #[serde(rename = "type")]
+    pub event_type: String, // "text", "thinking", "tool_start", "tool_result", "done", "error"
+    pub content: Option<String>,
+    pub done: Option<bool>,
     pub error: Option<String>,
+    pub tool_call: Option<Value>,
+    pub name: Option<String>,
+    pub result: Option<Value>,
+    pub metadata: Option<Value>,
 }
 
 #[tauri::command]
@@ -68,16 +71,33 @@ pub async fn llm_stream_request(
             if let Some(sys) = &req.system_instruction {
                 msgs.push(json!({"role": "system", "content": sys}));
             }
-            for m in &req.messages {
+            
+            // Slice history to budget
+            let mut current_tokens = 0;
+            let mut budget_msgs = vec![];
+            
+            let bpe = tiktoken_rs::cl100k_base().unwrap();
+            for m in req.messages.iter().rev() {
+                let msg_tokens = bpe.encode_with_special_tokens(&m.content).len();
+                if current_tokens + msg_tokens > 80_000 {
+                    break;
+                }
+                current_tokens += msg_tokens;
+                budget_msgs.push(m.clone());
+            }
+            budget_msgs.reverse();
+            
+            for m in &budget_msgs {
                 msgs.push(json!({"role": m.role, "content": m.content}));
             }
 
-            let body = json!({
+            let mut body = json!({
                 "model": req.model_id,
                 "messages": msgs,
                 "temperature": req.temperature.unwrap_or(0.7),
                 "max_tokens": max_tokens,
-                "stream": true
+                "stream": true,
+                "tools": crate::commands::agent::get_builtin_tools()
             });
 
             match req.provider.as_str() {
@@ -114,7 +134,23 @@ pub async fn llm_stream_request(
         }
         "anthropic" => {
             let mut msgs = vec![];
-            for m in &req.messages {
+            
+            // Slice history to budget
+            let mut current_tokens = 0;
+            let mut budget_msgs = vec![];
+            
+            let bpe = tiktoken_rs::cl100k_base().unwrap();
+            for m in req.messages.iter().rev() {
+                let msg_tokens = bpe.encode_with_special_tokens(&m.content).len();
+                if current_tokens + msg_tokens > 80_000 {
+                    break;
+                }
+                current_tokens += msg_tokens;
+                budget_msgs.push(m.clone());
+            }
+            budget_msgs.reverse();
+            
+            for m in &budget_msgs {
                 msgs.push(json!({"role": m.role, "content": m.content}));
             }
 
@@ -151,7 +187,23 @@ pub async fn llm_stream_request(
         }
         "gemini" => {
             let mut contents = vec![];
-            for m in &req.messages {
+            
+            // Slice history to budget
+            let mut current_tokens = 0;
+            let mut budget_msgs = vec![];
+            
+            let bpe = tiktoken_rs::cl100k_base().unwrap();
+            for m in req.messages.iter().rev() {
+                let msg_tokens = bpe.encode_with_special_tokens(&m.content).len();
+                if current_tokens + msg_tokens > 80_000 {
+                    break;
+                }
+                current_tokens += msg_tokens;
+                budget_msgs.push(m.clone());
+            }
+            budget_msgs.reverse();
+            
+            for m in &budget_msgs {
                 let role = if m.role == "assistant" { "model" } else { "user" };
                 contents.push(json!({
                     "role": role,
@@ -225,22 +277,61 @@ pub async fn llm_stream_request(
 
                             if data == "[DONE]" {
                                 let _ = app.emit(&event_name, StreamChunkPayload {
-                                    chunk: String::new(),
-                                    done: true,
+                                    event_type: "done".to_string(),
+                                    content: None,
+                                    done: Some(true),
                                     error: None,
+                                    tool_call: None,
+                                    name: None,
+                                    result: None,
+                                    metadata: None,
                                 });
                                 break;
                             }
 
-                            // Parse and extract text delta based on provider format
-                            if let Some(delta) = extract_delta(&data, &provider_type) {
-                                if !delta.is_empty() {
+                            match extract_stream_event(&data, &provider_type) {
+                                StreamEventParse::Text(text) => {
+                                    if !text.is_empty() {
+                                        let _ = app.emit(&event_name, StreamChunkPayload {
+                                            event_type: "text".to_string(),
+                                            content: Some(text),
+                                            done: Some(false),
+                                            error: None,
+                                            tool_call: None,
+                                            name: None,
+                                            result: None,
+                                            metadata: None,
+                                        });
+                                    }
+                                }
+                                StreamEventParse::ToolCallStart { id, name } => {
                                     let _ = app.emit(&event_name, StreamChunkPayload {
-                                        chunk: delta,
-                                        done: false,
+                                        event_type: "tool_start".to_string(),
+                                        content: None,
+                                        done: Some(false),
                                         error: None,
+                                        tool_call: Some(json!({"id": id})),
+                                        name: Some(name),
+                                        result: None,
+                                        metadata: None,
                                     });
                                 }
+                                StreamEventParse::ToolCallArgs { args } => {
+                                    // Normally we would accumulate args here and execute
+                                    // For now, we just pass the raw stream to the UI, 
+                                    // but we eventually need to do execution in Rust.
+                                    let _ = app.emit(&event_name, StreamChunkPayload {
+                                        event_type: "tool_call".to_string(),
+                                        content: Some(args),
+                                        done: Some(false),
+                                        error: None,
+                                        tool_call: None,
+                                        name: None,
+                                        result: None,
+                                        metadata: None,
+                                    });
+                                }
+                                StreamEventParse::None => {}
                             }
                         }
                         continue;
@@ -250,9 +341,14 @@ pub async fn llm_stream_request(
                     if let Some(payload) = line.strip_prefix("data: ") {
                         if payload == "[DONE]" {
                             let _ = app.emit(&event_name, StreamChunkPayload {
-                                chunk: String::new(),
-                                done: true,
+                                event_type: "done".to_string(),
+                                content: None,
+                                done: Some(true),
                                 error: None,
+                                tool_call: None,
+                                name: None,
+                                result: None,
+                                metadata: None,
                             });
                             break;
                         }
@@ -266,17 +362,27 @@ pub async fn llm_stream_request(
                 Ok(None) => {
                     // Stream ended cleanly
                     let _ = app.emit(&event_name, StreamChunkPayload {
-                        chunk: String::new(),
-                        done: true,
+                        event_type: "done".to_string(),
+                        content: None,
+                        done: Some(true),
                         error: None,
+                        tool_call: None,
+                        name: None,
+                        result: None,
+                        metadata: None,
                     });
                     break;
                 }
                 Err(e) => {
                     let _ = app.emit(&event_name, StreamChunkPayload {
-                        chunk: String::new(),
-                        done: true,
+                        event_type: "error".to_string(),
+                        content: None,
+                        done: Some(true),
                         error: Some(e.to_string()),
+                        tool_call: None,
+                        name: None,
+                        result: None,
+                        metadata: None,
                     });
                     break;
                 }
@@ -287,48 +393,86 @@ pub async fn llm_stream_request(
     Ok(())
 }
 
-/// Extract the text delta from a parsed SSE data payload.
-/// Each provider has a different JSON schema for the streaming delta.
-fn extract_delta(data: &str, provider_type: &str) -> Option<String> {
-    let v: Value = serde_json::from_str(data).ok()?;
+pub enum StreamEventParse {
+    Text(String),
+    ToolCallStart { id: String, name: String },
+    ToolCallArgs { args: String },
+    None,
+}
+
+pub fn extract_stream_event(data: &str, provider_type: &str) -> StreamEventParse {
+    let v: Value = match serde_json::from_str(data) {
+        Ok(val) => val,
+        Err(_) => return StreamEventParse::None,
+    };
 
     match provider_type {
-        // OpenAI-compatible: choices[0].delta.content
         "openai" => {
-            v["choices"][0]["delta"]["content"]
-                .as_str()
-                .map(|s| s.to_string())
-        }
-        // Anthropic: content_block_delta.delta.text (type: "content_block_delta")
-        "anthropic" => {
-            let event_type = v["type"].as_str().unwrap_or("");
-            match event_type {
-                "content_block_delta" => {
-                    let delta_type = v["delta"]["type"].as_str().unwrap_or("");
-                    match delta_type {
-                        "text_delta" => v["delta"]["text"].as_str().map(|s| s.to_string()),
-                        "thinking_delta" => {
-                            // Prefix thinking content so the frontend can distinguish
-                            v["delta"]["thinking"]
-                                .as_str()
-                                .map(|s| format!("\x00THINK\x00{}", s))
+            if let Some(choices) = v.get("choices").and_then(|c| c.as_array()) {
+                if let Some(choice) = choices.get(0) {
+                    if let Some(delta) = choice.get("delta").and_then(|d| d.as_object()) {
+                        if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                            return StreamEventParse::Text(content.to_string());
                         }
-                        _ => None,
+                        if let Some(tool_calls) = delta.get("tool_calls").and_then(|tc| tc.as_array()) {
+                            if let Some(tc) = tool_calls.get(0) {
+                                if let Some(func) = tc.get("function") {
+                                    if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
+                                        let id = tc.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
+                                        return StreamEventParse::ToolCallStart { id, name: name.to_string() };
+                                    }
+                                    if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
+                                        return StreamEventParse::ToolCallArgs { args: args.to_string() };
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                "message_delta" => {
-                    // Contains stop_reason — ignore for text extraction
-                    None
-                }
-                _ => None,
             }
+            StreamEventParse::None
         }
-        // Gemini: candidates[0].content.parts[0].text
+        "anthropic" => {
+            let event_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            match event_type {
+                "content_block_delta" => {
+                    if let Some(delta) = v.get("delta") {
+                        let delta_type = delta.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                        match delta_type {
+                            "text_delta" => {
+                                if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
+                                    return StreamEventParse::Text(text.to_string());
+                                }
+                            }
+                            "thinking_delta" => {
+                                if let Some(thinking) = delta.get("thinking").and_then(|t| t.as_str()) {
+                                    return StreamEventParse::Text(format!("\x00THINK\x00{}", thinking));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+            StreamEventParse::None
+        }
         "gemini" => {
-            v["candidates"][0]["content"]["parts"][0]["text"]
-                .as_str()
-                .map(|s| s.to_string())
+            if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
+                if let Some(candidate) = candidates.get(0) {
+                    if let Some(content) = candidate.get("content") {
+                        if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
+                            if let Some(part) = parts.get(0) {
+                                if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                                    return StreamEventParse::Text(text.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            StreamEventParse::None
         }
-        _ => None,
+        _ => StreamEventParse::None,
     }
 }

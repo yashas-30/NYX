@@ -1,7 +1,8 @@
 // fallow-ignore-file code-duplication
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Key, ChevronUp, ChevronDown, Network, Trash2, Eye, EyeOff, Loader2, Check, X } from 'lucide-react';
+import { KeyIcon as Key, ChevronUpIcon as ChevronUp, ChevronDownIcon as ChevronDown, Trash2Icon as Trash2, EyeIcon as Eye, EyeOffIcon as EyeOff, CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
+import { Network, Loader2 } from 'lucide-react';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -532,7 +533,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
           className="px-6 py-2.5 rounded-md bg-destructive/5 border border-destructive/10 text-destructive text-[11px] font-black uppercase tracking-[0.3em] hover:bg-destructive hover:text-white transition-all group active:scale-95 cursor-pointer"
         >
           <span className="opacity-40 group-hover:opacity-100 flex items-center gap-2">
-            <Trash2 size={12} strokeWidth={1.5} />
+            <Trash2 size={12}  />
             PURGE SERVER VAULT
           </span>
         </button>
