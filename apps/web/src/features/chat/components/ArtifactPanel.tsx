@@ -141,11 +141,11 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             ${tailwindScript}
-            <style>
-              body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #fff; background: #09090B; }
+            <style>              body { font-family: "SF Pro Display", "Geist Sans", -apple-system, BlinkMacSystemFont, sans-serif; color: #faf9f5; background: #181715; }
             </style>
+            ${tailwindScript}
           </head>
-          <body>
+          <body class="p-6">
             ${htmlContent}
           </body>
         </html>
@@ -159,18 +159,18 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
   return (
     <div
       className={`
-      flex flex-col bg-[#09090B] border-l border-[rgba(255,255,255,0.06)] transition-all duration-300 z-50
-      ${isFullscreen ? 'fixed inset-0 w-full h-full' : 'absolute top-0 right-0 w-1/3 h-full min-w-[400px] max-w-[600px] shadow-sm border border-border'}
+      flex flex-col bg-card border-l border-border transition-all duration-300 z-50
+      ${isFullscreen ? 'fixed inset-0 w-full h-full' : 'absolute top-0 right-0 w-1/3 h-full min-w-[400px] max-w-[600px] shadow-md border border-border'}
     `}
     >
-      <div className="flex items-center justify-between p-4 border-b border-[rgba(255,255,255,0.06)] bg-[#0e1416]">
+      <div className="flex items-center justify-between p-4 border-b border-border bg-muted/30">
         <div className="flex items-center gap-3">
-          <div className="p-1.5 bg-[#18181B] rounded text-primary">
+          <div className="p-1.5 bg-input border border-border/50 rounded text-primary">
             <Code2 className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-[14px] font-medium text-[#F8FAFC]">{artifact.title}</h3>
-            <span className="text-[11px] font-mono text-[#4A5059]">
+            <h3 className="text-[14px] font-medium text-foreground">{artifact.title}</h3>
+            <span className="text-[11px] font-mono text-muted-foreground">
               {artifact.type} {artifact.language ? `• ${artifact.language}` : ''}
             </span>
           </div>
@@ -178,10 +178,10 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
 
         <div className="flex items-center gap-2">
           {isRenderable && (
-            <div className="flex bg-[#18181B] rounded p-1 mr-2">
+            <div className="flex bg-input border border-border rounded p-1 mr-2">
               <button
                 onClick={() => setActiveTab('preview')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${activeTab === 'preview' ? 'bg-[#27272A] text-white' : 'text-[#4A5059] hover:text-white'}`}
+                className={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${activeTab === 'preview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 <div className="flex items-center gap-1">
                   <Play className="w-3 h-3" /> Preview
@@ -189,7 +189,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
               </button>
               <button
                 onClick={() => setActiveTab('code')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${activeTab === 'code' ? 'bg-[#27272A] text-white' : 'text-[#4A5059] hover:text-white'}`}
+                className={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${activeTab === 'code' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 <div className="flex items-center gap-1">
                   <Code2 className="w-3 h-3" /> Code
@@ -200,29 +200,29 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
 
           <button
             onClick={handleCopy}
-            className="p-1.5 text-[#4A5059] hover:text-[#F8FAFC] hover:bg-[#18181B] rounded transition-colors"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-input border border-transparent hover:border-border rounded transition-colors cursor-pointer"
             title="Copy Content"
           >
             <Copy className="w-4 h-4" />
           </button>
           <button
             onClick={handleDownload}
-            className="p-1.5 text-[#4A5059] hover:text-[#F8FAFC] hover:bg-[#18181B] rounded transition-colors"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-input border border-transparent hover:border-border rounded transition-colors cursor-pointer"
             title="Download"
           >
             <Download className="w-4 h-4" />
           </button>
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-1.5 text-[#4A5059] hover:text-[#F8FAFC] hover:bg-[#18181B] rounded transition-colors"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-input border border-transparent hover:border-border rounded transition-colors cursor-pointer"
             title="Toggle Fullscreen"
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
-          <div className="w-px h-4 bg-[rgba(255,255,255,0.1)] mx-1" />
+          <div className="w-px h-4 bg-border mx-1" />
           <button
             onClick={onClose}
-            className="p-1.5 text-[#4A5059] hover:text-[#ffb4ab] hover:bg-[#93000a]/20 rounded transition-colors"
+            className="p-1.5 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded transition-colors cursor-pointer"
             title="Close Panel"
           >
             <X className="w-4 h-4" />
@@ -230,19 +230,19 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden bg-[#09090B] relative">
+      <div className="flex-1 overflow-hidden bg-card relative">
         {activeTab === 'code' ? (
-          <div className="h-full overflow-auto p-4">
-            <pre className="font-mono text-[13px] text-[#dde4e5] leading-relaxed whitespace-pre-wrap">
+          <div className="h-full overflow-auto p-4 bg-background/30">
+            <pre className="font-mono text-[13px] text-foreground/80 leading-relaxed whitespace-pre-wrap bg-background/50 p-4 rounded-md border border-border">
               {artifact.content}
             </pre>
           </div>
         ) : isMermaid ? (
-          <div className="h-full overflow-auto bg-[#09090B]">
+          <div className="h-full overflow-auto bg-card">
             <MermaidRenderer content={artifact.content} />
           </div>
         ) : isReact ? (
-          <div className="w-full h-full bg-[#1e1e1e] relative overflow-hidden flex flex-col">
+          <div className="w-full h-full bg-card relative overflow-hidden flex flex-col">
             <Sandpack
               template="react-ts"
               theme="dark"

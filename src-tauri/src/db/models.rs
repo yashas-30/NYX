@@ -61,12 +61,20 @@ pub struct SwarmContextPool {
     pub timestamp: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
-#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
 pub struct ModelConfig {
     pub id: String,
     pub provider: String,
     pub name: String,
     pub config: String,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct LongTermMemory {
+    pub id: String,
+    pub fact: String,
+    pub category: String,
+    pub embedding: String, // JSON float array
+    pub created_at: i64,
 }

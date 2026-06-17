@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { RefreshCw } from 'lucide-react';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 interface ProviderStatus {
@@ -41,9 +42,9 @@ export function LocalProviderStatus() {
 
   if (!status) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900/40 border border-white/5 animate-pulse">
-        <div className="w-2 h-2 rounded-full bg-zinc-700" />
-        <span className="text-xs text-zinc-600">Local providers...</span>
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card border border-border animate-pulse">
+        <div className="w-1.5 h-1.5 rounded-full bg-muted" />
+        <span className="text-xs text-muted-foreground/60">Local providers...</span>
       </div>
     );
   }
@@ -54,7 +55,7 @@ export function LocalProviderStatus() {
   ];
 
   return (
-    <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-zinc-900/50 border border-white/5 text-xs">
+    <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-card border border-border text-xs">
       {providers.map(({ key, label, data }) => data ? (
         <div
           key={key}
@@ -66,8 +67,8 @@ export function LocalProviderStatus() {
           }`}
         >
           <motion.div
-            className={`w-2 h-2 rounded-full flex-shrink-0 ${
-              data.connected ? 'bg-emerald-400' : 'bg-zinc-600'
+            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+              data.connected ? 'bg-emerald-400' : 'bg-muted'
             }`}
             animate={
               data.connected
@@ -76,7 +77,7 @@ export function LocalProviderStatus() {
             }
             transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
           />
-          <span className={data.connected ? 'text-zinc-300' : 'text-zinc-600'}>
+          <span className={data.connected ? 'text-foreground/80' : 'text-muted-foreground/60'}>
             {label}
             {data.connected && (
               <span className="ml-1 text-emerald-400/70 font-mono">{data.models.length}</span>
@@ -87,7 +88,7 @@ export function LocalProviderStatus() {
       <button
         onClick={fetchStatus}
         disabled={loading}
-        className="ml-1 text-zinc-600 hover:text-zinc-400 transition-colors disabled:opacity-40"
+        className="ml-1 text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all disabled:opacity-40 cursor-pointer"
         title={lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString()}` : 'Refresh status'}
       >
         <motion.span
@@ -95,7 +96,7 @@ export function LocalProviderStatus() {
           transition={loading ? { duration: 1, repeat: Infinity, ease: 'linear' } : {}}
           style={{ display: 'inline-block' }}
         >
-          ↻
+          <RefreshCw className="w-3 h-3" />
         </motion.span>
       </button>
     </div>

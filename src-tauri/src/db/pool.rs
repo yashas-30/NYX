@@ -92,6 +92,14 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
             created_at INTEGER,
             FOREIGN KEY (session_id) REFERENCES db_sessions(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS long_term_memories (
+            id TEXT PRIMARY KEY,
+            fact TEXT NOT NULL,
+            category TEXT NOT NULL,
+            embedding TEXT NOT NULL, -- JSON float array
+            created_at INTEGER NOT NULL
+        );
     "#;
 
     sqlx::query(schema).execute(&pool).await?;

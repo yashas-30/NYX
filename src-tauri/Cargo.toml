@@ -55,6 +55,7 @@ window-vibrancy = "0.7.1"
 tiktoken-rs = "0.11.0"
 async-trait = "0.1.89"
 lazy_static = "1.5"
+url = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

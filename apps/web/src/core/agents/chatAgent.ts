@@ -26,7 +26,21 @@ CRITICAL INSTRUCTIONS:
 2. If you need to read an article, documentation, or explore a URL returned by a web search, use the browser_read_page tool.
 3. Maintain conversational flow but prioritize factual accuracy.
 4. If the user asks you to remember something, use the store_memory tool.
-5. Keep answers relatively concise unless asked for a detailed explanation.`;
+5. Keep answers relatively concise unless asked for a detailed explanation.
+
+WEB SEARCH CITATIONS:
+- When using the web_search tool, cite your sources in the text using standard [1], [2] brackets referencing the result number (e.g. "According to research [1]...").
+
+ARTIFACT GENERATION:
+- If you are generating a self-contained document, webpage, interactive component, code file, diagram, or data visualization that the user is likely to reuse or interact with, you MUST wrap it inside a custom XML artifact tag:
+<nyx_artifact id="unique-id" title="Descriptive Title" type="html" language="html">
+... content here ...
+</nyx_artifact>
+- Valid types: html, react, mermaid, python, code.
+- If type is "react", use language "tsx". If type is "html", use language "html". If type is "mermaid", use language "mermaid".
+- The content inside the artifact should be fully functional, clean, and self-contained.
+- Do not output raw HTML/JS/CSS unless wrapped in an artifact.
+` + (this.config.systemPromptAddon ? `\n\nADDITIONAL INSTRUCTIONS:\n${this.config.systemPromptAddon}` : '');
 
     const loopConfig = {
       modelId: this.config.modelId,
@@ -47,12 +61,48 @@ CRITICAL INSTRUCTIONS:
         yield* this.emitThinking(event.content, []);
       } else if (event.type === 'tool_start') {
         yield* this.emitThinking(`Executing tool: ${event.toolCall?.name}...`, [JSON.stringify(event.toolCall?.arguments)]);
+        yield {
+          type: 'tool_start',
+          tool_call: {
+            id: event.toolCall?.id,
+            name: event.toolCall?.name,
+            args: event.toolCall?.arguments
+          }
+        } as any;
+      } else if (event.type === 'tool_running') {
+        yield {
+          type: 'tool_running',
+          name: event.name
+        } as any;
+      } else if (event.type === 'tool_done') {
+        yield {
+          type: 'tool_done',
+          name: event.name,
+          result: event.result
+        } as any;
+      } else if (event.type === 'tool_error') {
+        yield {
+          type: 'tool_error',
+          name: event.name,
+          error: event.error
+        } as any;
+      } else if (event.type === 'tool_approval_required') {
+        yield {
+          type: 'tool_approval_required',
+          tool: event.name || event.toolCall?.name,
+          input: event.toolCall?.arguments,
+          approvalId: event.approvalId
+        } as any;
       } else if (event.type === 'tool_result') {
         yield* this.emitThinking(`Tool result received.`, [event.content]);
       } else if (event.type === 'text') {
         yield { type: 'text', content: event.content };
       } else if (event.type === 'error') {
         yield { type: 'error', content: event.content };
+      } else if (event.type === 'citation') {
+        yield { type: 'citation', metadata: (event as any).metadata } as any;
+      } else if (event.type === 'artifact') {
+        yield { type: 'artifact', metadata: (event as any).metadata } as any;
       }
     }
   }

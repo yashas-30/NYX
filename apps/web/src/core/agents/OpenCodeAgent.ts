@@ -37,7 +37,17 @@ Tools: read_file, write_file, list_dir, grep_search, run_terminal_command.
 <behavior>
 Before writing any code, thoroughly explore the workspace to understand the context. Use grep_search and list_dir.
 Do not make assumptions about the file structure. Read the files first.
-</behavior>`;
+</behavior>
+
+<artifact_generation>
+- If you are generating a self-contained document, webpage, interactive component, code file, diagram, or data visualization that the user is likely to reuse or interact with, you MUST wrap it inside a custom XML artifact tag:
+<nyx_artifact id="unique-id" title="Descriptive Title" type="code" language="typescript">
+... content here ...
+</nyx_artifact>
+- Valid types: html, react, mermaid, python, code.
+- If type is "react", use language "tsx". If type is "html", use language "html". If type is "mermaid", use language "mermaid".
+- The content inside the artifact should be fully functional, clean, and self-contained.
+</artifact_generation>`;
 
     const loopConfig = {
       modelId: this.config.modelId,
@@ -67,6 +77,38 @@ Do not make assumptions about the file structure. Read the files first.
           yield* this.emitThinking(event.content, []);
         } else if (event.type === 'tool_start') {
           yield* this.emitThinking(`Executing tool: ${event.toolCall?.name}...`, [JSON.stringify(event.toolCall?.arguments)]);
+          yield {
+            type: 'tool_start',
+            tool_call: {
+              id: event.toolCall?.id,
+              name: event.toolCall?.name,
+              args: event.toolCall?.arguments
+            }
+          } as any;
+        } else if (event.type === 'tool_running') {
+          yield {
+            type: 'tool_running',
+            name: event.name
+          } as any;
+        } else if (event.type === 'tool_done') {
+          yield {
+            type: 'tool_done',
+            name: event.name,
+            result: event.result
+          } as any;
+        } else if (event.type === 'tool_error') {
+          yield {
+            type: 'tool_error',
+            name: event.name,
+            error: event.error
+          } as any;
+        } else if (event.type === 'tool_approval_required') {
+          yield {
+            type: 'tool_approval_required',
+            tool: event.name || event.toolCall?.name,
+            input: event.toolCall?.arguments,
+            approvalId: event.approvalId
+          } as any;
         } else if (event.type === 'tool_result') {
           yield* this.emitThinking(`Tool result received.`, [event.content]);
         } else if (event.type === 'text') {
@@ -74,6 +116,10 @@ Do not make assumptions about the file structure. Read the files first.
           yield { type: 'text', content: event.content };
         } else if (event.type === 'error') {
           yield { type: 'error', content: event.content };
+        } else if (event.type === 'citation') {
+          yield { type: 'citation', metadata: (event as any).metadata } as any;
+        } else if (event.type === 'artifact') {
+          yield { type: 'artifact', metadata: (event as any).metadata } as any;
         }
       }
 

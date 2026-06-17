@@ -1,6 +1,14 @@
 import { ModelOption } from './types.js';
 
 const RAW_AVAILABLE_MODELS: ModelOption[] = [
+  {
+    id: 'nyx-auto',
+    name: 'Dynamic Auto-Router (NYX)',
+    provider: 'gemini',
+    status: 'ga',
+    description: 'Auto-selects the best model based on prompt complexity (e.g. Gemini 3.1 Flash Lite for fast chat, DeepSeek R1 for reasoning).',
+    specs: { contextWindow: '1M', trainingData: '2026', maxOutput: '32K', modality: 'Multimodal' },
+  },
   // ═══════════════════════════════════════════════════════════════════════════════
   // GEMINI DIRECT - Gemini 3.5 (GA)
   // ═══════════════════════════════════════════════════════════════════════════════

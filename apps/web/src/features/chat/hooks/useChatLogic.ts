@@ -8,31 +8,53 @@ import { useState, useRef, useEffect, useCallback, useReducer, useMemo } from 'r
 import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { useChatPipeline } from './useChatPipeline';
-import { cancelRequest, cancelAllRequests } from '@src/core/services/ai.service';
+import { AIService, cancelRequest, cancelAllRequests } from '@src/core/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
 import { getSessionToken } from '@src/infrastructure/api/authFetch';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
+import { compactHistory, compactHistoryAsync, estimateContextTokens } from '@src/infrastructure/utils/compaction';
+import { PlanPhase } from '@src/types/agent';
+import { PromptAnalysisService } from '@src/core/services/promptAnalysis.service';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-// fallow-ignore-next-line code-duplication
+interface ChatSessionsStore {
+  activeSid?: string | null;
+  activeSession?: {
+    title: string;
+    messages: ChatMessage[];
+  };
+  createSession?: (
+    messages: ChatMessage[],
+    options?: {
+      branchOf?: string | null;
+      branchAtIndex?: number | null;
+      title?: string;
+    }
+  ) => string;
+  updateSession?: (sid: string, messages: ChatMessage[]) => void;
+  switchSession?: (sid: string) => void;
+}
+
+// eslint-disable-next-line code-duplication
 interface ChatLogicProps {
   apiKeys: Record<string, string>;
-  modelSettings: any;
+  modelSettings: any; // We'll type this dynamically if needed, or import AISettings
   trackUsage: (provider: string, tokens: number) => void;
   models?: Record<'nyx', string>;
   setModel?: (modelId: string) => void;
-  chatSessions: any;
+  chatSessions: ChatSessionsStore;
   lightningEnabled?: boolean;
   lightningDirectives?: string[];
   logRollout?: (
     agentType: 'chat' | 'coder',
     task: string,
     response: string,
-    spans?: any[],
+    spans?: unknown[],
     initialReward?: number | null
   ) => string;
   submitReward?: (rolloutId: string, reward: number) => void;
@@ -97,9 +119,14 @@ interface ChatLogicReturn {
   setSessionTitle: (title: string) => void;
   exportSession: (format: 'markdown' | 'json' | 'txt') => string;
 
+  // Plan Phase
+  planPhase: PlanPhase | null;
+
   // Budget/features
   tokenBudget: number;
   tokensUsed: number;
+  approveTool: (index: number, approvalId: string) => Promise<void>;
+  rejectTool: (index: number, approvalId: string) => Promise<void>;
 }
 
 interface ChatImage {
@@ -161,20 +188,13 @@ function generateTitle(messages: ChatMessage[]): string {
 // Helper: Estimate context tokens
 // ---------------------------------------------------------------------------
 
-function estimateContextTokens(messages: ChatMessage[]): number {
-  return messages.reduce((sum, m) => {
-    const base = m.role === 'system' ? 50 : 0;
-    const contentTokens = Math.ceil((m.content || '').length / 4);
-    const imageTokens = (m.images?.length || 0) * 512;
-    return sum + base + contentTokens + imageTokens;
-  }, 0);
-}
+// Compaction moved to @src/infrastructure/utils/compaction
 
 // ---------------------------------------------------------------------------
 // Helper: Check if two message lists have the same content
 // ---------------------------------------------------------------------------
 
-// fallow-ignore-next-line code-duplication
+// eslint-disable-next-line code-duplication
 function areMessagesEqual(a: ChatMessage[], b: ChatMessage[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -204,7 +224,7 @@ export const useChatLogic = ({
   tokenBudget = Infinity,
 }: ChatLogicProps): ChatLogicReturn => {
   // --- Model state ---
-  // fallow-ignore-next-line code-duplication
+  // eslint-disable-next-line code-duplication
   const [localModels, setLocalModels] = useState<Record<'nyx', string>>({ nyx: '' });
   const models = propModels ?? localModels;
 
@@ -272,6 +292,12 @@ export const useChatLogic = ({
 
   // --- Abort controller for current generation ---
   const abortCtrlRef = useRef<AbortController | null>(null);
+
+  // --- Plan Phase State ---
+  const [planPhase, setPlanPhase] = useState<PlanPhase | null>(null);
+
+  // Prompt Analysis Service
+  const promptAnalyzer = useMemo(() => new PromptAnalysisService(), []);
 
   // --- WebSocket Real-time Collaboration ---
   useEffect(() => {
@@ -355,7 +381,7 @@ export const useChatLogic = ({
 
         const title = options?.title || generateTitle(messages);
         try {
-          const newSid = chatSessions.createSession?.(messages, title);
+          const newSid = chatSessions.createSession?.(messages, { title });
           if (newSid) {
             activeSidRef.current = newSid;
             newlyCreatedSidRef.current = newSid;
@@ -534,10 +560,11 @@ export const useChatLogic = ({
       const projectedTotal = contextTokens + estimatedInput + 4096; // Assume 4k output
 
       if (projectedTotal > maxContextTokens) {
-        toast.error(
-          `Context limit exceeded. Current: ${contextTokens}, Projected: ${projectedTotal}`
-        );
-        return;
+        toast.info('Compacting context to fit token limit...');
+        const compacted = await compactHistoryAsync(historyRef.current, maxContextTokens - estimatedInput - 4096, AIService, modelSettings);
+        dispatch({ type: 'SET', messages: compacted });
+        historyRef.current = compacted;
+        persistHistory(compacted);
       }
 
       if (tokensUsed + estimatedInput > tokenBudget) {
@@ -548,13 +575,115 @@ export const useChatLogic = ({
       abortCtrlRef.current = new AbortController();
 
       try {
-        await pipelineRunChat(prompt, images);
+        setPlanPhase({ status: 'planning', steps: ['Analyzing prompt intent...'], completedSteps: [] });
+        
+        const analysis = await promptAnalyzer.analyze(prompt, {
+          useEmbedding: true,
+          history: historyRef.current.map(m => m.content).slice(-5)
+        });
+
+        const expertisePrompt = analysis.userExpertise === 'beginner' 
+          ? 'Explain concepts simply. Use analogies. Avoid jargon.'
+          : analysis.userExpertise === 'expert'
+            ? 'Provide highly technical, concise answers. Skip basics.'
+            : '';
+
+        const modelToUse = models?.nyx === 'nyx-auto'
+          ? (analysis.suggestedModel === 'reasoning' ? 'deepseek-reasoner' :
+             analysis.suggestedModel === 'fast' ? 'gemini-3.1-flash-lite' :
+             'gemini-3.5-flash')
+          : (models?.nyx || 'gemini-3.5-flash');
+                           
+        let systemPromptAddon = expertisePrompt;
+        
+        // --- Project Context Injection ---
+        const activeProjectId = useNyxStore.getState().activeProjectId;
+        if (activeProjectId) {
+          try {
+            const saved = localStorage.getItem('nyx_projects');
+            if (saved) {
+              const projects = JSON.parse(saved);
+              const project = projects.find((p: any) => p.id === activeProjectId);
+              if (project) {
+                let projectContext = `\nYou are chatting in Project: "${project.name}".\n`;
+                projectContext += `Project Description: ${project.description}\n`;
+                if (project.instructions) {
+                  projectContext += `Project Custom System Instructions: ${project.instructions}\n`;
+                }
+                
+                if (project.files && project.files.length > 0) {
+                  projectContext += `\nHere are the workspace files in this project context:\n`;
+                  const appendFiles = (filesList: any[]) => {
+                    filesList.forEach((file: any) => {
+                      if (file.type === 'file' && file.content) {
+                        projectContext += `\n--- FILE: ${file.name} ---\n${file.content}\n`;
+                      } else if (file.type === 'folder' && file.children) {
+                        appendFiles(file.children);
+                      }
+                    });
+                  };
+                  appendFiles(project.files);
+                }
+                systemPromptAddon += `\n${projectContext}\n`;
+              }
+            }
+          } catch (err) {
+            console.warn('[useChatLogic] Failed to load project context:', err);
+          }
+        }
+        
+        // --- Plan Mode Parity ---
+        if ((analysis.estimatedComplexity || 1) >= 2 && !lightningEnabled) {
+          setPlanPhase({ 
+            status: 'planning', 
+            steps: ['Generating execution plan...'], 
+            completedSteps: ['Analyzing prompt intent...'] 
+          });
+          
+          try {
+            const planResponse = await AIService.execute(
+              'gemini-3.1-flash-lite',
+              detectProvider('gemini-3.1-flash-lite'),
+              `Task: ${prompt}\n\nPlease generate a very brief, high-level implementation plan for this task in a few bullet points. Do not execute the task yet.`,
+              getEffectiveApiKey(detectProvider('gemini-3.1-flash-lite'), apiKeys),
+              'You are an AI planner.',
+              { ...modelSettings, temperature: 0.2 }
+            );
+            const planContent = planResponse.text;
+            setPlanPhase({ 
+              status: 'executing', 
+              plan: planContent, 
+              steps: ['Executing plan...'], 
+              completedSteps: ['Analyzing prompt intent...', 'Generating execution plan...'] 
+            });
+            systemPromptAddon += `\n\nExecution Plan to follow:\n${planContent}`;
+          } catch (e) {
+            console.warn('[Plan Mode] Failed to generate plan, skipping...', e);
+            setPlanPhase(null);
+          }
+        } else {
+          setPlanPhase(null);
+        }
+
+        await pipelineRunChat(prompt, images, {
+          modelOverride: modelToUse,
+          systemPromptAddon: systemPromptAddon,
+          enableTools: analysis.needsToolUse,
+          expectedComplexity: analysis.estimatedComplexity,
+        });
 
         // Update token usage
         setTokensUsed((prev) => prev + estimatedInput);
       } catch (error: any) {
         if (error.name !== 'AbortError') {
-          toast.error(error.message || 'Generation failed');
+          if (error.message && error.message.includes('429')) {
+             toast.error('Rate limit reached (429). Please wait or switch models.');
+             const provider = detectProvider(models.nyx);
+             const apiKey = getEffectiveApiKey(provider, apiKeys) || '';
+             useUsageStore.getState().resetLimitForModel(models.nyx, apiKey);
+          } else {
+             toast.error(error.message || 'Generation failed');
+          }
         }
       } finally {
         abortCtrlRef.current = null;
@@ -580,12 +709,12 @@ export const useChatLogic = ({
       historyRef.current = truncated;
       persistHistory(truncated);
 
-      // fallow-ignore-next-line code-duplication
+      // eslint-disable-next-line code-duplication
       const mappedImages = truncated[index].images
         ?.map((img) => ({
           name: img.name,
           mimeType: img.mimeType || 'image/jpeg',
-          data: img.data || img.url || img.url || '',
+          data: img.data || '',
         }))
         .filter((img) => !!img.data);
 
@@ -611,12 +740,12 @@ export const useChatLogic = ({
       persistHistory(truncated);
 
       const userMsg = truncated[userIndex];
-      // fallow-ignore-next-line code-duplication
+      // eslint-disable-next-line code-duplication
       const mappedImages = userMsg.images
         ?.map((img) => ({
           name: img.name,
           mimeType: img.mimeType || 'image/jpeg',
-          data: img.data || img.url || img.url || '',
+          data: img.data || '',
         }))
         .filter((img) => !!img.data);
 
@@ -628,7 +757,7 @@ export const useChatLogic = ({
   const branchFromMessage = useCallback(
     (index: number): string | null => {
       const branchedHistory = historyRef.current.slice(0, index + 1).map((msg) => ({ ...msg }));
-      const newSid = chatSessions.createSession?.(branchedHistory);
+      const newSid = chatSessions.createSession?.(branchedHistory, { branchOf: activeSid, branchAtIndex: index });
       if (newSid) {
         chatSessions.switchSession?.(newSid);
         toast.success('Branched conversation from this message');
@@ -636,7 +765,7 @@ export const useChatLogic = ({
       }
       return null;
     },
-    [chatSessions]
+    [chatSessions, activeSid]
   );
 
   const deleteMessage = useCallback(
@@ -706,6 +835,46 @@ export const useChatLogic = ({
   // Return
   // -------------------------------------------------------------------------
 
+  const approveTool = useCallback(async (index: number, approvalId: string) => {
+    try {
+      const isTauriEnv = typeof window !== 'undefined' &&
+        ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+      
+      if (isTauriEnv) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('approve_tool', { approvalId });
+      }
+      
+      dispatch({
+        type: 'UPDATE',
+        index,
+        updater: (msg) => ({ ...msg, pendingApproval: null })
+      });
+    } catch (err: any) {
+      toast.error(`Failed to approve tool: ${err.message || String(err)}`);
+    }
+  }, []);
+
+  const rejectTool = useCallback(async (index: number, approvalId: string) => {
+    try {
+      const isTauriEnv = typeof window !== 'undefined' &&
+        ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+      
+      if (isTauriEnv) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('reject_tool', { approvalId });
+      }
+      
+      dispatch({
+        type: 'UPDATE',
+        index,
+        updater: (msg) => ({ ...msg, pendingApproval: null, status: 'stopped' })
+      });
+    } catch (err: any) {
+      toast.error(`Failed to reject tool: ${err.message || String(err)}`);
+    }
+  }, []);
+
   return {
     activeAgent: 'nyx',
     isLoading,
@@ -735,8 +904,13 @@ export const useChatLogic = ({
     setSessionTitle,
     exportSession,
 
+    // Plan Phase
+    planPhase,
+
     // Budget
     tokenBudget,
     tokensUsed,
+    approveTool,
+    rejectTool,
   };
 };

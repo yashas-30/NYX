@@ -7,7 +7,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2Icon as Trash2, BrainIcon as Brain, ChevronDownIcon as ChevronDown, LockIcon as Lock, ZapIcon as Zap, PaperclipIcon as Paperclip, WifiIcon as Wifi, WifiOffIcon as WifiOff, DownloadIcon as Download, CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
-import { PanelLeftOpen, PanelLeftClose, Share2, Unlock, Square, Bot, Cpu, Clock, MessageSquare, FileText, MoreHorizontal, Keyboard, AlertCircle, HardDrive } from 'lucide-react';
+import { PanelLeftOpen, PanelLeftClose, Share2, Unlock, Square, Bot, Cpu, Clock, MessageSquare, FileText, MoreHorizontal, Keyboard, AlertCircle, HardDrive, GitBranch } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { ModelSelector } from '@src/shared/components/ModelSelector';
@@ -54,11 +54,12 @@ export interface ChatHeaderProps {
   providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;
   gatewayUrls?: Record<string, string>;
   onAttachFiles?: (files: File[]) => void;
-  onExportChat?: (format: 'markdown' | 'json' | 'txt') => void;
+  onExportChat?: (format: 'markdown' | 'json' | 'txt' | 'html' | 'obsidian' | 'notion' | 'gist') => void;
   connectionStatus?: 'online' | 'offline' | 'degraded';
   isNewChat?: boolean;
-  onShareChat?: () => Promise<string>;
+  onShareChat?: (expiration?: string) => Promise<string>;
   onToggleMemory?: () => void;
+  onOpenBranchManager?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,10 +202,11 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
 const ShareMenu: React.FC<{
   onExport: ChatHeaderProps['onExportChat'];
   title: string;
-  onShareChat?: () => Promise<string>;
+  onShareChat?: (expiration?: string) => Promise<string>;
 }> = ({ onExport, title, onShareChat }) => {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [expiration, setExpiration] = useState<'1h' | '1d' | '7d' | 'never'>('never');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -217,7 +219,7 @@ const ShareMenu: React.FC<{
 
   const handleCopyLink = async () => {
     try {
-      const url = onShareChat ? await onShareChat() : window.location.href;
+      const url = onShareChat ? await onShareChat(expiration) : window.location.href;
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -245,46 +247,62 @@ const ShareMenu: React.FC<{
             initial={{ opacity: 0, y: -4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            className="absolute top-full right-0 mt-1 w-56 bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden z-50"
+            className="absolute top-full right-0 mt-1 w-56 bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-md overflow-hidden z-50 p-1.5 space-y-1"
           >
-            <div className="px-3 py-2 border-b border-border">
+            <div className="px-2.5 py-1">
               <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Share
+                Share Link
               </span>
             </div>
 
-            <button
-              onClick={handleCopyLink}
-              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted transition-colors text-left"
-            >
-              {copied ? (
-                <Check size={13} className="text-emerald-400" />
-              ) : (
-                <Share2 size={13} className="text-muted-foreground" />
-              )}
-              <span className="text-[12px] text-foreground/80">
-                {copied ? 'Copied!' : 'Copy link'}
-              </span>
-            </button>
+            <div className="px-2 py-0.5 space-y-2">
+              <div className="flex items-center gap-1.5 justify-between">
+                <span className="text-[10px] text-muted-foreground">Expires:</span>
+                <select
+                  value={expiration}
+                  onChange={(e: any) => setExpiration(e.target.value)}
+                  className="bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-white/85 outline-none cursor-pointer"
+                >
+                  <option value="1h" className="bg-popover text-foreground">1 Hour</option>
+                  <option value="1d" className="bg-popover text-foreground">1 Day</option>
+                  <option value="7d" className="bg-popover text-foreground">7 Days</option>
+                  <option value="never" className="bg-popover text-foreground">Never</option>
+                </select>
+              </div>
+
+              <button
+                onClick={handleCopyLink}
+                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 transition-colors text-white font-medium text-xs cursor-pointer"
+              >
+                {copied ? (
+                  <Check size={12} />
+                ) : (
+                  <Share2 size={12} />
+                )}
+                <span>{copied ? 'Copied!' : 'Copy Share Link'}</span>
+              </button>
+            </div>
 
             {onExport && (
               <>
-                <div className="px-3 py-1.5 border-t border-border">
+                <div className="px-2.5 py-1 pt-2 border-t border-white/5">
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Export
+                    Export Format
                   </span>
                 </div>
-                {(['markdown', 'json', 'txt'] as const).map((fmt) => (
+                {(['markdown', 'json', 'txt', 'html', 'obsidian', 'notion', 'gist'] as const).map((fmt) => (
                   <button
                     key={fmt}
                     onClick={() => {
                       onExport(fmt);
                       setOpen(false);
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-white/5 rounded text-left transition-colors cursor-pointer"
                   >
-                    <FileText size={13} className="text-muted-foreground" />
-                    <span className="text-[12px] text-foreground/80 capitalize">{fmt}</span>
+                    <FileText size={12} className="text-muted-foreground" />
+                    <span className="text-[11px] text-foreground/80 capitalize">
+                      {fmt === 'txt' ? 'Plain Text' : fmt === 'markdown' ? 'Markdown' : fmt === 'html' ? 'HTML Webpage' : fmt === 'obsidian' ? 'Obsidian Note' : fmt === 'notion' ? 'Notion Format' : fmt === 'gist' ? 'GitHub Gist' : fmt.toUpperCase()}
+                    </span>
                   </button>
                 ))}
               </>
@@ -398,6 +416,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   isNewChat = false,
   onShareChat,
   onToggleMemory,
+  onOpenBranchManager,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState(sessionTitle);
@@ -408,6 +427,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   const titleInputRef = useRef<HTMLInputElement>(null);
   const privacyMode = useNyxStore((state) => state.privacyMode);
   const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
+  const showReasoning = useNyxStore((state) => state.showReasoning);
+  const setShowReasoning = useNyxStore((state) => state.setShowReasoning);
   const lastPrivacyToggle = useRef(0);
   const liveElapsed = useLiveTimer(isLoading);
 
@@ -607,6 +628,31 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 title="Memory Manager"
               >
                 <Brain size={15}  />
+              </motion.button>
+            )}
+
+            {/* Show/Hide Reasoning */}
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowReasoning(!showReasoning)}
+              className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer shrink-0 ${showReasoning
+                  ? 'text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                }`}
+              title={showReasoning ? 'Hide Reasoning Steps' : 'Show Reasoning Steps'}
+            >
+              <Cpu size={15} className={showReasoning && isLoading ? 'animate-pulse' : ''} />
+            </motion.button>
+
+            {/* Branch Manager */}
+            {onOpenBranchManager && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={onOpenBranchManager}
+                className="w-8 h-8 flex items-center justify-center rounded-md text-emerald-400 hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors cursor-pointer shrink-0"
+                title="Branch Manager"
+              >
+                <GitBranch size={15} />
               </motion.button>
             )}
 

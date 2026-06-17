@@ -27,10 +27,10 @@ export const SearchResultsPanel: React.FC<SearchResultsPanelProps> = ({ citation
   const shown = expanded ? citations : citations.slice(0, 3);
 
   return (
-    <div className="mt-3 border-t border-white/5 pt-3">
+    <div className="mt-3 border-t border-border pt-3">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-[11px] text-white/40 hover:text-white/60 transition-colors mb-2"
+        className="flex items-center gap-1.5 text-[11px] text-muted-foreground/80 hover:text-foreground active:scale-[0.97] transition-all mb-2"
       >
         <Globe className="w-3 h-3" />
         <span>
@@ -50,16 +50,16 @@ export const SearchResultsPanel: React.FC<SearchResultsPanelProps> = ({ citation
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: i * 0.04 }}
-              className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.08] transition-colors group"
+              className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 hover:bg-muted/70 border border-border transition-colors group"
             >
-              <span className="text-[9px] w-4 h-4 flex items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 font-bold shrink-0">
+              <span className="text-[9px] w-4 h-4 flex items-center justify-center rounded-full bg-primary/20 text-primary border border-primary/20 font-bold shrink-0">
                 {cit.index}
               </span>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] text-white/70 truncate">{cit.title || getDomain(cit.url)}</p>
-                <p className="text-[10px] text-white/25">{getDomain(cit.url)}</p>
+                <p className="text-[11px] text-foreground/80 truncate">{cit.title || getDomain(cit.url)}</p>
+                <p className="text-[10px] text-muted-foreground/50">{getDomain(cit.url)}</p>
               </div>
-              <ExternalLink className="w-3 h-3 text-white/0 group-hover:text-white/30 transition-colors shrink-0" />
+              <ExternalLink className="w-3 h-3 text-muted-foreground/0 group-hover:text-muted-foreground/50 transition-colors shrink-0" />
             </motion.a>
           ))}
         </motion.div>

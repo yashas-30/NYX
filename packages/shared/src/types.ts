@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Provider definition
-export type ModelProvider = 'gemini' | 'terminal' | 'ollama' | 'lmstudio' | 'openai' | 'groq' | 'together' | 'perplexity' | 'anthropic';
+export type ModelProvider = 'gemini' | 'terminal' | 'ollama' | 'lmstudio' | 'openai' | 'groq' | 'together' | 'perplexity' | 'anthropic' | 'openrouter' | 'deepseek';
 export type Provider = ModelProvider;
 
 // Telemetry Metrics schema and type
@@ -65,6 +65,7 @@ export const ChatMessageSchema = z.object({
   citations: z.array(z.any()).optional(),
   artifacts: z.array(z.any()).optional(),
   metadata: z.any().optional(),
+  pendingApproval: z.any().optional(),
   siblingCount: z.number().optional(),
   currentIndex: z.number().optional(),
 });
@@ -87,7 +88,7 @@ export type ModelStatus = 'ga' | 'preview' | 'deprecated' | 'alias';
 export const ModelOptionSchema = z.object({
   id: z.string(),
   name: z.string(),
-  provider: z.enum(['gemini', 'terminal', 'ollama', 'lmstudio', 'openai', 'groq', 'together', 'perplexity', 'anthropic']),
+  provider: z.enum(['gemini', 'terminal', 'ollama', 'lmstudio', 'openai', 'groq', 'together', 'perplexity', 'anthropic', 'openrouter', 'deepseek']),
   description: z.string(),
   isLocal: z.boolean().optional(),
   status: z.enum(['ga', 'preview', 'deprecated', 'alias']).optional().default('ga'),

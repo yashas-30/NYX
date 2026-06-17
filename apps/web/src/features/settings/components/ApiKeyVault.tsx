@@ -19,6 +19,12 @@ interface ProviderConfig {
 
 const PROVIDER_CONFIGS: ProviderConfig[] = [
   { id: 'gemini', name: 'Google Gemini', hasModels: true, modelCount: 0 },
+  { id: 'anthropic', name: 'Anthropic Claude', hasModels: true, modelCount: 0 },
+  { id: 'openai', name: 'OpenAI', hasModels: true, modelCount: 0 },
+  { id: 'deepseek', name: 'DeepSeek', hasModels: true, modelCount: 0 },
+  { id: 'openrouter', name: 'OpenRouter', hasModels: true, modelCount: 0 },
+  { id: 'tavily', name: 'Tavily Search API', hasModels: false, modelCount: 0 },
+  { id: 'jina', name: 'Jina Search API', hasModels: false, modelCount: 0 },
   {
     id: 'scrapling',
     name: 'Scrapling Search & Scraper (Local / Cloud)',
@@ -207,7 +213,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
         for (const provider of Object.keys(keysToSave)) {
           const val = keysToSave[provider];
           if (val !== undefined && val.trim().length > 0) {
-            const res: any = await invoke('vault_store_key', { payload: { provider, key: val } });
+            const res: any = await invoke('vault:store-key', { payload: { provider, key: val } });
             if (res.success) {
               await updateApiKey(provider, val);
             } else {
@@ -215,7 +221,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
               toast.error(`Failed to save ${provider} key: ${res.error}`);
             }
           } else if (val === '') {
-            await invoke('vault_delete_key', { payload: { provider } });
+            await invoke('vault:delete-key', { payload: { provider } });
           }
         }
       } else {
@@ -256,17 +262,23 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
       const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
       try {
         if (isTauri) {
-          await invoke('vault_delete_key', { payload: { provider: 'gemini' } });
-          await invoke('vault_delete_key', { payload: { provider: 'scrapling' } });
-          await invoke('vault_delete_key', { payload: { provider: 'scrapling_url' } });
+          const allProviders = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
+          for (const provider of allProviders) {
+            await invoke('vault:delete-key', { payload: { provider } });
+          }
           toast.success('All API keys removed from server vault');
           await fetchVaultStatus();
           clearApiKeys();
         } else {
+          const keysPayload: Record<string, string> = {};
+          const allProviders = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
+          for (const provider of allProviders) {
+            keysPayload[provider] = '';
+          }
           const res = await fetchWithAuth('/api/v1/vault/store', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keys: { gemini: '', scrapling: '', scrapling_url: '' } }),
+            body: JSON.stringify({ keys: keysPayload }),
           });
           if (res.ok) {
             toast.success('All API keys removed from server vault');
@@ -309,7 +321,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
             }}
             className="sr-only peer"
           />
-          <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-md peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-400 after:border-zinc-300 after:border after:rounded-md after:h-4 after:w-4 after:transition-all peer-checked:bg-accent peer-checked:after:bg-zinc-950" />
+          <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-md peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-muted-foreground/60 after:border-border after:border after:rounded-md after:h-4 after:w-4 after:transition-all peer-checked:bg-accent peer-checked:after:bg-card" />
         </label>
       </div>
 
@@ -359,7 +371,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                     {p.id === 'scrapling' ? (
                       <div className="flex flex-col gap-2.5 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-[8px] font-black uppercase text-zinc-500 w-16 shrink-0">
+                          <span className="text-[8px] font-black uppercase text-muted-foreground/60 w-16 shrink-0">
                             API Key:
                           </span>
                           <div className="relative flex-1 flex items-center">
@@ -390,7 +402,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                                   toggleVisibility('scrapling');
                                 }
                               }}
-                              className={`absolute right-2.5 transition-colors ${(validationStatus['scrapling'] || 'idle') === 'idle' ? 'text-zinc-500 hover:text-white cursor-pointer' : 'text-zinc-400 cursor-default'}`}
+                              className={`absolute right-2.5 transition-colors ${(validationStatus['scrapling'] || 'idle') === 'idle' ? 'text-muted-foreground/80 hover:text-foreground cursor-pointer' : 'text-muted-foreground/40 cursor-default'}`}
                               title={(validationStatus['scrapling'] || 'idle') === 'idle' ? (visibleKeys['scrapling'] ? 'Hide API key' : 'Show API key') : undefined}
                             >
                               {(validationStatus['scrapling'] || 'idle') === 'loading' && <Loader2 size={12} className="animate-spin text-accent" />}
@@ -401,7 +413,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[8px] font-black uppercase text-zinc-500 w-16 shrink-0">
+                          <span className="text-[8px] font-black uppercase text-muted-foreground/60 w-16 shrink-0">
                             Service URL:
                           </span>
                           <input
@@ -446,7 +458,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                               toggleVisibility(p.id);
                             }
                           }}
-                          className={`absolute right-2.5 transition-colors ${(validationStatus[p.id] || 'idle') === 'idle' ? 'text-zinc-500 hover:text-white cursor-pointer' : 'text-zinc-400 cursor-default'}`}
+                          className={`absolute right-2.5 transition-colors ${(validationStatus[p.id] || 'idle') === 'idle' ? 'text-muted-foreground/80 hover:text-foreground cursor-pointer' : 'text-muted-foreground/40 cursor-default'}`}
                           title={(validationStatus[p.id] || 'idle') === 'idle' ? (visibleKeys[p.id] ? 'Hide API key' : 'Show API key') : undefined}
                         >
                           {(validationStatus[p.id] || 'idle') === 'loading' && <Loader2 size={12} className="animate-spin text-accent" />}

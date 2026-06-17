@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, State, Manager};
 use sqlx::SqlitePool;
 use reqwest::Client;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -78,7 +78,7 @@ pub async fn run_agent_stream(
         match provider {
             "openai"     => "https://api.openai.com/v1/chat/completions".to_string(),
             "openrouter" => "https://openrouter.ai/api/v1/chat/completions".to_string(),
-            "deepseek"   => "https://api.deepseek.com/v1/chat/completions".to_string(),
+            "deepseek"   => "https://api.deepseek.com/chat/completions".to_string(),
             "lmstudio"   => "http://127.0.0.1:1234/v1/chat/completions".to_string(),
             _            => "http://127.0.0.1:11434/v1/chat/completions".to_string(),
         }
@@ -558,18 +558,56 @@ pub async fn orchestrate_supervisor(
                         });
                     }
 
-                    // ── Execute ALL tool calls in PARALLEL ─────────────────────
-                    let tool_futures: Vec<_> = tool_calls.iter().map(|tc| {
-                        let tc_clone = tc.clone();
-                        async move {
-                            let name = tc_clone["function"]["name"].as_str().unwrap_or("").to_string();
-                            let args = tc_clone["function"]["arguments"].as_str().unwrap_or("{}").to_string();
-                            let result = execute_tool(&name, &args).await;
-                            (tc_clone, name, args, result)
-                        }
-                    }).collect();
-
-                    let tool_results = futures_util::future::join_all(tool_futures).await;
+                    let tool_results = {
+                        let tool_futures: Vec<_> = tool_calls.iter().map(|tc| {
+                            let tc_clone = tc.clone();
+                            let app_clone = app_clone.clone();
+                            let event_clone = event_clone.clone();
+                            async move {
+                                let name = tc_clone["function"]["name"].as_str().unwrap_or("").to_string();
+                                let args = tc_clone["function"]["arguments"].as_str().unwrap_or("{}").to_string();
+                                
+                                let is_destructive = name == "write_file"
+                                    || name == "edit_file"
+                                    || name == "run_terminal_command"
+                                    || name == "run_shell"
+                                    || name == "run_test"
+                                    || name == "lint_code";
+                                    
+                                if is_destructive {
+                                    let (tx, rx) = tokio::sync::oneshot::channel();
+                                    let approval_id = uuid::Uuid::new_v4().to_string();
+                                    
+                                    {
+                                        let app_state = app_clone.state::<crate::AppState>();
+                                        let mut approvals = app_state.pending_approvals.lock().unwrap();
+                                        approvals.insert(approval_id.clone(), tx);
+                                    }
+                                    
+                                    let _ = app_clone.emit(&event_clone, serde_json::json!({
+                                        "event_type": "tool_approval_required",
+                                        "name": name.clone(),
+                                        "arguments": args.clone(),
+                                        "approval_id": approval_id,
+                                        "tool_call_id": tc_clone["id"].as_str().unwrap_or("")
+                                    }));
+                                    
+                                    let approved = match rx.await {
+                                        Ok(val) => val,
+                                        Err(_) => false,
+                                    };
+                                    
+                                    if !approved {
+                                        return (tc_clone, name, args, "Error: Tool execution was rejected by the user.".to_string());
+                                    }
+                                }
+                                
+                                let result = execute_tool(&app_clone, &name, &args).await;
+                                (tc_clone, name, args, result)
+                            }
+                        }).collect();
+                        futures_util::future::join_all(tool_futures).await
+                    };
                     let mut any_success = false;
 
                     // Process each result — emit to UI and push to message history

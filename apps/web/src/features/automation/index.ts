@@ -1,4 +1,1 @@
-export const AutomationStudio = {
-  name: 'Computer Use Automation',
-  description: 'Live Playwright browser preview and macro recordings'
-};
+export { default as TasksView } from './TasksView';

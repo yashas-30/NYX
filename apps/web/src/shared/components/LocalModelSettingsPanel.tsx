@@ -34,7 +34,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
   const localSettings = modelSettings || {};
   const gpuColor =
     localSettings.gpuLayers === 0
-      ? 'text-zinc-500'
+      ? 'text-muted-foreground'
       : localSettings.gpuLayers < 90
         ? 'text-amber-400'
         : 'text-emerald-400';
@@ -52,10 +52,10 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-              className="absolute bottom-full mb-3 left-0 right-0 z-[500] bg-card border border-white/[0.04] p-1 rounded-md shadow-sm border border-border overflow-hidden"
+              className="absolute bottom-full mb-3 left-0 right-0 z-[500] bg-card border border-border p-1 rounded-md shadow-sm overflow-hidden"
             >
-              <div className="w-full bg-card/98 border border-white/[0.04] rounded-[calc(1.5rem-4px)] overflow-hidden">
-                <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/[0.05]">
+              <div className="w-full bg-card/98 border border-border rounded-[calc(1.5rem-4px)] overflow-hidden">
+                <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
                   <div className="flex items-center gap-3">
                     <div className="w-7 h-7 rounded-md bg-muted/50 border border-border flex items-center justify-center">
                       <Zap size={13} className="text-foreground" />

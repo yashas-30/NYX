@@ -89,7 +89,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
             {cacheStats.hits} Hits / {totalCalls} Total
           </span>
         </div>
-        <div className="h-1.5 w-full bg-white/5 rounded-md overflow-hidden">
+        <div className="h-1.5 w-full bg-muted rounded-md overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-accent to-emerald-500 rounded-md transition-all duration-500"
             style={{
@@ -106,12 +106,12 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
           identical prompts returns results instantly, saving network credits.
         </p>
         <motion.button
-          whileTap={cacheStats.itemCount === 0 ? {} : { scale: 0.95 }}
+          whileTap={cacheStats.itemCount === 0 ? {} : { scale: 0.97 }}
           onClick={handleClearCache}
           disabled={cacheStats.itemCount === 0}
           className={`px-4 py-2.5 rounded-md border text-[11px] font-bold uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
             cacheStats.itemCount === 0
-              ? 'bg-white/5 border-white/5 text-muted-foreground/30 cursor-not-allowed'
+              ? 'bg-muted/30 border-transparent text-muted-foreground/30 cursor-not-allowed'
               : 'bg-red-500/5 border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white hover:border-red-500 cursor-pointer shadow-sm'
           }`}
         >

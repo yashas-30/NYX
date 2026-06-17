@@ -50,7 +50,7 @@ export function CommandPalette() {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]">
       <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
-      <div className="relative w-full max-w-2xl bg-surface rounded-md shadow-sm border border-border border border-border overflow-hidden">
+      <div className="relative w-full max-w-2xl bg-surface rounded-md shadow-sm border border-border overflow-hidden">
         <div className="flex items-center px-4 py-3 border-b border-border">
           <SearchIcon className="w-5 h-5 text-text-subtle" />
           <input

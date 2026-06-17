@@ -37,7 +37,7 @@ export interface PromptAnalysis {
   requiresCodebaseContext?: boolean;
   estimatedTokens?: number;
   estimatedTokenCount?: number;
-  suggestedModel?: 'fast' | 'balanced' | 'powerful';
+  suggestedModel?: 'fast' | 'balanced' | 'powerful' | 'standard' | 'reasoning';
   suggestedTools?: string[];
   scope?: 'single_file' | 'multi_file' | 'project_wide' | 'external_knowledge';
   hardware?: any;
@@ -54,6 +54,15 @@ export interface PromptAnalysis {
   intentScores?: { intent: IntentType; confidence: number }[];
   languageConfidence?: number;
   requiresVision?: boolean;
+  domain?: string;
+  requiresReasoning?: boolean;
+  estimatedComplexity?: number;
+  needsToolUse?: boolean;
+  urgency?: 'low' | 'medium' | 'high' | 'normal';
+  userExpertise?: 'beginner' | 'intermediate' | 'expert';
+  contextWindowNeeded?: number;
+  suggestedExecutionMode?: 'standard' | 'parallel' | 'ensemble' | 'ab-test';
+  suggestedExecutionReasoning?: string;
 }
 
 export type SubagentType = 'planner' | 'researcher' | 'coder' | 'reviewer' | 'tester' | 'optimizer';
@@ -111,6 +120,14 @@ export interface HandoffSpecification {
 
 import { AISettings, ChatMessage } from '@nyx/shared';
 export type { AISettings, ChatMessage };
+
+export interface PlanPhase {
+  status: 'planning' | 'executing' | 'reviewing';
+  plan?: string;
+  approved?: boolean;
+  steps?: string[];
+  completedSteps?: string[];
+}
 
 export interface ToolCall {
   id: string;
@@ -251,7 +268,8 @@ export interface StreamEvent {
     | 'metrics'
     | 'error'
     | 'done'
-    | 'complete';
+    | 'complete'
+    | 'tool_approval_required';
   content?: string;
   metadata?: any;
   tool?: string;
@@ -263,6 +281,7 @@ export interface StreamEvent {
   source?: string;
   quote?: string;
   relevance?: number;
+  approvalId?: string;
 }
 
 export interface AIServiceToolDefinition {

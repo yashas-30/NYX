@@ -15,7 +15,23 @@ const MAX_TOKENS_DEFAULT: u32 = 8_192;
 #[derive(Deserialize, Debug, Clone)]
 pub struct UnifiedMessage {
     pub role: String,
-    pub content: String,
+    pub content: serde_json::Value,
+}
+
+fn get_content_string(val: &serde_json::Value) -> String {
+    match val {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(arr) => {
+            let mut text = String::new();
+            for item in arr {
+                if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
+                    text.push_str(t);
+                }
+            }
+            text
+        }
+        other => other.to_string(),
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -77,7 +93,8 @@ pub async fn execute_llm_stream(
             
             let bpe = tiktoken_rs::cl100k_base().unwrap();
             for m in req.messages.iter().rev() {
-                let msg_tokens = bpe.encode_with_special_tokens(&m.content).len();
+                let msg_content_str = get_content_string(&m.content);
+                let msg_tokens = bpe.encode_with_special_tokens(&msg_content_str).len();
                 if current_tokens + msg_tokens > 80_000 {
                     break;
                 }
@@ -87,7 +104,12 @@ pub async fn execute_llm_stream(
             budget_msgs.reverse();
             
             for m in &budget_msgs {
-                msgs.push(json!({"role": m.role, "content": m.content}));
+                let content_val = if req.provider == "anthropic" || req.provider == "openrouter" {
+                    m.content.clone()
+                } else {
+                    serde_json::Value::String(get_content_string(&m.content))
+                };
+                msgs.push(json!({"role": m.role, "content": content_val}));
             }
 
             let body = json!({
@@ -123,7 +145,7 @@ pub async fn execute_llm_stream(
                 match req.provider.as_str() {
                     "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
                     "openrouter" => "https://openrouter.ai/api/v1/chat/completions".to_string(),
-                    "deepseek" => "https://api.deepseek.com/v1/chat/completions".to_string(),
+                    "deepseek" => "https://api.deepseek.com/chat/completions".to_string(),
                     "lmstudio" => "http://127.0.0.1:1234/v1/chat/completions".to_string(),
                     _ => "http://127.0.0.1:11434/v1/chat/completions".to_string(),
                 }
@@ -140,7 +162,8 @@ pub async fn execute_llm_stream(
             
             let bpe = tiktoken_rs::cl100k_base().unwrap();
             for m in req.messages.iter().rev() {
-                let msg_tokens = bpe.encode_with_special_tokens(&m.content).len();
+                let msg_content_str = get_content_string(&m.content);
+                let msg_tokens = bpe.encode_with_special_tokens(&msg_content_str).len();
                 if current_tokens + msg_tokens > 80_000 {
                     break;
                 }
@@ -197,7 +220,7 @@ pub async fn execute_llm_stream(
             let mut budget_msgs = vec![];
             
             for m in req.messages.iter().rev() {
-                let msg_chars = m.content.len();
+                let msg_chars = get_content_string(&m.content).len();
                 if current_chars + msg_chars > char_budget {
                     break;
                 }
@@ -210,7 +233,7 @@ pub async fn execute_llm_stream(
                 let role = if m.role == "assistant" { "model" } else { "user" };
                 contents.push(json!({
                     "role": role,
-                    "parts": [{"text": m.content}]
+                    "parts": [{"text": get_content_string(&m.content)}]
                 }));
             }
 
@@ -546,3 +569,41 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
     }
     events
 }
+
+pub async fn execute_llm_call(
+    provider: &str,
+    model_id: &str,
+    api_key: &str,
+    system_instruction: Option<String>,
+    messages: Vec<UnifiedMessage>,
+) -> Result<String, String> {
+    let req = UnifiedRequest {
+        provider: provider.to_string(),
+        endpoint_override: None,
+        model_id: model_id.to_string(),
+        messages,
+        system_instruction,
+        api_key: api_key.to_string(),
+        temperature: Some(0.3),
+        max_tokens: None,
+        event_name: "dummy".to_string(),
+        tools: None,
+    };
+    let mut rx = execute_llm_stream(&req).await?;
+    let mut full_text = String::new();
+    while let Some(msg) = rx.recv().await {
+        match msg {
+            Ok(payload) => {
+                if let Some(text) = payload.content {
+                    full_text.push_str(&text);
+                }
+                if let Some(true) = payload.done {
+                    break;
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(full_text)
+}
+

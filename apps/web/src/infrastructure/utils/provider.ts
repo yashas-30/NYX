@@ -9,12 +9,15 @@ import { AVAILABLE_MODELS } from '@shared/config/models';
 export const PROVIDER_LABELS: Record<string, string> = {
   gemini: 'Gemini',
   terminal: 'Terminal',
-  'ollama': 'Ollama',
-  'lmstudio': 'LM Studio',
-
+  ollama: 'Ollama',
+  lmstudio: 'LM Studio',
+  anthropic: 'Anthropic Claude',
+  openai: 'OpenAI (ChatGPT)',
+  deepseek: 'DeepSeek',
+  openrouter: 'OpenRouter',
 };
 
-export const CLOUD_PROVIDERS: string[] = ['gemini'];
+export const CLOUD_PROVIDERS: string[] = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter'];
 
 export const LOCAL_PROVIDERS: string[] = ['ollama', 'lmstudio'];
 
@@ -178,7 +181,7 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
     caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 2097152;
-  } else if (lowerId.includes('gemini-1.5-flash')) {
+  } else if (lowerId.includes('gemini-3.1-flash-lite') || lowerId.includes('gemini-3.5-flash')) {
     caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576;

@@ -17,9 +17,9 @@ export interface ModelSettings {
   antigravity?: boolean;
 }
 
-export type ActiveMode = 'coder' | 'registry' | 'settings';
+export type ActiveMode = 'chat' | 'coder' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
 
-export type ExecutionMode = 'standard' | 'parallel' | 'ensemble' | 'ab-test';
+export type ExecutionMode = 'auto' | 'standard' | 'parallel' | 'ensemble' | 'ab-test';
 
 export interface NyxState {
   activeMode: ActiveMode;
@@ -34,6 +34,12 @@ export interface NyxState {
   privacyMode: boolean;
   rememberKeys: boolean;
   currentModel: ModelOption;
+  searchProvider: 'duckduckgo' | 'tavily' | 'jina';
+  setSearchProvider: (provider: 'duckduckgo' | 'tavily' | 'jina') => void;
+  activeProjectId: string | null;
+  setActiveProjectId: (id: string | null) => void;
+  showReasoning: boolean;
+  setShowReasoning: (show: boolean) => void;
 
   // Actions
   setActiveMode: (mode: ActiveMode) => void;
@@ -94,7 +100,7 @@ export const useNyxStore = create<NyxState>()(
   persist(
     (set, get) => ({
       activeMode: 'coder',
-      executionMode: 'standard',
+      executionMode: 'auto',
       workspacePath: '',
       localModelsEnabled: false,
       agentLoopEnabled: false,
@@ -105,6 +111,9 @@ export const useNyxStore = create<NyxState>()(
       privacyMode: false,
       rememberKeys: false,
       currentModel: DEFAULT_MODEL,
+      searchProvider: 'duckduckgo',
+      activeProjectId: null,
+      showReasoning: true,
 
       setActiveMode: (mode) => set({ activeMode: mode }),
       setExecutionMode: (mode) => set({ executionMode: mode }),
@@ -112,10 +121,13 @@ export const useNyxStore = create<NyxState>()(
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
       setAgentLoopEnabled: (enabled) => set({ agentLoopEnabled: enabled }),
       updateModelSettings: (settings) =>
-        set((state) => ({
-          modelSettings: { ...state.modelSettings, ...settings },
-        })),
+          set((state) => ({
+            modelSettings: { ...state.modelSettings, ...settings },
+          })),
       setModel: (mid) => set({ models: { nyx: mid } }),
+      setSearchProvider: (provider) => set({ searchProvider: provider }),
+      setActiveProjectId: (id) => set({ activeProjectId: id }),
+      setShowReasoning: (show) => set({ showReasoning: show }),
       setApiKeys: (keys) => set({ apiKeys: keys }),
       setPrivacyMode: (enabled) => {
         if (enabled) {
@@ -306,6 +318,7 @@ export const useNyxStore = create<NyxState>()(
         privacyMode: state.privacyMode,
         rememberKeys: state.rememberKeys,
         currentModel: state.currentModel,
+        searchProvider: state.searchProvider,
       }),
     }
   )

@@ -1,5 +1,3 @@
-// Plugins UI feature root
-export const PluginsFeature = {
-  name: 'Plugins',
-  description: 'Plugin Marketplace and Configuration UI'
-};
+export { default as PluginsView } from './PluginsView';
+export { default as McpView } from './McpView';
+

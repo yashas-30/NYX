@@ -47,6 +47,8 @@ export interface PromptAnalysis {
   multiIntent?: PromptIntent[]; // Secondary detected intents
   urgency: 'low' | 'normal' | 'high'; // User frustration indicators
   isFollowUp: boolean; // Part of ongoing conversation
+  suggestedExecutionMode?: 'standard' | 'parallel' | 'ensemble' | 'ab-test';
+  suggestedExecutionReasoning?: string;
 }
 
 export interface ConversationState {
@@ -819,6 +821,29 @@ export function analyzePrompt(
   // Hardware analysis
   const hardware = detectHardware(prompt);
 
+  // --- Execution Mode Selection Heuristics ---
+  let suggestedExecutionMode: 'standard' | 'parallel' | 'ensemble' | 'ab-test' = 'standard';
+  let suggestedExecutionReasoning = 'Standard conversational request. Using single selected model.';
+
+  const isABTest = /\b(a\/b\s*test|ab\s*test|split\s*test|ab-test)\b/i.test(lower);
+  const isParallel = /\b(compare|comparison|versus|vs|side\s*by\s*side|parallel|simultaneous|simultaneously|difference\s*between)\b/i.test(lower) ||
+                     /\b(model\s*difference|which\s*model\s*is\s*better|which\s*is\s*better)\b/i.test(lower);
+  const isEnsemble = /\b(ensemble|synthesize|synthesis|consensus|merge\s*responses|combine\s*answers|blend)\b/i.test(lower);
+
+  if (isABTest) {
+    suggestedExecutionMode = 'ab-test';
+    suggestedExecutionReasoning = 'Detected request for A/B testing of responses.';
+  } else if (isParallel) {
+    suggestedExecutionMode = 'parallel';
+    suggestedExecutionReasoning = 'Detected comparative query. Running models in parallel for side-by-side evaluation.';
+  } else if (isEnsemble) {
+    suggestedExecutionMode = 'ensemble';
+    suggestedExecutionReasoning = 'Detected request for consensus synthesis across multiple models.';
+  } else if (complexity === 'enterprise' || complexity === 'complex') {
+    suggestedExecutionMode = 'ensemble';
+    suggestedExecutionReasoning = 'Highly complex task. Routing to ensemble synthesis to combine capabilities of multiple models.';
+  }
+
   return {
     intent: bestIntent,
     confidence,
@@ -833,6 +858,8 @@ export function analyzePrompt(
     multiIntent: multiIntent.length ? multiIntent : undefined,
     urgency,
     isFollowUp,
+    suggestedExecutionMode,
+    suggestedExecutionReasoning,
   };
 }
 

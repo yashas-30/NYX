@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { AlertTriangle } from 'lucide-react';
 import { LazyStore as Store } from '@tauri-apps/plugin-store';
 
 const settingsStore = new Store('nyx_settings.bin');
@@ -198,7 +199,7 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
 
       {activeQuantInfo?.warn && (
         <div className="mb-3 px-3 py-2 rounded-md bg-accent/5 border border-accent/20 text-[10px] text-accent/90 flex items-center gap-2">
-          <span className="text-accent shrink-0">⚠</span>
+          <AlertTriangle className="w-3.5 h-3.5 text-accent shrink-0" />
           {activeQuantInfo.warn}
         </div>
       )}

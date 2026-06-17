@@ -11,6 +11,8 @@ export interface ChatSession {
   updatedAt: number;
   folderId?: string | null;
   tags?: string | null;
+  branchOf?: string | null;
+  branchAtIndex?: number | null;
 }
 
 export interface Folder {
@@ -186,15 +188,24 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
   }, [agentType, matchesAgentType, regularSessions, activeSid]);
 
   const createSession = useCallback(
-    (initialMessages: ChatMessage[] = []): string => {
+    (
+      initialMessages: ChatMessage[] = [],
+      options?: {
+        branchOf?: string | null;
+        branchAtIndex?: number | null;
+        title?: string;
+      }
+    ): string => {
       const id = generateId(agentType);
       const now = Date.now();
       const session: ChatSession = {
         id,
-        title: deriveTitleFromMessages(initialMessages),
+        title: options?.title || deriveTitleFromMessages(initialMessages),
         messages: initialMessages,
         createdAt: now,
         updatedAt: now,
+        branchOf: options?.branchOf,
+        branchAtIndex: options?.branchAtIndex,
       };
 
       setRegularSessions((prev) => [session, ...prev]);

@@ -37,7 +37,7 @@ export class BrowserService {
       // Remove images to save tokens unless specifically needed
       turndownService.remove('img');
       
-      const markdown = turndownService.turndown(article.content);
+      const markdown = turndownService.turndown(article.content || '');
       
       return `# ${article.title}\n\n${markdown}`;
     } catch (error: any) {

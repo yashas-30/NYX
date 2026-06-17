@@ -108,7 +108,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-zinc-950/90 backdrop-blur-md flex flex-col items-center justify-between p-6 z-50 overflow-hidden"
+        className="fixed inset-0 bg-background/95 backdrop-blur-md flex flex-col items-center justify-between p-6 z-50 overflow-hidden"
       >
         {/* Header */}
         <div className="w-full flex justify-end">
@@ -134,8 +134,8 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                 style={{
                   width: '6px',
                   borderRadius: '9999px',
-                  background: 'linear-gradient(to top, var(--color-primary-600, #3b82f6), var(--color-primary-400, #60a5fa))',
-                  boxShadow: '0 0 15px rgba(59, 130, 246, 0.4)',
+                  background: 'linear-gradient(to top, var(--primary), var(--accent))',
+                  boxShadow: '0 0 15px rgba(204, 120, 92, 0.4)',
                 }}
               />
             ))}
@@ -154,8 +154,8 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               }}
               className={`w-24 h-24 rounded-full bg-gradient-to-tr ${
                 status === 'error'
-                  ? 'from-red-600 to-rose-400'
-                  : 'from-blue-600 to-cyan-400'
+                  ? 'from-destructive to-rose-400'
+                  : 'from-primary to-accent'
               } flex items-center justify-center shadow-xl relative z-10`}
             >
               {status === 'listening' ? (
@@ -169,7 +169,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
             
             {/* Ambient background glow */}
             <div className={`absolute inset-0 w-24 h-24 rounded-full filter blur-xl opacity-60 animate-pulse ${
-              status === 'error' ? 'bg-red-500' : 'bg-blue-500'
+              status === 'error' ? 'bg-destructive' : 'bg-primary'
             }`} />
           </div>
 
@@ -179,7 +179,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               {statusLabel}
             </h2>
             {status === 'listening' && (
-              <p className="text-sm text-zinc-400 animate-pulse">
+              <p className="text-sm text-muted-foreground animate-pulse">
                 Click the mic or speak to capture
               </p>
             )}
@@ -195,9 +195,9 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-center max-h-32 overflow-y-auto"
+              className="w-full bg-muted/50 border border-border rounded-xl p-4 text-center max-h-32 overflow-y-auto"
             >
-              <p className="text-sm text-zinc-300 italic">
+              <p className="text-sm text-foreground/80 italic">
                 "{transcript}"
               </p>
             </motion.div>

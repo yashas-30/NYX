@@ -20,6 +20,11 @@ export interface ChatMessageUI extends Omit<ChatMessage, 'status'> {
   citations?: Citation[];
   metrics?: StreamMetrics;
   thinkingSteps?: string[];
+  pendingApproval?: {
+    approvalId: string;
+    tool: string;
+    input: any;
+  } | null;
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -197,6 +202,27 @@ export function useChatAgent() {
               throw new Error(event.content || 'Stream error');
             }
 
+            case 'tool_approval_required': {
+              const approvalPayload = {
+                approvalId: (event as any).approvalId || '',
+                tool: (event as any).tool || '',
+                input: (event as any).input || {},
+              };
+              setMessages((prev) => {
+                const next = [...prev];
+                const idx = next.findIndex((m) => m.id === assistantId);
+                if (idx !== -1) {
+                  next[idx] = {
+                    ...next[idx],
+                    pendingApproval: approvalPayload,
+                  };
+                }
+                messagesRef.current = next;
+                return next;
+              });
+              break;
+            }
+
             case 'done': {
               break;
             }
@@ -325,6 +351,61 @@ export function useChatAgent() {
     [sendMessage]
   );
 
+  const approveTool = useCallback(async (messageId: string, approvalId: string) => {
+    try {
+      const isTauriEnv = typeof window !== 'undefined' &&
+        ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+      
+      if (isTauriEnv) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('approve_tool', { approvalId });
+      }
+      
+      setMessages((prev) => {
+        const next = [...prev];
+        const idx = next.findIndex((m) => m.id === messageId);
+        if (idx !== -1) {
+          next[idx] = {
+            ...next[idx],
+            pendingApproval: null,
+          };
+        }
+        messagesRef.current = next;
+        return next;
+      });
+    } catch (err: any) {
+      setError(`Failed to approve tool: ${err.message || String(err)}`);
+    }
+  }, []);
+
+  const rejectTool = useCallback(async (messageId: string, approvalId: string) => {
+    try {
+      const isTauriEnv = typeof window !== 'undefined' &&
+        ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+      
+      if (isTauriEnv) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('reject_tool', { approvalId });
+      }
+      
+      setMessages((prev) => {
+        const next = [...prev];
+        const idx = next.findIndex((m) => m.id === messageId);
+        if (idx !== -1) {
+          next[idx] = {
+            ...next[idx],
+            pendingApproval: null,
+            status: 'stopped',
+          };
+        }
+        messagesRef.current = next;
+        return next;
+      });
+    } catch (err: any) {
+      setError(`Failed to reject tool: ${err.message || String(err)}`);
+    }
+  }, []);
+
   return {
     messages,
     isLoading,
@@ -336,5 +417,7 @@ export function useChatAgent() {
     regenerateResponse,
     scrollContainerRef,
     handleScroll,
+    approveTool,
+    rejectTool,
   };
 }

@@ -48,16 +48,16 @@ export const UnifiedDiffViewer: React.FC<UnifiedDiffViewerProps> = ({ code }) =>
               textColor = 'text-blue-400';
               break;
             case 'file':
-              textColor = 'text-zinc-400 font-bold';
+              textColor = 'text-foreground/80 font-bold';
               break;
           }
 
           return (
             <div
               key={idx}
-              className={`flex px-4 py-[1px] leading-relaxed w-full whitespace-pre ${bgColor} hover:bg-white/[0.02] transition-colors`}
+              className={`flex px-4 py-[1px] leading-relaxed w-full whitespace-pre ${bgColor} hover:bg-muted/30 transition-colors`}
             >
-              <div className="select-none text-zinc-500 opacity-50 w-6 text-right pr-3 shrink-0 border-r border-white/5 mr-3">
+              <div className="select-none text-muted-foreground/50 w-6 text-right pr-3 shrink-0 border-r border-border mr-3">
                 {idx + 1}
               </div>
               <div className={`flex-1 ${textColor} break-all`}>{line}</div>

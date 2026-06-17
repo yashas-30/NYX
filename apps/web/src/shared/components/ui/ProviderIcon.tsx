@@ -32,6 +32,14 @@ function getIcon(provider: string | undefined, size: number, className: string):
           className={`${className} text-primary animate-pulse`}
         />
       );
+    case 'anthropic':
+      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-amber-500`} />;
+    case 'openai':
+      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-emerald-500`} />;
+    case 'deepseek':
+      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-blue-500`} />;
+    case 'openrouter':
+      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-violet-500`} />;
     default:
       return <Cpu size={size} strokeWidth={1.5} className={className} />;
   }
@@ -60,6 +68,9 @@ export function getProviderLabel(provider: string | undefined): string {
   if (provider === 'mistral') return 'Mistral';
   if (provider === 'cohere') return 'Cohere';
   if (provider === 'openchat') return 'OpenChat';
+  if (provider === 'anthropic') return 'Anthropic';
+  if (provider === 'openai') return 'OpenAI';
+  if (provider === 'openrouter') return 'OpenRouter';
   if (provider === 'community') return 'Community / Custom';
   return provider;
 }
@@ -74,6 +85,10 @@ export function inferProviderFromId(modelId: string | undefined): string | undef
 
   // Fall back to prefix matching for cloud providers
   if (id.startsWith('gemini') || id.includes('gemini')) return 'gemini';
+  if (id.startsWith('claude') || id.includes('claude')) return 'anthropic';
+  if (id.startsWith('gpt-') || id.includes('gpt-') || id.startsWith('o1-') || id.startsWith('o3-')) return 'openai';
+  if (id.startsWith('deepseek') || id.includes('deepseek')) return 'deepseek';
+  if (id.startsWith('openrouter') || id.includes('openrouter')) return 'openrouter';
 
   return undefined;
 }

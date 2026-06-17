@@ -131,5 +131,9 @@
     "wait-on": "^9.0.10",
     "workbox-build": "^7.4.1",
     "workbox-webpack-plugin": "^7.4.1"
+  },
+  "optionalDependencies": {
+    "@xenova/transformers": "^2.17.2"
   }
 }
+

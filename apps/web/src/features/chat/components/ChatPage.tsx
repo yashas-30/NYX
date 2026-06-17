@@ -7,7 +7,8 @@
  */
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Folder } from 'lucide-react';
 import { ModelDefinition, ChatMessage, ToolCall } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
@@ -21,6 +22,8 @@ import { useChatLogic } from '../hooks/useChatLogic';
 import { ArtifactCanvas } from '../../artifacts/components/ArtifactCanvas';
 import { ContextBar } from '@src/shared/components/ContextBar';
 import { MemoryPanel } from './MemoryPanel';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { BranchingTreePanel } from './BranchingTreePanel';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -122,6 +125,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [pendingImages, setPendingImages] = useState<ChatImage[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [branchManagerOpen, setBranchManagerOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   
   // --- Artifact State ---
@@ -131,6 +135,24 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     language?: string;
     title?: string;
   } | null>(null);
+
+  // --- Project State ---
+  const activeProjectId = useNyxStore((s) => s.activeProjectId);
+  const setActiveProjectId = useNyxStore((s) => s.setActiveProjectId);
+
+  const activeProject = useMemo(() => {
+    if (!activeProjectId) return null;
+    try {
+      const saved = localStorage.getItem('nyx_projects');
+      if (saved) {
+        const projects = JSON.parse(saved);
+        return projects.find((p: any) => p.id === activeProjectId) || null;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }, [activeProjectId]);
 
   // --- Model resolution ---
   const currentModelId = models['nyx'];
@@ -161,6 +183,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     editMessage: handleEditMessage,
     regenerateMessage: handleRegenerate,
     branchFromMessage: handleBranch,
+    approveTool,
+    rejectTool,
   } = useChatLogic({
     apiKeys,
     modelSettings,
@@ -312,20 +336,25 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   // --- Export chat ---
   const handleExport = useCallback(
-    (format: 'markdown' | 'json' | 'txt') => {
-      let content: string;
-      let mimeType: string;
-      let extension: string;
+    (format: 'markdown' | 'json' | 'txt' | 'html' | 'obsidian' | 'notion' | 'gist') => {
+      let content = '';
+      let mimeType = '';
+      let extension = '';
+
+      const getMarkdown = () => {
+        const md = history
+          .map((m) => {
+            const role = m.role === 'user' ? 'User' : 'Assistant';
+            return `## ${role}\n\n${m.content}\n`;
+          })
+          .join('\n---\n\n');
+        const title = chatSessions?.activeSession?.title || 'Chat Export';
+        return `# ${title}\n\n*Exported from NYX AI Client*\n\n${md}`;
+      };
 
       switch (format) {
         case 'markdown': {
-          const md = history
-            .map((m) => {
-              const role = m.role === 'user' ? 'User' : 'Assistant';
-              return `## ${role}\n\n${m.content}\n`;
-            })
-            .join('\n---\n\n');
-          content = `# Chat Export\n\n${md}`;
+          content = getMarkdown();
           mimeType = 'text/markdown';
           extension = 'md';
           break;
@@ -348,6 +377,54 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           mimeType = 'text/plain';
           extension = 'txt';
           break;
+        case 'html': {
+          const title = chatSessions?.activeSession?.title || 'Chat Export';
+          content = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>NYX Chat Export - ${title}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #cbd5e1; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+    h1 { color: #f8fafc; font-size: 24px; border-bottom: 1px solid #334155; padding-bottom: 12px; margin-bottom: 30px; }
+    .msg { margin-bottom: 24px; padding: 16px; border-radius: 12px; }
+    .user { background: #1e293b; border-left: 4px solid #3b82f6; }
+    .assistant { background: #1e1b4b; border-left: 4px solid #6366f1; }
+    .role { font-weight: bold; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; margin-bottom: 8px; }
+    .content { font-size: 14px; white-space: pre-wrap; }
+    code { font-family: monospace; background: #0f172a; padding: 2px 6px; border-radius: 4px; color: #f43f5e; }
+    pre { background: #0f172a; padding: 16px; border-radius: 8px; overflow-x: auto; border: 1px solid #1e293b; }
+    pre code { background: none; padding: 0; color: inherit; }
+  </style>
+</head>
+<body>
+  <h1>${title}</h1>
+  ${history.map(m => `
+    <div class="msg ${m.role}">
+      <div class="role">${m.role}</div>
+      <div class="content">${m.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+    </div>
+  `).join('')}
+</body>
+</html>`;
+          mimeType = 'text/html';
+          extension = 'html';
+          break;
+        }
+        case 'obsidian': {
+          const title = chatSessions?.activeSession?.title || 'Chat Export';
+          const obsidianUrl = `obsidian://new?title=${encodeURIComponent(title)}&content=${encodeURIComponent(getMarkdown())}`;
+          window.open(obsidianUrl);
+          toast.success('Opened Obsidian export');
+          return;
+        }
+        case 'notion':
+        case 'gist': {
+          const finalMd = getMarkdown();
+          navigator.clipboard.writeText(finalMd);
+          toast.success(`Copied ${format === 'notion' ? 'Notion' : 'GitHub Gist'} formatted Markdown to clipboard!`);
+          return;
+        }
       }
 
       const blob = new Blob([content], { type: mimeType });
@@ -359,7 +436,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       URL.revokeObjectURL(url);
       toast.success(`Exported chat as ${format.toUpperCase()}`);
     },
-    [history, currentModelId]
+    [history, currentModelId, chatSessions?.activeSession?.title]
   );
 
   // --- Share chat ---
@@ -492,7 +569,35 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           connectionStatus={connectionStatus}
           isNewChat={history.length === 0}
           onToggleMemory={() => setMemoryPanelOpen(!memoryPanelOpen)}
+          onOpenBranchManager={() => setBranchManagerOpen(true)}
         />
+
+        {activeProject && (
+          <div className="bg-primary/5 border-b border-primary/20 px-4 py-2 flex items-center justify-between shrink-0 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <span className="text-sm select-none flex items-center justify-center shrink-0">
+                {activeProject.icon ? activeProject.icon : <Folder className="w-4 h-4 text-primary" />}
+              </span>
+              <div className="flex flex-col">
+                <span className="text-xs font-semibold text-foreground leading-none">
+                  Project Workspace: {activeProject.name}
+                </span>
+                <span className="text-[10px] text-muted-foreground mt-0.5 animate-pulse">
+                  Custom instructions and {activeProject.files?.length || 0} files loaded.
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setActiveProjectId(null);
+                toast.info('Left project context. Standard chat active.');
+              }}
+              className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted px-2 py-0.5 rounded border border-border cursor-pointer transition-all"
+            >
+              Exit Project
+            </button>
+          </div>
+        )}
 
         {/* CHAT MESSAGE LIST */}
         <ChatMessageList
@@ -513,6 +618,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           activeModel={currentModel?.name}
 
           onArtifactClick={setActiveArtifact}
+          approveTool={approveTool}
+          rejectTool={rejectTool}
         />
 
         {/* CONTEXT BAR */}
@@ -546,12 +653,14 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
       {/* ARTIFACT CANVAS */}
       <ArtifactCanvas
+        id={activeArtifact?.id}
         isOpen={!!activeArtifact}
         content={activeArtifact?.content || ''}
         language={activeArtifact?.language}
         title={activeArtifact?.title}
         onClose={() => setActiveArtifact(null)}
         onSubmitPrompt={(p) => handleSubmit(p)}
+        history={history}
       />
 
       {/* MEMORY MANAGER PANEL */}
@@ -559,6 +668,18 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         isOpen={memoryPanelOpen}
         onClose={() => setMemoryPanelOpen(false)}
       />
+
+      <AnimatePresence>
+        {branchManagerOpen && (
+          <BranchingTreePanel
+            sessions={chatSessions?.sessions || []}
+            activeSid={chatSessions?.activeSid || null}
+            onSwitchSession={(sid) => chatSessions?.switchSession?.(sid)}
+            onCreateSession={(msgs) => chatSessions?.createSession?.(msgs)}
+            onClose={() => setBranchManagerOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
     </motion.div>
   );

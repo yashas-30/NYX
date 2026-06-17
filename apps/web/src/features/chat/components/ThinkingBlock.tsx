@@ -1,13 +1,32 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CaretDown } from '@phosphor-icons/react';
+import { CaretDown, Globe, PuzzlePiece, Code, FileText, Microscope, Sparkle, Brain, Link, Lightning, ArrowsClockwise, ClipboardText } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
+
+function getIconFromEmoji(key: string, className = "w-3.5 h-3.5") {
+  switch (key) {
+    case 'brain': return <Brain className={className} />;
+    case 'sparkle': return <Sparkle className={className} />;
+    case 'link': return <Link className={className} />;
+    case 'lightning': return <Lightning className={className} />;
+    case 'arrows_clockwise': return <ArrowsClockwise className={className} />;
+    case 'globe': return <Globe className={className} />;
+    case 'puzzle_piece': return <PuzzlePiece className={className} />;
+    case 'code': return <Code className={className} />;
+    case 'file_text': return <FileText className={className} />;
+    case 'microscope': return <Microscope className={className} />;
+    case 'clipboard_text': return <ClipboardText className={className} />;
+    default: return null;
+  }
+}
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 
 interface ThinkingBlockProps {
   content: string;
+  responseContent?: string;
   isComplete?: boolean;
   startedAt?: number;
   agentProgress?: {
@@ -139,8 +158,8 @@ function parseThinking(raw: string): Segment[] {
     }
 
     // Connection messages
-    if (t.toLowerCase().includes('connecting to backend') || t.toLowerCase().includes('calling ai service')) {
-      segments.push({ type: 'section', label: t, icon: '🌐' });
+    if (t.startsWith('━━━') || t.includes('Routing') || t.includes('Supervisor')) {
+      segments.push({ type: 'section', label: t, icon: 'globe' });
       continue;
     }
 
@@ -148,11 +167,11 @@ function parseThinking(raw: string): Segment[] {
     const sec = t.match(/^[━]+\s+\[(.+?)\]\s+(.+?)\s+[━]+$/);
     if (sec) {
       const label = sec[1] + ' ' + sec[2].replace(/\.\.\.$/, '').trim();
-      const icon = label.includes('Supervisor') || label.includes('Routing') ? '🧠'
-        : label.includes('Polisher') || label.includes('Crafting') ? '✨'
-        : label.includes('Synthesis') ? '🔗'
-        : label.includes('Running') ? '⚡'
-        : '🔄';
+      const icon = label.includes('Supervisor') || label.includes('Routing') ? 'brain'
+        : label.includes('Polisher') || label.includes('Crafting') ? 'sparkle'
+        : label.includes('Synthesis') ? 'link'
+        : label.includes('Running') ? 'lightning'
+        : 'arrows_clockwise';
       segments.push({ type: 'section', label, icon });
       continue;
     }
@@ -175,8 +194,8 @@ function parseThinking(raw: string): Segment[] {
       segments.push({ type: 'task_start', index: taskStart[1], agent: normalizeAgent(taskStart[2]), task: taskStart[3] });
       continue;
     }
-    // dynamic spawn: ├─ ⚡ Dynamically spawning sub-agent: web_explorer for: task instructions
-    const dynamicSpawn = t.match(/^[┌├]─\s+⚡\s+Dynamically spawning sub-agent:\s*(.+?)\s+for:\s*(.*)$/);
+    // dynamic spawn: ├─ \u26A1 Dynamically spawning sub-agent: web_explorer for: task instructions
+    const dynamicSpawn = t.match(/^[┌├]─\s+\u26A1\s+Dynamically spawning sub-agent:\s*(.+?)\s+for:\s*(.*)$/);
     if (dynamicSpawn) {
       segments.push({ type: 'dynamic_spawn', agent: normalizeAgent(dynamicSpawn[1]), task: dynamicSpawn[2] });
       continue;
@@ -186,11 +205,11 @@ function parseThinking(raw: string): Segment[] {
       segments.push({ type: 'batch_complete' });
       continue;
     }
-    // tool call: ⚡ [Name] → tool(args)
-    const tc = t.match(/^⚡\s+\[(.+?)\]\s+[→>]\s+(\w+)\((.*)?\)$/);
+    // tool call: \u26A1 [Name] → tool(args)
+    const tc = t.match(/^\u26A1\s+\[(.+?)\]\s+[→>]\s+(\w+)\((.*)?\)$/);
     if (tc) { segments.push({ type: 'tool_call', agent: normalizeAgent(tc[1]), tool: tc[2], args: tc[3] || '' }); continue; }
-    // tool result: 📋 Result: ...
-    const tr = t.match(/^📋\s+Result:\s+(.+)$/);
+    // tool result: \uD83D\uDCCB Result: ...
+    const tr = t.match(/^\uD83D\uDCCB\s+Result:\s+(.+)$/);
     if (tr) { segments.push({ type: 'tool_result', preview: tr[1] }); continue; }
     // plain text
     const prev = segments[segments.length - 1];
@@ -210,12 +229,12 @@ const AGENT_COLORS: Record<string, { bg: string; text: string; border: string }>
 };
 
 const AGENT_ICONS: Record<string, string> = {
-  'Web Explorer': '🌐',
-  'Deep Planner': '🧩',
-  'Code Interpreter': '💻',
-  'Document Cruncher': '📄',
-  'Deep Research': '🔬',
-  'Persona & Polisher': '✨',
+  'Web Explorer': 'globe',
+  'Deep Planner': 'puzzle_piece',
+  'Code Interpreter': 'code',
+  'Document Cruncher': 'file_text',
+  'Deep Research': 'microscope',
+  'Persona & Polisher': 'sparkle',
 };
 
 function getAgentColor(agent: string) {
@@ -225,8 +244,8 @@ function getAgentColor(agent: string) {
 const SectionHeader: React.FC<{ icon: string; label: string }> = ({ icon, label }) => (
   <div className="flex items-center gap-2 py-2">
     <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.05)' }} />
-    <span className="text-[9px] font-mono font-medium tracking-widest uppercase px-1" style={{ color: 'rgba(255,255,255,0.22)' }}>
-      {icon} {label}
+    <span className="text-[9px] font-mono font-medium tracking-widest uppercase px-1 flex items-center gap-1.5" style={{ color: 'rgba(255,255,255,0.22)' }}>
+      {getIconFromEmoji(icon)} {label}
     </span>
     <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.05)' }} />
   </div>
@@ -239,9 +258,9 @@ const PlanPill: React.FC<{ agents: string[] }> = ({ agents }) => (
       const c = getAgentColor(normAgent);
       return (
         <React.Fragment key={a}>
-          <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full"
+          <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
             style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-            {AGENT_ICONS[normAgent] || '•'} {normAgent}
+            {getIconFromEmoji(AGENT_ICONS[normAgent], "w-3 h-3") || '•'} {normAgent}
           </span>
           {i < agents.length - 1 && <span style={{ color: 'rgba(255,255,255,0.18)', fontSize: 10 }}>→</span>}
         </React.Fragment>
@@ -260,7 +279,7 @@ const AgentBadge: React.FC<{ agent: string; status: 'running' | 'done' }> = ({ a
         {status === 'running' ? (
           <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.2, repeat: Infinity }}>●</motion.span>
         ) : <span>✓</span>}
-        {AGENT_ICONS[normAgent] || ''} {normAgent}
+        {getIconFromEmoji(AGENT_ICONS[normAgent], "w-3 h-3")} {normAgent}
       </span>
       <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.22)' }}>
         {status === 'running' ? 'working...' : 'complete'}
@@ -275,9 +294,9 @@ const TaskStartRow: React.FC<{ index: string; agent: string; task: string }> = (
   return (
     <div className="flex items-start gap-2.5 py-1 pl-1">
       <span className="text-[10px] font-mono text-muted-foreground shrink-0 pt-0.5 select-none">Task {index}:</span>
-      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full shrink-0"
+      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1"
         style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-        {AGENT_ICONS[normAgent] || '•'} {normAgent}
+        {getIconFromEmoji(AGENT_ICONS[normAgent], "w-3 h-3") || '•'} {normAgent}
       </span>
       <span className="text-[11px] font-mono text-foreground/75 leading-relaxed">{task}</span>
     </div>
@@ -289,10 +308,12 @@ const DynamicSpawnRow: React.FC<{ agent: string; task: string }> = ({ agent, tas
   const c = getAgentColor(normAgent);
   return (
     <div className="flex items-start gap-2.5 py-1.5 pl-3 bg-indigo-500/5 rounded-lg border border-indigo-500/10 my-1.5">
-      <span className="text-[10px] shrink-0 pt-0.5 animate-pulse select-none">⚡</span>
-      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full shrink-0"
+      <span className="text-[10px] shrink-0 pt-0.5 animate-pulse select-none text-indigo-400">
+        <Lightning className="w-3.5 h-3.5" />
+      </span>
+      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1"
         style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-        {AGENT_ICONS[normAgent] || '•'} {normAgent}
+        {getIconFromEmoji(AGENT_ICONS[normAgent], "w-3 h-3") || '•'} {normAgent}
       </span>
       <div className="flex flex-col min-w-0">
         <span className="text-[9px] font-mono text-indigo-300 uppercase tracking-wider select-none font-bold">Dynamically Spawned</span>
@@ -339,7 +360,7 @@ const ToolResultRow: React.FC<{ preview: string }> = ({ preview }) => (
 const PlainText: React.FC<{ content: string }> = ({ content }) => {
   if (!content.trim()) return null;
   return (
-    <div className="text-[13px] font-sans leading-relaxed py-1 animate-fade-in text-muted-foreground border-l-2 border-muted-foreground/20 pl-3 ml-1" style={{ whiteSpace: 'pre-wrap' }}>
+    <div className="text-[13px] font-sans leading-relaxed py-1 animate-fade-in text-muted-foreground border-l border-muted-foreground/20 pl-3 ml-1" style={{ whiteSpace: 'pre-wrap' }}>
       <ReactMarkdown 
         remarkPlugins={[remarkGfm, remarkMath]} 
         rehypePlugins={[rehypeKatex]}
@@ -392,9 +413,11 @@ function AgentProgressBar({
   );
 }
 
-export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplete = true, startedAt, agentProgress }) => {
+export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseContent, isComplete = true, startedAt, agentProgress }) => {
   const [isExpanded, setIsExpanded] = useState(!isComplete);
   const smoothContent = useSmoothTypewriter(content, !isComplete);
+  const showReasoning = useNyxStore((s) => s.showReasoning);
+  const setShowReasoning = useNyxStore((s) => s.setShowReasoning);
   const segments = useMemo(() => parseThinking(smoothContent), [smoothContent]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -458,6 +481,28 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplet
   }, [segments, isExpanded]);
 
   if (!content?.trim()) return null;
+
+  if (!showReasoning) {
+    const timeSecs = elapsedMs > 0 ? (elapsedMs / 1000).toFixed(1) : ((Date.now() - internalStartedAt) / 1000).toFixed(1);
+    return (
+      <div className="my-2 text-[12px] text-muted-foreground/80 flex items-center gap-1.5 font-sans select-none">
+        <span className="text-indigo-400">◎</span>
+        <span>
+          {isComplete 
+            ? `Reasoned for ${timeSecs}s` 
+            : `Reasoning... (${timeSecs}s)`
+          }
+        </span>
+        <button 
+          onClick={() => setShowReasoning(true)}
+          className="text-indigo-400 hover:text-indigo-300 font-medium underline underline-offset-2 cursor-pointer outline-none bg-transparent border-none p-0 ml-1 transition-colors"
+        >
+          (show)
+        </button>
+      </div>
+    );
+  }
+
   const spring = { duration: 0.2, ease: 'easeOut' as const };
   return (
     <motion.div
@@ -494,18 +539,12 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, isComplet
           </span>
         </div>
 
-        {isComplete && content && elapsedMs > 0 && (
+        {(elapsedMs > 0 || isComplete) && (
           <div className="flex items-center gap-2 ml-1">
             <span className="text-[11px] font-sans text-muted-foreground/60">
-              {(elapsedMs / 1000).toFixed(1)}s
-            </span>
-          </div>
-        )}
-
-        {!isComplete && elapsedMs > 0 && (
-          <div className="flex items-center gap-2 ml-1">
-            <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)' }}>
-              {(elapsedMs / 1000).toFixed(1)}s
+              {((elapsedMs || (Date.now() - internalStartedAt)) / 1000).toFixed(1)}s
+              {content && ` • ${Math.round(content.length / 4)} tokens reasoning`}
+              {responseContent && ` • ${Math.round(responseContent.length / 4)} tokens response`}
             </span>
           </div>
         )}

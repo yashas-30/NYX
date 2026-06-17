@@ -7,6 +7,7 @@ import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { useLocalModels } from '@src/shared/hooks/useLocalModels';
 import { SectionHeader, EmptyState } from './RegistryShared';
 import { ModelCard } from './ModelCard';
+import { LocalProviderStatus } from '@src/components/LocalProviderStatus';
 
 interface ModelRegistryViewProps {
   models?: Record<'nyx', string>;
@@ -88,11 +89,14 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         <header
           className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 py-1.5 px-4 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-card transition-all duration-300`}
         >
-          <div className="flex items-center gap-2">
-            <Package size={16} weight="duotone" className="text-primary" />
-            <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">
-              Model Registry
-            </h2>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Package size={16} weight="duotone" className="text-primary" />
+              <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">
+                Model Registry
+              </h2>
+            </div>
+            {showLocal && <LocalProviderStatus />}
           </div>
 
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full lg:w-auto">

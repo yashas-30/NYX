@@ -1,6 +1,6 @@
 use tauri::State;
 use sqlx::SqlitePool;
-use super::models::{ChatConversation, ChatMessage, DbSession, DbMessage, SwarmContextPool};
+use super::models::{ChatConversation, ChatMessage, DbSession, DbMessage, SwarmContextPool, LongTermMemory};
 
 #[tauri::command]
 pub async fn db_get_chat_conversations(
@@ -383,4 +383,111 @@ pub async fn db_get_folders(
     .map_err(|e| e.to_string())?;
 
     Ok(folders)
+}
+
+#[tauri::command]
+pub async fn db_add_memory(
+    pool: State<'_, SqlitePool>,
+    id: String,
+    fact: String,
+    category: String,
+    embedding: String, // JSON float array
+) -> Result<(), String> {
+    let now = chrono::Utc::now().timestamp();
+    sqlx::query(
+        "INSERT INTO long_term_memories (id, fact, category, embedding, created_at) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(id)
+    .bind(fact)
+    .bind(category)
+    .bind(embedding)
+    .bind(now)
+    .execute(&*pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn db_get_memories(
+    pool: State<'_, SqlitePool>,
+) -> Result<Vec<LongTermMemory>, String> {
+    let memories = sqlx::query_as::<_, LongTermMemory>(
+        "SELECT * FROM long_term_memories ORDER BY created_at DESC"
+    )
+    .fetch_all(&*pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(memories)
+}
+
+#[tauri::command]
+pub async fn db_delete_memory(
+    pool: State<'_, SqlitePool>,
+    id: String,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM long_term_memories WHERE id = ?")
+        .bind(id)
+        .execute(&*pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct MemorySearchResult {
+    pub id: String,
+    pub fact: String,
+    pub category: String,
+    pub created_at: i64,
+    pub similarity: f32,
+}
+
+#[tauri::command]
+pub async fn db_search_memories(
+    pool: State<'_, SqlitePool>,
+    query_embedding: Vec<f32>,
+    top_k: usize,
+) -> Result<Vec<MemorySearchResult>, String> {
+    let memories = db_get_memories(pool).await?;
+    let mut results: Vec<MemorySearchResult> = Vec::new();
+
+    for m in memories {
+        let embedding_arr: Vec<f32> = serde_json::from_str(&m.embedding).unwrap_or_default();
+        let similarity = if !embedding_arr.is_empty() && embedding_arr.len() == query_embedding.len() {
+            let mut dot_product = 0.0;
+            let mut norm_a = 0.0;
+            let mut norm_b = 0.0;
+            for i in 0..query_embedding.len() {
+                dot_product += query_embedding[i] * embedding_arr[i];
+                norm_a += query_embedding[i] * query_embedding[i];
+                norm_b += embedding_arr[i] * embedding_arr[i];
+            }
+            if norm_a == 0.0 || norm_b == 0.0 {
+                0.0
+            } else {
+                dot_product / (norm_a.sqrt() * norm_b.sqrt())
+            }
+        } else {
+            0.0
+        };
+
+        results.push(MemorySearchResult {
+            id: m.id,
+            fact: m.fact,
+            category: m.category,
+            created_at: m.created_at,
+            similarity,
+        });
+    }
+
+    // Sort descending by similarity
+    results.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+    
+    // Take top_k
+    results.truncate(top_k);
+
+    Ok(results)
 }

@@ -136,25 +136,25 @@ else:
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 p-8 bg-zinc-950 text-white/50 text-xs">
-        <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+      <div className="flex flex-col items-center justify-center h-full gap-3 p-8 bg-background text-muted-foreground text-xs">
+        <Loader2 className="w-5 h-5 animate-spin text-primary" />
         <p className="font-mono">{loadingStatus}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950 text-white font-mono text-xs overflow-hidden">
+    <div className="flex flex-col h-full bg-card text-foreground font-mono text-xs overflow-hidden">
       {/* Run Bar */}
-      <div className="flex items-center justify-between p-3 border-b border-white/5 bg-white/[0.02]">
-        <div className="flex items-center gap-2 text-white/40">
+      <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
+        <div className="flex items-center gap-2 text-muted-foreground/80">
           <Terminal className="w-3.5 h-3.5" />
           <span>Python WASM Console</span>
         </div>
         <button
           onClick={runCode}
           disabled={running}
-          className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white font-semibold rounded transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-1 bg-primary hover:bg-primary/90 disabled:bg-primary/50 text-primary-foreground font-semibold rounded transition-colors cursor-pointer"
         >
           {running ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -166,16 +166,16 @@ else:
       </div>
 
       {/* Outputs */}
-      <div className="flex-1 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-white/5 overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-border overflow-hidden">
         {/* Terminal logs */}
-        <div className="flex-1 p-3 overflow-y-auto space-y-1 bg-black/40 min-h-[150px]">
+        <div className="flex-1 p-3 overflow-y-auto space-y-1 bg-background/50 min-h-[150px]">
           {output.length === 0 ? (
-            <p className="text-white/20">Click 'Run Code' to execute in WASM sandbox...</p>
+            <p className="text-muted-foreground/40">Click 'Run Code' to execute in WASM sandbox...</p>
           ) : (
             output.map((line, idx) => (
               <p
                 key={idx}
-                className={line.startsWith('[Error]') || line.startsWith('Runtime Exception') ? 'text-red-400' : 'text-zinc-300'}
+                className={line.startsWith('[Error]') || line.startsWith('Runtime Exception') ? 'text-red-400' : 'text-foreground/80'}
               >
                 {line}
               </p>
@@ -185,8 +185,8 @@ else:
 
         {/* Matplotlib plot display */}
         {plotUrl && (
-          <div className="flex-1 flex flex-col bg-[#141618] overflow-hidden">
-            <div className="flex items-center gap-1.5 p-2 border-b border-white/5 text-white/30 text-[10px]">
+          <div className="flex-1 flex flex-col bg-muted overflow-hidden">
+            <div className="flex items-center gap-1.5 p-2 border-b border-border text-muted-foreground/60 text-[10px]">
               <ImageIcon className="w-3 h-3" />
               <span>Plot Output</span>
             </div>
@@ -194,7 +194,7 @@ else:
               <img
                 src={plotUrl}
                 alt="Matplotlib Figure"
-                className="max-w-full max-h-full rounded border border-white/5 shadow-lg object-contain bg-white"
+                className="max-w-full max-h-full rounded border border-border shadow-md object-contain bg-white"
               />
             </div>
           </div>

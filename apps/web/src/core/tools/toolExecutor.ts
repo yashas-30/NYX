@@ -31,6 +31,7 @@ export async function executeTool(
               title: r.title,
               url: r.link || r.url,
               snippet: r.snippet,
+              content: r.raw_content || undefined,
             })) || [],
         };
       }

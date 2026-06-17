@@ -10,6 +10,7 @@ import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { ApiKeyVault } from './ApiKeyVault';
 import { ModelSettingsSection } from './ModelSettingsSection';
 import { CacheClean } from './CacheClean';
+import { SearchSettingsSection } from './SearchSettingsSection';
 
 interface SettingsViewProps {
   apiKeys: Record<string, string>;
@@ -55,7 +56,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     try {
       if (isTauri) {
-        const res: any = await invoke('vault_status');
+        const res: any = await invoke('vault:status');
         if (res.success && res.data) {
           setVaultStatus(res.data);
         }
@@ -104,6 +105,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const TABS = [
     { id: 'api-keys', label: 'API Keys', icon: <Database size={14} /> },
     { id: 'models', label: 'Models & Cache', icon: <Cpu size={14} /> },
+    { id: 'search', label: 'Web Search', icon: <Globe size={14} /> },
   ];
 
   return (
@@ -170,6 +172,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 />
                 <CacheClean cacheStats={cacheStats} fetchCacheStats={fetchCacheStats} />
               </div>
+            )}
+
+            {activeTab === 'search' && (
+              <SearchSettingsSection />
             )}
 
 

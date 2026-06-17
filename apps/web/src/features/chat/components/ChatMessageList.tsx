@@ -23,7 +23,7 @@ import { AVAILABLE_MODELS } from '@src/shared/config/models';
 import { Logo, NyxLoader, CatLoader, AnimatedLogo } from '@src/assets/icons/icons';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ArtifactPanel } from './ArtifactPanel';
-import { Citation } from './CitationCard';
+import { Citation, CitationCard } from './CitationCard';
 import { SearchResultsPanel } from './SearchResultsPanel';
 import { MemoryPanel } from './MemoryPanel';
 import { ArtifactViewer } from '../../../components/artifacts/ArtifactViewer';
@@ -52,6 +52,8 @@ export interface ChatMessageListProps {
 
   activeModel?: string;
   onArtifactClick?: (artifact: any) => void;
+  approveTool?: (index: number, approvalId: string) => void;
+  rejectTool?: (index: number, approvalId: string) => void;
 }
 
 interface MessageBubbleProps {
@@ -68,6 +70,8 @@ interface MessageBubbleProps {
   activeModel?: string;
   onBranchChange?: (index: number, branchOffset: number) => void;
   onArtifactClick?: (artifact: any) => void;
+  approveTool?: (index: number, approvalId: string) => void;
+  rejectTool?: (index: number, approvalId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,11 +82,12 @@ const formatToolAction = (name: string, argsStr: string, status: string) => {
   let args: any = {};
   try { args = JSON.parse(argsStr || '{}'); } catch {}
 
-  const isDone = status === 'completed';
+  const isDone = status === 'completed' || status === 'success';
   const prefix = isDone ? 'Finished' : (status === 'error' ? 'Failed to' : 'Using');
 
   switch (name) {
     case 'searchWeb':
+    case 'web_search':
       return isDone ? 'Searched the web' : 'Searching the web...';
     case 'agent_handoff':
       return isDone ? `Received context from ${args.agent}` : `Handed off task to ${args.agent}...`;
@@ -106,12 +111,12 @@ const formatToolAction = (name: string, argsStr: string, status: string) => {
 
 const ToolCallCard: React.FC<{
   tool: ToolCall;
-  status: 'pending' | 'running' | 'completed' | 'error';
+  status: 'pending' | 'running' | 'completed' | 'success' | 'error';
 }> = memo(({ tool, status }) => {
   const [expanded, setExpanded] = useState(false);
   const isRunning = status === 'running';
   const isError = status === 'error';
-  const isDone = status === 'completed';
+  const isDone = status === 'completed' || status === 'success';
 
   const actionText = formatToolAction(tool.function.name, tool.function.arguments, status);
 
@@ -151,7 +156,7 @@ const ToolCallCard: React.FC<{
             transition={{ duration: 0.2 }}
             className="overflow-hidden w-full mt-2"
           >
-            <div className="pl-4 border-l-2 border-border/40 ml-2 py-1">
+            <div className="pl-4 border-l border-border/40 ml-2 py-1">
               <div className="text-[10px] text-muted-foreground/80 font-mono mb-1 uppercase tracking-wider">
                 {tool.function.name}
               </div>
@@ -495,7 +500,7 @@ const MemoizedMarkdownBlock: React.FC<{
       ),
       em: ({ children }: any) => <em className="italic text-foreground/90">{children}</em>,
       blockquote: ({ children }: any) => (
-        <blockquote className="my-2 pl-4 py-1 border-l-2 border-border bg-transparent text-sm text-muted-foreground italic">
+        <blockquote className="my-2 pl-4 py-1 border-l border-border bg-transparent text-sm text-muted-foreground italic">
           {children}
         </blockquote>
       ),
@@ -503,17 +508,15 @@ const MemoizedMarkdownBlock: React.FC<{
       a: ({ href, children }: any) => {
         if (href?.startsWith('#cite-')) {
           const id = href.replace('#cite-', '');
-          const cite = citations?.find((c) => c.id === id);
+          const cite = citations?.find((c) => c.id === id || String(c.index) === id);
+          if (cite) {
+            return <CitationCard citation={cite} />;
+          }
           return (
             <a
-              href={cite?.url || '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={cite?.title || cite?.url}
+              href="#"
+              onClick={(e) => e.preventDefault()}
               className="inline-flex items-center justify-center min-w-[16px] h-4 ml-0.5 px-1 text-[9px] font-bold text-primary bg-primary/10 rounded-md hover:bg-primary/20 hover:scale-110 transition-all align-super no-underline cursor-pointer"
-              onClick={(e) => {
-                if (!cite?.url) e.preventDefault();
-              }}
             >
               {id}
             </a>
@@ -569,7 +572,15 @@ const MarkdownContent: React.FC<{
   isStreaming?: boolean;
   citations?: Citation[];
 }> = memo(({ content, blocks, isStreaming, citations }) => {
-  const blocksToRender = blocks?.length ? blocks : [content];
+  // Hide raw XML artifact tags from being rendered in text bubble
+  const cleanText = (text: string) => {
+    return text.replace(/<nyx_artifact[\s\S]*?(?:<\/nyx_artifact>|$)/g, '');
+  };
+
+  const cleanedContent = cleanText(content);
+  const blocksToRender = blocks?.length 
+    ? blocks.map(b => cleanText(b)) 
+    : [cleanedContent];
   
   return (
     <div className="prose-nyx w-full">
@@ -862,6 +873,8 @@ const MessageBubble = React.memo<MessageBubbleProps>(
     onBranchChange,
     activeModel,
     onArtifactClick,
+    approveTool,
+    rejectTool,
   }) => {
     const isUser = msg.role === 'user';
     const [isExpanded, setIsExpanded] = useState(false);
@@ -1047,6 +1060,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     {msg.reasoning && (
                       <ThinkingBlock 
                         content={msg.reasoning} 
+                        responseContent={msg.content}
                         isComplete={
                           (!isStreaming && msg.status !== 'loading') || 
                           (!!msg.content && msg.content.length > 0) || 
@@ -1190,6 +1204,53 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           snippet: cite.snippet || cite.quote || '',
                         }))}
                       />
+                    )}
+
+                    {/* Tool Approval UI Gate */}
+                    {(msg as any).pendingApproval && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="my-4 p-4 rounded-xl border border-amber-500/25 bg-amber-500/5 shadow-md max-w-4xl"
+                      >
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle className="text-amber-500 w-5 h-5 shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                              <span>Tool Authorization Required</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-mono font-bold uppercase">
+                                Gate
+                              </span>
+                            </h4>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              The agent wants to execute a destructive or modifying action. Please review the parameters below before allowing:
+                            </p>
+                            <div className="mt-3 bg-muted/40 border border-border/40 rounded-lg p-3 overflow-x-auto">
+                              <div className="text-[11px] font-mono text-foreground font-bold mb-1.5 flex items-center gap-1.5">
+                                <Wrench size={10} className="text-muted-foreground" />
+                                <span>{(msg as any).pendingApproval.tool}</span>
+                              </div>
+                              <pre className="text-[10.5px] font-mono text-muted-foreground whitespace-pre-wrap">
+                                {JSON.stringify((msg as any).pendingApproval.input || {}, null, 2)}
+                              </pre>
+                            </div>
+                            <div className="flex items-center gap-3 mt-4">
+                              <button
+                                onClick={() => rejectTool?.(index, (msg as any).pendingApproval.approvalId)}
+                                className="px-3.5 py-1.5 rounded-md border border-red-500/30 text-red-500 bg-red-500/5 hover:bg-red-500/10 text-xs font-semibold cursor-pointer transition-colors"
+                              >
+                                Reject Action
+                              </button>
+                              <button
+                                onClick={() => approveTool?.(index, (msg as any).pendingApproval.approvalId)}
+                                className="px-4 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer transition-colors shadow-sm"
+                              >
+                                Approve & Execute
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
                     )}
 
                     {/* Actions */}
@@ -1349,6 +1410,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   activeModel,
   onArtifactClick,
   onBranchChange,
+  approveTool,
+  rejectTool,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -1444,6 +1507,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                     onBranchChange={onBranchChange}
                     activeModel={activeModel}
                     onArtifactClick={onArtifactClick}
+                    approveTool={approveTool}
+                    rejectTool={rejectTool}
                   />
                 </div>
               );
@@ -1460,7 +1525,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 12 }}
             onClick={jumpToBottom}
-            className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 px-3.5 py-2.5 rounded-md bg-card/90 border border-border text-foreground/70 hover:text-foreground shadow-sm border border-border text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-muted/90 cursor-pointer"
+            className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 px-3.5 py-2.5 rounded-md bg-card/90 border border-border text-foreground/70 hover:text-foreground shadow-sm text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-muted/90 cursor-pointer"
           >
             <ArrowDown className="w-3 h-3" />
             Latest

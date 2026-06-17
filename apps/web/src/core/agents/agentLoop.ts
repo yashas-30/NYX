@@ -23,6 +23,7 @@ import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { MemoryStore } from './memoryStore';
 import { TrajectoryLogger } from '@src/infrastructure/services/trajectoryLogger';
 import { BrowserService } from '@src/core/services/browserService';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 
 // Runtime environment detection
 const isTauriEnv = typeof window !== 'undefined' &&
@@ -42,7 +43,7 @@ export interface ToolDefinition {
   description: string;
   parameters: {
     type: 'object';
-    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    properties: Record<string, { type: string; description: string; enum?: string[]; items?: any }>;
     required?: string[];
   };
 }
@@ -58,6 +59,7 @@ export interface ToolResult {
   name: string;
   result: string;
   isError: boolean;
+  searchResults?: any[];
 }
 
 export interface AgentLoopEvent {
@@ -70,13 +72,18 @@ export interface AgentLoopEvent {
     | 'tool_done'
     | 'tool_error'
     | 'error'
-    | 'done';
+    | 'done'
+    | 'citation'
+    | 'artifact'
+    | 'tool_approval_required';
   content: string;
   toolCall?: ToolCall;
   toolResult?: ToolResult;
   name?: string;
   result?: any;
   error?: string;
+  metadata?: any;
+  approvalId?: string;
 }
 
 export interface AgentLoopConfig {
@@ -98,207 +105,395 @@ export interface AgentLoopConfig {
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'web_search',
-    description:
-      'Search the web for current information. Use for news, prices, documentation, recent events, or anything that may have changed after the model\'s training cutoff.',
+    description: 'Search the web for current information.',
     parameters: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'The search query' },
-        num_results: {
-          type: 'number',
-          description: 'Number of results to return (default: 5)',
-        },
+        num_results: { type: 'number', description: 'Number of results to return (default: 5)' }
       },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'browser_read_page',
-    description: 'Fetch the live HTML content of a URL and parse it into clean Markdown using readability algorithms. Crucial for deep RAG or exploring documentation links.',
-    parameters: {
-      type: 'object',
-      properties: {
-        url: { type: 'string', description: 'The fully qualified URL to browse (e.g. https://example.com)' },
-      },
-      required: ['url'],
-    },
+      required: ['query']
+    }
   },
   {
     name: 'read_file',
-    description: 'Read the contents of a file from the user\'s filesystem.',
+    description: 'Read the contents of a file from the local filesystem.',
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Absolute or relative file path' },
-        encoding: {
-          type: 'string',
-          description: 'File encoding (default: utf-8)',
-          enum: ['utf-8', 'base64'],
-        },
+        path: { type: 'string', description: 'Absolute path to the file to read' }
       },
-      required: ['path'],
-    },
+      required: ['path']
+    }
+  },
+  {
+    name: 'write_file',
+    description: 'Write contents to a file on the local filesystem.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the file to write' },
+        content: { type: 'string', description: 'The content to write to the file' }
+      },
+      required: ['path', 'content']
+    }
+  },
+  {
+    name: 'edit_file',
+    description: 'Replace a specific target block in a file with new replacement content.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the file' },
+        target: { type: 'string', description: 'The exact block of text in the file to find' },
+        replacement: { type: 'string', description: 'The replacement content' }
+      },
+      required: ['path', 'target', 'replacement']
+    }
+  },
+  {
+    name: 'list_directory',
+    description: 'List all files and folders in a directory.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the directory' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'grep_search',
+    description: 'Search recursively in a directory for files containing a specific pattern.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the directory to search' },
+        query: { type: 'string', description: 'The pattern/text to search for' }
+      },
+      required: ['path', 'query']
+    }
+  },
+  {
+    name: 'diff_files',
+    description: 'Show line-by-line differences between two files.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path_a: { type: 'string', description: 'Path to first file' },
+        path_b: { type: 'string', description: 'Path to second file' }
+      },
+      required: ['path_a', 'path_b']
+    }
+  },
+  {
+    name: 'web_browse',
+    description: 'Open a Tauri-native browser overlay window to view and navigate to a URL.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL to navigate to' }
+      },
+      required: ['url']
+    }
+  },
+  {
+    name: 'fetch_page',
+    description: 'Fetch a webpage\'s HTML and extract its clean readable text.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL to fetch' }
+      },
+      required: ['url']
+    }
+  },
+  {
+    name: 'web_scrape',
+    description: 'Scrape specific content from a page by fetching and selecting lines containing a keyword.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL to scrape' },
+        keyword: { type: 'string', description: 'Keyword to filter matching lines' }
+      },
+      required: ['url', 'keyword']
+    }
   },
   {
     name: 'run_python',
-    description:
-      'Execute a Python code snippet and return the output. Use for calculations, data processing, or verifying code correctness.',
+    description: 'Execute a Python code script.',
     parameters: {
       type: 'object',
       properties: {
-        code: { type: 'string', description: 'Python code to execute' },
-        timeout_seconds: {
-          type: 'number',
-          description: 'Maximum execution time in seconds (default: 30)',
-        },
+        code: { type: 'string', description: 'Python code block to run' }
       },
-      required: ['code'],
-    },
+      required: ['code']
+    }
   },
   {
-    name: 'mcp_call',
-    description: 'Call an MCP (Model Context Protocol) tool from a connected server.',
+    name: 'run_javascript',
+    description: 'Execute a Node.js JavaScript code script.',
     parameters: {
       type: 'object',
       properties: {
-        server: { type: 'string', description: 'MCP server name' },
-        tool: { type: 'string', description: 'Tool name on the MCP server' },
-        arguments: { type: 'string', description: 'JSON-encoded arguments object' },
+        code: { type: 'string', description: 'JavaScript code block to run' }
       },
-      required: ['server', 'tool'],
-    },
-  },
-  {
-    name: 'store_memory',
-    description: 'Save an important fact or user preference to persistent memory. Use this when the user explicitly asks you to remember something.',
-    parameters: {
-      type: 'object',
-      properties: {
-        fact: { type: 'string', description: 'The concise fact to remember (e.g. "User prefers Python", "User lives in Berlin")' },
-      },
-      required: ['fact'],
-    },
-  },
-  {
-    name: 'delete_memory',
-    description: 'Delete a previously stored fact from persistent memory if it is no longer true or relevant.',
-    parameters: {
-      type: 'object',
-      properties: {
-        idOrFact: { type: 'string', description: 'The exact fact string or ID to delete' },
-      },
-      required: ['idOrFact'],
-    },
-  },
-  {
-    name: 'computer_action',
-    description: 'Execute a direct computer action such as taking a screenshot, moving the mouse, or typing. ONLY use this when explicitly asked to interact with the screen or OS.',
-    parameters: {
-      type: 'object',
-      properties: {
-        action: { 
-          type: 'string', 
-          description: 'The action to perform',
-          enum: ['screenshot', 'mouse_move', 'left_click', 'left_click_drag', 'right_click', 'middle_click', 'double_click', 'type', 'key']
-        },
-        params: {
-          type: 'string',
-          description: 'JSON-encoded parameters for the action. For type/key, use {"text": "something"}. For mouse, use {"x": 100, "y": 200}. For screenshot, use empty {}.'
-        }
-      },
-      required: ['action', 'params'],
-    },
+      required: ['code']
+    }
   },
   {
     name: 'run_terminal_command',
-    description: 'Execute a terminal command (shell). Useful for compiling, testing, checking status, or generic OS interaction.',
+    description: 'Execute a terminal command on the host machine. On Windows, this runs in PowerShell. On Unix, it runs in sh.',
     parameters: {
       type: 'object',
       properties: {
-        command: { type: 'string', description: 'The exact command string to run.' }
+        command: { type: 'string', description: 'The terminal command to run' },
+        cwd: { type: 'string', description: 'Optional absolute path specifying the current working directory for the command' }
       },
       required: ['command']
     }
   },
   {
-    name: 'write_file',
-    description: 'Write string content to a file, completely replacing any existing content.',
+    name: 'run_shell',
+    description: 'Execute a shell command in a specified directory.',
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Absolute or relative file path.' },
-        content: { type: 'string', description: 'The file contents to write.' }
+        command: { type: 'string', description: 'Command to run' },
+        cwd: { type: 'string', description: 'Directory to run the command in' }
       },
-      required: ['path', 'content']
+      required: ['command', 'cwd']
     }
   },
+  {
+    name: 'run_test',
+    description: 'Run standard tests using a specified command.',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'Command (e.g. \'cargo test\' or \'npm test\')' },
+        cwd: { type: 'string', description: 'Directory to run tests in' }
+      },
+      required: ['command', 'cwd']
+    }
+  },
+  {
+    name: 'lint_code',
+    description: 'Run a linter command in a specified directory.',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'Linter command (e.g. \'eslint\' or \'cargo clippy\')' },
+        cwd: { type: 'string', description: 'Directory to run linting in' }
+      },
+      required: ['command', 'cwd']
+    }
+  },
+  {
+    name: 'get_system_info',
+    description: 'Retrieve CPU architecture, platform, and memory statistics of the host machine.',
+    parameters: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'take_screenshot',
+    description: 'Capture the primary display monitor screenshot and save it to the workspace.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path where the screenshot JPEG will be saved' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'run_mcp_tool',
+    description: 'Invoke an MCP tool on a specified configured server.',
+    parameters: {
+      type: 'object',
+      properties: {
+        server: { type: 'string', description: 'MCP Server name' },
+        tool: { type: 'string', description: 'Tool name to call' },
+        arguments: { type: 'string', description: 'JSON arguments object passed to the tool' }
+      },
+      required: ['server', 'tool', 'arguments']
+    }
+  },
+  {
+    name: 'schedule_task',
+    description: 'Schedule a command to run after a delay.',
+    parameters: {
+      type: 'object',
+      properties: {
+        seconds: { type: 'number', description: 'Delay in seconds' },
+        command: { type: 'string', description: 'Command to run' }
+      },
+      required: ['seconds', 'command']
+    }
+  },
+  {
+    name: 'read_pdf',
+    description: 'Read and extract plain text from a PDF file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to PDF file' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'read_docx',
+    description: 'Read and extract plain text from a Word DOCX file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to DOCX file' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'create_presentation',
+    description: 'Create a slideshow presentation in markdown slides format.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path to save presentation file' },
+        title: { type: 'string', description: 'Title of presentation' },
+        slides: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of slide texts'
+        }
+      },
+      required: ['path', 'title', 'slides']
+    }
+  },
+  {
+    name: 'create_spreadsheet',
+    description: 'Create a CSV spreadsheet file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path to save spreadsheet CSV' },
+        headers: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Spreadsheet headers'
+        },
+        rows: {
+          type: 'array',
+          items: {
+            type: 'array',
+            items: { type: 'string' }
+          },
+          description: 'List of row cells'
+        }
+      },
+      required: ['path', 'headers', 'rows']
+    }
+  },
+  {
+    name: 'generate_image',
+    description: 'Generate an image file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', description: 'Text description of the image to generate' },
+        path: { type: 'string', description: 'Path to save generated image file' }
+      },
+      required: ['prompt', 'path']
+    }
+  },
+  {
+    name: 'edit_image',
+    description: 'Edit/modify an image based on a prompt.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path to original image file' },
+        prompt: { type: 'string', description: 'Prompt instructions to modify the image' }
+      },
+      required: ['path', 'prompt']
+    }
+  },
+  {
+    name: 'analyze_image',
+    description: 'Analyze an image file and answer a question about it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path to image file' },
+        question: { type: 'string', description: 'Question to answer about the image content' }
+      },
+      required: ['path', 'question']
+    }
+  }
 ];
-
-// ── Tool executor ─────────────────────────────────────────────────────────────
 
 async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
   const args = toolCall.arguments;
 
+  if (isTauriEnv) {
+    try {
+      const result = await tauriInvoke<string>('run_agent_tool', {
+        name: toolCall.name,
+        argsJson: JSON.stringify(args)
+      });
+      return {
+        toolCallId: toolCall.id,
+        name: toolCall.name,
+        result,
+        isError: result.startsWith('Error:')
+      };
+    } catch (err: any) {
+      return {
+        toolCallId: toolCall.id,
+        name: toolCall.name,
+        result: `Tauri run_agent_tool error: ${err.message || String(err)}`,
+        isError: true
+      };
+    }
+  }
+
+  // Web fallback
   try {
     switch (toolCall.name) {
       case 'web_search': {
         const query = String(args.query || '');
         const numResults = Number(args.num_results || 5);
-        let formatted = '';
+        const { searchWeb } = await import('@src/infrastructure/api/searchApi');
+        const searchResult = await searchWeb(query, undefined, { topK: numResults });
         
-        const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-        if (isTauri) {
-          formatted = await tauriInvoke<string>('search_web_command', { query, numResults });
-        } else {
-          const res = await fetchWithAuth(
-            `/api/v1/search?q=${encodeURIComponent(query)}&n=${numResults}`
-          );
-          if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-          const data = await res.json();
-          formatted = (data.results || [])
-            .slice(0, numResults)
-            .map(
-              (r: { title: string; url: string; snippet: string }, i: number) =>
-                `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`
-            )
-            .join('\n\n');
+        if (!searchResult.success) {
+           return {
+             toolCallId: toolCall.id,
+             name: toolCall.name,
+             result: `Search failed: ${searchResult.error}`,
+             isError: true,
+           };
         }
+
+        const formatted = (searchResult.results || [])
+          .slice(0, numResults)
+          .map(
+            (r: any, i: number) =>
+              `[${i + 1}] ${r.title}\n${r.url}\nSnippet: ${r.snippet}\n\nFull Content:\n${r.raw_content || 'Not available'}`
+          )
+          .join('\n\n---\n\n');
 
         return {
           toolCallId: toolCall.id,
           name: toolCall.name,
           result: formatted || 'No results found.',
           isError: false,
+          searchResults: searchResult.results || [],
         };
       }
-
-      case 'browser_read_page': {
-        const url = String(args.url || '');
-        if (!url) throw new Error('URL is required for browser_read_page');
-        const markdown = await BrowserService.readPage(url);
-        return {
-          toolCallId: toolCall.id,
-          name: toolCall.name,
-          result: markdown,
-          isError: false,
-        };
-      }
-
-      case 'read_file': {
-        if (!isTauriEnv) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: 'read_file is only available in the desktop app.', isError: true };
-        }
-        const content = await tauriInvoke<string>('fs_read_file', {
-          path: String(args.path || ''),
-        });
-        return {
-          toolCallId: toolCall.id,
-          name: toolCall.name,
-          result: String(content),
-          isError: false,
-        };
-      }
-
       case 'run_python': {
         const res = await fetchWithAuth('/api/v1/sandbox/run', {
           method: 'POST',
@@ -319,45 +514,12 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
           isError: Boolean(data.error || data.stderr),
         };
       }
-
-      case 'mcp_call': {
-        const server = String(args.server || '');
-        const tool = String(args.tool || '');
-        const toolArgsStr = String(args.arguments || '{}');
-        let toolArgs = {};
-        try {
-          toolArgs = JSON.parse(toolArgsStr);
-        } catch {
-          // ignore
-        }
-        
-        if (!isTauriEnv) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: 'MCP calls are only available in the desktop app.', isError: true };
-        }
-        try {
-          const mcpResult = await tauriInvoke('mcp_send_request', {
-            serverName: server,
-            request: {
-              method: 'tools/call',
-              params: {
-                name: tool,
-                arguments: toolArgs,
-              },
-            } as any,
-          });
-          return { toolCallId: toolCall.id, name: toolCall.name, result: JSON.stringify(mcpResult), isError: false };
-        } catch (err: any) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: `MCP Error: ${err.message || String(err)}`, isError: true };
-        }
-      }
-
       case 'store_memory': {
         const fact = String(args.fact || '');
         if (!fact) throw new Error('Missing fact argument');
         await MemoryStore.addFact(fact);
         return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully remembered: "${fact}"`, isError: false };
       }
-
       case 'delete_memory': {
         const idOrFact = String(args.idOrFact || '');
         const deleted = await MemoryStore.deleteFact(idOrFact);
@@ -366,95 +528,24 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
         }
         return { toolCallId: toolCall.id, name: toolCall.name, result: `Memory not found: "${idOrFact}"`, isError: true };
       }
-
-      case 'computer_action': {
-        if (!isTauriEnv) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: 'Computer actions are only available in the desktop app.', isError: true };
-        }
-        const action = String(args.action || '');
-        const params = String(args.params || '{}');
-        try {
-          const compResult = await tauriInvoke<string>('execute_computer_action', { action, params });
-          if (action === 'screenshot') {
-            return { toolCallId: toolCall.id, name: toolCall.name, result: `Screenshot taken successfully. Base64 length: ${compResult.length}`, isError: false };
-          }
-          return { toolCallId: toolCall.id, name: toolCall.name, result: compResult, isError: false };
-        } catch (err: any) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: `Computer action failed: ${err.message || String(err)}`, isError: true };
-        }
-      }
-
-      case 'computer': {
-        // Handle native Anthropic computer_20241022 block
-        const action = String(args.action || '');
-        const text = String(args.text || '');
-        const coordinate = args.coordinate as number[];
-        
-        let params: any = {};
-        if (action === 'type') params = { text };
-        else if (action === 'key') params = { text };
-        else if (coordinate) params = { x: coordinate[0], y: coordinate[1] };
-        
-        if (!isTauriEnv) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: 'Computer actions are only available in the desktop app.', isError: true };
-        }
-        
-        try {
-          const compResult = await tauriInvoke<string>('execute_computer_action', { action, params: JSON.stringify(params) });
-          if (action === 'screenshot') {
-             return { toolCallId: toolCall.id, name: toolCall.name, result: `SCREENSHOT_BASE64:${compResult}`, isError: false };
-          }
-          return { toolCallId: toolCall.id, name: toolCall.name, result: compResult, isError: false };
-        } catch (err: any) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: `Computer action failed: ${err.message || String(err)}`, isError: true };
-        }
-      }
-
-      case 'run_terminal_command': {
-        if (!isTauriEnv) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: 'Terminal commands are only available in the desktop app.', isError: true };
-        }
-        const command = String(args.command || '');
-        try {
-          const output = await tauriInvoke<string>('execute_command', { command });
-          return { toolCallId: toolCall.id, name: toolCall.name, result: output || 'Command succeeded with no output.', isError: false };
-        } catch (err: any) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: `Command failed: ${err.message || String(err)}`, isError: true };
-        }
-      }
-
-      case 'write_file': {
-        if (!isTauriEnv) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: 'write_file is only available in the desktop app.', isError: true };
-        }
-        const path = String(args.path || '');
-        const content = String(args.content || '');
-        try {
-          await tauriInvoke('fs_write_file', { path, content });
-          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully wrote to ${path}`, isError: false };
-        } catch (err: any) {
-          return { toolCallId: toolCall.id, name: toolCall.name, result: `Failed to write file: ${err.message || String(err)}`, isError: true };
-        }
-      }
-
       default:
         return {
           toolCallId: toolCall.id,
           name: toolCall.name,
-          result: `Unknown tool: ${toolCall.name}`,
+          result: `Tool ${toolCall.name} is only available in desktop app mode.`,
           isError: true,
         };
     }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch (err: any) {
     return {
       toolCallId: toolCall.id,
       name: toolCall.name,
-      result: `Tool error: ${message}`,
-      isError: true,
+      result: `Tool execution error: ${err.message || String(err)}`,
+      isError: true
     };
   }
 }
+
 
 // ── Agentic loop ──────────────────────────────────────────────────────────────
 
@@ -592,13 +683,37 @@ export async function* runAgentLoop(
     // (yield inside Promise.all callbacks is not valid — emit tool_start events first)
     for (const tc of pendingToolCalls) {
       yield { type: 'tool_start', content: `Calling ${tc.name}…`, toolCall: tc };
+      yield { type: 'tool_running', content: `Running ${tc.name}…`, name: tc.name };
     }
     const toolResults = await Promise.all(
       pendingToolCalls.map((tc) => executeTool(tc))
     );
 
     for (const tr of toolResults) {
+      if (tr.isError) {
+        yield { type: 'tool_error', content: tr.result, name: tr.name, error: tr.result };
+      } else {
+        yield { type: 'tool_done', content: tr.result, name: tr.name, result: tr.result };
+      }
       yield { type: 'tool_result', content: tr.result, toolResult: tr };
+
+      // Yield citations if it's a web search
+      if (tr.name === 'web_search' && tr.searchResults) {
+        let index = 1;
+        for (const r of tr.searchResults) {
+          yield {
+            type: 'citation' as any,
+            content: '',
+            metadata: {
+              id: String(index++),
+              url: r.url,
+              title: r.title,
+              snippet: r.snippet,
+              source: r.title,
+            }
+          } as any;
+        }
+      }
     }
 
     for (const tr of toolResults) {
@@ -708,6 +823,20 @@ export async function* runTauriAgentLoop(
     }
     if (payload.result) {
       loopEvent.result = payload.result;
+    }
+    if (payload.event_type === 'tool_approval_required') {
+      let argsObj = {};
+      try {
+        argsObj = JSON.parse(payload.arguments || '{}');
+      } catch {
+        // ignore
+      }
+      loopEvent.toolCall = {
+        id: payload.tool_call_id || '',
+        name: payload.name || '',
+        arguments: argsObj,
+      };
+      loopEvent.approvalId = payload.approval_id;
     }
 
     eventQueue.push(loopEvent);

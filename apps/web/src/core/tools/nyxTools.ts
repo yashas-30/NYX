@@ -5,7 +5,7 @@ export const NYX_TOOLS = [
   {
     name: 'web_search',
     description:
-      'Search the web for current information, documentation, or examples. Use for: latest versions, API docs, troubleshooting, best practices.',
+      'Search the web for current information. Returns snippets and the FULL PAGE raw content of the top results. You MUST carefully read the provided full content and explicitly cite your sources (e.g. [1]) in your response.',
     parameters: {
       type: Type.OBJECT,
       properties: {

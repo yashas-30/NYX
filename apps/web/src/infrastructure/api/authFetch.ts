@@ -11,7 +11,7 @@ import { Mutex } from 'async-mutex';
 import { invoke } from '@tauri-apps/api/core';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 
-const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
 let backendPort: number | null = null;
 
 // ---------------------------------------------------------------------------

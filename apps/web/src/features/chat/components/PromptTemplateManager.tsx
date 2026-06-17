@@ -69,7 +69,7 @@ export const PromptTemplateManager: React.FC<{
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="p-2 text-zinc-500 hover:text-white transition-colors"
+        className="p-2 text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all"
         title="Prompt Templates"
       >
         <Settings size={16} />
@@ -81,36 +81,36 @@ export const PromptTemplateManager: React.FC<{
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="absolute bottom-full mb-2 left-0 w-80 bg-zinc-900 border border-white/10 rounded-md shadow-sm border border-border overflow-hidden z-50"
+            className="absolute bottom-full mb-2 left-0 w-80 bg-popover border border-border rounded-md shadow-sm overflow-hidden z-50"
           >
-            <div className="flex items-center justify-between p-3 border-b border-white/5 bg-zinc-900/50">
-              <span className="text-xs font-semibold text-zinc-200">Prompt Templates</span>
-              <button onClick={handleAdd} className="text-emerald-400 hover:text-emerald-300">
+            <div className="flex items-center justify-between p-3 border-b border-border bg-muted/50">
+              <span className="text-xs font-semibold text-foreground">Prompt Templates</span>
+              <button onClick={handleAdd} className="text-emerald-400 hover:text-emerald-300 active:scale-[0.97] transition-all">
                 <Plus size={14} />
               </button>
             </div>
 
             <div className="max-h-64 overflow-y-auto p-2">
               {isEditing && (
-                <div className="mb-2 p-2 bg-white/[0.02] rounded-md border border-white/10">
+                <div className="mb-2 p-2 bg-muted/20 rounded-md border border-border">
                   <input
                     type="text"
                     placeholder="Title"
                     value={editForm.title}
                     onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                    className="w-full bg-transparent border-b border-white/10 text-xs text-white p-1 mb-2 outline-none focus:border-primary/50"
+                    className="w-full bg-transparent border-b border-border text-xs text-foreground p-1 mb-2 outline-none focus:border-primary/50"
                   />
                   <textarea
                     placeholder="Prompt content..."
                     value={editForm.content}
                     onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
-                    className="w-full bg-black/20 border border-white/5 rounded text-xs text-white p-2 min-h-[60px] outline-none focus:border-primary/50 resize-none"
+                    className="w-full bg-input border border-border rounded text-xs text-foreground p-2 min-h-[60px] outline-none focus:border-primary/50 resize-none"
                   />
                   <div className="flex justify-end gap-2 mt-2">
-                    <button onClick={() => setIsEditing(null)} className="text-zinc-500 hover:text-white">
+                    <button onClick={() => setIsEditing(null)} className="text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all">
                       <X size={14} />
                     </button>
-                    <button onClick={handleSave} className="text-emerald-400 hover:text-emerald-300">
+                    <button onClick={handleSave} className="text-emerald-400 hover:text-emerald-300 active:scale-[0.97] transition-all">
                       <Check size={14} />
                     </button>
                   </div>
@@ -118,7 +118,7 @@ export const PromptTemplateManager: React.FC<{
               )}
 
               {!isEditing && templates.length === 0 && (
-                <div className="text-center p-4 text-xs text-zinc-500">
+                <div className="text-center p-4 text-xs text-muted-foreground">
                   No templates saved.
                 </div>
               )}
@@ -130,9 +130,9 @@ export const PromptTemplateManager: React.FC<{
                     onSelectTemplate(t.content);
                     setIsOpen(false);
                   }}
-                  className="group flex items-center justify-between p-2 hover:bg-white/[0.04] rounded-md cursor-pointer transition-colors mb-1"
+                  className="group flex items-center justify-between p-2 hover:bg-muted/40 rounded-md cursor-pointer transition-colors mb-1"
                 >
-                  <div className="truncate text-xs text-zinc-300">{t.title}</div>
+                  <div className="truncate text-xs text-foreground/80">{t.title}</div>
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={(e) => {
@@ -140,13 +140,13 @@ export const PromptTemplateManager: React.FC<{
                         setEditForm({ title: t.title, content: t.content });
                         setIsEditing(t.id);
                       }}
-                      className="text-zinc-500 hover:text-sky-400"
+                      className="text-muted-foreground hover:text-primary active:scale-[0.97] transition-all"
                     >
                       <Edit2 size={12} />
                     </button>
                     <button
                       onClick={(e) => handleDelete(t.id, e)}
-                      className="text-zinc-500 hover:text-red-400"
+                      className="text-muted-foreground hover:text-destructive active:scale-[0.97] transition-all"
                     >
                       <Trash2 size={12} />
                     </button>

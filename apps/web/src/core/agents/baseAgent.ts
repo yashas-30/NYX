@@ -16,6 +16,8 @@ export interface BaseAgentConfig {
   enableToolLoop?: boolean;
   /** Fast intent bypass flag for simple conversational queries */
   isFastIntent?: boolean;
+  /** Add-on for the system prompt based on dynamic analysis */
+  systemPromptAddon?: string;
 }
 
 export class TokenBudget {

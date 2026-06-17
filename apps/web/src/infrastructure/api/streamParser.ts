@@ -228,6 +228,21 @@ function extractContent(parsed: any): ExtractedContent {
     }
   }
 
+  // Anthropic format
+  if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+    result.text = parsed.delta.text;
+  }
+  if (parsed.type === 'message_delta' && parsed.delta?.stop_reason) {
+    result.finishReason = parsed.delta.stop_reason === 'end_turn' ? 'stop' : parsed.delta.stop_reason;
+  }
+  if (parsed.type === 'message_start' && parsed.message?.usage) {
+    result.usage = {
+      promptTokens: parsed.message.usage.input_tokens,
+      completionTokens: parsed.message.usage.output_tokens,
+      totalTokens: (parsed.message.usage.input_tokens || 0) + (parsed.message.usage.output_tokens || 0),
+    };
+  }
+
   // Unified format { chunk: "text" }
   if (typeof parsed.chunk === 'string') {
     result.text = parsed.chunk;

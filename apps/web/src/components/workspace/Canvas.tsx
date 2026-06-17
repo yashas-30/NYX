@@ -57,33 +57,33 @@ function CustomNode({ data, id }: { data: CanvasNode['data']; id: string }) {
 
   return (
     <div className={cn(
-      'w-80 rounded-md border shadow-sm border border-border overflow-hidden bg-white/5 backdrop-blur-md',
-      data.status === 'loading' && 'border-sky-500 animate-pulse',
+      'w-80 rounded-md border shadow-sm border-border overflow-hidden bg-card/90 backdrop-blur-md',
+      data.status === 'loading' && 'border-primary animate-pulse',
       data.status === 'done' && 'border-emerald-500',
       data.status === 'error' && 'border-red-500',
-      !data.status || data.status === 'idle' ? 'border-white/10' : ''
+      !data.status || data.status === 'idle' ? 'border-border' : ''
     )}>
       <div className={cn(
-        'px-3 py-2 flex items-center justify-between border-b border-white/10',
-        data.type === 'chat' && 'bg-sky-500/10',
+        'px-3 py-2 flex items-center justify-between border-b border-border',
+        data.type === 'chat' && 'bg-primary/10',
         data.type === 'code' && 'bg-emerald-500/10',
-        data.type === 'image' && 'bg-amber-500/10',
-        data.type === 'note' && 'bg-zinc-500/10'
+        data.type === 'image' && 'bg-accent/10',
+        data.type === 'note' && 'bg-muted/40'
       )}>
-        <span className="text-[10px] font-bold tracking-widest text-zinc-300 uppercase">{data.type}</span>
+        <span className="text-[10px] font-bold tracking-widest text-foreground/80 uppercase">{data.type}</span>
         <div className="flex gap-1">
-          <button onClick={runNode} className="p-1 hover:bg-black/20 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer">
+          <button onClick={runNode} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all cursor-pointer">
             <Play className="w-3 h-3" />
           </button>
-          <button onClick={() => setIsEditing(!isEditing)} className="p-1 hover:bg-black/20 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer">
+          <button onClick={() => setIsEditing(!isEditing)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all cursor-pointer">
             <Edit className="w-3 h-3" />
           </button>
         </div>
       </div>
-      <div className="p-3 text-zinc-200">
+      <div className="p-3 text-foreground">
         {isEditing ? (
           <textarea
-            className="w-full bg-black/20 rounded resize-none outline-none text-xs p-2 border border-white/10 focus:border-sky-500"
+            className="w-full bg-input rounded resize-none outline-none text-xs p-2 border border-border focus:border-primary/50 text-foreground"
             rows={4}
             value={content}
             onChange={e => setContent(e.target.value)}
@@ -91,7 +91,7 @@ function CustomNode({ data, id }: { data: CanvasNode['data']; id: string }) {
             autoFocus
           />
         ) : (
-          <div className="text-xs text-zinc-300 whitespace-pre-wrap">{content || 'Double click edit icon to start typing...'}</div>
+          <div className="text-xs text-muted-foreground whitespace-pre-wrap">{content || 'Double click edit icon to start typing...'}</div>
         )}
       </div>
     </div>
@@ -107,7 +107,7 @@ export function InfiniteCanvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   const onConnect = useCallback((params: Connection) => {
-    setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#0ea5e9' } }, eds));
+    setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: 'var(--primary)' } }, eds));
   }, [setEdges]);
 
   const addNode = useCallback((type: CanvasNode['data']['type'], position: { x: number; y: number }) => {
@@ -133,34 +133,34 @@ export function InfiniteCanvas() {
         attributionPosition="bottom-left"
         className="bg-background"
       >
-        <Background color="#3f3f46" gap={16} />
-        <Controls className="bg-zinc-800 border-white/10 fill-white" />
+        <Background color="rgba(250, 249, 245, 0.07)" gap={16} />
+        <Controls className="bg-card border-border fill-foreground" />
         <MiniMap 
           nodeColor={(node) => {
             switch (node.data.type) {
-              case 'chat': return '#0ea5e9';
+              case 'chat': return 'var(--primary)';
               case 'code': return '#10b981';
-              case 'image': return '#f59e0b';
+              case 'image': return 'var(--accent)';
               default: return '#71717a';
             }
           }}
-          className="bg-zinc-900 border border-white/10 rounded-md"
+          className="bg-card border border-border rounded-md"
           maskColor="rgba(0,0,0,0.5)"
         />
       </ReactFlow>
 
       {/* Floating toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 bg-zinc-900/90 backdrop-blur border border-white/10 rounded-md px-4 py-2 shadow-sm border border-border z-10">
-        <button onClick={() => addNode('chat', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-sky-400 hover:bg-white/5 rounded-md transition-all cursor-pointer" title="Add Chat Node">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 bg-popover/90 backdrop-blur border border-border rounded-md px-4 py-2 shadow-sm z-10">
+        <button onClick={() => addNode('chat', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-md transition-all active:scale-[0.97] cursor-pointer" title="Add Chat Node">
           <MessageSquare className="w-4 h-4" />
         </button>
-        <button onClick={() => addNode('code', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-emerald-400 hover:bg-white/5 rounded-md transition-all cursor-pointer" title="Add Code Node">
+        <button onClick={() => addNode('code', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-muted-foreground hover:text-emerald-400 hover:bg-emerald-400/5 rounded-md transition-all active:scale-[0.97] cursor-pointer" title="Add Code Node">
           <Code className="w-4 h-4" />
         </button>
-        <button onClick={() => addNode('image', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-amber-400 hover:bg-white/5 rounded-md transition-all cursor-pointer" title="Add Image Node">
+        <button onClick={() => addNode('image', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-muted-foreground hover:text-accent hover:bg-accent/5 rounded-md transition-all active:scale-[0.97] cursor-pointer" title="Add Image Node">
           <Image className="w-4 h-4" />
         </button>
-        <button onClick={() => addNode('note', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-zinc-400 hover:text-zinc-100 hover:bg-white/5 rounded-md transition-all cursor-pointer" title="Add Note Node">
+        <button onClick={() => addNode('note', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-all active:scale-[0.97] cursor-pointer" title="Add Note Node">
           <StickyNote className="w-4 h-4" />
         </button>
       </div>

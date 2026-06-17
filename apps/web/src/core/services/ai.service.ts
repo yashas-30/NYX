@@ -19,6 +19,8 @@ import {
 import { ContinuationManager } from '@src/infrastructure/services/continuationManager';
 import { fetchWithAuth, getSessionToken, setSessionToken } from '@src/infrastructure/api/authFetch';
 import { parseSSEStream } from '@src/infrastructure/api/streamParser';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 
 export interface AIServiceStreamEvent {
   type: 'text' | 'reasoning' | 'tool_calls' | 'error';
@@ -513,7 +515,7 @@ export class AIService {
 
     let result: EnhancedAIResponse;
 
-    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window || ('window' in globalThis && '__TAURI_INTERNALS__' in (globalThis as any).window));
 
     if (isTauri) {
       // Bypass Fastify entirely on Desktop and use native Rust IPC for zero-latency
@@ -523,14 +525,20 @@ export class AIService {
         case 'gemini':
           result = await this.executeGemini(providerConfig);
           break;
-        case 'ollama':
-        case 'lmstudio':
         case 'openai':
-        case 'anthropic':
         case 'openrouter':
         case 'deepseek':
-          result = await this.executeLocal({ ...providerConfig, provider: String(provider) } as any);
+        case 'ollama':
+        case 'lmstudio': {
+          const { directOpenAIFetch } = await import('@src/infrastructure/api/directOpenAIClient');
+          result = await directOpenAIFetch({ ...providerConfig, provider: String(provider) } as any);
           break;
+        }
+        case 'anthropic': {
+          const { directAnthropicFetch } = await import('@src/infrastructure/api/directAnthropicClient');
+          result = await directAnthropicFetch({ ...providerConfig, provider: String(provider) } as any);
+          break;
+        }
         default:
           throw new Error(`Unsupported provider: ${provider}`);
       }
@@ -646,7 +654,7 @@ export class AIService {
 
     const messages = this.buildMessages(prompt, systemInstruction, history);
 
-    const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
+    const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window || ('window' in globalThis && '__TAURI_INTERNALS__' in (globalThis as any).window));
     if (isTauri) {
       let resolvedApiKey = apiKey || '';
       if (!resolvedApiKey && ['openai', 'anthropic', 'deepseek', 'openrouter'].includes(provider)) {
@@ -930,12 +938,14 @@ export class AIService {
       options?: ExecuteOptions;
     }
   ): Promise<EnhancedAIResponse[]> {
-    const promises = configs.map((config) =>
-      this.execute(
+    const apiKeys = useNyxStore.getState().apiKeys;
+    const promises = configs.map((config) => {
+      const resolvedApiKey = getEffectiveApiKey(config.provider, apiKeys) || baseOptions.apiKey;
+      return this.execute(
         config.modelId,
         config.provider,
         prompt,
-        baseOptions.apiKey,
+        resolvedApiKey,
         baseOptions.systemInstruction,
         baseOptions.settings,
         undefined,
@@ -950,8 +960,8 @@ export class AIService {
             metrics: { latency: 0, tokens: 0, tps: 0 },
             finishReason: undefined /* error */,
           }) as EnhancedAIResponse
-      )
-    );
+      );
+    });
     return Promise.all(promises);
   }
 
@@ -976,11 +986,14 @@ export class AIService {
 
     synthesisPrompt += `Synthesize these responses into a single, high-quality final answer that takes the best parts of each approach.`;
 
+    const apiKeys = useNyxStore.getState().apiKeys;
+    const synthesizerApiKey = getEffectiveApiKey(synthesizerConfig.provider, apiKeys) || baseOptions.apiKey;
+
     return this.execute(
       synthesizerConfig.modelId,
       synthesizerConfig.provider,
       synthesisPrompt,
-      baseOptions.apiKey,
+      synthesizerApiKey,
       baseOptions.systemInstruction,
       baseOptions.settings,
       undefined,
@@ -1011,11 +1024,14 @@ export class AIService {
       rand -= v.weight;
     }
 
+    const apiKeys = useNyxStore.getState().apiKeys;
+    const selectedApiKey = getEffectiveApiKey(selectedVariant.config.provider, apiKeys) || baseOptions.apiKey;
+
     return this.execute(
       selectedVariant.config.modelId,
       selectedVariant.config.provider,
       prompt,
-      baseOptions.apiKey,
+      selectedApiKey,
       baseOptions.systemInstruction,
       baseOptions.settings,
       baseOptions.options?.onStream,

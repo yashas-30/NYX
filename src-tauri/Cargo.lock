@@ -3630,6 +3630,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "window-vibrancy 0.7.1",
  "xcap",

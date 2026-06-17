@@ -16,7 +16,7 @@ const PROVIDER_MAX_TOKENS: Record<string, number> = {
 export interface TauriLlmRequest {
   provider: string;
   model_id: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{ role: string; content: string | any[] }>;
   system_instruction?: string;
   api_key: string;
   temperature?: number;

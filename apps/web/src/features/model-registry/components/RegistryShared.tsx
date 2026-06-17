@@ -8,7 +8,7 @@ export const SectionHeader: React.FC<{
   subtitle: string;
   children?: React.ReactNode;
 }> = ({ icon, title, subtitle, children }) => (
-  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10 dark:border-white/5">
+  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
     <div className="flex items-center gap-4">
       <div className="w-10 h-10 rounded-[12px] bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 shadow-sm transition-transform duration-500 hover:rotate-6">
         {icon}
@@ -26,7 +26,7 @@ export const SectionHeader: React.FC<{
 
 /** Empty state for when no models are found */
 export const EmptyState: React.FC<{ message: string; hint: string }> = ({ message, hint }) => (
-  <div className="py-12 min-h-[240px] rounded-md border border-dashed border-white/15 dark:border-white/5 flex flex-col items-center justify-center text-center bg-white/10 dark:bg-white/5">
+  <div className="py-12 min-h-[240px] rounded-md border border-dashed border-border flex flex-col items-center justify-center text-center bg-muted/30">
     <Package size={32} weight="duotone" className="text-muted-foreground/30 mb-3" />
     <p className="text-[11px] font-black uppercase tracking-[0.25em] text-muted-foreground">
       {message}

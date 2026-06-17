@@ -33,6 +33,107 @@ import { useUsageStore } from '@src/core/stores/useUsageStore';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
 
 // ---------------------------------------------------------------------------
+// Execution Mode Helper Functions
+// ---------------------------------------------------------------------------
+
+function extractModelsFromPrompt(prompt: string): typeof AVAILABLE_MODELS {
+  const lower = prompt.toLowerCase();
+  const matched = new Set<string>();
+  const results: typeof AVAILABLE_MODELS = [];
+
+  const mappings = [
+    { keywords: ['claude 3.7', 'claude 37', 'claude-3.7', '3.7 sonnet', '3.7-sonnet'], modelId: 'claude-3-7-sonnet-20250219' },
+    { keywords: ['claude 3.5', 'claude-3.5', '3.5 sonnet', '3.5-sonnet', 'sonnet'], modelId: 'claude-3-5-sonnet-20241022' },
+    { keywords: ['haiku', 'claude-3.5-haiku', '3.5 haiku'], modelId: 'claude-3-5-haiku-20241022' },
+    { keywords: ['gpt-4o-mini', 'gpt 4o mini', '4o mini', 'gpt-4o mini'], modelId: 'gpt-4o-mini' },
+    { keywords: ['gpt-4o', 'gpt 4o', 'gpt4o', 'gpt-4'], modelId: 'gpt-4o' },
+    { keywords: ['o3-mini', 'o3 mini', 'o3'], modelId: 'o3-mini' },
+    { keywords: ['o1-mini', 'o1 mini', 'o1'], modelId: 'o1-mini' },
+    { keywords: ['deepseek r1', 'deepseek-r1', 'r1 cloud', 'r1'], modelId: 'deepseek-reasoner' },
+    { keywords: ['deepseek v3', 'deepseek-v3', 'deepseek chat'], modelId: 'deepseek-chat' },
+    { keywords: ['gemini 3.5', 'gemini-3.5', 'gemini 3.5 flash'], modelId: 'gemini-3.5-flash' },
+    { keywords: ['gemini 3.1', 'gemini 3.1 flash', 'gemini-3.1'], modelId: 'gemini-3.1-flash-lite' },
+    { keywords: ['gemma 4', 'gemma-4', 'gemma4'], modelId: 'gemma-4-31b-it' },
+    { keywords: ['llama 3.3', 'llama-3.3'], modelId: 'meta-llama/llama-3.3-70b-instruct' },
+  ];
+
+  for (const map of mappings) {
+    if (map.keywords.some(kw => lower.includes(kw))) {
+      const model = AVAILABLE_MODELS.find(m => m.id === map.modelId);
+      if (model && !matched.has(model.id)) {
+        matched.add(model.id);
+        results.push(model);
+      }
+    }
+  }
+
+  if (results.length < 2) {
+    const providerMappings = [
+      { keywords: ['claude', 'anthropic'], modelId: 'claude-3-7-sonnet-20250219' },
+      { keywords: ['gpt', 'openai'], modelId: 'gpt-4o' },
+      { keywords: ['gemini', 'google'], modelId: 'gemini-3.5-flash' },
+      { keywords: ['deepseek'], modelId: 'deepseek-chat' },
+    ];
+    for (const map of providerMappings) {
+      if (map.keywords.some(kw => lower.includes(kw))) {
+        const model = AVAILABLE_MODELS.find(m => m.id === map.modelId);
+        if (model && !matched.has(model.id)) {
+          matched.add(model.id);
+          results.push(model);
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+function getCandidatesForExecution(
+  promptModels: typeof AVAILABLE_MODELS,
+  currentModelId: string,
+  currentProvider: string
+): { modelId: string; provider: string }[] {
+  if (promptModels.length >= 2) {
+    return promptModels.map(m => ({ modelId: m.id, provider: m.provider }));
+  }
+
+  const configs: { modelId: string; provider: string }[] = [
+    { modelId: currentModelId, provider: currentProvider }
+  ];
+
+  const store = useNyxStore.getState();
+  const onlineProviders = Object.keys(store.statuses).filter(
+    (prov) => store.statuses[prov] === 'online' && prov !== currentProvider
+  );
+
+  const topModelsPerProvider: Record<string, string> = {
+    gemini: 'gemini-3.5-flash',
+    anthropic: 'claude-3-7-sonnet-20250219',
+    openai: 'gpt-4o',
+    deepseek: 'deepseek-chat',
+  };
+
+  for (const prov of onlineProviders) {
+    const modelId = topModelsPerProvider[prov];
+    if (modelId) {
+      configs.push({ modelId, provider: prov });
+    }
+  }
+
+  // If still less than 2, add sibling models from current provider
+  if (configs.length < 2) {
+    const siblingModels = AVAILABLE_MODELS.filter(
+      (m) => m.provider === currentProvider && m.id !== currentModelId && m.status !== 'deprecated' && m.id !== 'nyx-auto'
+    );
+    siblingModels.slice(0, 2).forEach(m => {
+      configs.push({ modelId: m.id, provider: m.provider });
+    });
+  }
+
+  return configs;
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -81,6 +182,7 @@ interface StreamChunk {
     | 'tool_running'
     | 'tool_done'
     | 'tool_error'
+    | 'tool_approval_required'
     | 'citation'
     | 'metrics'
     | 'finish'
@@ -278,11 +380,72 @@ export const useChatPipeline = ({
             const lastIdx = next.length - 1;
             const last = next[lastIdx];
             if (last?.role === 'assistant') {
+              // Parse streaming artifacts in real time
+              const parsedArtifacts: any[] = [];
+              const seenIds = new Set<string>();
+
+              // 1. Parse explicit <nyx_artifact> tags
+              const artifactRegex = /<nyx_artifact\s+id="([^"]+)"\s+title="([^"]+)"\s+type="([^"]+)"(?:\s+language="([^"]+)")?>([\s\S]*?)(?:<\/nyx_artifact>|$)/g;
+              let match;
+              while ((match = artifactRegex.exec(text)) !== null) {
+                const id = match[1];
+                seenIds.add(id);
+                parsedArtifacts.push({
+                  id,
+                  title: match[2],
+                  type: match[3],
+                  language: match[4] || match[3],
+                  content: match[5],
+                });
+              }
+
+              // 2. Auto-detect standard markdown code blocks (HTML, React, Python, CSS, JS, TS, SVG, Mermaid)
+              const markdownCodeBlockRegex = /```(html|react|tsx|jsx|python|py|javascript|js|typescript|ts|css|svg|mermaid)\b([\s\S]*?)(?:```|$)/g;
+              let blockIndex = 1;
+              while ((match = markdownCodeBlockRegex.exec(text)) !== null) {
+                const lang = match[1];
+                const content = match[2];
+                
+                // Ignore small snippets unless they are renderable structures
+                if (content.trim().length < 40 && !['html', 'svg', 'mermaid'].includes(lang)) {
+                  continue;
+                }
+
+                // Check if this block is already captured inside explicit artifacts to avoid duplication
+                const alreadyCaptured = parsedArtifacts.some(
+                  (art) =>
+                    art.content.includes(content.trim()) ||
+                    content.trim().includes(art.content.trim())
+                );
+                if (alreadyCaptured) {
+                  continue;
+                }
+
+                const id = `auto-code-${blockIndex++}`;
+                let title = 'Snippet';
+                if (lang === 'html') title = 'HTML Page';
+                else if (['react', 'tsx', 'jsx'].includes(lang)) title = 'React Component';
+                else if (['python', 'py'].includes(lang)) title = 'Python Script';
+                else if (lang === 'mermaid') title = 'Mermaid Diagram';
+                else if (lang === 'svg') title = 'Vector Graphic';
+                else if (['javascript', 'js', 'typescript', 'ts'].includes(lang)) title = 'Source Code';
+                else if (lang === 'css') title = 'CSS Stylesheet';
+
+                parsedArtifacts.push({
+                  id,
+                  title,
+                  type: ['react', 'tsx', 'jsx'].includes(lang) ? 'react' : (lang === 'py' ? 'python' : lang),
+                  language: lang,
+                  content: content.trim(),
+                });
+              }
+
               next[lastIdx] = {
                 ...last,
                 content: text,
                 reasoning: reasoning !== undefined ? reasoning : last.reasoning,
                 blocks: blocks || [],
+                artifacts: parsedArtifacts,
               } as any;
             }
             return next;
@@ -524,6 +687,26 @@ export const useChatPipeline = ({
               break;
             }
 
+            case 'tool_approval_required': {
+              const approvalPayload = {
+                approvalId: (chunk as any).approvalId || chunk.metadata?.approvalId || '',
+                tool: (chunk as any).tool || chunk.name || '',
+                input: (chunk as any).input || chunk.metadata?.input || {},
+              };
+              safeUpdateHistory((prev) => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last?.role === 'assistant') {
+                  next[next.length - 1] = {
+                    ...last,
+                    pendingApproval: approvalPayload,
+                  };
+                }
+                return next;
+              });
+              break;
+            }
+
             case 'error': {
               finishReason = 'error';
               throw new Error(chunk.error || chunk.content || 'Stream error from agent');
@@ -617,11 +800,11 @@ export const useChatPipeline = ({
   // -------------------------------------------------------------------------
 
   const runChat = useCallback(
-    async (prompt: string, images?: { name: string; mimeType: string; data: string }[], options?: { agentType?: 'chat' | 'coder', skipUserMessage?: boolean }) => {
+    async (prompt: string, images?: { name: string; mimeType: string; data: string }[], options?: { agentType?: 'chat' | 'coder', skipUserMessage?: boolean, modelOverride?: string, systemPromptAddon?: string, enableTools?: boolean, expectedComplexity?: number }) => {
       // Prompt sanitization (prevent null byte injection and normalize whitespace)
       const sanitizedPrompt = prompt.replace(/\0/g, '').trim();
 
-      const nyxModel = models['nyx'];
+      const nyxModel = options?.modelOverride || models['nyx'];
       if ((!sanitizedPrompt && (!images || images.length === 0)) || !nyxModel) {
         console.warn('[Chat Pipeline] Missing prompt or model:', {
           prompt: !!sanitizedPrompt,
@@ -739,7 +922,42 @@ export const useChatPipeline = ({
         const fastIntents = ['greeting', 'farewell', 'gratitude', 'general_chat'];
         const isFastIntent = fastIntents.includes(analysis.intent);
 
+        // Retrieve relevant memories and construct systemPromptAddon
+        let memoryAddon = '';
+        try {
+          const isTauriEnv = typeof window !== 'undefined' &&
+            ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+          
+          let fetchedMemories: any[] = [];
+          if (isTauriEnv) {
+            const { invoke } = await import('@tauri-apps/api/core');
+            fetchedMemories = await invoke<any[]>('db_get_memories').catch(() => []);
+          } else {
+            const local = localStorage.getItem('nyx_mock_memories');
+            if (local) fetchedMemories = JSON.parse(local);
+          }
+
+          if (fetchedMemories.length > 0) {
+            const words = sanitizedPrompt.toLowerCase().split(/\s+/);
+            const relevant = fetchedMemories.filter(m => {
+              const factLower = m.fact.toLowerCase();
+              return words.some(w => w.length > 3 && factLower.includes(w)) || 
+                     m.category.toLowerCase().includes(sanitizedPrompt.toLowerCase());
+            });
+
+            const selected = relevant.length > 0 ? relevant : fetchedMemories.slice(0, 3);
+            if (selected.length > 0) {
+              memoryAddon = `\n\n[Long-Term Memory / User Preferences]\nHere are relevant facts and preferences remembered about the user:\n` +
+                selected.map(m => `- ${m.fact} (${m.category})`).join('\n') + `\nUse this context to tailor your response accordingly.`;
+            }
+          }
+        } catch (err) {
+          console.warn('[Chat Pipeline] Failed to load long-term memories:', err);
+        }
+
         // 4. Initialize agent with snapshot (not live ref)
+        const systemPromptAddon = (options?.systemPromptAddon || '') + memoryAddon;
+
         const agent = new RouterAgent({
           modelId: nyxModel,
           provider: nyxProvider,
@@ -747,7 +965,8 @@ export const useChatPipeline = ({
           settings: modelSettings,
           history: optimizedHistory,
           lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
-          webSearchEnabled: webSearchEnabled,
+          webSearchEnabled: options?.enableTools ?? webSearchEnabled,
+          systemPromptAddon,
           agentType: options?.agentType === 'coder' ? 'opencode' : 'chat',
           enableToolLoop: useNyxStore.getState().agentLoopEnabled,
           isFastIntent,
@@ -765,9 +984,17 @@ export const useChatPipeline = ({
                   const query = sanitizedPrompt;
                   const numResults = 5;
                   
-                  if (typeof window !== 'undefined' && '__TAURI__' in window) {
+                  if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
                     const { invoke } = await import('@tauri-apps/api/core');
-                    return await invoke<string>('search_web_command', { query, numResults });
+                    const storeState = useNyxStore.getState();
+                    const searchProvider = storeState.searchProvider || 'duckduckgo';
+                    const apiKey = storeState.apiKeys[searchProvider] || '';
+                    return await invoke<string>('search_web_command', {
+                      query,
+                      numResults,
+                      provider: searchProvider,
+                      apiKey,
+                    });
                   } else {
                     const res = await fetchWithAuth(
                       `/api/v1/search?q=${encodeURIComponent(query)}&n=${numResults}`
@@ -787,9 +1014,16 @@ export const useChatPipeline = ({
            }
         }
 
-
         // 6. Stream response with timeout protection and Execution Mode handling
-        const executionMode = useNyxStore.getState().executionMode || 'standard';
+        const storeExecutionMode = useNyxStore.getState().executionMode || 'auto';
+        let executionMode = storeExecutionMode;
+        if (executionMode === 'auto') {
+          executionMode = analysis.suggestedExecutionMode || 'standard';
+          if (analysis.suggestedExecutionReasoning) {
+            toast.info(`[Auto-Mode] ${analysis.suggestedExecutionReasoning}`);
+          }
+        }
+
         let generator: AsyncGenerator<any>;
 
         if (executionMode === 'standard') {
@@ -824,7 +1058,9 @@ export const useChatPipeline = ({
               
               let responseText = '';
               let metadata: any = { latency: 0, tokens: 0, tps: 0 };
-              const configs = [{ modelId: nyxModel, provider: nyxProvider }];
+              
+              const promptModels = extractModelsFromPrompt(sanitizedPrompt);
+              const configs = getCandidatesForExecution(promptModels, nyxModel, nyxProvider);
 
               let executionPromise;
 
@@ -835,7 +1071,7 @@ export const useChatPipeline = ({
                   baseOptions
                 ).then((results) => {
                   responseText = results
-                    .map((r) => r.text)
+                    .map((r) => `### Model: ${AVAILABLE_MODELS.find(m => m.id === r.model)?.name || r.model}\n\n${r.text}`)
                     .join('\n\n---\n\n');
                   metadata = results[0]?.metrics || metadata;
                   queue.push({ type: 'text', content: responseText });
@@ -857,7 +1093,9 @@ export const useChatPipeline = ({
               } else if (executionMode === 'ab-test') {
                 const variants = configs.map((c) => ({ weight: 0.5, config: c }));
                 executionPromise = AIService.executeABTest(compressedPrompt, variants, baseOptions).then((res) => {
+                  responseText = res.text;
                   metadata = res.metrics || metadata;
+                  queue.push({ type: 'text', content: responseText });
                   if (metadata) queue.push({ type: 'metrics', metadata });
                 });
               }

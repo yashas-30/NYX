@@ -174,14 +174,9 @@ async function parseError(response: Response): Promise<Error> {
 }
 
 function resolveRealGeminiModel(model: string): string {
-  const modelMap: Record<string, string> = {
-    'gemini-3-flash': 'gemini-3-flash',
-    'gemini-3-flash-lite': 'gemini-3-flash-lite',
-    'gemini-2.5-flash': 'gemini-2.5-flash',
-    'gemma-4-31b-it': 'gemma-4-31b-it', // Map to real Google API model
-    'gemma-4-26b-it': 'gemma-4-26b-a4b-it', // Map to real Google API model
-  };
-  return modelMap[model] || model;
+  // In 2026, the 3.5 and 3.1 models are the actual backend names. 
+  // We no longer map to the deprecated 1.5 models.
+  return model;
 }
 
 // Cost estimation helper

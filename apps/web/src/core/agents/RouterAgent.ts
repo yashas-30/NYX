@@ -65,7 +65,7 @@ Only output the JSON array. Do not include markdown formatting like \`\`\`json.
 
 USER PROMPT:
 ${prompt}
-`;
+` + (this.config.systemPromptAddon ? `\nADDITIONAL SYSTEM INSTRUCTIONS:\n${this.config.systemPromptAddon}` : '');
 
       const aiResponse = await AIService.execute(
         this.config.modelId,

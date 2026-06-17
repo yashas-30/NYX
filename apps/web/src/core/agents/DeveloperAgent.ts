@@ -43,6 +43,13 @@ export class DeveloperAgent extends BaseAgent<DeveloperAgentConfig, StreamEvent>
         yield* this.emitThinking(`Executing tool: ${event.toolCall?.name}...`, [JSON.stringify(event.toolCall?.arguments)]);
       } else if (event.type === 'tool_result') {
         yield* this.emitThinking(`Tool result received.`, [event.content]);
+      } else if (event.type === 'tool_approval_required') {
+        yield {
+          type: 'tool_approval_required',
+          tool: event.name || event.toolCall?.name,
+          input: event.toolCall?.arguments,
+          approvalId: event.approvalId
+        } as any;
       } else if (event.type === 'text') {
         yield { type: 'text', content: event.content };
       } else if (event.type === 'error') {

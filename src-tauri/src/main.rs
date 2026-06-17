@@ -25,6 +25,9 @@ pub struct AppState {
     /// Reset to `false` automatically at the start of each new run.
     pub agent_cancel: Arc<AtomicBool>,
     pub orchestrator: Arc<agents::orchestrator::Orchestrator>,
+    pub pending_approvals: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
+    pub pending_plugin_tools: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
+    pub pending_browser_actions: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
 }
 
 impl Default for AppState {
@@ -35,6 +38,9 @@ impl Default for AppState {
             mcp_manager,
             pty_state:    Arc::new(Mutex::new(std::collections::HashMap::new())),
             agent_cancel: Arc::new(AtomicBool::new(false)),
+            pending_approvals: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            pending_plugin_tools: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            pending_browser_actions: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -116,12 +122,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             dialog_open_directory,
-            vault_store_key, vault_get_key, vault_delete_key, vault_status,
+            vault_store_key, vault_get_key, vault_delete_key, vault_status, vault_list_keys,
             window_minimize, window_maximize, window_close, window_show, window_hide,
             system_gpu_info, system_info, system_get_userdata, execute_command,
             app_get_version, app_open_external,
             execute_computer_action,
-            mcp_start_server, mcp_send_request, mcp_stop_server, mcp_list_servers,
+            mcp_start_server, mcp_send_request, mcp_call_tool, mcp_stop_server, mcp_list_servers,
             llm_stream_request,
             pty_spawn, pty_write, pty_resize, pty_close,
             fs_watch_start, fs_watch_stop, fs_parse_and_chunk_file,
@@ -138,10 +144,19 @@ pub fn run() {
             db::commands::db_create_folder,
             db::commands::db_delete_folder,
             db::commands::db_get_folders,
+            db::commands::db_add_memory,
+            db::commands::db_get_memories,
+            db::commands::db_delete_memory,
+            db::commands::db_search_memories,
             orchestrate_supervisor,
             cancel_agent_loop,       // Fix 11: expose cancellation to frontend
             search_web_command,
             commands::agent::fetch_page_html_command,
+            commands::agent::run_agent_tool,
+            commands::agent::approve_tool,
+            commands::agent::reject_tool,
+            commands::agent::resolve_plugin_tool,
+            commands::agent::resolve_browser_action,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

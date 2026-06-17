@@ -70,7 +70,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
                     ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
                     : status === 'offline'
                       ? 'bg-red-500/10 text-red-500 border-red-500/20'
-                      : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
+                      : 'bg-muted text-muted-foreground border-border'
                 }
               `}
               >

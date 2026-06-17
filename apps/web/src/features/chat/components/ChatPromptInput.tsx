@@ -426,7 +426,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
             : 'Full VRAM';
   const gpuColor =
     localSettings.gpuLayers === 0
-      ? 'text-zinc-400'
+      ? 'text-muted-foreground'
       : localSettings.gpuLayers < 50
         ? 'text-primary/70'
         : 'text-primary';

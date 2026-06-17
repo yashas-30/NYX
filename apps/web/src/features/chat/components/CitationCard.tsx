@@ -36,7 +36,7 @@ export const CitationCard: React.FC<CitationCardProps> = ({ citation }) => {
       <button
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        className="inline-flex items-center justify-center w-4 h-4 text-[9px] font-bold rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/40 hover:text-indigo-300 transition-colors cursor-pointer align-middle mx-0.5"
+        className="inline-flex items-center justify-center w-4 h-4 text-[9px] font-bold rounded-full bg-primary/20 text-primary border border-primary/30 hover:bg-primary/40 hover:text-primary transition-colors cursor-pointer align-middle mx-0.5"
         style={{ verticalAlign: 'super', fontSize: '9px', lineHeight: 1 }}
       >
         {citation.index}
@@ -51,24 +51,24 @@ export const CitationCard: React.FC<CitationCardProps> = ({ citation }) => {
             transition={{ duration: 0.15 }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
-            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-72 bg-[#141618] border border-white/10 rounded-xl shadow-2xl p-3"
+            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-72 bg-popover border border-border rounded-xl shadow-md p-3"
           >
             {/* Source header */}
             <div className="flex items-start gap-2 mb-2">
-              <div className="p-1 bg-white/5 rounded shrink-0">
-                <Globe className="w-3 h-3 text-white/40" />
+              <div className="p-1 bg-muted rounded shrink-0">
+                <Globe className="w-3 h-3 text-muted-foreground/60" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium text-white/90 leading-tight line-clamp-2">
+                <p className="text-[11px] font-medium text-foreground leading-tight line-clamp-2">
                   {citation.title || domain}
                 </p>
-                <p className="text-[10px] text-white/30 mt-0.5">{domain}</p>
+                <p className="text-[10px] text-muted-foreground/50 mt-0.5">{domain}</p>
               </div>
             </div>
 
             {/* Snippet */}
             {citation.snippet && (
-              <p className="text-[11px] text-white/50 leading-relaxed line-clamp-3 border-t border-white/5 pt-2 mt-2">
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed line-clamp-3 border-t border-border pt-2 mt-2">
                 {citation.snippet}
               </p>
             )}
@@ -78,14 +78,14 @@ export const CitationCard: React.FC<CitationCardProps> = ({ citation }) => {
               href={citation.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 mt-2 text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
+              className="flex items-center gap-1 mt-2 text-[10px] text-primary hover:text-primary/80 transition-colors"
             >
               <ExternalLink className="w-2.5 h-2.5" />
               Open source
             </a>
 
             {/* Arrow */}
-            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white/10" />
+            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-border" />
           </motion.div>
         )}
       </AnimatePresence>

@@ -223,7 +223,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                   </svg>
 
                   {/* Grid Lines Overlay */}
-                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none p-2 text-[8px] font-mono text-zinc-600">
+                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none p-2 text-[8px] font-mono text-muted-foreground/60">
                     <div className="border-b border-white/[0.02] w-full text-right">
                       1.0 (Optimal)
                     </div>

@@ -15,7 +15,7 @@ export const ContextBar: React.FC<ContextBarProps> = ({ used, limit, onSummarize
 
   const isWarn = pct >= 70 && pct < 90;
   const isDanger = pct >= 90;
-  const color = isDanger ? '#ef4444' : isWarn ? '#f97316' : '#6366f1';
+  const color = isDanger ? '#c64545' : isWarn ? '#e8a55a' : '#cc785c';
 
   return (
     <motion.div

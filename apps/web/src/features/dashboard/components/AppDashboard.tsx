@@ -13,13 +13,12 @@ import { AppRouter } from '@src/app/router';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
-import { PlusIcon as Plus, SettingsIcon as Settings, Trash2Icon as Trash2, ChevronRightIcon as ChevronRight, UserIcon as User, ActivityIcon as Activity, FolderIcon as Folder, LayersIcon as Layers } from '@animateicons/react/lucide';
-import { PanelLeftClose, PanelLeftOpen, MessageSquare, ArrowLeft, ArrowRight, Library, FolderPlus, MoreHorizontal } from 'lucide-react';
+import { SettingsIcon as Settings, Trash2Icon as Trash2, ChevronRightIcon as ChevronRight, UserIcon as User, ActivityIcon as Activity, FolderIcon, LayersIcon as Layers } from '@animateicons/react/lucide';
+import { Plus, PanelLeftOpen, MessageSquare, Library, FolderPlus, MoreHorizontal, Folder, Users, GitBranch, FileText, Image, Plug, Calendar, Code2, Brain } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
 import { useAgentLightning } from '@src/shared/hooks/useAgentLightning';
 import { AgentLightningPanel } from '@src/shared/components/AgentLightningPanel';
-import { LocalProviderStatus } from '@src/components/LocalProviderStatus';
 
 export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -113,6 +112,19 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           />
         )}
 
+        {/* Mobile Sidebar Backdrop Overlay */}
+        <AnimatePresence>
+          {isMobile && sidebarOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSidebarOpen(false)}
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-10 cursor-pointer"
+            />
+          )}
+        </AnimatePresence>
+
         {/* ── Desktop/Tablet Sidebar ──────────────────────────────────────── */}
         <motion.aside
           initial={false}
@@ -126,66 +138,71 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           }`}
         >
           <div className="flex flex-col h-full min-w-full bg-card">
-            {/* Sidebar Top Header */}
-            <div className="h-10 px-4 flex items-center select-none border-b border-border shrink-0">
-              {/* Toolbar: Sidebar Toggle + Back/Forward Arrows */}
-              <div className="flex items-center gap-3 text-muted-foreground">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setSidebarOpen(false)}
-                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer"
-                  title="Collapse Sidebar"
-                >
-                  <PanelLeftClose size={13} />
-                </motion.button>
-                <div className="flex items-center gap-2">
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-                  >
-                    <ArrowLeft size={12} />
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-                  >
-                    <ArrowRight size={12} />
-                  </motion.button>
-                </div>
-              </div>
-            </div>
 
             {/* Top Primary Actions */}
             <div className="px-3 pt-3 pb-2 space-y-1">
-              <motion.button
-                whileHover={{ backgroundColor: 'var(--muted)' }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  createSession([]);
-                  if (activeMode !== 'chat') {
-                    setActiveMode('chat');
-                  }
-                }}
-                className="w-full flex items-center justify-start gap-2 px-3 py-2 rounded-md text-xs font-medium tracking-wide transition-all duration-200 cursor-pointer border border-border text-foreground bg-background mb-1 hover:bg-muted"
+              <div
+                className={`w-full flex items-center justify-between rounded-md text-xs font-medium transition-all ${
+                  activeMode === 'chat'
+                    ? 'bg-muted border border-border text-foreground font-semibold'
+                    : 'hover:bg-muted/50 border border-transparent text-muted-foreground hover:text-foreground'
+                }`}
               >
-                <Plus size={13} strokeWidth={1.8} className="text-primary" />
-                <span>New Conversation</span>
-              </motion.button>
+                <button
+                  onClick={() => { setActiveMode('chat'); }}
+                  className="flex-1 flex items-center gap-2.5 px-3 py-2 text-left cursor-pointer outline-none"
+                >
+                  <MessageSquare
+                    size={13}
+                    className={activeMode === 'chat' ? 'text-primary' : 'text-muted-foreground'}
+                  />
+                  <span>NYX</span>
+                </button>
+                <motion.button
+                  whileHover={{ scale: 1.05, backgroundColor: 'var(--muted)' }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    createSession([]);
+                    if (activeMode !== 'chat') {
+                      setActiveMode('chat');
+                    }
+                  }}
+                  className="mr-1.5 p-1 rounded border border-border bg-background/50 hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer flex items-center justify-center shrink-0 w-5 h-5"
+                  title="New Conversation"
+                >
+                  <Plus size={10} strokeWidth={2.5} />
+                </motion.button>
+              </div>
 
               <button
-                onClick={() => { setActiveMode('chat'); }}
+                onClick={() => { setActiveMode('projects'); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
-                  activeMode === 'chat'
+                  activeMode === 'projects'
                     ? 'text-foreground bg-muted border border-border font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
                 }`}
               >
-                <MessageSquare
+                <Folder
                   size={13}
-                  className={activeMode === 'chat' ? 'text-primary' : 'text-muted-foreground'}
+                  className={activeMode === 'projects' ? 'text-primary' : 'text-muted-foreground'}
                 />
-                <span>NYX</span>
+                <span>Projects</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveMode('swarm'); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
+                  activeMode === 'swarm'
+                    ? 'text-foreground bg-muted border border-border font-semibold'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
+                }`}
+              >
+                <Users
+                  size={13}
+                  className={activeMode === 'swarm' ? 'text-primary' : 'text-muted-foreground'}
+                />
+                <span>Agent Swarm</span>
               </button>
 
               <button
@@ -275,53 +292,40 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               </div>
             </div>
 
-            {/* Bottom Section (Model Library & Settings) */}
-            <div className="px-4 py-3.5 border-t border-border mt-auto space-y-2">
-              <LocalProviderStatus />
-              <button
-                onClick={() => { setActiveMode('registry'); }}
-                className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${
-                  activeMode === 'registry'
-                    ? 'text-foreground bg-muted border border-border'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
-                <Library
-                  size={13}
-                  className={activeMode === 'registry' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>Model Library</span>
-              </button>
-
-              <button
-                onClick={() => { setActiveMode('compare'); }}
-                className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${
-                  activeMode === 'compare'
-                    ? 'text-foreground bg-muted border border-border'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
-                <Activity
-                  size={13}
-                  className={activeMode === 'compare' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>Model Comparison</span>
-              </button>
-
-              <button
-                onClick={() => { setActiveMode('settings'); }}
-                className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-all text-left cursor-pointer text-xs font-medium ${
-                  activeMode === 'settings'
-                    ? 'text-foreground bg-muted border border-border'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
-                <Settings
-                  size={13}
-                  className={activeMode === 'settings' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>Settings</span>
-              </button>
+            {/* Bottom Section (Horizontal Navigation Grid) */}
+            <div className="px-3 py-3.5 border-t border-border mt-auto space-y-3">
+              
+              <div className="grid grid-cols-6 gap-1.5 px-1">
+                {[
+                  { mode: 'registry', icon: Library, label: 'Model Library' },
+                  { mode: 'compare', icon: Activity, label: 'Model Comparison' },
+                  { mode: 'settings', icon: Settings, label: 'Settings' },
+                  { mode: 'plugins', icon: Plug, label: 'Plugins' },
+                  { mode: 'git', icon: GitBranch, label: 'Git' },
+                  { mode: 'documents', icon: FileText, label: 'Documents' },
+                  { mode: 'images', icon: Image, label: 'Images' },
+                  { mode: 'mcp', icon: Plug, label: 'MCP' },
+                  { mode: 'tasks', icon: Calendar, label: 'Tasks' },
+                  { mode: 'ide', icon: Code2, label: 'IDE' },
+                  { mode: 'memory', icon: Brain, label: 'Memory' },
+                ].map(({ mode, icon: Icon, label }) => (
+                  <button
+                    key={mode}
+                    onClick={() => { setActiveMode(mode as any); }}
+                    title={label}
+                    className={`aspect-square flex items-center justify-center rounded-lg transition-all cursor-pointer p-2 hover:bg-muted/50 ${
+                      activeMode === mode
+                        ? 'text-foreground bg-muted border border-border shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground border border-transparent'
+                    }`}
+                  >
+                    <Icon
+                      size={14}
+                      className={activeMode === mode ? 'text-primary' : 'text-muted-foreground'}
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </motion.aside>

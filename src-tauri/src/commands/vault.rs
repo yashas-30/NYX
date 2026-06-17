@@ -54,26 +54,60 @@ pub async fn vault_delete_key(payload: ProviderPayload) -> VaultResult<()> {
     }
 }
 
-#[derive(Serialize)]
-pub struct VaultStatus {
-    pub gemini: bool,
-    pub scrapling: bool,
-}
+use std::collections::HashMap;
 
 #[tauri::command(rename = "vault:status")]
-pub async fn vault_status() -> VaultResult<VaultStatus> {
-    let gemini_entry = Entry::new(SERVICE_NAME, "gemini").ok();
-    let scrapling_entry = Entry::new(SERVICE_NAME, "scrapling").ok();
-
-    let has_gemini = gemini_entry.and_then(|e| e.get_password().ok()).is_some();
-    let has_scrapling = scrapling_entry.and_then(|e| e.get_password().ok()).is_some();
+pub async fn vault_status() -> VaultResult<HashMap<String, bool>> {
+    let providers = vec![
+        "gemini",
+        "anthropic",
+        "openai",
+        "deepseek",
+        "openrouter",
+        "tavily",
+        "jina",
+        "scrapling",
+        "scrapling_url",
+    ];
+    let mut status_map = HashMap::new();
+    for provider in providers {
+        let entry = Entry::new(SERVICE_NAME, provider).ok();
+        let has_key = entry.and_then(|e| e.get_password().ok()).is_some();
+        status_map.insert(provider.to_string(), has_key);
+    }
 
     VaultResult {
         success: true,
-        data: Some(VaultStatus {
-            gemini: has_gemini,
-            scrapling: has_scrapling,
-        }),
+        data: Some(status_map),
         error: None,
     }
 }
+
+#[tauri::command(rename = "vault:list-keys")]
+pub async fn vault_list_keys() -> VaultResult<Vec<String>> {
+    let providers = vec![
+        "gemini",
+        "anthropic",
+        "openai",
+        "deepseek",
+        "openrouter",
+        "tavily",
+        "jina",
+        "scrapling",
+        "scrapling_url",
+    ];
+    let mut keys = Vec::new();
+    for provider in providers {
+        let entry = Entry::new(SERVICE_NAME, provider).ok();
+        if entry.and_then(|e| e.get_password().ok()).is_some() {
+            keys.push(provider.to_string());
+        }
+    }
+
+    VaultResult {
+        success: true,
+        data: Some(keys),
+        error: None,
+    }
+}
+

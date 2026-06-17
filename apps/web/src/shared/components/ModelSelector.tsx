@@ -29,7 +29,7 @@ interface Props {
 }
 
 // Structured provider order for the selector
-const PROVIDER_ORDER = ['gemini', 'lmstudio', 'ollama'];
+const PROVIDER_ORDER = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter', 'lmstudio', 'ollama'];
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
@@ -186,8 +186,12 @@ export const ModelSelector: React.FC<Props> = ({
   }, [allModels, localLibraryModels]);
 
   const groupedModels = useMemo(() => {
-    const groups: Record<string, any[]> = {
+    const groups: Record<string, ModelOption[]> = {
       'gemini': [],
+      'anthropic': [],
+      'openai': [],
+      'deepseek': [],
+      'openrouter': [],
       'lmstudio': [],
       'ollama': [],
     };
@@ -353,8 +357,8 @@ export const ModelSelector: React.FC<Props> = ({
             {/* Scrollable list of models */}
             <div ref={parentRef} className="flex-1 overflow-y-auto p-2 custom-scrollbar">
               {filteredModels.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-zinc-500 text-center space-y-2 py-6">
-                  <div className="w-8 h-8 rounded-md bg-white/5 flex items-center justify-center border border-dashed border-white/10">
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center space-y-2 py-6">
+                  <div className="w-8 h-8 rounded-md bg-muted/30 flex items-center justify-center border border-dashed border-border">
                     <Bot className="w-4 h-4 opacity-25" />
                   </div>
                   <p className="text-[8px] font-black uppercase tracking-widest opacity-35">
@@ -441,8 +445,8 @@ export const ModelSelector: React.FC<Props> = ({
                                       isOnline
                                         ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                                         : isNoKey
-                                          ? 'bg-zinc-800 border-white/[0.04] text-zinc-400'
-                                          : 'bg-zinc-900 border-white/[0.04] text-zinc-500'
+                                          ? 'bg-muted border-border text-muted-foreground'
+                                          : 'bg-muted/50 border-border text-muted-foreground/60'
                                     }
                                   `}
                                   >
@@ -452,13 +456,13 @@ export const ModelSelector: React.FC<Props> = ({
 
                                 {/* Inline Monospace Specs Badge */}
                                 {model.specs?.contextWindow && (
-                                  <span className="text-[6px] font-mono font-bold text-muted-foreground/50 bg-white/5 px-1 py-0.5 rounded border border-white/5 shrink-0 ml-auto leading-none">
+                                  <span className="text-[6px] font-mono font-bold text-muted-foreground/50 bg-muted px-1 py-0.5 rounded border border-border shrink-0 ml-auto leading-none">
                                     {model.specs.contextWindow}
                                   </span>
                                 )}
                               </div>
 
-                              <p className="text-[7px] font-mono text-zinc-500 truncate uppercase tracking-tight mt-0.5 leading-none pr-6">
+                              <p className="text-[7px] font-mono text-muted-foreground/60 truncate uppercase tracking-tight mt-0.5 leading-none pr-6">
                                 {model.description || model.id}
                               </p>
                             </div>
@@ -485,10 +489,10 @@ export const ModelSelector: React.FC<Props> = ({
                               
                               {isSelected && (
                                 <div
-                                  className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ml-0.5 ${isNoKey ? 'bg-zinc-600' : 'bg-white border border-white/10'}`}
+                                  className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ml-0.5 ${isNoKey ? 'bg-muted border border-border text-muted-foreground' : 'bg-primary border border-primary/20 text-primary-foreground'}`}
                                 >
                                   <Check
-                                    className={`w-2 h-2 ${isNoKey ? 'text-white' : 'text-black'}`}
+                                    className={`w-2 h-2 ${isNoKey ? 'text-muted-foreground' : 'text-primary-foreground'}`}
                                   />
                                 </div>
                               )}
@@ -555,7 +559,7 @@ export const ModelSelector: React.FC<Props> = ({
             Execution
           </span>
           <div className="flex-1 flex gap-1 bg-background p-0.5 rounded-md border border-border">
-            {(['standard', 'parallel', 'ensemble', 'ab-test'] as ExecutionMode[]).map((mode) => (
+            {(['auto', 'standard', 'parallel', 'ensemble', 'ab-test'] as ExecutionMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setExecutionMode(mode)}
