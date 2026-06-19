@@ -1,0 +1,69 @@
+# ──────────────────────────────────────────────────────────────
+# Fluent Bit sidecar config for log shipping.
+#
+# Ships NYX container stdout/stderr to stdout (for `kubectl logs`)
+# and optionally to a remote sink (Loki / Elasticsearch).
+#
+# To enable a remote sink, uncomment the OUTPUT section below
+# and set the FLUENT_OUTPUT env var in the DaemonSet.
+# ──────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nyx-fluent-bit-config
+  namespace: nyx-production
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+      flush         1
+      log_level     info
+      parsers_file  parsers.conf
+
+    [INPUT]
+      name          tail
+      path          /var/log/containers/nyx-*.log
+      multiline.parser docker, cri
+      tag           nyx.*
+      mem_buf_limit 32MB
+
+    [FILTER]
+      name          kubernetes
+      match         nyx.*
+      kube_url      https://kubernetes.default.svc
+      kube_token_file /var/run/secrets/kubernetes.io/serviceaccount/token
+      kube_ca_file  /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      annotations   on
+      labels        on
+
+    [FILTER]
+      name          modify
+      match         nyx.*
+      remove        stream
+      remove        _p
+
+    [OUTPUT]
+      name          stdout
+      match         *
+      format        json_lines
+
+    # ── Uncomment and set FLUENT_OUTPUT to enable remote log shipping ──
+    # [OUTPUT]
+    #   name          loki
+    #   match         nyx.*
+    #   host          ${FLUENT_OUTPUT}
+    #   port          3100
+    #   labels        job=nyx-server
+
+  parsers.conf: |
+    [PARSER]
+      name          cri
+      format        regex
+      regex         ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<log>.*)$
+      time_key      time
+      time_format   %Y-%m-%dT%H:%M:%S.%L%z
+
+    [PARSER]
+      name          docker
+      format        json
+      time_key      time
+      time_format   %Y-%m-%dT%H:%M:%S.%L

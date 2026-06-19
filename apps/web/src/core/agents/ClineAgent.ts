@@ -1,5 +1,5 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
-import { runTauriAgentLoop, runAgentLoop } from './agentLoop';
+import { runAgentLoop, runTauriAgentLoop } from './agentLoop';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 
@@ -34,7 +34,9 @@ Tools: run_terminal_command, computer_action, browser_read_page, web_search.
 </safety_boundaries>
 
 <reasoning>
-Before taking an action, explicitly state your goal and the expected outcome in a <think> block.
+Before taking an action, explicitly state your goal and the expected outcome in a <nyx_think> block.
+These blocks are hidden from the user, allowing you to think freely.
+Keep your final responses direct and concise. Do NOT use filler phrases like "I am an AI" or "Here is the result".
 </reasoning>
 
 <artifact_generation>
@@ -47,68 +49,6 @@ Before taking an action, explicitly state your goal and the expected outcome in 
 - The content inside the artifact should be fully functional, clean, and self-contained.
 </artifact_generation>`;
 
-    const loopConfig = {
-      modelId: this.config.modelId,
-      provider: this.config.provider,
-      apiKey: this.config.apiKey,
-      settings: this.config.settings,
-      systemInstruction,
-      history: this.config.history,
-      maxIterations: 25,
-      signal,
-      agentType: 'cline'
-    };
-
-    const generator = isTauriEnv ? runTauriAgentLoop(prompt, loopConfig as any) : runAgentLoop(prompt, loopConfig as any);
-
-    for await (const event of generator) {
-      if (event.type === 'thinking') {
-        yield* this.emitThinking(event.content, []);
-      } else if (event.type === 'tool_start') {
-        yield* this.emitThinking(`Executing tool: ${event.toolCall?.name}...`, [JSON.stringify(event.toolCall?.arguments)]);
-        yield {
-          type: 'tool_start',
-          tool_call: {
-            id: event.toolCall?.id,
-            name: event.toolCall?.name,
-            args: event.toolCall?.arguments
-          }
-        } as any;
-      } else if (event.type === 'tool_running') {
-        yield {
-          type: 'tool_running',
-          name: event.name
-        } as any;
-      } else if (event.type === 'tool_done') {
-        yield {
-          type: 'tool_done',
-          name: event.name,
-          result: event.result
-        } as any;
-      } else if (event.type === 'tool_error') {
-        yield {
-          type: 'tool_error',
-          name: event.name,
-          error: event.error
-        } as any;
-      } else if (event.type === 'tool_approval_required') {
-        yield {
-          type: 'tool_approval_required',
-          tool: event.name || event.toolCall?.name,
-          input: event.toolCall?.arguments,
-          approvalId: event.approvalId
-        } as any;
-      } else if (event.type === 'tool_result') {
-        yield* this.emitThinking(`Tool result received.`, [event.content]);
-      } else if (event.type === 'text') {
-        yield { type: 'text', content: event.content };
-      } else if (event.type === 'error') {
-        yield { type: 'error', content: event.content };
-      } else if (event.type === 'citation') {
-        yield { type: 'citation', metadata: (event as any).metadata } as any;
-      } else if (event.type === 'artifact') {
-        yield { type: 'artifact', metadata: (event as any).metadata } as any;
-      }
-    }
+    yield* this.streamFromPythonAPI(prompt, systemInstruction, signal);
   }
 }

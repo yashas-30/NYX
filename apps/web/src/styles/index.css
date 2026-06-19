@@ -1,0 +1,618 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+
+/* ── Apple HIG Design Tokens ─────────────────────────────────── */
+:root {
+  /* Light Mode (Premium Cream / Apple Aesthetic) */
+  --background: #F5F2E9;
+  --foreground: #1D1D1F;
+  --card: #FCF9F2;
+  --card-foreground: #1D1D1F;
+  --popover: #FFFFFF;
+  --popover-foreground: #1D1D1F;
+  
+  /* Apple System Colors */
+  --primary: #0071E3; /* System Blue */
+  --primary-rgb: 0, 113, 227;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F0EDE8;
+  --secondary-foreground: #1D1D1F;
+  --muted: #F0EDE8;
+  --muted-foreground: #86868B;
+  --accent: #0071E3;
+  --accent-rgb: 0, 113, 227;
+  --accent-foreground: #FFFFFF;
+  --destructive: #FF3B30; /* System Red */
+  
+  --border: rgba(0, 0, 0, 0.25);
+  --border-strong: rgba(0, 0, 0, 0.45);
+  --input: rgba(0, 0, 0, 0.04);
+  --ring: rgba(0, 113, 227, 0.3);
+  
+  /* Spatial Grid & Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 32px 64px -16px rgba(0, 0, 0, 0.15);
+  --shadow-terminal: 0 20px 40px -12px rgba(0, 0, 0, 0.2);
+  --shadow-inner: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  
+  /* Animation */
+  --ease-apple: cubic-bezier(0.23, 1, 0.32, 1);
+
+  --duration-normal: 300ms;
+  --duration-fast: 150ms;
+  
+  color-scheme: light;
+}
+
+.dark {
+  /* Dark Mode (Premium Matte Gray "Just Gray" Stitch Design Scheme) */
+  --background: #1c1c1c; /* Solid Matte Gray canvas background */
+  --foreground: #e3e3e3; /* Soft off-white text */
+  --card: #262626; /* Warm Gray Card Fill */
+  --card-foreground: #e3e3e3;
+  --popover: #262626;
+  --popover-foreground: #e3e3e3;
+  
+  --primary: #ffffff; /* Monochromatic Clean White */
+  --primary-rgb: 255, 255, 255;
+  --primary-foreground: #1c1c1c;
+  --secondary: #4A5059; /* Thundercloud Ash Sidebar */
+  --secondary-foreground: #e3e3e3; /* Soft off-white text */
+  --muted: #2d2d2d; /* Soft dark grey for blockquotes and code */
+  --muted-foreground: #a3a3a3; /* Muted text */
+  --accent: #FF3366; /* Flame Azalea Accent */
+  --accent-rgb: 255, 51, 102;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  
+  --border: rgba(255, 255, 255, 0.06); /* Extremely thin clean border lines */
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.02);
+  --ring: rgba(255, 51, 102, 0.3); /* Flame Azalea focus ring */
+  
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 16px 48px -8px rgba(0, 0, 0, 0.7);
+  --shadow-terminal: 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+  
+  color-scheme: dark;
+}
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Sora", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
+  
+  --ease-out: var(--ease-apple);
+  
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  
+  --animate-fade-in: fade-in 0.6s var(--ease-apple) forwards;
+  --animate-scale-in: scale-in 0.4s var(--ease-apple) forwards;
+  
+  /* Semantic Surfaces */
+  --color-surface-deep: var(--background);
+  --color-surface-elevated: var(--card);
+  --color-surface-chrome: var(--secondary);
+  
+  --color-flame: #FF3366;
+  --color-thundercloud: #4A5059;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: var(--ring);
+    transition-property: background-color, border-color, color, fill, stroke, box-shadow, outline-color;
+    transition-timing-function: var(--ease-apple);
+    transition-duration: var(--duration-normal);
+  }
+
+  html {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+    letter-spacing: -0.012em; /* Apple's tight tracking */
+  }
+
+  body {
+    background-color: var(--background) !important;
+    color: var(--foreground);
+    @apply selection:bg-primary/20 selection:text-primary w-full;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* Prevent bounce-scroll on iOS which can shift fixed elements */
+    overscroll-behavior: none;
+    transition: background-color 0.5s var(--ease-apple), color 0.5s var(--ease-apple);
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100dvh;
+    /* Safe area padding for notched phones (iPhone X+) */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Prevent text selection on interactive elements for a native feel */
+  button, [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+  }
+
+  /* Prevent iOS from making inputs tiny / triggering zoom */
+  input, textarea, select {
+    font-size: max(16px, 1rem);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.03em;
+    font-weight: 700;
+  }
+}
+
+@layer components {
+  /* ── Apple Materials (Glassmorphism) ────────────────────────── */
+  .glass {
+    background: var(--card);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .glass-thick {
+    background: color-mix(in srgb, var(--card) 90%, transparent);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    backdrop-filter: blur(40px) saturate(200%);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-md);
+  }
+
+  /* ── Geometry & Squirrels ───────────────────────────────────── */
+  .squircle {
+    border-radius: var(--radius-lg);
+    -webkit-mask-image: url('data:image/svg+xml;utf8,<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M 0,20 C 0,0 0,0 20,0 L 80,0 C 100,0 100,0 100,20 L 100,80 C 100,100 100,100 80,100 L 20,100 C 0,100 0,100 0,80 Z" fill="black"/></svg>');
+    mask-image: url('data:image/svg+xml;utf8,<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M 0,20 C 0,0 0,0 20,0 L 80,0 C 100,0 100,0 100,20 L 100,80 C 100,100 100,100 80,100 L 20,100 C 0,100 0,100 0,80 Z" fill="black"/></svg>');
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+  }
+
+  .btn-apple {
+    @apply px-5 py-2.5 rounded-full font-semibold transition-all active:scale-[0.97] disabled:opacity-50;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-apple:hover {
+    background: color-mix(in srgb, var(--primary) 90%, black);
+    box-shadow: var(--shadow-md);
+  }
+
+  .input-apple {
+    @apply px-4 py-2.5 rounded-xl border bg-input transition-all focus:ring-4 focus:ring-primary/20 outline-none;
+    border-color: var(--border);
+  }
+}
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ── Custom Backgrounds ─────────────────────────────────────── */
+.bg-mesh {
+  background-color: var(--background);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(240, 237, 232, 0.5) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, rgba(255, 255, 255, 0.4) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, rgba(234, 230, 222, 0.5) 0, transparent 50%);
+}
+
+.dark .bg-mesh {
+  background-color: var(--background);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(99, 99, 102, 0.4) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, rgba(142, 142, 147, 0.3) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, rgba(72, 72, 74, 0.4) 0, transparent 50%);
+}
+
+/* ── Scrollbars (Gemini-style thin dark) ────────────────────── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Thin scrollbar for sidebar session list */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 3px;
+}
+.scrollbar-thumb-white\/5::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+
+/* ── Live System Trace ──────────────────────────────────────── */
+/* ── Apple Terminal / Staging Area ─────────────────────────── */
+@layer components {
+  .terminal-staging, .terminal-window {
+    @apply font-mono text-xs leading-relaxed p-4 overflow-hidden transition-all;
+    background: var(--card);
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    backdrop-filter: blur(40px) saturate(200%);
+    border: 2px solid var(--border-strong);
+    box-shadow: var(--shadow-terminal), var(--shadow-inner);
+    border-radius: 16px;
+    color: var(--foreground);
+  }
+
+  .input-staging {
+    @apply transition-all focus-within:ring-4 focus-within:ring-primary/15;
+    background: var(--card);
+    border: 2px solid var(--border-strong);
+    border-radius: 16px;
+    box-shadow: var(--shadow-inner);
+  }
+
+  .terminal-line {
+    @apply opacity-0 animate-fade-in;
+  }
+
+  .terminal-cursor {
+    @apply w-1.5 h-4 bg-primary inline-block align-middle ml-1 animate-pulse;
+  }
+}
+
+/* Duplicate scroll-x for marquee */
+@keyframes scroll-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-scroll-x {
+  animation: scroll-x 40s linear infinite;
+  display: flex;
+  width: max-content;
+}
+
+/* ── Markdown Body ───────────────────────────────────────────── */
+/* Used in model response cards and analysis view */
+.markdown-body {
+  font-size: 12px;
+  line-height: 1.65;
+  color: inherit;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.markdown-body p {
+  margin: 0 0 0.6em;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.markdown-body h1 { font-size: 1.25em; font-weight: 700; margin: 0.8em 0 0.4em; }
+.markdown-body h2 { font-size: 1.1em;  font-weight: 700; margin: 0.8em 0 0.4em; }
+.markdown-body h3 { font-size: 1em;    font-weight: 600; margin: 0.6em 0 0.3em; }
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 { font-size: 0.9em;  font-weight: 600; margin: 0.5em 0 0.25em; }
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.4em 0 0.6em;
+  padding-left: 1.25em;
+}
+
+.markdown-body li {
+  margin: 0.2em 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.markdown-body blockquote {
+  border-left: 1px solid var(--primary);
+  margin: 0.5em 0;
+  padding: 0.25em 0.75em;
+  opacity: 0.8;
+}
+
+.markdown-body code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: color-mix(in srgb, var(--muted) 60%, transparent);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.markdown-body pre {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  word-break: normal;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin: 0.5em 0;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--border);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+
+.markdown-body a {
+  color: var(--primary);
+  word-break: break-all;
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.75em 0;
+}
+
+/* Streaming cursor */
+.streaming-cursor::after {
+  content: '▋';
+  animation: blink 1s step-end infinite;
+  color: var(--primary);
+  font-size: 0.9em;
+  margin-left: 1px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ── Mobile Optimization Rules ──────────────────────────────── */
+@media (max-width: 767px) {
+  body:has(input:focus, textarea:focus) .mobile-nav-bar {
+    display: none !important;
+  }
+
+  body:has(input:focus, textarea:focus) .dashboard-main-container {
+    padding-bottom: 0px !important;
+  }
+}
+
+/* ── Micro-interactions & Design Spells ────────────────────── */
+.hover-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.hover-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--primary-rgb), 0.1),
+    transparent
+  );
+  transform: skewX(-25deg);
+  transition: left 0.8s var(--ease-apple);
+}
+
+.hover-shimmer:hover::after {
+  left: 150%;
+}
+
+/* Custom smooth transitions for active state */
+.btn-smooth-active {
+  transition: transform 0.2s var(--ease-apple), filter 0.2s var(--ease-apple);
+}
+
+.btn-smooth-active:active {
+  transform: scale(0.97);
+}
+
+/* ── Mobile Input Zoom Prevention ──────────────────────────── */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="search"],
+  input[type="url"],
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* ── Professional List Marker Overrides ─────────────────────── */
+.prose-nyx ul li::marker {
+  color: color-mix(in srgb, currentColor 50%, transparent) !important;
+}
+
+.prose-nyx ol li::marker {
+  color: color-mix(in srgb, currentColor 70%, transparent) !important;
+}
+
+/* ── Custom Glassmorphism & Neon Spells ────────────────────── */
+.glass-panel {
+  background: rgba(17, 22, 34, 0.65) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.neon-border {
+  border-color: rgba(255, 51, 102, 0.3) !important;
+  box-shadow: 0 0 15px rgba(255, 51, 102, 0.05);
+}
+
+.neon-glow-cyan, .neon-glow-flame {
+  text-shadow: 0 0 8px rgba(255, 51, 102, 0.5);
+}
+
+.btn-tech {
+  @apply px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all duration-200 border cursor-pointer flex items-center justify-center gap-1.5;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--foreground);
+}
+
+.btn-tech:hover {
+  background: rgba(255, 51, 102, 0.08);
+  border-color: rgba(255, 51, 102, 0.3);
+  color: var(--primary);
+  box-shadow: 0 0 12px rgba(255, 51, 102, 0.05);
+}
+
+.btn-tech:active {
+  transform: translateY(1px);
+}
+
+/* ── Mobile-first Sizing and Touch Targets ─────────────────── */
+@media (max-width: 640px) {
+  /* Increase touch targets to min 44px */
+  button, a, [role="button"] {
+    min-height: 40px;
+    min-width: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Make containers fit mobile screens perfectly */
+  .max-w-xl, .max-w-2xl, .max-w-3xl, .max-w-4xl {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* Reduce paddings for cards and containers */
+  .p-6 {
+    padding: 1rem !important;
+  }
+  .p-4 {
+    padding: 0.75rem !important;
+  }
+  .px-6 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+  
+  /* Stacking on mobile */
+  .grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── NYX 6-Dot Spinner Pulse Keyframes ───────────────────────── */
+@keyframes nyx-loader-pulse {
+  0%, 100% {
+    opacity: 0.25;
+    fill: #52525b; /* Zinc-600 */
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 1;
+    fill: #FF3366; /* Flame Azalea */
+    transform: scale(1.05);
+  }
+}
+
+.nyx-dot {
+  animation: nyx-loader-pulse 1.4s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.nyx-dot-1 { animation-delay: 0.0s; }
+.nyx-dot-2 { animation-delay: 0.12s; }
+.nyx-dot-3 { animation-delay: 0.24s; }
+.nyx-dot-4 { animation-delay: 0.36s; }
+.nyx-dot-5 { animation-delay: 0.48s; }
+.nyx-dot-6 { animation-delay: 0.6s; }
+
+/* ── Active visual scale-on-press feedback ──────────────────── */
+button:active,
+[role="button"]:active,
+.active-scale:active {
+  transform: scale(0.97) !important;
+}
+
+button,
+[role="button"],
+.active-scale {
+  transition: transform 120ms ease-out !important;
+}
+

@@ -1,5 +1,5 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
-import { runTauriAgentLoop, runAgentLoop } from './agentLoop';
+import { runAgentLoop } from './agentLoop';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 
@@ -37,6 +37,11 @@ Tools: read_file, write_file, list_dir, grep_search, run_terminal_command.
 <behavior>
 Before writing any code, thoroughly explore the workspace to understand the context. Use grep_search and list_dir.
 Do not make assumptions about the file structure. Read the files first.
+Keep your final responses direct and concise. Do NOT use filler phrases like "I am an AI" or "Here is the code".
+
+THINKING PROTOCOL:
+- Use <nyx_think>...</nyx_think> blocks to explain your reasoning, planning, or decision-making process before responding to the user.
+- These blocks are hidden from the user, allowing you to think freely.
 </behavior>
 
 <artifact_generation>
@@ -70,57 +75,13 @@ Do not make assumptions about the file structure. Read the files first.
       currentLoop++;
       let fullOutput = '';
       
-      const generator = isTauriEnv ? runTauriAgentLoop(currentPrompt, loopConfig as any) : runAgentLoop(currentPrompt, loopConfig as any);
+      const generator = this.streamFromPythonAPI(currentPrompt, systemInstruction, signal);
 
       for await (const event of generator) {
-        if (event.type === 'thinking') {
-          yield* this.emitThinking(event.content, []);
-        } else if (event.type === 'tool_start') {
-          yield* this.emitThinking(`Executing tool: ${event.toolCall?.name}...`, [JSON.stringify(event.toolCall?.arguments)]);
-          yield {
-            type: 'tool_start',
-            tool_call: {
-              id: event.toolCall?.id,
-              name: event.toolCall?.name,
-              args: event.toolCall?.arguments
-            }
-          } as any;
-        } else if (event.type === 'tool_running') {
-          yield {
-            type: 'tool_running',
-            name: event.name
-          } as any;
-        } else if (event.type === 'tool_done') {
-          yield {
-            type: 'tool_done',
-            name: event.name,
-            result: event.result
-          } as any;
-        } else if (event.type === 'tool_error') {
-          yield {
-            type: 'tool_error',
-            name: event.name,
-            error: event.error
-          } as any;
-        } else if (event.type === 'tool_approval_required') {
-          yield {
-            type: 'tool_approval_required',
-            tool: event.name || event.toolCall?.name,
-            input: event.toolCall?.arguments,
-            approvalId: event.approvalId
-          } as any;
-        } else if (event.type === 'tool_result') {
-          yield* this.emitThinking(`Tool result received.`, [event.content]);
-        } else if (event.type === 'text') {
+        if (event.type === 'text') {
           fullOutput += event.content;
-          yield { type: 'text', content: event.content };
-        } else if (event.type === 'error') {
-          yield { type: 'error', content: event.content };
-        } else if (event.type === 'citation') {
-          yield { type: 'citation', metadata: (event as any).metadata } as any;
-        } else if (event.type === 'artifact') {
-          yield { type: 'artifact', metadata: (event as any).metadata } as any;
         }
+        yield event;
       }
 
       // ----------------------------------------------------------------------

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nyx-llama-worker
+  namespace: nyx-production
+spec:
+  selector:
+    app: nyx-llama
+  ports:
+    - name: inference
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

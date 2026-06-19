@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { ChatAgent } from './ChatAgent';
+import { ChatAgent } from './chatAgent';
 import { MemoryStore } from './memoryStore';
 import {
   StreamEvent,

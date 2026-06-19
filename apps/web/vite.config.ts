@@ -7,6 +7,7 @@ import topLevelAwait from 'vite-plugin-top-level-await';
 import { VitePWA } from 'vite-plugin-pwa';
 import svgr from 'vite-plugin-svgr';
 import { visualizer } from 'rollup-plugin-visualizer';
+import crypto from 'crypto';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -66,6 +67,32 @@ export default defineConfig(({ mode }) => {
             } else {
               res.statusCode = 200;
               res.end(JSON.stringify({ success: true, message: 'Backend mock default success fallback' }));
+            }
+          });
+
+          server.httpServer?.on('upgrade', (req, socket, head) => {
+            if (req.url && req.url.includes('/ws/session-sync')) {
+              const key = req.headers['sec-websocket-key'];
+              if (key) {
+                const accept = crypto
+                  .createHash('sha1')
+                  .update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
+                  .digest('base64');
+                
+                socket.write(
+                  'HTTP/1.1 101 Switching Protocols\r\n' +
+                  'Upgrade: websocket\r\n' +
+                  'Connection: Upgrade\r\n' +
+                  `Sec-WebSocket-Accept: ${accept}\r\n` +
+                  '\r\n'
+                );
+
+                socket.on('error', () => {
+                  socket.destroy();
+                });
+              } else {
+                socket.destroy();
+              }
             }
           });
         }

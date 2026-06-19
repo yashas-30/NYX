@@ -1,0 +1,81 @@
+# ──────────────────────────────────────────────────────────────
+# Deployment: nyx-llama-worker
+#
+# Separate inference worker for llama-server.
+# GGUF models (7B–70B params) need 4–48 GB RAM.
+# GPU nodes are strongly recommended for acceptable token rates.
+#
+# The main nyx-server connects via LLM_SERVICE_URL.
+# In dev mode, llama-server is still spawned as a child process
+# inside the main server pod (bootstrap.ts). This deployment is
+# the production path: run inference on dedicated GPU nodes.
+# ──────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nyx-llama-worker
+  namespace: nyx-production
+  labels:
+    app: nyx-llama
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nyx-llama
+  template:
+    metadata:
+      labels:
+        app: nyx-llama
+    spec:
+      # GPU node selector — remove if running CPU-only quantized models
+      # nodeSelector:
+      #   accelerator: nvidia-tesla
+      # tolerations:
+      #   - key: nvidia.com/gpu
+      #     operator: Exists
+      #     effect: NoSchedule
+      containers:
+      - name: llama
+        image: ghcr.io/yashas-30/nyx:latest
+        command: ["llama-server"]
+        args:
+          - --model
+          - /models/llama-8b.Q4_K_M.gguf
+          - --host
+          - 0.0.0.0
+          - --port
+          - "8080"
+          - --n-gpu-layers
+          - "99"
+        ports:
+        - containerPort: 8080
+          name: inference
+        env:
+        - name: LLAMA_N_GPU_LAYERS
+          value: "99"
+        volumeMounts:
+        - name: models
+          mountPath: /models
+        resources:
+          requests:
+            cpu: 4000m
+            memory: 8Gi
+          limits:
+            cpu: 8000m
+            memory: 48Gi
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: nyx-models-pvc

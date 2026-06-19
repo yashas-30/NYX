@@ -641,11 +641,13 @@ export const useChatLogic = ({
           });
           
           try {
+            const planProvider = detectProvider(modelToUse);
+            const planApiKey = getEffectiveApiKey(planProvider, apiKeys);
             const planResponse = await AIService.execute(
-              'gemini-3.1-flash-lite',
-              detectProvider('gemini-3.1-flash-lite'),
+              modelToUse,
+              planProvider,
               `Task: ${prompt}\n\nPlease generate a very brief, high-level implementation plan for this task in a few bullet points. Do not execute the task yet.`,
-              getEffectiveApiKey(detectProvider('gemini-3.1-flash-lite'), apiKeys),
+              planApiKey,
               'You are an AI planner.',
               { ...modelSettings, temperature: 0.2 }
             );

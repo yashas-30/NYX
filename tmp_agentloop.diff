@@ -1,0 +1,470 @@
+diff --git a/apps/web/src/core/agents/agentLoop.ts b/apps/web/src/core/agents/agentLoop.ts
+index b012e223..00cdbf40 100644
+--- a/apps/web/src/core/agents/agentLoop.ts
++++ b/apps/web/src/core/agents/agentLoop.ts
+@@ -24,6 +24,7 @@ import { MemoryStore } from './memoryStore';
+ import { TrajectoryLogger } from '@src/infrastructure/services/trajectoryLogger';
+ import { BrowserService } from '@src/core/services/browserService';
+ import { useNyxStore } from '@src/shared/store/useNyxStore';
++import { useHermesStore } from '../../stores/useHermesStore';
+ 
+ // Runtime environment detection
+ const isTauriEnv = typeof window !== 'undefined' &&
+@@ -98,8 +99,80 @@ export interface AgentLoopConfig {
+   agentType?: string;
+   isFastIntent?: boolean;
+   signal?: AbortSignal;
++  images?: any[];
++  searchContextPromise?: Promise<string>;
++  autoApproveAll?: boolean;
++  autoApproveTools?: string[];
+ }
+ 
++// ── Hermes tool definitions ───────────────────────────────────────────────────
++
++export const HERMES_TOOLS: ToolDefinition[] = [
++  {
++    name: 'manage_hermes_task',
++    description: 'Manage tasks in the autonomous task queue. Use this to create, update, delete, or list tasks.',
++    parameters: {
++      type: 'object',
++      properties: {
++        action: { type: 'string', description: 'The action to perform', enum: ['create', 'update', 'delete', 'list'] },
++        taskId: { type: 'string', description: 'The ID of the task to update/delete' },
++        title: { type: 'string', description: 'The title of the task (required for create)' },
++        description: { type: 'string', description: 'The description of the task (required for create)' },
++        status: { type: 'string', description: 'The status of the task', enum: ['pending', 'running', 'completed', 'failed', 'paused'] },
++        progress: { type: 'number', description: 'The progress percentage (0-100)' },
++        log: { type: 'string', description: 'Append a new log message to the task history' }
++      },
++      required: ['action']
++    }
++  },
++  {
++    name: 'manage_hermes_memory',
++    description: 'Query, add, or delete entities, relations, and observations in the structured persistent memory graph.',
++    parameters: {
++      type: 'object',
++      properties: {
++        action: { type: 'string', description: 'The action to perform', enum: ['add_entity', 'delete_entity', 'add_relation', 'delete_relation', 'add_observation', 'delete_observation', 'query'] },
++        entityId: { type: 'string', description: 'The ID of the entity (for add_observation or delete_entity)' },
++        entityName: { type: 'string', description: 'The name of the entity (for add_entity or add_relation)' },
++        entityType: { type: 'string', description: 'The type of the entity (for add_entity)' },
++        entityDescription: { type: 'string', description: 'The description of the entity (for add_entity)' },
++        source: { type: 'string', description: 'The source entity name or ID (for add_relation)' },
++        target: { type: 'string', description: 'The target entity name or ID (for add_relation)' },
++        relationType: { type: 'string', description: 'The relation type (for add_relation)' },
++        id: { type: 'string', description: 'The ID of the element to delete (entityId, relationId, or observationId)' },
++        fact: { type: 'string', description: 'The observed fact to save (for add_observation)' },
++        query: { type: 'string', description: 'Fuzzy query term to search observations/entities' }
++      },
++      required: ['action']
++    }
++  },
++  {
++    name: 'schedule_hermes_cron',
++    description: 'Configure and schedule recurring operator crons or background jobs.',
++    parameters: {
++      type: 'object',
++      properties: {
++        action: { type: 'string', description: 'The action to perform', enum: ['create', 'update', 'delete', 'list'] },
++        cronId: { type: 'string', description: 'The ID of the cron to update/delete' },
++        name: { type: 'string', description: 'The name of the schedule job' },
++        description: { type: 'string', description: 'The purpose of the job' },
++        expression: { type: 'string', description: 'Standard cron expression, e.g. "0 9 * * 1-5" (every weekday at 9am)' },
++        prompt: { type: 'string', description: 'The prompt instructions to run when this cron triggers' },
++        isActive: { type: 'boolean', description: 'Whether to enable or pause the cron' }
++      },
++      required: ['action']
++    }
++  },
++  {
++    name: 'get_system_diagnostics',
++    description: 'Retrieve OS and sandbox runtime integrity statistics for the current environment.',
++    parameters: {
++      type: 'object',
++      properties: {}
++    }
++  }
++];
++
+ // ── Built-in tool definitions ─────────────────────────────────────────────────
+ 
+ export const BUILTIN_TOOLS: ToolDefinition[] = [
+@@ -438,7 +511,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
+ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
+   const args = toolCall.arguments;
+ 
+-  if (isTauriEnv) {
++  if (isTauriEnv && !['manage_hermes_task', 'manage_hermes_memory', 'schedule_hermes_cron', 'get_system_diagnostics'].includes(toolCall.name)) {
+     try {
+       const result = await tauriInvoke<string>('run_agent_tool', {
+         name: toolCall.name,
+@@ -528,6 +601,165 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
+         }
+         return { toolCallId: toolCall.id, name: toolCall.name, result: `Memory not found: "${idOrFact}"`, isError: true };
+       }
++      case 'manage_hermes_task': {
++        const action = String(args.action || '');
++        const taskId = String(args.taskId || '');
++        const title = String(args.title || '');
++        const description = String(args.description || '');
++        const status = args.status as any;
++        const progress = typeof args.progress === 'number' ? args.progress : undefined;
++        const log = String(args.log || '');
++
++        const store = useHermesStore.getState();
++
++        if (action === 'create') {
++          if (!title || !description) throw new Error('Missing title or description for create action');
++          const id = store.addTask(title, description);
++          if (isTauriEnv) {
++            await tauriInvoke('db_create_hermes_task', { id, title, description, status: 'pending', progress: 0 });
++          }
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully created task. Task ID: ${id}`, isError: false };
++        } else if (action === 'update') {
++          if (!taskId) throw new Error('Missing taskId for update action');
++          const updates: any = {};
++          if (status) updates.status = status;
++          if (progress !== undefined) updates.progress = progress;
++          if (updates.status === 'completed') updates.completedAt = new Date().toISOString();
++          store.updateTask(taskId, updates);
++          if (log) store.appendTaskLog(taskId, `[LLM Update] ${log}`);
++          if (isTauriEnv) {
++            await tauriInvoke('db_update_hermes_task', { 
++              id: taskId, 
++              status: updates.status || null, 
++              progress: updates.progress !== undefined ? updates.progress : null, 
++              logMessage: log || null 
++            });
++          }
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully updated task ${taskId}`, isError: false };
++        } else if (action === 'delete') {
++          if (!taskId) throw new Error('Missing taskId for delete action');
++          store.deleteTask(taskId);
++          if (isTauriEnv) {
++            await tauriInvoke('db_delete_hermes_task', { id: taskId });
++          }
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully deleted task ${taskId}`, isError: false };
++        } else if (action === 'list') {
++          const list = isTauriEnv ? await tauriInvoke('db_get_hermes_tasks') : store.tasks;
++          return { toolCallId: toolCall.id, name: toolCall.name, result: JSON.stringify(list, null, 2), isError: false };
++        }
++        throw new Error(`Unsupported action: ${action}`);
++      }
++
++      case 'manage_hermes_memory': {
++        const action = String(args.action || '');
++        const entityId = String(args.entityId || '');
++        const entityName = String(args.entityName || '');
++        const entityType = String(args.entityType || '');
++        const entityDescription = String(args.entityDescription || '');
++        const source = String(args.source || '');
++        const target = String(args.target || '');
++        const relationType = String(args.relationType || '');
++        const id = String(args.id || '');
++        const fact = String(args.fact || '');
++        const query = String(args.query || '');
++
++        const store = useHermesStore.getState();
++
++        if (action === 'add_entity') {
++          if (!entityName || !entityType) throw new Error('Missing entityName or entityType');
++          const newId = store.addEntity(entityName, entityType, entityDescription);
++          if (isTauriEnv) await tauriInvoke('db_add_hermes_entity', { id: newId, name: entityName, entityType, description: entityDescription || null });
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully added entity. Entity ID: ${newId}`, isError: false };
++        } else if (action === 'delete_entity') {
++          if (!id) throw new Error('Missing id for delete_entity');
++          store.deleteEntity(id);
++          // Optional: handle cascading delete via Rust later
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully deleted entity ${id}`, isError: false };
++        } else if (action === 'add_relation') {
++          if (!source || !target || !relationType) throw new Error('Missing source, target, or relationType');
++          const newId = store.addRelation(source, target, relationType);
++          if (isTauriEnv) await tauriInvoke('db_add_hermes_relation', { id: newId, sourceId: source, targetId: target, relationType });
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully added relation. Relation ID: ${newId}`, isError: false };
++        } else if (action === 'delete_relation') {
++          if (!id) throw new Error('Missing id for delete_relation');
++          store.deleteRelation(id);
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully deleted relation ${id}`, isError: false };
++        } else if (action === 'add_observation') {
++          if (!entityId || !fact) throw new Error('Missing entityId or fact');
++          const newId = store.addObservation(entityId, fact);
++          if (isTauriEnv) await tauriInvoke('db_add_hermes_observation', { id: newId, entityId, fact });
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully added observation. Observation ID: ${newId}`, isError: false };
++        } else if (action === 'delete_observation') {
++          if (!id) throw new Error('Missing id for delete_observation');
++          store.deleteObservation(id);
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully deleted observation ${id}`, isError: false };
++        } else if (action === 'query') {
++          if (isTauriEnv) {
++            const entities: any[] = await tauriInvoke('db_get_hermes_entities');
++            const observations: any[] = await tauriInvoke('db_get_hermes_observations');
++            const matchedEntities = entities.filter(e => e.name.toLowerCase().includes(query.toLowerCase()) || (e.description && e.description.toLowerCase().includes(query.toLowerCase())));
++            const matchedObservations = observations.filter(o => o.fact.toLowerCase().includes(query.toLowerCase()));
++            return { toolCallId: toolCall.id, name: toolCall.name, result: JSON.stringify({ entities: matchedEntities, observations: matchedObservations }, null, 2), isError: false };
++          } else {
++            const matchedEntities = store.entities.filter(e => e.name.toLowerCase().includes(query.toLowerCase()) || e.description.toLowerCase().includes(query.toLowerCase()));
++            const matchedObservations = store.observations.filter(o => o.fact.toLowerCase().includes(query.toLowerCase()));
++            return { toolCallId: toolCall.id, name: toolCall.name, result: JSON.stringify({ entities: matchedEntities, observations: matchedObservations }, null, 2), isError: false };
++          }
++        }
++        throw new Error(`Unsupported action: ${action}`);
++      }
++
++      case 'schedule_hermes_cron': {
++        const action = String(args.action || '');
++        const cronId = String(args.cronId || '');
++        const name = String(args.name || '');
++        const description = String(args.description || '');
++        const expression = String(args.expression || '');
++        const prompt = String(args.prompt || '');
++        const isActive = args.isActive !== false;
++
++        const store = useHermesStore.getState();
++
++        if (action === 'create') {
++          if (!name || !expression || !prompt) throw new Error('Missing name, expression, or prompt');
++          const id = store.addCron(name, description, expression, prompt);
++          if (isTauriEnv) await tauriInvoke('db_create_hermes_cron', { id, name, description: description || null, expression, prompt });
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully created cron job. Cron ID: ${id}`, isError: false };
++        } else if (action === 'update') {
++          if (!cronId) throw new Error('Missing cronId for update');
++          const updates: any = {};
++          if (name) updates.name = name;
++          if (description) updates.description = description;
++          if (expression) updates.cronExpression = expression;
++          if (prompt) updates.prompt = prompt;
++          if (args.isActive !== undefined) updates.isActive = isActive;
++          store.updateCron(cronId, updates);
++          // Tauri update endpoint if needed...
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully updated cron job ${cronId}`, isError: false };
++        } else if (action === 'delete') {
++          if (!cronId) throw new Error('Missing cronId for delete');
++          store.deleteCron(cronId);
++          // Tauri delete endpoint if needed...
++          return { toolCallId: toolCall.id, name: toolCall.name, result: `Successfully deleted cron job ${cronId}`, isError: false };
++        } else if (action === 'list') {
++          const list = isTauriEnv ? await tauriInvoke('db_get_hermes_crons') : store.crons;
++          return { toolCallId: toolCall.id, name: toolCall.name, result: JSON.stringify(list, null, 2), isError: false };
++        }
++        throw new Error(`Unsupported action: ${action}`);
++      }
++
++      case 'get_system_diagnostics': {
++        const store = useHermesStore.getState();
++        store.runDiagnostics();
++        const data = store.diagnostics;
++        return {
++          toolCallId: toolCall.id,
++          name: toolCall.name,
++          result: `=== NYX Hermes System Diagnostics ===\nOS: ${data.os}\nCPU: ${data.cpu}\nMemory: ${data.memory}\nSandbox status: ${data.sandboxStatus}\nActive MCP Servers: ${data.activeMcpServers.join(', ')}\nLast check time: ${data.lastCheck}`,
++          isError: false
++        };
++      }
++
+       default:
+         return {
+           toolCallId: toolCall.id,
+@@ -546,6 +778,12 @@ async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
+   }
+ }
+ 
++export async function executeFrontendTool(name: string, args: any): Promise<string> {
++  const fakeToolCall = { id: 'plugin_call', name, arguments: args };
++  const res = await executeTool(fakeToolCall);
++  return res.result;
++}
++
+ 
+ // ── Agentic loop ──────────────────────────────────────────────────────────────
+ 
+@@ -612,54 +850,77 @@ export async function* runAgentLoop(
+     let finishReason: string | undefined;
+     let pendingToolCalls: ToolCall[] = [];
+ 
+-    try {
+-      await AIService.execute(
+-        modelId,
+-        provider,
+-        // BUG 3 FIX: Always pass the original user query as the "prompt", not the last tool result
+-        originalPrompt,
+-        apiKey,
+-        systemInstruction,
+-        settings,
+-        (event: { type: string; content: string | any[]; final: boolean }) => {
+-          if (event.type === 'text' && typeof event.content === 'string') {
+-            accumulatedText += event.content;
+-          } else if (event.type === 'tool_calls' && Array.isArray(event.content)) {
+-            pendingToolCalls = event.content.map((tc: any) => {
+-              const name = tc.name || tc.function?.name || 'unknown';
+-              let args = tc.arguments || tc.function?.arguments || {};
+-              if (typeof args === 'string') {
+-                try {
+-                  args = JSON.parse(args);
+-                } catch {
+-                  args = {};
+-                }
+-              }
+-              return {
+-                id: tc.id || `${name}_${Date.now()}`,
+-                name,
+-                arguments: args
+-              } as ToolCall;
+-            });
++    const eventQueue: AgentLoopEvent[] = [];
++    let resolveNextEvent: (() => void) | null = null;
++    let isExecuting = true;
++    let executeError: any = null;
++
++    const executePromise = AIService.execute(
++      modelId,
++      provider,
++      // BUG 3 FIX: Always pass the original user query as the "prompt", not the last tool result
++      originalPrompt,
++      apiKey,
++      systemInstruction,
++      settings,
++      (event: { type: string; content: string | any[]; final: boolean }) => {
++        if (event.type === 'text' && typeof event.content === 'string') {
++          accumulatedText += event.content;
++          eventQueue.push({ type: 'text', content: event.content });
++          if (resolveNextEvent) {
++            resolveNextEvent();
++            resolveNextEvent = null;
+           }
+-        },
+-        signal,
+-        {
+-          history: messages.slice(0, -1), // exclude current prompt (it's the actual prompt arg)
+-          tools: activeTools as any,
+-          streamEvents: true,
++        } else if (event.type === 'tool_calls' && Array.isArray(event.content)) {
++          pendingToolCalls = event.content.map((tc: any) => {
++            const name = tc.name || tc.function?.name || 'unknown';
++            let args = tc.arguments || tc.function?.arguments || {};
++            if (typeof args === 'string') {
++              try {
++                args = JSON.parse(args);
++              } catch {
++                args = {};
++              }
++            }
++            return {
++              id: tc.id || `${name}_${Date.now()}`,
++              name,
++              arguments: args
++            } as ToolCall;
++          });
+         }
+-      );
+-    } catch (err: unknown) {
+-      const msg = err instanceof Error ? err.message : String(err);
++      },
++      signal,
++      {
++        history: messages.slice(0, -1), // exclude current prompt (it's the actual prompt arg)
++        tools: activeTools as any,
++        streamEvents: true,
++      }
++    ).catch(err => {
++      executeError = err;
++    }).finally(() => {
++      isExecuting = false;
++      if (resolveNextEvent) {
++        resolveNextEvent();
++        resolveNextEvent = null;
++      }
++    });
++
++    while (isExecuting || eventQueue.length > 0) {
++      if (eventQueue.length > 0) {
++        yield eventQueue.shift()!;
++      } else if (isExecuting) {
++        await new Promise<void>(resolve => resolveNextEvent = resolve);
++      }
++    }
++
++    if (executeError) {
++      const msg = executeError instanceof Error ? executeError.message : String(executeError);
+       yield { type: 'error', content: `LLM error on turn ${iterations}: ${msg}` };
+       return;
+     }
+ 
+-    // Emit whatever text was generated this turn
+-    if (accumulatedText) {
+-      yield { type: 'text', content: accumulatedText };
+-    }
++    await executePromise;
+ 
+     if (accumulatedText || pendingToolCalls.length > 0) {
+       // Push assistant turn into history
+@@ -697,25 +958,28 @@ export async function* runAgentLoop(
+       }
+       yield { type: 'tool_result', content: tr.result, toolResult: tr };
+ 
+-      // Yield citations if it's a web search
+-      if (tr.name === 'web_search' && tr.searchResults) {
+-        let index = 1;
+-        for (const r of tr.searchResults) {
+-          yield {
+-            type: 'citation' as any,
+-            content: '',
+-            metadata: {
+-              id: String(index++),
+-              url: r.url,
+-              title: r.title,
+-              snippet: r.snippet,
+-              source: r.title,
+-            }
+-          } as any;
++        // Yield citations if it's a web search with domain extraction and dedup
++  const seenUrls = new Set<string>();
++  if (tr.name === 'web_search' && tr.searchResults) {
++    let index = 1;
++    for (const r of tr.searchResults) {
++      if (seenUrls.has(r.url)) continue;
++      seenUrls.add(r.url);
++      yield {
++        type: 'citation' as any,
++        content: '',
++        metadata: {
++          id: tr.toolCallId + '-' + index,
++          index,
++          url: r.url,
++          title: r.title,
++          snippet: r.snippet,
++          domain: r.domain || (() => { try { return new URL(r.url).hostname.replace('www.', ''); } catch { return r.url; } })(),
+         }
+-      }
++      } as any;
++      index++;
+     }
+-
++  }
+     for (const tr of toolResults) {
+       if (tr.result.startsWith('SCREENSHOT_BASE64:')) {
+          const b64 = tr.result.split(':')[1];
+@@ -847,6 +1111,11 @@ export async function* runTauriAgentLoop(
+   // We don't await this directly because we want to yield events as they come
+   const messages = [...(config.history || []), { role: 'user', content: prompt }];
+   
++  let searchContext = '';
++  if (config.searchContextPromise) {
++    searchContext = await config.searchContextPromise;
++  }
++
+   const invokePromise = invoke('orchestrate_supervisor', {
+     messages,
+     context: {
+@@ -859,6 +1128,10 @@ export async function* runTauriAgentLoop(
+       system_instruction: config.systemInstruction || '',
+       agent_type: config.agentType || 'default',
+       is_fast_intent: config.isFastIntent || false,
++      search_context: searchContext,
++      images: config.images || [],
++      auto_approve_all: config.autoApproveAll,
++      auto_approve_tools: config.autoApproveTools,
+     },
+     event_name: eventName,
+   }).catch((err: any) => {

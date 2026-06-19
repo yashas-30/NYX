@@ -978,13 +978,24 @@ export class AIService {
   ): Promise<EnhancedAIResponse> {
     const parallelResults = await this.executeParallel(configs, prompt, baseOptions);
 
+    const successfulResults = parallelResults.filter(res => !res.text.startsWith('Error: '));
+    if (successfulResults.length === 0) {
+      const firstError = parallelResults[0]?.text || 'Error: All models in ensemble failed.';
+      throw new Error(firstError.replace('Error: ', ''));
+    }
+
     let synthesisPrompt = `I asked multiple AI models the following prompt:\n\n<prompt>${prompt}</prompt>\n\nHere are their responses:\n\n`;
 
-    parallelResults.forEach((res, i) => {
+    successfulResults.forEach((res, i) => {
       synthesisPrompt += `<response model="${res.model}" provider="${res.provider}">\n${res.text}\n</response>\n\n`;
     });
 
-    synthesisPrompt += `Synthesize these responses into a single, high-quality final answer that takes the best parts of each approach.`;
+    synthesisPrompt += `Synthesize these responses into a single, high-quality final answer.
+CRITICAL RULES:
+1. Do NOT use introductory filler like "The synthesis of your query reveals..." or "Here is the combined response".
+2. Do NOT use labels like "Final Answer:" or "Summary of Results:".
+3. Write naturally as if you are directly answering the user's prompt.
+4. Only include the final output, not your reasoning about the synthesis process.`;
 
     const apiKeys = useNyxStore.getState().apiKeys;
     const synthesizerApiKey = getEffectiveApiKey(synthesizerConfig.provider, apiKeys) || baseOptions.apiKey;

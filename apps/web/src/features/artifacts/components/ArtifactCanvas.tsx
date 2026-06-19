@@ -120,6 +120,25 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
     });
   };
 
+  const handleDiffEditorDidMount = (editor: any) => {
+    const originalDispose = editor.dispose;
+    editor.dispose = () => {
+      try {
+        editor.setModel({
+          original: null,
+          modified: null,
+        });
+      } catch (err) {
+        // safely ignore
+      }
+      try {
+        originalDispose.call(editor);
+      } catch (err) {
+        // safely ignore
+      }
+    };
+  };
+
   const handleRequestEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editInstruction.trim() || !selection || !onSubmitPrompt) return;
@@ -377,10 +396,12 @@ User instructions to modify this selection: ${editInstruction}`;
           ) : activeTab === 'diff' ? (
             <div className="w-full h-full overflow-hidden bg-zinc-950">
               <DiffEditor
+                key={`diff-${id || title}`}
                 height="100%"
                 language={getLanguageFromExt(displayedArtifact.language || language)}
                 original={originalContentRef.current || ''}
                 modified={displayedArtifact.content}
+                onMount={handleDiffEditorDidMount}
                 theme="vs-dark"
                 options={{
                   readOnly: true,

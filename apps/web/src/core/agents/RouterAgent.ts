@@ -1,7 +1,7 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
-import { ChatAgent } from './ChatAgent';
+import { ChatAgent } from './chatAgent';
 import { OpenCodeAgent } from './OpenCodeAgent';
 import { ClineAgent } from './ClineAgent';
 import { AIService } from '@src/core/services/ai.service';
@@ -57,7 +57,7 @@ Provide the execution plan as a JSON array of objects with the following schema:
   {
     "id": "task_1",
     "agent": "chat",
-    "task": "A focused, synthesized brief of exactly what this agent needs to do.",
+    "task": "A focused, synthesized brief of exactly what this agent needs to do. YOU MUST INSTRUCT THE AGENT TO AVOID CONVERSATIONAL FILLER AND IMMEDIATELY OUTPUT ARTIFACTS/RESULTS.",
     "dependencies": []
   }
 ]

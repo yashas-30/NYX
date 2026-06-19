@@ -1,5 +1,5 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
-import { runTauriAgentLoop, runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
+import { runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
 import { StreamEvent } from '@src/infrastructure/types';
 import { MemoryStore } from './memoryStore';
 
@@ -48,21 +48,6 @@ export class ResearchAgent extends BaseAgent<ResearchAgentConfig, StreamEvent> {
       timestamp: Date.now()
     });
 
-    const loopConfig = {
-      modelId: this.config.modelId,
-      provider: this.config.provider,
-      apiKey: this.config.apiKey || '',
-      settings: this.config.settings,
-      history: processedHistory,
-      tools: this.config.tools || BUILTIN_TOOLS,
-      signal,
-      maxIterations: this.config.maxDepth || 15,
-    };
-
-    const loop = isTauriEnv
-      ? runTauriAgentLoop(prompt, loopConfig)
-      : runAgentLoop(prompt, loopConfig);
-
-    yield* loop as unknown as AsyncGenerator<StreamEvent>;
+    yield* this.streamFromPythonAPI(prompt, finalSystemPrompt, signal);
   }
 }

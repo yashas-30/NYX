@@ -1,0 +1,12 @@
+{
+  "mcp_servers": {
+    "workspace_toolkit": {
+      "command": "python",
+      "args": ["e:/NYX/agentic_template_2026/custom_mcp_server.py"]
+    },
+    "sqlite": {
+      "command": "uvx",
+      "args": ["mcp-server-sqlite", "--db-path", "e:/NYX/agentic_template_2026/test.db"]
+    }
+  }
+}

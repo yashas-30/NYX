@@ -1,5 +1,13 @@
 import { AISettings, ChatMessage } from '@src/infrastructure/types';
-import type { ToolDefinition } from './agentLoop';
+
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: any;
+  };
+}
 
 export interface BaseAgentConfig {
   modelId: string;
@@ -91,5 +99,131 @@ export abstract class BaseAgent<TConfig extends BaseAgentConfig, TEvent> {
       signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
     }
     return controller.signal;
+  }
+
+  protected async *streamFromPythonAPI(
+    prompt: string,
+    systemInstruction: string,
+    signal: AbortSignal
+  ): AsyncGenerator<any> {
+    const messages = [...(this.config.history || []), { role: 'user', content: prompt }];
+
+    const requestBody = {
+      messages: messages,
+      model: this.config.modelId || 'gpt-4o',
+      provider: this.config.provider || 'openai',
+      api_key: this.config.apiKey,
+      stream: true,
+      system_instruction: systemInstruction
+    };
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      }
+
+      if (!response.body) {
+        throw new Error("No response body from server");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        
+        buffer = lines.pop() || ''; // Keep the incomplete line in the buffer
+
+        for (let line of lines) {
+          line = line.trim();
+          if (line.startsWith('data: ')) {
+            const dataStr = line.replace('data: ', '');
+            if (dataStr === '[DONE]') {
+              yield { type: 'done' };
+              return;
+            }
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.type === 'content') {
+                yield { type: 'text', content: data.content };
+              } else if (data.type === 'tool_start') {
+                yield* this.emitThinking(`Executing tool: ${data.tool_call.function.name}...`, [data.tool_call.function.arguments]);
+                yield {
+                  type: 'tool_start',
+                  tool_call: {
+                    id: data.tool_call.id,
+                    name: data.tool_call.function.name,
+                    args: data.tool_call.function.arguments
+                  }
+                };
+              } else if (data.type === 'tool_execution') {
+                yield { type: 'tool_running', name: data.tool };
+              } else if (data.type === 'tool_result') {
+                yield* this.emitThinking(`Tool result received.`, [data.result]);
+                yield {
+                  type: 'tool_done',
+                  name: data.id,
+                  result: data.result
+                };
+              } else if (data.type === 'error') {
+                yield { type: 'error', content: data.error };
+              } else if (data.type === 'done') {
+                yield { type: 'done' };
+              }
+            } catch (e) {
+              console.error("Error parsing SSE JSON", e, line);
+            }
+          } else if (line.startsWith('{')) {
+             try {
+                const data = JSON.parse(line);
+                if (data.type === 'content') {
+                  yield { type: 'text', content: data.content };
+                } else if (data.type === 'tool_start') {
+                  yield* this.emitThinking(`Executing tool: ${data.tool_call.function.name}...`, [data.tool_call.function.arguments]);
+                  yield {
+                    type: 'tool_start',
+                    tool_call: {
+                      id: data.tool_call.id,
+                      name: data.tool_call.function.name,
+                      args: data.tool_call.function.arguments
+                    }
+                  };
+                } else if (data.type === 'tool_execution') {
+                  yield { type: 'tool_running', name: data.tool };
+                } else if (data.type === 'tool_result') {
+                  yield* this.emitThinking(`Tool result received.`, [data.result]);
+                  yield {
+                    type: 'tool_done',
+                    name: data.id,
+                    result: data.result
+                  };
+                } else if (data.type === 'error') {
+                  yield { type: 'error', content: data.error };
+                } else if (data.type === 'done') {
+                  yield { type: 'done' };
+                }
+             } catch (e) {}
+          }
+        }
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        yield { type: 'error', content: 'Request cancelled' };
+      } else {
+        yield { type: 'error', content: e.message };
+      }
+    }
   }
 }

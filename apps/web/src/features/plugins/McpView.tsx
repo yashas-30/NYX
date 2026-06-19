@@ -4,6 +4,7 @@ import {
   Server, Plug, CheckCircle, AlertCircle, XCircle, Plus, Trash2, Settings, Terminal, RefreshCw, ArrowRight, Globe, Database, FileText, Search, Zap, ChevronRight
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
+import { McpRegistry } from '@src/core/mcp/McpRegistry';
 
 const isTauriEnv = typeof window !== 'undefined' &&
   ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
@@ -115,11 +116,15 @@ const BUILTIN_SERVERS: McpServer[] = [
 ];
 
 const AVAILABLE_SERVERS: Omit<McpServer, 'status' | 'isBuiltin' | 'tools' | 'resources'>[] = [
-  { id: 'mcp-slack', name: 'Slack', description: 'Send messages and read channels from Slack workspaces', transport: 'sse', url: 'https://mcp-slack-server.example.com/sse', env: { SLACK_TOKEN: '' } },
-  { id: 'mcp-notion', name: 'Notion', description: 'Read and write Notion pages and databases', transport: 'sse', url: 'https://mcp-notion-server.example.com/sse', env: { NOTION_TOKEN: '' } },
+  { id: 'mcp-slack', name: 'Slack', description: 'Send messages and read channels from Slack workspaces', transport: 'sse', url: 'http://localhost:3001/sse', env: { SLACK_TOKEN: '' } },
+  { id: 'mcp-notion', name: 'Notion', description: 'Read and write Notion pages and databases', transport: 'sse', url: 'http://localhost:3002/sse', env: { NOTION_TOKEN: '' } },
   { id: 'mcp-brave', name: 'Brave Search', description: 'Search the web using Brave Search API', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-brave-search'], env: { BRAVE_API_KEY: '' } },
-  { id: 'mcp-puppeteer', name: 'Puppeteer', description: 'Browser automation using Puppeteer for web scraping', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'], env: {} },
-  { id: 'mcp-sqlite', name: 'SQLite', description: 'Query and manage SQLite databases', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-sqlite', '/path/to/db.sqlite'], env: {} },
+  { id: 'mcp-puppeteer', name: 'Puppeteer Browser', description: 'Browser automation using Puppeteer for web scraping', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'], env: {} },
+  { id: 'mcp-sqlite', name: 'SQLite', description: 'Query and manage SQLite databases', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-sqlite', '/workspace/db.sqlite'], env: {} },
+  { id: 'mcp-github-official', name: 'GitHub (Official)', description: 'Full access to GitHub API', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_PERSONAL_ACCESS_TOKEN: '' } },
+  { id: 'mcp-google-maps', name: 'Google Maps', description: 'Access Google Maps directions and places API', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-google-maps'], env: { GOOGLE_MAPS_API_KEY: '' } },
+  { id: 'mcp-linear', name: 'Linear', description: 'Manage Linear issues, projects, and teams', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-linear'], env: { LINEAR_API_KEY: '' } },
+  { id: 'mcp-filesystem-ext', name: 'Filesystem (Extended)', description: 'Extended file operations', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/workspace'], env: {} },
 ];
 
 export default function McpView() {
@@ -156,6 +161,50 @@ export default function McpView() {
 
     setIsConnecting(serverId);
 
+    // 1. Handle SSE connections directly through the web client registry
+    if (server.transport === 'sse') {
+      try {
+        if (server.status === 'connected') {
+          await McpRegistry.disconnectServer(server.id);
+          setServers((prev) =>
+            prev.map((s) => (s.id === serverId ? { ...s, status: 'disconnected' } : s))
+          );
+          toast.success(`Disconnected from SSE server '${server.name}'`);
+        } else {
+          await McpRegistry.connectServer({
+            id: server.id,
+            name: server.name,
+            url: server.url || '',
+          });
+          
+          // Fetch the dynamic tools that were just connected
+          const allMcpTools = await McpRegistry.getAllTools();
+          const serverTools = allMcpTools
+            .filter((t) => t._mcpServerId === server.id)
+            .map((t) => ({
+              name: t.name,
+              description: t.description || 'MCP Tool',
+              parameters: t.inputSchema || {},
+            }));
+
+          setServers((prev) =>
+            prev.map((s) => (s.id === serverId ? { ...s, status: 'connected', tools: serverTools } : s))
+          );
+          toast.success(`Connected to SSE server '${server.name}'`);
+        }
+      } catch (err: any) {
+        console.error(err);
+        setServers((prev) =>
+          prev.map((s) => (s.id === serverId ? { ...s, status: 'error' } : s))
+        );
+        toast.error(`SSE connection error: ${err.message || err}`);
+      } finally {
+        setIsConnecting(null);
+      }
+      return;
+    }
+
+    // 2. Handle STDIO connections (requires Tauri backend to spawn process)
     if (isTauriEnv) {
       try {
         if (server.status === 'connected') {
@@ -187,18 +236,12 @@ export default function McpView() {
         setIsConnecting(null);
       }
     } else {
-      setTimeout(() => {
-        setServers((prev) =>
-          prev.map((s) => {
-            if (s.id === serverId) {
-              const newStatus = s.status === 'connected' ? 'disconnected' : 'connected';
-              return { ...s, status: newStatus as any };
-            }
-            return s;
-          })
-        );
-        setIsConnecting(null);
-      }, 1000);
+      // Browser environment trying to run stdio
+      setServers((prev) =>
+        prev.map((s) => (s.id === serverId ? { ...s, status: 'error' } : s))
+      );
+      toast.error(`STDIO servers require the Desktop App to spawn local processes.`);
+      setIsConnecting(null);
     }
   };
 

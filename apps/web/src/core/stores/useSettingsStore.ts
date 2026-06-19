@@ -17,6 +17,11 @@ export interface ModelSettings {
   contextMode?: 'off' | 'prune' | 'summarize';
 }
 
+export interface ToolPermissions {
+  autoApproveAll: boolean;
+  autoApproveTools: string[];
+}
+
 const DEFAULT_CHAT_SETTINGS: ModelSettings = {
   temperature: 0.7,
   maxTokens: 8192,
@@ -51,15 +56,22 @@ const DEFAULT_CODER_SETTINGS: ModelSettings = {
   contextMode: 'prune',
 };
 
+const DEFAULT_TOOL_PERMISSIONS: ToolPermissions = {
+  autoApproveAll: false,
+  autoApproveTools: [],
+};
+
 interface SettingsState {
   chatSettings: ModelSettings;
   coderSettings: ModelSettings;
+  toolPermissions: ToolPermissions;
 
   // Actions
   setChatSettings: (settings: ModelSettings) => void;
   setCoderSettings: (settings: ModelSettings) => void;
   updateChatSettings: (settings: Partial<ModelSettings>) => void;
   updateCoderSettings: (settings: Partial<ModelSettings>) => void;
+  updateToolPermissions: (permissions: Partial<ToolPermissions>) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => {
@@ -83,9 +95,20 @@ export const useSettingsStore = create<SettingsState>((set) => {
     return DEFAULT_CODER_SETTINGS;
   };
 
+  const getInitialToolPermissions = (): ToolPermissions => {
+    const saved = localStorage.getItem('nyx_tool_permissions');
+    if (saved) {
+      try {
+        return { ...DEFAULT_TOOL_PERMISSIONS, ...JSON.parse(saved) };
+      } catch {}
+    }
+    return DEFAULT_TOOL_PERMISSIONS;
+  };
+
   return {
     chatSettings: getInitialChatSettings(),
     coderSettings: getInitialCoderSettings(),
+    toolPermissions: getInitialToolPermissions(),
 
     setChatSettings: (settings) => {
       set({ chatSettings: settings });
@@ -110,6 +133,14 @@ export const useSettingsStore = create<SettingsState>((set) => {
         const next = { ...state.coderSettings, ...updates };
         localStorage.setItem('nyx_coder_settings', JSON.stringify(next));
         return { coderSettings: next };
+      });
+    },
+
+    updateToolPermissions: (updates) => {
+      set((state) => {
+        const next = { ...state.toolPermissions, ...updates };
+        localStorage.setItem('nyx_tool_permissions', JSON.stringify(next));
+        return { toolPermissions: next };
       });
     },
   };

@@ -24,6 +24,7 @@ import { MemoryStore } from './memoryStore';
 import { TrajectoryLogger } from '@src/infrastructure/services/trajectoryLogger';
 import { BrowserService } from '@src/core/services/browserService';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { McpRegistry } from '@src/core/mcp/McpRegistry';
 
 // Runtime environment detection
 const isTauriEnv = typeof window !== 'undefined' &&
@@ -438,6 +439,32 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
 async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
   const args = toolCall.arguments;
 
+  // 1. Check if this is an MCP tool
+  const mcpServerId = await McpRegistry.findServerForTool(toolCall.name);
+  if (mcpServerId) {
+    try {
+      const result = await McpRegistry.callTool(mcpServerId, toolCall.name, args);
+      // Format MCP content blocks into string result
+      let resultString = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+      if (result && result.content && Array.isArray(result.content)) {
+        resultString = result.content.map((c: any) => c.text || JSON.stringify(c)).join('\n');
+      }
+      return {
+        toolCallId: toolCall.id,
+        name: toolCall.name,
+        result: resultString,
+        isError: result.isError || false
+      };
+    } catch (err: any) {
+      return {
+        toolCallId: toolCall.id,
+        name: toolCall.name,
+        result: `MCP Execution Error: ${err.message || String(err)}`,
+        isError: true
+      };
+    }
+  }
+
   if (isTauriEnv) {
     try {
       const result = await tauriInvoke<string>('run_agent_tool', {
@@ -585,6 +612,19 @@ export async function* runAgentLoop(
       display_height_px: 1080,
       display_number: 1,
     } as any);
+  }
+
+  // Phase 2: Dynamically inject MCP tools
+  try {
+    const mcpRawTools = await McpRegistry.getAllTools();
+    const mcpMappedTools = mcpRawTools.map(t => ({
+      name: t.name,
+      description: t.description || 'MCP Tool',
+      parameters: t.inputSchema || { type: 'object', properties: {} }
+    }));
+    activeTools = [...activeTools, ...mcpMappedTools];
+  } catch (err) {
+    console.error("[AgentLoop] Failed to fetch MCP tools:", err);
   }
 
   // Build the message history for the first turn
