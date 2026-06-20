@@ -2,7 +2,7 @@ import { BaseAgent, BaseAgentConfig } from './baseAgent';
 import { runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
-import { useSettingsStore } from '@src/core/stores/useSettingsStore';
+import { useSettingsStore } from '@src/shared/store/useSettingsStore';
 
 export interface HermesAgentConfig extends BaseAgentConfig {
   enableToolLoop?: boolean;

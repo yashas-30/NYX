@@ -15,7 +15,7 @@ import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { ModelInfo } from '@src/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { useLiveTimer } from '@src/shared/hooks/useLiveTimer';
-import { useUsageStore } from '@src/core/stores/useUsageStore';
+import { useUsageStore } from '@src/shared/store/useUsageStore';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 
 // ---------------------------------------------------------------------------

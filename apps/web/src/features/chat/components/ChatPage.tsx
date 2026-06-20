@@ -23,6 +23,8 @@ import { ArtifactCanvas } from '../../artifacts/components/ArtifactCanvas';
 import { ContextBar } from '@src/shared/components/ContextBar';
 import { MemoryPanel } from './MemoryPanel';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useChatStore } from '@src/shared/store/useChatStore';
+import { useProjectStore } from '@src/shared/store/useProjectStore';
 import { BranchingTreePanel } from './BranchingTreePanel';
 
 // ---------------------------------------------------------------------------
@@ -139,20 +141,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   // --- Project State ---
   const activeProjectId = useNyxStore((s) => s.activeProjectId);
   const setActiveProjectId = useNyxStore((s) => s.setActiveProjectId);
+  const projects = useProjectStore((s) => s.projects);
 
   const activeProject = useMemo(() => {
     if (!activeProjectId) return null;
-    try {
-      const saved = localStorage.getItem('nyx_projects');
-      if (saved) {
-        const projects = JSON.parse(saved);
-        return projects.find((p: any) => p.id === activeProjectId) || null;
-      }
-    } catch {
-      return null;
-    }
-    return null;
-  }, [activeProjectId]);
+    return projects.find((p) => p.id === activeProjectId) || null;
+  }, [activeProjectId, projects]);
 
   // --- Model resolution ---
   const currentModelId = models['nyx'];

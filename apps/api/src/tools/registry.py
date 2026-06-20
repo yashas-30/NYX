@@ -1,5 +1,6 @@
 from typing import Dict, Any, Callable, List
 import inspect
+import asyncio
 
 class PipelineRegistry:
     def __init__(self):
@@ -25,7 +26,7 @@ class PipelineRegistry:
             if inspect.iscoroutinefunction(func):
                 result = await func(**args)
             else:
-                result = func(**args)
+                result = await asyncio.to_thread(func, **args)
             return str(result)
         except Exception as e:
             return f"Error executing {name}: {str(e)}"

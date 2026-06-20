@@ -12,7 +12,155 @@ export interface AgentExecuteParams {
   images?: any[];
 }
 
+export interface ModelCapabilities {
+  supportsTools: boolean;
+  maxTokens: number;
+  supportsImages: boolean;
+}
+
+export type IntentType = 'code' | 'search' | 'creative' | 'factual' | 'general';
+
 export class AgentsService {
+  /**
+   * Classify user intent based on prompt content.
+   */
+  private classifyIntent(prompt: string): IntentType {
+    const lowerPrompt = prompt.toLowerCase();
+    
+    // Code-related patterns
+    if (
+      lowerPrompt.includes('code') ||
+      lowerPrompt.includes('function') ||
+      lowerPrompt.includes('implement') ||
+      lowerPrompt.includes('refactor') ||
+      lowerPrompt.includes('debug') ||
+      lowerPrompt.includes('fix bug') ||
+      lowerPrompt.includes('typescript') ||
+      lowerPrompt.includes('javascript') ||
+      lowerPrompt.includes('python') ||
+      lowerPrompt.includes('api') ||
+      lowerPrompt.includes('endpoint') ||
+      lowerPrompt.includes('class ') ||
+      lowerPrompt.includes('import ') ||
+      lowerPrompt.includes('export ')
+    ) {
+      return 'code';
+    }
+
+    // Search/web patterns
+    if (
+      lowerPrompt.includes('search') ||
+      lowerPrompt.includes('find') ||
+      lowerPrompt.includes('look up') ||
+      lowerPrompt.includes('what is') ||
+      lowerPrompt.includes('who is') ||
+      lowerPrompt.includes('when did') ||
+      lowerPrompt.includes('latest') ||
+      lowerPrompt.includes('news')
+    ) {
+      return 'search';
+    }
+
+    // Creative patterns
+    if (
+      lowerPrompt.includes('write') ||
+      lowerPrompt.includes('create') ||
+      lowerPrompt.includes('story') ||
+      lowerPrompt.includes('poem') ||
+      lowerPrompt.includes('creative') ||
+      lowerPrompt.includes('imagine') ||
+      lowerPrompt.includes('design')
+    ) {
+      return 'creative';
+    }
+
+    // Factual patterns
+    if (
+      lowerPrompt.includes('explain') ||
+      lowerPrompt.includes('how does') ||
+      lowerPrompt.includes('why') ||
+      lowerPrompt.includes('define') ||
+      lowerPrompt.includes('describe')
+    ) {
+      return 'factual';
+    }
+
+    return 'general';
+  }
+
+  /**
+   * Infer provider from model name.
+   */
+  private inferProviderFromModel(model: string): string {
+    const lowerModel = model.toLowerCase();
+    
+    if (lowerModel.includes('gemini')) return 'gemini';
+    if (lowerModel.includes('gpt') || lowerModel.includes('o1')) return 'openai';
+    if (lowerModel.includes('claude')) return 'anthropic';
+    if (lowerModel.includes('mistral') || lowerModel.includes('mixtral')) return 'mistral';
+    if (lowerModel.includes('llama') || lowerModel.includes('codellama')) return 'ollama';
+    
+    return 'gemini'; // default
+  }
+
+  /**
+   * Get model capabilities based on model name.
+   */
+  private getModelCapabilities(model: string): ModelCapabilities {
+    const lowerModel = model.toLowerCase();
+
+    // Gemini models
+    if (lowerModel.includes('gemini')) {
+      return {
+        supportsTools: true,
+        maxTokens: lowerModel.includes('pro') ? 32768 : 8192,
+        supportsImages: true,
+      };
+    }
+
+    // OpenAI models
+    if (lowerModel.includes('gpt') || lowerModel.includes('o1')) {
+      return {
+        supportsTools: true,
+        maxTokens: lowerModel.includes('4') ? 8192 : 4096,
+        supportsImages: true,
+      };
+    }
+
+    // Claude models
+    if (lowerModel.includes('claude')) {
+      return {
+        supportsTools: true,
+        maxTokens: 8192,
+        supportsImages: true,
+      };
+    }
+
+    // Default
+    return {
+      supportsTools: true,
+      maxTokens: 4096,
+      supportsImages: false,
+    };
+  }
+
+  /**
+   * Get temperature for intent.
+   */
+  private getTemperatureForIntent(intent: IntentType): number {
+    switch (intent) {
+      case 'code':
+        return 0.2;
+      case 'factual':
+        return 0.3;
+      case 'search':
+        return 0.4;
+      case 'creative':
+        return 0.8;
+      default:
+        return 0.5;
+    }
+  }
   async executeAgentStream(
     params: AgentExecuteParams,
     onChunk: (chunk: any) => void,
@@ -20,8 +168,13 @@ export class AgentsService {
   ): Promise<void> {
     const { provider, model, prompt, history, apiKey, gatewayUrls, agentType, images } = params;
 
-    // Define tools specific to the agent type
-    const tools = this.getToolsForAgent(agentType);
+    // Classify intent and get model capabilities
+    const intent = this.classifyIntent(prompt);
+    const capabilities = this.getModelCapabilities(model);
+    const temperature = this.getTemperatureForIntent(intent);
+
+    // Define tools specific to the agent type (only if model supports tools)
+    const tools = capabilities.supportsTools ? this.getToolsForAgent(agentType) : [];
 
     // Define the system prompt
     // fallow-ignore-next-line code-duplication
@@ -44,23 +197,19 @@ export class AgentsService {
     }
     messages.push(userMsg);
 
-    // Call unified engine.
-    // In a full implementation, this service would loop over the responses,
-    // execute tools internally, and then call the engine again.
-    // Since we are proxying tools to the backend, the backend will now intercept tool calls.
-
-    // TODO: Implement backend-side tool execution loop.
-    // For now, we will stream the tool calls down to the client just in case,
-    // or execute them here.
+    // Determine provider from model name if not explicitly provided
+    const resolvedProvider = provider || this.inferProviderFromModel(model);
 
     await UnifiedEngine.executeStream(
       {
-        provider: provider || 'gemini',
+        provider: resolvedProvider,
         model,
         messages,
         apiKey,
         customGatewayUrls: gatewayUrls,
-        tools, // Pass tools to the engine
+        tools,
+        temperature,
+        maxTokens: capabilities.maxTokens,
       },
       onChunk,
       onDone

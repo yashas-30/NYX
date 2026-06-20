@@ -74,8 +74,8 @@ setInterval(() => {
       activeControllers.delete(id);
 
       // Also find and remove from inFlightRequests
-      for (const [key, promise] of AIService.inFlightRequests.entries()) {
-        if (key.includes(id)) {
+      for (const [key, data] of AIService.inFlightRequests.entries()) {
+        if (data.requestId === id) {
           AIService.inFlightRequests.delete(key);
         }
       }
@@ -156,7 +156,7 @@ function recordFailure(provider: string): void {
 // AIService
 // ---------------------------------------------------------------------------
 export class AIService {
-  public static inFlightRequests = new Map<string, Promise<EnhancedAIResponse>>();
+  public static inFlightRequests = new Map<string, { promise: Promise<EnhancedAIResponse>, requestId: string }>();
   private static readonly DEDUPE_TTL_MS = 30000;
   private static cachedVaultStatus: any = null;
   private static cachedVaultStatusTime = 0;
@@ -315,21 +315,12 @@ export class AIService {
       throw new Error(`Circuit breaker open for provider: ${provider}`);
     }
 
-    const dedupeKey = JSON.stringify({
-      sessionId: this.getSessionToken(),
-      provider,
-      model: modelId,
-      prompt,
-      systemInstruction,
-      history: options.history || [],
-      settings: settings || {},
-      tools: options.tools || [],
-      responseFormat: options.responseFormat,
-    });
+    const historyHash = options.history?.length ? `${options.history.length}:${String(options.history[options.history.length - 1]?.content).substring(0, 30)}` : '0';
+    const dedupeKey = `${this.getSessionToken()}:${provider}:${modelId}:${prompt.substring(0, 50)}:${prompt.length}:${historyHash}`;
 
     // Deduplication
     if (this.inFlightRequests.has(dedupeKey)) {
-      const existing = this.inFlightRequests.get(dedupeKey)!;
+      const existing = this.inFlightRequests.get(dedupeKey)!.promise;
       if (onStream) {
         const res = await existing;
         if (res.text) {
@@ -363,7 +354,7 @@ export class AIService {
     });
 
     cleanupPromise.catch(() => {}); // prevent unhandled rejections if unawaited
-    this.inFlightRequests.set(dedupeKey, cleanupPromise);
+    this.inFlightRequests.set(dedupeKey, { promise: cleanupPromise, requestId });
 
     // Auto-cleanup dedupe map after TTL to prevent memory leaks
     setTimeout(() => this.inFlightRequests.delete(dedupeKey), this.DEDUPE_TTL_MS);
@@ -824,7 +815,14 @@ export class AIService {
     messages.push({ role: 'user', content: prompt });
 
     // Auto-inject cache markers for long contexts (e.g. Anthropic Ephemeral Caching)
-    const totalTokens = countTokens(JSON.stringify(messages));
+    let totalTokens = 0;
+    for (const m of messages) {
+      if (typeof m.content === 'string') {
+        totalTokens += countTokens(m.content);
+      } else {
+        totalTokens += countTokens(JSON.stringify(m.content));
+      }
+    }
     if (totalTokens > 4000) {
       // Also cache the system instruction
       if (messages[0]?.role === 'system' && typeof messages[0].content === 'string') {

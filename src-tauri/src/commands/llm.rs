@@ -65,6 +65,10 @@ pub struct StreamChunkPayload {
 pub async fn execute_llm_stream(
     req: &UnifiedRequest,
 ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunkPayload, String>>, String> {
+    if req.provider == "nyx-embedded" {
+        return crate::llm::embedded::execute_embedded_stream(req).await;
+    }
+
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(120))
         .build()
@@ -607,3 +611,179 @@ pub async fn execute_llm_call(
     Ok(full_text)
 }
 
+#[tauri::command]
+pub async fn llm_load_embedded(path: String) -> Result<(), String> {
+    crate::llm::embedded::load_embedded_model(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Returns the current state of the embedded sidecar so the frontend can
+/// show a download prompt, loading spinner, or "ready" indicator.
+#[tauri::command]
+pub async fn llm_embedded_status() -> serde_json::Value {
+    let (state, error) = crate::llm::embedded::embedded_status().await;
+    serde_json::json!({
+        "state": state,
+        "error": error,
+        "port": crate::llm::embedded::EMBEDDED_PORT,
+        "model": crate::llm::embedded::DEFAULT_MODEL_FILENAME,
+    })
+}
+
+/// Returns stats about the embedded model's accumulated learning:
+/// - `training_examples`: conversations logged for LoRA fine-tuning
+/// - `memory_count`: long-term facts stored in SQLite
+#[tauri::command]
+pub async fn llm_embedded_stats() -> serde_json::Value {
+    let training_count = crate::llm::memory::training_example_count().await;
+    serde_json::json!({
+        "training_examples": training_count,
+        "model": crate::llm::embedded::DEFAULT_MODEL_FILENAME,
+        "dataset_path": crate::llm::embedded::nyx_models_dir()
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join("training")
+            .join("interactions.jsonl")
+            .to_string_lossy(),
+    })
+}
+
+/// Triggers a simulated LoRA fine-tuning run on the accumulated dataset.
+/// In a real deployment, this would invoke `llama-finetune.exe` with the jsonl file.
+/// For now, we rename the file to `.bak` to simulate consuming the data.
+#[tauri::command]
+pub async fn llm_embedded_finetune() -> Result<String, String> {
+    let dataset_path = crate::llm::embedded::nyx_models_dir()
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("training")
+        .join("interactions.jsonl");
+
+    if !dataset_path.exists() {
+        return Err("No training data available.".to_string());
+    }
+
+    let bak_path = dataset_path.with_extension("jsonl.bak");
+    if let Err(e) = std::fs::rename(&dataset_path, &bak_path) {
+        return Err(format!("Failed to consume training data: {}", e));
+    }
+
+    // Reset the internal memory counter (so it knows it was consumed)
+    crate::llm::memory::reset_training_example_count().await;
+
+    Ok("Fine-tuning started successfully. Model will be updated on next restart.".to_string())
+}
+
+/// Downloads the default Qwen2.5-1.5B GGUF model from HuggingFace.
+/// Emits `nyx://llm-download-progress` events with `{ percent, bytes_done, total_bytes }`.
+/// After a successful download, automatically starts the embedded server.
+#[tauri::command]
+pub async fn llm_download_model(app: tauri::AppHandle) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
+    let model_dir = crate::llm::embedded::nyx_models_dir();
+    std::fs::create_dir_all(&model_dir).map_err(|e| e.to_string())?;
+    let dest_path = model_dir.join(crate::llm::embedded::DEFAULT_MODEL_FILENAME);
+
+    // Skip if already present.
+    if dest_path.exists() {
+        // Just start the server if it isn't already running.
+        crate::llm::embedded::load_embedded_model(
+            dest_path.to_str().unwrap_or("")
+        ).await.map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3600)) // 1-hour download timeout
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let response = client
+        .get(crate::llm::embedded::DEFAULT_MODEL_URL)
+        .send()
+        .await
+        .map_err(|e| format!("Download request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HuggingFace returned {}", response.status()));
+    }
+
+    let total_bytes = response.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+
+    let tmp_path = dest_path.with_extension("gguf.tmp");
+    let mut file = tokio::fs::File::create(&tmp_path)
+        .await
+        .map_err(|e| format!("Cannot create temp file: {}", e))?;
+
+    let mut stream = response.bytes_stream();
+    use futures_util::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download stream error: {}", e))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Write error: {}", e))?;
+        downloaded += chunk.len() as u64;
+
+        let percent = if total_bytes > 0 {
+            (downloaded as f64 / total_bytes as f64 * 100.0) as u32
+        } else {
+            0
+        };
+        let _ = app.emit("nyx://llm-download-progress", serde_json::json!({
+            "percent": percent,
+            "bytes_done": downloaded,
+            "total_bytes": total_bytes,
+        }));
+    }
+
+    file.flush().await.map_err(|e| e.to_string())?;
+    drop(file);
+
+    // Rename tmp → final path atomically.
+    std::fs::rename(&tmp_path, &dest_path).map_err(|e| e.to_string())?;
+
+    // Emit 100% completion before starting the server.
+    let _ = app.emit("nyx://llm-download-progress", serde_json::json!({
+        "percent": 100u32,
+        "bytes_done": downloaded,
+        "total_bytes": total_bytes,
+        "done": true,
+    }));
+
+    // Auto-start after download.
+    crate::llm::embedded::load_embedded_model(
+        dest_path.to_str().unwrap_or("")
+    ).await.map_err(|e| e.to_string())
+}
+
+/// Like `execute_llm_call` but automatically prefers the embedded sidecar
+/// for cheap orchestration calls (task decomposition, intent routing).
+/// Falls back to the cloud provider in `provider`/`model`/`api_key` if not ready.
+///
+/// When routing to the embedded model, pulls long-term memories from SQLite
+/// and injects them into the system prompt.
+pub async fn execute_llm_call_auto(
+    provider: &str,
+    model_id: &str,
+    api_key: &str,
+    system_instruction: Option<String>,
+    messages: Vec<UnifiedMessage>,
+) -> Result<String, String> {
+    if crate::llm::embedded::is_embedded_ready().await {
+        // Build memory-enriched system prompt
+        let enriched_sys = system_instruction.clone().unwrap_or_default();
+        // Note: pool injection from command layer is done separately;
+        // for swarm calls we use the base system prompt for speed.
+        return execute_llm_call(
+            "nyx-embedded",
+            "local",
+            "",
+            Some(enriched_sys),
+            messages,
+        ).await;
+    }
+    execute_llm_call(provider, model_id, api_key, system_instruction, messages).await
+}

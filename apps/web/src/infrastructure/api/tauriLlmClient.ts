@@ -11,6 +11,7 @@ const PROVIDER_MAX_TOKENS: Record<string, number> = {
   gemini: 8_192,
   ollama: 8_192,
   lmstudio: 8_192,
+  'nyx-embedded': 2_048,  // embedded Qwen 2.5 1.5B — 4096 ctx, 2048 max output
 };
 
 export interface TauriLlmRequest {

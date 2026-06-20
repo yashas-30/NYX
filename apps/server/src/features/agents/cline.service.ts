@@ -298,7 +298,7 @@ export class ClineService {
 
     let providerId = 'gemini';
     let modelId = ClineService.resolveRealGeminiModel(model);
-    let resolvedApiKey = apiKey || env.ANTIGRAVITY_API_KEY || '';
+    let resolvedApiKey = apiKey || '';
 
     // Route local offline runner via openai-compatible provider in Cline
     if (model === 'nyx-native' || modelId.startsWith('nyx-native')) {

@@ -28,6 +28,7 @@ pub struct AppState {
     pub pending_approvals: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
     pub pending_plugin_tools: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
     pub pending_browser_actions: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
+    pub sidecar_port: Arc<std::sync::Mutex<u16>>,
 }
 
 impl Default for AppState {
@@ -41,6 +42,7 @@ impl Default for AppState {
             pending_approvals: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_plugin_tools: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_browser_actions: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            sidecar_port: Arc::new(std::sync::Mutex::new(3010)),
         }
     }
 }
@@ -128,7 +130,7 @@ pub fn run() {
             app_get_version, app_open_external,
             execute_computer_action,
             mcp_start_server, mcp_send_request, mcp_call_tool, mcp_stop_server, mcp_list_servers,
-            llm_stream_request,
+            llm_stream_request, llm_load_embedded, llm_embedded_status, llm_download_model, llm_embedded_stats, llm_embedded_finetune,
             pty_spawn, pty_write, pty_resize, pty_close,
             fs_watch_start, fs_watch_stop, fs_parse_and_chunk_file,
             commands::fs::fs_read_file, commands::fs::fs_write_file, commands::fs::fs_list_dir,
@@ -157,20 +159,41 @@ pub fn run() {
             commands::agent::reject_tool,
             commands::agent::resolve_plugin_tool,
             commands::agent::resolve_browser_action,
+            server_get_ports,
         ])
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let app_handle = window.app_handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
-                });
-                api.prevent_close();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    let app_handle = window.app_handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Some(w) = app_handle.get_webview_window("main") {
+                            let _ = w.hide();
+                        }
+                    });
+                    api.prevent_close();
+                }
+                tauri::WindowEvent::Destroyed => {
+                    // Kill the embedded llama-server when the window is truly destroyed
+                    tauri::async_runtime::spawn(async {
+                        crate::llm::embedded::stop_embedded_model().await;
+                    });
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())
         .expect("error while running NYX");
+}
+
+#[tauri::command]
+fn server_get_ports(state: tauri::State<'_, AppState>) -> serde_json::Value {
+    let port = *state.sidecar_port.lock().unwrap();
+    serde_json::json!({
+        "success": true,
+        "data": {
+            "express_port": port
+        }
+    })
 }
 
 async fn setup_app(handle: &tauri::AppHandle) {
@@ -194,6 +217,48 @@ async fn setup_app(handle: &tauri::AppHandle) {
     {
         let _ = window_vibrancy::apply_mica(&window, Some(true));
         let _ = window_vibrancy::apply_mica(&spotlight, Some(true));
+    }
+
+    // ── Embedded LLM: try to auto-start in background ─────────────────────────
+    // Non-blocking: if the model file exists this completes in ~1.5s.
+    // If missing, sets state to ModelMissing so the frontend can offer download.
+    tauri::async_runtime::spawn(async {
+        crate::llm::embedded::try_autostart_embedded().await;
+    });
+
+    // ── Fastify Backend Sidecar ───────────────────────────────────────────────
+    use tauri_plugin_shell::ShellExt;
+    
+    // Find an ephemeral port
+    let sidecar_port = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .map(|addr| addr.port())
+        .unwrap_or(3001);
+        
+    // Store it in AppState
+    let state = handle.state::<AppState>();
+    *state.sidecar_port.lock().unwrap() = sidecar_port;
+
+    match handle.shell().sidecar("nyx-server") {
+        Ok(cmd) => {
+            let cmd = cmd.env("SIDECAR_PORT", sidecar_port.to_string());
+            match cmd.spawn() {
+                Ok((mut rx, mut child)) => {
+                    tracing::info!("✅ Fastify sidecar started on port {}.", sidecar_port);
+                    tauri::async_runtime::spawn(async move {
+                        while let Some(event) = rx.recv().await {
+                            if let tauri_plugin_shell::process::CommandEvent::Stdout(line) = event {
+                                tracing::debug!("[Fastify] {}", String::from_utf8_lossy(&line));
+                            } else if let tauri_plugin_shell::process::CommandEvent::Stderr(line) = event {
+                                tracing::warn!("[Fastify] {}", String::from_utf8_lossy(&line));
+                            }
+                        }
+                    });
+                }
+                Err(e) => tracing::error!("❌ Failed to spawn Fastify sidecar: {}", e),
+            }
+        }
+        Err(e) => tracing::error!("❌ Failed to locate Fastify sidecar 'nyx-server': {}", e),
     }
 
     tracing::info!("✅ NYX Tauri fully initialized");

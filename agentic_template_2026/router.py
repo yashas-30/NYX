@@ -45,29 +45,7 @@ class HybridModelRouter:
         else:
             raise ValueError("Unsupported cloud provider specified.")
             
-        # 2026 UX Standard: Progressive Disclosure & Generative UI
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an advanced 2026 AI Agent. 
-            You MUST follow two core UI patterns:
-            
-            1. PROGRESSIVE DISCLOSURE:
-            Before you provide your final answer, you MUST enclose your internal reasoning, tool strategy, and logic inside <think>...</think> tags.
-            
-            2. GENERATIVE UI (GenUI):
-            If you are providing structured data like a list of files, a code snippet, or web search results, DO NOT just write it as raw text. Instead, emit a UI Component rendering tag in this exact format:
-            [RENDER_COMPONENT: component_name]
-            { "json": "data" }
-            [/RENDER_COMPONENT]
-            
-            Supported components:
-            - `directory_tree`: For displaying folder contents.
-            - `search_results`: For displaying web search results.
-            - `markdown_card`: For general structured text or code.
-            """),
-            MessagesPlaceholder(variable_name="messages")
-        ])
-        
-        return prompt | model
+        return model
 
     def get_critic_model(self):
         """

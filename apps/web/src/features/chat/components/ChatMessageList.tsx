@@ -26,7 +26,7 @@ import { ArtifactPanel } from './ArtifactPanel';
 import { Citation, CitationCard } from './CitationCard';
 import { SearchResultsPanel } from './SearchResultsPanel';
 import { MemoryPanel } from './MemoryPanel';
-import { ArtifactViewer } from '../../../components/artifacts/ArtifactViewer';
+import { ArtifactViewer } from '@src/features/artifacts/ArtifactViewer';
 import { tts } from '@src/features/voice/tts';
 
 // ---------------------------------------------------------------------------

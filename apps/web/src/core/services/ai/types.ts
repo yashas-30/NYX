@@ -12,7 +12,6 @@ export interface AISettings {
   contextSize?: number;
   batchSize?: number;
   mirostat?: number;
-  antigravity?: boolean;
 }
 
 /** A citation from a web search or RAG source. */

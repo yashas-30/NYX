@@ -62,101 +62,14 @@ export class UnifiedEngine {
 
     const activeKey = Gateway.getActiveKey(provider, apiKey);
 
-    // Prompt pre-processing middleware using Antigravity service
-    let processedMessages = messages;
-    if (settings?.antigravity) {
-      const userMessages = messages.filter((m) => m.role === 'user');
-      if (userMessages.length > 0) {
-        const lastUserMessage = userMessages[userMessages.length - 1];
-        const originalPrompt = lastUserMessage.content;
-
-        try {
-          const port = env.ANTIGRAVITY_PORT || 3003;
-          const activeGeminiKey = Gateway.getActiveKey(
-            'gemini',
-            provider === 'gemini' ? apiKey : undefined
-          );
-
-          let domain = 'general';
-          if (
-            originalPrompt.includes('```') ||
-            originalPrompt.includes('function') ||
-            originalPrompt.includes('class')
-          ) {
-            domain = 'coding';
-          } else if (
-            originalPrompt.toLowerCase().includes('story') ||
-            originalPrompt.toLowerCase().includes('creative')
-          ) {
-            domain = 'creative';
-          }
-
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
-          const preprocessRes = await fetch(`http://127.0.0.1:${port}/preprocess`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              prompt: originalPrompt,
-              apiKey: activeGeminiKey,
-              domain,
-            }),
-            signal: controller.signal,
-          });
-          clearTimeout(timeoutId);
-
-          if (preprocessRes.ok) {
-            const data = await preprocessRes.json();
-            if (data && typeof data.prompt === 'string') {
-              const lastUserIdx = messages.lastIndexOf(lastUserMessage);
-              if (lastUserIdx >= 0) {
-                processedMessages = [...messages];
-                processedMessages[lastUserIdx] = {
-                  ...processedMessages[lastUserIdx],
-                  content: data.prompt,
-                };
-
-                try {
-                  const { db } = await import('../db/client.js');
-                  const { promptOptimizations } = await import('../db/schema.js');
-                  const { randomUUID } = await import('crypto');
-
-                  const optimizationId = randomUUID();
-                  await db.insert(promptOptimizations).values({
-                    id: optimizationId,
-                    originalPrompt,
-                    optimizedPrompt: data.prompt,
-                    domain: data.domain || domain,
-                    version: data.version || 'unknown',
-                    timestamp: Date.now(),
-                  });
-
-                  console.log(
-                    `[Antigravity Middleware] Optimized prompt successfully (ID: ${optimizationId}).`
-                  );
-                  writeChunk({ chunk: `\n\n<!-- ANTIGRAVITY_META:${optimizationId} -->\n\n` });
-                } catch (dbErr) {
-                  console.error('[Antigravity Middleware] Failed to log optimization:', dbErr);
-                }
-              }
-            }
-          }
-        } catch (err: any) {
-          console.warn(
-            '[Antigravity Middleware] Prompt preprocessing failed (non-fatal):',
-            err.message
-          );
-        }
-      }
-    }
+    // Prompt pre-processing middleware removed
 
     // 2. Route to provider-specific handler
     switch (provider) {
       case 'gemini':
         return this.streamGemini(
           model,
-          processedMessages,
+          messages,
           activeKey,
           settings,
           customGatewayUrls,
@@ -294,7 +207,8 @@ export class UnifiedEngine {
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
-    const url = 'http://127.0.0.1:12345/v1/chat/completions';
+    const llamaPort = env.LLAMA_PORT || 12345;
+    const url = `http://127.0.0.1:${llamaPort}/v1/chat/completions`;
     const augmentedMessages = injectAbstentionInstruction(
       messages.map((m) => ({ role: m.role, content: m.content }))
     );

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { useAppStore } from '@src/stores/useAppStore';
+import { useAppStore } from '@src/shared/store/useAppStore';
 
 export type WebSocketNamespace = 'ai' | 'downloads' | 'terminal' | '';
 

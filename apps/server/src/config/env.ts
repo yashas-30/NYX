@@ -7,7 +7,6 @@ const envSchema = z.object({
   PORT: z.string().default(String(PORTS.API)).transform((val) => parseInt(val, 10)),
   SENTRY_DSN: z.string().url().optional().or(z.literal('')),
   SCRAPLING_PORT: z.string().default(String(PORTS.SCRAPLING)).transform((val) => parseInt(val, 10)),
-  ANTIGRAVITY_PORT: z.string().default(String(PORTS.ANTIGRAVITY)).transform((val) => parseInt(val, 10)),
   LLAMA_PORT: z.string().default(String(LOCAL_MODEL_PORT)).transform((val) => parseInt(val, 10)),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   OTLP_TRACE_ENDPOINT: z.string().url().optional().or(z.literal('')),
@@ -25,7 +24,6 @@ const envSchema = z.object({
   LLM_API_KEY: z.string().optional(),
   SLACK_WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
   PAGERDUTY_ROUTING_KEY: z.string().optional(),
-  ANTIGRAVITY_URL: z.string().optional(),
   ENFORCE_REQUEST_SIGNATURE: z.string().default('false').transform((val) => val === 'true'),
   PLUGINS_DIR: z.string().optional(),
   IS_PACKAGED: z.string().default('false').transform((val) => val === 'true'),
@@ -33,7 +31,6 @@ const envSchema = z.object({
   DIALOGFLOW_PROJECT_ID: z.string().optional(),
   DIALOGFLOW_ACCESS_TOKEN: z.string().optional(),
   RASA_URL: z.string().optional(),
-  ANTIGRAVITY_API_KEY: z.string().optional(),
   RULES_DB_MAX_ENTRIES: z.string().default('500').transform((val) => parseInt(val, 10)),
   DATABASE_URL: z.string().url().optional(),
 }).passthrough();

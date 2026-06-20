@@ -10,6 +10,7 @@ import { TerminalService } from '../terminal/terminal.service.js';
 import { getWorkspaceRoot } from '../../lib/paths.js';
 import logger from '../../lib/logger.js';
 import { env } from '../../config/env.js';
+import { executeCodeInDocker, executeCommandInDocker } from './dockerSandbox.js';
 
 const filesystemService = new FilesystemService();
 const searchService = new SearchService();
@@ -63,29 +64,12 @@ const runCommandTool = createTool({
   }),
   async execute(input: any) {
     const { command, cwd } = input;
-    const { child, error } = await TerminalService.spawn(command, cwd);
-    if (error) {
-      return `Error: ${error}`;
+    try {
+      const output = await executeCommandInDocker(command, cwd);
+      return output;
+    } catch (err: any) {
+      return `Error executing command: ${err.message}`;
     }
-    if (!child) {
-      return `Error: Failed to spawn sandbox process.`;
-    }
-    return new Promise((resolve) => {
-      let stdout = '';
-      let stderr = '';
-      child.stdout?.on('data', (d) => {
-        stdout += d.toString();
-      });
-      child.stderr?.on('data', (d) => {
-        stderr += d.toString();
-      });
-      child.on('close', (code) => {
-        resolve(`Exit code: ${code}\nStdout:\n${stdout}\nStderr:\n${stderr}`);
-      });
-      child.on('error', (err) => {
-        resolve(`Process error: ${err.message}\nStdout:\n${stdout}\nStderr:\n${stderr}`);
-      });
-    });
   },
 });
 
@@ -179,50 +163,12 @@ const runCodeTool = createTool({
   }),
   async execute(input: any) {
     try {
-      const extMap: Record<string, string> = {
-        javascript: 'js',
-        typescript: 'ts',
-        python: 'py',
-        sh: 'sh',
-      };
-      const ext = extMap[input.language] || 'txt';
-      const workspacePath = getWorkspaceRoot();
-      const tempFile = path.join(workspacePath, `.nyx_temp_code.${ext}`);
-
-      fs.writeFileSync(tempFile, input.code, 'utf8');
-
-      let cmd = '';
-      if (input.language === 'python') cmd = `python .nyx_temp_code.${ext}`;
-      else if (input.language === 'javascript') cmd = `node .nyx_temp_code.${ext}`;
-      else if (input.language === 'typescript') cmd = `npx tsx .nyx_temp_code.${ext}`;
-      else if (input.language === 'sh') cmd = `bash .nyx_temp_code.${ext}`;
-
-      const { child, error } = await TerminalService.spawn(cmd, workspacePath);
-      if (error) return `Error: ${error}`;
-      if (!child) return `Error: Failed to spawn process.`;
-
-      return new Promise((resolve) => {
-        let stdout = '';
-        let stderr = '';
-        child.stdout?.on('data', (d) => {
-          stdout += d.toString();
-        });
-        child.stderr?.on('data', (d) => {
-          stderr += d.toString();
-        });
-        child.on('close', (code) => {
-          try {
-            fs.unlinkSync(tempFile);
-          } catch {}
-          resolve(`Exit code: ${code}\nStdout:\n${stdout}\nStderr:\n${stderr}`);
-        });
-        child.on('error', (err) => {
-          try {
-            fs.unlinkSync(tempFile);
-          } catch {}
-          resolve(`Process error: ${err.message}\nStdout:\n${stdout}\nStderr:\n${stderr}`);
-        });
-      });
+      let language = input.language;
+      // Remap some languages for dockerSandbox if needed
+      if (language === 'sh') language = 'bash';
+      
+      const output = await executeCodeInDocker(input.code, language);
+      return output;
     } catch (err: any) {
       return `Error running code: ${err.message}`;
     }

@@ -42,19 +42,12 @@ Your purpose is to provide industrial-grade, production-ready code.
     });
   });
 
-  fastify.post('/chat', async (request, reply) => {
-    logger.info('[Agents Router] Received /chat request');
-    handleAgentStream(request, reply, 'chat');
-  });
+  fastify.post('/orchestrate', async (request, reply) => {
+    logger.info('[Agents Router] Received /orchestrate request');
+    const { prompt, history, config, apiKeys } = (request.body as any) || {};
 
-  const clineService = new ClineService();
-
-  fastify.post('/coder', async (request, reply) => {
-    logger.info('[Agents Router] Received /coder request (Cline)');
-    const { model, prompt, history, apiKey, gatewayUrls, images } = (request.body as any) || {};
-
-    if (!model) {
-      return reply.code(400).send({ error: 'Model is required' });
+    if (!prompt) {
+      return reply.code(400).send({ error: 'Prompt is required' });
     }
 
     reply.header('Content-Type', 'text/event-stream');
@@ -62,57 +55,21 @@ Your purpose is to provide industrial-grade, production-ready code.
     reply.header('Connection', 'keep-alive');
     reply.header('X-Accel-Buffering', 'no');
     reply.raw.flushHeaders();
-    sendSseTokenRotate(reply.raw as any);
+    sendSseTokenRotate(reply);
 
     try {
-      await clineService.executeClineAgent(
-        {
-          model,
-          prompt,
-          history,
-          apiKey,
-          gatewayUrls,
-          images,
-        },
-        (event) => {
-          // Stream event back to the client
-          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-        }
-      );
-      reply.raw.write('data: [DONE]\n\n');
-      reply.raw.end();
-    } catch (error: any) {
-      logger.error(`[Agents Router Error - coder-cline]:`, error.message);
-      reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
-      reply.raw.end();
-    }
-  });
-
-  async function handleAgentStream(request: any, reply: any, agentType: 'chat' | 'coder') {
-    const { model, prompt, history, apiKey, gatewayUrls, images } = (request.body as any) || {};
-
-    if (!model) {
-      // fallow-ignore-next-line code-duplication
-      return reply.code(400).send({ error: 'Model is required' });
-    }
-
-    reply.header('Content-Type', 'text/event-stream');
-    reply.header('Cache-Control', 'no-cache');
-    reply.header('Connection', 'keep-alive');
-    reply.header('X-Accel-Buffering', 'no');
-    reply.raw.flushHeaders();
-    sendSseTokenRotate(reply.raw as any);
-
-    try {
+      // In a real implementation, we'd use SmartRouter and AgentOrchestrator here
+      // For now, we will just call the service as a placeholder
+      reply.raw.write(`data: ${JSON.stringify({ type: 'status', message: 'Orchestrating...' })}\n\n`);
+      
+      // Pass execution to service
       await service.executeAgentStream(
         {
-          model,
+          model: config?.primary?.modelId || 'default',
           prompt,
           history,
-          apiKey,
-          gatewayUrls,
-          agentType,
-          images,
+          apiKey: apiKeys?.[config?.primary?.provider] || '',
+          agentType: 'coder'
         },
         (chunk) => {
           reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
@@ -123,9 +80,9 @@ Your purpose is to provide industrial-grade, production-ready code.
         }
       );
     } catch (error: any) {
-      logger.error(`[Agents Router Error - ${agentType}]:`, error.message);
+      logger.error(`[Agents Router Error - orchestrate]:`, error.message);
       reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
       reply.raw.end();
     }
-  }
+  });
 }

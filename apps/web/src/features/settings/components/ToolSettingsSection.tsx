@@ -1,5 +1,5 @@
 import React from 'react';
-import { useSettingsStore, ToolPermissions } from '@src/core/stores/useSettingsStore';
+import { useSettingsStore, ToolPermissions } from '@src/shared/store/useSettingsStore';
 import { Switch } from '@src/shared/components/ui/switch';
 
 const DESTRUCTIVE_TOOLS = [

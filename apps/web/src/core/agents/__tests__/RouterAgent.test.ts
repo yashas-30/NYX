@@ -13,7 +13,7 @@ vi.mock('@src/core/services/ai.service', () => ({
   },
 }));
 
-vi.mock('../ChatAgent', () => ({
+vi.mock('../chatAgent', () => ({
   ChatAgent: class {
     async *streamResponse() {
       yield { type: 'text', content: 'ChatAgent response' };
@@ -96,7 +96,7 @@ describe('RouterAgent', () => {
 
   it('should decompose prompt and route to specialized agent based on AI execution plan', async () => {
     const plan = [
-      { id: 'task_1', agent: 'hermes', task: 'Do background work', dependencies: [] }
+      { id: 'task_1', agent: 'opencode', task: 'Do background work', dependencies: [] }
     ];
     
     (AIService.execute as any).mockResolvedValue({ text: JSON.stringify(plan) });
@@ -111,8 +111,8 @@ describe('RouterAgent', () => {
 
     expect(AIService.execute).toHaveBeenCalled();
     
-    const hermesEvent = events.find((e: any) => e.type === 'text');
-    expect(hermesEvent).toEqual({ type: 'text', content: 'HermesAgent response' });
+    const opencodeEvent = events.find((e: any) => e.type === 'text');
+    expect(opencodeEvent).toEqual({ type: 'text', content: 'OpenCodeAgent response' });
   });
 
   it('should fallback to monolithic routing if AI decomposition fails (e.g. invalid json)', async () => {

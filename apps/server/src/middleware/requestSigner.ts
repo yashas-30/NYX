@@ -12,7 +12,6 @@ export const requestSignerMiddleware = async (request: FastifyRequest, reply: Fa
     '/api/v1/vault/status',
     '/api/v1/vault/token',
     '/api/v1/auth/session',
-    '/api/v1/auth/handshake',
     '/api/v1/admin/logs',
     '/api/v1/metrics',
   ]).has(fullPath);

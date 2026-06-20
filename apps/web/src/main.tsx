@@ -2,7 +2,7 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './app/App';
-import { ErrorBoundary } from './core/components/ErrorBoundary';
+import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import './i18n';
 import './index.css';
 import * as Sentry from '@sentry/react';

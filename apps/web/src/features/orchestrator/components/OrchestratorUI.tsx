@@ -13,7 +13,8 @@ import {
   ToolCall,
   Artifact,
 } from '../hooks/useOrchestrator';
-import { LocalModelConfig, HardwareProfile, LocalTool } from '@src/infrastructure/types/agentTypes';
+import { StreamEvent } from '@src/types/agent';
+import { LocalModelConfig, HardwareProfile, LocalTool } from '@src/types/inference';
 import { Button } from '@src/shared/components/ui/button';
 import { ScrollArea } from '@src/shared/components/ui/scroll-area';
 import { Input } from '@src/shared/components/ui/input';

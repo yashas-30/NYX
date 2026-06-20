@@ -210,16 +210,7 @@ export const searchResultsRelations = relations(searchResults, ({ one }) => ({
   }),
 }));
 
-// Antigravity SDK - Prompt Optimizations
-export const promptOptimizations = sqliteTable('prompt_optimizations', {
-  id: text('id').primaryKey(),
-  originalPrompt: text('original_prompt').notNull(),
-  optimizedPrompt: text('optimized_prompt').notNull(),
-  domain: text('domain').notNull(),
-  version: text('version').notNull(),
-  rating: integer('rating'), // 1 for thumbs up, -1 for thumbs down, null for unrated
-  timestamp: integer('timestamp').notNull(),
-});
+
 
 import { index } from 'drizzle-orm/sqlite-core';
 
@@ -410,5 +401,19 @@ export const pgDbCache = pgTable('db_cache', {
   createdAt: pgTimestamp('createdAt').defaultNow(),
   expiresAt: pgTimestamp('expires_at'),
   hitCount: pgInteger('hit_count').default(0),
+});
+
+
+export const projects = sqliteTable('projects', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  icon: text('icon').default('??'),
+  model: text('model').default('gemini-2.5-flash'),
+  instructions: text('instructions'),
+  files: text('files').default('[]'),
+  sessions: text('sessions').default('[]'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql\CURRENT_TIMESTAMP\),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql\CURRENT_TIMESTAMP\),
 });
 

@@ -1,6 +1,6 @@
 import { ChatMessage, StreamEvent } from '@src/infrastructure/types';
-import { PromptAnalysis } from '@src/infrastructure/utils/promptClassifier';
-import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from '../../shared/agents/baseAgent';
+import { PromptAnalysis } from '@src/core/services/promptClassifier';
+import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from '@src/core/agents/baseAgent';
 
 export interface ChatAgentConfig extends BaseAgentConfig {
   updateHistory?: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;

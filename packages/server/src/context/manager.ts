@@ -142,7 +142,7 @@ SUMMARY:`;
 
     try {
       // Dynamically import to avoid circular dependencies
-      const { AIService } = await import('./ai.service');
+      const { AIService } = await import('../models/utils.js');
 
       // Use the cheapest fast model for summarization
       const summaryModel =
@@ -155,10 +155,7 @@ SUMMARY:`;
       const result = await AIService.execute(
         summaryModel,
         provider,
-        summaryPrompt,
-        apiKey,
-        undefined,
-        { temperature: 0.3, maxTokens: 512 } as any
+        summaryPrompt
       );
 
       return result.text || this.buildSummaryPlaceholder(messages);

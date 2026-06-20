@@ -33,6 +33,12 @@ jobs:
           command: test
           args: --all-projects --exclude=.agents,nyx-antigravity-extension
 
+      - name: Start Docker services
+        run: docker-compose up -d
+
+      - name: Wait for services to be ready
+        run: sleep 15
+
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.10.0
         with:

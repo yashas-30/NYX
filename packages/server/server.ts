@@ -27,12 +27,14 @@ async function startServer() {
   await runDependencyHealthChecks();
   const { clearHealthChecks } = spawnBackgroundServices();
 
-  // Initialize Fastify on 3001
+  // Initialize Fastify
+  const port = process.env.SIDECAR_PORT ? parseInt(process.env.SIDECAR_PORT, 10) : 3001;
   const fastifyApp = await buildFastifyServer();
-  await fastifyApp.listen({ port: 3001, host: '127.0.0.1' });
-  logger.info('🚀 Fastify API Server running on http://localhost:3001');
+  await fastifyApp.listen({ port, host: '127.0.0.1' });
+  logger.info(`🚀 Fastify API Server running on http://localhost:${port}`);
 
-  // Initialize Express Proxy on 3000
+  // Initialize Express Proxy on a different port or disabled if not needed
+  // If we only need Fastify for Tauri, maybe Express proxy is separate, but we leave it for now.
   const expressServer = buildExpressProxy();
 
   // Register graceful shutdown and error handlers

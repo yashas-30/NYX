@@ -19,7 +19,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
 
 export const CLOUD_PROVIDERS: string[] = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter'];
 
-export const LOCAL_PROVIDERS: string[] = ['ollama', 'lmstudio'];
+export const LOCAL_PROVIDERS: string[] = ['ollama', 'lmstudio', 'nyx-native'];
 
 const LOCAL_MODEL_IDS = new Set([
 
@@ -63,7 +63,7 @@ export const detectProvider = (modelId: string): Provider => {
 
   // 2. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'ollama';
+    return 'nyx-native';
   }
 
   // 3. Check in static AVAILABLE_MODELS presets
@@ -89,7 +89,7 @@ export const getProviderForModel = (modelId: string): Provider => {
 
   // 2. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'ollama';
+    return 'nyx-native';
   }
 
   // 3. Check in static AVAILABLE_MODELS presets
@@ -140,6 +140,19 @@ export const getEffectiveApiKey = (
     }
     if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
       return process.env.GEMINI_API_KEY;
+    }
+  }
+
+  if (provider === 'openai') {
+    if (
+      typeof import.meta !== 'undefined' &&
+      (import.meta as any).env &&
+      (import.meta as any).env.VITE_OPENAI_API_KEY
+    ) {
+      return (import.meta as any).env.VITE_OPENAI_API_KEY;
+    }
+    if (typeof process !== 'undefined' && process.env && process.env.OPENAI_API_KEY) {
+      return process.env.OPENAI_API_KEY;
     }
   }
 

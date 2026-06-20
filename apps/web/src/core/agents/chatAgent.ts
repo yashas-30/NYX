@@ -1,7 +1,7 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
-
+import { runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
 export interface ChatAgentConfig extends BaseAgentConfig {
   enableToolLoop?: boolean;
 }
@@ -44,6 +44,26 @@ ARTIFACT GENERATION:
 - Do not output raw HTML/JS/CSS unless wrapped in an artifact.
 ` + (this.config.systemPromptAddon ? `\n\nADDITIONAL INSTRUCTIONS:\n${this.config.systemPromptAddon}` : '');
 
-    yield* this.streamFromPythonAPI(prompt, systemInstruction, signal);
+    const allowedTools = BUILTIN_TOOLS.filter(t => 
+      ['web_search', 'read_file'].includes(t.name)
+    );
+
+    const loopConfig = {
+      modelId: this.config.modelId,
+      provider: this.config.provider,
+      apiKey: this.config.apiKey,
+      settings: this.config.settings,
+      systemInstruction,
+      history: this.config.history,
+      maxIterations: 5,
+      signal,
+      agentType: 'chat',
+      tools: allowedTools
+    };
+
+    const generator = runAgentLoop(prompt, loopConfig);
+    for await (const event of generator) {
+      yield event as any;
+    }
   }
 }

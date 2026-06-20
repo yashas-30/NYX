@@ -8,6 +8,62 @@ import { VitePWA } from 'vite-plugin-pwa';
 import svgr from 'vite-plugin-svgr';
 import { visualizer } from 'rollup-plugin-visualizer';
 import crypto from 'crypto';
+import https from 'https';
+import http from 'http';
+import { URL } from 'url';
+
+// ---------------------------------------------------------------------------
+// AI Provider Proxy targets (avoids browser CORS on direct fetch)
+// ---------------------------------------------------------------------------
+const AI_PROXY_TARGETS: Record<string, string> = {
+  openrouter: 'https://openrouter.ai',
+  openai:     'https://api.openai.com',
+  anthropic:  'https://api.anthropic.com',
+  deepseek:   'https://api.deepseek.com',
+};
+
+/** Forward an IncomingMessage to an external HTTPS target and pipe the response back. */
+function proxyAIRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetBase: string,
+  upstreamPath: string
+) {
+  const target = new URL(targetBase);
+  const options: https.RequestOptions = {
+    hostname: target.hostname,
+    port: 443,
+    path: upstreamPath,
+    method: req.method,
+    headers: {
+      ...req.headers,
+      host: target.hostname, // correct Host header for upstream
+    },
+  };
+  // Remove headers that confuse upstream APIs
+  delete (options.headers as any)['origin'];
+  delete (options.headers as any)['referer'];
+
+  const proxyReq = https.request(options, (proxyRes) => {
+    // Pass through CORS headers so browser is happy with the local response
+    res.writeHead(proxyRes.statusCode ?? 200, {
+      ...proxyRes.headers,
+      'access-control-allow-origin': '*',
+      'access-control-allow-headers': '*',
+    });
+    proxyRes.pipe(res, { end: true });
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error('[AI Proxy] upstream error:', err.message);
+    if (!res.headersSent) {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+    }
+    res.end(JSON.stringify({ error: 'AI proxy upstream error', detail: err.message }));
+  });
+
+  req.pipe(proxyReq, { end: true });
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -16,6 +72,40 @@ export default defineConfig(({ mode }) => {
       {
         name: 'mock-backend',
         configureServer(server) {
+          // ------------------------------------------------------------------
+          // AI Provider Proxy — routes /api/proxy/<provider>/* to upstream API
+          // so browser CORS never blocks the requests.
+          // ------------------------------------------------------------------
+          server.middlewares.use('/api/proxy', (req, res, next) => {
+            if (!req.url) { next(); return; }
+
+            // Handle CORS preflight
+            if (req.method === 'OPTIONS') {
+              res.writeHead(204, {
+                'access-control-allow-origin': '*',
+                'access-control-allow-methods': 'GET,POST,OPTIONS',
+                'access-control-allow-headers': '*',
+                'access-control-max-age': '86400',
+              });
+              res.end();
+              return;
+            }
+
+            // URL shape: /api/proxy/<provider>/<upstream-path>
+            // e.g.  /api/proxy/openrouter/api/v1/chat/completions
+            const parts = req.url.replace(/^\//, '').split('/');
+            const providerKey = parts[0];  // e.g. 'openrouter'
+            const upstreamPath = '/' + parts.slice(1).join('/');
+            const targetBase = AI_PROXY_TARGETS[providerKey];
+
+            if (!targetBase) {
+              next();
+              return;
+            }
+
+            proxyAIRequest(req as http.IncomingMessage, res as http.ServerResponse, targetBase, upstreamPath);
+          });
+
           server.middlewares.use('/api', (req, res, next) => {
             res.setHeader('Content-Type', 'application/json');
             if (req.url && (req.url.includes('/vault/token') || req.url.includes('/auth/session'))) {
@@ -146,7 +236,6 @@ export default defineConfig(({ mode }) => {
         'lucide-react',
         'zustand',
         'zustand/middleware',
-        'motion/react',
         '@codemirror/state',
         '@codemirror/view',
         '@base-ui/react',
@@ -188,7 +277,6 @@ export default defineConfig(({ mode }) => {
             if (id.includes('node_modules')) {
               if (id.includes('lucide-react')) return 'vendor-icons';
               if (id.includes('motion')) return 'vendor-animation';
-              if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
               if (id.includes('lottie-web') || id.includes('lottie')) return 'vendor-lottie';
               if (id.includes('@codemirror')) return 'vendor-codemirror';
               if (id.includes('react-syntax-highlighter') || id.includes('refractor'))

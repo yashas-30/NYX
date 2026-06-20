@@ -1,5 +1,5 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
-import { runAgentLoop } from './agentLoop';
+import { runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 
@@ -54,6 +54,10 @@ THINKING PROTOCOL:
 - The content inside the artifact should be fully functional, clean, and self-contained.
 </artifact_generation>`;
 
+    const allowedTools = BUILTIN_TOOLS.filter(t => 
+      ['read_file', 'write_file', 'list_directory', 'grep_search', 'diff_files', 'run_python', 'lint_code', 'edit_file'].includes(t.name)
+    );
+
     const loopConfig = {
       modelId: this.config.modelId,
       provider: this.config.provider,
@@ -63,7 +67,8 @@ THINKING PROTOCOL:
       history: this.config.history,
       maxIterations: 10, // Coding tasks require more iterations for exploration and writing
       signal,
-      agentType: 'opencode'
+      agentType: 'opencode',
+      tools: allowedTools
     };
 
     let maxCriticLoops = 3;
@@ -75,13 +80,16 @@ THINKING PROTOCOL:
       currentLoop++;
       let fullOutput = '';
       
-      const generator = this.streamFromPythonAPI(currentPrompt, systemInstruction, signal);
+      // Update loopConfig dynamically with the new prompt (so critic feedback goes to the loop)
+      const currentLoopConfig = { ...loopConfig, systemInstruction: systemInstruction };
+      
+      const generator = runAgentLoop(currentPrompt, currentLoopConfig);
 
       for await (const event of generator) {
-        if (event.type === 'text') {
+        if (event.type === 'text' && typeof event.content === 'string') {
           fullOutput += event.content;
         }
-        yield event;
+        yield event as any;
       }
 
       // ----------------------------------------------------------------------

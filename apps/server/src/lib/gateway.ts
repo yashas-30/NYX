@@ -67,8 +67,16 @@ const getCloudflareGateway = (provider: Provider): AIGatewayConfig => {
 const PROVIDER_URLS: Record<Provider, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
   'nyx-native': '',
-  'antigravity-sdk': '',
   terminal: '',
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com',
+  groq: 'https://api.groq.com/openai/v1',
+  together: 'https://api.together.xyz/v1',
+  perplexity: 'https://api.perplexity.ai',
+  ollama: env.OLLAMA_URL || 'http://localhost:11434/v1',
+  lmstudio: env.LM_STUDIO_URL || 'http://localhost:1234/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  deepseek: 'https://api.deepseek.com',
 };
 
 export class Gateway {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { XIcon as X, ZapIcon as Zap } from '@animateicons/react/lucide';
 import { Settings2, Sliders, Database, BrainCircuit, Maximize } from 'lucide-react';
-import { useSettingsStore } from '../../../core/stores/useSettingsStore';
+import { useSettingsStore } from '@src/shared/store/useSettingsStore';
 
 interface ChatSettingsProps {
   isOpen: boolean;
@@ -116,17 +116,6 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
             />
           </label>
 
-          <label className="flex items-center justify-between cursor-pointer group">
-            <span className="text-[13px] text-foreground/80 group-hover:text-foreground transition-colors">
-              Artifact Generation
-            </span>
-            <input
-              type="checkbox"
-              checked={chatSettings.antigravity ?? true}
-              onChange={(e) => updateChatSettings({ antigravity: e.target.checked })}
-              className="accent-primary w-4 h-4 bg-input border border-border"
-            />
-          </label>
         </div>
       </div>
 

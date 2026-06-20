@@ -19,8 +19,8 @@ export class AgentsService {
   ): Promise<void> {
     const { model, prompt, history, apiKey, gatewayUrls, agentType, images } = params;
 
-    // Define tools specific to the agent type
-    const tools = this.getToolsForAgent(agentType);
+    const modelCapabilities = this.getModelCapabilities(model);
+    const tools = modelCapabilities.supportsTools ? this.getToolsForAgent(agentType) : undefined;
 
     // Define the system prompt
     // fallow-ignore-next-line code-duplication
@@ -64,6 +64,15 @@ export class AgentsService {
       onChunk,
       onDone
     );
+  }
+
+  private getModelCapabilities(modelId: string): { supportsTools: boolean; contextWindow: number } {
+    // Basic heuristic: assume anything not explicitly limited supports tools
+    const toolLimitedModels = ['gemma-2b', 'phi-2'];
+    return {
+      supportsTools: !toolLimitedModels.some(m => modelId.includes(m)),
+      contextWindow: 8192
+    };
   }
 
   private getSystemPromptForAgent(agentType: 'chat' | 'coder'): string {

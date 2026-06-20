@@ -9,10 +9,12 @@ import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { useChatPipeline } from './useChatPipeline';
 import { AIService, cancelRequest, cancelAllRequests } from '@src/core/services/ai.service';
+import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
+import { useProjectStore } from '@src/shared/store/useProjectStore';
 import { toast } from '@src/shared/components/ui/sonner';
 import { getSessionToken } from '@src/infrastructure/api/authFetch';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
-import { useUsageStore } from '@src/core/stores/useUsageStore';
+import { useUsageStore } from '@src/shared/store/useUsageStore';
 import { compactHistory, compactHistoryAsync, estimateContextTokens } from '@src/infrastructure/utils/compaction';
 import { PlanPhase } from '@src/types/agent';
 import { PromptAnalysisService } from '@src/core/services/promptAnalysis.service';
@@ -600,11 +602,9 @@ export const useChatLogic = ({
         const activeProjectId = useNyxStore.getState().activeProjectId;
         if (activeProjectId) {
           try {
-            const saved = localStorage.getItem('nyx_projects');
-            if (saved) {
-              const projects = JSON.parse(saved);
-              const project = projects.find((p: any) => p.id === activeProjectId);
-              if (project) {
+            const projects = useProjectStore.getState().projects;
+            const project = projects.find((p) => p.id === activeProjectId);
+            if (project) {
                 let projectContext = `\nYou are chatting in Project: "${project.name}".\n`;
                 projectContext += `Project Description: ${project.description}\n`;
                 if (project.instructions) {
@@ -626,7 +626,6 @@ export const useChatLogic = ({
                 }
                 systemPromptAddon += `\n${projectContext}\n`;
               }
-            }
           } catch (err) {
             console.warn('[useChatLogic] Failed to load project context:', err);
           }

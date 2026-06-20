@@ -11,8 +11,10 @@
       "@shared/*": ["./src/shared/*"],
       "@features/*": ["./src/features/*"],
       "@core/*": ["./src/core/*"],
-      "@assets/*": ["./src/assets/*"]
+      "@assets/*": ["./src/assets/*"],
+      "@server/*": ["./server/*"]
     }
   },
-  "include": ["src/**/*", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src/**/*", "vite.config.ts", "vitest.config.ts"],
+  "exclude": ["src/graphify-out", "node_modules", "dist"]
 }

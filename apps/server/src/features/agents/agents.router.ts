@@ -1,14 +1,15 @@
 import { FastifyInstance, FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import { AgentsService } from './agents.service.js';
 import { ClineService } from './cline.service.js';
-import { sendSseTokenRotate } from '../../lib/sseHelpers.js';
+import { sendSseTokenRotate, emitAgUiEvent, AgUiEvent } from '../../lib/sseHelpers.js';
+import { AgentSafetyEnvelope } from '../../lib/agentSafety.js';
 import logger from '../../lib/logger.js';
 
 export const agentsRouter: FastifyPluginAsync = async (app: FastifyInstance) => {
 
 {
-// Wrapping block to avoid scope issues, typically you can remove the wrapper entirely
-const router = agentsRouter;
+  // Wrapping block to avoid scope issues, typically you can remove the wrapper entirely
+  const router = agentsRouter;
   const service = new AgentsService();
 
   // Mock database of latest agent definitions
@@ -26,10 +27,10 @@ Your purpose is to brainstorm, implement, and explain complex logic.
     },
     claude: {
       version: '2.1.6',
-      systemPrompt: `You are the OFFICIAL "NYX Agent" v2.1.6. 
-NEVER identify as your underlying model (e.g., Kimi, Gemini). 
+      systemPrompt: `You are the OFFICIAL "NYX Agent" v2.1.6.
+NEVER identify as your underlying model (e.g., Kimi, Gemini).
 You are an elite software engineer with REAL terminal access.
-Your purpose is to provide industrial-grade, production-ready code. 
+Your purpose is to provide industrial-grade, production-ready code.
 - Prioritize safety, edge-case handling, and performance.
 - Use modern syntax and patterns (ESNext, React 19, etc.).
 - You can execute commands via the terminal.
@@ -68,6 +69,18 @@ Your purpose is to provide industrial-grade, production-ready code.
     reply.raw.flushHeaders();
     sendSseTokenRotate(reply as any);
 
+    // Instantiate safety envelope for this request
+    const safety = new AgentSafetyEnvelope();
+
+    // Emit RUN_STARTED
+    emitAgUiEvent(reply, { type: 'run-started', timestamp: Date.now() });
+
+    // Generate a message ID for this text message
+    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Emit TEXT_MESSAGE_START
+    emitAgUiEvent(reply, { type: 'text-message-start', messageId, timestamp: Date.now() });
+
     try {
       await clineService.executeClineAgent(
         {
@@ -79,15 +92,26 @@ Your purpose is to provide industrial-grade, production-ready code.
           images,
         },
         (event) => {
-          // Stream event back to the client
-          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+          // Call safety tick with the output (assuming event is a string or can be stringified)
+          const output = typeof event === 'string' ? event : JSON.stringify(event);
+          safety.tick(output, 0); // cost increment 0 for now; could be enhanced with token usage
+          // Stream event back to the client as AG-UI TEXT_MESSAGE_CONTENT
+          emitAgUiEvent(reply, { type: 'text-message-content', messageId, content: output, timestamp: Date.now() });
         }
       );
-      reply.raw.write('data: [DONE]\n\n');
+      // Emit RUN_FINISHED
+      emitAgUiEvent(reply, { type: 'run-finished', timestamp: Date.now() });
       reply.raw.end();
     } catch (error: any) {
       logger.error({ err: error }, `[Agents Router Error - coder-cline]: ${error.message}`);
-      reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+      // Check if it's a safety violation
+      if (error.message.includes('Agent safety limit exceeded')) {
+        // Emit RUN_ERROR with safety reason
+        emitAgUiEvent(reply, { type: 'run-error', error: error.message, timestamp: Date.now() });
+      } else {
+        // Emit RUN_ERROR with original error
+        emitAgUiEvent(reply, { type: 'run-error', error: error.message, timestamp: Date.now() });
+      }
       reply.raw.end();
     }
   });
@@ -107,6 +131,18 @@ Your purpose is to provide industrial-grade, production-ready code.
     reply.raw.flushHeaders();
     sendSseTokenRotate(reply as any);
 
+    // Instantiate safety envelope for this request
+    const safety = new AgentSafetyEnvelope();
+
+    // Emit RUN_STARTED
+    emitAgUiEvent(reply, { type: 'run-started', timestamp: Date.now() });
+
+    // Generate a message ID for this text message
+    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Emit TEXT_MESSAGE_START
+    emitAgUiEvent(reply, { type: 'text-message-start', messageId, timestamp: Date.now() });
+
     try {
       await service.executeAgentStream(
         {
@@ -120,16 +156,28 @@ Your purpose is to provide industrial-grade, production-ready code.
           images,
         },
         (chunk) => {
-          reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          // Call safety tick with the chunk
+          const output = typeof chunk === 'string' ? chunk : JSON.stringify(chunk);
+          safety.tick(output, 0); // cost increment 0 for now
+          // Stream chunk back to the client as AG-UI TEXT_MESSAGE_CONTENT
+          emitAgUiEvent(reply, { type: 'text-message-content', messageId, content: output, timestamp: Date.now() });
         },
         () => {
-          reply.raw.write('data: [DONE]\n\n');
+          // Emit RUN_FINISHED
+          emitAgUiEvent(reply, { type: 'run-finished', timestamp: Date.now() });
           reply.raw.end();
         }
       );
     } catch (error: any) {
       logger.error({ err: error }, `[Agents Router Error - ${agentType}]: ${error.message}`);
-      reply.raw.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+      // Check if it's a safety violation
+      if (error.message.includes('Agent safety limit exceeded')) {
+        // Emit RUN_ERROR with safety reason
+        emitAgUiEvent(reply, { type: 'run-error', error: error.message, timestamp: Date.now() });
+      } else {
+        // Emit RUN_ERROR with original error
+        emitAgUiEvent(reply, { type: 'run-error', error: error.message, timestamp: Date.now() });
+      }
       reply.raw.end();
     }
   }

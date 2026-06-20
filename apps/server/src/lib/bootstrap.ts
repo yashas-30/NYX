@@ -119,9 +119,9 @@ export function spawnBackgroundServices() {
   let scraplingProc: ReturnType<typeof spawn> | null = null;
   let scraplingFailed = false; // set true on immediate exit code 1 (e.g. missing deps)
 
-  const ANTIGRAVITY_PORT = env.ANTIGRAVITY_PORT;
-  let antigravityProc: ReturnType<typeof spawn> | null = null;
-  let antigravityFailed = false;
+  const LLAMA_PORT = env.LLAMA_PORT;
+  let hfProc: ReturnType<typeof spawn> | null = null;
+  let hfFailed = false;
 
   async function spawnScrapling() {
     if (scraplingFailed) return; // don't restart if missing deps
@@ -158,48 +158,38 @@ export function spawnBackgroundServices() {
     }
   }
 
-  async function spawnAntigravity() {
-    if (antigravityFailed) return;
+  async function spawnHfService() {
+    if (hfFailed) return;
     try {
-      const isAvailable = await checkPortAvailable(ANTIGRAVITY_PORT);
+      const isAvailable = await checkPortAvailable(LLAMA_PORT);
       if (!isAvailable) {
-        logger.warn(
-          `[Antigravity] Port ${ANTIGRAVITY_PORT} is already in use. Skipping spawn to avoid crash-loop.`
-        );
+        logger.warn(`[HFService] Port ${LLAMA_PORT} already in use. Skipping local runner spawn.`);
         return;
       }
       const pythonPath = findPythonPath();
-      const antigravityScriptPath = path.join(
-        appsServerDir,
-        'src',
-        'python',
-        'antigravity_service.py'
-      );
+      const hfScriptPath = path.join(appsServerDir, 'src', 'python', 'hf_service.py');
       const startedAt = Date.now();
-      const proc = spawn(pythonPath, [antigravityScriptPath, '--port', String(ANTIGRAVITY_PORT)], {
-        cwd: path.dirname(antigravityScriptPath),
+      const proc = spawn(pythonPath, [hfScriptPath, String(LLAMA_PORT)], {
+        cwd: path.dirname(hfScriptPath),
         detached: false,
         stdio: ['pipe', 'inherit', 'inherit'],
       });
       registerProcess(proc);
-      antigravityProc = proc;
+      hfProc = proc;
       proc.on('exit', (code) => {
-        antigravityProc = null;
-        if (code !== 0 && Date.now() - startedAt < 3000) {
-          antigravityFailed = true;
-          logger.warn(`[Antigravity] Service exited immediately (code ${code}) — likely missing Python deps. Stopping auto-restart. Run: pip install uvicorn`);
+        hfProc = null;
+        if (code !== 0 && Date.now() - startedAt < 5000) {
+          hfFailed = true;
+          logger.warn(`[HFService] Exited immediately (code ${code}). Stopping auto-restart.`);
         }
       });
     } catch (error: any) {
-      logger.error(
-        { error: error.message },
-        '[Antigravity] Failed to spawn Antigravity local service'
-      );
+      logger.error({ error: error.message }, '[HFService] Failed to spawn local runner');
     }
   }
 
   spawnScrapling();
-  spawnAntigravity();
+  spawnHfService();
 
   // Health checks — skip if service permanently failed
   const scraplingHealthInterval = setInterval(async () => {
@@ -217,25 +207,25 @@ export function spawnBackgroundServices() {
   }, 15_000);
   scraplingHealthInterval.unref();
 
-  const antigravityHealthInterval = setInterval(async () => {
-    if (antigravityFailed) return;
+  const hfHealthInterval = setInterval(async () => {
+    if (hfFailed) return;
     try {
-      await performHealthCheck(`http://127.0.0.1:${ANTIGRAVITY_PORT}/health`, 5000);
+      await performHealthCheck(`http://127.0.0.1:${LLAMA_PORT}/health`, 5000);
     } catch (err: any) {
-      logger.warn({ error: err?.message || err }, '[Antigravity] Health check failed — restarting Antigravity service...');
-      if (antigravityProc) {
-        try { antigravityProc.kill('SIGTERM'); } catch {}
-        antigravityProc = null;
+      logger.warn({ error: err?.message || err }, '[HFService] Health check failed - restarting...');
+      if (hfProc) {
+        try { hfProc.kill('SIGTERM'); } catch {}
+        hfProc = null;
       }
-      setTimeout(() => spawnAntigravity(), 2000);
+      setTimeout(() => spawnHfService(), 2000);
     }
-  }, 15_000);
-  antigravityHealthInterval.unref();
+  }, 20_000);
+  hfHealthInterval.unref();
 
   return {
     clearHealthChecks: () => {
       clearInterval(scraplingHealthInterval);
-      clearInterval(antigravityHealthInterval);
+      clearInterval(hfHealthInterval);
     }
   };
 }

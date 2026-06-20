@@ -299,32 +299,8 @@ const router = nyxRouter;
     }
   );
 
-  // ── Git Endpoints ──────────────────────────────────────────────────────────────
+  // ── Git Endpoints migrated to git.router.ts ──────────────────────────────────
 
-  // POST /api/nyx/git-diff
-  app.post('/git-diff', async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const { filePath } = request.body as { filePath?: string };
-      const diff = await gitService.getDiff(filePath);
-      reply.send({ success: true, diff });
-    } catch (error: any) {
-      logger.error('[Nyx Router] git-diff failed:', error);
-      reply.code(500).send({ error: error.message });
-    }
-  });
-
-  // POST /api/nyx/git-status
-  app.post('/git-status', async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const status = await gitService.getStatus();
-      reply.send({ success: true, status });
-    } catch (error: any) {
-      logger.error('[Nyx Router] git-status failed:', error);
-      reply.code(500).send({ error: error.message });
-    }
-  });
-
-  // ── Intelligence Endpoints ───────────────────────────────────────────────────────
 
   // POST /api/nyx/claude-md-hierarchy
   app.post('/claude-md-hierarchy', async (request: FastifyRequest, reply: FastifyReply) => {

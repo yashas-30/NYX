@@ -5,9 +5,6 @@ import { workspaceSchema } from './workspace.schema.js';
 
 export const workspaceRouter: FastifyPluginAsync = async (app: FastifyInstance) => {
 
-{
-// Wrapping block to avoid scope issues, typically you can remove the wrapper entirely
-const router = workspaceRouter;
   const service = new WorkspaceService();
 
   app.get('/', (request: FastifyRequest, reply: FastifyReply) => {
@@ -52,7 +49,42 @@ const router = workspaceRouter;
     }
   });
 
+  app.get('/projects', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const projects = await service.getProjects();
+      reply.send(projects);
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
 
-}
+  app.post('/projects', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const project = await service.createProject(request.body);
+      reply.send(project);
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
 
+  app.put('/projects/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { id } = request.params as any;
+      const project = await service.updateProject(id, request.body);
+      if (!project) return reply.code(404).send({ error: 'Project not found' });
+      reply.send(project);
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
+  app.delete('/projects/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { id } = request.params as any;
+      const result = await service.deleteProject(id);
+      reply.send(result);
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
 };

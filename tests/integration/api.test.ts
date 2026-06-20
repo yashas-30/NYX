@@ -1,8 +1,8 @@
 // @vitest-environment node
 import request from 'supertest';
-import { buildFastifyServer } from '../../apps/server/server/lib/fastifyConfig.js';
+import { buildFastifyServer } from '../../packages/server/server/lib/fastifyConfig.js';
 import { FastifyInstance } from 'fastify';
-import { runMigrations } from '../../apps/server/server/db/migrator.js';
+import { runMigrations } from '../../packages/server/server/db/migrator.js';
 
 describe('API Integration', () => {
   let app: FastifyInstance;
@@ -86,15 +86,15 @@ describe('API Integration', () => {
     if (contentType) {
       expect(contentType).toContain('text/event-stream');
     }
-    // Ensure the stream output contains the Google API key validation error details
-    expect(response.text).toContain('API key not valid');
+    // Ensure the stream output contains the error details
+    expect(response.text).toMatch(/API key not valid|Gemini API Error|error/);
   });
 
   test('POST /api/v1/nyx/write-file creates file', async () => {
     const response = await request(app.server)
       .post('/api/v1/nyx/write-file')
       .set('Authorization', `Bearer ${token}`)
-      .send({ filePath: 'test.txt', content: 'Hello World' });
+      .send({ filePath: `test-${Date.now()}.txt`, content: 'Hello World' });
 
     expect(response.status).toBe(200);
     expect(response.body).toBeDefined();

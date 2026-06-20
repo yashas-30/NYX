@@ -7,6 +7,7 @@ import Editor, { DiffEditor } from '@monaco-editor/react';
 import { Sandpack } from '@codesandbox/sandpack-react';
 import { PythonSandbox } from '../../chat/components/PythonSandbox';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useProjectStore } from '@src/shared/store/useProjectStore';
 import { toast } from '@src/shared/components/ui/sonner';
 import { ChatMessage } from '@src/infrastructure/types';
 
@@ -37,6 +38,7 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
   const [copied, setCopied] = useState(false);
 
   const activeProjectId = useNyxStore((s) => s.activeProjectId);
+  const saveFileToProject = useProjectStore((s) => s.saveFileToProject);
 
   // Track original content to show diff comparisons
   const originalContentRef = useRef<string>(content);
@@ -180,12 +182,6 @@ User instructions to modify this selection: ${editInstruction}`;
       handleDownload();
       return;
     }
-    const saved = localStorage.getItem('nyx_projects');
-    if (!saved) return;
-
-    const projects = JSON.parse(saved);
-    const projIdx = projects.findIndex((p: any) => p.id === activeProjectId);
-    if (projIdx === -1) return;
 
     const fileName = `${displayedArtifact.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.${displayedArtifact.language || 'txt'}`;
     const fileContent = displayedArtifact.content;
@@ -200,22 +196,8 @@ User instructions to modify this selection: ${editInstruction}`;
       content: fileContent,
     };
 
-    const existingIdx = projects[projIdx].files.findIndex((f: any) => f.name === fileName);
-    if (existingIdx > -1) {
-      projects[projIdx].files[existingIdx] = {
-        ...projects[projIdx].files[existingIdx],
-        content: fileContent,
-        size: newFile.size,
-        modified: 'Just now',
-      };
-      toast.success(`Updated "${fileName}" in project workspace.`);
-    } else {
-      projects[projIdx].files.push(newFile);
-      toast.success(`Saved "${fileName}" to project workspace.`);
-    }
-
-    localStorage.setItem('nyx_projects', JSON.stringify(projects));
-    window.dispatchEvent(new Event('nyx:projects-updated'));
+    saveFileToProject(activeProjectId, newFile);
+    toast.success(`Saved "${fileName}" to project workspace.`);
   };
 
   const handleFork = () => {

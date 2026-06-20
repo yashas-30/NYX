@@ -22,6 +22,15 @@ export async function directOpenAIFetch(config: any): Promise<EnhancedAIResponse
   if (provider === 'ollama') endpoint = 'http://localhost:11434/v1/chat/completions';
   if (provider === 'lmstudio') endpoint = 'http://localhost:1234/v1/chat/completions';
 
+  // In browser/dev mode, route cloud providers through the Vite server-side proxy
+  // to avoid CORS preflight blocks. Proxy URL: /api/proxy/<provider>/<upstream-path>
+  const isDevProxy = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+  if (isDevProxy) {
+    if (provider === 'openrouter') endpoint = `${window.location.origin}/api/proxy/openrouter/api/v1/chat/completions`;
+    if (provider === 'openai')     endpoint = `${window.location.origin}/api/proxy/openai/v1/chat/completions`;
+    if (provider === 'deepseek')   endpoint = `${window.location.origin}/api/proxy/deepseek/v1/chat/completions`;
+  }
+
   if (gatewayUrls && gatewayUrls[provider]) {
     endpoint = gatewayUrls[provider].replace(/\/$/, '') + '/chat/completions';
   }
@@ -55,7 +64,6 @@ export async function directOpenAIFetch(config: any): Promise<EnhancedAIResponse
   }
   
   if (provider === 'openrouter') {
-    headers['HTTP-Referer'] = window.location.origin;
     headers['X-Title'] = 'NYX Web';
   }
 

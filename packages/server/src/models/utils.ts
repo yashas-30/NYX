@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import os from 'os';
 import si from 'systeminformation';
 import axios from 'axios';
-import { SmartRouter } from '../ai/router.js';
+import { SmartRouter } from '../../server/features/agents/router.js';
 
 export const MODELS_DIR = path.join(os.homedir(), '.nyx-models');
 
@@ -122,7 +122,7 @@ export const AIService = {
     
     try {
       const decision = await router.route(prompt, {
-        primary: { id: modelId, provider: provider as any, name: 'Eval Model' },
+        primary: { id: modelId, provider: provider as any, name: 'Eval Model' } as any,
         fallbacks: []
       }, apiKeys);
       

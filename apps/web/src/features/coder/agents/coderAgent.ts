@@ -10,11 +10,11 @@ import {
   FileProposal,
   ValidationResult,
 } from '@src/infrastructure/types';
-import { PromptAnalysis, AgentRoute } from '@src/infrastructure/utils/promptClassifier';
+import { PromptAnalysis, AgentRoute } from '@src/core/services/promptClassifier';
 import { fetchEvolutionaryRules, writeFile } from '@src/infrastructure/api/coderApi';
 import { searchCodebase, searchWeb } from '@src/infrastructure/api/searchApi';
 import { buildCoderPrompts, CodeContext } from '../prompts/coderPrompts';
-import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from '../../shared/agents/baseAgent';
+import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from '@src/core/agents/baseAgent';
 
 // ── Retry Configuration ──────────────────────────────────────────────────────
 

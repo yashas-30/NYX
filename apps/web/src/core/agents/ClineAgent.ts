@@ -1,5 +1,5 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
-import { runAgentLoop, runTauriAgentLoop } from './agentLoop';
+import { runAgentLoop, runTauriAgentLoop, BUILTIN_TOOLS } from './agentLoop';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 
@@ -49,6 +49,26 @@ Keep your final responses direct and concise. Do NOT use filler phrases like "I 
 - The content inside the artifact should be fully functional, clean, and self-contained.
 </artifact_generation>`;
 
-    yield* this.streamFromPythonAPI(prompt, systemInstruction, signal);
+    const allowedTools = BUILTIN_TOOLS.filter(t => 
+      ['run_terminal_command', 'run_shell', 'run_mcp_tool', 'web_browse', 'read_file'].includes(t.name)
+    );
+
+    const loopConfig = {
+      modelId: this.config.modelId,
+      provider: this.config.provider,
+      apiKey: this.config.apiKey,
+      settings: this.config.settings,
+      systemInstruction,
+      history: this.config.history,
+      maxIterations: 10,
+      signal,
+      agentType: 'cline',
+      tools: allowedTools
+    };
+
+    const generator = runAgentLoop(prompt, loopConfig);
+    for await (const event of generator) {
+      yield event as any;
+    }
   }
 }

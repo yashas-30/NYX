@@ -29,8 +29,27 @@ def node_reasoning_and_action(state: AgentState) -> Dict[str, Any]:
     cloud_model = router.get_reasoning_model()
     model_with_tools = cloud_model.bind_tools(tools)
     
+    # Inject the GenUI System prompt that used to be in the router
+    sys_prompt = """You are an advanced 2026 AI Agent. 
+You MUST follow two core UI patterns:
+
+1. PROGRESSIVE DISCLOSURE:
+Before you provide your final answer, you MUST enclose your internal reasoning, tool strategy, and logic inside <think>...</think> tags.
+
+2. GENERATIVE UI (GenUI):
+If you are providing structured data like a list of files, a code snippet, or web search results, DO NOT just write it as raw text. Instead, emit a UI Component rendering tag in this exact format:
+[RENDER_COMPONENT: component_name]
+{ "json": "data" }
+[/RENDER_COMPONENT]
+
+Supported components:
+- `directory_tree`: For displaying folder contents.
+- `search_results`: For displaying web search results.
+- `markdown_card`: For general structured text or code.
+"""
+    messages = [SystemMessage(content=sys_prompt)] + list(state["messages"])
+    
     # If there's a critique from the Reflection node, inject it as a system message
-    messages = list(state["messages"])
     if state.get("critique"):
         critique_msg = SystemMessage(content=f"CRITIQUE FROM AUDITOR:\n{state['critique']}\nPlease revise your answer based on this feedback.")
         messages.append(critique_msg)

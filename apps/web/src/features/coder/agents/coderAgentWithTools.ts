@@ -6,8 +6,8 @@ import {
   CoderStreamEvent,
   ToolCall,
 } from '@src/infrastructure/types';
-import { PromptAnalysis, AgentRoute } from '@src/infrastructure/utils/promptClassifier';
-import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from '../../shared/agents/baseAgent';
+import { PromptAnalysis, AgentRoute } from '@src/core/services/promptClassifier';
+import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from '@src/core/agents/baseAgent';
 import { NYX_TOOLS } from '../tools/nyxTools';
 import { executeTool } from '../tools/toolExecutor';
 

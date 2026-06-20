@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { AVAILABLE_MODELS } from '@src/features/shared/config/models';
-import { useModelStore } from '@src/stores/useModelStore';
+import { AVAILABLE_MODELS } from '@src/shared/config/models';
+import { useModelStore } from '@src/shared/store/useModelStore';
 import { ArrowLeft, Plus, X, BarChart3, ShieldCheck } from 'lucide-react';
 
 export default function ModelComparisonView() {

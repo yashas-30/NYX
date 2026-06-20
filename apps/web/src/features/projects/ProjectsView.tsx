@@ -12,58 +12,7 @@ const ProjectIcon = ({ icon, className = "w-5 h-5 text-primary" }: { icon: strin
 };
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { toast } from '@src/shared/components/ui/sonner';
-
-interface ProjectFile {
-  id: string;
-  name: string;
-  type: 'file' | 'folder';
-  contentType?: 'text' | 'code' | 'image' | 'json' | 'doc';
-  children?: ProjectFile[];
-  size?: string;
-  modified?: string;
-  content?: string;
-}
-
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  createdAt: string;
-  updatedAt: string;
-  files: ProjectFile[];
-  instructions: string;
-  model: string;
-  sessions: string[];
-}
-
-const DEFAULT_PROJECTS: Project[] = [
-  {
-    id: 'proj-1',
-    name: 'Web Application Redesign',
-    description: 'Redesigning the company dashboard with modern UI patterns',
-    icon: '🎨',
-    createdAt: '2025-06-10',
-    updatedAt: '2025-06-15',
-    model: 'claude-4-sonnet',
-    instructions: 'You are a senior frontend developer. Focus on accessibility, performance, and modern React patterns. Use Tailwind CSS v4 and Framer Motion for animations.',
-    sessions: ['session-1', 'session-2'],
-    files: [
-      {
-        id: 'f-1', name: 'design-system.md', type: 'file', contentType: 'text', size: '12 KB', modified: '2 hours ago',
-        content: '# Design System\n\n## Colors\n- Primary: #0ea5e9\n- Secondary: #8b5cf6\n\n## Typography\n- Font: Geist Variable\n- Headings: 400 weight, negative tracking'
-      },
-      {
-        id: 'f-2', name: 'components', type: 'folder',
-        children: [
-          { id: 'f-3', name: 'Button.tsx', type: 'file', contentType: 'code', size: '3.2 KB', modified: '1 day ago', content: 'import React from "react";\nexport const Button = () => <button>Click me</button>;' },
-          { id: 'f-4', name: 'Card.tsx', type: 'file', contentType: 'code', size: '2.8 KB', modified: '1 day ago', content: 'export const Card = () => <div>Card component</div>;' },
-        ]
-      },
-      { id: 'f-9', name: 'package.json', type: 'file', contentType: 'json', size: '1.5 KB', modified: '2 hours ago', content: '{\n  "dependencies": {\n    "react": "^19.0.0"\n  }\n}' },
-    ],
-  },
-];
+import { useProjectStore, Project, ProjectFile } from '@src/shared/store/useProjectStore';
 
 const FILE_ICONS = {
   text: FileText,
@@ -74,11 +23,14 @@ const FILE_ICONS = {
 };
 
 export default function ProjectsView() {
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const saved = localStorage.getItem('nyx_projects');
-    return saved ? JSON.parse(saved) : DEFAULT_PROJECTS;
-  });
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const projects = useProjectStore((s) => s.projects);
+  const fetchProjects = useProjectStore((s) => s.fetchProjects);
+  const activeProjectIdFromStore = useNyxStore((s) => s.activeProjectId);
+  const activeProject = projects.find(p => p.id === activeProjectIdFromStore) || null;
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
   const [searchQuery, setSearchQuery] = useState('');
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -91,27 +43,10 @@ export default function ProjectsView() {
   const setActiveProjectId = useNyxStore((s) => s.setActiveProjectId);
   const setActiveMode = useNyxStore((s) => s.setActiveMode);
 
-  // Sync projects updates
-  useEffect(() => {
-    const handleUpdate = () => {
-      const saved = localStorage.getItem('nyx_projects');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setProjects(parsed);
-        if (activeProject) {
-          const fresh = parsed.find((p: any) => p.id === activeProject.id);
-          if (fresh) setActiveProject(fresh);
-        }
-      }
-    };
-    window.addEventListener('nyx:projects-updated', handleUpdate);
-    return () => window.removeEventListener('nyx:projects-updated', handleUpdate);
-  }, [activeProject]);
-
-  useEffect(() => {
-    localStorage.setItem('nyx_projects', JSON.stringify(projects));
-  }, [projects]);
-
+  const addProject = useProjectStore((s) => s.addProject);
+  const deleteProjectStore = useProjectStore((s) => s.deleteProject);
+  const saveFileToProject = useProjectStore((s) => s.saveFileToProject);
+  const updateProject = useProjectStore((s) => s.updateProject);
   const toggleFolder = (folderId: string) => {
     setExpandedFolders((prev) => {
       const next = new Set(prev);
@@ -121,31 +56,27 @@ export default function ProjectsView() {
     });
   };
 
-  const createProject = () => {
+  const createProject = async () => {
     if (!newProjectName.trim()) return;
-    const newProject: Project = {
-      id: `proj-${Date.now()}`,
+    const newProject = {
       name: newProjectName,
       description: newProjectDesc,
       icon: '📁',
-      createdAt: new Date().toISOString().split('T')[0],
-      updatedAt: new Date().toISOString().split('T')[0],
       model: 'gemini-2.5-flash',
       instructions: '',
       sessions: [],
       files: [],
     };
-    setProjects((prev) => [...prev, newProject]);
+    await addProject(newProject);
     setNewProjectName('');
     setNewProjectDesc('');
     setIsCreating(false);
-    setActiveProject(newProject);
   };
 
   const deleteProject = (projectId: string) => {
     if (!confirm('Delete this project? All files and chat history will be lost.')) return;
-    setProjects((prev) => prev.filter((p) => p.id !== projectId));
-    if (activeProject?.id === projectId) setActiveProject(null);
+    deleteProjectStore(projectId);
+    if (activeProjectIdFromStore === projectId) setActiveProjectId(null);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,22 +108,7 @@ export default function ProjectsView() {
           content: text || '',
         };
 
-        setProjects((prev) => {
-          const next = prev.map((p) => {
-            if (p.id === activeProject.id) {
-              const updatedFiles = [...p.files];
-              const existingIdx = updatedFiles.findIndex((f) => f.name === file.name);
-              if (existingIdx > -1) {
-                updatedFiles[existingIdx] = newFile;
-              } else {
-                updatedFiles.push(newFile);
-              }
-              return { ...p, files: updatedFiles };
-            }
-            return p;
-          });
-          return next;
-        });
+        saveFileToProject(activeProject.id, newFile);
 
         toast.success(`Uploaded "${file.name}" to project.`);
       };
@@ -202,24 +118,19 @@ export default function ProjectsView() {
 
   const deleteFile = (fileId: string) => {
     if (!confirm('Are you sure you want to delete this file?')) return;
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id === activeProject!.id) {
-          const filterFiles = (list: ProjectFile[]): ProjectFile[] => {
-            return list
-              .filter((f) => f.id !== fileId)
-              .map((f) => {
-                if (f.type === 'folder' && f.children) {
-                  return { ...f, children: filterFiles(f.children) };
-                }
-                return f;
-              });
-          };
-          return { ...p, files: filterFiles(p.files) };
-        }
-        return p;
-      })
-    );
+    if (activeProject) {
+      const filterFiles = (list: ProjectFile[]): ProjectFile[] => {
+        return list
+          .filter((f) => f.id !== fileId)
+          .map((f) => {
+            if (f.type === 'folder' && f.children) {
+              return { ...f, children: filterFiles(f.children) };
+            }
+            return f;
+          });
+      };
+      updateProject(activeProject.id, { files: filterFiles(activeProject.files) });
+    }
     setSelectedFile(null);
     toast.success('File removed from project.');
   };
@@ -360,7 +271,7 @@ export default function ProjectsView() {
             <div
               key={project.id}
               onClick={() => {
-                setActiveProject(project);
+                setActiveProjectId(project.id);
                 setSelectedFile(null);
                 setFileSearchQuery('');
               }}
@@ -453,12 +364,7 @@ export default function ProjectsView() {
                         <textarea
                           value={activeProject.instructions}
                           onChange={(e) => {
-                            setProjects((prev) =>
-                              prev.map((p) =>
-                                p.id === activeProject.id ? { ...p, instructions: e.target.value } : p
-                              )
-                            );
-                            setActiveProject({ ...activeProject, instructions: e.target.value });
+                            updateProject(activeProject.id, { instructions: e.target.value });
                           }}
                           placeholder="Project-scoped instructions for the AI..."
                           className="w-full h-20 p-2 rounded bg-background border border-border text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 resize-none font-medium"

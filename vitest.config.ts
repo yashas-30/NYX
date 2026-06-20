@@ -8,10 +8,15 @@ export default defineConfig({
     environment: 'happy-dom',
     globals: true,
     setupFiles: ['./test/setup.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/release/**', '**/dist-server/**', '**/dist-desktop/**', '**/e2e/**', '**/*.spec.ts', '**/.worktrees/**'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/release/**', '**/dist-server/**', '**/dist-desktop/**', '**/e2e/**', '**/*.spec.ts', '**/.worktrees/**', 'animateicons_temp/**', 'apps/server/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        branches: 70,
+      },
     },
   },
   resolve: {

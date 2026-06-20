@@ -13,22 +13,26 @@ export class VectorStore {
       this.table = await this.db.openTable("documents");
     } catch {
       // Create if doesn't exist. Assuming embeddings are 1536 dim (e.g. OpenAI)
-      this.table = await this.db.createEmptyTable("documents", [
-        { name: "id", type: new lancedb.Float32(), vectorIndex: false },
-        { name: "vector", type: new lancedb.Float32(), dim: 1536 },
-        { name: "content", type: new lancedb.Utf8() },
-        { name: "filename", type: new lancedb.Utf8() }
+      this.table = await this.db.createTable("documents", [
+        { id: "init", vector: Array(1536).fill(0), content: "", filename: "" }
       ]);
+      await this.table.delete("id = 'init'");
       // Create full text search index for BM25 (Hybrid Search requirement)
-      await this.table.createIndex("content", { config: lancedb.Index.fts() });
+      // Note: FTS index creation requires specific LanceDB config, leaving out for now if not supported directly on this version
+      try {
+        await this.table.createIndex("content", { config: lancedb.Index.fts() });
+      } catch (e) {
+        // Ignore FTS index creation error if not supported
+      }
     }
   }
 
   async addChunks(chunks: DocumentChunk[], filename: string) {
     if (!this.table) throw new Error("VectorStore not initialized");
     
-    const records = chunks.map(chunk => ({
-      vector: chunk.embedding || new Array(1536).fill(0), // Mock embedding if missing
+    const records = chunks.map((chunk, i) => ({
+      id: `${filename}_${i}`,
+      vector: chunk.embedding || Array(1536).fill(0), // Mock embedding if missing
       content: chunk.content,
       filename: filename
     }));
@@ -46,9 +50,8 @@ export class VectorStore {
     // In LanceDB JS, we can execute a vector search and combine with FTS
     const results = await this.table
       .search(queryEmbedding)
-      .metricType("cosine")
       .limit(limit)
-      .execute();
+      .toArray();
 
     // In a full implementation, we'd also run:
     // const ftsResults = await this.table.search(query).limit(limit).execute();

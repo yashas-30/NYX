@@ -7,7 +7,7 @@ import {
   StreamMetrics,
   ImageAttachment,
 } from '@src/infrastructure/types';
-import { PromptAnalysis } from '@src/infrastructure/utils/promptClassifier';
+import { PromptAnalysis } from '@src/core/services/promptClassifier';
 import { ChatMessage } from '@src/infrastructure/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────

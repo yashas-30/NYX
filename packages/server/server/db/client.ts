@@ -44,12 +44,12 @@ export * as schema from './schema.js';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function executeDbQuery<T>(
-  queryPromise: Promise<T>,
+  queryFn: () => Promise<T>,
   isWrite: boolean = false
 ): Promise<T> {
   if (isPg) {
     // For pg, we don't have SQLite busy errors, but we can do a simple execution wrapper
-    return queryPromise;
+    return queryFn();
   }
 
   const timeoutMs = 30000;
@@ -65,7 +65,7 @@ export async function executeDbQuery<T>(
         throw new Error('Query execution timed out after 30 seconds');
       });
 
-      const result = await Promise.race([queryPromise, timeoutPromise]);
+      const result = await Promise.race([queryFn(), timeoutPromise]);
       const duration = Date.now() - start;
 
       if (duration > 1000) {

@@ -1,79 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GitBranch, GitCommit, GitPullRequest, GitMerge, Circle, CheckCircle, AlertCircle,
   FileDiff, Folder, Clock, User, MessageSquare, ChevronRight, RefreshCw, Plus, Copy, ExternalLink
 } from 'lucide-react';
-
-interface GitBranchInfo {
-  name: string;
-  current: boolean;
-  ahead: number;
-  behind: number;
-  lastCommit: string;
-  lastCommitDate: string;
-}
-
-interface GitCommit {
-  hash: string;
-  message: string;
-  author: string;
-  date: string;
-  files: string[];
-}
-
-interface GitStatus {
-  modified: string[];
-  added: string[];
-  deleted: string[];
-  untracked: string[];
-  renamed: string[];
-  branch: string;
-  ahead: number;
-  behind: number;
-}
-
-const DEMO_BRANCHES: GitBranchInfo[] = [
-  { name: 'main', current: true, ahead: 0, behind: 0, lastCommit: 'feat: update landing page copy', lastCommitDate: '2 hours ago' },
-  { name: 'feature/agent-swarm', current: false, ahead: 12, behind: 3, lastCommit: 'feat: implement multi-agent orchestration', lastCommitDate: '1 day ago' },
-  { name: 'feature/plugin-system', current: false, ahead: 8, behind: 1, lastCommit: 'feat: add plugin marketplace UI', lastCommitDate: '3 days ago' },
-  { name: 'fix/typescript-errors', current: false, ahead: 4, behind: 0, lastCommit: 'fix: resolve 300+ type errors', lastCommitDate: '5 hours ago' },
-  { name: 'docs/readme-update', current: false, ahead: 2, behind: 0, lastCommit: 'docs: update architecture diagram', lastCommitDate: '1 week ago' },
-];
-
-const DEMO_COMMITS: GitCommit[] = [
-  { hash: 'a1b2c3d', message: 'feat: implement multi-agent orchestration panel', author: 'yashas-30', date: '1 hour ago', files: ['src/features/autonomous/SwarmView.tsx', 'src/core/services/swarm.service.ts'] },
-  { hash: 'e4f5g6h', message: 'feat: add plugin marketplace with install flow', author: 'yashas-30', date: '3 hours ago', files: ['src/features/plugins/PluginsView.tsx', 'src/shared/store/usePluginStore.ts'] },
-  { hash: 'i7j8k9l', message: 'feat: create project knowledge base system', author: 'yashas-30', date: '5 hours ago', files: ['src/features/projects/ProjectsView.tsx', 'src/core/services/project.service.ts'] },
-  { hash: 'm0n1o2p', message: 'fix: resolve streaming pipeline race condition', author: 'yashas-30', date: '1 day ago', files: ['src/features/chat/hooks/useChatPipeline.ts'] },
-  { hash: 'q3r4s5t', message: 'feat: add document generation (DOCX, PPTX, XLSX)', author: 'yashas-30', date: '2 days ago', files: ['src/features/documents/DocumentsView.tsx', 'package.json'] },
-  { hash: 'u6v7w8x', message: 'refactor: unify activeMode types across codebase', author: 'yashas-30', date: '2 days ago', files: ['src/app/router.tsx', 'src/hooks/useDashboardState.ts'] },
-  { hash: 'y9z0a1b', message: 'feat: implement git integration panel', author: 'yashas-30', date: '3 days ago', files: ['src/features/git/GitView.tsx', 'src/core/services/git.service.ts'] },
-];
-
-const DEMO_STATUS: GitStatus = {
-  branch: 'main',
-  ahead: 0,
-  behind: 0,
-  modified: ['src/app/router.tsx', 'src/features/dashboard/AppDashboard.tsx'],
-  added: ['src/features/plugins/PluginsView.tsx', 'src/features/projects/ProjectsView.tsx'],
-  deleted: ['src/features/autonomous/index.ts'],
-  untracked: ['src/features/git/GitView.tsx', 'src/features/documents/DocumentsView.tsx'],
-  renamed: [],
-};
+import { useGitStatus, useGitLog, useGitBranches, useGitDiff, useGitActions, GitCommit as IGitCommit, GitBranchInfo } from './hooks/useGit';
 
 export default function GitView() {
   const [activeTab, setActiveTab] = useState<'status' | 'commits' | 'branches' | 'diff'>('status');
-  const [selectedCommit, setSelectedCommit] = useState<GitCommit | null>(null);
+  const [selectedCommit, setSelectedCommit] = useState<IGitCommit | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<GitBranchInfo | null>(null);
-  const [status, setStatus] = useState<GitStatus>(DEMO_STATUS);
-  const [commits, setCommits] = useState<GitCommit[]>(DEMO_COMMITS);
-  const [branches] = useState<GitBranchInfo[]>(DEMO_BRANCHES);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const { data: status, isFetching: isStatusFetching, refetch: refetchStatus } = useGitStatus();
+  const { data: commits, isFetching: isCommitsFetching, refetch: refetchCommits } = useGitLog();
+  const { data: branches, isFetching: isBranchesFetching, refetch: refetchBranches } = useGitBranches();
+  
+  // Example for diff fetching: right now just showing overall diff if no file selected
+  const { data: diff, isFetching: isDiffFetching } = useGitDiff();
+
+  const isRefreshing = isStatusFetching || isCommitsFetching || isBranchesFetching;
 
   const refresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 1000);
+    refetchStatus();
+    refetchCommits();
+    refetchBranches();
   };
 
   const StatusBadge = ({ count, color }: { count: number; color: string }) => {
@@ -109,6 +59,10 @@ export default function GitView() {
       </div>
     );
   };
+
+  if (!status) {
+    return <div className="h-full flex items-center justify-center text-muted-foreground">Loading git status...</div>;
+  }
 
   return (
     <div className="h-full flex flex-col bg-background overflow-hidden">
@@ -263,7 +217,7 @@ export default function GitView() {
               className="max-w-3xl"
             >
               <div className="space-y-3">
-                {commits.map((commit, index) => (
+                {commits?.map((commit, index) => (
                   <div
                     key={commit.hash}
                     onClick={() => setSelectedCommit(commit)}
@@ -313,7 +267,7 @@ export default function GitView() {
               className="max-w-3xl"
             >
               <div className="space-y-2">
-                {branches.map((branch) => (
+                {branches?.map((branch) => (
                   <div
                     key={branch.name}
                     onClick={() => setSelectedBranch(branch)}
@@ -372,38 +326,10 @@ export default function GitView() {
               <div className="p-4 bg-card border border-border rounded-xl">
                 <div className="flex items-center gap-2 mb-4">
                   <FileDiff size={14} className="text-primary" />
-                  <span className="text-sm font-medium text-foreground">src/app/router.tsx</span>
-                  <span className="text-[10px] text-muted-foreground">+45 lines, -12 lines</span>
+                  <span className="text-sm font-medium text-foreground">Current Diff</span>
                 </div>
-                <div className="font-mono text-xs leading-relaxed space-y-0.5">
-                  <div className="flex gap-2">
-                    <span className="w-6 text-right text-muted-foreground select-none">1</span>
-                    <span className="text-muted-foreground">// ... existing imports</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="w-6 text-right text-green-500 select-none">+2</span>
-                    <span className="text-green-400">const PluginsView = lazy(() =&gt; import('@src/features/plugins/PluginsView'));</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="w-6 text-right text-green-500 select-none">+3</span>
-                    <span className="text-green-400">const ProjectsView = lazy(() =&gt; import('@src/features/projects/ProjectsView'));</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="w-6 text-right text-green-500 select-none">+4</span>
-                    <span className="text-green-400">const SwarmView = lazy(() =&gt; import('@src/features/autonomous/SwarmView'));</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="w-6 text-right text-muted-foreground select-none">5</span>
-                    <span className="text-muted-foreground">// ...</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="w-6 text-right text-red-500 select-none">-12</span>
-                    <span className="text-red-400 line-through">  activeMode: 'chat' | 'registry' | 'settings' | 'compare' | 'workspace';</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="w-6 text-right text-green-500 select-none">+13</span>
-                    <span className="text-green-400">  activeMode: 'chat' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';</span>
-                  </div>
+                <div className="font-mono text-xs leading-relaxed space-y-0.5 overflow-x-auto whitespace-pre">
+                  {isDiffFetching ? 'Loading diff...' : diff || 'No changes to show.'}
                 </div>
               </div>
             </motion.div>

@@ -27,6 +27,7 @@ import { terminalRouter } from '../features/terminal/terminal.router.js';
 import { agentsRouter } from '../features/agents/agents.router.js';
 import { localModelsRouter } from '../features/local-models/localModels.router.js';
 import { nyxRouter } from '../features/nyx/nyx.router.js';
+import { gitRouter } from '../features/nyx/git.router.js';
 import { graphqlRouter } from '../features/graphql/graphql.router.js';
 import { uploadRouter } from '../features/upload/upload.router.js';
 import { cacheRouter } from '../features/cache/cache.router.js';
@@ -153,6 +154,7 @@ export async function setupRoutes(app: FastifyInstance) {
       v1.register(agentsRouter, { prefix: '/agents' });
       v1.register(localModelsRouter, { prefix: '/nyx/local-models' });
       v1.register(nyxRouter, { prefix: '/nyx' });
+      v1.register(gitRouter, { prefix: '/git' });
       v1.register(graphqlRouter, { prefix: '/graphql' });
       v1.register(uploadRouter, { prefix: '/upload' });
     },

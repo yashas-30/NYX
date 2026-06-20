@@ -7,7 +7,7 @@ import {
   Clock, Tag, Network, Info, Server, Terminal, User, BookOpen
 } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
-import { useHermesStore, HermesTask, HermesCron, MemoryEntity, MemoryRelation, MemoryObservation } from '@src/stores/useHermesStore';
+import { useHermesStore, HermesTask, HermesCron, MemoryEntity, MemoryRelation, MemoryObservation } from '@src/shared/store/useHermesStore';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { HermesAgent } from '@src/core/agents/HermesAgent';
 

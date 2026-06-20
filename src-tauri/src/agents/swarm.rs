@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 use crate::commands::mcp::McpManager;
 use crate::commands::agent_orchestrator::StreamContext;
-use crate::commands::llm::{execute_llm_call, UnifiedMessage};
+use crate::commands::llm::{execute_llm_call_auto, UnifiedMessage};
 use tauri::{AppHandle, Emitter, Manager};
 
 /// Represents the memory and state of an agent session
@@ -102,7 +102,7 @@ Task:
         content: json!(prompt),
     }];
 
-    let decomposition_raw = match execute_llm_call(
+    let decomposition_raw = match execute_llm_call_auto(
         &context.provider,
         &context.model,
         &context.api_key,
@@ -234,7 +234,7 @@ Final Consolidated Response:", epic, reports_text
         content: json!(aggregator_prompt),
     }];
 
-    let final_result = match execute_llm_call(
+    let final_result = match execute_llm_call_auto(
         &context.provider,
         &context.model,
         &context.api_key,
@@ -301,7 +301,7 @@ async fn run_worker_agent_loop(
         content: json!(task),
     }];
 
-    let result = match execute_llm_call(
+    let result = match execute_llm_call_auto(
         &ctx.provider,
         &ctx.model,
         &ctx.api_key,

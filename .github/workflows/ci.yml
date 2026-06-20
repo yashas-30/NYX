@@ -42,7 +42,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile --reporter append-only
-      - run: pnpm test
+      - run: pnpm run coverage
 
   build:
     runs-on: ${{ matrix.os }}

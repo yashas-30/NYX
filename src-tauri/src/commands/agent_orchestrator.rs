@@ -80,6 +80,7 @@ pub async fn run_agent_stream(
             "openrouter" => "https://openrouter.ai/api/v1/chat/completions".to_string(),
             "deepseek"   => "https://api.deepseek.com/chat/completions".to_string(),
             "lmstudio"   => "http://127.0.0.1:1234/v1/chat/completions".to_string(),
+            "nyx-embedded" => "http://127.0.0.1:11435/v1/chat/completions".to_string(),
             _            => "http://127.0.0.1:11434/v1/chat/completions".to_string(),
         }
     };

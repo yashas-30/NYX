@@ -29,7 +29,7 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { ContextManager } from '../utils/ContextManager';
 import { formatProviderError } from '@src/infrastructure/api/streamParser';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
-import { useUsageStore } from '@src/core/stores/useUsageStore';
+import { useUsageStore } from '@src/shared/store/useUsageStore';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
 
 // ---------------------------------------------------------------------------
@@ -45,10 +45,12 @@ function extractModelsFromPrompt(prompt: string): typeof AVAILABLE_MODELS {
     { keywords: ['claude 3.7', 'claude 37', 'claude-3.7', '3.7 sonnet', '3.7-sonnet'], modelId: 'claude-3-7-sonnet-20250219' },
     { keywords: ['claude 3.5', 'claude-3.5', '3.5 sonnet', '3.5-sonnet', 'sonnet'], modelId: 'claude-3-5-sonnet-20241022' },
     { keywords: ['haiku', 'claude-3.5-haiku', '3.5 haiku'], modelId: 'claude-3-5-haiku-20241022' },
+    { keywords: ['gpt-4.5', 'gpt 4.5', 'gpt-4.5-preview'], modelId: 'gpt-4.5-preview' },
     { keywords: ['gpt-4o-mini', 'gpt 4o mini', '4o mini', 'gpt-4o mini'], modelId: 'gpt-4o-mini' },
     { keywords: ['gpt-4o', 'gpt 4o', 'gpt4o', 'gpt-4'], modelId: 'gpt-4o' },
     { keywords: ['o3-mini', 'o3 mini', 'o3'], modelId: 'o3-mini' },
-    { keywords: ['o1-mini', 'o1 mini', 'o1'], modelId: 'o1-mini' },
+    { keywords: ['o1-mini', 'o1 mini'], modelId: 'o1-mini' },
+    { keywords: ['o1', 'openai o1'], modelId: 'o1' },
     { keywords: ['deepseek r1', 'deepseek-r1', 'r1 cloud', 'r1'], modelId: 'deepseek-reasoner' },
     { keywords: ['deepseek v3', 'deepseek-v3', 'deepseek chat'], modelId: 'deepseek-chat' },
     { keywords: ['gemini 3.5', 'gemini-3.5', 'gemini 3.5 flash'], modelId: 'gemini-3.5-flash' },
@@ -859,7 +861,7 @@ export const useChatPipeline = ({
 
       try {
         // Validate API key early
-        if (!nyxApiKey && nyxProvider !== 'ollama' && nyxProvider !== 'lmstudio') {
+        if (!nyxApiKey && nyxProvider !== 'ollama' && nyxProvider !== 'lmstudio' && nyxProvider !== 'nyx-native') {
           throw new Error(
             `${nyxProvider} API key not found. Please add your API key in Settings before using this model.`
           );
@@ -1313,7 +1315,7 @@ export const useChatPipeline = ({
                 tpm: 'tokens per minute',
                 rpd: 'requests per day',
               };
-              finalContent = `You have reached your limit. You are requesting more ${limitNames[rateLimitReason]} than the limit of the model. Please wait for a certain amount of time and retry.`;
+              finalContent = `You have reached your limit. You are requesting more ${limitNames[rateLimitReason]} than the limit of the model. Please wait for a certain amount of time and retry.\n\n**Provider Details:**\n\`${errorMsg}\``;
             }
 
             next[next.length - 1] = {

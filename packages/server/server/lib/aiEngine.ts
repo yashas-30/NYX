@@ -166,7 +166,7 @@ export class UnifiedEngine {
         );
 
       case 'nyx-native':
-        return this.streamNyxNative(model, processedMessages, settings, writeChunk, onDone);
+        return this.streamNyxNative(model, processedMessages, settings, tools, writeChunk, onDone);
 
       case 'antigravity-sdk':
         return this.streamAntigravitySdk(model, processedMessages, activeKey, writeChunk, onDone);
@@ -291,6 +291,7 @@ export class UnifiedEngine {
     model: string,
     messages: ChatMessage[],
     settings: AISettings | undefined,
+    tools: any[] | undefined,
     write: (chunk: any) => void,
     done: () => void
   ): Promise<void> {
@@ -311,6 +312,7 @@ export class UnifiedEngine {
         top_p: settings?.topP ?? 0.9, // Nucleus sampling
         top_k: settings?.topK ?? 20, // Top-K filter
         min_p: (settings as any)?.minP ?? 0.05, // Layer 1: MinP prevents wildly improbable tokens
+        tools: tools,
       }),
     });
 

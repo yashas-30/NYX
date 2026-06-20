@@ -8,10 +8,10 @@ metadata:
 spec:
   tls:
   - hosts:
-    - api.nyx.local
+    - api.nyx.production
     secretName: nyx-tls
   rules:
-  - host: api.nyx.local
+  - host: api.nyx.production
     http:
       paths:
       - path: /

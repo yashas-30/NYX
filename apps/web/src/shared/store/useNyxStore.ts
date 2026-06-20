@@ -14,7 +14,6 @@ export interface ModelSettings {
   batchSize: number;
   repeatPenalty: number;
   mirostat: number;
-  antigravity?: boolean;
 }
 
 export type ActiveMode = 'chat' | 'coder' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
@@ -79,7 +78,6 @@ const DEFAULT_SETTINGS: ModelSettings = {
   batchSize: 512,
   repeatPenalty: 1.1,
   mirostat: 0,
-  antigravity: true,
 };
 
 const DEFAULT_MODEL: ModelOption = {

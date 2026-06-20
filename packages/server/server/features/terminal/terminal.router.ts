@@ -26,34 +26,38 @@ export async function terminalRouter(fastify: FastifyInstance) {
         return reply.code(500).send({ error: 'Failed to initialize sandboxed process' });
       }
 
-      let stdout = '';
-      let stderr = '';
+      return new Promise((resolve) => {
+        let stdout = '';
+        let stderr = '';
 
-      child.stdout?.on('data', (data) => {
-        stdout += data.toString();
-      });
+        child.stdout?.on('data', (data) => {
+          stdout += data.toString();
+        });
 
-      child.stderr?.on('data', (data) => {
-        stderr += data.toString();
-      });
+        child.stderr?.on('data', (data) => {
+          stderr += data.toString();
+        });
 
-      child.on('close', (code) => {
-        if (code === 0) {
-          reply.send({ stdout, stderr });
-        } else {
+        child.on('close', (code) => {
+          if (code === 0) {
+            reply.send({ stdout, stderr });
+          } else {
+            reply.code(500).send({
+              error: `Process exited with code ${code}`,
+              stdout,
+              stderr,
+            });
+          }
+          resolve(undefined);
+        });
+
+        child.on('error', (err) => {
           reply.code(500).send({
-            error: `Process exited with code ${code}`,
+            error: `Process error: ${err.message}`,
             stdout,
             stderr,
           });
-        }
-      });
-
-      child.on('error', (err) => {
-        reply.code(500).send({
-          error: `Process error: ${err.message}`,
-          stdout,
-          stderr,
+          resolve(undefined);
         });
       });
     }
@@ -100,7 +104,7 @@ export async function terminalRouter(fastify: FastifyInstance) {
     reply.header('Cache-Control', 'no-cache');
     reply.header('Connection', 'keep-alive');
     reply.raw.flushHeaders();
-    sendSseTokenRotate(reply.raw as any);
+    sendSseTokenRotate(reply);
 
     const execId = (request.query as any).execId as string;
 

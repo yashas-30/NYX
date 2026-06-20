@@ -27,8 +27,8 @@ const responseCache = new LRUCache<string, any>({
   ttl: 1000 * 60 * 60, // 1 hour
 });
 
-function generateCacheKey(provider: string, model: string, prompt: any): string {
-  const hash = crypto.createHash('sha256').update(JSON.stringify(prompt)).digest('hex');
+function generateCacheKey(provider: string, model: string, chatReq: any): string {
+  const hash = crypto.createHash('sha256').update(JSON.stringify(chatReq)).digest('hex');
   return `${provider}:${model}:${hash}`;
 }
 
@@ -113,13 +113,18 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
   ): AsyncGenerator<string, void, unknown> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const apiKey = keyManager.getNextKey(provider);
+      let yieldedAny = false;
       try {
         const stream = adapter.streamChat(chatReq, apiKey);
         for await (const chunk of stream) {
+          yieldedAny = true;
           yield chunk;
         }
         return; // Success, exit retry loop
       } catch (err: any) {
+        if (yieldedAny) {
+          throw err; // Cannot retry if we already sent partial chunks
+        }
         if (err.message && err.message.includes('429')) {
           keyManager.markRateLimited(provider, apiKey, 60);
           logger.warn(`[Fastify] Rate limited on attempt ${attempt} for ${provider}. Retrying...`);
@@ -147,7 +152,7 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
     try {
       const adapter = adapters[provider];
-      const cacheKey = generateCacheKey(provider, chatReq.model, chatReq.messages);
+      const cacheKey = generateCacheKey(provider, chatReq.model, chatReq);
       let active = activeStreams.get(cacheKey);
 
       if (!active) {
@@ -237,9 +242,15 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
       // Keep the request open until the stream finishes
       await new Promise<void>((resolve) => {
-        request.raw.on('close', resolve);
-        active!.emitter.once('end', resolve);
-        active!.emitter.once('error', resolve);
+        const onResolve = () => {
+          request.raw.removeListener('close', onResolve);
+          active!.emitter.removeListener('end', onResolve);
+          active!.emitter.removeListener('error', onResolve);
+          resolve();
+        };
+        request.raw.once('close', onResolve);
+        active!.emitter.once('end', onResolve);
+        active!.emitter.once('error', onResolve);
       });
     } catch (err: any) {
       logger.error({ err }, '[Fastify] Stream error');
@@ -269,7 +280,7 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       const results = await Promise.all(
         requests.map(async (chatReq, idx) => {
           // Check cache first
-          const cacheKey = generateCacheKey(provider, chatReq.model, chatReq.messages);
+          const cacheKey = generateCacheKey(provider, chatReq.model, chatReq);
           if (responseCache.has(cacheKey)) {
             return { index: idx, result: responseCache.get(cacheKey) };
           }

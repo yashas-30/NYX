@@ -11,10 +11,10 @@ import {
   ToolCall,
   TelemetryMetrics,
 } from '@src/infrastructure/types';
-import { PromptAnalysis, ConversationState } from '@src/infrastructure/utils/promptClassifier';
+import { PromptAnalysis, ConversationState } from '@src/core/services/promptClassifier';
 import { buildChatSystemPrompt, buildChatUserPrompt } from '../prompts/chatPrompts';
 import { searchWeb } from '@src/infrastructure/api/searchApi';
-import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from '../../shared/agents/baseAgent';
+import { BaseAgent, BaseAgentConfig, HISTORY_SLICE_SIZE } from '@src/core/agents/baseAgent';
 import { encoding_for_model } from 'tiktoken';
 
 export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));

@@ -162,7 +162,7 @@ export async function buildFastifyServer(): Promise<FastifyInstance> {
       if (!isPublic) {
         try {
           if (
-            env.NODE_ENV !== 'development' ||
+            (env.NODE_ENV !== 'development' && env.NODE_ENV !== 'test') ||
             request.headers['csrf-token'] ||
             request.headers['xsrf-token'] ||
             request.headers['x-csrf-token']
