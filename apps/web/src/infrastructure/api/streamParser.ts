@@ -381,6 +381,11 @@ export async function parseSSEStream(
           startLen = 17;
         }
 
+        if (startIdx === -1) {
+          startIdx = streamBuffer.indexOf('<nyx_think>');
+          startLen = 11;
+        }
+
         if (startIdx !== -1) {
           const before = streamBuffer.slice(0, startIdx);
           if (before) {
@@ -394,7 +399,7 @@ export async function parseSSEStream(
 
         let partialIdx = -1;
         if (!flush) {
-          const targets = ['<think>', '<|channel>thought'];
+          const targets = ['<think>', '<|channel>thought', '<nyx_think>'];
           for (const target of targets) {
             for (
               let i = Math.max(0, streamBuffer.length - target.length);
@@ -430,6 +435,11 @@ export async function parseSSEStream(
           endLen = 10;
         }
 
+        if (endIdx === -1) {
+          endIdx = streamBuffer.indexOf('</nyx_think>');
+          endLen = 12;
+        }
+
         if (endIdx !== -1) {
           const reasoningDelta = streamBuffer.slice(0, endIdx);
           if (reasoningDelta) {
@@ -443,7 +453,7 @@ export async function parseSSEStream(
 
         let partialIdx = -1;
         if (!flush) {
-          const targets = ['</think>', '<channel|>'];
+          const targets = ['</think>', '<channel|>', '</nyx_think>'];
           for (const target of targets) {
             for (
               let i = Math.max(0, streamBuffer.length - target.length);

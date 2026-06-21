@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { AVAILABLE_MODELS } from '@shared/config/models';
@@ -96,7 +97,7 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
         } border-b border-border shrink-0 select-none bg-card transition-all duration-300`}
       >
         <div className="flex items-center gap-2">
-          <Scale size={16} className="text-primary" />
+          <AnimatedIcon icon={Scale} size={16} className="text-primary" />
           <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">
             Model Comparison
           </h2>
@@ -143,7 +144,7 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
             {/* Card A */}
             <div className="bg-card border border-border p-6 rounded-2xl space-y-4 shadow-sm relative overflow-hidden">
               <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-full flex items-center justify-center pointer-events-none">
-                {modelA.provider === 'gemini' ? <Globe size={24} className="text-primary/20" /> : <Cpu size={24} className="text-primary/20" />}
+                {modelA.provider === 'gemini' ? <AnimatedIcon icon={Globe} size={24} className="text-primary/20" /> : <AnimatedIcon icon={Cpu} size={24} className="text-primary/20" />}
               </div>
               <div>
                 <span className="text-[9px] uppercase tracking-widest font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
@@ -157,16 +158,16 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
 
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground flex items-center gap-1.5"><Globe size={13} /> Provider</span>
+                  <span className="text-muted-foreground flex items-center gap-1.5"><AnimatedIcon icon={Globe} size={13} /> Provider</span>
                   <span className="font-semibold capitalize text-foreground">{modelA.provider}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground flex items-center gap-1.5"><Activity size={13} /> Tier Status</span>
+                  <span className="text-muted-foreground flex items-center gap-1.5"><AnimatedIcon icon={Activity} size={13} /> Tier Status</span>
                   <span className="font-semibold uppercase tracking-wider text-[10px] bg-muted px-2 py-0.5 rounded text-foreground">{modelA.status}</span>
                 </div>
                 {modelA.shutdownDate && (
                   <div className="flex justify-between items-center text-xs text-amber-500">
-                    <span className="flex items-center gap-1.5"><Clock size={13} /> Deprecated date</span>
+                    <span className="flex items-center gap-1.5"><AnimatedIcon icon={Clock} size={13} /> Deprecated date</span>
                     <span className="font-bold">{modelA.shutdownDate}</span>
                   </div>
                 )}
@@ -176,7 +177,7 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
             {/* Card B */}
             <div className="bg-card border border-border p-6 rounded-2xl space-y-4 shadow-sm relative overflow-hidden">
               <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-full flex items-center justify-center pointer-events-none">
-                {modelB.provider === 'gemini' ? <Globe size={24} className="text-primary/20" /> : <Cpu size={24} className="text-primary/20" />}
+                {modelB.provider === 'gemini' ? <AnimatedIcon icon={Globe} size={24} className="text-primary/20" /> : <AnimatedIcon icon={Cpu} size={24} className="text-primary/20" />}
               </div>
               <div>
                 <span className="text-[9px] uppercase tracking-widest font-bold text-sky-500 bg-sky-500/10 px-2 py-0.5 rounded-full">
@@ -190,16 +191,16 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
 
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground flex items-center gap-1.5"><Globe size={13} /> Provider</span>
+                  <span className="text-muted-foreground flex items-center gap-1.5"><AnimatedIcon icon={Globe} size={13} /> Provider</span>
                   <span className="font-semibold capitalize text-foreground">{modelB.provider}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-muted-foreground flex items-center gap-1.5"><Activity size={13} /> Tier Status</span>
+                  <span className="text-muted-foreground flex items-center gap-1.5"><AnimatedIcon icon={Activity} size={13} /> Tier Status</span>
                   <span className="font-semibold uppercase tracking-wider text-[10px] bg-muted px-2 py-0.5 rounded text-foreground">{modelB.status}</span>
                 </div>
                 {modelB.shutdownDate && (
                   <div className="flex justify-between items-center text-xs text-amber-500">
-                    <span className="flex items-center gap-1.5"><Clock size={13} /> Deprecated date</span>
+                    <span className="flex items-center gap-1.5"><AnimatedIcon icon={Clock} size={13} /> Deprecated date</span>
                     <span className="font-bold">{modelB.shutdownDate}</span>
                   </div>
                 )}
@@ -217,7 +218,7 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
               {/* Context Window Scale */}
               <div className="space-y-2">
                 <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-muted-foreground flex items-center gap-1.5"><FileText size={13} /> Context Window</span>
+                  <span className="text-muted-foreground flex items-center gap-1.5"><AnimatedIcon icon={FileText} size={13} /> Context Window</span>
                   <div className="space-x-4">
                     <span className="text-primary">Model A: {modelA.specs?.contextWindow || 'Unknown'}</span>
                     <span className="text-sky-500">Model B: {modelB.specs?.contextWindow || 'Unknown'}</span>
@@ -248,7 +249,7 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
               {/* Output Limit Scale */}
               <div className="space-y-2">
                 <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-muted-foreground flex items-center gap-1.5"><Zap size={13} /> Max Output Limit</span>
+                  <span className="text-muted-foreground flex items-center gap-1.5"><AnimatedIcon icon={Zap} size={13} /> Max Output Limit</span>
                   <div className="space-x-4">
                     <span className="text-primary">Model A: {modelA.specs?.maxOutput || 'Unknown'}</span>
                     <span className="text-sky-500">Model B: {modelB.specs?.maxOutput || 'Unknown'}</span>
@@ -281,7 +282,7 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                 {/* Cost Estimate */}
                 <div className="border border-border/60 bg-muted/20 p-4 rounded-xl space-y-2">
                   <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                    <Coins size={14} className="text-amber-500" />
+                    <AnimatedIcon icon={Coins} size={14} className="text-amber-500" />
                     <span>Cost Tier</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
@@ -303,7 +304,7 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                 {/* Speed / Latency Indicator */}
                 <div className="border border-border/60 bg-muted/20 p-4 rounded-xl space-y-2">
                   <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                    <Zap size={14} className="text-cyan-500" />
+                    <AnimatedIcon icon={Zap} size={14} className="text-cyan-500" />
                     <span>Speed / Latency</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
@@ -325,7 +326,7 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                 {/* Modality Comparison */}
                 <div className="border border-border/60 bg-muted/20 p-4 rounded-xl space-y-2">
                   <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                    <Sparkles size={14} className="text-purple-500" />
+                    <AnimatedIcon icon={Sparkles} size={14} className="text-purple-500" />
                     <span>Native Modality</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
@@ -363,16 +364,16 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                   <td className="py-3 text-foreground font-semibold">Zero-key Local Running</td>
                   <td className="py-3">
                     {modelA.provider === 'ollama' || modelA.provider === 'lmstudio' ? (
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                     ) : (
-                      <X className="w-4 h-4 text-red-500" />
+                      <AnimatedIcon icon={X} className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                   <td className="py-3">
                     {modelB.provider === 'ollama' || modelB.provider === 'lmstudio' ? (
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                     ) : (
-                      <X className="w-4 h-4 text-red-500" />
+                      <AnimatedIcon icon={X} className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                 </tr>
@@ -380,16 +381,16 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                   <td className="py-3 text-foreground font-semibold">Multimodal Inputs (Images)</td>
                   <td className="py-3">
                     {modelA.specs?.modality?.toLowerCase().includes('multi') ? (
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                     ) : (
-                      <X className="w-4 h-4 text-red-500" />
+                      <AnimatedIcon icon={X} className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                   <td className="py-3">
                     {modelB.specs?.modality?.toLowerCase().includes('multi') ? (
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                     ) : (
-                      <X className="w-4 h-4 text-red-500" />
+                      <AnimatedIcon icon={X} className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                 </tr>
@@ -397,16 +398,16 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                   <td className="py-3 text-foreground font-semibold">High Context Window (100k+)</td>
                   <td className="py-3">
                     {modelACtx >= 100000 ? (
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                     ) : (
-                      <X className="w-4 h-4 text-red-500" />
+                      <AnimatedIcon icon={X} className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                   <td className="py-3">
                     {modelBCtx >= 100000 ? (
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                     ) : (
-                      <X className="w-4 h-4 text-red-500" />
+                      <AnimatedIcon icon={X} className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                 </tr>
@@ -414,26 +415,26 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                   <td className="py-3 text-foreground font-semibold">Offline Execution Capable</td>
                   <td className="py-3">
                     {modelA.provider === 'ollama' || modelA.provider === 'lmstudio' ? (
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                     ) : (
-                      <X className="w-4 h-4 text-red-500" />
+                      <AnimatedIcon icon={X} className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                   <td className="py-3">
                     {modelB.provider === 'ollama' || modelB.provider === 'lmstudio' ? (
-                      <Check className="w-4 h-4 text-emerald-500" />
+                      <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                     ) : (
-                      <X className="w-4 h-4 text-red-500" />
+                      <AnimatedIcon icon={X} className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                 </tr>
                 <tr>
                   <td className="py-3 text-foreground font-semibold">Structured Agent Task Routing</td>
                   <td className="py-3">
-                    <Check className="w-4 h-4 text-emerald-500" />
+                    <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                   </td>
                   <td className="py-3">
-                    <Check className="w-4 h-4 text-emerald-500" />
+                    <AnimatedIcon icon={Check} className="w-4 h-4 text-emerald-500" />
                   </td>
                 </tr>
               </tbody>

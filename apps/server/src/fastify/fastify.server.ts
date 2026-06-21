@@ -10,6 +10,7 @@ import { ProviderAdapter, ChatRequest } from './adapters/base.adapter.js';
 import { modelCache } from './modelCache.service.js';
 import { keyManager } from './keyManager.service.js';
 import { webhookService } from './webhook.service.js';
+import { MemoryService } from '../features/nyx/memory.service.js';
 import logger from '../lib/logger.js';
 
 const registry = new promClient.Registry();
@@ -52,6 +53,9 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
   // Initialize load balancer keys
   keyManager.initializeFromEnv();
+
+  // Preload local embedding models so they don't block the first request
+  MemoryService.preloadModels();
 
   // Metrics endpoint
   app.get('/metrics', async (request, reply) => {
@@ -308,7 +312,6 @@ export const fastifyModelRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         chatReq.model,
         webhookUrl,
         chatReq,
-        adapter,
         apiKey
       );
       return reply.send({ jobId, status: 'pending' });

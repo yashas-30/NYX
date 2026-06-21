@@ -648,7 +648,6 @@ export const useChatPipeline = ({
             case 'citation': {
               const cite = chunk.metadata as Citation;
               if (cite) {
-                // fallow-ignore-next-line code-duplication
                 citations.push(cite);
                 safeUpdateHistory((prev) => {
                   const next = [...prev];
@@ -661,6 +660,73 @@ export const useChatPipeline = ({
                   }
                   return next;
                 });
+              }
+              break;
+            }
+
+            case 'tool_calls': {
+              const newCalls = Array.isArray(chunk.content) ? chunk.content : [];
+              newCalls.forEach((tc: any) => {
+                const tcId = tc.id || tc.toolCallId || `call_${Date.now()}_${Math.random()}`;
+                const existing = toolCallsMap.get(tcId);
+                if (existing) {
+                  existing.function.arguments = tc.function?.arguments || tc.args || '';
+                } else {
+                  toolCallsMap.set(tcId, {
+                    id: tcId,
+                    type: 'function',
+                    index: tc.index || toolCallsMap.size,
+                    function: {
+                      name: tc.function?.name || tc.name || tc.toolName || '',
+                      arguments: tc.function?.arguments || tc.args || '',
+                    },
+                  });
+                }
+              });
+              
+              const calls = Array.from(toolCallsMap.values());
+              safeUpdateHistory((prev) => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (last?.role === 'assistant') {
+                  next[next.length - 1] = {
+                    ...last,
+                    toolCalls: calls,
+                  };
+                }
+                return next;
+              });
+
+              onStreamRef.current?.({
+                type: 'tool_use',
+                content: JSON.stringify(calls),
+              } as any);
+              break;
+            }
+
+            case 'tool_result': {
+              const resultData = chunk.content;
+              const resultObj = chunk.toolResult;
+              // If we have a tool result, we can mark the corresponding tool call as successful
+              if (resultObj && resultObj.toolCallId) {
+                const target = toolCallsMap.get(resultObj.toolCallId);
+                if (target) {
+                  target.status = 'success';
+                  target.result = resultObj.result || resultData;
+                  toolCallsMap.set(target.id, target);
+                  
+                  safeUpdateHistory((prev) => {
+                    const next = [...prev];
+                    const last = next[next.length - 1];
+                    if (last?.role === 'assistant') {
+                      next[next.length - 1] = {
+                        ...last,
+                        toolCalls: Array.from(toolCallsMap.values()),
+                      };
+                    }
+                    return next;
+                  });
+                }
               }
               break;
             }

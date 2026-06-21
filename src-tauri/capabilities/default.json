@@ -6,14 +6,25 @@
     "core:default",
     "shell:allow-open",
     "dialog:default",
+    "dialog:allow-confirm",
+    "dialog:allow-message",
     "fs:allow-appdata-read",
     "fs:allow-appdata-write",
     "fs:allow-resource-read",
     "http:default",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        { "url": "http://127.0.0.1:*/**" },
+        { "url": "http://localhost:*/**" },
+        { "url": "https://generativelanguage.googleapis.com/**" },
+        { "url": "https://*.anthropic.com/**" },
+        { "url": "https://api.openai.com/**" },
+        { "url": "https://api.deepseek.com/**" },
+        { "url": "https://openrouter.ai/**" }
+      ]
+    },
     "store:default",
-    "global-shortcut:allow-is-registered",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister",
     "process:allow-restart",
     "notification:default",
     "opener:default"

@@ -1,5 +1,6 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React from 'react';
-import { MousePointer2, Keyboard } from 'lucide-react';
+import { Cursor as Cursor, Keyboard } from '@phosphor-icons/react';
 import { motion } from 'framer-motion';
 
 interface ComputerUsePreviewProps {
@@ -20,9 +21,9 @@ export const ComputerUsePreview: React.FC<ComputerUsePreviewProps> = ({
       <div className="flex w-full items-center justify-between bg-muted px-3 py-2 text-sm text-primary">
         <div className="flex items-center gap-2">
           {['key', 'type'].includes(action) ? (
-            <Keyboard className="h-4 w-4" />
+            <AnimatedIcon icon={Keyboard} className="h-4 w-4" />
           ) : (
-            <MousePointer2 className="h-4 w-4" />
+            <AnimatedIcon icon={Cursor} className="h-4 w-4" />
           )}
           <span className="font-mono font-medium">OS Action: {action}</span>
         </div>

@@ -55,6 +55,7 @@ pub async fn run_agent_stream(
     messages: &[Value],
 ) -> Result<(String, Vec<Value>), String> {
     let client = Client::builder()
+        .user_agent("NYX/1.0")
         .timeout(std::time::Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())?;
@@ -86,11 +87,19 @@ pub async fn run_agent_stream(
     };
 
     // ── Build request body ────────────────────────────────────────────────────
-    let mut body = json!({
-        "model": context.model,
-        "temperature": 0.3,
-        "stream": true,
-    });
+    let mut body = if is_gemini {
+        json!({
+            "generationConfig": {
+                "temperature": 0.3
+            }
+        })
+    } else {
+        json!({
+            "model": context.model,
+            "temperature": 0.3,
+            "stream": true,
+        })
+    };
 
     if is_anthropic {
         body["max_tokens"] = json!(8192);
@@ -156,14 +165,16 @@ pub async fn run_agent_stream(
 
         let tools = get_builtin_tools();
         if let Some(t_array) = tools.as_array() {
-            let anthropic_tools: Vec<Value> = t_array.iter().filter_map(|t| {
-                t.get("function").map(|f| json!({
-                    "name":         f["name"],
-                    "description":  f["description"],
-                    "input_schema": f["parameters"]
-                }))
-            }).collect();
-            body["tools"] = json!(anthropic_tools);
+            if !t_array.is_empty() {
+                let anthropic_tools: Vec<Value> = t_array.iter().filter_map(|t| {
+                    t.get("function").map(|f| json!({
+                        "name":         f["name"],
+                        "description":  f["description"],
+                        "input_schema": f["parameters"]
+                    }))
+                }).collect();
+                body["tools"] = json!(anthropic_tools);
+            }
         }
     } else if is_gemini {
         let mut contents = vec![];
@@ -220,17 +231,19 @@ pub async fn run_agent_stream(
 
         let tools = get_builtin_tools();
         if let Some(t_array) = tools.as_array() {
-            let mut decls = vec![];
-            for t in t_array {
-                if let Some(f) = t.get("function") {
-                    let mut f_clone = f.clone();
-                    if let Some(params) = f_clone.get_mut("parameters") {
-                        convert_schema_to_gemini(params);
+            if !t_array.is_empty() {
+                let mut decls = vec![];
+                for t in t_array {
+                    if let Some(f) = t.get("function") {
+                        let mut f_clone = f.clone();
+                        if let Some(params) = f_clone.get_mut("parameters") {
+                            convert_schema_to_gemini(params);
+                        }
+                        decls.push(f_clone);
                     }
-                    decls.push(f_clone);
                 }
+                body["tools"] = json!([{"functionDeclarations": decls}]);
             }
-            body["tools"] = json!([{"functionDeclarations": decls}]);
         }
     } else {
         // OpenAI / OpenRouter / DeepSeek / Ollama / LMStudio
@@ -249,7 +262,12 @@ pub async fn run_agent_stream(
             }
         }
         body["messages"] = json!(mapped_msgs);
-        body["tools"]    = get_builtin_tools();
+        let tools = get_builtin_tools();
+        if let Some(t_array) = tools.as_array() {
+            if !t_array.is_empty() {
+                body["tools"] = tools;
+            }
+        }
     }
 
     // ── Send with retry (exponential backoff on 429 / 503) ───────────────────
@@ -436,7 +454,7 @@ pub async fn orchestrate_supervisor(
     cancel_flag.store(false, Ordering::SeqCst);
 
     // --- NEW: Agent Routing Phase ---
-    let query = messages.last().and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
+    let _query = messages.last().and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
     if let Some(agent) = &context.agent_type {
         let task = match agent.as_str() {
             "chat" => Some(crate::agents::orchestrator::AgentTask::ChatQuery(context.clone(), messages.to_vec())),

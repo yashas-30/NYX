@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle } from 'lucide-react';
@@ -45,7 +46,7 @@ export const ContextBar: React.FC<ContextBarProps> = ({ used, limit, onSummarize
           </button>
         )}
         {isWarn && (
-          <AlertTriangle className="w-3 h-3 shrink-0" style={{ color }} />
+          <AnimatedIcon icon={AlertTriangle} className="w-3 h-3 shrink-0" style={{ color }} />
         )}
       </div>
     </motion.div>

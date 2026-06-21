@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 /**
  * @file src/shared/components/AgentLightningPanel.tsx
  * @description Sleek glassmorphism side panel detailing the Microsoft Agent Lightning RL training loop,
@@ -189,7 +190,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
               <div className="p-4 bg-muted/20 border border-border rounded-md space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <GitCommit size={12} className="text-foreground" />
+                    <AnimatedIcon icon={GitCommit} size={12} className="text-foreground" />
                     Learning Trajectory (APO Loop)
                   </h4>
                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-muted text-foreground font-mono border border-border font-bold uppercase">
@@ -241,12 +242,12 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <Cpu size={12} className="text-foreground" />
+                    <AnimatedIcon icon={Cpu} size={12} className="text-foreground" />
                     APO Prompt Optimizations ({activeDirectives.length})
                   </h4>
                   {isOptimizing && (
                     <span className="flex items-center gap-1 text-[9px] text-foreground font-bold animate-pulse">
-                      <RefreshCw size={10} className="animate-spin" /> Optimizing...
+                      <AnimatedIcon icon={RefreshCw} size={10} className="animate-spin" /> Optimizing...
                     </span>
                   )}
                 </div>
@@ -254,7 +255,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                 <div className="space-y-2">
                   {activeDirectives.length === 0 ? (
                     <div className="p-4 rounded-md border border-dashed border-border text-center text-muted-foreground text-xs">
-                      <AlertCircle size={14} className="mx-auto text-muted-foreground mb-1.5" />
+                      <AnimatedIcon icon={AlertCircle} size={14} className="mx-auto text-muted-foreground mb-1.5" />
                       No prompt rules generated yet. Provide thumbs up/down rewards to trigger
                       automatic continuous optimization!
                     </div>
@@ -282,7 +283,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                    <FileText size={12} className="text-foreground" />
+                    <AnimatedIcon icon={FileText} size={12} className="text-foreground" />
                     Rollout Trace History ({activeRollouts.length})
                   </h4>
                   {activeRollouts.length > 0 && (
@@ -308,7 +309,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                       >
                         <div className="flex items-center justify-between text-[8px] font-mono text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <Clock size={8} /> {new Date(rollout.timestamp).toLocaleTimeString()}
+                            <AnimatedIcon icon={Clock} size={8} /> {new Date(rollout.timestamp).toLocaleTimeString()}
                           </span>
                           <span className="uppercase font-bold tracking-widest text-foreground">
                             {rollout.id.slice(0, 13)}
@@ -337,7 +338,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
                               key={sidx}
                               className="flex items-center gap-1 text-[8.5px] text-muted-foreground font-medium"
                             >
-                              <Cpu size={10} className="text-foreground/70" />
+                              <AnimatedIcon icon={Cpu} size={10} className="text-foreground/70" />
                               <span>{span.name}</span>
                               <span className="text-muted-foreground font-mono">({span.durationMs}ms)</span>
                             </div>
@@ -389,7 +390,7 @@ export const AgentLightningPanel: React.FC<AgentLightningPanelProps> = ({
 
             {/* Panel footer */}
             <div className="p-4 bg-muted/20 border-t border-border text-[9px] text-muted-foreground text-center flex items-center justify-center gap-1.5 select-none shrink-0">
-              <ShieldAlert size={10} className="text-muted-foreground" />
+              <AnimatedIcon icon={ShieldAlert} size={10} className="text-muted-foreground" />
               <span>Vault protected traces. Dynamic updates run isolated.</span>
             </div>
           </motion.div>

@@ -318,21 +318,11 @@ export class AIService {
     const historyHash = options.history?.length ? `${options.history.length}:${String(options.history[options.history.length - 1]?.content).substring(0, 30)}` : '0';
     const dedupeKey = `${this.getSessionToken()}:${provider}:${modelId}:${prompt.substring(0, 50)}:${prompt.length}:${historyHash}`;
 
-    // Deduplication
+    // Deduplication — return the existing promise without replaying onStream.
+    // The original caller's stream already delivered all tokens; replaying
+    // res.text here would double the content for any streaming duplicate.
     if (this.inFlightRequests.has(dedupeKey)) {
-      const existing = this.inFlightRequests.get(dedupeKey)!.promise;
-      if (onStream) {
-        const res = await existing;
-        if (res.text) {
-          if (options.streamEvents) {
-            onStream({ type: 'text', content: res.text, final: true });
-          } else {
-            onStream(res.text);
-          }
-        }
-        return res;
-      }
-      return existing;
+      return this.inFlightRequests.get(dedupeKey)!.promise;
     }
 
     const executePromise = this.executeWithRetry(
@@ -672,7 +662,7 @@ export class AIService {
           tools,
         }, {
           signal,
-          timeoutMs: 120000,
+          timeoutMs: 900000,
           onChunk: (delta, accumulated) => {
             if (onStream) {
               if (streamEvents) {
@@ -709,7 +699,12 @@ export class AIService {
           metrics: this.computeMetrics(parsed.text, Date.now() - (parsed.metrics.latencyMs || 0)),
         };
       } catch (err) {
-        console.warn('[AIService] Tauri native streaming failed, falling back to backend stream', err);
+        if (provider !== 'ollama' && provider !== 'lmstudio') {
+          console.warn('[AIService] Tauri native streaming failed, falling back to backend stream', err);
+        } else {
+          // In local mode, backend fallback is mostly pointless and will just hang/timeout.
+          throw new Error(`Local model provider (${provider}) failed to respond: ${err}`);
+        }
       }
     }
 

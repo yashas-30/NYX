@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 /**
  * @file src/features/coder/utils/modelIcons.ts
  * @description Provider-specific icon rendering for model selectors.
@@ -8,7 +9,7 @@ import { Bot, BrainCircuit } from 'lucide-react';
 import { ModelDefinition } from '@src/infrastructure/types';
 
 export function getCustomModelIcon(model: ModelDefinition | null | undefined): React.ReactNode {
-  if (!model) return <Bot className="w-3.5 h-3.5 text-muted-foreground/70" />;
+  if (!model) return <AnimatedIcon icon={Bot} className="w-3.5 h-3.5 text-muted-foreground/70" />;
   const provider = model.provider?.toLowerCase() || '';
   const id = model.id?.toLowerCase() || '';
 
@@ -20,5 +21,5 @@ export function getCustomModelIcon(model: ModelDefinition | null | undefined): R
     );
   }
 
-  return <BrainCircuit className="w-3.5 h-3.5 text-purple-500" />;
+  return <AnimatedIcon icon={BrainCircuit} className="w-3.5 h-3.5 text-purple-500" />;
 }

@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -52,7 +53,7 @@ export default function GitView() {
       <div className="space-y-1">
         {files.map((file) => (
           <div key={file} className="flex items-center gap-2 text-xs">
-            <Circle size={6} className={colorMap[color] || colorMap.blue} fill="currentColor" />
+            <AnimatedIcon icon={Circle} size={6} className={colorMap[color] || colorMap.blue} fill="currentColor" />
             <span className="text-foreground truncate">{file}</span>
           </div>
         ))}
@@ -71,7 +72,7 @@ export default function GitView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <GitBranch size={18} />
+              <AnimatedIcon icon={GitBranch} size={18} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">Git Integration</h1>
@@ -87,10 +88,10 @@ export default function GitView() {
               onClick={refresh}
               className={`p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all ${isRefreshing ? 'animate-spin' : ''}`}
             >
-              <RefreshCw size={14} />
+              <AnimatedIcon icon={RefreshCw} size={14} />
             </button>
             <button className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-all">
-              <GitCommit size={12} /> Commit
+              <AnimatedIcon icon={GitCommit} size={12} /> Commit
             </button>
           </div>
         </div>
@@ -134,28 +135,28 @@ export default function GitView() {
               <div className="grid grid-cols-4 gap-3">
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
-                    <Circle size={14} className="text-blue-400" fill="currentColor" />
+                    <AnimatedIcon icon={Circle} size={14} className="text-blue-400" fill="currentColor" />
                     <span className="text-xs font-medium text-muted-foreground">Modified</span>
                   </div>
                   <span className="text-2xl font-semibold text-foreground">{status.modified.length}</span>
                 </div>
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
-                    <Circle size={14} className="text-green-400" fill="currentColor" />
+                    <AnimatedIcon icon={Circle} size={14} className="text-green-400" fill="currentColor" />
                     <span className="text-xs font-medium text-muted-foreground">Added</span>
                   </div>
                   <span className="text-2xl font-semibold text-foreground">{status.added.length}</span>
                 </div>
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
-                    <Circle size={14} className="text-red-400" fill="currentColor" />
+                    <AnimatedIcon icon={Circle} size={14} className="text-red-400" fill="currentColor" />
                     <span className="text-xs font-medium text-muted-foreground">Deleted</span>
                   </div>
                   <span className="text-2xl font-semibold text-foreground">{status.deleted.length}</span>
                 </div>
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
-                    <Circle size={14} className="text-amber-400" fill="currentColor" />
+                    <AnimatedIcon icon={Circle} size={14} className="text-amber-400" fill="currentColor" />
                     <span className="text-xs font-medium text-muted-foreground">Untracked</span>
                   </div>
                   <span className="text-2xl font-semibold text-foreground">{status.untracked.length}</span>
@@ -167,7 +168,7 @@ export default function GitView() {
                 {status.modified.length > 0 && (
                   <div className="p-4 bg-card border border-border rounded-xl">
                     <div className="flex items-center gap-2 mb-3">
-                      <Circle size={10} className="text-blue-400" fill="currentColor" />
+                      <AnimatedIcon icon={Circle} size={10} className="text-blue-400" fill="currentColor" />
                       <h3 className="text-sm font-medium text-foreground">Modified</h3>
                       <StatusBadge count={status.modified.length} color="blue" />
                     </div>
@@ -177,7 +178,7 @@ export default function GitView() {
                 {status.added.length > 0 && (
                   <div className="p-4 bg-card border border-border rounded-xl">
                     <div className="flex items-center gap-2 mb-3">
-                      <Circle size={10} className="text-green-400" fill="currentColor" />
+                      <AnimatedIcon icon={Circle} size={10} className="text-green-400" fill="currentColor" />
                       <h3 className="text-sm font-medium text-foreground">Added</h3>
                       <StatusBadge count={status.added.length} color="green" />
                     </div>
@@ -187,7 +188,7 @@ export default function GitView() {
                 {status.deleted.length > 0 && (
                   <div className="p-4 bg-card border border-border rounded-xl">
                     <div className="flex items-center gap-2 mb-3">
-                      <Circle size={10} className="text-red-400" fill="currentColor" />
+                      <AnimatedIcon icon={Circle} size={10} className="text-red-400" fill="currentColor" />
                       <h3 className="text-sm font-medium text-foreground">Deleted</h3>
                       <StatusBadge count={status.deleted.length} color="red" />
                     </div>
@@ -197,7 +198,7 @@ export default function GitView() {
                 {status.untracked.length > 0 && (
                   <div className="p-4 bg-card border border-border rounded-xl">
                     <div className="flex items-center gap-2 mb-3">
-                      <Circle size={10} className="text-amber-400" fill="currentColor" />
+                      <AnimatedIcon icon={Circle} size={10} className="text-amber-400" fill="currentColor" />
                       <h3 className="text-sm font-medium text-foreground">Untracked</h3>
                       <StatusBadge count={status.untracked.length} color="amber" />
                     </div>
@@ -233,10 +234,10 @@ export default function GitView() {
                         <h3 className="text-sm font-medium text-foreground">{commit.message}</h3>
                         <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <User size={9} /> {commit.author}
+                            <AnimatedIcon icon={User} size={9} /> {commit.author}
                           </span>
                           <span className="flex items-center gap-1">
-                            <Clock size={9} /> {commit.date}
+                            <AnimatedIcon icon={Clock} size={9} /> {commit.date}
                           </span>
                           <span className="font-mono text-primary/60">{commit.hash}</span>
                         </div>
@@ -279,7 +280,7 @@ export default function GitView() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <GitBranch size={16} className={branch.current ? 'text-primary' : 'text-muted-foreground'} />
+                        <AnimatedIcon icon={GitBranch} size={16} className={branch.current ? 'text-primary' : 'text-muted-foreground'} />
                         <div>
                           <div className="flex items-center gap-2">
                             <span className={`text-sm font-medium ${branch.current ? 'text-primary' : 'text-foreground'}`}>
@@ -299,12 +300,12 @@ export default function GitView() {
                       <div className="flex items-center gap-2">
                         {branch.ahead > 0 && (
                           <span className="flex items-center gap-1 text-[10px] text-green-500">
-                            <ChevronRight size={10} /> {branch.ahead}
+                            <AnimatedIcon icon={ChevronRight} size={10} /> {branch.ahead}
                           </span>
                         )}
                         {branch.behind > 0 && (
                           <span className="flex items-center gap-1 text-[10px] text-red-500">
-                            <ChevronRight size={10} className="rotate-90" /> {branch.behind}
+                            <AnimatedIcon icon={ChevronRight} size={10} className="rotate-90" /> {branch.behind}
                           </span>
                         )}
                       </div>
@@ -325,7 +326,7 @@ export default function GitView() {
             >
               <div className="p-4 bg-card border border-border rounded-xl">
                 <div className="flex items-center gap-2 mb-4">
-                  <FileDiff size={14} className="text-primary" />
+                  <AnimatedIcon icon={FileDiff} size={14} className="text-primary" />
                   <span className="text-sm font-medium text-foreground">Current Diff</span>
                 </div>
                 <div className="font-mono text-xs leading-relaxed space-y-0.5 overflow-x-auto whitespace-pre">

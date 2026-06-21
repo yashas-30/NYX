@@ -1,10 +1,3 @@
-import { env } from '../config/env.js';
-import { findPythonPath } from './paths.js';
-import { setScraplingHealthState } from '../features/admin/admin.router.js';
-import path from 'path';
-import fs from 'fs';
-import { spawn, exec } from 'child_process';
-import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import logger from './logger.js';
 import { cleanupProcesses, registerProcess } from './processRegistry.js';
@@ -23,48 +16,16 @@ const appsServerDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 export async function runDependencyHealthChecks() {
   logger.info('[DepCheck] Running startup dependency health checks...');
 
-  // Check Python availability
+  // Check Ollama daemon
   try {
-    const pythonPath = findPythonPath();
-    await execAsync(`"${pythonPath}" --version`, { timeout: 5_000 });
-    logger.info({ pythonPath }, '[DepCheck] Python: OK');
+    await performHealthCheck('http://127.0.0.1:11434/', 2000);
+    logger.info('[DepCheck] Ollama daemon: OK');
   } catch (error: any) {
     logger.warn(
-      { error: error.message },
-      '[DepCheck] Python: NOT FOUND — Scrapling service will be unavailable'
+      '[DepCheck] Ollama daemon: NOT FOUND — Local models will be unavailable. Please start Ollama.'
     );
   }
 
-  // Check llama-server binary
-  const llamaPaths = [
-    path.join(appsServerDir, '.nyx-models', 'llama-server.exe'),
-    path.join(appsServerDir, '.nyx-models', 'llama-server'),
-    path.join(appsServerDir, 'llama-server.exe'),
-    path.join(appsServerDir, 'llama-server'),
-  ];
-  const llamaBinaryExists = llamaPaths.some((p) => fs.existsSync(p));
-  if (llamaBinaryExists) {
-    logger.info('[DepCheck] llama-server binary: OK');
-  } else {
-    logger.warn(
-      '[DepCheck] llama-server binary: NOT FOUND — Local GGUF models will require download on first use'
-    );
-  }
-
-  // Check Vulkan driver
-  try {
-    await execAsync('vulkaninfo --summary 2>&1 | head -5', { timeout: 5_000 });
-    logger.info('[DepCheck] Vulkan driver: OK');
-  } catch {
-    try {
-      await execAsync('dxdiag /t nul 2>&1', { timeout: 5_000 });
-      logger.info('[DepCheck] Vulkan driver: Using DirectX fallback (GPU detected)');
-    } catch {
-      logger.warn(
-        '[DepCheck] Vulkan driver: NOT DETECTED — GPU acceleration may be unavailable for local models'
-      );
-    }
-  }
   logger.info('[DepCheck] Startup dependency health checks complete.');
 }
 
@@ -115,118 +76,10 @@ export async function initializeDatabaseAndPlugins() {
 }
 
 export function spawnBackgroundServices() {
-  const SCRAPLING_PORT = env.SCRAPLING_PORT;
-  let scraplingProc: ReturnType<typeof spawn> | null = null;
-  let scraplingFailed = false; // set true on immediate exit code 1 (e.g. missing deps)
-
-  const LLAMA_PORT = env.LLAMA_PORT;
-  let hfProc: ReturnType<typeof spawn> | null = null;
-  let hfFailed = false;
-
-  async function spawnScrapling() {
-    if (scraplingFailed) return; // don't restart if missing deps
-    try {
-      const isAvailable = await checkPortAvailable(SCRAPLING_PORT);
-      if (!isAvailable) {
-        logger.warn(
-          `[Scrapling] Port ${SCRAPLING_PORT} is already in use. Skipping spawn to avoid crash-loop. Assuming external instance.`
-        );
-        return;
-      }
-      const pythonPath = findPythonPath();
-      const scraplingScriptPath = path.join(appsServerDir, 'src', 'python', 'scrapling_server.py');
-      const startedAt = Date.now();
-      const proc = spawn(pythonPath, [scraplingScriptPath, '--port', String(SCRAPLING_PORT)], {
-        cwd: path.dirname(scraplingScriptPath),
-        detached: false,
-        stdio: ['pipe', 'inherit', 'inherit'],
-      });
-      registerProcess(proc);
-      setScraplingHealthState('running');
-      scraplingProc = proc;
-      proc.on('exit', (code) => {
-        setScraplingHealthState('offline');
-        scraplingProc = null;
-        // If it died in under 3s with non-zero exit, assume missing deps — stop retrying
-        if (code !== 0 && Date.now() - startedAt < 3000) {
-          scraplingFailed = true;
-          logger.warn(`[Scrapling] Service exited immediately (code ${code}) — likely missing Python deps. Stopping auto-restart. Run: pip install ddgs scrapling html2text curl_cffi playwright browserforge`);
-        }
-      });
-    } catch (error: any) {
-      logger.error({ error: error.message }, '[Scrapling] Failed to spawn Scrapling local service');
-    }
-  }
-
-  async function spawnHfService() {
-    if (hfFailed) return;
-    try {
-      const isAvailable = await checkPortAvailable(LLAMA_PORT);
-      if (!isAvailable) {
-        logger.warn(`[HFService] Port ${LLAMA_PORT} already in use. Skipping local runner spawn.`);
-        return;
-      }
-      const pythonPath = findPythonPath();
-      const hfScriptPath = path.join(appsServerDir, 'src', 'python', 'hf_service.py');
-      const startedAt = Date.now();
-      const proc = spawn(pythonPath, [hfScriptPath, String(LLAMA_PORT)], {
-        cwd: path.dirname(hfScriptPath),
-        detached: false,
-        stdio: ['pipe', 'inherit', 'inherit'],
-      });
-      registerProcess(proc);
-      hfProc = proc;
-      proc.on('exit', (code) => {
-        hfProc = null;
-        if (code !== 0 && Date.now() - startedAt < 5000) {
-          hfFailed = true;
-          logger.warn(`[HFService] Exited immediately (code ${code}). Stopping auto-restart.`);
-        }
-      });
-    } catch (error: any) {
-      logger.error({ error: error.message }, '[HFService] Failed to spawn local runner');
-    }
-  }
-
-  spawnScrapling();
-  spawnHfService();
-
-  // Health checks — skip if service permanently failed
-  const scraplingHealthInterval = setInterval(async () => {
-    if (scraplingFailed) return;
-    try {
-      await performHealthCheck(`http://127.0.0.1:${SCRAPLING_PORT}/health`, 5000);
-    } catch (err: any) {
-      logger.warn({ error: err?.message || err }, '[Scrapling] Health check failed - restarting Scrapling service...');
-      if (scraplingProc) {
-        try { scraplingProc.kill('SIGTERM'); } catch {}
-        scraplingProc = null;
-      }
-      setTimeout(() => spawnScrapling(), 2000);
-    }
-  }, 15_000);
-  scraplingHealthInterval.unref();
-
-  const hfHealthInterval = setInterval(async () => {
-    if (hfFailed) return;
-    try {
-      await performHealthCheck(`http://127.0.0.1:${LLAMA_PORT}/health`, 5000);
-    } catch (err: any) {
-      logger.warn({ error: err?.message || err }, '[HFService] Health check failed - restarting...');
-      if (hfProc) {
-        try { hfProc.kill('SIGTERM'); } catch {}
-        hfProc = null;
-      }
-      setTimeout(() => spawnHfService(), 2000);
-    }
-  }, 20_000);
-  hfHealthInterval.unref();
-
+  // Python/Scrapling has been deprecated and removed.
+  // Browsing is handled via JS Playwright/BrowserForge.
   return {
-    clearHealthChecks: () => {
-      clearInterval(scraplingHealthInterval);
-      clearInterval(hfHealthInterval);
-    }
+    clearHealthChecks: () => {}
   };
 }
 

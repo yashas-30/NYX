@@ -10,6 +10,11 @@ pub mod pty;
 pub mod fs;
 pub mod agent;
 pub mod agent_orchestrator;
+pub mod chat;
+pub mod workspace;
+pub mod cache;
+pub mod voice;
+pub mod legacy;
 
 pub use dialog::*;
 pub use vault::*;
@@ -22,3 +27,5 @@ pub use llm::*;
 pub use pty::*;
 pub use fs::*;
 pub use agent::*;
+pub use chat::*;
+pub use legacy::*;

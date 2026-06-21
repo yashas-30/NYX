@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
@@ -5,7 +6,6 @@ import { BookOpenIcon as BookOpen, ExternalLinkIcon as ExternalLink, ZapIcon as 
 import { Network, HelpCircle, Cpu, Database, Palette } from 'lucide-react';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 import { ApiKeyVault } from './ApiKeyVault';
 import { ModelSettingsSection } from './ModelSettingsSection';
@@ -67,20 +67,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           setVaultStatus(data);
         }
       }
-    } catch (e: any) {
-      console.error('Failed to fetch vault status:', e);
+    } catch {
+      // Backend unavailable — silently skip
     }
   };
 
   const fetchCacheStats = async () => {
     try {
-      const res = await fetchWithAuth('/api/v1/cache/stats');
+      // Use plain fetch (via Vite proxy) — cache/stats is a read-only public endpoint
+      // that does not require a session token. Using fetchWithAuth here triggers a
+      // tauriFetch to 127.0.0.1:3010 which errors when the Express backend isn't running.
+      const res = await fetch('/api/v1/cache/stats');
       if (res.ok) {
         const data = await res.json();
         setCacheStats(data);
       }
-    } catch (e: any) {
-      console.error('Failed to fetch cache stats:', e);
+    } catch {
+      // Backend unavailable — silently skip, stats will show zeros
     }
   };
 
@@ -97,14 +100,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     });
   }, [vaultStatus, refreshProviderQuota]);
 
-
   const toggleExpanded = (providerId: string) => {
     setExpandedProvider(expandedProvider === providerId ? null : providerId);
   };
 
   const TABS = [
-    { id: 'api-keys', label: 'API Keys', icon: <Database size={14} /> },
-    { id: 'models', label: 'Models & Cache', icon: <Cpu size={14} /> },
+    { id: 'api-keys', label: 'API Keys', icon: <AnimatedIcon icon={Database} size={14} /> },
+    { id: 'models', label: 'Models & Cache', icon: <AnimatedIcon icon={Cpu} size={14} /> },
     { id: 'search', label: 'Web Search', icon: <Globe size={14} /> },
   ];
 
@@ -124,7 +126,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <SettingsIcon size={16} className="text-primary" />
           <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">Settings</h2>
         </div>
-
       </header>
 
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
@@ -177,8 +178,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {activeTab === 'search' && (
               <SearchSettingsSection />
             )}
-
-
           </div>
         </div>
       </div>

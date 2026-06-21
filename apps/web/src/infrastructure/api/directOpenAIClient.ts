@@ -67,7 +67,18 @@ export async function directOpenAIFetch(config: any): Promise<EnhancedAIResponse
     headers['X-Title'] = 'NYX Web';
   }
 
-  const response = await fetch(endpoint, {
+  let fetchFn = fetch;
+  const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+  if (isTauri) {
+    try {
+      const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+      fetchFn = tauriFetch;
+    } catch (e) {
+      console.warn('[directOpenAIClient] Failed to load tauriFetch, falling back to window.fetch:', e);
+    }
+  }
+
+  const response = await fetchFn(endpoint, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

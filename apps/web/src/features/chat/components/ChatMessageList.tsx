@@ -7,8 +7,7 @@
 
 import React, { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CopyIcon as Copy, CheckIcon as Check, TerminalIcon as Terminal, ThumbsUpIcon as ThumbsUp, ThumbsDownIcon as ThumbsDown, GitBranchIcon as GitBranch, ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, XIcon as X, SparklesIcon as Sparkles, DownloadIcon as Download } from '@animateicons/react/lucide';
-import { ArrowDown, Pencil, RefreshCw, Wrench, FileText, Image as ImageIcon, Clock, AlertTriangle, Loader2, Square, Volume2, VolumeX } from 'lucide-react';
+import { Copy, Check, Terminal, ThumbsUp, ThumbsDown, GitBranch, CaretDown as ChevronDown, CaretRight as ChevronRight, X, Sparkle as Sparkles, DownloadSimple as Download, ArrowDown, PencilSimple as Pencil, ArrowsClockwise as RefreshCw, Wrench, FileText, Image as ImageIcon, Clock, Warning as AlertTriangle, Spinner as Loader2, Stop as Square, SpeakerHigh as Volume2, SpeakerSlash as VolumeX } from '@phosphor-icons/react';
 import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -112,7 +111,8 @@ const formatToolAction = (name: string, argsStr: string, status: string) => {
 const ToolCallCard: React.FC<{
   tool: ToolCall;
   status: 'pending' | 'running' | 'completed' | 'success' | 'error';
-}> = memo(({ tool, status }) => {
+  index?: number;
+}> = memo(({ tool, status, index = 0 }) => {
   const [expanded, setExpanded] = useState(false);
   const isRunning = status === 'running';
   const isError = status === 'error';
@@ -122,8 +122,9 @@ const ToolCallCard: React.FC<{
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, transform: "translateY(4px)" }}
+      animate={{ opacity: 1, transform: "translateY(0px)" }}
+      transition={{ delay: index * 0.04, duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
       className="my-3 flex flex-col group"
     >
       <button
@@ -187,8 +188,8 @@ const ContextIngestionCard: React.FC<{
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, transform: "translateY(4px)" }}
+      animate={{ opacity: 1, transform: "translateY(0px)" }}
       className={`my-2 rounded-md border overflow-hidden ${
         isError
           ? 'bg-red-500/5 border-red-500/20'
@@ -397,8 +398,8 @@ const FileAttachment: React.FC<{ name: string; size?: number; type?: string; mim
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 5 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, transform: "translateY(5px)" }}
+      animate={{ opacity: 1, transform: "translateY(0px)" }}
       className="flex items-center gap-3 px-3 py-2 bg-muted/30 border border-border rounded-lg max-w-[280px] shadow-sm mb-2"
     >
       <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-primary/10 text-primary rounded-md">
@@ -890,123 +891,99 @@ const MessageBubble = React.memo<MessageBubbleProps>(
 
     return (
       <motion.div
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0, transform: "translateY(4px)" }}
+        animate={{ opacity: 1, transform: "translateY(0px)" }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
-        className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} group`}
+        className={`flex flex-col gap-2 w-full max-w-3xl group relative ${isUser ? 'self-end items-end' : ''}`}
       >
-        {isUser ? (
-          <div className="max-w-[85%] sm:max-w-[75%]">
-            <div className="py-3.5 px-5 bg-muted/10 border border-border rounded-2xl hover:bg-muted/20 transition-all shadow-sm">
-              {msg.attachments && msg.attachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {msg.attachments.map((att, i) => (
-                    <FileAttachment
-                      key={i}
-                      name={att.name}
-                      size={att.size}
-                      type={att.type}
-                      mimeType={att.mimeType}
-                    />
-                  ))}
-                </div>
-              )}
-              {(() => {
-                const shouldCollapse = msg.content.length > 350;
-                const displayText = shouldCollapse && !isExpanded 
-                  ? msg.content.slice(0, 300) + '...' 
-                  : msg.content;
-                return (
-                  <>
-                    <div className="text-[14px] font-normal leading-relaxed text-foreground select-text whitespace-pre-wrap">
-                      {displayText}
-                    </div>
-                    {shouldCollapse && (
-                      <button
-                        onClick={() => setIsExpanded(!isExpanded)}
-                        className="mt-2 text-[10px] font-mono font-bold uppercase tracking-wider text-accent hover:text-accent/80 transition-all cursor-pointer flex items-center gap-1.5 outline-none select-none"
-                      >
-                        <span>{isExpanded ? 'Show Less' : 'Show More'}</span>
-                        <ChevronDown
-                          size={10}
-                          className={`transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : 'rotate-0'}`}
-                        />
-                      </button>
-                    )}
-                  </>
-                );
-              })()}
-              {msg.images && msg.images.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {msg.images.map((img, i) => (
-                    <ImageAttachment
-                      key={i}
-                      src={
-                        img.url ||
-                        (img.data
-                          ? img.data.startsWith('data:')
-                            ? img.data
-                            : `data:${img.mimeType || 'image/png'};base64,${img.data}`
-                          : '')
-                      }
-                      alt={img.name}
-                    />
-                  ))}
-                </div>
-              )}
+        <div className={`flex flex-col gap-2 min-w-0 w-full ${isUser ? 'items-end' : 'flex-1'}`}>
+          {/* Header */}
+          {!isUser && (
+            <div className="flex items-center gap-2 px-3">
+              <span className="material-symbols-outlined text-[16px] text-primary">auto_awesome</span>
+              <span className="font-label-md text-on-surface-variant font-medium">
+                {msg.model && msg.model.toLowerCase() !== 'default' ? msg.model : 'Graphite AI'}
+              </span>
+              {isLoadingIcon && <NyxLoader size={12} className="text-primary animate-spin" />}
             </div>
-            <MessageActions
-              index={index}
-              content={msg.content}
-              onEdit={onEdit}
-              onCopy={onCopy}
-              copiedId={copiedId}
-              msgId={msgId}
-              isUser={true}
-              siblingCount={msg.siblingCount}
-              currentIndex={msg.currentIndex}
-              onBranchChange={onBranchChange}
-            />
-          </div>
-        ) : (
-          <div className="flex flex-col w-full animate-fade-in relative">
-            {/* Clean Header with Message-Specific Model Resolution */}
-            {(() => {
-              const messageModel = msg.model || activeModel;
-              if (!messageModel || messageModel.toLowerCase() === 'default') return null;
-              const found = AVAILABLE_MODELS.find((m) => m.id === messageModel);
-              const displayName = found ? found.name : messageModel;
-              if (displayName.toLowerCase() === 'default') return null;
+          )}
 
-              if (
-                !(msg.content ||
-                  msg.reasoning ||
-                  (msg.toolCalls && msg.toolCalls.length > 0) ||
-                  msg.status === 'loading')
-              ) {
-                return null;
-              }
-
-              return (
-                <div className="flex items-baseline gap-2 mb-1 select-none pl-[92px] md:pl-0">
-                  <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
-                    {displayName}
-                  </span>
-                </div>
-              );
-            })()}
-
-            <div className="flex w-full gap-3 md:gap-0 items-start relative">
-              <div className="md:absolute md:-left-[92px] md:top-0 flex-shrink-0 mt-0.5 select-none">
-                <div className="w-16 h-16 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
-                  {isLoadingIcon ? (
-                    <NyxLoader size={36} className="text-foreground animate-spin" />
-                  ) : (
-                    <AnimatedLogo size={64} className="animate-fade-in" />
-                  )}
-                </div>
+          {/* Bubble content */}
+          {isUser ? (
+            <div className="flex flex-col items-end max-w-full">
+              <div className="bg-primary text-on-primary rounded-3xl rounded-tr-sm px-6 py-4 shadow-md text-[15px] leading-relaxed">
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {msg.attachments.map((att, i) => (
+                      <FileAttachment
+                        key={i}
+                        name={att.name}
+                        size={att.size}
+                        type={att.type}
+                        mimeType={att.mimeType}
+                      />
+                    ))}
+                  </div>
+                )}
+                {(() => {
+                  const shouldCollapse = msg.content.length > 350;
+                  const displayText = shouldCollapse && !isExpanded 
+                    ? msg.content.slice(0, 300) + '...' 
+                    : msg.content;
+                  return (
+                    <>
+                      <div className="font-body-lg text-on-primary leading-relaxed whitespace-pre-wrap select-text">
+                        {displayText}
+                      </div>
+                      {shouldCollapse && (
+                        <button
+                          onClick={() => setIsExpanded(!isExpanded)}
+                          className="mt-2 text-[10px] font-mono font-bold uppercase tracking-wider text-on-primary/80 hover:text-on-primary transition-all cursor-pointer flex items-center gap-1.5 outline-none select-none"
+                        >
+                          <span>{isExpanded ? 'Show Less' : 'Show More'}</span>
+                          <ChevronDown
+                            size={10}
+                            className={`transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : 'rotate-0'}`}
+                          />
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
+                {msg.images && msg.images.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {msg.images.map((img, i) => (
+                      <ImageAttachment
+                        key={i}
+                        src={
+                          img.url ||
+                          (img.data
+                            ? img.data.startsWith('data:')
+                              ? img.data
+                              : `data:${img.mimeType || 'image/png'};base64,${img.data}`
+                            : '')
+                        }
+                        alt={img.name}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="flex-1 min-w-0">
+              <MessageActions
+                index={index}
+                content={msg.content}
+                onEdit={onEdit}
+                onCopy={onCopy}
+                copiedId={copiedId}
+                msgId={msgId}
+                isUser={true}
+                siblingCount={msg.siblingCount}
+                currentIndex={msg.currentIndex}
+                onBranchChange={onBranchChange}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col w-full animate-fade-in relative">
                 {/* Error state */}
                 {msg.status === 'error' && (
                   (() => {
@@ -1091,11 +1068,12 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           return (
                             <>
                               {retrievalTools.length > 0 && <ContextIngestionCard tools={retrievalTools} />}
-                              {otherTools.map(t => (
+                              {otherTools.map((t, idx) => (
                                 <ToolCallCard
                                   key={t.tool.id || t.index}
                                   tool={t.tool}
                                   status={t.status as any}
+                                  index={idx}
                                 />
                               ))}
                             </>
@@ -1106,12 +1084,14 @@ const MessageBubble = React.memo<MessageBubbleProps>(
 
                     {/* Main content */}
                     {msg.content && msg.status !== 'error' && (
-                      <MarkdownContent
-                        content={msg.content}
-                        blocks={(msg as any).blocks}
-                        isStreaming={isStreaming && isLast}
-                        citations={msg.citations}
-                      />
+                      <div className="bg-surface-container rounded-3xl rounded-tl-sm px-6 py-4 border border-outline-variant text-on-surface shadow-sm mt-1 transition-all duration-300 hover:shadow-md">
+                        <MarkdownContent
+                          content={msg.content}
+                          blocks={(msg as any).blocks}
+                          isStreaming={isStreaming && isLast}
+                          citations={msg.citations}
+                        />
+                      </div>
                     )}
 
                     {/* Artifacts */}
@@ -1164,27 +1144,25 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                               <div 
                                 key={artifact.id || i}
                                 onClick={() => onArtifactClick?.(artifact)}
-                                className="cursor-pointer group flex items-center justify-between p-3.5 my-3 rounded-xl border border-border/60 bg-surface hover:bg-muted/30 hover:border-primary/40 hover:shadow-sm transition-all max-w-4xl"
+                                className="my-3 max-w-md bg-surface-container-high rounded-xl border border-outline-variant overflow-hidden cursor-pointer group hover:border-primary/50 transition-colors shadow-sm"
                               >
-                                <div className="flex items-center gap-3 overflow-hidden">
-                                  <div className="flex items-center justify-center w-9 h-9 rounded-md bg-primary/10 text-primary">
-                                    {artifact.type === 'html' || artifact.type === 'react' || artifact.type === 'code' ? (
-                                      <Terminal className="w-4.5 h-4.5" />
-                                    ) : (
-                                      <FileText className="w-4.5 h-4.5" />
-                                    )}
-                                  </div>
-                                  <div className="flex flex-col min-w-0">
-                                    <span className="text-sm font-semibold text-foreground truncate">
+                                <div className="px-4 py-3 border-b border-outline-variant flex items-center justify-between bg-surface-container-highest/50">
+                                  <div className="flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-primary text-lg">
+                                      {artifact.type === 'html' || artifact.type === 'react' || artifact.type === 'code' ? 'code_blocks' : 'description'}
+                                    </span>
+                                    <span className="text-sm font-semibold text-on-surface">
                                       {artifact.title || 'Generated Artifact'}
                                     </span>
-                                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                                      {artifact.type === 'code' ? artifact.language || 'code' : artifact.type}
-                                    </span>
                                   </div>
+                                  <button className="text-primary hover:bg-primary/10 p-1.5 rounded-full transition-colors group-hover:bg-primary/5">
+                                    <span className="material-symbols-outlined text-sm">open_in_new</span>
+                                  </button>
                                 </div>
-                                <div className="text-xs font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity pr-2">
-                                  Click to open
+                                <div className="p-4 bg-surface-container-low text-xs font-mono text-on-surface-variant flex items-center gap-2">
+                                  <span className="opacity-70">
+                                    {artifact.type === 'code' ? artifact.language || 'code' : artifact.type}
+                                  </span>
                                 </div>
                               </div>
                             );
@@ -1276,6 +1254,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                 )}
 
                 {/* Empty fallback */}
+                {/* Empty fallback */}
                 {!msg.content &&
                   !msg.reasoning &&
                   (!msg.toolCalls || msg.toolCalls.length === 0) &&
@@ -1285,10 +1264,9 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       Empty response from model.
                     </div>
                   )}
-              </div>
-            </div>
           </div>
         )}
+        </div>
       </motion.div>
     );
   },
@@ -1439,7 +1417,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden w-full bg-background">
       <div
         ref={containerRef}
-        className="flex-1 min-h-0 relative w-full"
+        className="flex-1 min-h-0 relative w-full px-4 md:px-8 py-6"
         aria-live="polite"
         aria-atomic="false"
       >
@@ -1492,7 +1470,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
               const isStreaming = isLast && isLoading;
 
               return (
-                <div className="py-3 px-4 md:px-6 max-w-4xl mx-auto w-full">
+                <div className="max-w-4xl mx-auto w-full mb-6">
                   <MessageBubble
                     msg={msg}
                     index={index}

@@ -33,6 +33,11 @@ const DEDUPE_WINDOW_MS = 100;
 let sessionToken: string | null = null;
 let tokenExpiresAt: number = 0;
 const tokenMutex = new Mutex();
+let isOfflineMode: boolean = false;
+
+export function setOfflineMode(offline: boolean): void {
+  isOfflineMode = offline;
+}
 
 // Circuit breaker for stream backend
 interface CircuitState {
@@ -68,6 +73,34 @@ function isTokenValid(): boolean {
 }
 
 async function fetchFreshToken(isStream = false, attempt = 0): Promise<{ token: string; expiresAt: number }> {
+  // Offline bypass logic: Check explicit offline flag OR if ollama is selected
+  let isLocalProviderSelected = false;
+  try {
+    const { useNyxStore } = require('../../shared/store/useNyxStore');
+    const storeState = useNyxStore.getState();
+    const provider = storeState.settings?.provider || 'ollama';
+    isLocalProviderSelected = provider === 'ollama' || provider === 'lmstudio';
+  } catch (e) {
+    // Ignore store import errors if it hasn't initialized
+  }
+
+  if (isOfflineMode || isLocalProviderSelected) {
+    return { token: 'offline_token_bypass', expiresAt: Date.now() + 86400000 };
+  }
+
+  if (isTauri && backendPort === null) {
+    try {
+      const res: any = await invoke('server_get_ports');
+      if (res.success && res.data) {
+        backendPort = res.data.express_port || 3010;
+      } else {
+        backendPort = 3010;
+      }
+    } catch (e) {
+      backendPort = 3010;
+    }
+  }
+
   // If endpoint is relative, resolve it via Tauri invoke (dynamic)
   const basePath = isStream ? '/api/v1/vault/token?stream=true' : '/api/v1/vault/token';
   const endpoint = isTauri && backendPort 
@@ -88,9 +121,9 @@ async function fetchFreshToken(isStream = false, attempt = 0): Promise<{ token: 
     if (!res.ok) {
       const text = await res.text().catch(() => 'Unknown error');
       
-      // Retry with backoff if server is starting (503) or generic 502/504
-      if ((res.status === 503 || res.status === 502 || res.status === 504) && attempt < 5) {
-        await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+      // Only retry transient server errors (starting up); non-retriable otherwise
+      if ((res.status === 503 || res.status === 502 || res.status === 504) && attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
         return fetchFreshToken(isStream, attempt + 1);
       }
       
@@ -107,12 +140,19 @@ async function fetchFreshToken(isStream = false, attempt = 0): Promise<{ token: 
       expiresAt: data.expiresAt || Date.now() + TOKEN_TTL_MS,
     };
   } catch (err: any) {
-    if (attempt < 5) {
-      await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+    const msg = err?.message || String(err) || '';
+    // Never retry permanent failures: scope errors, auth rejections, etc.
+    const isPermanent =
+      msg.includes('not allowed on the configured scope') ||
+      msg.includes('401') ||
+      msg.includes('403') ||
+      msg.includes('forbidden');
+    if (!isPermanent && attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
       return fetchFreshToken(isStream, attempt + 1);
     }
     
-    throw new Error(`Token refresh failed: ${err.message}`);
+    throw new Error(`Token refresh failed: ${msg || 'Unknown error'}`);
   }
 }
 

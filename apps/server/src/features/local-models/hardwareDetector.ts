@@ -367,9 +367,17 @@ export async function calculateOptimalLayers(
 
 export async function detectBackend(): Promise<'cuda' | 'vulkan' | 'metal'> {
   if (process.platform === 'darwin') return 'metal';
-  // We prefer Vulkan by default on Windows/Linux to avoid massive 620MB CUDA download and setup latency.
-  // Vulkan delivers extremely high GPU acceleration (up to 78% of layers offloaded) with a 20x smaller
-  // package (31MB) and zero complex driver dependencies, guaranteeing an instant and robust startup.
+
+  try {
+    const gpus = await detectGPUs();
+    const hasNvidia = gpus.some((g) => g.vendor.toUpperCase().includes('NVIDIA'));
+    if (hasNvidia) {
+      return 'cuda';
+    }
+  } catch (err) {
+    // Fallback if detection fails
+  }
+
   return 'vulkan';
 }
 

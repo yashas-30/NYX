@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -287,11 +288,11 @@ export default function McpView() {
 
   const StatusIcon = ({ status }: { status: McpServer['status'] }) => {
     switch (status) {
-      case 'connected': return <CheckCircle size={14} className="text-green-500" />;
-      case 'disconnected': return <XCircle size={14} className="text-muted-foreground" />;
-      case 'error': return <AlertCircle size={14} className="text-red-500" />;
-      case 'connecting': return <RefreshCw size={14} className="text-primary animate-spin" />;
-      default: return <XCircle size={14} className="text-muted-foreground" />;
+      case 'connected': return <AnimatedIcon icon={CheckCircle} size={14} className="text-green-500" />;
+      case 'disconnected': return <AnimatedIcon icon={XCircle} size={14} className="text-muted-foreground" />;
+      case 'error': return <AnimatedIcon icon={AlertCircle} size={14} className="text-red-500" />;
+      case 'connecting': return <AnimatedIcon icon={RefreshCw} size={14} className="text-primary animate-spin" />;
+      default: return <AnimatedIcon icon={XCircle} size={14} className="text-muted-foreground" />;
     }
   };
 
@@ -302,7 +303,7 @@ export default function McpView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <Plug size={18} />
+              <AnimatedIcon icon={Plug} size={18} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">MCP Servers</h1>
@@ -315,7 +316,7 @@ export default function McpView() {
             onClick={() => setIsAdding(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-all"
           >
-            <Plus size={14} /> Add Server
+            <AnimatedIcon icon={Plus} size={14} /> Add Server
           </button>
         </div>
       </div>
@@ -369,7 +370,7 @@ export default function McpView() {
                     <h3 className="text-xs font-medium text-foreground truncate">{server.name}</h3>
                     <p className="text-[10px] text-muted-foreground mt-0.5">{server.transport === 'stdio' ? 'STDIO' : 'SSE'} · {server.tools.length} tools</p>
                   </div>
-                  <ChevronRight size={12} className="text-muted-foreground" />
+                  <AnimatedIcon icon={ChevronRight} size={12} className="text-muted-foreground" />
                 </div>
               </div>
             ))}
@@ -381,7 +382,7 @@ export default function McpView() {
               >
                 <div className="flex items-start gap-2.5">
                   <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
-                    <Server size={14} />
+                    <AnimatedIcon icon={Server} size={14} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-xs font-medium text-foreground">{server.name}</h3>
@@ -401,7 +402,7 @@ export default function McpView() {
               <div key={`${tool.serverId}-${tool.name}-${index}`} className="p-3 rounded-lg border border-border hover:border-primary/30 transition-all">
                 <div className="flex items-start gap-2.5">
                   <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                    <Zap size={14} />
+                    <AnimatedIcon icon={Zap} size={14} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-xs font-medium text-foreground">{tool.name}</h3>
@@ -441,11 +442,11 @@ export default function McpView() {
                     }`}
                   >
                     {isConnecting === selectedServer.id ? (
-                      <RefreshCw size={12} className="animate-spin" />
+                      <AnimatedIcon icon={RefreshCw} size={12} className="animate-spin" />
                     ) : selectedServer.status === 'connected' ? (
-                      <XCircle size={12} />
+                      <AnimatedIcon icon={XCircle} size={12} />
                     ) : (
-                      <Plug size={12} />
+                      <AnimatedIcon icon={Plug} size={12} />
                     )}
                     {isConnecting === selectedServer.id ? 'Connecting...' : selectedServer.status === 'connected' ? 'Disconnect' : 'Connect'}
                   </button>
@@ -454,7 +455,7 @@ export default function McpView() {
                       onClick={() => removeServer(selectedServer.id)}
                       className="p-2 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-all"
                     >
-                      <Trash2 size={14} />
+                      <AnimatedIcon icon={Trash2} size={14} />
                     </button>
                   )}
                 </div>
@@ -464,7 +465,7 @@ export default function McpView() {
                 {/* Configuration */}
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <h3 className="text-xs font-medium text-foreground mb-3 flex items-center gap-2">
-                    <Settings size={12} /> Configuration
+                    <AnimatedIcon icon={Settings} size={12} /> Configuration
                   </h3>
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
@@ -510,7 +511,7 @@ export default function McpView() {
                 {selectedServer.tools.length > 0 && (
                   <div className="p-4 bg-card border border-border rounded-xl">
                     <h3 className="text-xs font-medium text-foreground mb-3 flex items-center gap-2">
-                      <Zap size={12} /> Tools ({selectedServer.tools.length})
+                      <AnimatedIcon icon={Zap} size={12} /> Tools ({selectedServer.tools.length})
                     </h3>
                     <div className="space-y-2">
                       {selectedServer.tools.map((tool) => (
@@ -529,12 +530,12 @@ export default function McpView() {
                 {selectedServer.resources.length > 0 && (
                   <div className="p-4 bg-card border border-border rounded-xl">
                     <h3 className="text-xs font-medium text-foreground mb-3 flex items-center gap-2">
-                      <FileText size={12} /> Resources ({selectedServer.resources.length})
+                      <AnimatedIcon icon={FileText} size={12} /> Resources ({selectedServer.resources.length})
                     </h3>
                     <div className="space-y-2">
                       {selectedServer.resources.map((resource) => (
                         <div key={resource.uri} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
-                          <FileText size={14} className="text-muted-foreground" />
+                          <AnimatedIcon icon={FileText} size={14} className="text-muted-foreground" />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-medium text-foreground truncate">{resource.name}</p>
                             <p className="text-[10px] text-muted-foreground">{resource.mimeType}</p>
@@ -549,7 +550,7 @@ export default function McpView() {
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
               <div className="text-center">
-                <Plug size={48} className="mx-auto mb-3 opacity-20" />
+                <AnimatedIcon icon={Plug} size={48} className="mx-auto mb-3 opacity-20" />
                 <p className="text-sm font-medium">Select a server</p>
                 <p className="text-xs mt-1 opacity-60">Manage MCP server connections and tools</p>
               </div>

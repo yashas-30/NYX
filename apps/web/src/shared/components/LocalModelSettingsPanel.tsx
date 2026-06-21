@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ZapIcon as Zap, CheckIcon as Check, LayersIcon as Layers } from '@animateicons/react/lucide';
@@ -82,13 +83,13 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                           const vramGB = (sys.vram || 0) / (1024 * 1024 * 1024);
 
                           let newGpu = 10;
-                          let recommendedModel = currentModelId || 'qwen2.5-coder-1.5b-native';
+                          let recommendedModel = currentModelId || 'qwen2.5-coder:1.5b';
                           let message = '';
 
                           if (sys.optimalLayers) {
                             newGpu = sys.optimalLayers.gpuLayers;
                             message = sys.optimalLayers.message;
-                            if (vramGB >= 8 && currentModelId === 'qwen2.5-coder-1.5b-native') {
+                            if (vramGB >= 8 && currentModelId === 'qwen2.5-coder:1.5b') {
                               recommendedModel = 'qwen2.5-coder-3b-native';
                               message += ` High VRAM detected, switching to qwen2.5-coder-3b-native for optimal code generation.`;
                             }
@@ -99,7 +100,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                               message = `High VRAM detected (${Math.round(vramGB)}GB). Optimal settings applied.`;
                             } else if (vramGB > 0) {
                               newGpu = Math.floor(vramGB * 10);
-                              recommendedModel = 'qwen2.5-coder-1.5b-native';
+                              recommendedModel = 'qwen2.5-coder:1.5b';
                               message = `VRAM detected (${vramGB.toFixed(1)}GB). Optimal settings applied.`;
                             } else if (ramGB >= 24) {
                               newGpu = 99;
@@ -146,7 +147,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                       title="Reset to defaults"
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[8px] font-black uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent transition-all"
                     >
-                      <RotateCcw size={9} />
+                      <AnimatedIcon icon={RotateCcw} size={9} />
                       Reset
                     </motion.button>
                     <motion.button
@@ -168,7 +169,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                     <div className="space-y-6">
                       <section>
                         <SectionLabel
-                          icon={<MemoryStick size={9} />}
+                          icon={<AnimatedIcon icon={MemoryStick} size={9} />}
                           label="GPU / VRAM"
                           color="text-foreground"
                         />
@@ -229,7 +230,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                     <div className="space-y-6">
                       <section>
                         <SectionLabel
-                          icon={<Thermometer size={9} />}
+                          icon={<AnimatedIcon icon={Thermometer} size={9} />}
                           label="Sampling"
                           color="text-foreground"
                         />

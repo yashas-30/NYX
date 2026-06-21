@@ -254,12 +254,19 @@ export const useNyxStore = create<NyxState>()(
             const listRes = await ipc.invoke('vault:list-keys');
             if (listRes.success && Array.isArray(listRes.data)) {
               const keys: Record<string, string> = {};
-              for (const provider of listRes.data) {
+              const promises = listRes.data.map(async (provider: string) => {
                 const getRes = await ipc.invoke('vault:get-key', { provider });
                 if (getRes.success && getRes.data) {
-                  keys[provider] = getRes.data;
+                  return { provider, key: getRes.data };
                 }
+                return null;
+              });
+              
+              const results = await Promise.all(promises);
+              for (const res of results) {
+                if (res) keys[res.provider] = res.key;
               }
+              
               set({ apiKeys: keys });
               await get().refreshStatuses();
             }
@@ -280,7 +287,7 @@ export const useNyxStore = create<NyxState>()(
           const vaultRes = await fetch('/api/v1/vault/status').catch(() => null);
           const vaultStatus = vaultRes && vaultRes.ok ? await vaultRes.json() : {};
 
-          for (const p of cloudProviders) {
+          const promises = cloudProviders.map(async (p) => {
             const hasVaultKey = vaultStatus[p];
             const hasMemoryKey = !!get().apiKeys[p];
 
@@ -291,13 +298,18 @@ export const useNyxStore = create<NyxState>()(
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ provider: p, apiKey: get().apiKeys[p] || '' }),
                 });
-                newStatuses[p] = validateRes.ok ? 'online' : 'invalid-key';
+                return { provider: p, status: validateRes.ok ? 'online' : 'invalid-key' };
               } catch {
-                newStatuses[p] = 'offline';
+                return { provider: p, status: 'offline' };
               }
             } else {
-              newStatuses[p] = 'no-key';
+              return { provider: p, status: 'no-key' };
             }
+          });
+
+          const results = await Promise.all(promises);
+          for (const res of results) {
+            newStatuses[res.provider] = res.status as any;
           }
           set({ statuses: newStatuses });
         } catch (e: any) {

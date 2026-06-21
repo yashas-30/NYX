@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React from 'react';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { Globe, Search, BookOpen } from 'lucide-react';
@@ -11,21 +12,21 @@ export const SearchSettingsSection: React.FC = () => {
       id: 'duckduckgo',
       name: 'DuckDuckGo (HTML)',
       desc: 'Free, private web search. Extracts titles, links, and text snippets directly from DuckDuckGo Lite without external API keys.',
-      icon: <Search className="w-5 h-5 text-muted-foreground" />,
+      icon: <AnimatedIcon icon={Search} className="w-5 h-5 text-muted-foreground" />,
       requiresKey: false,
     },
     {
       id: 'tavily',
       name: 'Tavily Search API',
       desc: 'Real-time search engine optimized specifically for LLMs. Returns high-quality, pre-cleaned content blocks for precise search grounding.',
-      icon: <Globe className="w-5 h-5 text-accent" />,
+      icon: <AnimatedIcon icon={Globe} className="w-5 h-5 text-accent" />,
       requiresKey: true,
     },
     {
       id: 'jina',
       name: 'Jina Reader Search',
       desc: 'Converts search results and web content directly into clean, LLM-friendly markdown. Ideal for long-context search analysis.',
-      icon: <BookOpen className="w-5 h-5 text-emerald-400" />,
+      icon: <AnimatedIcon icon={BookOpen} className="w-5 h-5 text-emerald-400" />,
       requiresKey: true,
     },
   ] as const;

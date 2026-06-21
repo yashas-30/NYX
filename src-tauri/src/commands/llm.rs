@@ -5,12 +5,35 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::io::StreamReader;
 use futures_util::TryStreamExt;
+use std::sync::OnceLock;
 
 // ── Max token defaults per provider (all raised from the broken 4096 cap) ──
 const MAX_TOKENS_ANTHROPIC: u32 = 32_768;
 const MAX_TOKENS_OPENAI: u32 = 16_384;
 const MAX_TOKENS_GEMINI: u32 = 8_192;
 const MAX_TOKENS_DEFAULT: u32 = 8_192;
+
+// Global singleton HTTP client — reuses connection pool & keep-alive sockets
+// across all LLM requests, avoiding per-request TLS/socket overhead.
+static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
+
+fn get_http_client() -> &'static Client {
+    HTTP_CLIENT.get_or_init(|| {
+        Client::builder()
+            .user_agent("NYX/1.0")
+            // Long timeout for streaming responses
+            .timeout(std::time::Duration::from_secs(180))
+            // Keep connections alive between requests
+            .tcp_keepalive(std::time::Duration::from_secs(30))
+            .connection_verbose(false)
+            // Allow many idle connections so burst messages reuse sockets
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .build()
+            .expect("Failed to build global HTTP client")
+    })
+}
+
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct UnifiedMessage {
@@ -69,10 +92,7 @@ pub async fn execute_llm_stream(
         return crate::llm::embedded::execute_embedded_stream(req).await;
     }
 
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = get_http_client();
 
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", HeaderValue::from_static("application/json"));

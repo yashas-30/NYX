@@ -72,6 +72,29 @@ export default defineConfig(({ mode }) => {
       {
         name: 'mock-backend',
         configureServer(server) {
+          let isBackendAlive = false;
+          const checkBackend = () => {
+            const req = http.request({
+              hostname: '127.0.0.1',
+              port: 3001,
+              path: '/api/v1/health',
+              method: 'GET',
+              timeout: 1000
+            }, (res) => {
+              isBackendAlive = (res.statusCode === 200);
+            });
+            req.on('error', () => {
+              isBackendAlive = false;
+            });
+            req.end();
+          };
+          checkBackend();
+          const timer = setInterval(checkBackend, 5000);
+
+          server.httpServer?.on('close', () => {
+            clearInterval(timer);
+          });
+
           // ------------------------------------------------------------------
           // AI Provider Proxy — routes /api/proxy/<provider>/* to upstream API
           // so browser CORS never blocks the requests.
@@ -107,6 +130,10 @@ export default defineConfig(({ mode }) => {
           });
 
           server.middlewares.use('/api', (req, res, next) => {
+            if (isBackendAlive) {
+              next();
+              return;
+            }
             res.setHeader('Content-Type', 'application/json');
             if (req.url && (req.url.includes('/vault/token') || req.url.includes('/auth/session'))) {
               res.statusCode = 200;
@@ -227,8 +254,6 @@ export default defineConfig(({ mode }) => {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
     optimizeDeps: {
-      // @ts-ignore - Vite types might be slightly outdated with Rolldown migration
-      rolldownOptions: { target: 'esnext' } as any,
       exclude: ['tiktoken'],
       include: [
         'react',
@@ -253,13 +278,16 @@ export default defineConfig(({ mode }) => {
 
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, './src'),
         '@src': path.resolve(__dirname, './src'),
-        '@server': path.resolve(__dirname, './server'),
         '@shared': path.resolve(__dirname, './src/shared'),
         '@features': path.resolve(__dirname, './src/features'),
         '@core': path.resolve(__dirname, './src/core'),
         '@assets': path.resolve(__dirname, './src/assets'),
+        '~types': path.resolve(__dirname, './src/types'),
+        '~components': path.resolve(__dirname, './src/components'),
+        '~features': path.resolve(__dirname, './src/features'),
+        '@server': path.resolve(__dirname, './server'),
       },
     },
     build: {
@@ -308,7 +336,7 @@ export default defineConfig(({ mode }) => {
       },
       port: 3000,
       strictPort: true,
-      proxy: undefined /* process.env.FASTIFY_VITE_EMBEDDED ? undefined : {
+      proxy: process.env.FASTIFY_VITE_EMBEDDED ? undefined : {
         '/uploads': {
           target: 'http://127.0.0.1:3001',
           changeOrigin: true,
@@ -345,7 +373,7 @@ export default defineConfig(({ mode }) => {
             });
           }
         },
-      } */,
+      },
     },
   };
 });

@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -129,7 +130,7 @@ Timestamp: ${new Date().toLocaleString()}`;
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <FileText size={18} />
+              <AnimatedIcon icon={FileText} size={18} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">Document Generation</h1>
@@ -185,7 +186,7 @@ Timestamp: ${new Date().toLocaleString()}`;
                 >
                   <div className="flex items-start gap-2.5">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${CATEGORY_COLORS[template.category]}`}>
-                      <FileText size={14} />
+                      <AnimatedIcon icon={FileText} size={14} />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -210,7 +211,7 @@ Timestamp: ${new Date().toLocaleString()}`;
               <div className="shrink-0 px-6 py-4 border-b border-border">
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${CATEGORY_COLORS[selectedTemplate.category]}`}>
-                    <FileText size={14} />
+                    <AnimatedIcon icon={FileText} size={14} />
                   </div>
                   <div>
                     <h2 className="text-sm font-medium text-foreground">{selectedTemplate.name}</h2>
@@ -246,7 +247,7 @@ Timestamp: ${new Date().toLocaleString()}`;
                             </>
                           ) : (
                             <>
-                              <Wand2 size={14} /> Generate {selectedTemplate.format.toUpperCase()}
+                              <AnimatedIcon icon={Wand2} size={14} /> Generate {selectedTemplate.format.toUpperCase()}
                             </>
                           )}
                         </button>
@@ -262,7 +263,7 @@ Timestamp: ${new Date().toLocaleString()}`;
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Check size={14} className="text-green-500" />
+                          <AnimatedIcon icon={Check} size={14} className="text-green-500" />
                           <span className="text-sm font-medium text-foreground">Document Generated</span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -270,11 +271,11 @@ Timestamp: ${new Date().toLocaleString()}`;
                             onClick={copyToClipboard}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted text-xs font-medium text-muted-foreground hover:text-foreground transition-all"
                           >
-                            {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+                            {copied ? <AnimatedIcon icon={Check} size={12} className="text-green-500" /> : <AnimatedIcon icon={Copy} size={12} />}
                             {copied ? 'Copied' : 'Copy'}
                           </button>
                           <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-all">
-                            <Download size={12} /> Download .{selectedTemplate.format}
+                            <AnimatedIcon icon={Download} size={12} /> Download .{selectedTemplate.format}
                           </button>
                         </div>
                       </div>
@@ -295,7 +296,7 @@ Timestamp: ${new Date().toLocaleString()}`;
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
               <div className="text-center">
-                <FileText size={48} className="mx-auto mb-3 opacity-20" />
+                <AnimatedIcon icon={FileText} size={48} className="mx-auto mb-3 opacity-20" />
                 <p className="text-sm font-medium">Select a template</p>
                 <p className="text-xs mt-1 opacity-60">Choose a document type and describe what you need</p>
               </div>

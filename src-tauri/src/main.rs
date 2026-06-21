@@ -13,6 +13,7 @@ mod tray;
 mod db;
 pub mod llm;
 pub mod agents;
+pub mod workers;
 
 use commands::*;
 
@@ -28,7 +29,6 @@ pub struct AppState {
     pub pending_approvals: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
     pub pending_plugin_tools: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
     pub pending_browser_actions: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
-    pub sidecar_port: Arc<std::sync::Mutex<u16>>,
 }
 
 impl Default for AppState {
@@ -42,7 +42,6 @@ impl Default for AppState {
             pending_approvals: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_plugin_tools: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_browser_actions: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            sidecar_port: Arc::new(std::sync::Mutex::new(3010)),
         }
     }
 }
@@ -58,22 +57,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        if let Some(window) = app.get_webview_window("spotlight") {
-                            if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    }
-                })
-                .build()
-        )
+
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -90,14 +74,7 @@ pub fn run() {
         .manage(commands::pty::PtyState::default())
         .manage(commands::fs::WatcherState::default())
         .setup(|app| {
-            // ── Register global shortcut ──────────────────────────────────────
-            use std::str::FromStr;
-            use tauri_plugin_global_shortcut::GlobalShortcutExt;
-            let shortcut = tauri_plugin_global_shortcut::Shortcut::from_str("Super+Space")
-                .unwrap_or_else(|_| tauri_plugin_global_shortcut::Shortcut::from_str("CmdOrCtrl+Space").unwrap());
-            if let Err(e) = app.global_shortcut().register(shortcut) {
-                tracing::warn!("Failed to register global shortcut: {}", e);
-            }
+
 
             // ── Initialize SQLite pool synchronously ──────────────────────────
             // Fix 6 & 10: Use Tauri's proper per-app data directory (cross-platform)
@@ -110,9 +87,21 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir).expect("Could not create app data directory");
             let db_path = data_dir.join("nyx.db");
 
-            let pool = tauri::async_runtime::block_on(db::pool::init_db_pool(db_path))
+            let pool = tauri::async_runtime::block_on(db::pool::init_db_pool(db_path.clone()))
                 .expect("Failed to initialize SQLite database pool");
-            app.manage(pool);
+            app.manage(pool.clone());
+
+            // ── Spawn Background Worker Loop ──────────────────────────────────
+            tauri::async_runtime::spawn(crate::workers::start_worker_loop(pool.clone(), db_path.clone()));
+
+            // ── Spawn Turbovec HTTP API ───────────────────────────────────────
+            let mem_state = db::memory::HermesMemoryState::default();
+            app.manage(mem_state.clone());
+            db::memory::spawn_memory_server(mem_state);
+
+            // ── Initialize RAG State ──────────────────────────────────────────
+            let rag_state = db::rag::RagState::default();
+            app.manage(rag_state);
 
             // ── Spawn the rest of the UI setup asynchronously ─────────────────
             let handle = app.handle().clone();
@@ -124,7 +113,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             dialog_open_directory,
-            vault_store_key, vault_get_key, vault_delete_key, vault_status, vault_list_keys,
+            vault_store_key, vault_get_key, vault_delete_key, vault_status, vault_list_keys, vault_validate_gemini_key,
             window_minimize, window_maximize, window_close, window_show, window_hide,
             system_gpu_info, system_info, system_get_userdata, execute_command,
             app_get_version, app_open_external,
@@ -150,16 +139,41 @@ pub fn run() {
             db::commands::db_get_memories,
             db::commands::db_delete_memory,
             db::commands::db_search_memories,
+            db::memory::turbovec_add_memory,
+            db::memory::turbovec_search_memory,
+            db::rag::db_add_document_chunk,
+            db::rag::db_delete_document_chunks,
+            db::rag::db_search_document_chunks,
             orchestrate_supervisor,
             cancel_agent_loop,       // Fix 11: expose cancellation to frontend
             search_web_command,
+            commands::agent::search_web_json_command,
             commands::agent::fetch_page_html_command,
             commands::agent::run_agent_tool,
             commands::agent::approve_tool,
             commands::agent::reject_tool,
             commands::agent::resolve_plugin_tool,
             commands::agent::resolve_browser_action,
-            server_get_ports,
+            stream_chat,
+            commands::workspace::workspace_get,
+            commands::workspace::workspace_select,
+            commands::workspace::workspace_create,
+            commands::workspace::workspace_list_projects,
+            commands::workspace::workspace_create_project,
+            commands::workspace::workspace_update_project,
+            commands::workspace::workspace_delete_project,
+            commands::cache::cache_stats,
+            commands::cache::cache_clear,
+            commands::voice::voice_tts,
+            commands::voice::voice_stt,
+            cancel_all_requests,
+            cancel_request,
+            get_models_quota,
+            list_local_models,
+            chat_send_message,
+            chat_send_message_ensemble,
+            chat_send_message_parallel,
+            chat_send_message_ab_test,
         ])
         .on_window_event(|window, event| {
             match event {
@@ -185,22 +199,8 @@ pub fn run() {
         .expect("error while running NYX");
 }
 
-#[tauri::command]
-fn server_get_ports(state: tauri::State<'_, AppState>) -> serde_json::Value {
-    let port = *state.sidecar_port.lock().unwrap();
-    serde_json::json!({
-        "success": true,
-        "data": {
-            "express_port": port
-        }
-    })
-}
-
 async fn setup_app(handle: &tauri::AppHandle) {
-    tracing::info!("🚀 NYX Tauri boot sequence starting...");
-
     let window   = create_main_window(handle).await;
-    let spotlight = create_spotlight_window(handle).await;
     tray::create_tray(handle, &window).expect("Failed to create tray");
     setup_menus(handle);
 
@@ -210,13 +210,11 @@ async fn setup_app(handle: &tauri::AppHandle) {
     #[cfg(target_os = "macos")]
     {
         let _ = window_vibrancy::apply_vibrancy(&window, window_vibrancy::NSVisualEffectMaterial::HudWindow, None, None);
-        let _ = window_vibrancy::apply_vibrancy(&spotlight, window_vibrancy::NSVisualEffectMaterial::HudWindow, None, None);
     }
 
     #[cfg(target_os = "windows")]
     {
         let _ = window_vibrancy::apply_mica(&window, Some(true));
-        let _ = window_vibrancy::apply_mica(&spotlight, Some(true));
     }
 
     // ── Embedded LLM: try to auto-start in background ─────────────────────────
@@ -226,40 +224,8 @@ async fn setup_app(handle: &tauri::AppHandle) {
         crate::llm::embedded::try_autostart_embedded().await;
     });
 
-    // ── Fastify Backend Sidecar ───────────────────────────────────────────────
-    use tauri_plugin_shell::ShellExt;
-    
-    // Find an ephemeral port
-    let sidecar_port = std::net::TcpListener::bind("127.0.0.1:0")
-        .and_then(|listener| listener.local_addr())
-        .map(|addr| addr.port())
-        .unwrap_or(3001);
-        
-    // Store it in AppState
-    let state = handle.state::<AppState>();
-    *state.sidecar_port.lock().unwrap() = sidecar_port;
+    // Fastify Backend Sidecar has been removed (migrated to native Rust)
 
-    match handle.shell().sidecar("nyx-server") {
-        Ok(cmd) => {
-            let cmd = cmd.env("SIDECAR_PORT", sidecar_port.to_string());
-            match cmd.spawn() {
-                Ok((mut rx, mut child)) => {
-                    tracing::info!("✅ Fastify sidecar started on port {}.", sidecar_port);
-                    tauri::async_runtime::spawn(async move {
-                        while let Some(event) = rx.recv().await {
-                            if let tauri_plugin_shell::process::CommandEvent::Stdout(line) = event {
-                                tracing::debug!("[Fastify] {}", String::from_utf8_lossy(&line));
-                            } else if let tauri_plugin_shell::process::CommandEvent::Stderr(line) = event {
-                                tracing::warn!("[Fastify] {}", String::from_utf8_lossy(&line));
-                            }
-                        }
-                    });
-                }
-                Err(e) => tracing::error!("❌ Failed to spawn Fastify sidecar: {}", e),
-            }
-        }
-        Err(e) => tracing::error!("❌ Failed to locate Fastify sidecar 'nyx-server': {}", e),
-    }
 
     tracing::info!("✅ NYX Tauri fully initialized");
 }
@@ -288,28 +254,6 @@ async fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
         .expect("Failed to create window")
 }
 
-async fn create_spotlight_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
-    if let Some(window) = handle.get_webview_window("spotlight") {
-        return window;
-    }
-
-    let url = if cfg!(debug_assertions) {
-        WebviewUrl::External("http://localhost:3000/spotlight".parse().unwrap())
-    } else {
-        WebviewUrl::App("spotlight.html".into())
-    };
-
-    WebviewWindowBuilder::new(handle, "spotlight", url)
-        .title("NYX Spotlight")
-        .inner_size(800.0, 600.0)
-        .center()
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .visible(false)
-        .build()
-        .expect("Failed to create spotlight window")
-}
 
 fn setup_menus(handle: &tauri::AppHandle) {
     let menu     = Menu::new(handle).unwrap();

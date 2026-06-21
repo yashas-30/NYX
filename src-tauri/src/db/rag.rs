@@ -1,5 +1,4 @@
 use tauri::State;
-use sqlx::SqlitePool;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -151,8 +150,4 @@ pub async fn db_search_document_chunks(
     }
 }
 
-#[tauri::command]
-pub async fn db_parse_pdf(bytes: Vec<u8>) -> Result<String, String> {
-    let text = pdf_extract::extract_text_from_mem(&bytes).map_err(|e| e.to_string())?;
-    Ok(text)
-}
+

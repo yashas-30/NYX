@@ -37,7 +37,7 @@ const LOCAL_MODEL_IDS = new Set([
   'phi-4-mini-instruct',
   'phi-4-instruct',
   'qwen2.5-1.5b-instruct',
-  'qwen2.5-coder-1.5b-native',
+  'qwen2.5-coder:1.5b',
   'qwen2.5-coder-3b-native',
   'qwen2.5-coder-7b-native',
   'qwen2.5-coder-14b-native',

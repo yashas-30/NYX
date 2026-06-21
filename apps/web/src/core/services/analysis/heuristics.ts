@@ -292,12 +292,10 @@ export function detectExecutionMode(lower: string, complexity: number): {
       suggestedExecutionMode: 'parallel',
       suggestedExecutionReasoning: 'Detected comparative query. Running models in parallel for side-by-side evaluation.',
     };
-  } else if (isEnsemble || complexity >= 3) {
+  } else if (isEnsemble) {
     return {
       suggestedExecutionMode: 'ensemble',
-      suggestedExecutionReasoning: isEnsemble
-        ? 'Detected request for consensus synthesis across multiple models.'
-        : 'Highly complex task. Routing to ensemble synthesis to combine capabilities of multiple models.',
+      suggestedExecutionReasoning: 'Detected request for consensus synthesis across multiple models.',
     };
   }
 

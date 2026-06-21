@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XIcon as X, CodeIcon as Code, PlayIcon as Play, SendIcon as Send, ChevronRightIcon as ChevronRight } from '@animateicons/react/lucide';
@@ -254,7 +255,7 @@ User instructions to modify this selection: ${editInstruction}`;
                 className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
                 title="Previous Version"
               >
-                <ChevronLeft className="w-3.5 h-3.5" />
+                <AnimatedIcon icon={ChevronLeft} className="w-3.5 h-3.5" />
               </button>
               <span className="text-[10px] font-mono font-medium text-muted-foreground select-none">
                 v{selectedVersionIndex + 1} of {versions.length}
@@ -278,7 +279,7 @@ User instructions to modify this selection: ${editInstruction}`;
               title="Save to Project"
               onClick={handleSaveToProject}
             >
-              <Save className="w-4 h-4" />
+              <AnimatedIcon icon={Save} className="w-4 h-4" />
             </Button>
             <Button
               variant="ghost"
@@ -287,7 +288,7 @@ User instructions to modify this selection: ${editInstruction}`;
               title="Fork Code"
               onClick={handleFork}
             >
-              <GitFork className="w-4 h-4" />
+              <AnimatedIcon icon={GitFork} className="w-4 h-4" />
             </Button>
             <Button
               variant="ghost"
@@ -296,7 +297,7 @@ User instructions to modify this selection: ${editInstruction}`;
               title="Copy"
               onClick={handleCopy}
             >
-              <Copy className="w-4 h-4" />
+              <AnimatedIcon icon={Copy} className="w-4 h-4" />
             </Button>
             <Button
               variant="ghost"
@@ -305,11 +306,11 @@ User instructions to modify this selection: ${editInstruction}`;
               title="Export File"
               onClick={handleDownload}
             >
-              <Download className="w-4 h-4" />
+              <AnimatedIcon icon={Download} className="w-4 h-4" />
             </Button>
             <div className="h-4 w-px bg-border mx-1" />
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsFullscreen(!isFullscreen)}>
-              {isFullscreen ? <Minimize2 className="w-4 h-4 text-muted-foreground" /> : <Maximize2 className="w-4 h-4 text-muted-foreground" />}
+              {isFullscreen ? <AnimatedIcon icon={Minimize2} className="w-4 h-4 text-muted-foreground" /> : <AnimatedIcon icon={Maximize2} className="w-4 h-4 text-muted-foreground" />}
             </Button>
             <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive" onClick={onClose}>
               <X className="w-4.5 h-4.5" />
@@ -425,7 +426,7 @@ User instructions to modify this selection: ${editInstruction}`;
                   >
                     <form onSubmit={handleRequestEdit} className="flex flex-col gap-2">
                       <div className="text-[10px] text-muted-foreground font-semibold flex items-center gap-1.5 uppercase">
-                        <CheckCircle className="w-3.5 h-3.5 text-primary" />
+                        <AnimatedIcon icon={CheckCircle} className="w-3.5 h-3.5 text-primary" />
                         <span>Selected Lines {selection.startLine} - {selection.endLine}</span>
                       </div>
                       <div className="flex gap-2 items-center">

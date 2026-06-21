@@ -5,13 +5,16 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {
-      "@/*": ["./*"],
+      "@/*": ["./src/*"],
       "@src/*": ["./src/*"],
       "@nyx/shared/*": ["../../packages/shared/src/*"],
       "@shared/*": ["./src/shared/*"],
       "@features/*": ["./src/features/*"],
       "@core/*": ["./src/core/*"],
       "@assets/*": ["./src/assets/*"],
+      "~types/*": ["./src/types/*"],
+      "~components/*": ["./src/components/*"],
+      "~features/*": ["./src/features/*"],
       "@server/*": ["./server/*"]
     }
   },

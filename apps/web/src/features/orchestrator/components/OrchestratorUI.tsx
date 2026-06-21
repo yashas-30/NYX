@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 // fallow-ignore-file code-duplication
 /**
  * @file src/features/orchestrator/components/OrchestratorUI.tsx
@@ -169,7 +170,7 @@ const ToolCallCard: React.FC<{ call: ToolCall }> = memo(({ call }) => {
         {(call.status === 'completed' || call.status === 'success') && (
           <Check size={12} className="text-emerald-400 ml-auto" />
         )}
-        {call.status === 'error' && <AlertCircle size={12} className="text-red-400 ml-auto" />}
+        {call.status === 'error' && <AnimatedIcon icon={AlertCircle} size={12} className="text-red-400 ml-auto" />}
         <span className="ml-auto">
           {expanded ? (
             <ChevronDown size={12} className="text-[#555]" />
@@ -214,9 +215,9 @@ ToolCallCard.displayName = 'ToolCallCard';
 
 const ArtifactCard: React.FC<{ artifact: Artifact }> = memo(({ artifact }) => {
   const icons: Record<string, React.ReactNode> = {
-    code: <FileCode size={14} className="text-blue-400" />,
-    image: <ImageIcon size={14} className="text-purple-400" />,
-    document: <FileCode size={14} className="text-emerald-400" />,
+    code: <AnimatedIcon icon={FileCode} size={14} className="text-blue-400" />,
+    image: <AnimatedIcon icon={ImageIcon} size={14} className="text-purple-400" />,
+    document: <AnimatedIcon icon={FileCode} size={14} className="text-emerald-400" />,
   };
 
   return (
@@ -378,7 +379,7 @@ const MessageActions: React.FC<{
         onClick={onRegenerate}
         className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-[#555] hover:text-blue-400 hover:bg-white/[0.03] transition-all cursor-pointer"
       >
-        <RefreshCw size={10} />
+        <AnimatedIcon icon={RefreshCw} size={10} />
         <span>Regenerate</span>
       </button>
     )}
@@ -400,15 +401,15 @@ const AssistantMessage: React.FC<{
       {/* Model info */}
       {msg.metrics?.modelUsed && (
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-[#666] font-medium">
-          <Bot size={10} className="text-emerald-500/50" />
+          <AnimatedIcon icon={Bot} size={10} className="text-emerald-500/50" />
           <span>{msg.metrics.modelUsed}</span>
           <span className="text-[#444]">•</span>
-          <Clock size={10} className="text-[#444]" />
+          <AnimatedIcon icon={Clock} size={10} className="text-[#444]" />
           <span>{msg.metrics.latencyMs}ms</span>
           {msg.metrics.tokens && (
             <>
               <span className="text-[#444]">•</span>
-              <Cpu size={10} className="text-[#444]" />
+              <AnimatedIcon icon={Cpu} size={10} className="text-[#444]" />
               <span>{msg.metrics.tokens} tok</span>
             </>
           )}
@@ -606,7 +607,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
                 size="sm"
                 className="h-8 text-xs bg-red-600/20 text-red-400 hover:bg-red-600/30 border-red-500/20"
               >
-                <Square size={12} className="mr-1" fill="currentColor" />
+                <AnimatedIcon icon={Square} size={12} className="mr-1" fill="currentColor" />
                 Stop
               </Button>
             ) : (

@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React from 'react';
 import { FileText, Clock } from 'lucide-react';
 
@@ -27,7 +28,7 @@ export const AuditLogView: React.FC = () => {
   return (
     <div className="bg-card border border-border rounded-md p-6 shadow-sm mb-4">
       <div className="flex items-center gap-2 mb-4">
-        <FileText size={16} className="text-accent" />
+        <AnimatedIcon icon={FileText} size={16} className="text-accent" />
         <h3 className="text-sm font-bold text-foreground uppercase tracking-widest">
           Settings Audit Log
         </h3>
@@ -39,7 +40,7 @@ export const AuditLogView: React.FC = () => {
             className="flex gap-4 items-start pb-3 border-b border-border last:border-0 last:pb-0"
           >
             <div className="pt-0.5">
-              <Clock size={12} className="text-muted-foreground" />
+              <AnimatedIcon icon={Clock} size={12} className="text-muted-foreground" />
             </div>
             <div>
               <p className="text-xs font-bold text-foreground">{log.action}</p>

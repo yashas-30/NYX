@@ -1,6 +1,6 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useMemo, useRef } from 'react';
-import { XIcon as X, CopyIcon as Copy, DownloadIcon as Download, PlayIcon as Play } from '@animateicons/react/lucide';
-import { Code2, Maximize2, Minimize2 } from 'lucide-react';
+import { Code, CornersOut as Maximize, CornersIn as Minimize, Play, Copy, DownloadSimple as Download, X } from '@phosphor-icons/react';
 import { Sandpack } from '@codesandbox/sandpack-react';
 import { PythonSandbox } from './PythonSandbox';
 
@@ -93,7 +93,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
   const isReact =
     ['jsx', 'tsx', 'react'].includes(artifact.language?.toLowerCase() || '') ||
     ((artifact.language?.toLowerCase() === 'typescript' || artifact.language?.toLowerCase() === 'javascript' || artifact.language?.toLowerCase() === 'ts' || artifact.language?.toLowerCase() === 'js') &&
-      (artifact.content.includes('import React') || artifact.content.includes('from "lucide-react"')));
+     artifact.content.includes('import React'));
   const isPython =
     artifact.type === 'python' || artifact.language?.toLowerCase() === 'python';
   const isRenderable =
@@ -166,7 +166,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
       <div className="flex items-center justify-between p-4 border-b border-border bg-muted/30">
         <div className="flex items-center gap-3">
           <div className="p-1.5 bg-input border border-border/50 rounded text-primary">
-            <Code2 className="w-4 h-4" />
+            <AnimatedIcon icon={Code} className="w-4 h-4" />
           </div>
           <div>
             <h3 className="text-[14px] font-medium text-foreground">{artifact.title}</h3>
@@ -192,7 +192,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
                 className={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${activeTab === 'code' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 <div className="flex items-center gap-1">
-                  <Code2 className="w-3 h-3" /> Code
+                  <AnimatedIcon icon={Code} className="w-3 h-3" /> Code
                 </div>
               </button>
             </div>
@@ -217,7 +217,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
             className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-input border border-transparent hover:border-border rounded transition-colors cursor-pointer"
             title="Toggle Fullscreen"
           >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            {isFullscreen ? <AnimatedIcon icon={Minimize} className="w-4 h-4" /> : <AnimatedIcon icon={Maximize} className="w-4 h-4" />}
           </button>
           <div className="w-px h-4 bg-border mx-1" />
           <button

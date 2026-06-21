@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState } from 'react';
 import { GlobeIcon as Globe } from '@animateicons/react/lucide';
 import { Save } from 'lucide-react';
@@ -41,7 +42,7 @@ export const NetworkSettings: React.FC = () => {
         </label>
 
         <button className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-md text-xs font-bold uppercase tracking-wider hover:bg-accent/90 transition-all">
-          <Save size={14} />
+          <AnimatedIcon icon={Save} size={14} />
           Save Proxy
         </button>
       </div>

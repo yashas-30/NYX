@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -6,9 +7,9 @@ import {
 
 const ProjectIcon = ({ icon, className = "w-5 h-5 text-primary" }: { icon: string; className?: string }) => {
   if (icon === '🎨') {
-    return <Palette className={className} />;
+    return <AnimatedIcon icon={Palette} className={className} />;
   }
-  return <Folder className={className} />;
+  return <AnimatedIcon icon={Folder} className={className} />;
 };
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -204,7 +205,7 @@ export default function ProjectsView() {
           >
             {file.type === 'folder' && (
               <span className="text-muted-foreground">
-                {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                {isExpanded ? <AnimatedIcon icon={ChevronDown} size={12} /> : <AnimatedIcon icon={ChevronRight} size={12} />}
               </span>
             )}
             <Icon size={14} className={colorClass} />
@@ -234,7 +235,7 @@ export default function ProjectsView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <Folder size={18} />
+              <AnimatedIcon icon={Folder} size={18} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">Projects</h1>
@@ -245,7 +246,7 @@ export default function ProjectsView() {
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <AnimatedIcon icon={Search} size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 value={searchQuery}
@@ -258,7 +259,7 @@ export default function ProjectsView() {
               onClick={() => setIsCreating(true)}
               className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-all cursor-pointer"
             >
-              <Plus size={14} /> New Project
+              <AnimatedIcon icon={Plus} size={14} /> New Project
             </button>
           </div>
         </div>
@@ -288,10 +289,10 @@ export default function ProjectsView() {
                   <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{project.description}</p>
                   <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <MessageSquare size={9} /> {project.sessions.length}
+                      <AnimatedIcon icon={MessageSquare} size={9} /> {project.sessions.length}
                     </span>
                     <span className="flex items-center gap-1">
-                      <FileText size={9} /> {project.files.length}
+                      <AnimatedIcon icon={FileText} size={9} /> {project.files.length}
                     </span>
                   </div>
                 </div>
@@ -317,7 +318,7 @@ export default function ProjectsView() {
                         onClick={startProjectChat}
                         className="flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all cursor-pointer shadow-sm"
                       >
-                        <MessageSquare size={12} /> Chat in Project
+                        <AnimatedIcon icon={MessageSquare} size={12} /> Chat in Project
                       </button>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -327,10 +328,10 @@ export default function ProjectsView() {
                           showInstructions ? 'bg-primary/10 text-primary border-primary/20' : 'bg-muted/40 text-muted-foreground hover:text-foreground'
                         }`}
                       >
-                        <BrainCircuit size={10} /> Instructions
+                        <AnimatedIcon icon={BrainCircuit} size={10} /> Instructions
                       </button>
                       <label className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md bg-muted/40 text-[10px] font-medium text-muted-foreground hover:text-foreground border border-border transition-all cursor-pointer">
-                        <Upload size={10} /> Upload Files
+                        <AnimatedIcon icon={Upload} size={10} /> Upload Files
                         <input
                           type="file"
                           multiple
@@ -346,7 +347,7 @@ export default function ProjectsView() {
                   {/* File Search */}
                   <div className="p-2 border-b border-border bg-muted/10 shrink-0">
                     <div className="relative">
-                      <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+                      <AnimatedIcon icon={Search} size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
                       <input
                         type="text"
                         value={fileSearchQuery}
@@ -383,7 +384,7 @@ export default function ProjectsView() {
                               selectedFile?.id === file.id ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-muted text-foreground'
                             }`}
                           >
-                            <FileCode size={14} className="text-blue-400" />
+                            <AnimatedIcon icon={FileCode} size={14} className="text-blue-400" />
                             <span className="flex-1 truncate">{file.name}</span>
                           </div>
                         ))}
@@ -404,7 +405,7 @@ export default function ProjectsView() {
                   <>
                     <div className="shrink-0 px-4 py-3 border-b border-border flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <FileText size={14} className="text-primary" />
+                        <AnimatedIcon icon={FileText} size={14} className="text-primary" />
                         <span className="text-sm font-semibold text-foreground">{selectedFile.name}</span>
                         <span className="text-[10px] text-muted-foreground">{selectedFile.size}</span>
                       </div>
@@ -413,7 +414,7 @@ export default function ProjectsView() {
                           onClick={() => deleteFile(selectedFile.id)}
                           className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-all cursor-pointer"
                         >
-                          <Trash2 size={13} />
+                          <AnimatedIcon icon={Trash2} size={13} />
                         </button>
                       </div>
                     </div>
@@ -426,7 +427,7 @@ export default function ProjectsView() {
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-muted-foreground">
                     <div className="text-center">
-                      <FolderOpen size={48} className="mx-auto mb-3 opacity-20" />
+                      <AnimatedIcon icon={FolderOpen} size={48} className="mx-auto mb-3 opacity-20" />
                       <p className="text-sm font-medium">Select a file to preview</p>
                       <p className="text-xs mt-1 opacity-60">Files are stored per-project and shared across chat sessions</p>
                     </div>
@@ -437,7 +438,7 @@ export default function ProjectsView() {
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
               <div className="text-center">
-                <Folder size={48} className="mx-auto mb-3 opacity-20" />
+                <AnimatedIcon icon={Folder} size={48} className="mx-auto mb-3 opacity-20" />
                 <p className="text-sm font-medium">Select a project</p>
                 <p className="text-xs mt-1 opacity-60">Create or select a project to manage files and context</p>
               </div>

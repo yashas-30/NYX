@@ -1,19 +1,9 @@
-use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::fs;
 use tokio::process::Command;
 use std::process::Stdio;
 use tauri::Manager;
 use base64::Engine;
-
-#[derive(Serialize, Clone)]
-pub struct StreamEventPayload {
-    pub event_type: String, // "text", "tool_start", "tool_result", "done", "error"
-    pub content: String,
-    pub tool_name: Option<String>,
-    pub tool_args: Option<String>,
-    pub request_id: String,
-}
 
 // Built-in tools for NYX
 pub fn get_builtin_tools() -> Value {
@@ -493,7 +483,22 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         "web_search" => {
             let query = args["query"].as_str().unwrap_or("");
             let num_results = args["num_results"].as_u64().unwrap_or(5) as usize;
-            match search_web_command(query.to_string(), Some(num_results), None, None).await {
+            
+            let mut tavily_key = keyring::Entry::new("com.nyx.desktop", "tavily")
+                .and_then(|entry| entry.get_password())
+                .unwrap_or_default();
+            
+            if tavily_key.trim().is_empty() {
+                tavily_key = std::env::var("TAVILY_API_KEY").unwrap_or_default();
+            }
+
+            let (provider, api_key) = if !tavily_key.trim().is_empty() {
+                (Some("tavily".to_string()), Some(tavily_key))
+            } else {
+                (None, None) // Defaults to duckduckgo
+            };
+
+            match search_web_command(query.to_string(), Some(num_results), provider, api_key).await {
                 Ok(res) => res,
                 Err(e) => format!("Search failed: {}", e),
             }
@@ -1191,6 +1196,48 @@ fn parse_duckduckgo_html(html: &str, num_results: usize) -> String {
         "No results found.".to_string()
     } else {
         formatted_results.join("\n\n")
+    }
+}
+
+#[tauri::command]
+pub async fn search_web_json_command(
+    query: String,
+    num_results: Option<usize>,
+    provider: Option<String>,
+    api_key: Option<String>,
+) -> Result<Value, String> {
+    let search_provider = provider.unwrap_or_else(|| "duckduckgo".to_string());
+    let limit = num_results.unwrap_or(5);
+
+    if search_provider == "tavily" {
+        let key = api_key.ok_or_else(|| "Tavily API key is missing".to_string())?;
+        if key.trim().is_empty() {
+            return Err("Tavily API key is empty".to_string());
+        }
+        let client = reqwest::Client::new();
+        let res = client.post("https://api.tavily.com/search")
+            .header("Authorization", format!("Bearer {}", key))
+            .json(&json!({
+                "query": query,
+                "max_results": limit,
+                "include_raw_content": true,
+                "search_depth": "advanced"
+            }))
+            .send()
+            .await
+            .map_err(|e| format!("Tavily request failed: {}", e))?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let err_text = res.text().await.unwrap_or_default();
+            return Err(format!("Tavily search failed ({}): {}", status, err_text));
+        }
+
+        let response_data: Value = res.json().await.map_err(|e| format!("Tavily response parsing failed: {}", e))?;
+        Ok(response_data)
+    } else {
+        // Fallback
+        Ok(json!({ "results": [] }))
     }
 }
 

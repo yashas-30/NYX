@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -110,7 +111,7 @@ export default function IdeView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <Code2 size={18} />
+              <AnimatedIcon icon={Code2} size={18} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">IDE Connector</h1>
@@ -123,7 +124,7 @@ export default function IdeView() {
             onClick={() => setIsConnecting(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-all"
           >
-            <Link size={14} /> Connect IDE
+            <AnimatedIcon icon={Link} size={14} /> Connect IDE
           </button>
         </div>
       </div>
@@ -170,8 +171,8 @@ export default function IdeView() {
               onClick={() => setShowInstructions(!showInstructions)}
               className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-all"
             >
-              <Wand2 size={12} /> Extension Setup
-              {showInstructions ? <EyeOff size={10} /> : <Eye size={10} />}
+              <AnimatedIcon icon={Wand2} size={12} /> Extension Setup
+              {showInstructions ? <AnimatedIcon icon={EyeOff} size={10} /> : <AnimatedIcon icon={Eye} size={10} />}
             </button>
             <AnimatePresence>
               {showInstructions && (
@@ -191,7 +192,7 @@ export default function IdeView() {
                         onClick={() => copyCommand(extensionCommand)}
                         className="p-1 rounded hover:bg-background text-muted-foreground transition-all"
                       >
-                        {copied ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
+                        {copied ? <AnimatedIcon icon={Check} size={10} className="text-green-500" /> : <AnimatedIcon icon={Copy} size={10} />}
                       </button>
                     </div>
                   </div>
@@ -208,7 +209,7 @@ export default function IdeView() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-lg ${EDITOR_INFO[selectedConnection.editor].color} flex items-center justify-center`}>
-                    <Code2 size={18} />
+                    <AnimatedIcon icon={Code2} size={18} />
                   </div>
                   <div>
                     <h2 className="text-lg font-semibold text-foreground">{selectedConnection.name}</h2>
@@ -221,11 +222,11 @@ export default function IdeView() {
                       onClick={() => disconnectIde(selectedConnection.id)}
                       className="flex items-center gap-1.5 px-3 py-2 bg-red-500/10 text-red-500 rounded-lg text-xs font-medium hover:bg-red-500/20 transition-all"
                     >
-                      <XCircle size={12} /> Disconnect
+                      <AnimatedIcon icon={XCircle} size={12} /> Disconnect
                     </button>
                   ) : (
                     <button className="flex items-center gap-1.5 px-3 py-2 bg-green-500/10 text-green-500 rounded-lg text-xs font-medium hover:bg-green-500/20 transition-all">
-                      <Play size={12} /> Connect
+                      <AnimatedIcon icon={Play} size={12} /> Connect
                     </button>
                   )}
                 </div>
@@ -242,14 +243,14 @@ export default function IdeView() {
                 </div>
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
-                    <RefreshCw size={12} className="text-muted-foreground" />
+                    <AnimatedIcon icon={RefreshCw} size={12} className="text-muted-foreground" />
                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Last Sync</span>
                   </div>
                   <p className="text-sm font-medium text-foreground">{selectedConnection.lastSync}</p>
                 </div>
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
-                    <FileCode size={12} className="text-muted-foreground" />
+                    <AnimatedIcon icon={FileCode} size={12} className="text-muted-foreground" />
                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Files</span>
                   </div>
                   <p className="text-sm font-medium text-foreground">{selectedConnection.files.length} tracked</p>
@@ -259,7 +260,7 @@ export default function IdeView() {
               {/* Features */}
               <div className="p-4 bg-card border border-border rounded-xl">
                 <h3 className="text-xs font-medium text-foreground mb-3 flex items-center gap-2">
-                  <Zap size={12} /> Enabled Features
+                  <AnimatedIcon icon={Zap} size={12} /> Enabled Features
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   {selectedConnection.features.map((feature) => (
@@ -276,12 +277,12 @@ export default function IdeView() {
               {/* Tracked Files */}
               <div className="p-4 bg-card border border-border rounded-xl">
                 <h3 className="text-xs font-medium text-foreground mb-3 flex items-center gap-2">
-                  <FileCode size={12} /> Tracked Files
+                  <AnimatedIcon icon={FileCode} size={12} /> Tracked Files
                 </h3>
                 <div className="space-y-1.5">
                   {selectedConnection.files.map((file) => (
                     <div key={file} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 hover:bg-muted transition-all">
-                      <FileCode size={12} className="text-muted-foreground" />
+                      <AnimatedIcon icon={FileCode} size={12} className="text-muted-foreground" />
                       <span className="text-xs text-foreground font-mono">{file}</span>
                     </div>
                   ))}
@@ -291,20 +292,20 @@ export default function IdeView() {
               {/* Actions */}
               <div className="flex gap-2">
                 <button className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-all">
-                  <Terminal size={12} /> Open Terminal
+                  <AnimatedIcon icon={Terminal} size={12} /> Open Terminal
                 </button>
                 <button className="flex items-center gap-1.5 px-4 py-2 bg-muted text-foreground rounded-lg text-xs font-medium hover:bg-muted/80 transition-all">
-                  <GitBranch size={12} /> Git Status
+                  <AnimatedIcon icon={GitBranch} size={12} /> Git Status
                 </button>
                 <button className="flex items-center gap-1.5 px-4 py-2 bg-muted text-foreground rounded-lg text-xs font-medium hover:bg-muted/80 transition-all">
-                  <Send size={12} /> Send to Chat
+                  <AnimatedIcon icon={Send} size={12} /> Send to Chat
                 </button>
               </div>
             </div>
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
               <div className="text-center">
-                <Code2 size={48} className="mx-auto mb-3 opacity-20" />
+                <AnimatedIcon icon={Code2} size={48} className="mx-auto mb-3 opacity-20" />
                 <p className="text-sm font-medium">Select a workspace</p>
                 <p className="text-xs mt-1 opacity-60">Connect your IDE to use NYX features directly in your editor</p>
                 <div className="mt-4 p-4 bg-card border border-border rounded-xl max-w-md mx-auto text-left">
@@ -377,7 +378,7 @@ export default function IdeView() {
                       onClick={() => copyCommand(extensionCommand)}
                       className="p-1 rounded hover:bg-background text-muted-foreground transition-all"
                     >
-                      {copied ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
+                      {copied ? <AnimatedIcon icon={Check} size={10} className="text-green-500" /> : <AnimatedIcon icon={Copy} size={10} />}
                     </button>
                   </div>
                 </div>

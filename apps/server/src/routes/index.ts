@@ -31,6 +31,7 @@ import { gitRouter } from '../features/nyx/git.router.js';
 import { uploadRouter } from '../features/upload/upload.router.js';
 import { cacheRouter } from '../features/cache/cache.router.js';
 import { assistantRouter } from '../features/assistant/assistant.router.js';
+import { memoryRouter } from '../features/memory/memory.router.js';
 
 import { providerRateLimiter } from '../middleware/rateLimit.js';
 
@@ -137,6 +138,7 @@ export const registerRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     v1.register(modelProxyRouter, { prefix: '/models' });
     v1.register(promptTemplatesRouter, { prefix: '/prompt-templates' });
     v1.register(assistantRouter, { prefix: '/assistant' });
+    v1.register(memoryRouter, { prefix: '/memory' });
 
     // For gemini router with providerRateLimiter
     v1.register(async (geminiScope: FastifyInstance) => {

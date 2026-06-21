@@ -119,6 +119,56 @@ pub async fn try_autostart_embedded() {
     }
 }
 
+/// Runs llama-cli.exe --list-devices to find the index of the best GPU.
+/// Returns the GPU index (e.g. 0) and the device string (e.g. "Vulkan0").
+fn detect_best_gpu_device(bin_dir: &std::path::Path) -> Option<(usize, String)> {
+    let cli_exe = bin_dir.join("llama-cli.exe");
+    if !cli_exe.exists() {
+        return None;
+    }
+    
+    let output = Command::new(&cli_exe)
+        .current_dir(bin_dir)
+        .arg("--list-devices")
+        .output()
+        .ok()?;
+        
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut best_device: Option<(usize, String, bool)> = None; // (index, device_name, is_dedicated)
+    
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("Vulkan") {
+            if let Some(colon_pos) = trimmed.find(':') {
+                let device_name = trimmed[..colon_pos].trim().to_string();
+                
+                // Extract index from VulkanX
+                let index_str: String = device_name.chars().filter(|c| c.is_digit(10)).collect();
+                let index = index_str.parse::<usize>().unwrap_or(0);
+                
+                let device_desc = trimmed[colon_pos + 1..].to_lowercase();
+                
+                let is_dedicated = device_desc.contains("nvidia") 
+                    || device_desc.contains("geforce") 
+                    || device_desc.contains("gtx") 
+                    || device_desc.contains("rtx") 
+                    || device_desc.contains("amd") 
+                    || device_desc.contains("radeon")
+                    || device_desc.contains("arc");
+                    
+                if is_dedicated {
+                    best_device = Some((index, device_name, true));
+                    break;
+                } else if best_device.is_none() {
+                    best_device = Some((index, device_name, false));
+                }
+            }
+        }
+    }
+    
+    best_device.map(|(index, name, _)| (index, name))
+}
+
 /// Loads and starts the embedded llama-server for the given `.gguf` model path.
 /// Idempotent — does nothing if already in `Ready` state.
 pub async fn load_embedded_model(model_path: &str) -> Result<()> {
@@ -150,21 +200,38 @@ pub async fn load_embedded_model(model_path: &str) -> Result<()> {
         model_path, EMBEDDED_PORT
     );
 
+    // Build arguments
+    let mut args = vec![
+        "--model".to_string(),        model_path.to_string(),
+        "--port".to_string(),         EMBEDDED_PORT.to_string(),
+        "--ctx-size".to_string(),     "4096".to_string(),
+        "--threads".to_string(),      "4".to_string(),
+        "--n-gpu-layers".to_string(), "99".to_string(),
+        "--log-disable".to_string(),
+    ];
+
+    let mut detected_gpu: Option<(usize, String)> = None;
+    if let Some((index, device_name)) = detect_best_gpu_device(&bin_dir) {
+        tracing::info!("🎯 Detected best GPU device for offloading: {}", device_name);
+        args.push("--device".to_string());
+        args.push(device_name.clone());
+        detected_gpu = Some((index, device_name));
+    }
+
     // Spawn llama-server with Vulkan/GPU acceleration if available,
     // falling back gracefully to CPU. --n-gpu-layers 99 is harmless on CPU-only.
-    let child = Command::new(&server_exe)
-        .current_dir(&bin_dir) // DLLs are in the same dir
-        .args([
-            "--model",        model_path,
-            "--port",         &EMBEDDED_PORT.to_string(),
-            "--ctx-size",     "4096",
-            "--threads",      "4",
-            "--n-gpu-layers", "99",
-            "--log-disable",
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
+    let mut cmd = Command::new(&server_exe);
+    cmd.current_dir(&bin_dir) // DLLs are in the same dir
+       .args(&args)
+       .stdout(std::process::Stdio::null())
+       .stderr(std::process::Stdio::null());
+
+    if let Some((index, _)) = detected_gpu {
+        cmd.env("GGML_VK_VISIBLE_DEVICES", index.to_string());
+        cmd.env("GGML_VULKAN_DEVICE", index.to_string());
+    }
+
+    let child = cmd.spawn()
         .map_err(|e| anyhow!("Failed to spawn llama-server: {}", e))?;
 
     eng.child = Some(child);

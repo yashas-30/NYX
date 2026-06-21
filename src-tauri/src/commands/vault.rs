@@ -111,3 +111,30 @@ pub async fn vault_list_keys() -> VaultResult<Vec<String>> {
     }
 }
 
+#[tauri::command(rename = "vault:validate-gemini-key")]
+pub async fn vault_validate_gemini_key(key: String) -> VaultResult<bool> {
+    let url = format!("https://generativelanguage.googleapis.com/v1beta/models?key={}", key);
+    let client = reqwest::Client::builder()
+        .user_agent("NYX/1.0")
+        .default_headers({
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert("Accept", reqwest::header::HeaderValue::from_static("application/json"));
+            headers
+        })
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+        
+    match client.get(&url).send().await {
+        Ok(res) => {
+            let status = res.status();
+            if status.is_success() {
+                VaultResult { success: true, data: Some(true), error: None }
+            } else {
+                let text = res.text().await.unwrap_or_default();
+                VaultResult { success: false, data: Some(false), error: Some(format!("Status {}: {}", status, text)) }
+            }
+        }
+        Err(e) => VaultResult { success: false, data: Some(false), error: Some(e.to_string()) },
+    }
+}

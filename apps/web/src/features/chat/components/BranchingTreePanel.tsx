@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 /**
  * @file BranchingTreePanel.tsx
  * @description Premium visual branching tree panel, split-pane comparison view, and step-by-step merge wizard.
@@ -12,12 +13,14 @@ import {
   X, 
   Check, 
   ArrowRight, 
-  ChevronRight, 
-  Layers, 
-  MessageSquare,
+  CaretRight as ChevronRight, 
+  Stack as Layers, 
+  ChatText,
   ArrowLeft,
-  ChevronDown
-} from 'lucide-react';
+  CaretDown as ChevronDown,
+  Play,
+  CheckCircle
+} from '@phosphor-icons/react';
 import { ChatSession } from '@src/shared/hooks/useChatSessions';
 import { ChatMessage } from '@src/infrastructure/types';
 
@@ -203,7 +206,7 @@ export const BranchingTreePanel: React.FC<BranchingTreePanelProps> = ({
                 title="Compare side-by-side"
                 className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 transition-colors cursor-pointer"
               >
-                <Columns size={13} />
+                <AnimatedIcon icon={Columns} size={13} />
               </button>
             </div>
           )}
@@ -231,7 +234,7 @@ export const BranchingTreePanel: React.FC<BranchingTreePanelProps> = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0 bg-muted/20">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/10 text-primary rounded-xl">
-              <GitBranch size={18} />
+              <AnimatedIcon icon={GitBranch} size={18} />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-foreground/90">
@@ -270,7 +273,7 @@ export const BranchingTreePanel: React.FC<BranchingTreePanelProps> = ({
               onClick={onClose}
               className="p-1.5 rounded-lg hover:bg-muted/40 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             >
-              <X size={16} />
+              <AnimatedIcon icon={X} size={16} />
             </button>
           </div>
         </div>
@@ -285,7 +288,7 @@ export const BranchingTreePanel: React.FC<BranchingTreePanelProps> = ({
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center w-full h-64 text-white/30">
-                  <GitBranch size={40} strokeWidth={1} className="mb-4" />
+                  <AnimatedIcon icon={GitBranch} size={40} strokeWidth={1} className="mb-4" />
                   <p className="text-sm">No branching history found for this session.</p>
                 </div>
               )}
@@ -403,7 +406,7 @@ export const BranchingTreePanel: React.FC<BranchingTreePanelProps> = ({
                             ? 'bg-primary border-primary text-primary-foreground' 
                             : 'border-border'
                         }`}>
-                          {item.checked && <Check size={12} strokeWidth={3} />}
+                          {item.checked && <AnimatedIcon icon={Check} size={12} strokeWidth={3} />}
                         </div>
                       </div>
 
@@ -445,7 +448,7 @@ export const BranchingTreePanel: React.FC<BranchingTreePanelProps> = ({
                 }}
                 className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
               >
-                <Columns size={14} />
+                <AnimatedIcon icon={Columns} size={14} />
                 Compare Branches
               </button>
             )}
@@ -455,7 +458,7 @@ export const BranchingTreePanel: React.FC<BranchingTreePanelProps> = ({
                 onClick={handleEnterMerge}
                 className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-colors cursor-pointer"
               >
-                <GitMerge size={14} />
+                <AnimatedIcon icon={GitMerge} size={14} />
                 Consolidate & Merge Messages
               </button>
             )}
@@ -465,7 +468,7 @@ export const BranchingTreePanel: React.FC<BranchingTreePanelProps> = ({
                 onClick={() => setViewMode('compare')}
                 className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-muted border border-border text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
               >
-                <ArrowLeft size={14} />
+                <AnimatedIcon icon={ArrowLeft} size={14} />
                 Back to Comparison
               </button>
             )}

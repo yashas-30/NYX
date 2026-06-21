@@ -20,18 +20,6 @@
         "center": true,
         "transparent": true,
         "visible": false
-      },
-      {
-        "title": "NYX Spotlight",
-        "label": "spotlight",
-        "width": 700,
-        "height": 450,
-        "center": true,
-        "transparent": true,
-        "decorations": false,
-        "alwaysOnTop": true,
-        "visible": false,
-        "skipTaskbar": true
       }
     ],
     "security": {
@@ -50,9 +38,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg", "appimage", "deb"],
-    "externalBin": [
-      "../packages/server/dist/nyx-server"
-    ],
+
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

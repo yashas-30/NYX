@@ -70,7 +70,7 @@ pub async fn fs_watch_stop(
 pub async fn fs_parse_and_chunk_file(
     path: String,
     chunk_size: usize,
-    overlap: usize,
+    _overlap: usize,
 ) -> Result<Vec<String>, String> {
     use std::fs::File;
     use std::io::{Read, BufReader};

@@ -61,19 +61,24 @@ class McpRegistryService {
    */
   async getAllTools(): Promise<any[]> {
     const allTools: any[] = [];
+    const entries = Array.from(this.clients.entries());
 
-    for (const [id, client] of Array.from(this.clients.entries())) {
+    const promises = entries.map(async ([id, client]) => {
       try {
         const result = await client.listTools();
-        // Tag tools with their source server ID so we can route execution correctly
-        const toolsWithSource = result.tools.map((t: any) => ({
+        return result.tools.map((t: any) => ({
           ...t,
           _mcpServerId: id,
         }));
-        allTools.push(...toolsWithSource);
       } catch (error) {
         console.error(`[MCP] Failed to list tools for server ${id}:`, error);
+        return [];
       }
+    });
+
+    const results = await Promise.all(promises);
+    for (const tools of results) {
+      allTools.push(...tools);
     }
 
     return allTools;

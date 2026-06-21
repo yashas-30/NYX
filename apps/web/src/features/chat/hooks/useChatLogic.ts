@@ -19,6 +19,7 @@ import { compactHistory, compactHistoryAsync, estimateContextTokens } from '@src
 import { PlanPhase } from '@src/types/agent';
 import { PromptAnalysisService } from '@src/core/services/promptAnalysis.service';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { MemoryStore } from '@src/core/agents/memoryStore';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -527,6 +528,12 @@ export const useChatLogic = ({
       const timer = setTimeout(() => {
         streamJustEndedRef.current = false;
       }, 500);
+      
+      // Trigger memory extraction in the background
+      if (historyRef.current.length > 0) {
+        MemoryStore.extractImplicitMemory(historyRef.current).catch(console.error);
+      }
+
       return () => clearTimeout(timer);
     }
   }, [isLoading]);
@@ -596,7 +603,8 @@ export const useChatLogic = ({
              'gemini-3.5-flash')
           : (models?.nyx || 'gemini-3.5-flash');
                            
-        let systemPromptAddon = expertisePrompt;
+        const memoryPrompt = await MemoryStore.getMemoryPrompt(prompt);
+        let systemPromptAddon = expertisePrompt + memoryPrompt;
         
         // --- Project Context Injection ---
         const activeProjectId = useNyxStore.getState().activeProjectId;

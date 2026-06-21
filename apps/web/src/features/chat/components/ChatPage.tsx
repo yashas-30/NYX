@@ -6,9 +6,9 @@
  *   attachment sync, and coordinates chat sessions with edit/regenerate/branch capabilities.
  */
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Folder } from 'lucide-react';
+import { Folder } from '@phosphor-icons/react';
 import { ModelDefinition, ChatMessage, ToolCall } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
@@ -20,12 +20,18 @@ import { ChatSettings } from './ChatSettings';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useChatLogic } from '../hooks/useChatLogic';
 import { ArtifactCanvas } from '../../artifacts/components/ArtifactCanvas';
-import { ContextBar } from '@src/shared/components/ContextBar';
-import { MemoryPanel } from './MemoryPanel';
+import { ContextPanel } from './ContextPanel';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useChatStore } from '@src/shared/store/useChatStore';
 import { useProjectStore } from '@src/shared/store/useProjectStore';
-import { BranchingTreePanel } from './BranchingTreePanel';
+// Lazy-load heavy panels — keeps initial JS bundle lean
+const MemoryPanel = lazy(() =>
+  import('./MemoryPanel').then(m => ({ default: m.MemoryPanel as React.ComponentType<any> }))
+);
+const BranchingTreePanel = lazy(() =>
+  import('./BranchingTreePanel').then(m => ({ default: m.BranchingTreePanel as React.ComponentType<any> }))
+);
+
 
 // ---------------------------------------------------------------------------
 // Types
@@ -472,6 +478,17 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     return 'degraded';
   }, [currentModel, providerStatuses]);
 
+  // Stable callbacks — not recreated on every render
+  const handleSuggestedPromptClick = useCallback((p: string) => {
+    setPrompt(p);
+    handleSubmit(p);
+  }, [handleSubmit]);
+
+  const handleArtifactClose = useCallback(() => setActiveArtifact(null), []);
+  const handleArtifactSubmit = useCallback((p: string) => handleSubmit(p), [handleSubmit]);
+  const handleMemoryClose = useCallback(() => setMemoryPanelOpen(false), []);
+  const handleBranchingClose = useCallback(() => setBranchManagerOpen(false), []);
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -501,10 +518,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   return (
     <motion.div
       key="chat"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      initial={{ opacity: 0, transform: "translateY(20px)" }}
+      animate={{ opacity: 1, transform: "translateY(0px)" }}
+      exit={{ opacity: 0, transform: "translateY(-20px)" }}
+      transition={{ ease: [0.23, 1, 0.32, 1], duration: 0.4 }}
       className="h-full w-full flex min-h-0 overflow-hidden bg-background relative"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -527,7 +544,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
       <ChatSettings isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
-      <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
+      <div className="flex-1 min-h-0 w-full flex flex-row overflow-hidden relative bg-surface-bright">
+        <main className="flex-1 flex flex-col relative bg-transparent overflow-hidden">
         {/* CHAT HEADER */}
         <ChatHeader
           metrics={metrics}
@@ -567,16 +585,16 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         />
 
         {activeProject && (
-          <div className="bg-primary/5 border-b border-primary/20 px-4 py-2 flex items-center justify-between shrink-0 animate-fade-in">
+          <div className="bg-primary-container border-b border-outline-variant px-4 py-2 flex items-center justify-between shrink-0 animate-fade-in max-w-4xl mx-auto w-full">
             <div className="flex items-center gap-2">
               <span className="text-sm select-none flex items-center justify-center shrink-0">
                 {activeProject.icon ? activeProject.icon : <Folder className="w-4 h-4 text-primary" />}
               </span>
               <div className="flex flex-col">
-                <span className="text-xs font-semibold text-foreground leading-none">
+                <span className="text-xs font-semibold text-on-surface leading-none">
                   Project Workspace: {activeProject.name}
                 </span>
-                <span className="text-[10px] text-muted-foreground mt-0.5 animate-pulse">
+                <span className="text-[10px] text-on-surface-variant mt-0.5 animate-pulse">
                   Custom instructions and {activeProject.files?.length || 0} files loaded.
                 </span>
               </div>
@@ -586,7 +604,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 setActiveProjectId(null);
                 toast.info('Left project context. Standard chat active.');
               }}
-              className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted px-2 py-0.5 rounded border border-border cursor-pointer transition-all"
+              className="text-[9px] font-extrabold uppercase tracking-widest text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-2 py-0.5 rounded border border-outline-variant cursor-pointer transition-all"
             >
               Exit Project
             </button>
@@ -594,55 +612,55 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         )}
 
         {/* CHAT MESSAGE LIST */}
-        <ChatMessageList
-          history={history}
-          activeAgent={activeAgent}
-          isLoading={isLoading}
-          onCopy={copyToClipboard}
-          copiedId={copiedId}
-          suggestedPrompts={suggestedPrompts}
-          onSuggestedPromptClick={(p) => {
-            setPrompt(p);
-            handleSubmit(p);
-          }}
-          submitReward={submitReward}
-          onEditMessage={handleEditMessage}
-          onRegenerate={handleRegenerate}
-          onBranchFromMessage={handleBranch}
-          activeModel={currentModel?.name}
-
-          onArtifactClick={setActiveArtifact}
-          approveTool={approveTool}
-          rejectTool={rejectTool}
-        />
-
-        {/* CONTEXT BAR */}
-        <ContextBar used={metrics.contextTokens} limit={metrics.contextLimit} />
+        <div className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-6 max-w-4xl mx-auto w-full pb-32 custom-scrollbar">
+          <ChatMessageList
+            history={history}
+            activeAgent={activeAgent}
+            isLoading={isLoading}
+            onCopy={copyToClipboard}
+            copiedId={copiedId}
+            suggestedPrompts={suggestedPrompts}
+            onSuggestedPromptClick={handleSuggestedPromptClick}
+            submitReward={submitReward}
+            onEditMessage={handleEditMessage}
+            onRegenerate={handleRegenerate}
+            onBranchFromMessage={handleBranch}
+            activeModel={currentModel?.name}
+            onArtifactClick={setActiveArtifact}
+            approveTool={approveTool}
+            rejectTool={rejectTool}
+          />
+        </div>
 
         {/* CHAT PROMPT INPUT */}
-        <ChatPromptInput
-          prompt={prompt}
-          onPromptChange={setPrompt}
-          onSubmit={handleSubmit}
-          isLoading={isLoading}
-          onStop={stopChat}
-          currentModelId={currentModelId}
-          currentModel={currentModel}
-          onClearHistory={parentClearHistory}
-          onModelSelect={handleModelChange}
-          onModelSettingsChange={setModelSettings}
-          modelSettings={modelSettings}
-          suggestedPrompts={suggestedPrompts}
-          onSuggestedPromptClick={(p) => {
-            setPrompt(p);
-            handleSubmit(p);
-          }}
-          getCustomModelIcon={getCustomModelIcon}
-          pendingImages={pendingImages}
-          onRemoveImage={handleRemoveImage}
-          onImagesChange={setPendingImages}
-          onAttachFiles={handleAttachFiles}
-        />
+        <div className="absolute bottom-0 left-0 w-full px-6 pb-6 bg-gradient-to-t from-surface-bright via-surface-bright to-transparent pt-8 pointer-events-none">
+          <div className="max-w-3xl mx-auto relative pointer-events-auto">
+            <ChatPromptInput
+              prompt={prompt}
+              onPromptChange={setPrompt}
+              onSubmit={handleSubmit}
+              isLoading={isLoading}
+              onStop={stopChat}
+              currentModelId={currentModelId}
+              currentModel={currentModel}
+              onClearHistory={parentClearHistory}
+              onModelSelect={handleModelChange}
+              onModelSettingsChange={setModelSettings}
+              modelSettings={modelSettings}
+              suggestedPrompts={suggestedPrompts}
+              onSuggestedPromptClick={handleSuggestedPromptClick}
+              getCustomModelIcon={getCustomModelIcon}
+              pendingImages={pendingImages}
+              onRemoveImage={handleRemoveImage}
+              onImagesChange={setPendingImages}
+              onAttachFiles={handleAttachFiles}
+            />
+          </div>
+        </div>
+        </main>
+
+        {/* CONTEXT PANEL (Right Sidebar) */}
+        <ContextPanel metrics={metrics} modelName={currentModel?.name} />
       </div>
 
       {/* ARTIFACT CANVAS */}
@@ -652,26 +670,30 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         content={activeArtifact?.content || ''}
         language={activeArtifact?.language}
         title={activeArtifact?.title}
-        onClose={() => setActiveArtifact(null)}
-        onSubmitPrompt={(p) => handleSubmit(p)}
+        onClose={handleArtifactClose}
+        onSubmitPrompt={handleArtifactSubmit}
         history={history}
       />
 
-      {/* MEMORY MANAGER PANEL */}
-      <MemoryPanel
-        isOpen={memoryPanelOpen}
-        onClose={() => setMemoryPanelOpen(false)}
-      />
+      {/* MEMORY MANAGER PANEL - lazy loaded */}
+      <Suspense fallback={null}>
+        <MemoryPanel
+          isOpen={memoryPanelOpen}
+          onClose={handleMemoryClose}
+        />
+      </Suspense>
 
       <AnimatePresence>
         {branchManagerOpen && (
-          <BranchingTreePanel
-            sessions={chatSessions?.sessions || []}
-            activeSid={chatSessions?.activeSid || null}
-            onSwitchSession={(sid) => chatSessions?.switchSession?.(sid)}
-            onCreateSession={(msgs) => chatSessions?.createSession?.(msgs)}
-            onClose={() => setBranchManagerOpen(false)}
-          />
+          <Suspense fallback={null}>
+            <BranchingTreePanel
+              sessions={chatSessions?.sessions || []}
+              activeSid={chatSessions?.activeSid || null}
+              onSwitchSession={(sid: any) => chatSessions?.switchSession?.(sid)}
+              onCreateSession={(msgs: any) => chatSessions?.createSession?.(msgs)}
+              onClose={handleBranchingClose}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
 

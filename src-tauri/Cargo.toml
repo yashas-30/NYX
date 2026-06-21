@@ -16,7 +16,6 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-http = "2"
 tauri-plugin-store = "2"
-tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
@@ -28,7 +27,7 @@ tauri-plugin-window-state = "2"
 tokio = { version = "1", features = ["full", "process", "sync", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 eventsource-stream = "0.2.3"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "chrono", "json"] }
 tokio-util = { version = "0.7", features = ["io", "codec"] }
@@ -56,6 +55,9 @@ tiktoken-rs = "0.11.0"
 async-trait = "0.1.89"
 lazy_static = "1.5"
 url = "2"
+axum = "0.8.4"
+turbovec = "0.9.0"
+pdf-extract = "0.10.0"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

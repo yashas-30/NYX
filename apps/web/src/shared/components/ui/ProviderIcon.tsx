@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 // ─── ProviderIcon ─────────────────────────────────────────────────────────────
 // Single source of truth for provider → icon mapping.
 // To add a new provider icon: add one line to the map below.
@@ -17,31 +18,31 @@ interface ProviderIconProps {
 const PROVIDER_ICON_MAP: Record<string, React.ReactNode> = {};
 
 function getIcon(provider: string | undefined, size: number, className: string): React.ReactNode {
-  if (!provider) return <Cpu size={size} strokeWidth={1.5} className={className} />;
+  if (!provider) return <AnimatedIcon icon={Cpu} size={size} strokeWidth={1.5} className={className} />;
   switch (provider) {
     case 'gemini':
       return <Logo size={size + 4} className={className} />;
     case 'terminal':
-      return <Cpu size={size} strokeWidth={1.5} className={className} />;
+      return <AnimatedIcon icon={Cpu} size={size} strokeWidth={1.5} className={className} />;
     case 'ollama':
     case 'lmstudio':
       return (
-        <Cpu
+        <AnimatedIcon icon={Cpu}
           size={size}
           strokeWidth={1.5}
           className={`${className} text-primary animate-pulse`}
         />
       );
     case 'anthropic':
-      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-amber-500`} />;
+      return <AnimatedIcon icon={Cpu} size={size} strokeWidth={1.5} className={`${className} text-amber-500`} />;
     case 'openai':
-      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-emerald-500`} />;
+      return <AnimatedIcon icon={Cpu} size={size} strokeWidth={1.5} className={`${className} text-emerald-500`} />;
     case 'deepseek':
-      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-blue-500`} />;
+      return <AnimatedIcon icon={Cpu} size={size} strokeWidth={1.5} className={`${className} text-blue-500`} />;
     case 'openrouter':
-      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-violet-500`} />;
+      return <AnimatedIcon icon={Cpu} size={size} strokeWidth={1.5} className={`${className} text-violet-500`} />;
     default:
-      return <Cpu size={size} strokeWidth={1.5} className={className} />;
+      return <AnimatedIcon icon={Cpu} size={size} strokeWidth={1.5} className={className} />;
   }
 }
 

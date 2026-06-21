@@ -69,7 +69,7 @@ const COST_TABLE: Record<string, number> = {
   'gemini-2.5-flash': 0.000075,
   'gemma-4-31b-it': 0.0001,
   'gemma-4-26b-it': 0.0001,
-  'qwen2.5-coder-1.5b-native': 0,
+  'qwen2.5-coder:1.5b': 0,
   'qwen2.5-coder-3b-native': 0,
   'llama-3.2-3b-native': 0,
 };

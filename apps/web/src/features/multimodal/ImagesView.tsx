@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -142,7 +143,7 @@ export default function ImagesView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <Image size={18} />
+              <AnimatedIcon icon={Image} size={18} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">Image Generation</h1>
@@ -158,7 +159,7 @@ export default function ImagesView() {
                 showFavorites ? 'bg-amber-500/10 text-amber-500' : 'text-muted-foreground hover:bg-muted'
               }`}
             >
-              <Star size={12} /> {showFavorites ? 'All' : 'Favorites'}
+              <AnimatedIcon icon={Star} size={12} /> {showFavorites ? 'All' : 'Favorites'}
             </button>
           </div>
         </div>
@@ -190,7 +191,7 @@ export default function ImagesView() {
                     }`}
                   >
                     <div className={`w-8 h-8 rounded-lg ${provider.color} flex items-center justify-center`}>
-                      <Image size={14} />
+                      <AnimatedIcon icon={Image} size={14} />
                     </div>
                     <div>
                       <h3 className="text-xs font-medium text-foreground">{provider.name}</h3>
@@ -251,7 +252,7 @@ export default function ImagesView() {
                 </>
               ) : (
                 <>
-                  <Wand2 size={14} /> Generate Image
+                  <AnimatedIcon icon={Wand2} size={14} /> Generate Image
                 </>
               )}
             </button>
@@ -287,13 +288,13 @@ export default function ImagesView() {
                           onClick={(e) => { e.stopPropagation(); toggleFavorite(image.id); }}
                           className="p-1 rounded hover:bg-white/20 transition-all"
                         >
-                          <Star size={12} className={image.isFavorite ? 'text-amber-400 fill-amber-400' : 'text-white/60'} />
+                          <AnimatedIcon icon={Star} size={12} className={image.isFavorite ? 'text-amber-400 fill-amber-400' : 'text-white/60'} />
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); deleteImage(image.id); }}
                           className="p-1 rounded hover:bg-white/20 transition-all"
                         >
-                          <Trash2 size={12} className="text-white/60" />
+                          <AnimatedIcon icon={Trash2} size={12} className="text-white/60" />
                         </button>
                       </div>
                     </div>
@@ -306,7 +307,7 @@ export default function ImagesView() {
           {filteredImages.length === 0 && (
             <div className="flex items-center justify-center h-full text-muted-foreground">
               <div className="text-center">
-                <Image size={48} className="mx-auto mb-3 opacity-20" />
+                <AnimatedIcon icon={Image} size={48} className="mx-auto mb-3 opacity-20" />
                 <p className="text-sm font-medium">No images yet</p>
                 <p className="text-xs mt-1 opacity-60">Generate your first image using the panel on the left</p>
               </div>
@@ -342,7 +343,7 @@ export default function ImagesView() {
                   onClick={() => setSelectedImage(null)}
                   className="absolute top-3 right-3 p-2 rounded-lg bg-black/50 text-white hover:bg-black/70 transition-all"
                 >
-                  <X size={16} />
+                  <AnimatedIcon icon={X} size={16} />
                 </button>
               </div>
               <div className="p-4 border-t border-border">
@@ -361,16 +362,16 @@ export default function ImagesView() {
                       onClick={() => copyPrompt(selectedImage.prompt)}
                       className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
                     >
-                      {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+                      {copied ? <AnimatedIcon icon={Check} size={14} className="text-green-500" /> : <AnimatedIcon icon={Copy} size={14} />}
                     </button>
                     <button className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all">
-                      <Download size={14} />
+                      <AnimatedIcon icon={Download} size={14} />
                     </button>
                     <button
                       onClick={() => toggleFavorite(selectedImage.id)}
                       className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
                     >
-                      <Star size={14} className={selectedImage.isFavorite ? 'text-amber-400 fill-amber-400' : ''} />
+                      <AnimatedIcon icon={Star} size={14} className={selectedImage.isFavorite ? 'text-amber-400 fill-amber-400' : ''} />
                     </button>
                   </div>
                 </div>

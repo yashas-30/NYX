@@ -1,6 +1,6 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useEffect } from 'react';
-import { SettingsIcon as Settings, PlusIcon as Plus, Trash2Icon as Trash2, CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
-import { Edit2 } from 'lucide-react';
+import { PencilSimple, Gear as Settings, Plus, X, Check, Trash as Trash2 } from '@phosphor-icons/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '@src/shared/components/ui/sonner';
 
@@ -142,7 +142,7 @@ export const PromptTemplateManager: React.FC<{
                       }}
                       className="text-muted-foreground hover:text-primary active:scale-[0.97] transition-all"
                     >
-                      <Edit2 size={12} />
+                      <AnimatedIcon icon={PencilSimple} size={12} />
                     </button>
                     <button
                       onClick={(e) => handleDelete(t.id, e)}

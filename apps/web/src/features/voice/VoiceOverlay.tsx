@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XIcon as X, MicIcon as Mic, MicOffIcon as MicOff } from '@animateicons/react/lucide';
@@ -163,7 +164,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               ) : status === 'error' ? (
                 <MicOff className="w-10 h-10 text-white" />
               ) : (
-                <Volume2 className="w-10 h-10 text-white animate-pulse" />
+                <AnimatedIcon icon={Volume2} className="w-10 h-10 text-white animate-pulse" />
               )}
             </motion.div>
             

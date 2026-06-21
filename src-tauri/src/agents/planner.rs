@@ -19,7 +19,7 @@ pub struct ExecutionPlan {
     pub steps: Vec<PlanStep>,
 }
 
-pub async fn run_planner_agent(context: StreamContext, messages: Vec<Value>, app: AppHandle, event_name: String) -> Result<String> {
+pub async fn run_planner_agent(_context: StreamContext, messages: Vec<Value>, app: AppHandle, event_name: String) -> Result<String> {
     let goal = messages.last().and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
     let _ = app.emit(&event_name, json!({"type": "thinking", "content": format!("Planner mapping out goal: {}\n", goal)}));
     

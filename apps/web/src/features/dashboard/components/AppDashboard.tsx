@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 /**
  * @file src/components/AppDashboard.tsx
  * @description Claude Desktop-style dashboard with a warm-slate sidebar, Chat page,
@@ -129,117 +130,102 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         <motion.aside
           initial={false}
           animate={{
-            width: sidebarOpen ? 260 : 0,
+            width: sidebarOpen ? 256 : 0, // w-64 is 256px
             opacity: sidebarOpen ? 1 : 0,
           }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-          className={`flex-shrink-0 flex border-r border-border h-full bg-card overflow-hidden z-20 ${
+          className={`flex-shrink-0 flex flex-col justify-between border-r border-outline-variant/30 bg-surface-container-low py-6 px-4 z-20 ${
             isMobile && sidebarOpen ? 'absolute left-0 top-0 bottom-0 shadow-2xl' : 'relative'
-          }`}
+          } overflow-hidden`}
         >
-          <div className="flex flex-col h-full min-w-full bg-card">
-
-            {/* Top Primary Actions */}
-            <div className="px-3 pt-3 pb-2 space-y-1">
-              <div
-                className={`w-full flex items-center justify-between rounded-md text-xs font-medium transition-all ${
-                  activeMode === 'chat'
-                    ? 'bg-muted border border-border text-foreground font-semibold'
-                    : 'hover:bg-muted/50 border border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <button
-                  onClick={() => { setActiveMode('chat'); }}
-                  className="flex-1 flex items-center gap-2.5 px-3 py-2 text-left cursor-pointer outline-none"
-                >
-                  <MessageSquare
-                    size={13}
-                    className={activeMode === 'chat' ? 'text-primary' : 'text-muted-foreground'}
-                  />
-                  <span>NYX</span>
-                </button>
-                <motion.button
-                  whileHover={{ scale: 1.05, backgroundColor: 'var(--muted)' }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    createSession([]);
-                    if (activeMode !== 'chat') {
-                      setActiveMode('chat');
-                    }
-                  }}
-                  className="mr-1.5 p-1 rounded border border-border bg-background/50 hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer flex items-center justify-center shrink-0 w-5 h-5"
-                  title="New Conversation"
-                >
-                  <Plus size={10} strokeWidth={2.5} />
-                </motion.button>
+          <div className="flex flex-col gap-6 h-full min-w-[224px]">
+            {/* Header/Brand */}
+            <div className="flex items-center gap-3 px-2">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-tertiary flex items-center justify-center text-on-primary font-bold shadow-sm">
+                N
               </div>
-
-              <button
-                onClick={() => { setActiveMode('projects'); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
-                  activeMode === 'projects'
-                    ? 'text-foreground bg-muted border border-border font-semibold'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-                }`}
-              >
-                <Folder
-                  size={13}
-                  className={activeMode === 'projects' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>Projects</span>
-              </button>
-
-              <button
-                onClick={() => { setActiveMode('swarm'); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
-                  activeMode === 'swarm'
-                    ? 'text-foreground bg-muted border border-border font-semibold'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-                }`}
-              >
-                <Users
-                  size={13}
-                  className={activeMode === 'swarm' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>Agent Swarm</span>
-              </button>
-
-              <button
-                onClick={() => { setActiveMode('workspace'); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
-                  activeMode === 'workspace'
-                    ? 'text-foreground bg-muted border border-border font-semibold'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-                }`}
-              >
-                <Layers
-                  size={13}
-                  className={activeMode === 'workspace' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>Infinite Canvas</span>
-              </button>
+              <span className="font-semibold text-lg tracking-tight text-on-surface">NYX</span>
             </div>
 
-            {/* Folders and Chat Session List */}
-            <div className="flex-1 overflow-y-auto px-2 space-y-1.5 scrollbar-none pt-3">
-              <div className="flex items-center justify-between px-2.5 pb-1">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+            {/* Main Navigation */}
+            <nav className="flex flex-col gap-1 mt-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  createSession([]);
+                  if (activeMode !== 'chat') setActiveMode('chat');
+                }}
+                className="flex items-center gap-3 p-3 rounded-xl bg-surface-container-high text-on-surface hover:bg-surface-container-highest cursor-pointer transition-all active:scale-[0.98] mb-3"
+              >
+                <Plus className="w-5 h-5 text-primary" />
+                <span className="font-medium">New Chat</span>
+              </button>
+              
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={() => setActiveMode('chat')}
+                  className={`flex items-center gap-3 p-2 rounded-lg font-medium transition-colors ${
+                    activeMode === 'chat' 
+                      ? 'bg-secondary-container text-on-secondary-container' 
+                      : 'text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" />
                   Chats
-                </span>
+                </button>
+                <button
+                  onClick={() => setActiveMode('projects')}
+                  className={`flex items-center gap-3 p-2 rounded-lg font-medium transition-colors ${
+                    activeMode === 'projects' 
+                      ? 'bg-secondary-container text-on-secondary-container' 
+                      : 'text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  <Folder className="w-4 h-4" />
+                  Projects
+                </button>
+                <button
+                  onClick={() => setActiveMode('swarm')}
+                  className={`flex items-center gap-3 p-2 rounded-lg font-medium transition-colors ${
+                    activeMode === 'swarm' 
+                      ? 'bg-secondary-container text-on-secondary-container' 
+                      : 'text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  Agents
+                </button>
+                <button
+                  onClick={() => setActiveMode('workspace')}
+                  className={`flex items-center gap-3 p-2 rounded-lg font-medium transition-colors ${
+                    activeMode === 'workspace' 
+                      ? 'bg-secondary-container text-on-secondary-container' 
+                      : 'text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  <Layers className="w-4 h-4" />
+                  Canvas
+                </button>
+              </div>
+            </nav>
+
+            {/* Recent Chats */}
+            <div className="flex flex-col flex-1 min-h-0">
+              <div className="flex items-center justify-between px-2 mb-2">
+                <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Recent</span>
                 <button
                   onClick={() => {
                     const name = prompt('New Folder Name:');
                     if (name) createFolder(name);
                   }}
-                  className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer p-1"
+                  className="text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer p-1"
                   title="New Folder"
                 >
-                  <FolderPlus size={13} />
+                  <FolderPlus className="w-3.5 h-3.5" />
                 </button>
               </div>
-
-              <div className="space-y-0.5">
+              
+              <div className="flex flex-col gap-1 overflow-y-auto pr-1 custom-scrollbar">
                 <AnimatePresence>
                   {folders?.map((folder) => {
                     const folderSessions = filteredSessions.filter((s) => s.folderId === folder.id);
@@ -252,8 +238,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         onDeleteFolder={() => deleteFolder(folder.id)}
                         onSelectSession={(id) => {
                           switchSession(id);
-                          if (activeMode !== 'chat')
-                            setActiveMode('chat');
+                          if (activeMode !== 'chat') setActiveMode('chat');
                         }}
                         onDeleteSession={deleteSession}
                         updateSessionMeta={updateSessionMeta}
@@ -268,12 +253,10 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                       <SessionItem
                         key={session.id}
                         session={session}
-                        isActive={session.id === activeSid}
+                        isActive={session.id === activeSid && activeMode === 'chat'}
                         onClick={() => {
                           switchSession(session.id);
-                          if (activeMode !== 'chat') {
-                            setActiveMode('chat');
-                          }
+                          if (activeMode !== 'chat') setActiveMode('chat');
                         }}
                         onDelete={() => deleteSession(session.id)}
                         folders={folders}
@@ -282,50 +265,35 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     ))}
 
                   {filteredSessions.length === 0 && folders?.length === 0 && (
-                    <div className="text-left py-4 pl-4">
-                      <p className="text-[9px] text-muted-foreground/60 font-semibold uppercase tracking-wider">
-                        No conversations
-                      </p>
-                    </div>
+                     <div className="text-left py-4 pl-2">
+                       <p className="text-[11px] text-on-surface-variant font-medium">
+                         No conversations
+                       </p>
+                     </div>
                   )}
                 </AnimatePresence>
               </div>
             </div>
+          </div>
 
-            {/* Bottom Section (Horizontal Navigation Grid) */}
-            <div className="px-3 py-3.5 border-t border-border mt-auto space-y-3">
-              
-              <div className="grid grid-cols-6 gap-1.5 px-1">
-                {[
-                  { mode: 'registry', icon: Library, label: 'Model Library' },
-                  { mode: 'compare', icon: Activity, label: 'Model Comparison' },
-                  { mode: 'settings', icon: Settings, label: 'Settings' },
-                  { mode: 'plugins', icon: Plug, label: 'Plugins' },
-                  { mode: 'git', icon: GitBranch, label: 'Git' },
-                  { mode: 'documents', icon: FileText, label: 'Documents' },
-                  { mode: 'images', icon: Image, label: 'Images' },
-                  { mode: 'mcp', icon: Plug, label: 'MCP' },
-                  { mode: 'tasks', icon: Calendar, label: 'Tasks' },
-                  { mode: 'ide', icon: Code2, label: 'IDE' },
-                  { mode: 'memory', icon: Brain, label: 'Memory' },
-                ].map(({ mode, icon: Icon, label }) => (
-                  <button
-                    key={mode}
-                    onClick={() => { setActiveMode(mode as any); }}
-                    title={label}
-                    className={`aspect-square flex items-center justify-center rounded-lg transition-all cursor-pointer p-2 hover:bg-muted/50 ${
-                      activeMode === mode
-                        ? 'text-foreground bg-muted border border-border shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground border border-transparent'
-                    }`}
-                  >
-                    <Icon
-                      size={14}
-                      className={activeMode === mode ? 'text-primary' : 'text-muted-foreground'}
-                    />
-                  </button>
-                ))}
+          {/* User / Settings (Bottom) */}
+          <div className="flex items-center justify-between pt-4 mt-4 border-t border-outline-variant/30 w-full min-w-[224px]">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface">
+                <User className="w-4 h-4" />
               </div>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-on-surface leading-tight">User</span>
+                <span className="text-[10px] text-on-surface-variant">Pro Plan</span>
+              </div>
+            </div>
+            <div className="flex gap-1">
+               <button 
+                 onClick={() => setActiveMode('settings')}
+                 className="p-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high rounded-lg transition-colors"
+               >
+                 <Settings className="w-4 h-4" />
+               </button>
             </div>
           </div>
         </motion.aside>
@@ -337,12 +305,12 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-              whileHover={{ scale: 1.05, backgroundColor: 'var(--muted)' }}
+              whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setSidebarOpen(true)}
-              className="absolute top-[7px] left-3.5 z-30 p-1.5 rounded-md bg-secondary hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all shadow-sm cursor-pointer"
+              className="absolute top-[12px] left-[12px] z-30 p-2 rounded-lg bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 text-on-surface-variant hover:text-on-surface transition-all shadow-sm cursor-pointer"
             >
-              <PanelLeftOpen size={14} />
+              <PanelLeftOpen size={16} />
             </motion.button>
           )}
         </AnimatePresence>
@@ -378,7 +346,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           activeMode={activeMode}
           setActiveMode={setActiveMode}
           createSession={createSession}
-          clearHistory={() => {}} // CommandPalette might need refactoring to clear history without accessing state directly
+          clearHistory={() => {}}
           models={models}
           setModel={setModel}
           allModels={allModels}
@@ -388,32 +356,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   );
 };
 
-/* ── Sidebar Nav Button ─────────────────────── */
-const SideNavButton: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}> = ({ icon, label, active, onClick }) => (
-  <motion.button
-    whileHover={{ scale: 1.01 }}
-    whileTap={{ scale: 0.98 }}
-    onClick={onClick}
-    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium tracking-wide transition-all duration-200 cursor-pointer ${
-      active
-        ? 'bg-muted text-foreground border border-border font-semibold'
-        : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-    }`}
-  >
-    <span
-      className={`transition-all duration-200 ${active ? 'scale-105 text-primary' : 'text-muted-foreground'}`}
-    >
-      {icon}
-    </span>
-    <span>{label}</span>
-  </motion.button>
-);
-
 /* ── Sub-components for Sidebar ──────────────── */
 
 const FolderItem = ({ folder, sessions, activeSid, onDeleteFolder, onSelectSession, onDeleteSession, updateSessionMeta, allFolders }: any) => {
@@ -422,19 +364,19 @@ const FolderItem = ({ folder, sessions, activeSid, onDeleteFolder, onSelectSessi
   return (
     <div className="mb-1">
       <div 
-        className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-muted/50 cursor-pointer group transition-colors"
+        className="flex items-center justify-between p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high cursor-pointer group transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
         <div className="flex items-center gap-2 overflow-hidden">
-          <ChevronRight size={12} className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-          <Folder size={12} className="text-muted-foreground flex-shrink-0" />
-          <span className="text-[11px] font-medium truncate opacity-80">{folder.name}</span>
+          <ChevronRight size={14} className={`transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+          <Folder size={14} className="flex-shrink-0 opacity-70" />
+          <span className="text-sm font-medium truncate opacity-90">{folder.name}</span>
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); onDeleteFolder(); }}
-          className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-400 transition-all"
+          className="opacity-0 group-hover:opacity-100 p-1 text-on-surface-variant hover:text-error transition-all rounded-md"
         >
-          <Trash2 size={10} />
+          <Trash2 size={12} />
         </button>
       </div>
       
@@ -444,7 +386,7 @@ const FolderItem = ({ folder, sessions, activeSid, onDeleteFolder, onSelectSessi
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="pl-4 mt-0.5 space-y-0.5 border-l border-border/40 ml-2.5 overflow-hidden"
+            className="pl-6 mt-1 flex flex-col gap-1 overflow-hidden"
           >
             {sessions.length > 0 ? sessions.map((session: any) => (
               <SessionItem
@@ -458,7 +400,7 @@ const FolderItem = ({ folder, sessions, activeSid, onDeleteFolder, onSelectSessi
                 isNested
               />
             )) : (
-              <div className="py-1 px-2 text-[10px] text-muted-foreground/50 italic">Empty folder</div>
+              <div className="py-1 px-2 text-xs text-on-surface-variant/70 italic">Empty folder</div>
             )}
           </motion.div>
         )}
@@ -480,59 +422,64 @@ const SessionItem = ({ session, isActive, onClick, onDelete, folders, onMoveToFo
       className="relative group"
       onMouseLeave={() => setShowMenu(false)}
     >
-      <button
+      <div
         onClick={onClick}
-        className={`w-full flex items-center justify-between ${isNested ? 'px-2 py-1.5' : 'px-2.5 py-1.5'} rounded-md text-[11px] transition-all cursor-pointer ${
+        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${
           isActive
-            ? 'bg-muted/80 text-foreground font-medium shadow-sm border border-border/50'
-            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground border border-transparent'
+            ? 'bg-secondary-container text-on-secondary-container'
+            : 'text-on-surface-variant hover:bg-surface-container-high'
         }`}
       >
-        <span className="truncate pr-2 opacity-90">{session.title || 'New Chat'}</span>
-      </button>
-
-      {/* Action buttons appear on hover */}
-      <div className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? 'opacity-100' : ''}`}>
-        <div className="relative">
-          <button 
-            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
-            className={`p-1 rounded text-muted-foreground hover:text-foreground hover:bg-background shadow-sm transition-colors ${isActive ? 'bg-background/50' : ''}`}
-          >
-            <MoreHorizontal size={11} />
-          </button>
-          
-          {showMenu && (
-            <div className="absolute right-0 top-full mt-1 w-32 py-1 bg-popover border border-border rounded-md shadow-lg z-50 overflow-hidden">
-              <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-wider bg-muted/30">Move to</div>
-              <button 
-                onClick={(e) => { e.stopPropagation(); onMoveToFolder(null); setShowMenu(false); }}
-                className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-muted transition-colors"
-              >
-                No Folder
-              </button>
-              {folders?.map((f: any) => (
-                <button 
-                  key={f.id}
-                  onClick={(e) => { e.stopPropagation(); onMoveToFolder(f.id); setShowMenu(false); }}
-                  className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-muted transition-colors truncate"
-                >
-                  {f.name}
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="flex items-center gap-2 overflow-hidden w-full">
+          {!isNested && <MessageSquare className={`w-4 h-4 flex-shrink-0 ${isActive ? '' : 'opacity-70'}`} />}
+          <span className={`text-sm font-medium truncate ${isActive ? '' : 'opacity-90'}`}>
+            {session.title || 'New Chat'}
+          </span>
         </div>
         
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className={`p-1 rounded text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors ${isActive ? 'bg-background/50' : ''}`}
-          title="Delete Conversation"
-        >
-          <Trash2 size={11} />
-        </button>
+        {/* Action buttons appear on hover */}
+        <div className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? 'opacity-100' : ''}`}>
+          <div className="relative">
+            <button 
+              onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+              className="p-1 hover:bg-on-surface-variant/10 rounded-md transition-all"
+            >
+              <MoreHorizontal size={14} />
+            </button>
+            
+            {showMenu && (
+              <div className="absolute right-0 top-full mt-1 w-36 py-1 bg-surface-container-high border border-outline-variant/30 rounded-xl shadow-lg z-50 overflow-hidden text-on-surface">
+                <div className="px-3 py-1.5 text-[10px] font-bold text-on-surface-variant uppercase tracking-wider bg-surface-container-highest/50">Move to</div>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onMoveToFolder(null); setShowMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-surface-container-highest transition-colors"
+                >
+                  No Folder
+                </button>
+                {folders?.map((f: any) => (
+                  <button 
+                    key={f.id}
+                    onClick={(e) => { e.stopPropagation(); onMoveToFolder(f.id); setShowMenu(false); }}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-surface-container-highest transition-colors truncate"
+                  >
+                    {f.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="p-1 hover:bg-error/10 hover:text-error rounded-md transition-all text-on-surface-variant"
+            title="Delete Conversation"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
     </motion.div>
   );

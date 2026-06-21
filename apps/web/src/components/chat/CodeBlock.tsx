@@ -26,19 +26,47 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
   const { resolvedTheme } = useTheme();
 
   useEffect(() => {
+    let isCancelled = false;
+    let timer: any;
+
     const highlight = async () => {
-      const highlighted = await codeToHtml(code, {
-        lang: language || 'text',
-        theme: resolvedTheme === 'dark' ? 'github-dark' : 'github-light',
-      });
-      setHtml(highlighted);
+      try {
+        const highlighted = await codeToHtml(code, {
+          lang: language || 'text',
+          theme: resolvedTheme === 'dark' ? 'github-dark' : 'github-light',
+        });
+        if (!isCancelled) {
+          setHtml(highlighted);
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          // If shiki fails (e.g. unknown language), we stay with plain text
+        }
+      }
     };
-    highlight();
+
+    // Debounce highlighting by 150ms to prevent heavy CPU load during streaming
+    timer = setTimeout(highlight, 150);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
   }, [code, language, resolvedTheme]);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(code);
     // Show toast
+  };
+
+  // Escape HTML for the fallback plain-text block
+  const escapeHtml = (unsafe: string) => {
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   };
 
   return (
@@ -58,7 +86,7 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
       )}
       <div 
         className="overflow-x-auto p-4 text-sm font-mono"
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: html || `<pre><code>${escapeHtml(code)}</code></pre>` }}
       />
     </div>
   );

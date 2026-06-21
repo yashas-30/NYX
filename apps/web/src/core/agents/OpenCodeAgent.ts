@@ -1,5 +1,6 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
-import { runAgentLoop, BUILTIN_TOOLS } from './agentLoop';
+import { runLangGraphAgent } from './executeTool';
+import { BUILTIN_TOOLS } from './executeTool';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 
@@ -83,7 +84,7 @@ THINKING PROTOCOL:
       // Update loopConfig dynamically with the new prompt (so critic feedback goes to the loop)
       const currentLoopConfig = { ...loopConfig, systemInstruction: systemInstruction };
       
-      const generator = runAgentLoop(currentPrompt, currentLoopConfig);
+      const generator = runLangGraphAgent(currentPrompt, currentLoopConfig);
 
       for await (const event of generator) {
         if (event.type === 'text' && typeof event.content === 'string') {

@@ -16,6 +16,7 @@ allowBuilds:
   msgpackr-extract: true
   msw: true
   netlify-cli: true
+  node-llama-cpp: true
   onnxruntime-node: true
   protobufjs: true
   sharp: true

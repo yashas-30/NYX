@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState } from 'react';
 import { PlusIcon as Plus, XIcon as X } from '@animateicons/react/lucide';
 import { Keyboard } from 'lucide-react';
@@ -37,7 +38,7 @@ export const HotkeyManager: React.FC = () => {
   return (
     <div className="bg-card border border-border rounded-md p-6 shadow-sm mb-4">
       <div className="flex items-center gap-2 mb-4">
-        <Keyboard size={16} className="text-accent" />
+        <AnimatedIcon icon={Keyboard} size={16} className="text-accent" />
         <h3 className="text-sm font-bold text-foreground uppercase tracking-widest">
           Global Hotkeys
         </h3>

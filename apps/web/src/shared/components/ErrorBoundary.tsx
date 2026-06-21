@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { Component, ReactNode } from 'react';
 import { AlertCircle } from 'lucide-react';
 
@@ -39,9 +40,9 @@ export class ErrorBoundary extends Component<Props, State> {
               background: 'rgba(239, 68, 68, 0.05)',
             }}
           >
-            <p style={{ color: '#ef4444', marginBottom: '0.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <AlertCircle size={14} style={{ flexShrink: 0 }} /> Something went wrong in {this.props.name ?? 'this component'}.
-            </p>
+            <div style={{ color: '#ef4444', marginBottom: '0.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <AnimatedIcon icon={AlertCircle} size={14} style={{ flexShrink: 0 }} /> Something went wrong in {this.props.name ?? 'this component'}.
+            </div>
             <pre
               style={{
                 opacity: 0.8,

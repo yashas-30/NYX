@@ -1,7 +1,7 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BrainIcon as Brain, XIcon as X, PlusIcon as Plus, CheckIcon as Check, EyeIcon as Eye, EyeOffIcon as EyeOff } from '@animateicons/react/lucide';
-import { RefreshCw } from 'lucide-react';
+import { ArrowsClockwise, Brain, EyeSlash as EyeOff, Eye, X, Check, Plus } from '@phosphor-icons/react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
@@ -119,7 +119,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ isOpen, onClose }) => 
                 className="p-1.5 text-muted-foreground hover:text-foreground/70 rounded transition-colors"
                 title="Refresh"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                <AnimatedIcon icon={ArrowsClockwise} className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={onClose}

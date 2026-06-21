@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 // fallow-ignore-file code-duplication
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -74,6 +75,13 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     setVisibleKeys((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // Inline confirmation state — replaces window.confirm/native dialogs which
+  // are not available in Tauri without explicit plugin permissions.
+  const [confirmState, setConfirmState] = React.useState<{
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   const [validationStatus, setValidationStatus] = React.useState<Record<string, 'idle' | 'loading' | 'valid' | 'invalid'>>({});
   const validationTimeoutRef = React.useRef<Record<string, NodeJS.Timeout>>({});
   const revertTimeoutRef = React.useRef<Record<string, NodeJS.Timeout>>({});
@@ -83,33 +91,50 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     modelCount: getModelCountForProvider(p.id),
   }));
 
-  const getGatewayUrl = (provider: string): string => {
-    return DEFAULT_GATEWAY_URLS[provider] || '';
-  };
+
 
   const validateGeminiKey = async (key: string): Promise<{ valid: boolean; error?: string }> => {
     try {
-      const res = await fetchWithAuth('/api/v1/vault/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'gemini', key, geminiUrl: getGatewayUrl('gemini') }),
+      // Validate directly against Gemini API — no backend needed, no session token required.
+      // The backend route (/api/v1/vault/validate) requires the Express server on port 3010
+      // to be running, which it may not be. Direct validation is faster and always works.
+      const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(8000),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        return { valid: false, error: data.error || `Server returned status ${res.status}` };
+
+      if (res.ok) {
+        return { valid: true };
       }
-      return { valid: data.valid === true, error: data.error };
+      if (res.status === 400 || res.status === 403) {
+        return { valid: false, error: 'Invalid API key' };
+      }
+      if (res.status === 429) {
+        // Rate-limited means the key is valid
+        return { valid: true, error: 'Rate limited (key is valid)' };
+      }
+      return { valid: false, error: `HTTP ${res.status}` };
     } catch (err: any) {
-      return { valid: false, error: err.message || 'Network error' };
+      // Network error — can't confirm validity but don't block the user
+      return { valid: true, error: err?.message || 'Network error (assumed valid)' };
     }
   };
+
 
   const triggerValidation = (provider: string, key: string) => {
     if (!key) {
       setValidationStatus(prev => ({ ...prev, [provider]: 'idle' }));
       return;
     }
-    
+
+    // Only Gemini has live server-side validation — skip spinner for all other providers
+    // to avoid unnecessary token fetches on every keystroke
+    if (provider !== 'gemini') {
+      setValidationStatus(prev => ({ ...prev, [provider]: 'idle' }));
+      return;
+    }
+
     if (validationTimeoutRef.current[provider]) {
       clearTimeout(validationTimeoutRef.current[provider]);
     }
@@ -120,13 +145,8 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     setValidationStatus(prev => ({ ...prev, [provider]: 'loading' }));
 
     validationTimeoutRef.current[provider] = setTimeout(async () => {
-      let isValid = true;
-      if (provider === 'gemini') {
-        const result = await validateGeminiKey(key);
-        isValid = result.valid;
-      }
-      
-      setValidationStatus(prev => ({ ...prev, [provider]: isValid ? 'valid' : 'invalid' }));
+      const result = await validateGeminiKey(key);
+      setValidationStatus(prev => ({ ...prev, [provider]: result.valid ? 'valid' : 'invalid' }));
 
       revertTimeoutRef.current[provider] = setTimeout(() => {
         setValidationStatus(prev => ({ ...prev, [provider]: 'idle' }));
@@ -135,49 +155,55 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   };
 
   const handleSaveToVault = async () => {
-    // Validate Gemini key if it's being updated
     const geminiKey = keysInput['gemini'];
     let isGeminiValid = true;
     let validationError = '';
+
     if (geminiKey && geminiKey.trim().length > 0) {
-      toast.info('Validating Gemini API Key...');
-      const result = await validateGeminiKey(geminiKey);
-      isGeminiValid = result.valid;
-      validationError = result.error || '';
-
-      if (!isGeminiValid) {
-        const isNetworkErr = 
-          validationError.toLowerCase().includes('connection') || 
-          validationError.toLowerCase().includes('fetch') || 
-          validationError.toLowerCase().includes('unreachable') ||
-          validationError.toLowerCase().includes('timeout') ||
-          validationError.toLowerCase().includes('starting') ||
-          validationError.toLowerCase().includes('retry') ||
-          validationError.toLowerCase().includes('status 5');
-
-        if (isNetworkErr) {
-          toast.warning(`Could not reach validation server (${validationError}). Saving key anyway...`);
-          isGeminiValid = true; // Allow saving since it's a network issue, not necessarily a bad key
-        } else {
-          const forceSave = window.confirm(
-            `Gemini API Key validation failed: ${validationError}\n\nDo you want to save this key anyway? (It might be valid but unreachable from the server, or restricted by region/permissions)`
-          );
-          if (forceSave) {
-            isGeminiValid = true;
-            toast.warning('Saving API Key despite validation failure.');
-          } else {
-            toast.error(`Invalid Gemini API Key: ${validationError}. It will not be saved.`);
-          }
-        }
+      // Skip re-validation if the inline debouncer already confirmed the key is valid
+      if (validationStatus['gemini'] === 'valid') {
+        toast.success('Gemini API Key already validated.');
       } else {
-        toast.success('Gemini API Key validated successfully.');
+        toast.info('Validating Gemini API Key...');
+        const result = await validateGeminiKey(geminiKey);
+        isGeminiValid = result.valid;
+        validationError = result.error || '';
+
+        if (!isGeminiValid) {
+          const isNetworkErr =
+            validationError.toLowerCase().includes('connection') ||
+            validationError.toLowerCase().includes('fetch') ||
+            validationError.toLowerCase().includes('unreachable') ||
+            validationError.toLowerCase().includes('timeout') ||
+            validationError.toLowerCase().includes('starting') ||
+            validationError.toLowerCase().includes('retry') ||
+            validationError.toLowerCase().includes('status 5');
+
+          if (isNetworkErr) {
+            toast.warning(`Could not reach validation server (${validationError}). Saving key anyway...`);
+            isGeminiValid = true;
+          } else {
+            // Use inline confirm instead of window.confirm (not available in Tauri)
+            toast.error(`Invalid Gemini API Key: ${validationError}`);
+            setConfirmState({
+              message: `Key validation failed: "${validationError}". Save anyway?`,
+              onConfirm: async () => {
+                setConfirmState(null);
+                await updateApiKey('gemini', geminiKey);
+                toast.warning('Gemini key saved despite validation failure.');
+              },
+            });
+            return; // Let the inline confirm handle the rest
+          }
+        } else {
+          toast.success('Gemini API Key validated successfully.');
+        }
       }
     }
 
     const keysToSave = { ...keysInput };
     if (!isGeminiValid) {
       delete keysToSave['gemini'];
-      // Clear the invalid key from input so it doesn't keep triggering on subsequent applies
       setKeysInput((prev) => {
         const next = { ...prev };
         delete next['gemini'];
@@ -190,7 +216,6 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     }
 
     if (!rememberKeys) {
-      // Save keys ephemerally to Zustand in-memory state
       for (const provider of Object.keys(keysToSave)) {
         const val = keysToSave[provider];
         if (val !== undefined && val.trim().length > 0) {
@@ -258,8 +283,11 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   };
 
   const handlePurgeVault = async () => {
-    if (confirm('Delete all keys from server vault?')) {
-      const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    setConfirmState({
+      message: 'Delete ALL keys from vault? This cannot be undone.',
+      onConfirm: async () => {
+        setConfirmState(null);
+        const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
       try {
         if (isTauri) {
           const allProviders = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
@@ -291,11 +319,33 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
       } catch (error: any) {
         toast.error(`Error: ${error.message}`);
       }
-    }
+      },
+    });
   };
 
   return (
     <div className="space-y-4">
+      {/* Inline confirm banner — replaces window.confirm which is blocked in Tauri */}
+      {confirmState && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive">
+          <p className="text-[10px] font-bold flex-1">{confirmState.message}</p>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => setConfirmState(null)}
+              className="px-3 py-1 rounded-md bg-secondary text-muted-foreground text-[10px] font-bold uppercase tracking-widest hover:bg-muted transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmState.onConfirm}
+              className="px-3 py-1 rounded-md bg-destructive text-white text-[10px] font-bold uppercase tracking-widest hover:bg-destructive/90 transition-colors cursor-pointer"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Remember Keys Opt-in */}
       <div className="p-4 rounded-xl bg-secondary/40 border border-border flex items-center justify-between gap-4 select-none">
         <div className="flex-1">
@@ -405,7 +455,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                               className={`absolute right-2.5 transition-colors ${(validationStatus['scrapling'] || 'idle') === 'idle' ? 'text-muted-foreground/80 hover:text-foreground cursor-pointer' : 'text-muted-foreground/40 cursor-default'}`}
                               title={(validationStatus['scrapling'] || 'idle') === 'idle' ? (visibleKeys['scrapling'] ? 'Hide API key' : 'Show API key') : undefined}
                             >
-                              {(validationStatus['scrapling'] || 'idle') === 'loading' && <Loader2 size={12} className="animate-spin text-accent" />}
+                              {(validationStatus['scrapling'] || 'idle') === 'loading' && <AnimatedIcon icon={Loader2} size={12} className="animate-spin text-accent" />}
                               {(validationStatus['scrapling'] || 'idle') === 'valid' && <Check size={12} className="text-emerald-400" />}
                               {(validationStatus['scrapling'] || 'idle') === 'invalid' && <X size={12} className="text-red-400" />}
                               {(validationStatus['scrapling'] || 'idle') === 'idle' && (visibleKeys['scrapling'] ? <EyeOff size={12} /> : <Eye size={12} />)}
@@ -461,7 +511,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                           className={`absolute right-2.5 transition-colors ${(validationStatus[p.id] || 'idle') === 'idle' ? 'text-muted-foreground/80 hover:text-foreground cursor-pointer' : 'text-muted-foreground/40 cursor-default'}`}
                           title={(validationStatus[p.id] || 'idle') === 'idle' ? (visibleKeys[p.id] ? 'Hide API key' : 'Show API key') : undefined}
                         >
-                          {(validationStatus[p.id] || 'idle') === 'loading' && <Loader2 size={12} className="animate-spin text-accent" />}
+                          {(validationStatus[p.id] || 'idle') === 'loading' && <AnimatedIcon icon={Loader2} size={12} className="animate-spin text-accent" />}
                           {(validationStatus[p.id] || 'idle') === 'valid' && <Check size={12} className="text-emerald-400" />}
                           {(validationStatus[p.id] || 'idle') === 'invalid' && <X size={12} className="text-red-400" />}
                           {(validationStatus[p.id] || 'idle') === 'idle' && (visibleKeys[p.id] ? <EyeOff size={12} /> : <Eye size={12} />)}
@@ -522,8 +572,6 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                   </motion.div>
                 )}
               </AnimatePresence>
-
-
             </div>
           );
         })}

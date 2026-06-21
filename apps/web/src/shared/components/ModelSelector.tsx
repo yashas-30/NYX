@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 // fallow-ignore-file code-duplication
 import React, { useMemo, useEffect, useRef } from 'react';
 import { SearchIcon as Search, CheckIcon as Check, InfoIcon as Info, XIcon as X, SparklesIcon as Sparkles, ZapIcon as Zap } from '@animateicons/react/lucide';
@@ -359,7 +360,7 @@ export const ModelSelector: React.FC<Props> = ({
               {filteredModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center space-y-2 py-6">
                   <div className="w-8 h-8 rounded-md bg-muted/30 flex items-center justify-center border border-dashed border-border">
-                    <Bot className="w-4 h-4 opacity-25" />
+                    <AnimatedIcon icon={Bot} className="w-4 h-4 opacity-25" />
                   </div>
                   <p className="text-[8px] font-black uppercase tracking-widest opacity-35">
                     None found

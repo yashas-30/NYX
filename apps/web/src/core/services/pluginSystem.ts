@@ -4,7 +4,7 @@
  *              hooks registry, and starter plugins (Calculator, Weather, Stock, Calendar, Email).
  */
 
-import { ToolDefinition } from '../agents/agentLoop';
+import { AgentLoopConfig, ToolDefinition } from '../agents/executeTool';
 
 export interface PluginTool {
   name: string;

@@ -1,28 +1,40 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CaretDown, Globe, PuzzlePiece, Code, FileText, Microscope, Sparkle, Brain, Link, Lightning, ArrowsClockwise, ClipboardText } from '@phosphor-icons/react';
+import { 
+  CaretDown, 
+  CaretRight, 
+  Globe, 
+  PuzzlePiece, 
+  Code, 
+  FileText, 
+  Microscope, 
+  Sparkle, 
+  Brain, 
+  Link, 
+  Lightning, 
+  ArrowsClockwise, 
+  ClipboardText, 
+  Warning, 
+  MagnifyingGlass, 
+  Check, 
+  Cpu 
+} from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
-
-function getIconFromEmoji(key: string, className = "w-3.5 h-3.5") {
-  switch (key) {
-    case 'brain': return <Brain className={className} />;
-    case 'sparkle': return <Sparkle className={className} />;
-    case 'link': return <Link className={className} />;
-    case 'lightning': return <Lightning className={className} />;
-    case 'arrows_clockwise': return <ArrowsClockwise className={className} />;
-    case 'globe': return <Globe className={className} />;
-    case 'puzzle_piece': return <PuzzlePiece className={className} />;
-    case 'code': return <Code className={className} />;
-    case 'file_text': return <FileText className={className} />;
-    case 'microscope': return <Microscope className={className} />;
-    case 'clipboard_text': return <ClipboardText className={className} />;
-    default: return null;
-  }
-}
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useSmoothTypewriter } from '../hooks/useSmoothTypewriter';
+import { ProgressiveFluxLoader } from '@/components/ui/progressive-flux-loader';
+
+const THINKING_PHASES = [
+  { at: 0, label: "analyzing intent" },
+  { at: 25, label: "searching codebase" },
+  { at: 55, label: "synthesizing solution" },
+  { at: 80, label: "refining response" },
+  { at: 100, label: "executing plan" },
+];
+
 
 interface ThinkingBlockProps {
   content: string;
@@ -42,7 +54,6 @@ type ThinkingPhase = 'analyzing' | 'tool_evaluating' | 'synthesizing' | 'complet
 
 function detectPhase(content: string): ThinkingPhase {
   if (!content || content.length < 10) return 'analyzing';
-  // Only process the last 1500 chars to avoid main thread blocking on huge strings
   const scanArea = content.length > 2000 ? content.slice(-1500) : content;
   const lower = scanArea.toLowerCase();
   
@@ -112,7 +123,6 @@ function normalizeAgent(name: string): string {
 }
 
 function parseThinking(raw: string): Segment[] {
-  // Fast path for massive strings without our custom agent markers to avoid freezing the UI
   if (raw.length > 10000 && !raw.includes('━━━') && !raw.includes('┌─') && !raw.includes('⚡') && !raw.includes('📋') && !raw.includes('Plan:') && !raw.includes('Agent turn') && !raw.includes('Executing tool')) {
     return [{ type: 'text', content: raw }];
   }
@@ -126,7 +136,7 @@ function parseThinking(raw: string): Segment[] {
     // Agent turn header: Agent turn 1/15…
     const turnMatch = t.match(/^Agent\s+turn\s+(\d+)\/(\d+)/i);
     if (turnMatch) {
-      segments.push({ type: 'section', label: `Agent Turn ${turnMatch[1]}/${turnMatch[2]}`, icon: '🔄' });
+      segments.push({ type: 'section', label: `Agent Turn ${turnMatch[1]}/${turnMatch[2]}`, icon: 'arrows_clockwise' });
       continue;
     }
 
@@ -146,7 +156,7 @@ function parseThinking(raw: string): Segment[] {
     // Section header: 🔄 [ReAct Loop] Iteration 1
     const reactLoopMatch = t.match(/🔄\s+\[ReAct\s+Loop\]\s+Iteration\s+(\d+)/i);
     if (reactLoopMatch) {
-      segments.push({ type: 'section', label: `ReAct Loop Iteration ${reactLoopMatch[1]}`, icon: '🔄' });
+      segments.push({ type: 'section', label: `ReAct Loop Iteration ${reactLoopMatch[1]}`, icon: 'arrows_clockwise' });
       continue;
     }
 
@@ -159,7 +169,7 @@ function parseThinking(raw: string): Segment[] {
 
     // Connection messages
     if (t.startsWith('━━━') || t.includes('Routing') || t.includes('Supervisor')) {
-      segments.push({ type: 'section', label: t, icon: 'globe' });
+      segments.push({ type: 'section', label: t.replace(/^[━\s]+|[━\s]+$/g, '').trim(), icon: 'brain' });
       continue;
     }
 
@@ -194,7 +204,7 @@ function parseThinking(raw: string): Segment[] {
       segments.push({ type: 'task_start', index: taskStart[1], agent: normalizeAgent(taskStart[2]), task: taskStart[3] });
       continue;
     }
-    // dynamic spawn: ├─ \u26A1 Dynamically spawning sub-agent: web_explorer for: task instructions
+    // dynamic spawn: ├─ ⚡ Dynamically spawning sub-agent: web_explorer for: task instructions
     const dynamicSpawn = t.match(/^[┌├]─\s+\u26A1\s+Dynamically spawning sub-agent:\s*(.+?)\s+for:\s*(.*)$/);
     if (dynamicSpawn) {
       segments.push({ type: 'dynamic_spawn', agent: normalizeAgent(dynamicSpawn[1]), task: dynamicSpawn[2] });
@@ -205,10 +215,10 @@ function parseThinking(raw: string): Segment[] {
       segments.push({ type: 'batch_complete' });
       continue;
     }
-    // tool call: \u26A1 [Name] → tool(args)
+    // tool call: ⚡ [Name] → tool(args)
     const tc = t.match(/^\u26A1\s+\[(.+?)\]\s+[→>]\s+(\w+)\((.*)?\)$/);
     if (tc) { segments.push({ type: 'tool_call', agent: normalizeAgent(tc[1]), tool: tc[2], args: tc[3] || '' }); continue; }
-    // tool result: \uD83D\uDCCB Result: ...
+    // tool result: 📋 Result: ...
     const tr = t.match(/^\uD83D\uDCCB\s+Result:\s+(.+)$/);
     if (tr) { segments.push({ type: 'tool_result', preview: tr[1] }); continue; }
     // plain text
@@ -220,158 +230,241 @@ function parseThinking(raw: string): Segment[] {
 }
 
 const AGENT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  'Web Explorer':       { bg: 'rgba(59,130,246,0.12)',  text: '#60A5FA', border: 'rgba(59,130,246,0.3)' },
-  'Deep Planner':       { bg: 'rgba(168,85,247,0.12)',  text: '#C084FC', border: 'rgba(168,85,247,0.3)' },
-  'Code Interpreter':   { bg: 'rgba(16,185,129,0.12)',  text: '#34D399', border: 'rgba(16,185,129,0.3)' },
-  'Document Cruncher':  { bg: 'rgba(245,158,11,0.12)',  text: '#FBBF24', border: 'rgba(245,158,11,0.3)' },
-  'Deep Research':      { bg: 'rgba(45,212,191,0.12)',  text: '#2DD4BF', border: 'rgba(45,212,191,0.3)' },
-  'Persona & Polisher': { bg: 'rgba(244,63,94,0.12)',   text: '#FB7185', border: 'rgba(244,63,94,0.3)' },
-};
-
-const AGENT_ICONS: Record<string, string> = {
-  'Web Explorer': 'globe',
-  'Deep Planner': 'puzzle_piece',
-  'Code Interpreter': 'code',
-  'Document Cruncher': 'file_text',
-  'Deep Research': 'microscope',
-  'Persona & Polisher': 'sparkle',
+  'Web Explorer':       { bg: 'bg-card',  text: 'text-foreground', border: 'border-border' },
+  'Deep Planner':       { bg: 'bg-card',  text: 'text-foreground', border: 'border-border' },
+  'Code Interpreter':   { bg: 'bg-card',  text: 'text-foreground', border: 'border-border' },
+  'Document Cruncher':  { bg: 'bg-card',  text: 'text-foreground', border: 'border-border' },
+  'Deep Research':      { bg: 'bg-card',  text: 'text-foreground', border: 'border-border' },
+  'Persona & Polisher': { bg: 'bg-card',  text: 'text-foreground', border: 'border-border' },
 };
 
 function getAgentColor(agent: string) {
-  return AGENT_COLORS[agent] || { bg: 'rgba(255,255,255,0.06)', text: '#94A3B8', border: 'rgba(255,255,255,0.1)' };
+  return AGENT_COLORS[agent] || { bg: 'bg-card', text: 'text-foreground', border: 'border-border' };
 }
 
-const SectionHeader: React.FC<{ icon: string; label: string }> = ({ icon, label }) => (
-  <div className="flex items-center gap-2 py-2">
-    <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.05)' }} />
-    <span className="text-[9px] font-mono font-medium tracking-widest uppercase px-1 flex items-center gap-1.5" style={{ color: 'rgba(255,255,255,0.22)' }}>
-      {getIconFromEmoji(icon)} {label}
-    </span>
-    <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.05)' }} />
-  </div>
-);
+function getAgentIcon(agent: string, className = "w-3.5 h-3.5") {
+  switch (normalizeAgent(agent)) {
+    case 'Web Explorer': return <Globe className={className} />;
+    case 'Deep Planner': return <PuzzlePiece className={className} />;
+    case 'Code Interpreter': return <Code className={className} />;
+    case 'Document Cruncher': return <FileText className={className} />;
+    case 'Deep Research': return <Microscope className={className} />;
+    case 'Persona & Polisher': return <Sparkle className={className} />;
+    default: return <Brain className={className} />;
+  }
+}
+
+function getIconFromEmoji(key: string, className = "w-3.5 h-3.5") {
+  switch (key) {
+    case 'brain': return <Brain className={className} />;
+    case 'sparkle': return <Sparkle className={className} />;
+    case 'link': return <Link className={className} />;
+    case 'lightning': return <Lightning className={className} />;
+    case 'arrows_clockwise': return <ArrowsClockwise className={className} />;
+    case 'globe': return <Globe className={className} />;
+    case 'puzzle_piece': return <PuzzlePiece className={className} />;
+    case 'code': return <Code className={className} />;
+    case 'file_text': return <FileText className={className} />;
+    case 'microscope': return <Microscope className={className} />;
+    case 'clipboard_text': return <ClipboardText className={className} />;
+    default: return null;
+  }
+}
+
+// ─── Step Timeline layout structures ──────────────────────────────────────────
+export type PlanStepStatus = 'pending' | 'active' | 'success' | 'error';
+
+interface GroupedStep {
+  id: string;
+  title: string;
+  status: PlanStepStatus;
+  icon?: React.ReactNode;
+  duration?: string;
+  contentNodes: Segment[];
+}
+
+function groupSegmentsToSteps(segments: Segment[], isComplete: boolean): GroupedStep[] {
+  const steps: GroupedStep[] = [];
+  let currentStep: GroupedStep | null = null;
+  let stepCounter = 0;
+
+  const createStep = (title: string, status: PlanStepStatus, icon?: React.ReactNode) => {
+    const prevStep = currentStep as GroupedStep | null;
+    if (prevStep) {
+      if (prevStep.status === 'active') {
+        prevStep.status = 'success';
+      }
+    }
+    stepCounter++;
+    currentStep = {
+      id: String(stepCounter),
+      title,
+      status,
+      icon,
+      contentNodes: []
+    };
+    steps.push(currentStep);
+  };
+
+  for (let idx = 0; idx < segments.length; idx++) {
+    const seg = segments[idx];
+    const isLastSegment = idx === segments.length - 1;
+
+    // Detect explicit step markers
+    if (seg.type === 'section') {
+      const icon = getIconFromEmoji(seg.icon) || <Brain className="w-3.5 h-3.5" />;
+      createStep(seg.label, isLastSegment && !isComplete ? 'active' : 'success', icon);
+    } 
+    else if (seg.type === 'agent_start') {
+      const icon = getAgentIcon(seg.agent, "w-3.5 h-3.5");
+      createStep(`${seg.agent} turn`, isLastSegment && !isComplete ? 'active' : 'success', icon);
+    }
+    else if (seg.type === 'agent_end') {
+      const agentStep = [...steps].reverse().find(s => s.title.includes(seg.agent));
+      if (agentStep) {
+        agentStep.status = 'success';
+      }
+    }
+    else if (seg.type === 'task_start') {
+      const icon = getAgentIcon(seg.agent, "w-3.5 h-3.5");
+      createStep(`Task ${seg.index}: ${seg.task}`, isLastSegment && !isComplete ? 'active' : 'success', icon);
+    }
+    else if (seg.type === 'dynamic_spawn') {
+      const icon = <Lightning className="w-3.5 h-3.5" />;
+      createStep(`Spawning Sub-agent: ${seg.agent}`, isLastSegment && !isComplete ? 'active' : 'success', icon);
+      const activeStep = currentStep as GroupedStep | null;
+      if (activeStep) {
+        activeStep.contentNodes.push(seg);
+      }
+    }
+    else if (seg.type === 'batch_complete') {
+      const activeStep = currentStep as GroupedStep | null;
+      if (activeStep) {
+        activeStep.status = 'success';
+      }
+      createStep(`Parallel Batch Complete`, 'success', <Check className="w-3.5 h-3.5" />);
+    }
+    else {
+      // Append to the current active step
+      if (!currentStep) {
+        createStep('Analysis & Planning', isLastSegment && !isComplete ? 'active' : 'success', <MagnifyingGlass className="w-3.5 h-3.5" />);
+      }
+      const activeStep = currentStep as GroupedStep | null;
+      if (activeStep) {
+        activeStep.contentNodes.push(seg);
+      }
+    }
+  }
+
+  // Finalize last step status
+  const finalStep = currentStep as GroupedStep | null;
+  if (finalStep && isComplete) {
+    if (finalStep.status === 'active') {
+      finalStep.status = 'success';
+    }
+  }
+
+  return steps;
+}
+
+// ─── Inline Timeline rendering nodes ──────────────────────────────────────────
 
 const PlanPill: React.FC<{ agents: string[] }> = ({ agents }) => (
-  <div className="flex items-center gap-1.5 flex-wrap py-1">
+  <div className="flex items-center gap-2 flex-wrap py-1.5 select-none relative">
+    <span className="text-[13px] font-mono text-muted-foreground mr-1 uppercase">Plan:</span>
     {agents.map((a, i) => {
       const normAgent = normalizeAgent(a);
-      const c = getAgentColor(normAgent);
       return (
         <React.Fragment key={a}>
-          <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
-            style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-            {getIconFromEmoji(AGENT_ICONS[normAgent], "w-3 h-3") || '•'} {normAgent}
+          <span className="text-[13px] font-mono font-medium px-2 py-0.5 rounded-lg border border-border text-foreground bg-card flex items-center gap-1.5">
+            {getAgentIcon(normAgent, "w-3 h-3")} {normAgent}
           </span>
-          {i < agents.length - 1 && <span style={{ color: 'rgba(255,255,255,0.18)', fontSize: 10 }}>→</span>}
+          {i < agents.length - 1 && <CaretRight className="w-3 h-3 text-muted-foreground shrink-0" />}
         </React.Fragment>
       );
     })}
   </div>
 );
 
-const AgentBadge: React.FC<{ agent: string; status: 'running' | 'done' }> = ({ agent, status }) => {
+const DynamicSpawnNode: React.FC<{ agent: string; task: string }> = ({ agent, task }) => {
   const normAgent = normalizeAgent(agent);
-  const c = getAgentColor(normAgent);
   return (
-    <div className="flex items-center gap-2 py-0.5">
-      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full flex items-center gap-1.5"
-        style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-        {status === 'running' ? (
-          <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.2, repeat: Infinity }}>●</motion.span>
-        ) : <span>✓</span>}
-        {getIconFromEmoji(AGENT_ICONS[normAgent], "w-3 h-3")} {normAgent}
-      </span>
-      <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.22)' }}>
-        {status === 'running' ? 'working...' : 'complete'}
-      </span>
-    </div>
-  );
-};
-
-const TaskStartRow: React.FC<{ index: string; agent: string; task: string }> = ({ index, agent, task }) => {
-  const normAgent = normalizeAgent(agent);
-  const c = getAgentColor(normAgent);
-  return (
-    <div className="flex items-start gap-2.5 py-1 pl-1">
-      <span className="text-[10px] font-mono text-muted-foreground shrink-0 pt-0.5 select-none">Task {index}:</span>
-      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1"
-        style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-        {getIconFromEmoji(AGENT_ICONS[normAgent], "w-3 h-3") || '•'} {normAgent}
-      </span>
-      <span className="text-[11px] font-mono text-foreground/75 leading-relaxed">{task}</span>
-    </div>
-  );
-};
-
-const DynamicSpawnRow: React.FC<{ agent: string; task: string }> = ({ agent, task }) => {
-  const normAgent = normalizeAgent(agent);
-  const c = getAgentColor(normAgent);
-  return (
-    <div className="flex items-start gap-2.5 py-1.5 pl-3 bg-indigo-500/5 rounded-lg border border-indigo-500/10 my-1.5">
-      <span className="text-[10px] shrink-0 pt-0.5 animate-pulse select-none text-indigo-400">
-        <Lightning className="w-3.5 h-3.5" />
-      </span>
-      <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1"
-        style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-        {getIconFromEmoji(AGENT_ICONS[normAgent], "w-3 h-3") || '•'} {normAgent}
+    <div className="relative flex items-start gap-3 p-4 bg-card rounded-[16px] border border-border my-2">
+      <span className="text-[13px] font-mono font-medium px-2 py-0.5 rounded-lg border border-border shrink-0 flex items-center gap-1.5 text-foreground">
+        {getAgentIcon(normAgent, "w-3 h-3")} {normAgent}
       </span>
       <div className="flex flex-col min-w-0">
-        <span className="text-[9px] font-mono text-indigo-300 uppercase tracking-wider select-none font-bold">Dynamically Spawned</span>
-        <span className="text-[11px] font-mono text-foreground/80 leading-relaxed mt-0.5">{task}</span>
+        <span className="text-[11px] font-mono text-muted-foreground uppercase tracking-wider font-semibold">Sub-agent Spawned</span>
+        <span className="text-[13px] font-mono text-foreground leading-relaxed mt-1 select-text">{task}</span>
       </div>
     </div>
   );
 };
 
-const BatchCompleteRow: React.FC = () => (
-  <div className="flex items-center gap-2 py-2 select-none">
-    <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.05)' }} />
-    <span className="text-[9px] font-mono uppercase tracking-widest text-emerald-400/70 font-semibold">
-      ✓ Parallel Batch Complete
-    </span>
-    <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.05)' }} />
-  </div>
-);
+const ToolCallNode: React.FC<{ agent: string; tool: string; args: string }> = ({ agent, tool, args }) => {
+  const [prettyArgs, isMultiline] = useMemo(() => {
+    if (!args.trim()) return ['', false];
+    try {
+      const parsed = JSON.parse(args);
+      const keys = Object.keys(parsed);
+      if (keys.length === 1 && typeof parsed[keys[0]] === 'string' && parsed[keys[0]].length < 60) {
+        return [parsed[keys[0]], false];
+      }
+      return [JSON.stringify(parsed, null, 2), true];
+    } catch {
+      return [args, args.includes('\n') || args.length > 60];
+    }
+  }, [args]);
 
-const ToolCallRow: React.FC<{ agent: string; tool: string; args: string }> = ({ agent, tool, args }) => {
-  const normAgent = normalizeAgent(agent);
-  const c = getAgentColor(normAgent);
-  let argPreview = args;
-  try { const p = JSON.parse(args); argPreview = p.query || p.command || p.path || args; } catch {}
-  if (argPreview.length > 60) argPreview = argPreview.slice(0, 57) + '...';
   return (
-    <div className="flex items-center gap-2 pl-3 py-0.5">
-      <div className="w-px h-4 shrink-0" style={{ background: 'rgba(255,255,255,0.07)' }} />
-      <span className="text-[10px] font-mono font-medium px-1.5 py-px rounded" style={{ background: c.bg, color: c.text }}>{tool}</span>
-      {argPreview && <span className="text-[10px] font-mono truncate" style={{ color: 'rgba(255,255,255,0.25)' }}>({argPreview})</span>}
+    <div className="flex flex-col gap-1 py-1.5 relative">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[13px] font-mono text-muted-foreground uppercase select-none">Tool Call:</span>
+        <span className="text-[13px] font-mono font-medium px-2 py-0.5 rounded-lg border border-border text-foreground bg-card">{tool}</span>
+        {!isMultiline && prettyArgs && (
+          <span className="text-[13px] font-mono text-muted-foreground truncate max-w-[300px] select-all">({prettyArgs})</span>
+        )}
+      </div>
+      {isMultiline && prettyArgs && (
+        <div className="mt-2 p-3 rounded-[16px] bg-card border border-border text-[13px] font-mono text-foreground max-w-[95%] overflow-x-auto select-text scrollbar-thin leading-relaxed max-h-[180px]">
+          <pre className="m-0 font-mono whitespace-pre-wrap break-all">{prettyArgs}</pre>
+        </div>
+      )}
     </div>
   );
 };
 
-const ToolResultRow: React.FC<{ preview: string }> = ({ preview }) => (
-  <div className="flex items-center gap-2 pl-3 py-0.5">
-    <div className="w-px h-3 shrink-0" style={{ background: 'rgba(255,255,255,0.07)' }} />
-    <span className="text-[10px] font-mono truncate max-w-[90%]" style={{ color: 'rgba(52,211,153,0.6)' }}>
-      ↳ {preview.length > 80 ? preview.slice(0, 77) + '...' : preview}
+const ToolResultNode: React.FC<{ preview: string }> = ({ preview }) => (
+  <div className="flex items-start gap-2 py-1.5 relative">
+    <span className="text-[13px] font-mono text-muted-foreground uppercase select-none pt-0.5">Response:</span>
+    <span className="text-[13px] font-mono text-foreground leading-relaxed break-all max-w-[85%] select-text bg-card border border-border rounded-lg px-2 py-0.5">
+      {preview.length > 200 ? preview.slice(0, 200) + '...' : preview}
     </span>
   </div>
 );
 
-const PlainText: React.FC<{ content: string }> = ({ content }) => {
+const PlainTextNode: React.FC<{ content: string }> = ({ content }) => {
   if (!content.trim()) return null;
   return (
-    <div className="text-[13px] font-sans leading-relaxed py-1 animate-fade-in text-muted-foreground border-l border-muted-foreground/20 pl-3 ml-1" style={{ whiteSpace: 'pre-wrap' }}>
-      <ReactMarkdown 
-        remarkPlugins={[remarkGfm, remarkMath]} 
-        rehypePlugins={[rehypeKatex]}
-      >
-        {content}
-      </ReactMarkdown>
+    <div className="text-[15px] font-sans leading-relaxed py-2 text-foreground relative">
+      <div className="prose prose-sm max-w-none text-foreground select-text">
+        <ReactMarkdown 
+          remarkPlugins={[remarkGfm, remarkMath]} 
+          rehypePlugins={[rehypeKatex]}
+          components={{
+            p: ({ children }) => <p className="mb-3 last:mb-0 text-[15px] leading-relaxed">{children}</p>,
+            ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 my-2">{children}</ul>,
+            ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 my-2">{children}</ol>,
+            li: ({ children }) => <li className="marker:text-muted-foreground">{children}</li>,
+            code: ({ children }) => <code className="bg-card px-1.5 py-0.5 rounded-lg border border-border text-[13px] font-mono text-foreground">{children}</code>
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 };
-
-import { useSmoothTypewriter } from '../hooks/useSmoothTypewriter';
 
 function AgentProgressBar({
   step,
@@ -386,41 +479,63 @@ function AgentProgressBar({
 }) {
   const pct = total > 0 ? Math.round((step / total) * 100) : 0;
   const elapsedSec = elapsed ? Math.round(elapsed / 1000) : 0;
-  const agentLabel = currentAgent?.replace(/_/g, ' ') ?? '';
+  const agentLabel = currentAgent ? normalizeAgent(currentAgent) : '';
 
   return (
-    <div className="my-2 mx-1 px-3 py-2 rounded-lg bg-zinc-900/70 border border-white/[0.06]">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] text-zinc-400">
-          Agent {step}/{total}
+    <div className="my-4 mx-0 p-4 rounded-[16px] bg-card border border-border select-none">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-mono text-muted-foreground uppercase tracking-wider">Agent Turn {step}/{total}</span>
           {agentLabel && (
-            <span className="ml-2 text-violet-400 capitalize">{agentLabel}</span>
+            <>
+              <span className="text-[11px] text-[#DADCE0]">•</span>
+              <span className={`text-[13px] font-mono font-medium flex items-center gap-1.5 text-foreground`}>
+                {getAgentIcon(agentLabel, "w-4 h-4")} {agentLabel}
+              </span>
+            </>
           )}
-        </span>
+        </div>
         {elapsedSec > 0 && (
-          <span className="text-[11px] text-zinc-600 font-mono">{elapsedSec}s</span>
+          <span className="text-[13px] font-mono text-muted-foreground">{elapsedSec}s</span>
         )}
       </div>
-      <div className="h-[3px] bg-zinc-800 rounded-full overflow-hidden">
+      <div className="h-[1px] bg-[#DADCE0] relative overflow-hidden">
         <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500"
+          className="h-full bg-primary"
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
+          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         />
       </div>
     </div>
   );
 }
 
+// ─── ThinkingBlock Redesign ───────────────────────────────────────────────────
+
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseContent, isComplete = true, startedAt, agentProgress }) => {
   const [isExpanded, setIsExpanded] = useState(!isComplete);
-  const smoothContent = useSmoothTypewriter(content, !isComplete);
   const showReasoning = useNyxStore((s) => s.showReasoning);
   const setShowReasoning = useNyxStore((s) => s.setShowReasoning);
-  const segments = useMemo(() => parseThinking(smoothContent), [smoothContent]);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  
+  // Balance code blocks dynamically to prevent markdown thrashing during active streaming
+  const balancedContent = useMemo(() => {
+    if (isComplete) return content;
+    let safeText = content;
+    const codeBlockMatches = safeText.match(/```/g);
+    if (codeBlockMatches && codeBlockMatches.length % 2 !== 0) {
+      safeText += '\n```';
+    }
+    return safeText;
+  }, [content, isComplete]);
+  
+  // Parse flat segments
+  const segments = useMemo(() => parseThinking(balancedContent), [balancedContent]);
+  
+  // Dynamic timeline step grouping
+  const steps = useMemo(() => groupSegmentsToSteps(segments, isComplete), [segments, isComplete]);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [internalStartedAt] = useState(() => startedAt || Date.now());
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -434,13 +549,63 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
 
   const currentPhase: ThinkingPhase = useMemo(() => {
     if (isComplete) return 'complete';
-    return detectPhase(smoothContent);
-  }, [smoothContent, isComplete]);
+    return detectPhase(balancedContent);
+  }, [balancedContent, isComplete]);
+
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    if (isComplete) {
+      setProgress(100);
+      return;
+    }
+    let target = 15;
+    if (currentPhase === 'analyzing') {
+      target = 25;
+    } else if (currentPhase === 'tool_evaluating') {
+      target = 60;
+    } else if (currentPhase === 'synthesizing') {
+      target = 85;
+    }
+    
+    const timer = setInterval(() => {
+      setProgress(prev => {
+        if (prev < target) {
+          return Math.min(target, prev + 2);
+        } else if (prev > target) {
+          return Math.max(target, prev - 2);
+        }
+        return prev;
+      });
+    }, 150);
+
+    return () => clearInterval(timer);
+  }, [currentPhase, isComplete]);
+
+
+  // Extract unique active agents and tools
+  const activeProcessesText = useMemo(() => {
+    const processes: string[] = [];
+    segments.forEach(s => {
+      if (s.type === 'agent_start' || s.type === 'task_start') {
+        const norm = normalizeAgent(s.agent);
+        if (norm && !processes.includes(norm)) {
+          processes.push(norm);
+        }
+      }
+      if (s.type === 'tool_call') {
+        if (s.tool && !processes.includes(s.tool)) {
+          processes.push(s.tool);
+        }
+      }
+    });
+    if (processes.length === 0) return '';
+    return `(${processes.join(', ')})`;
+  }, [segments]);
 
   const currentStatusText = useMemo(() => {
     if (isComplete) return 'Complete';
     
-    // Find the most recent active agent, tool, or text
     for (let i = segments.length - 1; i >= 0; i--) {
       const s = segments[i];
       if (s.type === 'tool_call') {
@@ -454,10 +619,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
       }
       if (s.type === 'text' && s.content.trim()) {
         const clean = s.content.replace(/\s+/g, ' ').trim();
-        
-        // Skip system/backend connection messages from the dynamic header
         if (clean.includes('Connecting to backend agent service')) continue;
-        
         if (clean.length <= 60) return clean;
         return '...' + clean.slice(-55).trim();
       }
@@ -478,85 +640,141 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
     if (scrollRef.current && !userScrolledUp.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [segments, isExpanded]);
+  }, [steps, isExpanded]);
 
   if (!content?.trim()) return null;
+
+  const getStatusColor = (status: PlanStepStatus) => {
+    switch (status) {
+      case 'success': 
+        return 'bg-transparent text-foreground border border-border';
+      case 'active': 
+        return 'bg-primary text-primary-foreground border border-[#202124]';
+      case 'error': 
+        return 'bg-transparent text-rose-600 border border-rose-200';
+      case 'pending': 
+        return 'bg-transparent text-muted-foreground border border-border border-dashed';
+    }
+  };
 
   if (!showReasoning) {
     const timeSecs = elapsedMs > 0 ? (elapsedMs / 1000).toFixed(1) : ((Date.now() - internalStartedAt) / 1000).toFixed(1);
     return (
-      <div className="my-2 text-[12px] text-muted-foreground/80 flex items-center gap-1.5 font-sans select-none">
-        <span className="text-indigo-400">◎</span>
-        <span>
-          {isComplete 
-            ? `Reasoned for ${timeSecs}s` 
-            : `Reasoning... (${timeSecs}s)`
-          }
-        </span>
-        <button 
+      <div className="my-4 flex items-center select-none animate-fade-in group w-full">
+        <div 
           onClick={() => setShowReasoning(true)}
-          className="text-indigo-400 hover:text-indigo-300 font-medium underline underline-offset-2 cursor-pointer outline-none bg-transparent border-none p-0 ml-1 transition-colors"
+          className="w-full flex flex-col bg-card border-y border-border py-2 px-4 cursor-pointer hover:bg-muted transition-colors duration-150 ease-out active:scale-[0.99]"
         >
-          (show)
-        </button>
+          <div className="flex items-center justify-between w-full text-[13px] font-mono text-muted-foreground tracking-wide">
+            <span className="flex items-center gap-3">
+              <span className="uppercase text-foreground font-medium">
+                {isComplete ? 'Reasoning Complete' : 'Thinking'}
+              </span>
+              {!isComplete && currentStatusText && (
+                <span className="text-muted-foreground truncate max-w-[300px]">({currentStatusText})</span>
+              )}
+              {isComplete && activeProcessesText && (
+                <span className="text-muted-foreground truncate max-w-[300px]">{activeProcessesText}</span>
+              )}
+            </span>
+            <span className="flex items-center gap-4">
+              <span>{timeSecs}s</span>
+              <CaretDown weight="bold" className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
+            </span>
+          </div>
+          {!isComplete && (
+            <div className="w-full h-[1px] bg-[#DADCE0] mt-2 overflow-hidden relative">
+              <motion.div 
+                className="h-full bg-primary"
+                initial={{ width: '0%' }}
+                animate={{ width: '100%' }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+              />
+            </div>
+          )}
+        </div>
       </div>
     );
   }
 
-  const spring = { duration: 0.2, ease: 'easeOut' as const };
+  const customTransition = { type: "spring", stiffness: 300, damping: 30 };
+  const hasActive = steps.some(s => s.status === 'active');
+  const allSuccess = steps.length > 0 && steps.every(s => s.status === 'success');
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={spring}
-      className="my-2 mb-4 overflow-hidden"
+      transition={customTransition}
+      className="my-6 mb-8 overflow-hidden"
     >
-      <motion.button
-        onClick={() => setIsExpanded(v => !v)}
-        whileHover={{ opacity: 0.8 }}
-        whileTap={{ scale: 0.995 }}
-        transition={spring}
-        className="flex items-center gap-2 outline-none cursor-pointer group"
-      >
-        <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted/40 group-hover:bg-muted/60 transition-colors">
-          {!isComplete ? (
-            <motion.div
-              animate={{ opacity: [1, 0.3, 1], scale: [1, 0.85, 1] }}
-              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ background: PHASE_CONFIG[currentPhase].color }}
-            />
-          ) : (
-            <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={spring}>
-              <CaretDown weight="bold" className="w-3 h-3 text-muted-foreground" />
-            </motion.div>
-          )}
-        </div>
-        
-        <div className="flex flex-col text-left">
-          <span className="text-[13px] font-sans font-medium text-muted-foreground transition-colors group-hover:text-foreground">
-            {!isComplete ? currentStatusText : 'Thinking Process'}
-          </span>
-        </div>
+      <div className="px-0.5">
+        {/* Sleek Outer Card Trigger */}
+        {!isComplete ? (
+          <button
+            onClick={() => setIsExpanded(v => !v)}
+            className={`w-full text-left outline-none cursor-pointer group bg-card border border-border p-5 rounded-[16px] flex flex-col gap-4 relative overflow-hidden transition-all duration-150 ease-out select-none active:scale-[0.99]
+              ${isExpanded ? 'rounded-b-none border-b-transparent' : 'hover:bg-muted'}
+            `}
+          >
+            <div className="absolute top-1/2 -translate-y-1/2 right-4 flex items-center gap-2.5 select-none z-10">
+              <span className="text-[13px] font-mono text-muted-foreground mr-2">
+                {elapsedMs > 0 ? (elapsedMs / 1000).toFixed(1) : ((Date.now() - internalStartedAt) / 1000).toFixed(1)}s
+              </span>
+              <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={customTransition}>
+                <CaretDown weight="bold" className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+              </motion.div>
+            </div>
 
-        {(elapsedMs > 0 || isComplete) && (
-          <div className="flex items-center gap-2 ml-1">
-            <span className="text-[11px] font-sans text-muted-foreground/60">
-              {((elapsedMs || (Date.now() - internalStartedAt)) / 1000).toFixed(1)}s
-              {content && ` • ${Math.round(content.length / 4)} tokens reasoning`}
-              {responseContent && ` • ${Math.round(responseContent.length / 4)} tokens response`}
-            </span>
-          </div>
+            <div className="flex flex-col gap-2 relative z-0 pr-20">
+              <span className="text-[13px] font-mono font-medium tracking-widest uppercase text-foreground">
+                {PHASE_CONFIG[currentPhase].label}
+              </span>
+              <div className="h-[1px] bg-[#DADCE0] w-full overflow-hidden relative">
+                <motion.div 
+                  className="h-full bg-primary"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress}%` }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                />
+              </div>
+            </div>
+          </button>
+        ) : (
+          <button
+            onClick={() => setIsExpanded(v => !v)}
+            className={`w-full flex items-center justify-between outline-none cursor-pointer group bg-card border border-border p-3 px-4 rounded-[16px] transition-all duration-150 ease-out select-none active:scale-[0.99]
+              ${isExpanded ? 'rounded-b-none border-b-transparent' : 'hover:bg-muted'}
+            `}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-[13px] font-mono text-foreground font-medium truncate uppercase tracking-widest">
+                Reasoning Complete
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0 pl-2">
+              {elapsedMs > 0 && (
+                <span className="text-[13px] font-mono text-muted-foreground mr-2">
+                  {(elapsedMs / 1000).toFixed(1)}s
+                </span>
+              )}
+              <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={customTransition}>
+                <CaretDown weight="bold" className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+              </motion.div>
+            </div>
+          </button>
         )}
-      </motion.button>
+      </div>
+
       <AnimatePresence initial={false}>
         {isExpanded && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={spring}
-            className="overflow-hidden"
+            initial={{ height: 0, opacity: 0, clipPath: 'inset(0% 0% 100% 0%)' }}
+            animate={{ height: 'auto', opacity: 1, clipPath: 'inset(0% 0% 0% 0%)' }}
+            exit={{ height: 0, opacity: 0, clipPath: 'inset(0% 0% 100% 0%)' }}
+            transition={customTransition}
+            className="overflow-hidden bg-card border border-border border-t-0 rounded-b-[16px]"
           >
             {agentProgress && agentProgress.total > 0 && (
               <AgentProgressBar
@@ -566,21 +784,82 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
                 elapsed={agentProgress.elapsed}
               />
             )}
-            <div ref={scrollRef} onScroll={handleScroll} className="ml-2.5 pl-4 pb-2 pt-2 mt-2 space-y-1 max-h-[600px] overflow-y-auto overscroll-contain border-l border-border/40">
-              {segments.map((seg, i) => {
-                switch (seg.type) {
-                  case 'section':    return <SectionHeader key={i} icon={seg.icon} label={seg.label} />;
-                  case 'plan':       return <PlanPill key={i} agents={seg.agents} />;
-                  case 'agent_start':return <AgentBadge key={i} agent={seg.agent} status="running" />;
-                  case 'agent_end':  return <AgentBadge key={i} agent={seg.agent} status="done" />;
-                  case 'task_start': return <TaskStartRow key={i} index={seg.index} agent={seg.agent} task={seg.task} />;
-                  case 'dynamic_spawn': return <DynamicSpawnRow key={i} agent={seg.agent} task={seg.task} />;
-                  case 'batch_complete': return <BatchCompleteRow key={i} />;
-                  case 'tool_call':  return <ToolCallRow key={i} agent={seg.agent} tool={seg.tool} args={seg.args} />;
-                  case 'tool_result':return <ToolResultRow key={i} preview={seg.preview} />;
-                  case 'text':       return <PlainText key={i} content={seg.content} />;
-                  default:           return null;
-                }
+            
+            {/* Timeline Steps Area */}
+            <div 
+              ref={scrollRef} 
+              onScroll={handleScroll} 
+              className="p-6 flex flex-col max-h-[600px] overflow-y-auto overscroll-contain scrollbar-thin space-y-2"
+            >
+              {steps.map((step, index) => {
+                const isLast = index === steps.length - 1;
+                
+                return (
+                  <div 
+                    key={step.id} 
+                    className={`relative flex gap-5 animate-fade-in
+                      ${step.status === 'pending' ? 'opacity-60' : 'opacity-100'}
+                    `}
+                  >
+                    {/* Timeline connecting line */}
+                    {!isLast && (
+                      <div className="absolute left-[11px] top-8 bottom-[-16px] w-[1px] bg-[#DADCE0] z-0" />
+                    )}
+
+                    {/* Icon Column */}
+                    <div className="relative z-10 flex-none w-6 h-6 mt-1">
+                      <div className={`flex items-center justify-center w-full h-full rounded-lg transition-all duration-300
+                        ${getStatusColor(step.status)}
+                      `}>
+                        {step.status === 'success' ? (
+                          <Check className="w-3 h-3 font-bold" />
+                        ) : step.status === 'active' ? (
+                          <ArrowsClockwise className="w-3 h-3 animate-spin text-foreground" />
+                        ) : (
+                          step.icon || <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Content Column */}
+                    <div className="flex-1 pb-6">
+                      {/* Step Header */}
+                      <div className="flex items-center justify-between group rounded-md -mx-2 px-2 py-0.5 select-none">
+                        <span className={`text-[13px] font-mono font-semibold uppercase tracking-wider transition-colors duration-200
+                          ${step.status === 'active' ? 'text-foreground' : 
+                            step.status === 'error' ? 'text-rose-600' : 
+                            'text-muted-foreground'}
+                        `}>
+                          {step.title}
+                        </span>
+
+                        {step.duration && (
+                          <span className="text-[13px] font-mono text-muted-foreground tabular-nums">
+                            {step.duration}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Step Content Nodes (Always visible) */}
+                      {step.contentNodes.length > 0 && (
+                        <div className="mt-2 opacity-100">
+                          <div className="pt-1 pb-2 pl-1 space-y-2.5">
+                            {step.contentNodes.map((node, nIdx) => {
+                              switch (node.type) {
+                                case 'plan':          return <PlanPill key={nIdx} agents={node.agents} />;
+                                case 'dynamic_spawn': return <DynamicSpawnNode key={nIdx} agent={node.agent} task={node.task} />;
+                                case 'tool_call':     return <ToolCallNode key={nIdx} agent={node.agent} tool={node.tool} args={node.args} />;
+                                case 'tool_result':   return <ToolResultNode key={nIdx} preview={node.preview} />;
+                                case 'text':          return <PlainTextNode key={nIdx} content={node.content} />;
+                                default:              return null;
+                              }
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
               })}
             </div>
           </motion.div>

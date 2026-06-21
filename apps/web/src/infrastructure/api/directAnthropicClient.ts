@@ -50,7 +50,18 @@ export async function directAnthropicFetch(config: any): Promise<EnhancedAIRespo
     headers['x-api-key'] = apiKey;
   }
 
-  const response = await fetch(endpoint, {
+  let fetchFn = fetch;
+  const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+  if (isTauri) {
+    try {
+      const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+      fetchFn = tauriFetch;
+    } catch (e) {
+      console.warn('[directAnthropicClient] Failed to load tauriFetch, falling back to window.fetch:', e);
+    }
+  }
+
+  const response = await fetchFn(endpoint, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

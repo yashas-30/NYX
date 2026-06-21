@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useCallback } from 'react';
 import ReactFlow, {
   Background,
@@ -76,7 +77,7 @@ function CustomNode({ data, id }: { data: CanvasNode['data']; id: string }) {
             <Play className="w-3 h-3" />
           </button>
           <button onClick={() => setIsEditing(!isEditing)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all cursor-pointer">
-            <Edit className="w-3 h-3" />
+            <AnimatedIcon icon={Edit} className="w-3 h-3" />
           </button>
         </div>
       </div>
@@ -152,16 +153,16 @@ export function InfiniteCanvas() {
       {/* Floating toolbar */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 bg-popover/90 backdrop-blur border border-border rounded-md px-4 py-2 shadow-sm z-10">
         <button onClick={() => addNode('chat', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-md transition-all active:scale-[0.97] cursor-pointer" title="Add Chat Node">
-          <MessageSquare className="w-4 h-4" />
+          <AnimatedIcon icon={MessageSquare} className="w-4 h-4" />
         </button>
         <button onClick={() => addNode('code', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-muted-foreground hover:text-emerald-400 hover:bg-emerald-400/5 rounded-md transition-all active:scale-[0.97] cursor-pointer" title="Add Code Node">
           <Code className="w-4 h-4" />
         </button>
         <button onClick={() => addNode('image', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-muted-foreground hover:text-accent hover:bg-accent/5 rounded-md transition-all active:scale-[0.97] cursor-pointer" title="Add Image Node">
-          <Image className="w-4 h-4" />
+          <AnimatedIcon icon={Image} className="w-4 h-4" />
         </button>
         <button onClick={() => addNode('note', { x: Math.random() * 200, y: Math.random() * 200 })} className="p-2.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-all active:scale-[0.97] cursor-pointer" title="Add Note Node">
-          <StickyNote className="w-4 h-4" />
+          <AnimatedIcon icon={StickyNote} className="w-4 h-4" />
         </button>
       </div>
     </div>

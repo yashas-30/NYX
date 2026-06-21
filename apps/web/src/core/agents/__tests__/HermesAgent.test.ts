@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HermesAgent } from '../HermesAgent';
-import { runAgentLoop, runTauriAgentLoop } from '../agentLoop';
+import { runLangGraphAgent } from '../executeTool';
 
-vi.mock('../agentLoop', () => ({
-  runAgentLoop: vi.fn(),
-  runTauriAgentLoop: vi.fn(),
+vi.mock('../executeTool', () => ({
+  runLangGraphAgent: vi.fn(),
   BUILTIN_TOOLS: [],
   HERMES_TOOLS: []
 }));

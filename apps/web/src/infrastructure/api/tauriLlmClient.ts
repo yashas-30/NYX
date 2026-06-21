@@ -46,16 +46,47 @@ export async function tauriLlmStream(
   return new Promise<ParseResult>(async (resolve, reject) => {
     let unlisten: UnlistenFn | undefined;
 
+    let inactivityTimeoutId: any = null;
+
+    const resetInactivityTimer = (timeoutMs: number) => {
+      if (inactivityTimeoutId) clearTimeout(inactivityTimeoutId);
+      inactivityTimeoutId = setTimeout(() => {
+        if (accumulatedText || accumulatedReasoning) {
+          console.warn(`[TauriLlmClient] Stream inactivity timeout. Resolving early since we have data.`);
+          clearTimeout(timeoutId ?? undefined);
+          finishReason = 'stop';
+          options.onFinish?.(finishReason);
+          unlisten?.();
+          resolve({
+            text: accumulatedText,
+            reasoning: accumulatedReasoning,
+            toolCalls,
+            metrics: { ...metrics, latencyMs: Date.now() - startTime },
+            finishReason,
+          });
+        } else {
+          console.warn(`[TauriLlmClient] Stream inactivity timeout with no data. Rejecting.`);
+          unlisten?.();
+          reject(new Error(`Stream inactivity timeout after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+    };
+
     // Timeout support — abort stream if no response within timeoutMs
     const timeoutId = options.timeoutMs
       ? setTimeout(() => {
+          if (inactivityTimeoutId) clearTimeout(inactivityTimeoutId);
           unlisten?.();
           reject(new Error(`Stream timeout after ${options.timeoutMs}ms`));
         }, options.timeoutMs)
       : null;
 
+    // Allow 60 seconds for Time-To-First-Token (TTFT)
+    resetInactivityTimer(60000);
+
     // AbortSignal support
     const onAbort = () => {
+      if (inactivityTimeoutId) clearTimeout(inactivityTimeoutId);
       clearTimeout(timeoutId ?? undefined);
       unlisten?.();
       resolve({
@@ -70,9 +101,12 @@ export async function tauriLlmStream(
 
     try {
       unlisten = await listen<any>(eventName, (event) => {
+        // Reset to 120s after the first chunk arrives to allow for long thinking times
+        resetInactivityTimer(120000);
         const payload = event.payload;
 
         if (payload.error) {
+          if (inactivityTimeoutId) clearTimeout(inactivityTimeoutId);
           clearTimeout(timeoutId ?? undefined);
           options.onError?.(payload.error);
           unlisten?.();
@@ -81,6 +115,7 @@ export async function tauriLlmStream(
         }
 
         if (payload.done || payload.type === 'done') {
+          if (inactivityTimeoutId) clearTimeout(inactivityTimeoutId);
           clearTimeout(timeoutId ?? undefined);
           finishReason = 'stop';
           options.onFinish?.(finishReason);

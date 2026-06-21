@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useEffect } from 'react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
@@ -199,7 +200,7 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
 
       {activeQuantInfo?.warn && (
         <div className="mb-3 px-3 py-2 rounded-md bg-accent/5 border border-accent/20 text-[10px] text-accent/90 flex items-center gap-2">
-          <AlertTriangle className="w-3.5 h-3.5 text-accent shrink-0" />
+          <AnimatedIcon icon={AlertTriangle} className="w-3.5 h-3.5 text-accent shrink-0" />
           {activeQuantInfo.warn}
         </div>
       )}

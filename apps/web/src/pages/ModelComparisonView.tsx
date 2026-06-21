@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
@@ -66,7 +67,7 @@ export default function ModelComparisonView() {
             onClick={() => navigate(-1)}
             className="p-2 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-all cursor-pointer"
           >
-            <ArrowLeft size={16} />
+            <AnimatedIcon icon={ArrowLeft} size={16} />
           </button>
           <div>
             <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-500 bg-clip-text text-transparent">
@@ -98,7 +99,7 @@ export default function ModelComparisonView() {
               ))}
             </select>
             <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400">
-              <Plus size={12} />
+              <AnimatedIcon icon={Plus} size={12} />
             </div>
           </div>
         )}
@@ -106,7 +107,7 @@ export default function ModelComparisonView() {
 
       {comparedModels.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 py-12 text-center">
-          <BarChart3 size={48} className="text-zinc-600 mb-4" />
+          <AnimatedIcon icon={BarChart3} size={48} className="text-zinc-600 mb-4" />
           <h3 className="text-sm font-semibold text-zinc-300">No models selected</h3>
           <p className="text-xs text-zinc-500 mt-1 max-w-sm">
             Select at least one model from the registry or dropdown above to start comparing.
@@ -126,7 +127,7 @@ export default function ModelComparisonView() {
                   onClick={() => handleRemoveModel(model.id)}
                   className="absolute top-4 right-4 p-1 rounded-md hover:bg-red-500/10 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
                 >
-                  <X size={14} />
+                  <AnimatedIcon icon={X} size={14} />
                 </button>
 
                 <div className="mb-4">
@@ -176,7 +177,7 @@ export default function ModelComparisonView() {
                       Status
                     </span>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <ShieldCheck size={12} className="text-emerald-400" />
+                      <AnimatedIcon icon={ShieldCheck} size={12} className="text-emerald-400" />
                       <span className="text-xs font-medium text-zinc-300">
                         {model.provider === 'nyx-native' ? (model.status || 'Active') : 'Cloud API Ready'}
                       </span>

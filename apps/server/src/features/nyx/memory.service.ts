@@ -12,11 +12,26 @@ export interface MemoryEntry {
   relevanceKey: string;
   timestamp: number;
   agentType?: 'chat' | 'code';
+  embedding?: number[];
+  lastAccessed?: number;
 }
+
+// Global reference for the transformers.js pipeline
+let embeddingPipeline: any = null;
 
 export class MemoryService {
   private static inMemoryFallback: MemoryEntry[] = [];
   private static useFallback = false;
+
+  public static async preloadModels() {
+    logger.info('[MemoryService] Preloading embedding models...');
+    try {
+      await this.getEmbedding('warmup');
+      logger.info('[MemoryService] Embedding models preloaded successfully.');
+    } catch (e) {
+      logger.error('[MemoryService] Failed to preload embedding models:', e);
+    }
+  }
 
   private static ensureInitialized() {
     if (this.useFallback) return;
@@ -33,18 +48,29 @@ export class MemoryService {
           category TEXT NOT NULL,
           relevance_key TEXT NOT NULL,
           timestamp INTEGER NOT NULL,
-          agent_type TEXT DEFAULT 'code'
+          agent_type TEXT DEFAULT 'code',
+          embedding TEXT,
+          last_accessed INTEGER DEFAULT 0
         )
       `
         )
         .run();
 
-      // Migration: Add agent_type if not present in existing table
+      // Migrations for existing tables
       const info = sqlite.pragma('table_info(memories)') as any[];
-      const hasAgentType = info.some((col) => col.name === 'agent_type');
-      if (!hasAgentType) {
+      
+      if (!info.some((col) => col.name === 'agent_type')) {
         sqlite.prepare(`ALTER TABLE memories ADD COLUMN agent_type TEXT DEFAULT 'code'`).run();
         logger.info('[MemoryService] Migrated memories table: Added agent_type column.');
+      }
+      if (!info.some((col) => col.name === 'embedding')) {
+        sqlite.prepare(`ALTER TABLE memories ADD COLUMN embedding TEXT`).run();
+        logger.info('[MemoryService] Migrated memories table: Added embedding column.');
+      }
+      if (!info.some((col) => col.name === 'last_accessed')) {
+        sqlite.prepare(`ALTER TABLE memories ADD COLUMN last_accessed INTEGER DEFAULT 0`).run();
+        sqlite.prepare(`UPDATE memories SET last_accessed = timestamp`).run();
+        logger.info('[MemoryService] Migrated memories table: Added last_accessed column.');
       }
     } catch (e: any) {
       logger.error(
@@ -55,26 +81,61 @@ export class MemoryService {
     }
   }
 
+  private static async getEmbedding(text: string): Promise<number[]> {
+    try {
+      if (!embeddingPipeline) {
+        // Dynamically import to avoid breaking if not installed globally
+        const { pipeline, env: hfEnv } = await import('@xenova/transformers');
+        // Prevent downloading to random temp dirs
+        hfEnv.allowLocalModels = true;
+        embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+          quantized: true,
+        });
+      }
+      const output = await embeddingPipeline(text, { pooling: 'mean', normalize: true });
+      return Array.from(output.data);
+    } catch (error) {
+      logger.warn('[MemoryService] Embedding generation failed. Falling back to empty embedding.', error);
+      return [];
+    }
+  }
+
+  private static cosineSimilarity(a: number[], b: number[]): number {
+    if (!a.length || !b.length) return 0;
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
   private static addMemoryInMemory(
     content: string,
     category: string,
     relevanceKey: string,
-    agentType: 'chat' | 'code'
+    agentType: 'chat' | 'code',
+    embedding: number[]
   ): void {
     const existingIdx = this.inMemoryFallback.findIndex(
       (m) => m.content.toLowerCase() === content.toLowerCase() && m.agentType === agentType
     );
 
+    const now = Date.now();
     if (existingIdx >= 0) {
       this.inMemoryFallback[existingIdx] = {
         ...this.inMemoryFallback[existingIdx],
-        timestamp: Date.now(),
+        timestamp: now,
+        lastAccessed: now,
         category: category as any,
         relevanceKey,
+        embedding: embedding.length ? embedding : this.inMemoryFallback[existingIdx].embedding
       };
-      logger.info(
-        `[MemoryService] Updated duplicate memory in-memory: "${content}" for agentType: ${agentType}`
-      );
+      logger.info(`[MemoryService] Updated duplicate memory in-memory: "${content}"`);
       return;
     }
 
@@ -84,17 +145,65 @@ export class MemoryService {
       content,
       category: category as any,
       relevanceKey,
-      timestamp: Date.now(),
+      timestamp: now,
+      lastAccessed: now,
       agentType,
+      embedding,
     });
-    logger.info(
-      `[MemoryService] Saved new memory successfully in-memory: "${content}" for agentType: ${agentType}`
-    );
+    logger.info(`[MemoryService] Saved new memory in-memory: "${content}"`);
   }
 
-  /**
-   * Fetches all persistent semantic memories sorted by timestamp
-   */
+  public static async addMemory(
+    content: string,
+    category: string,
+    relevanceKey: string,
+    agentType: 'chat' | 'code' = 'code'
+  ): Promise<void> {
+    const trimmedContent = content.trim();
+    const trimmedKey = relevanceKey.trim();
+    if (!trimmedContent) return;
+
+    this.ensureInitialized();
+    const embedding = await this.getEmbedding(trimmedContent);
+
+    if (this.useFallback) {
+      this.addMemoryInMemory(trimmedContent, category, trimmedKey, agentType, embedding);
+      return;
+    }
+    
+    try {
+      const existing = sqlite
+        .prepare(`SELECT id FROM memories WHERE lower(content) = ? AND agent_type = ?`)
+        .get(trimmedContent.toLowerCase(), agentType) as any;
+
+      const now = Date.now();
+      const embeddingStr = JSON.stringify(embedding);
+
+      if (existing) {
+        sqlite
+          .prepare(
+            `UPDATE memories SET timestamp = ?, last_accessed = ?, category = ?, relevance_key = ?, embedding = ? WHERE id = ?`
+          )
+          .run(now, now, category, trimmedKey, embeddingStr, existing.id);
+        logger.info(`[MemoryService] Updated duplicate memory: "${trimmedContent}"`);
+        return;
+      }
+
+      const id = crypto.randomUUID();
+      sqlite
+        .prepare(
+          `INSERT INTO memories (id, content, category, relevance_key, timestamp, agent_type, embedding, last_accessed)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(id, trimmedContent, category, trimmedKey, now, agentType, embeddingStr, now);
+      logger.info(`[MemoryService] Saved new memory successfully: "${trimmedContent}"`);
+    } catch (e: any) {
+      logger.error('[MemoryService] Failed to write memory, falling back to in-memory:', e);
+      this.useFallback = true;
+      this.addMemoryInMemory(trimmedContent, category, trimmedKey, agentType, embedding);
+    }
+  }
+
   public static getMemories(agentType: 'chat' | 'code' = 'code'): MemoryEntry[] {
     this.ensureInitialized();
     if (this.useFallback) {
@@ -103,8 +212,9 @@ export class MemoryService {
         .sort((a, b) => b.timestamp - a.timestamp);
     }
     try {
+      // Limit to 1000 most recent to prevent OOM/bottleneck on JS-side sorting
       const rows = sqlite
-        .prepare(`SELECT * FROM memories WHERE agent_type = ? ORDER BY timestamp DESC`)
+        .prepare(`SELECT * FROM memories WHERE agent_type = ? ORDER BY timestamp DESC LIMIT 1000`)
         .all(agentType) as any[];
       return rows.map((r) => ({
         id: r.id,
@@ -112,155 +222,109 @@ export class MemoryService {
         category: r.category as any,
         relevanceKey: r.relevance_key,
         timestamp: r.timestamp,
+        lastAccessed: r.last_accessed,
         agentType: r.agent_type as any,
+        embedding: r.embedding ? JSON.parse(r.embedding) : []
       }));
     } catch (e: any) {
-      logger.error('[MemoryService] Failed to get memories, using in-memory fallback:', e);
-      this.useFallback = true;
-      return [...this.inMemoryFallback]
-        .filter((m) => m.agentType === agentType)
-        .sort((a, b) => b.timestamp - a.timestamp);
+      logger.error('[MemoryService] Failed to get memories:', e);
+      return [];
     }
   }
 
-  /**
-   * Appends or updates a memory entry in the database (deduplication based on content)
-   */
-  public static addMemory(
-    content: string,
-    category: string,
-    relevanceKey: string,
-    agentType: 'chat' | 'code' = 'code'
-  ): void {
-    const trimmedContent = content.trim();
-    const trimmedKey = relevanceKey.trim();
-    if (!trimmedContent) return;
-
-    this.ensureInitialized();
-    if (this.useFallback) {
-      this.addMemoryInMemory(trimmedContent, category, trimmedKey, agentType);
-      return;
-    }
-    try {
-      // Check if duplicate exists (case-insensitive) under same agentType
-      const existing = sqlite
-        .prepare(`SELECT id FROM memories WHERE lower(content) = ? AND agent_type = ?`)
-        .get(trimmedContent.toLowerCase(), agentType) as any;
-
-      if (existing) {
-        sqlite
-          .prepare(
-            `UPDATE memories SET timestamp = ?, category = ?, relevance_key = ? WHERE id = ?`
-          )
-          .run(Date.now(), category, trimmedKey, existing.id);
-        logger.info(
-          `[MemoryService] Updated duplicate memory: "${trimmedContent}" for agentType: ${agentType}`
-        );
-        return;
-      }
-
-      const id = crypto.randomUUID();
-      sqlite
-        .prepare(
-          `
-        INSERT INTO memories (id, content, category, relevance_key, timestamp, agent_type)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `
-        )
-        .run(id, trimmedContent, category, trimmedKey, Date.now(), agentType);
-      logger.info(
-        `[MemoryService] Saved new memory successfully: "${trimmedContent}" for agentType: ${agentType}`
-      );
-    } catch (e: any) {
-      logger.error('[MemoryService] Failed to write memory, falling back to in-memory:', e);
-      this.useFallback = true;
-      this.addMemoryInMemory(trimmedContent, category, trimmedKey, agentType);
-    }
-  }
-
-  /**
-   * Clears stored memories
-   */
   public static resetMemories(agentType?: 'chat' | 'code'): void {
     this.ensureInitialized();
     if (this.useFallback) {
       if (agentType) {
         this.inMemoryFallback = this.inMemoryFallback.filter((m) => m.agentType !== agentType);
-        logger.info(`[MemoryService] In-memory memories cleared for agentType: ${agentType}.`);
       } else {
         this.inMemoryFallback = [];
-        logger.info('[MemoryService] All in-memory memories cleared.');
       }
       return;
     }
     try {
       if (agentType) {
         sqlite.prepare(`DELETE FROM memories WHERE agent_type = ?`).run(agentType);
-        logger.info(`[MemoryService] Persistent memories cleared for agentType: ${agentType}.`);
       } else {
         sqlite.prepare(`DELETE FROM memories`).run();
-        logger.info('[MemoryService] All persistent memories cleared.');
       }
     } catch (e: any) {
-      logger.error('[MemoryService] Failed to clear memories, clearing in-memory fallback:', e);
-      this.useFallback = true;
-      if (agentType) {
-        this.inMemoryFallback = this.inMemoryFallback.filter((m) => m.agentType !== agentType);
-      } else {
-        this.inMemoryFallback = [];
-      }
+      logger.error('[MemoryService] Failed to clear memories:', e);
     }
   }
 
-  /**
-   * Returns a formatted injection-ready string containing all memories
-   */
-  public static getMemoriesString(agentType: 'chat' | 'code' = 'code'): string {
+  public static async getMemoriesString(
+    agentType: 'chat' | 'code' = 'code',
+    contextPrompt?: string
+  ): Promise<string> {
     const list = this.getMemories(agentType);
     if (!list || list.length === 0) return '';
 
-    // Group memories by category for cleaner visual styling
-    const preferences = list.filter((m) => m.category === 'user_preference');
-    const facts = list.filter((m) => m.category === 'project_fact');
-    const decisions = list.filter((m) => m.category === 'decision');
-    const summaries = list.filter((m) => m.category === 'summary');
+    let relevantMemories = list;
+
+    // Retrieval-Augmented Generation based on cosine similarity if context is provided
+    if (contextPrompt) {
+      const queryEmbedding = await this.getEmbedding(contextPrompt);
+      if (queryEmbedding.length > 0) {
+        relevantMemories = list
+          .map((m) => ({
+            ...m,
+            score: this.cosineSimilarity(queryEmbedding, m.embedding || []),
+          }))
+          // Threshold of 0.3 for basic semantic relevance
+          .filter((m) => m.score > 0.3 || m.category === 'user_preference')
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 15); // Top 15 most relevant memories + all user preferences
+
+        // Update last_accessed for RAG retrieved memories
+        const now = Date.now();
+        if (!this.useFallback) {
+          try {
+            const ids = relevantMemories.map(m => m.id);
+            if (ids.length > 0) {
+              const placeholders = ids.map(() => '?').join(',');
+              sqlite.prepare(`UPDATE memories SET last_accessed = ? WHERE id IN (${placeholders})`).run(now, ...ids);
+            }
+          } catch (e) {
+            logger.warn('[MemoryService] Failed to update last_accessed timestamps', e);
+          }
+        }
+      }
+    } else {
+      // If no context provided, just take the most recent 15
+      relevantMemories = list.sort((a, b) => b.timestamp - a.timestamp).slice(0, 15);
+    }
+
+    // CoALA Structural Memory Injection
+    const preferences = relevantMemories.filter((m) => m.category === 'user_preference');
+    const facts = relevantMemories.filter((m) => m.category === 'project_fact');
+    const decisions = relevantMemories.filter((m) => m.category === 'decision');
+    const summaries = relevantMemories.filter((m) => m.category === 'summary');
 
     let block = '\n\n=== PERSISTENT SEMANTIC MEMORIES (LONG-TERM SESSION CONTEXT) ===\n';
-    block +=
-      'You must respect all stored developer preferences, tech stack facts, and key architectural choices listed below:\n';
+    block += 'You must respect all stored developer preferences, tech stack facts, and key architectural choices listed below:\n';
 
     if (preferences.length > 0) {
       block += '\n[DEVELOPER PREFERENCES]:\n';
-      preferences.forEach((m) => {
-        block += `- ${m.content}\n`;
-      });
+      preferences.forEach((m) => { block += `- ${m.content}\n`; });
     }
     if (facts.length > 0) {
       block += '\n[TECH STACK & PROJECT FACTS]:\n';
-      facts.forEach((m) => {
-        block += `- ${m.content}\n`;
-      });
+      facts.forEach((m) => { block += `- ${m.content}\n`; });
     }
     if (decisions.length > 0) {
       block += '\n[ARCHITECTURAL DECISIONS]:\n';
-      decisions.forEach((m) => {
-        block += `- ${m.content}\n`;
-      });
+      decisions.forEach((m) => { block += `- ${m.content}\n`; });
     }
     if (summaries.length > 0) {
-      block += '\n[RECENT SESSION ACCOMPLISHMENTS]:\n';
-      summaries.slice(0, 5).forEach((m) => {
-        block += `- ${m.content}\n`;
-      });
+      block += '\n[RECENT RELEVANT ACCOMPLISHMENTS]:\n';
+      summaries.forEach((m) => { block += `- ${m.content}\n`; });
     }
 
     block += '=================================================================\n\n';
     return block;
   }
 
-  /**
-   * Run background task to analyze conversational turn, extract semantic memories, and commit to DB
-   */
   public static async runBackgroundMemoryKeeper(
     userPrompt: string,
     nyxResponse: string,
@@ -289,26 +353,18 @@ Output your response strictly as a single, compact JSON object matching the requ
 {
   "memories": [
     {
-      "content": "Description of the memory (e.g., 'User prefers using HSL colors for Tailwind styling in this project.')",
+      "content": "Description of the memory",
       "category": "user_preference" | "project_fact" | "decision" | "summary"
     }
   ]
 }
     `.trim();
 
-    const conversationPayload = `
-[USER PROMPT]:
-${userPrompt}
-
-[NYX RESPONSE]:
-${nyxResponse}
-    `.trim();
-
+    const conversationPayload = `[USER PROMPT]:\n${userPrompt}\n\n[NYX RESPONSE]:\n${nyxResponse}`.trim();
     let responseText = '';
 
     if (modelId && provider) {
       try {
-        // fallow-ignore-next-line code-duplication
         logger.info(`[Memory Keeper] Executing extraction using model ${modelId} (${provider})`);
 
         if (provider === 'gemini') {
@@ -322,7 +378,6 @@ ${nyxResponse}
               systemInstruction: { parts: [{ text: memorySystemPrompt }] },
               generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
             }),
-            // fallow-ignore-next-line code-duplication
             signal: AbortSignal.timeout(15000),
           });
           if (!res.ok) throw new Error(`Gemini Critic API error: ${res.statusText}`);
@@ -343,7 +398,6 @@ ${nyxResponse}
               temperature: 0.2,
               max_tokens: 512,
             }),
-            // fallow-ignore-next-line code-duplication
             signal: AbortSignal.timeout(15000),
           });
           if (!res.ok) throw new Error(`Local GGUF Critic error: ${res.statusText}`);
@@ -353,14 +407,10 @@ ${nyxResponse}
           throw new Error(`Unsupported provider for memory keeper: ${provider}`);
         }
       } catch (error: any) {
-        logger.warn(
-          '[Memory Keeper] Selected model run failed, falling back to local Python server:',
-          error.message
-        );
+        logger.warn('[Memory Keeper] Selected model run failed, falling back to local Python server:', error.message);
       }
     }
 
-    // Fallback to local Python HF service
     if (!responseText) {
       try {
         const scraplingPort = env.SCRAPLING_PORT || 3002;
@@ -370,10 +420,7 @@ ${nyxResponse}
           body: JSON.stringify({
             prompt: conversationPayload,
             systemInstruction: memorySystemPrompt,
-            settings: {
-              maxTokens: 512,
-              temperature: 0.2,
-            },
+            settings: { maxTokens: 512, temperature: 0.2 },
           }),
           signal: AbortSignal.timeout(15000),
         });
@@ -396,18 +443,31 @@ ${nyxResponse}
             let count = 0;
             for (const item of parsed.memories) {
               if (item.content && item.category) {
-                this.addMemory(item.content, item.category, userPrompt, agentType);
+                await this.addMemory(item.content, item.category, userPrompt, agentType);
                 count++;
               }
             }
-            logger.info(
-              `[Memory Keeper] Semantic extraction complete! Committed ${count} new memories for ${agentType}.`
-            );
+            logger.info(`[Memory Keeper] Semantic extraction complete! Committed ${count} new memories for ${agentType}.`);
           }
         }
       } catch (error: any) {
         logger.error('[Memory Keeper] Failed to parse or save semantic memories:', error.message);
       }
+    }
+  }
+
+  public static deleteMemory(id: string): void {
+    this.ensureInitialized();
+    if (this.useFallback) {
+      this.inMemoryFallback = this.inMemoryFallback.filter((m) => m.id !== id);
+      logger.info(`[MemoryService] Deleted memory from fallback: ${id}`);
+      return;
+    }
+    try {
+      sqlite.prepare(`DELETE FROM memories WHERE id = ?`).run(id);
+      logger.info(`[MemoryService] Deleted memory from database: ${id}`);
+    } catch (e: any) {
+      logger.error('[MemoryService] Failed to delete memory:', e);
     }
   }
 }

@@ -1,4 +1,4 @@
-﻿// fallow-ignore-file code-duplication
+// fallow-ignore-file code-duplication
 import 'dotenv/config';
 import './server/lib/otel.ts';
 import express from 'express';
@@ -43,6 +43,8 @@ import { pluginRegistry } from './server/lib/pluginRegistry.ts';
 import { errorHandler } from './server/middleware/errorHandler.ts';
 import { setupOpenApi } from './server/docs/openapi.ts';
 import { startFastifyServer } from './server/fastify/fastify.server.ts';
+import { LocalModelRunner } from './server/features/local-models/localModelRunner.ts';
+import { LocalModelManager } from './server/features/local-models/localModelManager.ts';
 
 const execAsync = promisify(exec);
 
@@ -224,6 +226,14 @@ async function startServer() {
   startFastifyServer(FASTIFY_PORT).catch((err) => {
     logger.error({ err }, '[Fastify] Startup failed in server.ts');
   });
+
+  // Start default local model
+  const localModels = LocalModelManager.listModels();
+  const readyModel = localModels.find((m: any) => m.status === 'completed');
+  if (readyModel) {
+    logger.info(`[LocalModels] Auto-starting local model: ${readyModel.name}`);
+    LocalModelRunner.start(readyModel.id).catch(e => logger.error({ err: e }, 'Failed to auto-start local model'));
+  }
 
   // BAD-6: Health-check loop â€” poll every 15 seconds, auto-restart on failure
   const scraplingHealthInterval = setInterval(async () => {
@@ -614,6 +624,7 @@ async function startServer() {
     logger.info('[Server] Gracefully shutting down...');
     cleanupProcesses();
     try {
+      LocalModelRunner.stop();
       CodebaseScanner.dispose();
     } catch (error: any) {
       logger.error({ err: error }, '[Shutdown] Failed to dispose CodebaseScanner');

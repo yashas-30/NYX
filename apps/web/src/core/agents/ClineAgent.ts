@@ -1,5 +1,5 @@
 import { BaseAgent, BaseAgentConfig } from './baseAgent';
-import { runAgentLoop, runTauriAgentLoop, BUILTIN_TOOLS } from './agentLoop';
+import { runLangGraphAgent, BUILTIN_TOOLS } from './executeTool';
 import { StreamEvent } from '@src/infrastructure/types';
 import { PromptAnalysis } from '@src/core/services/promptClassifier';
 
@@ -66,7 +66,7 @@ Keep your final responses direct and concise. Do NOT use filler phrases like "I 
       tools: allowedTools
     };
 
-    const generator = runAgentLoop(prompt, loopConfig);
+    const generator = runLangGraphAgent(prompt, loopConfig);
     for await (const event of generator) {
       yield event as any;
     }

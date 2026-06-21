@@ -1,6 +1,6 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React from 'react';
-import { XIcon as X, ZapIcon as Zap } from '@animateicons/react/lucide';
-import { Settings2, Sliders, Database, BrainCircuit, Maximize } from 'lucide-react';
+import { FadersHorizontal, Faders, Database, Graph, CornersOut as Maximize, X, Lightning as Zap } from '@phosphor-icons/react';
 import { useSettingsStore } from '@src/shared/store/useSettingsStore';
 
 interface ChatSettingsProps {
@@ -17,7 +17,7 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
     <div className="absolute top-0 right-0 w-80 h-full bg-card border-l border-border shadow-md z-40 flex flex-col transform transition-transform duration-300">
       <div className="flex items-center justify-between p-4 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2 text-foreground">
-          <Settings2 className="w-5 h-5 text-primary" />
+          <AnimatedIcon icon={FadersHorizontal} className="w-5 h-5 text-primary" />
           <span className="font-medium">Model Settings</span>
         </div>
         <button
@@ -33,7 +33,7 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-[13px] font-medium text-foreground flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-muted-foreground" />
+              <AnimatedIcon icon={Faders} className="w-4 h-4 text-muted-foreground" />
               Temperature
             </label>
             <span className="text-[12px] font-mono text-primary">{chatSettings.temperature ?? 0.7}</span>
@@ -57,7 +57,7 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
         <div className="space-y-3 pt-4 border-t border-border">
           <div className="flex items-center justify-between">
             <label className="text-[13px] font-medium text-foreground flex items-center gap-2">
-              <Database className="w-4 h-4 text-muted-foreground" />
+              <AnimatedIcon icon={Database} className="w-4 h-4 text-muted-foreground" />
               Max Output Tokens
             </label>
             <span className="text-[12px] font-mono text-primary">{chatSettings.maxTokens ?? 8192}</span>
@@ -78,7 +78,7 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ isOpen, onClose }) =
         <div className="space-y-3 pt-4 border-t border-border">
           <div className="flex items-center justify-between">
             <label className="text-[13px] font-medium text-foreground flex items-center gap-2">
-              <BrainCircuit className="w-4 h-4 text-muted-foreground" />
+              <AnimatedIcon icon={Graph} className="w-4 h-4 text-muted-foreground" />
               Context Optimizer
             </label>
           </div>

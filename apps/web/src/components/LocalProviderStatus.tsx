@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
@@ -96,7 +97,7 @@ export function LocalProviderStatus() {
           transition={loading ? { duration: 1, repeat: Infinity, ease: 'linear' } : {}}
           style={{ display: 'inline-block' }}
         >
-          <RefreshCw className="w-3 h-3" />
+          <AnimatedIcon icon={RefreshCw} className="w-3 h-3" />
         </motion.span>
       </button>
     </div>

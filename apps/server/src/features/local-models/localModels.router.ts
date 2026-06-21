@@ -275,6 +275,17 @@ const router = localModelsRouter;
   });
 
 
+  app.post('/reload', async (_req, reply) => {
+    try {
+      const { LocalModelRunner } = await import('./localModelRunner.js');
+      logger.info('[LocalModels Router] /reload called: stopping current model so it hot-reloads on next request (e.g. for new LoRA weights).');
+      await LocalModelRunner.stop();
+      reply.send({ success: true, message: 'Model stopped and will be reloaded on next request' });
+    } catch (error: any) {
+      reply.code(500).send({ error: error.message });
+    }
+  });
+
 }
 
 };

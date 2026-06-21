@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -260,7 +261,7 @@ export default function TasksView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <Calendar size={18} />
+              <AnimatedIcon icon={Calendar} size={18} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">Scheduled Tasks</h1>
@@ -273,7 +274,7 @@ export default function TasksView() {
             onClick={() => setIsCreating(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-all"
           >
-            <Plus size={14} /> New Task
+            <AnimatedIcon icon={Plus} size={14} /> New Task
           </button>
         </div>
       </div>
@@ -316,7 +317,7 @@ export default function TasksView() {
                       <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{task.description}</p>
                       <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
                         <span className="flex items-center gap-1">
-                          <Clock size={9} /> {task.schedule}
+                          <AnimatedIcon icon={Clock} size={9} /> {task.schedule}
                         </span>
                         <span>·</span>
                         <span>{task.nextRun}</span>
@@ -356,7 +357,7 @@ export default function TasksView() {
                         className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full"
                       />
                     ) : (
-                      <Play size={12} />
+                      <AnimatedIcon icon={Play} size={12} />
                     )}
                     {isRunning === selectedTask.id ? 'Running...' : 'Run Now'}
                   </button>
@@ -368,13 +369,13 @@ export default function TasksView() {
                         : 'hover:bg-green-500/10 text-muted-foreground hover:text-green-500'
                     }`}
                   >
-                    {selectedTask.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
+                    {selectedTask.status === 'active' ? <AnimatedIcon icon={Pause} size={14} /> : <AnimatedIcon icon={Play} size={14} />}
                   </button>
                   <button
                     onClick={() => deleteTask(selectedTask.id)}
                     className="p-2 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-all"
                   >
-                    <Trash2 size={14} />
+                    <AnimatedIcon icon={Trash2} size={14} />
                   </button>
                 </div>
               </div>
@@ -383,7 +384,7 @@ export default function TasksView() {
               <div className="grid grid-cols-3 gap-3">
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
-                    <Clock3 size={12} className="text-muted-foreground" />
+                    <AnimatedIcon icon={Clock3} size={12} className="text-muted-foreground" />
                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Schedule</span>
                   </div>
                   <p className="text-sm font-medium text-foreground">{selectedTask.schedule}</p>
@@ -391,14 +392,14 @@ export default function TasksView() {
                 </div>
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
-                    <ArrowRight size={12} className="text-muted-foreground" />
+                    <AnimatedIcon icon={ArrowRight} size={12} className="text-muted-foreground" />
                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Next Run</span>
                   </div>
                   <p className="text-sm font-medium text-foreground">{selectedTask.nextRun}</p>
                 </div>
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle size={12} className="text-muted-foreground" />
+                    <AnimatedIcon icon={CheckCircle} size={12} className="text-muted-foreground" />
                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Last Run</span>
                   </div>
                   <p className="text-sm font-medium text-foreground">{selectedTask.lastRun || 'Never'}</p>
@@ -409,7 +410,7 @@ export default function TasksView() {
               {selectedTask.lastResult && (
                 <div className="p-4 bg-card border border-border rounded-xl">
                   <h3 className="text-xs font-medium text-foreground mb-2 flex items-center gap-2">
-                    <FileText size={12} /> Last Result
+                    <AnimatedIcon icon={FileText} size={12} /> Last Result
                   </h3>
                   <p className="text-sm text-foreground">{selectedTask.lastResult}</p>
                 </div>
@@ -418,7 +419,7 @@ export default function TasksView() {
               {/* History */}
               <div>
                 <h3 className="text-xs font-medium text-foreground mb-3 flex items-center gap-2">
-                  <Calendar size={12} /> Run History ({selectedTask.history.length} runs)
+                  <AnimatedIcon icon={Calendar} size={12} /> Run History ({selectedTask.history.length} runs)
                 </h3>
                 <div className="space-y-2">
                   {selectedTask.history.map((run) => (
@@ -426,7 +427,7 @@ export default function TasksView() {
                       <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
                         run.status === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
                       }`}>
-                        {run.status === 'success' ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+                        {run.status === 'success' ? <AnimatedIcon icon={CheckCircle} size={12} /> : <AnimatedIcon icon={AlertCircle} size={12} />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-foreground">{run.output}</p>
@@ -441,7 +442,7 @@ export default function TasksView() {
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
               <div className="text-center">
-                <Calendar size={48} className="mx-auto mb-3 opacity-20" />
+                <AnimatedIcon icon={Calendar} size={48} className="mx-auto mb-3 opacity-20" />
                 <p className="text-sm font-medium">Select a task</p>
                 <p className="text-xs mt-1 opacity-60">Manage scheduled tasks and view execution history</p>
               </div>

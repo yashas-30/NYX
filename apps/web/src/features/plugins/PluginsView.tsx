@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Download, Check, X, Settings, Globe, Puzzle, Shield, Code, Terminal, Database, Webhook, Plus } from 'lucide-react';
@@ -181,7 +182,7 @@ export default function PluginsView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
             <span className="flex items-center gap-1">
-              <Download size={10} />
+              <AnimatedIcon icon={Download} size={10} />
               {plugin.downloads.toLocaleString()}
             </span>
             <span className="flex items-center gap-1">
@@ -208,11 +209,11 @@ export default function PluginsView() {
               />
             ) : plugin.installed ? (
               <>
-                <X size={12} /> Uninstall
+                <AnimatedIcon icon={X} size={12} /> Uninstall
               </>
             ) : (
               <>
-                <Download size={12} /> Install
+                <AnimatedIcon icon={Download} size={12} /> Install
               </>
             )}
           </button>
@@ -228,7 +229,7 @@ export default function PluginsView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <Puzzle size={18} />
+              <AnimatedIcon icon={Puzzle} size={18} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">Plugin Marketplace</h1>
@@ -250,7 +251,7 @@ export default function PluginsView() {
                 onClick={handleInstallFromUrl}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1 transition-all"
               >
-                <Plus size={12} /> Install
+                <AnimatedIcon icon={Plus} size={12} /> Install
               </button>
             </div>
             <div className="relative">
@@ -323,7 +324,7 @@ export default function PluginsView() {
               {installedPlugins.length > 0 && (
                 <div className="mb-8">
                   <h2 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
-                    <Check size={14} className="text-green-500" />
+                    <AnimatedIcon icon={Check} size={14} className="text-green-500" />
                     Installed Plugins ({installedPlugins.length})
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -337,7 +338,7 @@ export default function PluginsView() {
               {/* Available Section */}
               <div>
                 <h2 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
-                  <Download size={14} className="text-primary" />
+                  <AnimatedIcon icon={Download} size={14} className="text-primary" />
                   Available Plugins ({availablePlugins.length})
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

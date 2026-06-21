@@ -109,7 +109,17 @@ async function fetchWithRetry(
   const signal = mergeSignals(userSignal, createTimeoutSignal(timeout));
 
   try {
-    const response = await fetch(url, { ...fetchInit, signal });
+    let fetchFn = fetch;
+    const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+    if (isTauri) {
+      try {
+        const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+        fetchFn = tauriFetch;
+      } catch (e) {
+        console.warn('[directClient] Failed to load tauriFetch, falling back to window.fetch:', e);
+      }
+    }
+    const response = await fetchFn(url, { ...fetchInit, signal });
 
     // Retry on server error, but NOT on rate limit (429) per user request
     if (

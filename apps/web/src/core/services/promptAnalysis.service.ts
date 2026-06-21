@@ -312,9 +312,6 @@ export class PromptAnalysisService {
     } else if (isEnsemble) {
       suggestedExecutionMode = 'ensemble';
       suggestedExecutionReasoning = 'Detected request for consensus synthesis across multiple models.';
-    } else if (complexity >= 3) {
-      suggestedExecutionMode = 'ensemble';
-      suggestedExecutionReasoning = 'Highly complex task. Routing to ensemble synthesis to combine capabilities of multiple models.';
     }
 
     return {

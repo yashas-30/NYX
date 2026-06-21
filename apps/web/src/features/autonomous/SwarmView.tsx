@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -329,7 +330,7 @@ export default function SwarmView() {
       >
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Users size={16} className={statusColor} />
+            <AnimatedIcon icon={Users} size={16} className={statusColor} />
             <h3 className="text-sm font-medium text-foreground">{swarm.title}</h3>
           </div>
           <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${statusColor} bg-opacity-10`}>
@@ -352,11 +353,11 @@ export default function SwarmView() {
         </div>
         <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <Users size={9} /> {swarm.agents.length} agents
+            <AnimatedIcon icon={Users} size={9} /> {swarm.agents.length} agents
           </span>
           {runningAgents > 0 && (
             <span className="flex items-center gap-1 text-primary">
-              <Zap size={9} /> {runningAgents} running
+              <AnimatedIcon icon={Zap} size={9} /> {runningAgents} running
             </span>
           )}
           <span>{swarm.createdAt}</span>
@@ -372,7 +373,7 @@ export default function SwarmView() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-              <Users size={18} />
+              <AnimatedIcon icon={Users} size={18} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">Agent Swarm</h1>
@@ -385,7 +386,7 @@ export default function SwarmView() {
             onClick={() => setIsCreating(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-all"
           >
-            <Plus size={14} /> New Swarm Task
+            <AnimatedIcon icon={Plus} size={14} /> New Swarm Task
           </button>
         </div>
       </div>
@@ -405,25 +406,25 @@ export default function SwarmView() {
               <div className="shrink-0 px-6 py-4 border-b border-border">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <Users size={16} className="text-primary" />
+                    <AnimatedIcon icon={Users} size={16} className="text-primary" />
                     <h2 className="text-lg font-semibold text-foreground">{activeSwarm.title}</h2>
                   </div>
                   <div className="flex items-center gap-2">
                     {activeSwarm.status === 'running' && (
                       <button className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all">
-                        <Pause size={14} />
+                        <AnimatedIcon icon={Pause} size={14} />
                       </button>
                     )}
                     {activeSwarm.status === 'pending' && (
                       <button className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-all">
-                        <Play size={12} /> Start
+                        <AnimatedIcon icon={Play} size={12} /> Start
                       </button>
                     )}
                     <button className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all">
-                      <RotateCcw size={14} />
+                      <AnimatedIcon icon={RotateCcw} size={14} />
                     </button>
                     <button className="p-2 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-all">
-                      <Trash2 size={14} />
+                      <AnimatedIcon icon={Trash2} size={14} />
                     </button>
                   </div>
                 </div>
@@ -494,7 +495,7 @@ export default function SwarmView() {
                 {activeSwarm.aggregatedResult && (
                   <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
                     <h3 className="text-xs font-medium text-primary uppercase tracking-wider mb-2 flex items-center gap-2">
-                      <Sparkles size={12} /> Aggregated Result
+                      <AnimatedIcon icon={Sparkles} size={12} /> Aggregated Result
                     </h3>
                     <p className="text-sm text-foreground leading-relaxed">{activeSwarm.aggregatedResult}</p>
                   </div>
@@ -504,7 +505,7 @@ export default function SwarmView() {
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
               <div className="text-center">
-                <Users size={48} className="mx-auto mb-3 opacity-20" />
+                <AnimatedIcon icon={Users} size={48} className="mx-auto mb-3 opacity-20" />
                 <p className="text-sm font-medium">Select a swarm task</p>
                 <p className="text-xs mt-1 opacity-60">Create a task to spawn multiple agents working in parallel</p>
               </div>

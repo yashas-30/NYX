@@ -1,3 +1,4 @@
+import { AnimatedIcon } from '@shared/components/ui/animated-icon';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SearchIcon as Search, PlusIcon as Plus, Trash2Icon as Trash2, LockIcon as Lock, SettingsIcon as Settings, CheckIcon as Check, CornerDownLeftIcon as CornerDownLeft } from '@animateicons/react/lucide';
@@ -144,7 +145,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'toggle_privacy',
         title: privacyMode ? 'Disable Privacy Mode' : 'Enable Privacy Mode',
         subtitle: privacyMode ? 'Resume SQLite database syncing' : 'Incognito memory-only session',
-        icon: privacyMode ? <Unlock size={16} /> : <Lock size={16} />,
+        icon: privacyMode ? <AnimatedIcon icon={Unlock} size={16} /> : <Lock size={16} />,
         shortcut: ['⌘', '⇧', 'P'],
         action: () => {
           const next = !privacyMode;
@@ -160,7 +161,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'switch_model',
         title: 'Switch AI Model...',
         subtitle: 'Select available GGUF/Cloud model',
-        icon: <Cpu size={16} />,
+        icon: <AnimatedIcon icon={Cpu} size={16} />,
         shortcut: ['⌘', 'M'],
         action: () => setView('models'),
       },
@@ -168,7 +169,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_chat',
         title: 'Go to NYX',
         subtitle: 'Open the conversational AI workspace',
-        icon: <MessageSquare size={16} />,
+        icon: <AnimatedIcon icon={MessageSquare} size={16} />,
         action: () => {
           setActiveMode('chat');
         },
@@ -177,7 +178,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_registry',
         title: 'Go to Model Library',
         subtitle: 'Download or manage GGUF models',
-        icon: <Library size={16} />,
+        icon: <AnimatedIcon icon={Library} size={16} />,
         action: () => {
           setActiveMode('registry');
         },
@@ -195,7 +196,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_projects',
         title: 'Go to Projects',
         subtitle: 'Manage knowledge bases and project workspaces',
-        icon: <Folder size={16} />,
+        icon: <AnimatedIcon icon={Folder} size={16} />,
         action: () => {
           setActiveMode('projects');
         },
@@ -204,7 +205,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_swarm',
         title: 'Go to Agent Swarm',
         subtitle: 'Parallel multi-agent execution and orchestration',
-        icon: <Users size={16} />,
+        icon: <AnimatedIcon icon={Users} size={16} />,
         action: () => {
           setActiveMode('swarm');
         },
@@ -213,7 +214,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_plugins',
         title: 'Go to Plugins',
         subtitle: 'Browse and manage plugin marketplace',
-        icon: <Plug size={16} />,
+        icon: <AnimatedIcon icon={Plug} size={16} />,
         action: () => {
           setActiveMode('plugins');
         },
@@ -222,7 +223,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_git',
         title: 'Go to Git Integration',
         subtitle: 'View repository status, branches, and commits',
-        icon: <GitBranch size={16} />,
+        icon: <AnimatedIcon icon={GitBranch} size={16} />,
         action: () => {
           setActiveMode('git');
         },
@@ -231,7 +232,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_documents',
         title: 'Go to Document Generation',
         subtitle: 'Generate DOCX, PPTX, XLSX, and PDF documents',
-        icon: <FileText size={16} />,
+        icon: <AnimatedIcon icon={FileText} size={16} />,
         action: () => {
           setActiveMode('documents');
         },
@@ -240,7 +241,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_images',
         title: 'Go to Image Generation',
         subtitle: 'Generate and edit images with AI',
-        icon: <Image size={16} />,
+        icon: <AnimatedIcon icon={Image} size={16} />,
         action: () => {
           setActiveMode('images');
         },
@@ -249,7 +250,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_mcp',
         title: 'Go to MCP Servers',
         subtitle: 'Manage Model Context Protocol servers and tools',
-        icon: <Plug size={16} />,
+        icon: <AnimatedIcon icon={Plug} size={16} />,
         action: () => {
           setActiveMode('mcp');
         },
@@ -258,7 +259,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_tasks',
         title: 'Go to Scheduled Tasks',
         subtitle: 'Manage cron jobs and automated workflows',
-        icon: <Calendar size={16} />,
+        icon: <AnimatedIcon icon={Calendar} size={16} />,
         action: () => {
           setActiveMode('tasks');
         },
@@ -267,7 +268,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         id: 'go_ide',
         title: 'Go to IDE Connector',
         subtitle: 'Connect VS Code, Cursor, and other editors',
-        icon: <Code2 size={16} />,
+        icon: <AnimatedIcon icon={Code2} size={16} />,
         action: () => {
           setActiveMode('ide');
         },
@@ -379,7 +380,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                   className="mr-3 p-1 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
                   title="Back to Commands (Backspace)"
                 >
-                  <ArrowLeft size={16} />
+                  <AnimatedIcon icon={ArrowLeft} size={16} />
                 </button>
               ) : (
                 <Search size={18} className="text-muted-foreground mr-3" />
@@ -501,7 +502,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                                 : 'bg-muted text-muted-foreground'
                             }`}
                           >
-                            <Cpu size={14} />
+                            <AnimatedIcon icon={Cpu} size={14} />
                           </div>
                           <div className="flex flex-col truncate">
                             <span
@@ -549,7 +550,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
               {view === 'models' && filteredModels.length === 0 && (
                 <div className="py-12 flex flex-col items-center justify-center text-muted-foreground">
-                  <Cpu size={24} className="mb-2 opacity-20" />
+                  <AnimatedIcon icon={Cpu} size={24} className="mb-2 opacity-20" />
                   <p className="text-[13px] font-medium">No models found</p>
                   <p className="text-[11px] opacity-60">Try a different search term</p>
                 </div>
