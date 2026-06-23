@@ -31,19 +31,19 @@ impl UnifiedEngine {
         // Placeholder for native Rust streaming logic
         // This will replace the Node.js Fastify endpoint
         match provider {
-            "ollama" => self.stream_ollama(model, messages, settings).await,
+            "nyx-native" => self.stream_nyx_native(model, messages, settings).await,
             "gemini" => self.stream_gemini(model, messages, settings).await,
             _ => Err(format!("Provider {} not supported in native engine yet.", provider)),
         }
     }
 
-    async fn stream_ollama(
+    async fn stream_nyx_native(
         &self,
         model: &str,
         messages: Vec<ChatMessage>,
         _settings: AISettings,
     ) -> Result<String, String> {
-        Ok(format!("Mock native Ollama response for model {}", model))
+        Ok(format!("Mock native nyx-native response for model {}", model))
     }
 
     async fn stream_gemini(

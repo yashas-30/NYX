@@ -9,6 +9,7 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { invoke } from '@tauri-apps/api/core';
+import { confirm } from '@tauri-apps/plugin-dialog';
 
 interface ProviderConfig {
   id: string;
@@ -19,9 +20,6 @@ interface ProviderConfig {
 
 const PROVIDER_CONFIGS: ProviderConfig[] = [
   { id: 'gemini', name: 'Google Gemini', hasModels: true, modelCount: 0 },
-  { id: 'anthropic', name: 'Anthropic Claude', hasModels: true, modelCount: 0 },
-  { id: 'openai', name: 'OpenAI', hasModels: true, modelCount: 0 },
-  { id: 'deepseek', name: 'DeepSeek', hasModels: true, modelCount: 0 },
   { id: 'openrouter', name: 'OpenRouter', hasModels: true, modelCount: 0 },
   { id: 'tavily', name: 'Tavily Search API', hasModels: false, modelCount: 0 },
   { id: 'jina', name: 'Jina Search API', hasModels: false, modelCount: 0 },
@@ -89,21 +87,19 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
 
   const validateGeminiKey = async (key: string): Promise<{ valid: boolean; error?: string }> => {
     try {
-      const res = await fetchWithAuth('/api/v1/vault/validate', {
-        method: 'POST',
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`, {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'gemini', key, geminiUrl: getGatewayUrl('gemini') }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        return { valid: false, error: data.error || `Server returned status ${res.status}` };
+        return { valid: false, error: data.error?.message || `Server returned status ${res.status}` };
       }
-      return { valid: data.valid === true, error: data.error };
+      return { valid: true };
     } catch (err: any) {
       return { valid: false, error: err.message || 'Network error' };
     }
   };
-
   const triggerValidation = (provider: string, key: string) => {
     if (!key) {
       setValidationStatus(prev => ({ ...prev, [provider]: 'idle' }));
@@ -159,8 +155,9 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
           toast.warning(`Could not reach validation server (${validationError}). Saving key anyway...`);
           isGeminiValid = true; // Allow saving since it's a network issue, not necessarily a bad key
         } else {
-          const forceSave = window.confirm(
-            `Gemini API Key validation failed: ${validationError}\n\nDo you want to save this key anyway? (It might be valid but unreachable from the server, or restricted by region/permissions)`
+          const forceSave = await confirm(
+            `Gemini API Key validation failed: ${validationError}\n\nDo you want to save this key anyway? (It might be valid but unreachable from the server, or restricted by region/permissions)`,
+            { title: 'Validation Failed', kind: 'warning' }
           );
           if (forceSave) {
             isGeminiValid = true;
@@ -258,11 +255,12 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   };
 
   const handlePurgeVault = async () => {
-    if (confirm('Delete all keys from server vault?')) {
+    const shouldDelete = await confirm('Delete all keys from server vault?', { title: 'Confirm Deletion', kind: 'warning' });
+    if (shouldDelete) {
       const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
       try {
         if (isTauri) {
-          const allProviders = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
+          const allProviders = ['gemini', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
           for (const provider of allProviders) {
             await invoke('vault:delete-key', { payload: { provider } });
           }
@@ -271,7 +269,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
           clearApiKeys();
         } else {
           const keysPayload: Record<string, string> = {};
-          const allProviders = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
+          const allProviders = ['gemini', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
           for (const provider of allProviders) {
             keysPayload[provider] = '';
           }

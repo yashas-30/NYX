@@ -4,7 +4,7 @@
  *   batch operations, and Claude/Kimi-parity reliability patterns.
  */
 
-import { AIService } from '@src/core/services/ai.service';
+import { AIService } from '@src/features/ai/services/ai.service';
 
 // ---------------------------------------------------------------------------
 // Configuration

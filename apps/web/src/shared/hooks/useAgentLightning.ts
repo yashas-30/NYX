@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from '@src/shared/components/ui/sonner';
-import { countTokens } from '@src/core/services/ai.service';
+import { countTokens } from '@src/features/ai/services/ai.service';
 
 export interface LightningSpan {
   name: string;

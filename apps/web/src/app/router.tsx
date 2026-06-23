@@ -10,19 +10,8 @@ import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 const ChatView = lazy(() => import('@src/views/ChatView'));
 const ModelRegistryView = lazy(() => import('@src/views/ModelRegistryView'));
 const SettingsView = lazy(() => import('@src/views/SettingsView'));
-const WorkspaceCanvas = lazy(() => import('@src/components/workspace/Canvas').then(m => ({ default: m.InfiniteCanvas })));
 const ModelComparisonView = lazy(() => import('@src/views/ModelComparisonView'));
 
-// New Feature Views
-const PluginsView = lazy(() => import('@src/features/plugins/PluginsView'));
-const ProjectsView = lazy(() => import('@src/features/projects/ProjectsView'));
-const SwarmView = lazy(() => import('@src/features/autonomous/SwarmView'));
-const GitView = lazy(() => import('@src/features/git/GitView'));
-const DocumentsView = lazy(() => import('@src/features/documents/DocumentsView'));
-const ImagesView = lazy(() => import('@src/features/multimodal/ImagesView'));
-const McpView = lazy(() => import('@src/features/plugins/McpView'));
-const TasksView = lazy(() => import('@src/features/automation/TasksView'));
-const IdeView = lazy(() => import('@src/features/ide/IdeView'));
 const MemoryView = lazy(() => import('@src/features/memory/MemoryView'));
 
 const LoadingFallback = () => (
@@ -52,8 +41,8 @@ export interface ChatSessionHookResult {
 }
 
 interface AppRouterProps {
-  activeMode: 'chat' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide' | 'memory';
-  setActiveMode: (mode: 'chat' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide' | 'memory') => void;
+  activeMode: 'chat' | 'registry' | 'settings' | 'compare' | 'memory';
+  setActiveMode: (mode: 'chat' | 'registry' | 'settings' | 'compare' | 'memory') => void;
   apiKeys: Record<string, string>;
   chatSettings: ModelSettings;
   setChatSettings: (settings: ModelSettings) => void;
@@ -166,14 +155,6 @@ export function AppRouter({
         }
       />
       <Route
-        path="/workspace"
-        element={
-          <LazyRoute name="WorkspaceCanvas">
-            <WorkspaceCanvas />
-          </LazyRoute>
-        }
-      />
-      <Route
         path="/compare"
         element={
           <LazyRoute name="ModelComparisonView">
@@ -185,15 +166,6 @@ export function AppRouter({
           </LazyRoute>
         }
       />
-      <Route path="/plugins" element={<LazyRoute name="PluginsView"><PluginsView /></LazyRoute>} />
-      <Route path="/projects" element={<LazyRoute name="ProjectsView"><ProjectsView /></LazyRoute>} />
-      <Route path="/swarm" element={<LazyRoute name="SwarmView"><SwarmView /></LazyRoute>} />
-      <Route path="/git" element={<LazyRoute name="GitView"><GitView /></LazyRoute>} />
-      <Route path="/documents" element={<LazyRoute name="DocumentsView"><DocumentsView /></LazyRoute>} />
-      <Route path="/images" element={<LazyRoute name="ImagesView"><ImagesView /></LazyRoute>} />
-      <Route path="/mcp" element={<LazyRoute name="McpView"><McpView /></LazyRoute>} />
-      <Route path="/tasks" element={<LazyRoute name="TasksView"><TasksView /></LazyRoute>} />
-      <Route path="/ide" element={<LazyRoute name="IdeView"><IdeView /></LazyRoute>} />
       <Route path="/memory" element={<LazyRoute name="MemoryView"><MemoryView /></LazyRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />

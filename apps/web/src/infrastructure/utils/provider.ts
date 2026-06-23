@@ -9,17 +9,12 @@ import { AVAILABLE_MODELS } from '@shared/config/models';
 export const PROVIDER_LABELS: Record<string, string> = {
   gemini: 'Gemini',
   terminal: 'Terminal',
-  ollama: 'Ollama',
-  lmstudio: 'LM Studio',
-  anthropic: 'Anthropic Claude',
-  openai: 'OpenAI (ChatGPT)',
-  deepseek: 'DeepSeek',
   openrouter: 'OpenRouter',
 };
 
-export const CLOUD_PROVIDERS: string[] = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter'];
+export const CLOUD_PROVIDERS: string[] = ['gemini', 'openrouter'];
 
-export const LOCAL_PROVIDERS: string[] = ['ollama', 'lmstudio'];
+export const LOCAL_PROVIDERS: string[] = ['nyx-native'];
 
 const LOCAL_MODEL_IDS = new Set([
 
@@ -58,12 +53,11 @@ export const detectProvider = (modelId: string): Provider => {
   if (!modelId) return 'gemini';
 
   // 1. Detect explicit provider prefixes (from local model registry)
-  if (modelId.startsWith('ollama/') || modelId.startsWith('ollama:')) return 'ollama';
-  if (modelId.startsWith('lmstudio/')) return 'lmstudio';
+  if (modelId.startsWith('huggingface/')) return 'huggingface' as Provider;
 
   // 2. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'ollama';
+    return 'nyx-native' as Provider;
   }
 
   // 3. Check in static AVAILABLE_MODELS presets
@@ -73,7 +67,7 @@ export const detectProvider = (modelId: string): Provider => {
   // 4. Check GGUF and custom patterns for imported models
   const lowerId = modelId.toLowerCase();
   if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
-    return 'ollama';
+    return 'nyx-native' as Provider;
   }
 
   return 'gemini';
@@ -84,12 +78,11 @@ export const detectProvider = (modelId: string): Provider => {
  */
 export const getProviderForModel = (modelId: string): Provider => {
   // 1. Detect explicit provider prefixes (from local model registry)
-  if (modelId.startsWith('ollama/') || modelId.startsWith('ollama:')) return 'ollama';
-  if (modelId.startsWith('lmstudio/')) return 'lmstudio';
+  if (modelId.startsWith('huggingface/')) return 'huggingface' as Provider;
 
   // 2. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'ollama';
+    return 'nyx-native' as Provider;
   }
 
   // 3. Check in static AVAILABLE_MODELS presets
@@ -99,7 +92,7 @@ export const getProviderForModel = (modelId: string): Provider => {
   // 4. Check GGUF and custom patterns for imported models
   const lowerId = modelId.toLowerCase();
   if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
-    return 'ollama';
+    return 'nyx-native' as Provider;
   }
 
   return 'gemini';

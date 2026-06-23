@@ -1,2 +1,0 @@
-export { default as ProjectsView } from './ProjectsView';
-

@@ -13,6 +13,7 @@ mod tray;
 mod db;
 pub mod llm;
 pub mod agents;
+pub mod rag;
 
 use commands::*;
 
@@ -24,7 +25,7 @@ pub struct AppState {
     /// The orchestrator checks this flag at the start of every ReAct iteration.
     /// Reset to `false` automatically at the start of each new run.
     pub agent_cancel: Arc<AtomicBool>,
-    pub orchestrator: Arc<agents::orchestrator::Orchestrator>,
+
     pub pending_approvals: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
     pub pending_plugin_tools: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
     pub pending_browser_actions: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
@@ -34,7 +35,7 @@ impl Default for AppState {
     fn default() -> Self {
         let mcp_manager = Arc::new(commands::mcp::McpManager::default());
         Self {
-            orchestrator: Arc::new(agents::orchestrator::Orchestrator::new(mcp_manager.clone())),
+
             mcp_manager,
             pty_state:    Arc::new(Mutex::new(std::collections::HashMap::new())),
             agent_cancel: Arc::new(AtomicBool::new(false)),
@@ -50,28 +51,17 @@ use crate::commands::agent_orchestrator::{orchestrate_supervisor, cancel_agent_l
 
 pub fn run() {
     tracing_subscriber::fmt::init();
+
+    // Optimize Webview2 memory usage on Windows to reduce RAM consumption
+    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=RendererCodeIntegrity,SitePerProcess --js-flags=\"--max-old-space-size=2048\"");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        if let Some(window) = app.get_webview_window("spotlight") {
-                            if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    }
-                })
-                .build()
-        )
+
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -88,24 +78,29 @@ pub fn run() {
         .manage(commands::pty::PtyState::default())
         .manage(commands::fs::WatcherState::default())
         .setup(|app| {
-            // ── Register global shortcut ──────────────────────────────────────
-            use std::str::FromStr;
-            use tauri_plugin_global_shortcut::GlobalShortcutExt;
-            let shortcut = tauri_plugin_global_shortcut::Shortcut::from_str("Super+Space")
-                .unwrap_or_else(|_| tauri_plugin_global_shortcut::Shortcut::from_str("CmdOrCtrl+Space").unwrap());
-            if let Err(e) = app.global_shortcut().register(shortcut) {
-                tracing::warn!("Failed to register global shortcut: {}", e);
-            }
+            let app_handle = app.handle().clone();
 
-            // ── Initialize SQLite pool synchronously ──────────────────────────
-            // Fix 6 & 10: Use Tauri's proper per-app data directory (cross-platform)
-            // instead of a heuristic based on nearby files. Blocking here is safe
-            // because setup() runs on a non-async thread before any commands fire.
+            // Set up Llama sidecar manager
+            let llama_manager = std::sync::Arc::new(llm::manager::LlamaManager::new());
+            app_handle.manage(llama_manager);
+
+            let hf_state = std::sync::Arc::new(llm::hf_downloader::HfDownloaderState::new());
+            app_handle.manage(hf_state);
+
             let data_dir = app
                 .path()
                 .app_data_dir()
                 .expect("Could not determine app data directory");
             std::fs::create_dir_all(&data_dir).expect("Could not create app data directory");
+            
+            // Set up RAG CodebaseScanner
+            let rag_db_path = data_dir.join("rag.db");
+            if let Ok(scanner) = tauri::async_runtime::block_on(crate::rag::scanner::CodebaseScanner::new(rag_db_path)) {
+                app_handle.manage(std::sync::Arc::new(scanner));
+            } else {
+                tracing::error!("Failed to initialize CodebaseScanner");
+            }
+
             let db_path = data_dir.join("nyx.db");
 
             let pool = tauri::async_runtime::block_on(db::pool::init_db_pool(db_path))
@@ -157,6 +152,22 @@ pub fn run() {
             commands::agent::reject_tool,
             commands::agent::resolve_plugin_tool,
             commands::agent::resolve_browser_action,
+            agents::stream::start_native_agent,
+            llm::download_local_model,
+            llm::list_local_models,
+            llm::start_local_server,
+            llm::stop_local_server,
+            llm::hf_set_token,
+            llm::hf_download_model,
+            llm::hf_pause_download,
+            llm::hf_resume_download,
+            llm::hf_cancel_download,
+            llm::hf_uninstall_model,
+            llm::hf_search_models,
+            llm::hf_get_model_files,
+            llm::hf_get_model_readme,
+            llm::hf_get_restored_downloads,
+            commands::system::get_hardware_specs,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -177,7 +188,7 @@ async fn setup_app(handle: &tauri::AppHandle) {
     tracing::info!("🚀 NYX Tauri boot sequence starting...");
 
     let window   = create_main_window(handle).await;
-    let spotlight = create_spotlight_window(handle).await;
+
     tray::create_tray(handle, &window).expect("Failed to create tray");
     setup_menus(handle);
 
@@ -187,13 +198,13 @@ async fn setup_app(handle: &tauri::AppHandle) {
     #[cfg(target_os = "macos")]
     {
         let _ = window_vibrancy::apply_vibrancy(&window, window_vibrancy::NSVisualEffectMaterial::HudWindow, None, None);
-        let _ = window_vibrancy::apply_vibrancy(&spotlight, window_vibrancy::NSVisualEffectMaterial::HudWindow, None, None);
+
     }
 
     #[cfg(target_os = "windows")]
     {
         let _ = window_vibrancy::apply_mica(&window, Some(true));
-        let _ = window_vibrancy::apply_mica(&spotlight, Some(true));
+
     }
 
     tracing::info!("✅ NYX Tauri fully initialized");
@@ -223,28 +234,6 @@ async fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
         .expect("Failed to create window")
 }
 
-async fn create_spotlight_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
-    if let Some(window) = handle.get_webview_window("spotlight") {
-        return window;
-    }
-
-    let url = if cfg!(debug_assertions) {
-        WebviewUrl::External("http://localhost:3000/spotlight".parse().unwrap())
-    } else {
-        WebviewUrl::App("spotlight.html".into())
-    };
-
-    WebviewWindowBuilder::new(handle, "spotlight", url)
-        .title("NYX Spotlight")
-        .inner_size(800.0, 600.0)
-        .center()
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .visible(false)
-        .build()
-        .expect("Failed to create spotlight window")
-}
 
 fn setup_menus(handle: &tauri::AppHandle) {
     let menu     = Menu::new(handle).unwrap();

@@ -8,6 +8,10 @@ import { useLocalModels } from '@src/shared/hooks/useLocalModels';
 import { SectionHeader, EmptyState } from './RegistryShared';
 import { ModelCard } from './ModelCard';
 import { LocalProviderStatus } from '@src/components/LocalProviderStatus';
+import { HardwareAnalyzerCard } from './HardwareAnalyzerCard';
+import { HuggingFaceDownloader } from './HuggingFaceDownloader';
+import { invoke } from '@tauri-apps/api/core';
+import { confirm } from '@tauri-apps/plugin-dialog';
 
 interface ModelRegistryViewProps {
   models?: Record<'nyx', string>;
@@ -32,15 +36,55 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const [filter, setFilter] = useState<'local' | 'cloud'>('local');
   const [expandedModelId, setExpandedModelId] = useState<string | null>(null);
 
+  const [loadedModel, setLoadedModel] = useState<string | null>(null);
+  const [loadingState, setLoadingState] = useState<'idle'|'loading'|'unloading'|'uninstalling'>('idle');
+
+  const handleLoadModel = async (modelId: string) => {
+    try {
+      setLoadingState('loading');
+      await invoke('start_local_server', { modelId });
+      setLoadedModel(modelId);
+    } catch (e) {
+      console.error('Failed to load model', e);
+    } finally {
+      setLoadingState('idle');
+    }
+  };
+
+  const handleUnloadModel = async () => {
+    try {
+      setLoadingState('unloading');
+      await invoke('stop_local_server');
+      setLoadedModel(null);
+    } catch (e) {
+      console.error('Failed to unload model', e);
+    } finally {
+      setLoadingState('idle');
+    }
+  };
+
+  const handleUninstallModel = async (modelId: string) => {
+    const confirmed = await confirm(`Are you sure you want to uninstall ${modelId}?`);
+    if (!confirmed) return;
+    try {
+      setLoadingState('uninstalling');
+      await invoke('hf_uninstall_model', { filename: modelId });
+      localModelsQuery.refetch(); // Refresh the list
+    } catch (e) {
+      console.error('Failed to uninstall model', e);
+      alert(`Failed to uninstall: ${e}`);
+    } finally {
+      setLoadingState('idle');
+    }
+  };
+
   const [ollamaModels, setOllamaModels] = useState<any[]>([]);
-  const [lmstudioModels, setLmstudioModels] = useState<any[]>([]);
 
   const localModelsQuery = useLocalModels(true);
 
   useEffect(() => {
     if (localModelsQuery.data) {
-      setOllamaModels(localModelsQuery.data.ollamaModels || []);
-      setLmstudioModels(localModelsQuery.data.lmstudioModels || []);
+      setOllamaModels(localModelsQuery.data.models || []);
     }
   }, [localModelsQuery.data]);
 
@@ -151,37 +195,42 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
           {showLocal && (
             <div className="flex flex-col gap-6">
+              <HardwareAnalyzerCard />
+              <HuggingFaceDownloader />
               <section className="space-y-4 p-6 rounded-2xl bg-card border border-border mt-6 shadow-sm">
                 <SectionHeader
                   icon={<Cpu size={18} weight="duotone" className="text-orange-500" />}
-                  title="Ollama Local Library"
-                  subtitle="Models hosted by your local Ollama instance"
+                  title="Local Model Library"
+                  subtitle="Models hosted natively by NYX (llama.cpp)"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
                   {ollamaModels.map((m, idx) => (
-                     <ModelCard key={m.id} index={idx} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={undefined} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
+                     <ModelCard 
+                       key={m.id} 
+                       index={idx} 
+                       name={m.name} 
+                       provider={m.provider} 
+                       description={m.description} 
+                       specs={m.specs} 
+                       features={m.features} 
+                       pros={m.pros} 
+                       cons={m.cons} 
+                       hasKey={true} 
+                       status="online" 
+                       usage={undefined} 
+                       isExpanded={expandedModelId === m.id} 
+                       onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
+                       isLocal={true}
+                       isLoaded={loadedModel === m.id}
+                       loadingState={loadedModel === m.id || (loadingState === 'loading' && loadedModel === null) ? loadingState : 'idle'}
+                       onLoad={() => handleLoadModel(m.id)}
+                       onUnload={() => handleUnloadModel()}
+                       onUninstall={() => handleUninstallModel(m.id)}
+                     />
                   ))}
                   {ollamaModels.length === 0 && (
                      <div className="col-span-full">
-                       <EmptyState message="No Ollama models found" hint="Ensure Ollama is running and has downloaded models." />
-                     </div>
-                  )}
-                </div>
-              </section>
-              
-              <section className="space-y-4 p-6 rounded-2xl bg-card border border-border mt-6 shadow-sm">
-                <SectionHeader
-                  icon={<Cpu size={18} weight="duotone" className="text-blue-500" />}
-                  title="LM Studio Local Library"
-                  subtitle="Models hosted by your local LM Studio instance"
-                />
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                  {lmstudioModels.map((m, idx) => (
-                     <ModelCard key={m.id} index={idx} name={m.name} provider={m.provider} description={m.description} specs={m.specs} features={m.features} pros={m.pros} cons={m.cons} hasKey={true} status="online" usage={undefined} isExpanded={expandedModelId === m.id} onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)} />
-                  ))}
-                  {lmstudioModels.length === 0 && (
-                     <div className="col-span-full">
-                       <EmptyState message="No LM Studio models found" hint="Ensure LM Studio server is running on port 1234." />
+                       <EmptyState message="No local models found" hint="Download models using the Hugging Face Downloader above." />
                      </div>
                   )}
                 </div>

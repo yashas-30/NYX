@@ -60,28 +60,19 @@ pub async fn run_agent_stream(
         .map_err(|e| e.to_string())?;
 
     let provider = context.provider.as_str();
-    let is_anthropic = provider == "anthropic";
     let is_gemini = provider == "gemini";
-    let provider_type = if is_anthropic { "anthropic" } else if is_gemini { "gemini" } else { "openai" };
+    let provider_type = if is_gemini { "gemini" } else { "openrouter" };
 
     // ── Build URL ─────────────────────────────────────────────────────────────
     // IMPORTANT: Gemini API key goes in the x-goog-api-key header — NOT the URL.
     // Putting secret keys in URLs leaks them via proxy logs and browser history.
-    let url = if is_anthropic {
-        "https://api.anthropic.com/v1/messages".to_string()
-    } else if is_gemini {
+    let url = if is_gemini {
         format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse",
             context.model
         )
     } else {
-        match provider {
-            "openai"     => "https://api.openai.com/v1/chat/completions".to_string(),
-            "openrouter" => "https://openrouter.ai/api/v1/chat/completions".to_string(),
-            "deepseek"   => "https://api.deepseek.com/chat/completions".to_string(),
-            "lmstudio"   => "http://127.0.0.1:1234/v1/chat/completions".to_string(),
-            _            => "http://127.0.0.1:11434/v1/chat/completions".to_string(),
-        }
+        "https://openrouter.ai/api/v1/chat/completions".to_string()
     };
 
     // ── Build request body ────────────────────────────────────────────────────
@@ -91,80 +82,7 @@ pub async fn run_agent_stream(
         "stream": true,
     });
 
-    if is_anthropic {
-        body["max_tokens"] = json!(8192);
-
-        let mut mapped_msgs: Vec<Value> = vec![];
-        for m in messages {
-            if m["role"] == "system" {
-                body["system"] = m["content"].clone();
-            } else if m["role"] == "assistant" {
-                if let Some(tool_calls) = m.get("tool_calls").and_then(|tc| tc.as_array()) {
-                    let mut content_blocks = vec![];
-                    if let Some(txt) = m["content"].as_str() {
-                        if !txt.is_empty() {
-                            content_blocks.push(json!({"type": "text", "text": txt}));
-                        }
-                    }
-                    for tc in tool_calls {
-                        let id       = tc["id"].as_str().unwrap_or("");
-                        let name     = tc["function"]["name"].as_str().unwrap_or("");
-                        let args_str = tc["function"]["arguments"].as_str().unwrap_or("{}");
-                        let input: Value = serde_json::from_str(args_str).unwrap_or(json!({}));
-                        content_blocks.push(json!({
-                            "type": "tool_use",
-                            "id": id,
-                            "name": name,
-                            "input": input
-                        }));
-                    }
-                    mapped_msgs.push(json!({"role": "assistant", "content": content_blocks}));
-                } else {
-                    mapped_msgs.push(m.clone());
-                }
-            } else if m["role"] == "tool" {
-                let tool_call_id = m["tool_call_id"].as_str().unwrap_or("");
-                let content      = m["content"].as_str().unwrap_or("");
-
-                let mut merged = false;
-                if let Some(last_msg) = mapped_msgs.last_mut() {
-                    if last_msg["role"] == "user" && last_msg["content"].is_array() {
-                        if let Some(arr) = last_msg["content"].as_array_mut() {
-                            if arr.iter().any(|item| item["type"] == "tool_result") {
-                                arr.push(json!({
-                                    "type": "tool_result",
-                                    "tool_use_id": tool_call_id,
-                                    "content": content
-                                }));
-                                merged = true;
-                            }
-                        }
-                    }
-                }
-                if !merged {
-                    mapped_msgs.push(json!({
-                        "role": "user",
-                        "content": [{"type": "tool_result", "tool_use_id": tool_call_id, "content": content}]
-                    }));
-                }
-            } else {
-                mapped_msgs.push(m.clone());
-            }
-        }
-        body["messages"] = json!(mapped_msgs);
-
-        let tools = get_builtin_tools();
-        if let Some(t_array) = tools.as_array() {
-            let anthropic_tools: Vec<Value> = t_array.iter().filter_map(|t| {
-                t.get("function").map(|f| json!({
-                    "name":         f["name"],
-                    "description":  f["description"],
-                    "input_schema": f["parameters"]
-                }))
-            }).collect();
-            body["tools"] = json!(anthropic_tools);
-        }
-    } else if is_gemini {
+    if is_gemini {
         let mut contents = vec![];
         for m in messages {
             if m["role"] == "system" {
@@ -232,7 +150,7 @@ pub async fn run_agent_stream(
             body["tools"] = json!([{"functionDeclarations": decls}]);
         }
     } else {
-        // OpenAI / OpenRouter / DeepSeek / Ollama / LMStudio
+        // OpenRouter
         let mut mapped_msgs = vec![];
         for m in messages {
             if m["role"] == "assistant" {
@@ -256,17 +174,7 @@ pub async fn run_agent_stream(
     let res = loop {
         let mut req = client.post(&url).json(&body);
 
-        if is_anthropic {
-            req = req
-                .header("x-api-key", &context.api_key)
-                .header("anthropic-version", "2023-06-01");
-            if context.model.contains("claude-3-7")
-                || context.model.contains("claude-sonnet-4")
-                || context.model.contains("claude-opus-4")
-            {
-                req = req.header("anthropic-beta", "interleaved-thinking-2025-05-14");
-            }
-        } else if is_gemini {
+        if is_gemini {
             // API key as header — never in the URL query string
             req = req.header("x-goog-api-key", &context.api_key);
         } else if provider == "openrouter" {
@@ -434,25 +342,7 @@ pub async fn orchestrate_supervisor(
     let cancel_flag = Arc::clone(&app_state.agent_cancel);
     cancel_flag.store(false, Ordering::SeqCst);
 
-    // --- NEW: Agent Routing Phase ---
-    let query = messages.last().and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
-    if let Some(agent) = &context.agent_type {
-        let task = match agent.as_str() {
-            "chat" => Some(crate::agents::orchestrator::AgentTask::ChatQuery(context.clone(), messages.to_vec())),
-            "opencode" | "coder" => Some(crate::agents::orchestrator::AgentTask::CodeAnalysis(context.clone(), messages.to_vec())),
-            "cline" => Some(crate::agents::orchestrator::AgentTask::SystemTask(context.clone(), messages.to_vec())),
-            "swarm" => Some(crate::agents::orchestrator::AgentTask::SwarmEpic(context.clone(), messages.to_vec())),
-            "planner" => Some(crate::agents::orchestrator::AgentTask::PlanTask(context.clone(), messages.to_vec())),
-            _ => None,
-        };
 
-        if let Some(t) = task {
-            let res = app_state.orchestrator.dispatch(t, app.clone(), event_name.clone()).await;
-            let _ = app.emit(&event_name, json!({"type": "done"}));
-            return res.map_err(|e| e.to_string());
-        }
-    }
-    // --------------------------------
 
     let _ = app.emit(&event_name, json!({
         "type": "thinking",

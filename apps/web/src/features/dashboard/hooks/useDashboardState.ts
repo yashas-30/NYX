@@ -24,35 +24,15 @@ export const useDashboardState = (onExit?: () => void) => {
     if (path === '/models') return 'registry';
     if (path === '/settings') return 'settings';
     if (path === '/compare') return 'compare';
-    if (path === '/workspace') return 'workspace';
-    if (path === '/plugins') return 'plugins';
-    if (path === '/projects') return 'projects';
-    if (path === '/swarm') return 'swarm';
-    if (path === '/git') return 'git';
-    if (path === '/documents') return 'documents';
-    if (path === '/images') return 'images';
-    if (path === '/mcp') return 'mcp';
-    if (path === '/tasks') return 'tasks';
-    if (path === '/ide') return 'ide';
     if (path === '/memory') return 'memory';
     return 'chat';
   })();
 
-  const setActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide' | 'memory') => {
+  const setActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare' | 'memory') => {
     if (mode === 'chat') navigate('/chat');
     else if (mode === 'registry') navigate('/models');
     else if (mode === 'settings') navigate('/settings');
     else if (mode === 'compare') navigate('/compare');
-    else if (mode === 'workspace') navigate('/workspace');
-    else if (mode === 'plugins') navigate('/plugins');
-    else if (mode === 'projects') navigate('/projects');
-    else if (mode === 'swarm') navigate('/swarm');
-    else if (mode === 'git') navigate('/git');
-    else if (mode === 'documents') navigate('/documents');
-    else if (mode === 'images') navigate('/images');
-    else if (mode === 'mcp') navigate('/mcp');
-    else if (mode === 'tasks') navigate('/tasks');
-    else if (mode === 'ide') navigate('/ide');
     else if (mode === 'memory') navigate('/memory');
     else navigate('/chat');
   };
@@ -86,8 +66,7 @@ export const useDashboardState = (onExit?: () => void) => {
   const [localModelsEnabled, setLocalModelsEnabled] = useState(false);
   const localModelsQuery = useLocalModels(localModelsEnabled);
   const localLibraryModels = [
-    ...(localModelsQuery.data?.ollamaModels || []),
-    ...(localModelsQuery.data?.lmstudioModels || []),
+    ...(localModelsQuery.data?.models || []),
   ];
 
   // 2. Security & API Keys from Zustand store
@@ -105,7 +84,7 @@ export const useDashboardState = (onExit?: () => void) => {
   // ── Initialization Logic ───────────────────────────────────────────────
   useEffect(() => {
     // Register global mode switch helper
-    (window as any).nyxSwitchActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare' | 'workspace') => {
+    (window as any).nyxSwitchActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare' | 'memory') => {
       setActiveMode(mode);
     };
 

@@ -24,6 +24,34 @@ pub struct SystemVersions {
     pub app: String,
 }
 
+#[derive(Serialize)]
+pub struct HardwareSpecs {
+    pub cpu_cores: usize,
+    pub total_ram: u64,
+    pub free_ram: u64,
+    pub gpu_name: String,
+    pub gpu_vram: u64,
+}
+
+#[tauri::command]
+pub async fn get_hardware_specs() -> SystemResult<HardwareSpecs> {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+    
+    // Stub GPU info - in a production setting we would use WMI or WGPU here
+    let gpu_name = "Detected GPU (Vulkan/Metal)".to_string();
+    let gpu_vram = 8 * 1024 * 1024 * 1024; // 8GB stub
+
+    let specs = HardwareSpecs {
+        cpu_cores: sys.cpus().len(),
+        total_ram: sys.total_memory(),
+        free_ram: sys.available_memory(),
+        gpu_name,
+        gpu_vram,
+    };
+    SystemResult { success: true, data: Some(specs), error: None }
+}
+
 #[tauri::command]
 pub async fn system_gpu_info() -> SystemResult<serde_json::Value> {
     SystemResult { success: true, data: Some(serde_json::json!({})), error: None }

@@ -175,50 +175,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 </motion.button>
               </div>
 
-              <button
-                onClick={() => { setActiveMode('projects'); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
-                  activeMode === 'projects'
-                    ? 'text-foreground bg-muted border border-border font-semibold'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-                }`}
-              >
-                <Folder
-                  size={13}
-                  className={activeMode === 'projects' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>Projects</span>
-              </button>
 
-              <button
-                onClick={() => { setActiveMode('swarm'); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
-                  activeMode === 'swarm'
-                    ? 'text-foreground bg-muted border border-border font-semibold'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-                }`}
-              >
-                <Users
-                  size={13}
-                  className={activeMode === 'swarm' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>Agent Swarm</span>
-              </button>
-
-              <button
-                onClick={() => { setActiveMode('workspace'); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-all text-left cursor-pointer ${
-                  activeMode === 'workspace'
-                    ? 'text-foreground bg-muted border border-border font-semibold'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-                }`}
-              >
-                <Layers
-                  size={13}
-                  className={activeMode === 'workspace' ? 'text-primary' : 'text-muted-foreground'}
-                />
-                <span>Infinite Canvas</span>
-              </button>
             </div>
 
             {/* Folders and Chat Session List */}
@@ -300,13 +257,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                   { mode: 'registry', icon: Library, label: 'Model Library' },
                   { mode: 'compare', icon: Activity, label: 'Model Comparison' },
                   { mode: 'settings', icon: Settings, label: 'Settings' },
-                  { mode: 'plugins', icon: Plug, label: 'Plugins' },
-                  { mode: 'git', icon: GitBranch, label: 'Git' },
-                  { mode: 'documents', icon: FileText, label: 'Documents' },
-                  { mode: 'images', icon: Image, label: 'Images' },
-                  { mode: 'mcp', icon: Plug, label: 'MCP' },
-                  { mode: 'tasks', icon: Calendar, label: 'Tasks' },
-                  { mode: 'ide', icon: Code2, label: 'IDE' },
                   { mode: 'memory', icon: Brain, label: 'Memory' },
                 ].map(({ mode, icon: Icon, label }) => (
                   <button

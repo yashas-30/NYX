@@ -35,8 +35,7 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
   
   const allModels = useMemo(() => {
     const localModels = [
-      ...(localModelsQuery.data?.ollamaModels || []),
-      ...(localModelsQuery.data?.lmstudioModels || []),
+      ...(localModelsQuery.data?.models || []),
     ];
     // Deduplicate models combined with static AVAILABLE_MODELS
     const combined = [...AVAILABLE_MODELS, ...localModels];

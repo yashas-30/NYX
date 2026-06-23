@@ -20,11 +20,11 @@ import {
   createConversationState,
   updateConversationState,
   ConversationState,
-} from '@src/core/services/promptClassifier';
-import { RouterAgent } from '@src/core/agents/RouterAgent';
+} from '@src/features/ai/services/promptClassifier';
+import { NativeAgentService } from '../../agents/openHands.service';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
-import { AIService, countTokens } from '@src/core/services/ai.service';
+import { AIService, countTokens } from '@src/features/ai/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
 import { ContextManager } from '../utils/ContextManager';
 import { formatProviderError } from '@src/infrastructure/api/streamParser';
@@ -49,8 +49,7 @@ function extractModelsFromPrompt(prompt: string): typeof AVAILABLE_MODELS {
     { keywords: ['gpt-4o', 'gpt 4o', 'gpt4o', 'gpt-4'], modelId: 'gpt-4o' },
     { keywords: ['o3-mini', 'o3 mini', 'o3'], modelId: 'o3-mini' },
     { keywords: ['o1-mini', 'o1 mini', 'o1'], modelId: 'o1-mini' },
-    { keywords: ['deepseek r1', 'deepseek-r1', 'r1 cloud', 'r1'], modelId: 'deepseek-reasoner' },
-    { keywords: ['deepseek v3', 'deepseek-v3', 'deepseek chat'], modelId: 'deepseek-chat' },
+
     { keywords: ['gemini 3.5', 'gemini-3.5', 'gemini 3.5 flash'], modelId: 'gemini-3.5-flash' },
     { keywords: ['gemini 3.1', 'gemini 3.1 flash', 'gemini-3.1'], modelId: 'gemini-3.1-flash-lite' },
     { keywords: ['gemma 4', 'gemma-4', 'gemma4'], modelId: 'gemma-4-31b-it' },
@@ -68,13 +67,10 @@ function extractModelsFromPrompt(prompt: string): typeof AVAILABLE_MODELS {
   }
 
   if (results.length < 2) {
-    const providerMappings = [
-      { keywords: ['claude', 'anthropic'], modelId: 'claude-3-7-sonnet-20250219' },
-      { keywords: ['gpt', 'openai'], modelId: 'gpt-4o' },
-      { keywords: ['gemini', 'google'], modelId: 'gemini-3.5-flash' },
-      { keywords: ['deepseek'], modelId: 'deepseek-chat' },
+    const routingRules: { keywords: string[], modelId: string }[] = [
+      { keywords: ['gemini', 'google'], modelId: 'gemini-3.5-flash' }
     ];
-    for (const map of providerMappings) {
+    for (const map of routingRules) {
       if (map.keywords.some(kw => lower.includes(kw))) {
         const model = AVAILABLE_MODELS.find(m => m.id === map.modelId);
         if (model && !matched.has(model.id)) {
@@ -108,9 +104,7 @@ function getCandidatesForExecution(
 
   const topModelsPerProvider: Record<string, string> = {
     gemini: 'gemini-3.5-flash',
-    anthropic: 'claude-3-7-sonnet-20250219',
-    openai: 'gpt-4o',
-    deepseek: 'deepseek-chat',
+    openrouter: 'google/gemini-2.5-flash'
   };
 
   for (const prov of onlineProviders) {
@@ -859,7 +853,7 @@ export const useChatPipeline = ({
 
       try {
         // Validate API key early
-        if (!nyxApiKey && nyxProvider !== 'ollama' && nyxProvider !== 'lmstudio') {
+        if (!nyxApiKey && nyxProvider !== 'ollama' && nyxProvider !== 'lmstudio' && navigator.onLine) {
           throw new Error(
             `${nyxProvider} API key not found. Please add your API key in Settings before using this model.`
           );
@@ -958,19 +952,27 @@ export const useChatPipeline = ({
         // 4. Initialize agent with snapshot (not live ref)
         const systemPromptAddon = (options?.systemPromptAddon || '') + memoryAddon;
 
-        const agent = new RouterAgent({
-          modelId: nyxModel,
-          provider: nyxProvider,
-          apiKey: nyxApiKey,
-          settings: modelSettings,
-          history: optimizedHistory,
-          lightningDirectives: lightningEnabled ? lightningDirectives : undefined,
-          webSearchEnabled: options?.enableTools ?? webSearchEnabled,
-          systemPromptAddon,
-          agentType: options?.agentType === 'coder' ? 'opencode' : 'chat',
-          enableToolLoop: useNyxStore.getState().agentLoopEnabled,
-          isFastIntent,
-        });
+        // Determine correct base URL and model for local inference if requested
+        let finalBaseUrl = 'https://api.openai.com/v1'; // Default OpenAI base
+        let finalModel = nyxModel;
+        let finalApiKey = nyxApiKey || 'dummy_key';
+
+        if (analysis.suggestedModel === 'local' || nyxProvider === 'nyx-native') {
+          finalBaseUrl = 'http://127.0.0.1:8080/v1';
+          finalApiKey = 'local';
+        } else {
+          // Set Base URL for Cloud Providers
+          if (nyxProvider === 'anthropic') finalBaseUrl = 'https://api.anthropic.com/v1';
+          else if (nyxProvider === 'gemini') finalBaseUrl = 'https://generativelanguage.googleapis.com/v1beta/openai';
+          else if (nyxProvider === 'groq') finalBaseUrl = 'https://api.groq.com/openai/v1';
+          else if (nyxProvider === 'openrouter') finalBaseUrl = 'https://openrouter.ai/api/v1';
+        }
+
+        const agent = new NativeAgentService(
+          finalApiKey,
+          finalBaseUrl, 
+          finalModel
+        );
 
         // 5. Gather search context (non-blocking UI)
         const enableToolLoop = useNyxStore.getState().agentLoopEnabled;
@@ -1030,6 +1032,7 @@ export const useChatPipeline = ({
           generator = agent.streamResponse(
             compressedPrompt,
             analysis,
+            systemPromptAddon,
             controller.signal,
             searchContextPromise,
             images

@@ -6,6 +6,7 @@ use std::process::Stdio;
 use tauri::Manager;
 use base64::Engine;
 
+#[allow(dead_code)]
 #[derive(Serialize, Clone)]
 pub struct StreamEventPayload {
     pub event_type: String, // "text", "tool_start", "tool_result", "done", "error"

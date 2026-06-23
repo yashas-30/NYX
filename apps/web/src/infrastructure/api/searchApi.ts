@@ -143,7 +143,7 @@ async function searchDuckDuckGo(query: string, signal?: AbortSignal): Promise<We
   const resultNodes = doc.querySelectorAll('.result');
   
   let count = 0;
-  for (const node of resultNodes) {
+  for (const node of Array.from(resultNodes)) {
     if (count >= 5) break;
     const titleNode = node.querySelector('.result__title a');
     const snippetNode = node.querySelector('.result__snippet');

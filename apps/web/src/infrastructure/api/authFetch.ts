@@ -117,6 +117,9 @@ async function fetchFreshToken(isStream = false, attempt = 0): Promise<{ token: 
 }
 
 export async function getOrFetchSessionToken(isStream = false): Promise<string> {
+  // In Tauri, all requests are natively authenticated or use IPC; bypass Bearer tokens
+  if (isTauri) return 'tauri-native-session';
+
   // Fast path: valid cached token
   if (!isStream && isTokenValid()) {
     return sessionToken!;

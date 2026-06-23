@@ -7,8 +7,8 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 
 interface CommandPaletteProps {
-  activeMode: 'registry' | 'settings' | 'chat' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
-  setActiveMode: (mode: 'registry' | 'settings' | 'chat' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide') => void;
+  activeMode: 'registry' | 'settings' | 'chat' | 'compare' | 'memory';
+  setActiveMode: (mode: 'registry' | 'settings' | 'chat' | 'compare' | 'memory') => void;
   createSession: (initialMessages?: any[]) => string;
   clearHistory: () => void;
   models: Record<'nyx', string>;
@@ -191,88 +191,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           setActiveMode('settings');
         },
       },
-      {
-        id: 'go_projects',
-        title: 'Go to Projects',
-        subtitle: 'Manage knowledge bases and project workspaces',
-        icon: <Folder size={16} />,
-        action: () => {
-          setActiveMode('projects');
-        },
-      },
-      {
-        id: 'go_swarm',
-        title: 'Go to Agent Swarm',
-        subtitle: 'Parallel multi-agent execution and orchestration',
-        icon: <Users size={16} />,
-        action: () => {
-          setActiveMode('swarm');
-        },
-      },
-      {
-        id: 'go_plugins',
-        title: 'Go to Plugins',
-        subtitle: 'Browse and manage plugin marketplace',
-        icon: <Plug size={16} />,
-        action: () => {
-          setActiveMode('plugins');
-        },
-      },
-      {
-        id: 'go_git',
-        title: 'Go to Git Integration',
-        subtitle: 'View repository status, branches, and commits',
-        icon: <GitBranch size={16} />,
-        action: () => {
-          setActiveMode('git');
-        },
-      },
-      {
-        id: 'go_documents',
-        title: 'Go to Document Generation',
-        subtitle: 'Generate DOCX, PPTX, XLSX, and PDF documents',
-        icon: <FileText size={16} />,
-        action: () => {
-          setActiveMode('documents');
-        },
-      },
-      {
-        id: 'go_images',
-        title: 'Go to Image Generation',
-        subtitle: 'Generate and edit images with AI',
-        icon: <Image size={16} />,
-        action: () => {
-          setActiveMode('images');
-        },
-      },
-      {
-        id: 'go_mcp',
-        title: 'Go to MCP Servers',
-        subtitle: 'Manage Model Context Protocol servers and tools',
-        icon: <Plug size={16} />,
-        action: () => {
-          setActiveMode('mcp');
-        },
-      },
-      {
-        id: 'go_tasks',
-        title: 'Go to Scheduled Tasks',
-        subtitle: 'Manage cron jobs and automated workflows',
-        icon: <Calendar size={16} />,
-        action: () => {
-          setActiveMode('tasks');
-        },
-      },
-      {
-        id: 'go_ide',
-        title: 'Go to IDE Connector',
-        subtitle: 'Connect VS Code, Cursor, and other editors',
-        icon: <Code2 size={16} />,
-        action: () => {
-          setActiveMode('ide');
-        },
-      },
+
     ];
+
 
     return list.filter(
       (cmd) =>

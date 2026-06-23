@@ -1,0 +1,51 @@
+﻿node.exe : $ turbo run typecheck
+At C:\Users\yasha\AppData\Roaming\npm\pnpm.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.mjs" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ($ turbo run typecheck:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ΓÇó turbo 2.9.18
+
+   ΓÇó Packages in scope: @nyx/config, @nyx/desktop, @nyx/server, @nyx/shared, @nyx/web
+   ΓÇó Running typecheck in 5 packages
+   ΓÇó Remote caching disabled
+
+@nyx/shared:build: cache miss, executing 327d58e13269f943
+@nyx/shared:typecheck: cache miss, executing 228d30af7cb85fba
+@nyx/shared:build: $ tsup src/index.ts --format cjs,esm --dts
+@nyx/shared:typecheck: $ tsc --noEmit
+@nyx/shared:build: [34mCLI[39m Building entry: src/index.ts
+@nyx/shared:build: [34mCLI[39m Using tsconfig: tsconfig.json
+@nyx/shared:build: [34mCLI[39m tsup v8.5.1
+@nyx/shared:build: [34mCLI[39m Target: es2022
+@nyx/shared:build: [34mCJS[39m Build start
+@nyx/shared:build: [34mESM[39m Build start
+@nyx/shared:build: [32mESM[39m [1mdist\index.js [22m[32m72.24 KB[39m
+@nyx/shared:build: [32mESM[39m ΓÜí∩╕Å Build success in 48ms
+@nyx/shared:build: [32mCJS[39m [1mdist\index.cjs [22m[32m76.04 KB[39m
+@nyx/shared:build: [32mCJS[39m ΓÜí∩╕Å Build success in 49ms
+@nyx/shared:build: [34mDTS[39m Build start
+@nyx/shared:build: [32mDTS[39m ΓÜí∩╕Å Build success in 1832ms
+@nyx/shared:build: [32mDTS[39m [1mdist\index.d.cts [22m[32m11.83 KB[39m
+@nyx/shared:build: [32mDTS[39m [1mdist\index.d.ts  [22m[32m11.83 KB[39m
+@nyx/web:typecheck: cache miss, executing 96efbcc71fb5d7ef
+@nyx/web:typecheck: $ tsc --noEmit
+@nyx/web:typecheck: src/core/agents/RouterAgent.ts(4,27): error TS1261: Already included file name 'E:/NYX/apps/web/src/core/agents/ChatAgent.ts' differs from file name 'E:/NYX/apps/web/src/core/agents/chatAgent.ts' only in casing.
+@nyx/web:typecheck:   The file is in the program because:
+@nyx/web:typecheck:     Imported via './ChatAgent' from file 'E:/NYX/apps/web/src/core/agents/RouterAgent.ts'
+@nyx/web:typecheck:     Imported via './agents/ChatAgent' from file 'E:/NYX/apps/web/src/core/index.ts'
+@nyx/web:typecheck:     Matched by include pattern 'src/**/*' in 'E:/NYX/apps/web/tsconfig.json'
+@nyx/web:typecheck:     Imported via './ChatAgent' from file 'E:/NYX/apps/web/src/core/agents/useChatAgent.ts'
+@nyx/web:typecheck: src/infrastructure/api/searchApi.ts(146,22): error TS2488: Type 'NodeListOf<Element>' must have a '[Symbol.iterator]()' method that returns an iterator.
+@nyx/web:typecheck: [ELIFECYCLE] Command failed with exit code 2.
+ ERROR  @nyx/web#typecheck: command (E:\NYX\apps\web) C:\Users\yasha\AppData\Roaming\npm\pnpm.cmd run typecheck exited 
+(2)
+
+ Tasks:    2 successful, 3 total
+Cached:    0 cached, 3 total
+  Time:    18.82s 
+Failed:    @nyx/web#typecheck
+
+ ERROR  run failed: command  exited (2)
+[ELIFECYCLE] Command failed with exit code 2.

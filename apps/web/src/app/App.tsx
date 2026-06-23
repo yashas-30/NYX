@@ -23,6 +23,42 @@ function AppContent() {
 
   useEffect(() => {
     DebugLogger.init();
+
+    // Initialize Local LLM Environment
+    const initLocalLLM = async () => {
+      try {
+        if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const { listen } = await import('@tauri-apps/api/event');
+          
+          let toastId: string | number | undefined;
+          
+          const unlisten = await listen<{ progress: number; status: string }>('llm-download-progress', (event) => {
+             const { progress, status } = event.payload;
+             if (!toastId && progress < 100) {
+               toastId = toast.loading(`Initializing Local Intelligence: ${status}`, { duration: Infinity });
+             } else if (toastId && progress < 100) {
+               toast.loading(`${status} (${Math.round(progress)}%)`, { id: toastId });
+             }
+          });
+
+          const unlistenComplete = await listen('llm-download-complete', () => {
+             if (toastId) toast.success('Local model downloaded successfully!', { id: toastId });
+             toastId = undefined;
+          });
+
+          // Ensure assets exist (downloads if missing)
+          await invoke('download_local_model');
+          console.log('[App] Local Llama Server assets ready');
+
+          unlisten();
+          unlistenComplete();
+        }
+      } catch (err) {
+        console.error('[App] Failed to init Local LLM:', err);
+      }
+    };
+    initLocalLLM();
     if (!privacyMode) return;
 
     let timeoutId: NodeJS.Timeout;
@@ -61,44 +97,7 @@ function AppContent() {
     };
   }, [privacyMode, clearPrivacyData]);
 
-  // Register plugin execution event listener
-  useEffect(() => {
-    const isTauriEnv = typeof window !== 'undefined' &&
-      ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-    if (!isTauriEnv) return;
 
-    let unlisten: (() => void) | null = null;
-
-    const setupListener = async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        const { invoke } = await import('@tauri-apps/api/core');
-        const { pluginSystem } = await import('@src/core/services/pluginSystem');
-
-        unlisten = await listen('execute_plugin_tool', async (event: any) => {
-          const { call_id, name, args } = event.payload;
-          try {
-            const parsedArgs = JSON.parse(args);
-            const result = await pluginSystem.executeTool(name, parsedArgs);
-            await invoke('resolve_plugin_tool', { callId: call_id, result });
-          } catch (e: any) {
-            await invoke('resolve_plugin_tool', {
-              callId: call_id,
-              result: JSON.stringify({ success: false, error: e.message }),
-            });
-          }
-        });
-      } catch (err) {
-        console.error('Failed to setup plugin tool listener:', err);
-      }
-    };
-
-    setupListener();
-
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 font-sans">

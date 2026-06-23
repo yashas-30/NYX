@@ -7,7 +7,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { ModelOption } from '@src/types';
 import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
-import { AIService } from '@src/core/services/ai.service';
+import { AIService } from '@src/features/ai/services/ai.service';
 import { useNyxStore, ExecutionMode } from '@src/shared/store/useNyxStore';
 import { ModelStatusBadge } from '@src/features/model-registry/ModelStatusBadge';
 
@@ -29,7 +29,7 @@ interface Props {
 }
 
 // Structured provider order for the selector
-const PROVIDER_ORDER = ['gemini', 'anthropic', 'openai', 'deepseek', 'openrouter', 'lmstudio', 'ollama'];
+const PROVIDER_ORDER = ['gemini', 'openrouter', 'nyx-native'];
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
@@ -88,58 +88,9 @@ export const ModelSelector: React.FC<Props> = ({
   React.useEffect(() => {
     let active = true;
     const loadLocalModels = async () => {
-      const isLocalEngineEnabled = localStorage.getItem('llm_ref_local_models_enabled') === 'true';
-      try {
-        const [ollamaRes, lmstudioRes] = await Promise.allSettled([
-          AIService.fetchWithAuth('/api/v1/nyx/local-models/ollama/models'),
-          AIService.fetchWithAuth('/api/v1/models/list', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider: 'lmstudio' })
-          })
-        ]);
-
-        let combinedModels: any[] = [];
-
-        if (ollamaRes.status === 'fulfilled' && ollamaRes.value.ok) {
-          try {
-            const oData = await ollamaRes.value.json();
-            const ollamaModels = (oData.models || oData || []).map((m: any) => ({
-              id: m.name || m,
-              name: (m.name || m).replace('ollama/', ''),
-              provider: 'ollama',
-              description: 'Ollama local model',
-              specs: { contextWindow: '8K', trainingData: 'N/A', maxOutput: 'N/A', modality: 'Text' },
-              status: 'completed'
-            }));
-            combinedModels = [...combinedModels, ...ollamaModels];
-          } catch (e) {}
-        }
-
-        if (lmstudioRes.status === 'fulfilled' && lmstudioRes.value.ok) {
-          try {
-            const lData = await lmstudioRes.value.json();
-            const lmstudioModels = (lData.models || []).map((m: any) => {
-              const idStr = typeof m === 'string' ? m : (m.id || m.key || m.name || JSON.stringify(m));
-              const nameStr = typeof m === 'string' ? m : (m.name || m.display_name || m.id || m.key || JSON.stringify(m));
-              return {
-                id: idStr,
-                name: nameStr.replace('lmstudio/', ''),
-              provider: 'lmstudio',
-              description: 'LM Studio local model',
-              specs: { contextWindow: '8K', trainingData: 'N/A', maxOutput: 'N/A', modality: 'Text' },
-              status: 'completed'
-              };
-            });
-            combinedModels = [...combinedModels, ...lmstudioModels];
-          } catch (e) {}
-        }
-
-        if (active) {
-          setLocalLibraryModels(combinedModels);
-        }
-      } catch (err: any) {
-        console.error('[ModelSelector] Failed to load local models:', err);
+      // Stub: Future fetching from Rust backend via nyx-native provider
+      if (active) {
+        setLocalLibraryModels([]);
       }
     };
     loadLocalModels();
@@ -188,12 +139,8 @@ export const ModelSelector: React.FC<Props> = ({
   const groupedModels = useMemo(() => {
     const groups: Record<string, ModelOption[]> = {
       'gemini': [],
-      'anthropic': [],
-      'openai': [],
-      'deepseek': [],
       'openrouter': [],
-      'lmstudio': [],
-      'ollama': [],
+      'nyx-native': [],
     };
     mergedModels.forEach((model) => {
       const p = model.provider || 'unknown';

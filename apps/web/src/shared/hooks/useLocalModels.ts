@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface LocalModel {
   id: string;
@@ -77,56 +77,27 @@ export function useLocalModels(enabled: boolean = true) {
   return useQuery({
     queryKey: ['localModels'],
     queryFn: async () => {
-      const [ollamaRes, lmstudioRes] = await Promise.allSettled([
-        fetchWithAuth('/api/v1/nyx/local-models/ollama/models'),
-        fetchWithAuth('/api/v1/models/list', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: 'lmstudio' })
-        })
-      ]);
-
-      let ollamaModels = [];
-      if (ollamaRes.status === 'fulfilled' && ollamaRes.value.ok) {
-        try {
-          const oData = await ollamaRes.value.json();
-          ollamaModels = (oData.models || oData || []).map((m: any) => {
-            const nameStr = typeof m === 'string' ? m : (m.name || m.id || JSON.stringify(m));
-            return {
-              id: `ollama/${nameStr}`,
-              name: nameStr.replace('ollama/', ''),
-              provider: 'ollama',
-              description: 'Ollama local model',
-              specs: inferModelSpecs(nameStr),
-              status: 'completed'
-            };
-          });
-        } catch (e) {}
+      try {
+        const models: any[] = await invoke('list_local_models');
+        const formattedModels = models.map(m => {
+          const specs = inferModelSpecs(m.name);
+          return {
+            ...m,
+            specs: {
+              ...specs,
+              size: (m.size_bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
+            },
+            status: 'online',
+            features: ['Local', 'GGUF'],
+            pros: ['Private', 'Fast', 'No Cloud'],
+            cons: ['Requires RAM/VRAM']
+          };
+        });
+        return { models: formattedModels };
+      } catch (e) {
+        console.error('Failed to fetch local models', e);
+        return { models: [] };
       }
-
-      let lmstudioModels = [];
-      if (lmstudioRes.status === 'fulfilled' && lmstudioRes.value.ok) {
-        try {
-          const lData = await lmstudioRes.value.json();
-          lmstudioModels = (lData.models || []).map((m: any) => {
-            const idStr = typeof m === 'string' ? m : (m.id || m.key || m.name || JSON.stringify(m));
-            const nameStr = typeof m === 'string' ? m : (m.name || m.display_name || m.id || m.key || JSON.stringify(m));
-            return {
-              id: idStr,
-              name: nameStr.replace('lmstudio/', ''),
-              provider: 'lmstudio',
-              description: 'LM Studio local model',
-              specs: inferModelSpecs(idStr),
-              status: 'completed'
-            };
-          });
-        } catch (e) {}
-      }
-
-      return {
-        ollamaModels,
-        lmstudioModels,
-      };
     },
     refetchInterval: enabled ? 30000 : false,
     enabled,

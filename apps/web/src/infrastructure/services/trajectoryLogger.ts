@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { ToolCall, ToolResult } from '@src/core/agents/agentLoop';
+import { ToolCall, ToolResult } from '@src/features/agents/agentLoop';
 
 export interface TrajectoryLogEntry {
   timestamp: number;

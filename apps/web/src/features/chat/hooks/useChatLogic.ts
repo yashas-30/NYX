@@ -8,14 +8,14 @@ import { useState, useRef, useEffect, useCallback, useReducer, useMemo } from 'r
 import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { useChatPipeline } from './useChatPipeline';
-import { AIService, cancelRequest, cancelAllRequests } from '@src/core/services/ai.service';
+import { AIService, cancelRequest, cancelAllRequests } from '@src/features/ai/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
 import { getSessionToken } from '@src/infrastructure/api/authFetch';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
 import { compactHistory, compactHistoryAsync, estimateContextTokens } from '@src/infrastructure/utils/compaction';
 import { PlanPhase } from '@src/types/agent';
-import { PromptAnalysisService } from '@src/core/services/promptAnalysis.service';
+import { PromptAnalysisService } from '@src/features/ai/services/promptAnalysis.service';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 
 // ---------------------------------------------------------------------------

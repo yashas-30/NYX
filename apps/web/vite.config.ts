@@ -1,5 +1,5 @@
 import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
+import react from '@vitejs/plugin-react-swc';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import wasm from 'vite-plugin-wasm';
@@ -75,36 +75,38 @@ export default defineConfig(({ mode }) => {
       wasm(),
       topLevelAwait(),
       svgr(),
-      VitePWA({
-        registerType: 'autoUpdate',
-        workbox: {
-          maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
-        },
-        manifest: {
-          name: 'NYX Coder Workspace',
-          short_name: 'NYX',
-          description: 'Transparent agentic AI coding workspace',
-          theme_color: '#09090b',
-          icons: [
-            {
-              src: '/icon-192.png',
-              sizes: '192x192',
-              type: 'image/png',
-            },
-            {
-              src: '/icon-512.png',
-              sizes: '512x512',
-              type: 'image/png',
-            },
-          ],
-        },
-      }),
-      visualizer({
-        open: false,
-        gzipSize: true,
-        brotliSize: true,
-        filename: 'dist/stats.html'
-      })
+      ...(mode === 'production' ? [
+        VitePWA({
+          registerType: 'autoUpdate',
+          workbox: {
+            maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
+          },
+          manifest: {
+            name: 'NYX Coder Workspace',
+            short_name: 'NYX',
+            description: 'Transparent agentic AI coding workspace',
+            theme_color: '#09090b',
+            icons: [
+              {
+                src: '/icon-192.png',
+                sizes: '192x192',
+                type: 'image/png',
+              },
+              {
+                src: '/icon-512.png',
+                sizes: '512x512',
+                type: 'image/png',
+              },
+            ],
+          },
+        }),
+        visualizer({
+          open: false,
+          gzipSize: true,
+          brotliSize: true,
+          filename: 'dist/stats.html'
+        })
+      ] : [])
     ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),

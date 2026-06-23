@@ -14,7 +14,7 @@ tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-tauri-plugin-http = "2"
+tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-store = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
@@ -56,6 +56,10 @@ tiktoken-rs = "0.11.0"
 async-trait = "0.1.89"
 lazy_static = "1.5"
 url = "2"
+fastembed = "5.17.2"
+rusqlite = { version = "0.31.0", features = ["load_extension", "bundled"] }
+sqlite-vec = "0.1.9"
+walkdir = "2.5.0"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

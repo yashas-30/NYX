@@ -20,6 +20,12 @@ interface ModelCardProps {
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   index?: number;
+  isLocal?: boolean;
+  isLoaded?: boolean;
+  onLoad?: () => void;
+  onUnload?: () => void;
+  onUninstall?: () => void;
+  loadingState?: 'loading' | 'unloading' | 'uninstalling' | 'idle';
 }
 
 /** Pure display model card — library view only, no add functionality */
@@ -39,6 +45,12 @@ export const ModelCard: React.FC<ModelCardProps> = ({
   isExpanded = false,
   onToggleExpand,
   index = 0,
+  isLocal = false,
+  isLoaded = false,
+  onLoad,
+  onUnload,
+  onUninstall,
+  loadingState = 'idle',
 }) => {
   const providerLabel = provider;
 
@@ -202,6 +214,38 @@ export const ModelCard: React.FC<ModelCardProps> = ({
             Quota Reached
           </span>
         </motion.div>
+      )}
+
+      {/* Local Model Actions */}
+      {isLocal && (
+        <div className="pt-3 mt-3 border-t border-border/30 flex justify-end gap-2">
+          {onUninstall && (
+            <button
+              onClick={onUninstall}
+              disabled={loadingState === 'uninstalling'}
+              className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:opacity-50 transition-colors mr-auto"
+            >
+              {loadingState === 'uninstalling' ? 'Uninstalling...' : 'Uninstall'}
+            </button>
+          )}
+          {isLoaded ? (
+            <button
+              onClick={onUnload}
+              disabled={loadingState === 'unloading'}
+              className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+            >
+              {loadingState === 'unloading' ? 'Unloading...' : 'Unload'}
+            </button>
+          ) : (
+            <button
+              onClick={onLoad}
+              disabled={loadingState === 'loading'}
+              className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 transition-colors"
+            >
+              {loadingState === 'loading' ? 'Loading to GPU...' : 'Load to GPU'}
+            </button>
+          )}
+        </div>
       )}
     </motion.div>
   );

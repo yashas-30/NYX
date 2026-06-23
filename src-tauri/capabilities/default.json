@@ -6,6 +6,7 @@
     "core:default",
     "shell:allow-open",
     "dialog:default",
+    "dialog:allow-confirm",
     "fs:allow-appdata-read",
     "fs:allow-appdata-write",
     "fs:allow-resource-read",

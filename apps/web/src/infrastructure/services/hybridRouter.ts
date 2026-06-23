@@ -2,7 +2,7 @@
  * @file src/infrastructure/services/hybridRouter.ts
  * @description Production-grade hybrid model router with predictive latency,
  *   cost optimization, per-request isolation, and Claude/Kimi-parity routing.
- *   Exclusively supports Gemini and local models (ollama, lmstudio).
+ *   Exclusively supports Gemini and local models (nyx-native).
  */
 
 import { AVAILABLE_MODELS } from '@shared/config/models';
@@ -118,10 +118,13 @@ export class HybridModelRouter {
       return;
     }
     try {
-      const res = await fetchWithAuth('/api/v1/models/status?provider=ollama');
-      if (!res.ok) return;
 
-      const data = await res.json();
+      let data: any = { models: [], activeModelId: null };
+      if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        data.models = await invoke('list_local_models');
+      }
+
       const activeModelId = data.activeModelId;
       const models = data.models || [];
 
@@ -309,7 +312,7 @@ export class HybridModelRouter {
       localStorage.getItem('llm_ref_local_models_enabled') === 'true';
     const candidates = AVAILABLE_MODELS.filter((m) => {
       // Exclusively support Gemini and local models
-      if (m.provider === 'ollama' || m.provider === 'lmstudio') return localEnabled;
+      if (m.provider === 'nyx-native') return localEnabled;
       if (m.provider === 'gemini') return !!context.apiKeys['gemini']?.trim();
       return false;
     });
@@ -334,7 +337,7 @@ export class HybridModelRouter {
 
     const best = scored[0];
     const warmth = this.predictWarmth(best.model.id);
-    const isLocal = best.model.provider === 'ollama' || best.model.provider === 'lmstudio';
+    const isLocal = best.model.provider === 'nyx-native';
 
     // Auto-warm cold local models for simple tasks
     if (isLocal && warmth.timeToWarmMs > 0 && context.task.complexity !== 'enterprise') {
@@ -349,7 +352,7 @@ export class HybridModelRouter {
       }`,
       estimatedLatency:
         warmth.timeToWarmMs + (this.performanceLog.get(best.model.id)?.avgLatencyMs || 500),
-      estimatedCost: (best.model.provider === 'ollama' || best.model.provider === 'lmstudio') ? 'free' : 'low',
+      estimatedCost: (best.model.provider === 'nyx-native') ? 'free' : 'low',
     };
   }
 
@@ -368,7 +371,7 @@ export class HybridModelRouter {
       requiresTools: false,
       requiresVision: false,
       maxLatencyMs: 2000,
-      preferredProviders: ['ollama', 'lmstudio', 'gemini'],
+      preferredProviders: ['nyx-native', 'gemini'],
     });
   }
 
@@ -389,7 +392,7 @@ export class HybridModelRouter {
       requiresTools: false,
       requiresVision: false,
       maxLatencyMs: 1500, // Very strict latency for background tasks
-      preferredProviders: ['ollama', 'lmstudio', 'gemini'],
+      preferredProviders: ['nyx-native', 'gemini'],
     });
   }
 
@@ -438,7 +441,7 @@ export class HybridModelRouter {
     const alternatives = AVAILABLE_MODELS.filter((m) => {
       if (m.id === modelId) return false;
       if (this.isCircuitOpen(m.id)) return false;
-      if (m.provider === 'ollama' || m.provider === 'lmstudio') return true;
+      if (m.provider === 'nyx-native') return true;
       if (m.provider === 'gemini') return !!apiKeys['gemini']?.trim();
       return false;
     }).sort((a, b) => {
@@ -479,7 +482,7 @@ export class HybridModelRouter {
       const current = chain[i];
       const apiKey = apiKeys[current.provider] || '';
 
-      if (current.provider !== 'ollama' && current.provider !== 'lmstudio' && !apiKey) {
+      if (current.provider !== 'nyx-native' && !apiKey) {
         continue;
       }
 
@@ -488,7 +491,7 @@ export class HybridModelRouter {
           `[FallbackChain] ${current.id} (${current.provider}) [${i + 1}/${chain.length}]`
         );
 
-        if (current.provider === 'ollama' || current.provider === 'lmstudio') {
+        if (current.provider === 'nyx-native') {
           const status = await checkStatusFn(current.provider).catch(() => 'offline');
           if (status !== 'online') {
             console.log('[FallbackChain] Booting cold local model fallback...');
