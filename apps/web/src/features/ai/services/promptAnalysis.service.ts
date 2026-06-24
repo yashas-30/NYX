@@ -202,70 +202,19 @@ export class PromptAnalysisService {
     this.llmRouter = new APIRouter(apiKey);
   }
 
-  /**
-   * Main analysis entry point.
-   * Hybrid approach: fast heuristic → embedding → LLM fallback
-   * Respects timeout budget, returns best available result.
-   */
   public async analyze(prompt: string, options?: AnalysisOptions): Promise<PromptAnalysis> {
-    const startTime = performance.now();
-    const timeout = options?.timeout ?? 1000;
-    
     // Check cache first
     const cached = this.cache.get(prompt);
     if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
       return cached.result;
     }
 
-    // Layer 1: Ultra-fast heuristic (always runs, <50ms)
+    // Layer 1: Ultra-fast heuristic (always runs, <5ms)
+    // Layer 2 (Embedding) and Layer 3 (Live LLM) were removed to eliminate 200-800ms TTFT overhead
     const heuristic = this.fastAnalyze(prompt);
-    const elapsed = performance.now() - startTime;
-    
-    if (elapsed > timeout || heuristic.confidence > 0.85) {
-      this.cache.set(prompt, { result: heuristic, timestamp: Date.now() });
-      return heuristic;
-    }
 
-    // Layer 2: Embedding-based refinement (if enabled and time permits)
-    let embeddingResult: PromptAnalysis | null = null;
-    if (options?.useEmbedding !== false && timeout - elapsed > this.EMBED_TIMEOUT) {
-      try {
-        embeddingResult = await this.embeddingAnalyze(prompt, heuristic);
-      } catch (e) {
-        console.debug('[PromptAnalysis] Embedding layer failed:', e);
-      }
-    }
-
-    const currentResult = embeddingResult || heuristic;
-    const currentElapsed = performance.now() - startTime;
-    
-    if (currentElapsed > timeout || currentResult.confidence > 0.9) {
-      this.cache.set(prompt, { result: currentResult, timestamp: Date.now() });
-      return currentResult;
-    }
-
-    // Layer 3: LLM router for complex/ambiguous cases (if enabled and time permits)
-    if (options?.useLLM !== false && timeout - currentElapsed > this.LLM_TIMEOUT) {
-      try {
-        const llmResult = await Promise.race([
-          this.llmRouter.route(prompt, options?.history),
-          new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error('LLM timeout')), timeout - currentElapsed)
-          )
-        ]);
-        
-        if (llmResult && Object.keys(llmResult).length > 0) {
-          const merged = this.mergeResults(currentResult, llmResult as PromptAnalysis);
-          this.cache.set(prompt, { result: merged, timestamp: Date.now() });
-          return merged;
-        }
-      } catch (e) {
-        console.debug('[PromptAnalysis] LLM layer failed or timed out:', e);
-      }
-    }
-
-    this.cache.set(prompt, { result: currentResult, timestamp: Date.now() });
-    return currentResult;
+    this.cache.set(prompt, { result: heuristic, timestamp: Date.now() });
+    return heuristic;
   }
 
   // -------------------------------------------------------------------------
@@ -312,9 +261,6 @@ export class PromptAnalysisService {
     } else if (isEnsemble) {
       suggestedExecutionMode = 'ensemble';
       suggestedExecutionReasoning = 'Detected request for consensus synthesis across multiple models.';
-    } else if (complexity >= 3) {
-      suggestedExecutionMode = 'ensemble';
-      suggestedExecutionReasoning = 'Highly complex task. Routing to ensemble synthesis to combine capabilities of multiple models.';
     }
 
     return {

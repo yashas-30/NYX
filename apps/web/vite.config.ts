@@ -112,8 +112,6 @@ export default defineConfig(({ mode }) => {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
     optimizeDeps: {
-      // @ts-ignore - Vite types might be slightly outdated with Rolldown migration
-      rolldownOptions: { target: 'esnext' } as any,
       exclude: ['tiktoken'],
       include: [
         'react',

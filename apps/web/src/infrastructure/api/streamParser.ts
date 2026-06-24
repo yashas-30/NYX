@@ -254,7 +254,7 @@ function extractContent(parsed: any): ExtractedContent {
     result.reasoning = parsed.reasoning;
   }
 
-  // Ollama formats
+  // nyx-native formats
   if (parsed.message?.content) {
     result.text = parsed.message.content;
   }
@@ -348,8 +348,7 @@ export async function parseSSEStream(
     throw new Error('No response body');
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';
 
   // Result accumulation
@@ -481,11 +480,10 @@ export async function parseSSEStream(
         throw new DOMException('Aborted', 'AbortError');
       }
 
-      // fallow-ignore-next-line code-duplication
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      buffer += value;
 
       // Process complete lines
       const lines = buffer.split('\n');

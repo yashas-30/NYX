@@ -287,13 +287,13 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                     <div>
                       <p className="text-[10px] text-muted-foreground uppercase font-bold">Model A</p>
                       <p className="font-semibold text-foreground mt-0.5">
-                        {modelA.provider === 'ollama' || modelA.provider === 'lmstudio' ? 'Free (Local)' : 'Cloud Tier'}
+                        {modelA.provider === 'nyx-native' ? 'Free (Local)' : 'Cloud Tier'}
                       </p>
                     </div>
                     <div>
                       <p className="text-[10px] text-muted-foreground uppercase font-bold">Model B</p>
                       <p className="font-semibold text-foreground mt-0.5">
-                        {modelB.provider === 'ollama' || modelB.provider === 'lmstudio' ? 'Free (Local)' : 'Cloud Tier'}
+                        {modelB.provider === 'nyx-native' ? 'Free (Local)' : 'Cloud Tier'}
                       </p>
                     </div>
                   </div>
@@ -361,14 +361,14 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                 <tr>
                   <td className="py-3 text-foreground font-semibold">Zero-key Local Running</td>
                   <td className="py-3">
-                    {modelA.provider === 'ollama' || modelA.provider === 'lmstudio' ? (
+                    {modelA.provider === 'nyx-native' ? (
                       <Check className="w-4 h-4 text-emerald-500" />
                     ) : (
                       <X className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                   <td className="py-3">
-                    {modelB.provider === 'ollama' || modelB.provider === 'lmstudio' ? (
+                    {modelB.provider === 'nyx-native' ? (
                       <Check className="w-4 h-4 text-emerald-500" />
                     ) : (
                       <X className="w-4 h-4 text-red-500" />
@@ -412,14 +412,14 @@ export const ModelComparisonView: React.FC<ModelComparisonViewProps> = ({
                 <tr>
                   <td className="py-3 text-foreground font-semibold">Offline Execution Capable</td>
                   <td className="py-3">
-                    {modelA.provider === 'ollama' || modelA.provider === 'lmstudio' ? (
+                    {modelA.provider === 'nyx-native' ? (
                       <Check className="w-4 h-4 text-emerald-500" />
                     ) : (
                       <X className="w-4 h-4 text-red-500" />
                     )}
                   </td>
                   <td className="py-3">
-                    {modelB.provider === 'ollama' || modelB.provider === 'lmstudio' ? (
+                    {modelB.provider === 'nyx-native' ? (
                       <Check className="w-4 h-4 text-emerald-500" />
                     ) : (
                       <X className="w-4 h-4 text-red-500" />

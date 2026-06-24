@@ -7,7 +7,7 @@ use tracing::error;
 
 #[derive(Deserialize)]
 pub struct ChatRequest {
-    pub prompt: String,
+    pub messages: Vec<crate::agents::memory::Message>,
     pub api_key: String,
     pub base_url: String,
     pub model: String,
@@ -27,11 +27,12 @@ pub async fn start_native_agent(
         req.base_url,
         req.model,
         req.system_prompt,
+        req.messages,
         scanner.inner().clone(),
     );
 
     let app_clone = app.clone();
-    let res = engine.run(&req.prompt, move |event| {
+    let res = engine.run(move |event| {
         // Emit events to frontend
         if let Err(e) = app_clone.emit("agent-stream", event) {
             error!("Failed to emit agent event: {}", e);

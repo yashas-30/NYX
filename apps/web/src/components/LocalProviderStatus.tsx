@@ -10,8 +10,7 @@ interface ProviderStatus {
 }
 
 interface LocalStatus {
-  ollama: ProviderStatus;
-  lmstudio: ProviderStatus;
+  tauri: ProviderStatus;
 }
 
 export function LocalProviderStatus() {
@@ -50,8 +49,7 @@ export function LocalProviderStatus() {
   }
 
   const providers: Array<{ key: keyof LocalStatus; label: string; data: ProviderStatus | undefined }> = [
-    { key: 'ollama', label: 'Ollama', data: status.ollama },
-    { key: 'lmstudio', label: 'LM Studio', data: status.lmstudio },
+    { key: 'tauri', label: 'Tauri Native', data: status.tauri },
   ];
 
   return (

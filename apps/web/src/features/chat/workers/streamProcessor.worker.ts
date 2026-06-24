@@ -5,6 +5,9 @@ let accumulatedText = '';
 let accumulatedReasoning = '';
 let lastFlushTime = 0;
 const FLUSH_INTERVAL_MS = 50;
+let hasEmittedFirstChunk = false;
+let lastProcessedLength = 0;
+let cachedBlocks: string[] = [];
 
 function splitIntoBlocks(text: string): string[] {
   const blocks: string[] = [];
@@ -22,7 +25,6 @@ function splitIntoBlocks(text: string): string[] {
     
     // Split by double newline if not in a code block
     if (!inCodeBlock && line.trim() === '' && currentBlock.length > 0) {
-      // Don't split if the block only contains empty lines
       if (currentBlock.some(l => l.trim() !== '')) {
         blocks.push(currentBlock.join('\n'));
       }
@@ -44,17 +46,19 @@ self.onmessage = (event) => {
     accumulatedText = '';
     accumulatedReasoning = '';
     lastFlushTime = 0;
+    hasEmittedFirstChunk = false;
     self.postMessage({ type: 'reset_done' });
     return;
   }
 
   if (type === 'sync') {
+    const blocks = splitIntoBlocks(accumulatedText);
     self.postMessage({
       type: 'update',
       payload: {
         text: accumulatedText,
         reasoning: accumulatedReasoning,
-        blocks: splitIntoBlocks(accumulatedText),
+        blocks: blocks,
         isDone: true,
         originalChunk: { type: 'text', content: '' }
       }
@@ -89,23 +93,29 @@ self.onmessage = (event) => {
     }
 
     const now = Date.now();
-    if (
-      hasNewContent &&
-      (now - lastFlushTime >= FLUSH_INTERVAL_MS ||
+    if (hasNewContent) {
+      if (!hasEmittedFirstChunk) {
+        shouldFlush = true;
+        lastFlushTime = now;
+        hasEmittedFirstChunk = true;
+      } else if (
+        now - lastFlushTime >= FLUSH_INTERVAL_MS ||
         chunk.type === 'done' ||
-        chunk.type === 'finish')
-    ) {
-      shouldFlush = true;
-      lastFlushTime = now;
+        chunk.type === 'finish'
+      ) {
+        shouldFlush = true;
+        lastFlushTime = now;
+      }
     }
 
     if (shouldFlush) {
+      const blocks = splitIntoBlocks(accumulatedText);
       self.postMessage({
         type: 'update',
         payload: {
           text: accumulatedText,
           reasoning: accumulatedReasoning,
-          blocks: splitIntoBlocks(accumulatedText),
+          blocks: blocks,
           isDone: chunk.type === 'done' || chunk.type === 'finish',
           originalChunk: chunk
         }

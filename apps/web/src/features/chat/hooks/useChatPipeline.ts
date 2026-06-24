@@ -21,6 +21,7 @@ import {
   updateConversationState,
   ConversationState,
 } from '@src/features/ai/services/promptClassifier';
+
 import { NativeAgentService } from '../../agents/openHands.service';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
@@ -31,6 +32,9 @@ import { formatProviderError } from '@src/infrastructure/api/streamParser';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
+
+// Tauri MCP imports
+import { invoke } from '@tauri-apps/api/core';
 
 // ---------------------------------------------------------------------------
 // Execution Mode Helper Functions
@@ -93,38 +97,7 @@ function getCandidatesForExecution(
     return promptModels.map(m => ({ modelId: m.id, provider: m.provider }));
   }
 
-  const configs: { modelId: string; provider: string }[] = [
-    { modelId: currentModelId, provider: currentProvider }
-  ];
-
-  const store = useNyxStore.getState();
-  const onlineProviders = Object.keys(store.statuses).filter(
-    (prov) => store.statuses[prov] === 'online' && prov !== currentProvider
-  );
-
-  const topModelsPerProvider: Record<string, string> = {
-    gemini: 'gemini-3.5-flash',
-    openrouter: 'google/gemini-2.5-flash'
-  };
-
-  for (const prov of onlineProviders) {
-    const modelId = topModelsPerProvider[prov];
-    if (modelId) {
-      configs.push({ modelId, provider: prov });
-    }
-  }
-
-  // If still less than 2, add sibling models from current provider
-  if (configs.length < 2) {
-    const siblingModels = AVAILABLE_MODELS.filter(
-      (m) => m.provider === currentProvider && m.id !== currentModelId && m.status !== 'deprecated' && m.id !== 'nyx-auto'
-    );
-    siblingModels.slice(0, 2).forEach(m => {
-      configs.push({ modelId: m.id, provider: m.provider });
-    });
-  }
-
-  return configs;
+  return [{ modelId: currentModelId, provider: currentProvider }];
 }
 
 // ---------------------------------------------------------------------------
@@ -278,12 +251,18 @@ export const useChatPipeline = ({
   }, [history]);
 
   // Cleanup on unmount
+  const workerRef = useRef<Worker | null>(null);
   useEffect(() => {
     isMountedRef.current = true;
+    workerRef.current = new Worker(new URL('../workers/streamProcessor.worker.ts', import.meta.url), { type: 'module' });
     return () => {
       isMountedRef.current = false;
       if (controllerRef.current) {
         controllerRef.current.abort();
+      }
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
       }
     };
   }, []);
@@ -343,7 +322,8 @@ export const useChatPipeline = ({
       const streamStartTime = Date.now();
 
       // Web Worker Setup
-      const worker = new Worker(new URL('../workers/streamProcessor.worker.ts', import.meta.url), { type: 'module' });
+      const worker = workerRef.current || new Worker(new URL('../workers/streamProcessor.worker.ts', import.meta.url), { type: 'module' });
+      if (!workerRef.current) workerRef.current = worker;
       worker.postMessage({ type: 'reset' });
 
       let resolveSync: (() => void) | null = null;
@@ -359,79 +339,78 @@ export const useChatPipeline = ({
 
       worker.onmessage = (event) => {
         if (event.data.type === 'update') {
-          const { text, reasoning, blocks, originalChunk } = event.data.payload;
+          const { text, reasoning, blocks, originalChunk, isDone } = event.data.payload;
           const textChanged = text !== accumulatedText;
           const reasoningChanged = reasoning !== accumulatedReasoning;
           
           accumulatedText = text;
           accumulatedReasoning = reasoning;
           
-          // CRITICAL FIX: Must return a NEW array with a NEW object for React to detect the change.
-          // The old code mutated `last.content` directly and returned the same `prev` reference,
-          // which caused React to skip re-renders entirely — responses only showed in ThinkingBlock.
           safeUpdateHistory((prev) => {
             const next = [...prev];
             const lastIdx = next.length - 1;
             const last = next[lastIdx];
             if (last?.role === 'assistant') {
-              // Parse streaming artifacts in real time
-              const parsedArtifacts: any[] = [];
-              const seenIds = new Set<string>();
+              // Parse streaming artifacts at end-of-stream only to optimize regex runtime
+              let parsedArtifacts: any[] = [];
+              if (isDone || originalChunk?.type === 'done' || originalChunk?.type === 'finish') {
+                const seenIds = new Set<string>();
 
-              // 1. Parse explicit <nyx_artifact> tags
-              const artifactRegex = /<nyx_artifact\s+id="([^"]+)"\s+title="([^"]+)"\s+type="([^"]+)"(?:\s+language="([^"]+)")?>([\s\S]*?)(?:<\/nyx_artifact>|$)/g;
-              let match;
-              while ((match = artifactRegex.exec(text)) !== null) {
-                const id = match[1];
-                seenIds.add(id);
-                parsedArtifacts.push({
-                  id,
-                  title: match[2],
-                  type: match[3],
-                  language: match[4] || match[3],
-                  content: match[5],
-                });
-              }
-
-              // 2. Auto-detect standard markdown code blocks (HTML, React, Python, CSS, JS, TS, SVG, Mermaid)
-              const markdownCodeBlockRegex = /```(html|react|tsx|jsx|python|py|javascript|js|typescript|ts|css|svg|mermaid)\b([\s\S]*?)(?:```|$)/g;
-              let blockIndex = 1;
-              while ((match = markdownCodeBlockRegex.exec(text)) !== null) {
-                const lang = match[1];
-                const content = match[2];
-                
-                // Ignore small snippets unless they are renderable structures
-                if (content.trim().length < 40 && !['html', 'svg', 'mermaid'].includes(lang)) {
-                  continue;
+                // 1. Parse explicit <nyx_artifact> tags
+                const artifactRegex = /<nyx_artifact\s+id="([^"]+)"\s+title="([^"]+)"\s+type="([^"]+)"(?:\s+language="([^"]+)")?>([\s\S]*?)(?:<\/nyx_artifact>|$)/g;
+                let match;
+                while ((match = artifactRegex.exec(text)) !== null) {
+                  const id = match[1];
+                  seenIds.add(id);
+                  parsedArtifacts.push({
+                    id,
+                    title: match[2],
+                    type: match[3],
+                    language: match[4] || match[3],
+                    content: match[5],
+                  });
                 }
 
-                // Check if this block is already captured inside explicit artifacts to avoid duplication
-                const alreadyCaptured = parsedArtifacts.some(
-                  (art) =>
-                    art.content.includes(content.trim()) ||
-                    content.trim().includes(art.content.trim())
-                );
-                if (alreadyCaptured) {
-                  continue;
+                // 2. Auto-detect standard markdown code blocks (HTML, React, Python, CSS, JS, TS, SVG, Mermaid)
+                const markdownCodeBlockRegex = /```(html|react|tsx|jsx|python|py|javascript|js|typescript|ts|css|svg|mermaid)\b([\s\S]*?)(?:```|$)/g;
+                let blockIndex = 1;
+                while ((match = markdownCodeBlockRegex.exec(text)) !== null) {
+                  const lang = match[1];
+                  const content = match[2];
+                  
+                  // Ignore small snippets unless they are renderable structures
+                  if (content.trim().length < 40 && !['html', 'svg', 'mermaid'].includes(lang)) {
+                    continue;
+                  }
+
+                  // Check if this block is already captured inside explicit artifacts to avoid duplication
+                  const alreadyCaptured = parsedArtifacts.some(
+                    (art) =>
+                      art.content.includes(content.trim()) ||
+                      content.trim().includes(art.content.trim())
+                  );
+                  if (alreadyCaptured) {
+                    continue;
+                  }
+
+                  const id = `auto-code-${blockIndex++}`;
+                  let title = 'Snippet';
+                  if (lang === 'html') title = 'HTML Page';
+                  else if (['react', 'tsx', 'jsx'].includes(lang)) title = 'React Component';
+                  else if (['python', 'py'].includes(lang)) title = 'Python Script';
+                  else if (lang === 'mermaid') title = 'Mermaid Diagram';
+                  else if (lang === 'svg') title = 'Vector Graphic';
+                  else if (['javascript', 'js', 'typescript', 'ts'].includes(lang)) title = 'Source Code';
+                  else if (lang === 'css') title = 'CSS Stylesheet';
+
+                  parsedArtifacts.push({
+                    id,
+                    title,
+                    type: ['react', 'tsx', 'jsx'].includes(lang) ? 'react' : (lang === 'py' ? 'python' : lang),
+                    language: lang,
+                    content: content.trim(),
+                  });
                 }
-
-                const id = `auto-code-${blockIndex++}`;
-                let title = 'Snippet';
-                if (lang === 'html') title = 'HTML Page';
-                else if (['react', 'tsx', 'jsx'].includes(lang)) title = 'React Component';
-                else if (['python', 'py'].includes(lang)) title = 'Python Script';
-                else if (lang === 'mermaid') title = 'Mermaid Diagram';
-                else if (lang === 'svg') title = 'Vector Graphic';
-                else if (['javascript', 'js', 'typescript', 'ts'].includes(lang)) title = 'Source Code';
-                else if (lang === 'css') title = 'CSS Stylesheet';
-
-                parsedArtifacts.push({
-                  id,
-                  title,
-                  type: ['react', 'tsx', 'jsx'].includes(lang) ? 'react' : (lang === 'py' ? 'python' : lang),
-                  language: lang,
-                  content: content.trim(),
-                });
               }
 
               next[lastIdx] = {
@@ -439,7 +418,7 @@ export const useChatPipeline = ({
                 content: text,
                 reasoning: reasoning !== undefined ? reasoning : last.reasoning,
                 blocks: blocks || [],
-                artifacts: parsedArtifacts,
+                artifacts: parsedArtifacts.length ? parsedArtifacts : (last.artifacts || []),
               } as any;
             }
             return next;
@@ -777,7 +756,7 @@ export const useChatPipeline = ({
         }
         throw err;
       } finally {
-        worker.terminate();
+        // Do not terminate, we reuse the worker!
       }
 
       return { text: accumulatedText, metrics: finalMetrics, finishReason };
@@ -853,7 +832,7 @@ export const useChatPipeline = ({
 
       try {
         // Validate API key early
-        if (!nyxApiKey && nyxProvider !== 'ollama' && nyxProvider !== 'lmstudio' && navigator.onLine) {
+        if (!nyxApiKey && nyxProvider !== 'nyx-native' && navigator.onLine) {
           throw new Error(
             `${nyxProvider} API key not found. Please add your API key in Settings before using this model.`
           );
@@ -903,11 +882,15 @@ export const useChatPipeline = ({
           },
         ]);
 
-        // Optimize conversation history
+        // Optimize conversation history dynamically based on model tier
+        const isLocalModel = nyxProvider === 'nyx-native';
+        const maxTokens = isLocalModel ? 8192 : 32000;
+        const minPreserved = isLocalModel ? 10 : 20;
+
         const optimizedHistory = await ContextManager.optimizeContextWindow(
           historySnapshotRef.current,
-          8192,
-          5
+          maxTokens,
+          minPreserved
         );
 
         // Compress prompt to mitigate context overflows if it's too large
@@ -924,7 +907,6 @@ export const useChatPipeline = ({
           
           let fetchedMemories: any[] = [];
           if (isTauriEnv) {
-            const { invoke } = await import('@tauri-apps/api/core');
             fetchedMemories = await invoke<any[]>('db_get_memories').catch(() => []);
           } else {
             const local = localStorage.getItem('nyx_mock_memories');
@@ -957,7 +939,9 @@ export const useChatPipeline = ({
         let finalModel = nyxModel;
         let finalApiKey = nyxApiKey || 'dummy_key';
 
-        if (analysis.suggestedModel === 'local' || nyxProvider === 'nyx-native') {
+        const isActuallyLocal = nyxProvider === 'nyx-native';
+
+        if (isActuallyLocal) {
           finalBaseUrl = 'http://127.0.0.1:8080/v1';
           finalApiKey = 'local';
         } else {
@@ -965,7 +949,6 @@ export const useChatPipeline = ({
           if (nyxProvider === 'anthropic') finalBaseUrl = 'https://api.anthropic.com/v1';
           else if (nyxProvider === 'gemini') finalBaseUrl = 'https://generativelanguage.googleapis.com/v1beta/openai';
           else if (nyxProvider === 'groq') finalBaseUrl = 'https://api.groq.com/openai/v1';
-          else if (nyxProvider === 'openrouter') finalBaseUrl = 'https://openrouter.ai/api/v1';
         }
 
         const agent = new NativeAgentService(
@@ -987,7 +970,6 @@ export const useChatPipeline = ({
                   const numResults = 5;
                   
                   if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
-                    const { invoke } = await import('@tauri-apps/api/core');
                     const storeState = useNyxStore.getState();
                     const searchProvider = storeState.searchProvider || 'duckduckgo';
                     const apiKey = storeState.apiKeys[searchProvider] || '';
@@ -1024,6 +1006,11 @@ export const useChatPipeline = ({
           if (analysis.suggestedExecutionReasoning) {
             toast.info(`[Auto-Mode] ${analysis.suggestedExecutionReasoning}`);
           }
+        }
+
+        const promptModels = extractModelsFromPrompt(sanitizedPrompt);
+        if (executionMode !== 'standard' && promptModels.length < 2) {
+          executionMode = 'standard';
         }
 
         let generator: AsyncGenerator<any>;
@@ -1105,7 +1092,8 @@ export const useChatPipeline = ({
 
               if (executionPromise) {
                 executionPromise.catch((err: any) => {
-                  queue.push({ type: 'error', content: err.message });
+                  const errorMsg = err instanceof Error ? err.message : String(err);
+                  queue.push({ type: 'error', content: errorMsg });
                 }).finally(() => {
                   isDone = true;
                   if (resolveNext) resolveNext();
@@ -1124,7 +1112,8 @@ export const useChatPipeline = ({
 
               yield { type: 'done' };
             } catch (err: any) {
-              yield { type: 'error', content: err.message };
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              yield { type: 'error', content: errorMsg };
             }
           })();
         }

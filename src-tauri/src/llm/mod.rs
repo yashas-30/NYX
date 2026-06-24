@@ -30,7 +30,7 @@ pub async fn download_local_model(app: AppHandle) -> Result<(), String> {
 pub async fn start_local_server(app: AppHandle, manager: State<'_, Arc<LlamaManager>>, model_id: String) -> Result<(), String> {
     let app_dir = app.path().app_data_dir().map_err(|_| "Failed to get app data dir".to_string())?;
     let model_path = app_dir.join("models").join(&model_id);
-    let server_path = app_dir.join("binaries").join("llama-server-cuda.exe");
+    let server_path = app_dir.join("binaries").join("llama-server-vulkan.exe");
 
     if !model_path.exists() || !server_path.exists() {
         return Err("Model or server binary not found. Please download them first.".to_string());

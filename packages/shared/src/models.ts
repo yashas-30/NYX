@@ -107,7 +107,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
   {
     id: 'nyx-gemma-4-e2b-it',
     name: 'NYX Edge Agent (Gemma 4 E2B)',
-    provider: 'ollama',
+    provider: 'nyx-native',
     status: 'ga',
     description:
       "The native NYX agent running locally on-device. Fully powered by Google's Gemma 4 E2B.",
@@ -116,7 +116,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
   {
     id: 'qwen2.5-coder-1.5b-native',
     name: 'Qwen 2.5 Coder 1.5B (GGUF)',
-    provider: 'ollama',
+    provider: 'nyx-native',
     status: 'ga',
     description: 'Fast, lightweight Qwen model optimized specifically for coding tasks.',
     specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' },
@@ -124,7 +124,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
   {
     id: 'qwen2.5-coder-3b-native',
     name: 'Qwen 2.5 Coder 3B (GGUF)',
-    provider: 'ollama',
+    provider: 'nyx-native',
     status: 'ga',
     description: 'Perfect balance of high intelligence and execution speed for coding.',
     specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' },
@@ -132,7 +132,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
   {
     id: 'llama-3.2-3b-native',
     name: 'Llama 3.2 3B (GGUF)',
-    provider: 'ollama',
+    provider: 'nyx-native',
     status: 'ga',
     description: "Meta's highly capable general instruction model for general analysis.",
     specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' },
@@ -140,7 +140,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
 ];
 
 // Deduplicate by ID to prevent duplicate entries in the model selector
-const ALLOWED_PROVIDERS = ['gemini', 'ollama', 'lmstudio'];
+const ALLOWED_PROVIDERS = ['gemini', 'nyx-native'];
 const _seen = new Set<string>();
 export const AVAILABLE_MODELS: ModelOption[] = RAW_AVAILABLE_MODELS.filter((m) =>
   ALLOWED_PROVIDERS.includes(m.provider)

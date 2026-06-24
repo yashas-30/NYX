@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Provider definition
-export type ModelProvider = 'gemini' | 'terminal' | 'ollama' | 'lmstudio' | 'openai' | 'groq' | 'together' | 'perplexity' | 'anthropic' | 'openrouter' | 'deepseek' | 'nyx-native';
+export type ModelProvider = 'gemini' | 'terminal' | 'openai' | 'groq' | 'together' | 'perplexity' | 'anthropic' | 'openrouter' | 'deepseek' | 'nyx-native';
 export type Provider = ModelProvider;
 
 // Telemetry Metrics schema and type
@@ -88,7 +88,7 @@ export type ModelStatus = 'ga' | 'preview' | 'deprecated' | 'alias';
 export const ModelOptionSchema = z.object({
   id: z.string(),
   name: z.string(),
-  provider: z.enum(['gemini', 'terminal', 'ollama', 'lmstudio', 'openai', 'groq', 'together', 'perplexity', 'anthropic', 'openrouter', 'deepseek', 'nyx-native']),
+  provider: z.enum(['gemini', 'terminal', 'openai', 'groq', 'together', 'perplexity', 'anthropic', 'openrouter', 'deepseek', 'nyx-native']),
   description: z.string(),
   isLocal: z.boolean().optional(),
   status: z.enum(['ga', 'preview', 'deprecated', 'alias']).optional().default('ga'),

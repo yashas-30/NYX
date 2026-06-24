@@ -28,6 +28,8 @@ export interface NyxState {
   localModelsEnabled: boolean;
   agentLoopEnabled: boolean;
   modelSettings: ModelSettings;
+  cloudModelId: string | null;
+  localModelId: string | null;
   models: Record<'nyx', string>;
   apiKeys: Record<string, string>;
   statuses: Record<string, 'online' | 'offline' | 'no-key' | 'invalid-key'>;
@@ -48,6 +50,8 @@ export interface NyxState {
   setLocalModelsEnabled: (enabled: boolean) => void;
   setAgentLoopEnabled: (enabled: boolean) => void;
   updateModelSettings: (settings: Partial<ModelSettings>) => void;
+  setCloudModelId: (id: string | null) => void;
+  setLocalModelId: (id: string | null) => void;
   setModel: (mid: string) => void;
   setApiKeys: (keys: Record<string, string>) => void;
   updateApiKey: (provider: string, key: string) => Promise<void>;
@@ -105,6 +109,8 @@ export const useNyxStore = create<NyxState>()(
       localModelsEnabled: false,
       agentLoopEnabled: false,
       modelSettings: DEFAULT_SETTINGS,
+      cloudModelId: 'gemini-2.5-flash',
+      localModelId: null,
       models: { nyx: '' },
       apiKeys: {},
       statuses: {},
@@ -124,6 +130,8 @@ export const useNyxStore = create<NyxState>()(
           set((state) => ({
             modelSettings: { ...state.modelSettings, ...settings },
           })),
+      setCloudModelId: (id) => set({ cloudModelId: id }),
+      setLocalModelId: (id) => set({ localModelId: id }),
       setModel: (mid) => set({ models: { nyx: mid } }),
       setSearchProvider: (provider) => set({ searchProvider: provider }),
       setActiveProjectId: (id) => set({ activeProjectId: id }),
@@ -256,12 +264,12 @@ export const useNyxStore = create<NyxState>()(
             const listRes = await ipc.invoke('vault:list-keys');
             if (listRes.success && Array.isArray(listRes.data)) {
               const keys: Record<string, string> = {};
-              for (const provider of listRes.data) {
+              await Promise.all(listRes.data.map(async (provider: string) => {
                 const getRes = await ipc.invoke('vault:get-key', { provider });
                 if (getRes.success && getRes.data) {
                   keys[provider] = getRes.data;
                 }
-              }
+              }));
               set({ apiKeys: keys });
               await get().refreshStatuses();
             }
@@ -269,6 +277,32 @@ export const useNyxStore = create<NyxState>()(
             console.error('[Store] Failed to retrieve secure keys on mount:', err);
           }
         }
+      },
+
+      deleteApiKey: async (provider: string): Promise<boolean> => {
+        const { apiKeys } = get();
+        if (!apiKeys[provider]) {
+          return false;
+        }
+        
+        const updatedKeys = { ...apiKeys };
+        delete updatedKeys[provider];
+        set({ apiKeys: updatedKeys });
+        
+        // Also delete from the vault if available
+        const ipc = (window as any).nyxIPC;
+        if (ipc && typeof ipc.invoke === 'function') {
+          try {
+            await ipc.invoke('vault:delete-key', { provider });
+          } catch (err: any) {
+            console.error('[Store] Failed to delete vault key:', err);
+            // Revert the local state if vault deletion fails
+            set({ apiKeys: { ...apiKeys, [provider]: apiKeys[provider] } });
+            return false;
+          }
+        }
+        
+        return true;
       },
 
       refreshStatuses: async () => {
@@ -282,7 +316,7 @@ export const useNyxStore = create<NyxState>()(
           const vaultRes = await fetch('/api/v1/vault/status').catch(() => null);
           const vaultStatus = vaultRes && vaultRes.ok ? await vaultRes.json() : {};
 
-          for (const p of cloudProviders) {
+          await Promise.all(cloudProviders.map(async (p) => {
             const hasVaultKey = vaultStatus[p];
             const hasMemoryKey = !!get().apiKeys[p];
 
@@ -300,7 +334,7 @@ export const useNyxStore = create<NyxState>()(
             } else {
               newStatuses[p] = 'no-key';
             }
-          }
+          }));
           set({ statuses: newStatuses });
         } catch (e: any) {
           console.warn('[Store] Status checks failed:', e);
@@ -314,6 +348,8 @@ export const useNyxStore = create<NyxState>()(
         executionMode: state.executionMode,
         localModelsEnabled: state.localModelsEnabled,
         modelSettings: state.modelSettings,
+        cloudModelId: state.cloudModelId,
+        localModelId: state.localModelId,
         models: state.models,
         privacyMode: state.privacyMode,
         rememberKeys: state.rememberKeys,

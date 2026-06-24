@@ -117,6 +117,10 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const localSettings = modelSettings;
   const agentLoopEnabled = useNyxStore((state) => state.agentLoopEnabled);
   const setAgentLoopEnabled = useNyxStore((state) => state.setAgentLoopEnabled);
+  const cloudModelId = useNyxStore((state) => state.cloudModelId);
+  const localModelId = useNyxStore((state) => state.localModelId);
+
+  const hasModelSelected = !!cloudModelId || !!localModelId || !!currentModelId;
 
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [voiceEngine, setVoiceEngine] = useState<'browser' | 'vad'>('browser');
@@ -292,7 +296,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const providerStr = String(currentModel?.provider ?? '');
   const isLocalModel = !!(
     currentModelId &&
-    (providerStr === 'ollama' || providerStr === 'lmstudio' || (!currentModel && currentModelId))
+    (providerStr === 'nyx-native' || (!currentModel && currentModelId))
   );
 
   useEffect(() => {
@@ -393,7 +397,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     e?.preventDefault();
     if ((!prompt.trim() && selectedImages.length === 0) || isLoading || isSubmitting.current)
       return;
-    if (!currentModelId) {
+    if (!hasModelSelected) {
       toast.error('Please select a model first');
       return;
     }
@@ -412,7 +416,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   };
 
   const canSubmit =
-    (!!prompt.trim() || selectedImages.length > 0) && !!currentModelId && !isLoading;
+    (!!prompt.trim() || selectedImages.length > 0) && hasModelSelected && !isLoading;
 
   const gpuModeLabel =
     localSettings.gpuLayers === 0

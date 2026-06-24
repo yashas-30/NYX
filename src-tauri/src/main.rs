@@ -1,5 +1,10 @@
 // #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// Force Windows to use Dedicated GPU (High Performance) for this application and WebView2
+#[no_mangle]
+pub static NvOptimusEnablement: u32 = 1;
+#[no_mangle]
+pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tokio::sync::Mutex;
@@ -14,6 +19,7 @@ mod db;
 pub mod llm;
 pub mod agents;
 pub mod rag;
+pub mod research;
 
 use commands::*;
 
@@ -168,6 +174,7 @@ pub fn run() {
             llm::hf_get_model_readme,
             llm::hf_get_restored_downloads,
             commands::system::get_hardware_specs,
+            research::start_deep_research,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

@@ -25,13 +25,7 @@ export const useProviderStatus = (
     if (!isVisibleRef.current) return;
 
     const providers: string[] = ['gemini'];
-    if (localModelsEnabled) {
-      providers.push('ollama');
-    }
     const newStatuses: Record<string, Status> = {};
-    if (!localModelsEnabled) {
-      newStatuses['ollama'] = 'offline';
-    }
 
     await Promise.all(
       providers.map(async (p) => {

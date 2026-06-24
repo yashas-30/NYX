@@ -7,6 +7,7 @@
 
 import { AISettings } from './types';
 import { parseSSEStream } from './streamParser';
+import { stripThinkingContent } from '../../utils/textUtils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -109,7 +110,7 @@ async function fetchWithRetry(
   const signal = mergeSignals(userSignal, createTimeoutSignal(timeout));
 
   try {
-    const response = await fetch(url, { ...fetchInit, signal });
+    const response = await fetch(url, { keepalive: true, ...fetchInit, signal });
 
     // Retry on server error, but NOT on rate limit (429) per user request
     if (
@@ -237,7 +238,7 @@ export async function directFetch(
       if (m.role === 'assistant' || m.role === 'model') {
         const parts: any[] = [];
         if (m.content) {
-          parts.push({ text: m.content });
+          parts.push({ text: stripThinkingContent(m.content) });
         }
         const toolCalls = m.toolCalls || m.tool_calls;
         if (toolCalls && Array.isArray(toolCalls)) {

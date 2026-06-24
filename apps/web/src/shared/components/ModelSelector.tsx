@@ -10,6 +10,9 @@ import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/Provid
 import { AIService } from '@src/features/ai/services/ai.service';
 import { useNyxStore, ExecutionMode } from '@src/shared/store/useNyxStore';
 import { ModelStatusBadge } from '@src/features/model-registry/ModelStatusBadge';
+import { useModelStore } from '@src/core/stores/useModelStore';
+import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 
 interface Props {
   currentModelId?: string;
@@ -26,6 +29,8 @@ interface Props {
   gatewayUrls?: Record<string, string>;
   dropdown?: boolean;
   alignDropdown?: 'top' | 'bottom';
+  hideGateways?: boolean;
+  hideNyxNative?: boolean;
 }
 
 // Structured provider order for the selector
@@ -77,29 +82,56 @@ export const ModelSelector: React.FC<Props> = ({
   gatewayUrls = {},
   dropdown = false,
   alignDropdown = 'top',
+  hideGateways = false,
+  hideNyxNative = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const parentRef = useRef<HTMLDivElement>(null);
-  const [localLibraryModels, setLocalLibraryModels] = React.useState<ModelOption[]>([]);
+  const localLibraryModels = useModelStore((s) => s.localLibraryModels);
+  const loadedLocalModel = useModelStore((s) => s.loadedLocalModel);
+  const setLoadedLocalModel = useModelStore((s) => s.setLoadedLocalModel);
+  const loadLocalLibraryModels = useModelStore((s) => s.loadLocalLibraryModels);
+  const [isTogglingModel, setIsTogglingModel] = React.useState(false);
+
   const [expandedModelId, setExpandedModelId] = React.useState<string | null>(null);
   const executionMode = useNyxStore((s) => s.executionMode);
   const setExecutionMode = useNyxStore((s) => s.setExecutionMode);
 
   React.useEffect(() => {
-    let active = true;
-    const loadLocalModels = async () => {
-      // Stub: Future fetching from Rust backend via nyx-native provider
-      if (active) {
-        setLocalLibraryModels([]);
-      }
-    };
-    loadLocalModels();
-    const interval = setInterval(loadLocalModels, 15_000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
+    loadLocalLibraryModels();
+  }, [loadLocalLibraryModels]);
+
+  const handleLoadModel = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      setIsTogglingModel(true);
+      await invoke('start_local_server', { modelId: id });
+      setLoadedLocalModel(id);
+      setIsTogglingModel(false);
+      toast.success('Model loaded successfully');
+      // Automatically select it as well
+      onSelect(id);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err || 'Failed to load model');
+      setIsTogglingModel(false);
+    }
+  };
+
+  const handleUnloadModel = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      setIsTogglingModel(true);
+      await invoke('stop_local_server');
+      setLoadedLocalModel(null);
+      setIsTogglingModel(false);
+      toast.success('Model unloaded successfully');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err || 'Failed to unload model');
+      setIsTogglingModel(false);
+    }
+  };
 
   useEffect(() => {
     if (!dropdown || !onClose) return;
@@ -152,7 +184,10 @@ export const ModelSelector: React.FC<Props> = ({
 
   // Sort providers in structured order
   const sortedProviders = useMemo(() => {
-    const providers = Object.keys(groupedModels);
+    let providers = Object.keys(groupedModels);
+    if (hideNyxNative) {
+      providers = providers.filter((p) => p !== 'nyx-native');
+    }
     return providers.sort((a, b) => {
       const aIdx = PROVIDER_ORDER.indexOf(a);
       const bIdx = PROVIDER_ORDER.indexOf(b);
@@ -161,7 +196,7 @@ export const ModelSelector: React.FC<Props> = ({
       if (bIdx === -1) return -1;
       return aIdx - bIdx;
     });
-  }, [groupedModels]);
+  }, [groupedModels, hideNyxNative]);
 
   const filteredModels = useMemo(() => {
     const query = searchTerm.toLowerCase();
@@ -238,13 +273,14 @@ export const ModelSelector: React.FC<Props> = ({
         {/* Main Content Split Area */}
         <div className="flex flex-1 min-h-0 gap-1.5 p-1.5 overflow-hidden">
           {/* Left Box: Providers (Gateways) */}
-          <div className="w-[clamp(100px,25%,120px)] shrink-0 bg-muted/30 border border-border rounded-md flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar">
-            <span className="px-1 py-0.5 text-[6.5px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-              Gateways
-            </span>
-            {sortedProviders.map((provider) => {
-              const status = providerStatuses?.[provider];
-              const isActive = selectedProvider === provider;
+          {!hideGateways && (
+            <div className="w-[clamp(100px,25%,120px)] shrink-0 bg-muted/30 border border-border rounded-md flex flex-col p-1 space-y-0.5 overflow-y-auto custom-scrollbar">
+              <span className="px-1 py-0.5 text-[6.5px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                Gateways
+              </span>
+              {sortedProviders.map((provider) => {
+                const status = providerStatuses?.[provider];
+                const isActive = selectedProvider === provider;
 
               return (
                 <motion.button
@@ -288,6 +324,7 @@ export const ModelSelector: React.FC<Props> = ({
               );
             })}
           </div>
+          )}
 
           {/* Right Box: Models Grid */}
           <div className="flex-1 bg-muted/10 border border-border rounded-md overflow-hidden flex flex-col">
@@ -434,16 +471,35 @@ export const ModelSelector: React.FC<Props> = ({
                                 </button>
                               )}
                               
-                              {isSelected && (
-                                <div
-                                  className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ml-0.5 ${isNoKey ? 'bg-muted border border-border text-muted-foreground' : 'bg-primary border border-primary/20 text-primary-foreground'}`}
-                                >
-                                  <Check
-                                    className={`w-2 h-2 ${isNoKey ? 'text-muted-foreground' : 'text-primary-foreground'}`}
-                                  />
-                                </div>
-                              )}
-                            </div>
+                                {model.provider === 'nyx-native' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => loadedLocalModel === model.id ? handleUnloadModel(e) : handleLoadModel(model.id, e)}
+                                    disabled={isTogglingModel}
+                                    className={`
+                                      px-2 py-0.5 rounded border text-[7px] font-bold tracking-wider uppercase transition-colors
+                                      ${
+                                        loadedLocalModel === model.id
+                                          ? 'bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20'
+                                          : 'bg-primary/10 border-primary/20 text-primary hover:bg-primary/20'
+                                      }
+                                      ${isTogglingModel ? 'opacity-50 cursor-not-allowed' : ''}
+                                    `}
+                                  >
+                                    {loadedLocalModel === model.id ? 'Unload' : 'Load'}
+                                  </button>
+                                )}
+                              
+                                {isSelected && (
+                                  <div
+                                    className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ml-0.5 ${isNoKey ? 'bg-muted border border-border text-muted-foreground' : 'bg-primary border border-primary/20 text-primary-foreground'}`}
+                                  >
+                                    <Check
+                                      className={`w-2 h-2 ${isNoKey ? 'text-muted-foreground' : 'text-primary-foreground'}`}
+                                    />
+                                  </div>
+                                )}
+                              </div>
                           </div>
 
                           {/* Expanded Details */}

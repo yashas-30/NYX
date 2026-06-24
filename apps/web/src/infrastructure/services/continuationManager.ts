@@ -136,7 +136,7 @@ export class ContinuationManager {
       if (!isGemma) {
         limit = limit ? Math.min(limit, hardLimit) : hardLimit;
       }
-    } else if (provider === 'ollama' || provider === 'lmstudio') {
+    } else if (provider === 'nyx-native') {
       limit = limit ? Math.min(limit, 8192) : 4096;
     }
 

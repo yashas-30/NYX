@@ -4,7 +4,7 @@
  *   monitoring, attachment support, and Claude/Kimi-parity UX.
  */
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2Icon as Trash2, BrainIcon as Brain, ChevronDownIcon as ChevronDown, LockIcon as Lock, ZapIcon as Zap, PaperclipIcon as Paperclip, WifiIcon as Wifi, WifiOffIcon as WifiOff, DownloadIcon as Download, CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
 import { PanelLeftOpen, PanelLeftClose, Share2, Unlock, Square, Bot, Cpu, Clock, MessageSquare, FileText, MoreHorizontal, Keyboard, AlertCircle, HardDrive, GitBranch } from 'lucide-react';
@@ -16,6 +16,7 @@ import { ModelInfo } from '@src/types';
 import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { useLiveTimer } from '@src/shared/hooks/useLiveTimer';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
+import { useModelStore } from '@src/core/stores/useModelStore';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 
 // ---------------------------------------------------------------------------
@@ -420,7 +421,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState(sessionTitle);
-  const [showModelSelector, setShowModelSelector] = useState(false);
+  const [showCloudSelector, setShowCloudSelector] = useState(false);
+  const [showLocalSelector, setShowLocalSelector] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
   const [selectedProvider, setSelectedProvider] = useState<string>('gemini');
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -429,6 +431,16 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
   const showReasoning = useNyxStore((state) => state.showReasoning);
   const setShowReasoning = useNyxStore((state) => state.setShowReasoning);
+  const cloudModelId = useNyxStore((s) => s.cloudModelId);
+  const localModelId = useNyxStore((s) => s.localModelId);
+  const setCloudModelId = useNyxStore((s) => s.setCloudModelId);
+  const setLocalModelId = useNyxStore((s) => s.setLocalModelId);
+  
+  const localLibraryModels = useModelStore((s) => s.localLibraryModels);
+
+  const cloudModel = useMemo(() => allModels?.find(m => m.id === cloudModelId), [allModels, cloudModelId]);
+  const localModel = useMemo(() => allModels?.find(m => m.id === localModelId) || localLibraryModels?.find(m => m.id === localModelId), [allModels, localLibraryModels, localModelId]);
+
   const lastPrivacyToggle = useRef(0);
   const liveElapsed = useLiveTimer(isLoading);
 
@@ -486,58 +498,121 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             </motion.button>
           )}
 
-          <div className="flex relative min-w-0 shrink">
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowModelSelector((v) => !v);
-              }}
-              disabled={isLoading}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors select-none w-full ${showModelSelector
-                  ? 'bg-muted/80 text-foreground'
-                  : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40'
-                } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            >
-              <div className="shrink-0">
-                {currentModel ? getCustomModelIcon(currentModel) : <Bot className="w-4 h-4" />}
-              </div>
-              <span className="truncate max-w-[80px] sm:max-w-[150px] text-[13px] font-medium text-foreground/90">
-                {currentModel?.name || 'Select model'}
-              </span>
-              <ChevronDown
-                className={`w-4 h-4 opacity-50 shrink-0 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
-              />
-            </motion.button>
-
-            <AnimatePresence>
-              {showModelSelector && (
-                <ModelSelector
-                  currentModelId={currentModelId || undefined}
-                  allModels={allModels || []}
-                  selectedProvider={selectedProvider}
-                  searchTerm={modelSearch}
-                  onProviderChange={setSelectedProvider}
-                  onSearchChange={setModelSearch}
-                  onSelect={(id) => {
-                    if (onModelSelect) onModelSelect(id);
-                    setShowModelSelector(false);
-                    setModelSearch('');
-                  }}
-                  onClose={() => setShowModelSelector(false)}
-                  providerStatuses={providerStatuses || {}}
-                  isCoder={false}
-                  onResetContext={() => {
-                    onClear();
-                    toast.success('Context reset');
-                  }}
-                  gatewayUrls={gatewayUrls || {}}
-                  dropdown={true}
-                  alignDropdown="bottom"
+          <div className="flex relative min-w-0 shrink gap-2">
+            {/* Cloud Selector */}
+            <div className="relative">
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowLocalSelector(false);
+                  setShowCloudSelector((v) => !v);
+                }}
+                disabled={isLoading}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors select-none w-full ${showCloudSelector
+                    ? 'bg-muted/80 text-foreground'
+                    : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                  } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <div className="shrink-0">
+                  {cloudModel ? getCustomModelIcon(cloudModel) : <Bot className="w-4 h-4" />}
+                </div>
+                <span className="truncate max-w-[80px] sm:max-w-[150px] text-[13px] font-medium text-foreground/90">
+                  {cloudModel?.name || 'Cloud: None'}
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 opacity-50 shrink-0 transition-transform ${showCloudSelector ? 'rotate-180' : ''}`}
                 />
-              )}
-            </AnimatePresence>
+              </motion.button>
+
+              <AnimatePresence>
+                {showCloudSelector && (
+                  <ModelSelector
+                    currentModelId={cloudModelId || undefined}
+                    allModels={allModels || []}
+                    selectedProvider={selectedProvider}
+                    searchTerm={modelSearch}
+                    onProviderChange={setSelectedProvider}
+                    onSearchChange={setModelSearch}
+                    onSelect={(id) => {
+                      setCloudModelId(id === cloudModelId ? null : id);
+                      if (onModelSelect && id) onModelSelect(id);
+                      setShowCloudSelector(false);
+                      setModelSearch('');
+                    }}
+                    onClose={() => setShowCloudSelector(false)}
+                    providerStatuses={providerStatuses || {}}
+                    isCoder={false}
+                    onResetContext={() => {
+                      onClear();
+                      toast.success('Context reset');
+                    }}
+                    gatewayUrls={gatewayUrls || {}}
+                    dropdown={true}
+                    alignDropdown="bottom"
+                    hideNyxNative={true}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Local Selector */}
+            <div className="relative hidden md:block">
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowCloudSelector(false);
+                  setShowLocalSelector((v) => !v);
+                }}
+                disabled={isLoading}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors select-none w-full ${showLocalSelector
+                    ? 'bg-muted/80 text-foreground'
+                    : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                  } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <div className="shrink-0">
+                  {localModel ? getCustomModelIcon(localModel) : <HardDrive className="w-4 h-4" />}
+                </div>
+                <span className="truncate max-w-[80px] sm:max-w-[150px] text-[13px] font-medium text-foreground/90">
+                  {localModel?.name || 'Local: None'}
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 opacity-50 shrink-0 transition-transform ${showLocalSelector ? 'rotate-180' : ''}`}
+                />
+              </motion.button>
+
+              <AnimatePresence>
+                {showLocalSelector && (
+                  <ModelSelector
+                    currentModelId={localModelId || undefined}
+                    allModels={allModels?.filter(m => m.provider === 'nyx-native') || []}
+                    selectedProvider="nyx-native"
+                    searchTerm={modelSearch}
+                    onProviderChange={() => {}}
+                    onSearchChange={setModelSearch}
+                    onSelect={(id) => {
+                      setLocalModelId(id === localModelId ? null : id);
+                      setShowLocalSelector(false);
+                      setModelSearch('');
+                    }}
+                    onClose={() => setShowLocalSelector(false)}
+                    providerStatuses={providerStatuses || {}}
+                    isCoder={false}
+                    onResetContext={() => {
+                      onClear();
+                      toast.success('Context reset');
+                    }}
+                    gatewayUrls={gatewayUrls || {}}
+                    dropdown={true}
+                    alignDropdown="bottom"
+                    hideGateways={true}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
           {/* Connection status (desktop) */}

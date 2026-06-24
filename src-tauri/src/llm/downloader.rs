@@ -23,51 +23,42 @@ impl Downloader {
         tokio::fs::create_dir_all(&models_dir).await.map_err(|e| e.to_string())?;
         tokio::fs::create_dir_all(&bin_dir).await.map_err(|e| e.to_string())?;
 
-        // 1. Download Model: gemma-2-2b-it-Q4_K_M.gguf
+        // 1. Download llama-server.exe (Vulkan Windows build for universal GPU support)
+        let server_path = bin_dir.join("llama-server-vulkan.exe");
+        if !server_path.exists() {
+            let server_url = "https://github.com/ggerganov/llama.cpp/releases/download/b9776/llama-b9776-bin-win-vulkan-x64.zip";
+            let zip_path = bin_dir.join("llama_vulkan.zip");
+            self.download_file(server_url, &zip_path, |p| on_progress(p, "Downloading llama.cpp Vulkan server...")).await?;
+            
+            let zip_str = zip_path.to_string_lossy().replace("\\\\?\\", "");
+            let bin_str = bin_dir.to_string_lossy().replace("\\\\?\\", "");
+            let output = std::process::Command::new("powershell")
+                .arg("-c")
+                .arg(format!("Expand-Archive -Path '{}' -DestinationPath '{}' -Force", zip_str, bin_str))
+                .output()
+                .map_err(|e| e.to_string())?;
+                
+            let stderr_str = String::from_utf8_lossy(&output.stderr);
+            if !output.status.success() || stderr_str.contains("Exception") || stderr_str.contains("Error") {
+                return Err(format!("Failed to unzip server: {}", stderr_str));
+            }
+            
+            // Rename llama-server.exe to llama-server-vulkan.exe
+            if let Err(e) = tokio::fs::rename(bin_dir.join("llama-server.exe"), &server_path).await {
+                return Err(format!("Failed to rename llama-server.exe: {}", e));
+            }
+            let _ = tokio::fs::remove_file(zip_path).await;
+        } else {
+            on_progress(100.0, "Llama Server exists.");
+        }
+
+        // 2. Download Model: gemma-2-2b-it-Q4_K_M.gguf
         let model_path = models_dir.join("gemma-2-2b-it-Q4_K_M.gguf");
         if !model_path.exists() {
             let model_url = "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf";
             self.download_file(model_url, &model_path, |p| on_progress(p, "Downloading Gemma 2B (Q4)...")).await?;
         } else {
             on_progress(100.0, "Model exists.");
-        }
-
-        // 2. Download llama-server.exe (CUDA Windows build for NVIDIA GPUs)
-        let server_path = bin_dir.join("llama-server-cuda.exe");
-        if !server_path.exists() {
-            let server_url = "https://github.com/ggerganov/llama.cpp/releases/download/b4300/llama-b4300-bin-win-cuda-cu12.4-x64.zip";
-            let zip_path = bin_dir.join("llama_cuda.zip");
-            self.download_file(server_url, &zip_path, |p| on_progress(p, "Downloading llama.cpp CUDA server...")).await?;
-            
-            let output = std::process::Command::new("powershell")
-                .arg("-c")
-                .arg(format!("Expand-Archive -Path '{}' -DestinationPath '{}' -Force", zip_path.display(), bin_dir.display()))
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                return Err(format!("Failed to unzip llama.cpp CUDA: {}", String::from_utf8_lossy(&output.stderr)));
-            }
-            let _ = tokio::fs::remove_file(zip_path).await;
-
-            // Rename llama-server.exe to llama-server-cuda.exe
-            let _ = tokio::fs::rename(bin_dir.join("llama-server.exe"), &server_path).await;
-            
-            // Download CUDART dependencies
-            let cudart_url = "https://github.com/ggerganov/llama.cpp/releases/download/b4300/cudart-llama-bin-win-cu12.4-x64.zip";
-            let cudart_zip = bin_dir.join("cudart.zip");
-            self.download_file(cudart_url, &cudart_zip, |p| on_progress(p, "Downloading CUDA runtime...")).await?;
-            
-            let output = std::process::Command::new("powershell")
-                .arg("-c")
-                .arg(format!("Expand-Archive -Path '{}' -DestinationPath '{}' -Force", cudart_zip.display(), bin_dir.display()))
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                return Err(format!("Failed to unzip CUDART: {}", String::from_utf8_lossy(&output.stderr)));
-            }
-            let _ = tokio::fs::remove_file(cudart_zip).await;
-        } else {
-            on_progress(100.0, "Llama Server exists.");
         }
 
         Ok((model_path, server_path))
@@ -81,7 +72,8 @@ impl Downloader {
         }
 
         let total_size = response.content_length().unwrap_or(0);
-        let mut file = tokio::fs::File::create(dest).await.map_err(|e| e.to_string())?;
+        let tmp_dest = dest.with_extension("tmp");
+        let mut file = tokio::fs::File::create(&tmp_dest).await.map_err(|e| e.to_string())?;
         
         let mut downloaded: u64 = 0;
         while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
@@ -91,6 +83,11 @@ impl Downloader {
                 on_progress((downloaded as f32 / total_size as f32) * 100.0);
             }
         }
+        
+        file.flush().await.map_err(|e| e.to_string())?;
+        drop(file);
+        
+        tokio::fs::rename(tmp_dest, dest).await.map_err(|e| e.to_string())?;
         
         Ok(())
     }

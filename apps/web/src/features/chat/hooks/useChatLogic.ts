@@ -574,25 +574,77 @@ export const useChatLogic = ({
 
       abortCtrlRef.current = new AbortController();
 
+      const userMsg: ChatMessage = {
+        role: 'user',
+        content: prompt,
+        timestamp: Date.now(),
+        images: images?.map((img) => ({
+          name: img.name,
+          mimeType: img.mimeType || 'image/jpeg',
+          data: img.data || '',
+        })).filter((img) => !!img.data),
+      };
+      dispatch({ type: 'APPEND', message: userMsg });
+      historyRef.current = [...historyRef.current, userMsg];
+      persistHistory(historyRef.current);
+
       try {
-        setPlanPhase({ status: 'planning', steps: ['Analyzing prompt intent...'], completedSteps: [] });
-        
-        const analysis = await promptAnalyzer.analyze(prompt, {
-          useEmbedding: true,
-          history: historyRef.current.map(m => m.content).slice(-5)
-        });
+        const { cloudModelId, localModelId } = useNyxStore.getState();
+        let modelToUse = 'gemini-3.5-flash';
 
-        const expertisePrompt = analysis.userExpertise === 'beginner' 
-          ? 'Explain concepts simply. Use analogies. Avoid jargon.'
-          : analysis.userExpertise === 'expert'
-            ? 'Provide highly technical, concise answers. Skip basics.'
-            : '';
+        if (!cloudModelId && !localModelId) {
+          toast.error('Please select at least one model (Cloud or Local).');
+          return;
+        }
 
-        const modelToUse = models?.nyx === 'nyx-auto'
-          ? (analysis.suggestedModel === 'reasoning' ? 'deepseek-reasoner' :
-             analysis.suggestedModel === 'fast' ? 'gemini-3.1-flash-lite' :
-             'gemini-3.5-flash')
-          : (models?.nyx || 'gemini-3.5-flash');
+        let analysis: any = { needsToolUse: false, estimatedComplexity: 1, intent: 'conversation' };
+        let expertisePrompt = '';
+
+        if (cloudModelId && localModelId) {
+          setPlanPhase({ status: 'planning', steps: ['Analyzing prompt intent...'], completedSteps: [] });
+          
+          analysis = await promptAnalyzer.analyze(prompt, {
+            useEmbedding: true,
+            history: historyRef.current.map(m => m.content).slice(-5)
+          });
+
+          expertisePrompt = analysis.userExpertise === 'beginner' 
+            ? 'Explain concepts simply. Use analogies. Avoid jargon.'
+            : analysis.userExpertise === 'expert'
+              ? 'Provide highly technical, concise answers. Skip basics.'
+              : '';
+
+          // --- SOTA Intelligent Routing (Phase 2) ---
+          
+          // 1. Semantic Router (Intent Matching)
+          // If the user is just asking for a boilerplate task, greeting, or conversational filler, 
+          // route to local immediately regardless of complexity.
+          const isBoilerplateIntent = ['conversation', 'command'].includes(analysis.intent || '');
+          
+          // 2. Complexity Classifier (RouteLLM approach)
+          // If the intent isn't explicitly simple, we check complexity. A complexity >= 3 or 
+          // requiring deep reasoning/tools mandates the cloud model.
+          const requiresFrontierModel = (analysis.estimatedComplexity || 1) >= 3 || 
+                                        analysis.needsToolUse || 
+                                        analysis.suggestedModel === 'reasoning' ||
+                                        analysis.requiresReasoning;
+
+          if (isBoilerplateIntent && !requiresFrontierModel) {
+            modelToUse = localModelId;
+            toast.success(`Semantic Router: Fast Boilerplate detected. Routed to Local (${modelToUse})`);
+          } else if (requiresFrontierModel) {
+            modelToUse = cloudModelId;
+            toast.success(`Complexity Router: Heavy task detected. Routed to Cloud Supervisor (${modelToUse})`);
+          } else {
+            // Fallback for moderate tasks: Prefer local if it's highly confident, else cloud.
+            modelToUse = analysis.confidence > 0.85 ? localModelId : cloudModelId;
+            toast.success(`RouteLLM Threshold: Routed to ${modelToUse === localModelId ? 'Local' : 'Cloud'} (${modelToUse})`);
+          }
+        } else if (cloudModelId) {
+          modelToUse = cloudModelId;
+        } else if (localModelId) {
+          modelToUse = localModelId;
+        }
                            
         let systemPromptAddon = expertisePrompt;
         
@@ -670,6 +722,7 @@ export const useChatLogic = ({
           systemPromptAddon: systemPromptAddon,
           enableTools: analysis.needsToolUse,
           expectedComplexity: analysis.estimatedComplexity,
+          skipUserMessage: true,
         });
 
         // Update token usage

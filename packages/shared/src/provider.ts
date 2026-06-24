@@ -4,8 +4,7 @@ import { AVAILABLE_MODELS } from './models.js';
 export const PROVIDER_LABELS: Record<string, string> = {
   gemini: 'Gemini',
   terminal: 'Terminal',
-  ollama: 'Ollama',
-  lmstudio: 'LM Studio',
+  'nyx-native': 'NYX Native',
   openai: 'OpenAI',
   groq: 'Groq',
   together: 'Together AI',
@@ -15,7 +14,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
 
 export const CLOUD_PROVIDERS: string[] = ['gemini', 'openai', 'groq', 'together', 'perplexity', 'anthropic'];
 
-export const LOCAL_PROVIDERS: string[] = ['ollama', 'lmstudio'];
+export const LOCAL_PROVIDERS: string[] = ['nyx-native'];
 
 const LOCAL_MODEL_IDS = new Set([
 
@@ -55,14 +54,13 @@ export const detectProvider = (modelId: string): Provider => {
     throw new Error('Model ID is required but was not provided.');
   }
 
-  if (modelId.startsWith('ollama/') || modelId.startsWith('ollama:')) return 'ollama';
-  if (modelId.startsWith('lmstudio/')) return 'lmstudio';
+  if (modelId.startsWith('nyx-native/') || modelId.startsWith('nyx-native:')) return 'nyx-native';
   if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3')) return 'openai';
   if (modelId.startsWith('claude-')) return 'anthropic';
 
   // 1. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'ollama';
+    return 'nyx-native';
   }
 
   // 2. Check in static AVAILABLE_MODELS presets
@@ -74,9 +72,7 @@ export const detectProvider = (modelId: string): Provider => {
   if (lowerId.startsWith('gemini-') || lowerId.startsWith('gemma-4')) {
     return 'gemini';
   }
-  if (lowerId.includes('lmstudio')) {
-    return 'lmstudio';
-  }
+
   if (
     lowerId.includes('llama') ||
     lowerId.includes('qwen') ||
@@ -85,12 +81,12 @@ export const detectProvider = (modelId: string): Provider => {
     lowerId.includes('mistral') ||
     lowerId.includes('deepseek')
   ) {
-    return 'ollama';
+    return 'nyx-native';
   }
 
   // 4. Check GGUF and custom patterns for imported models
   if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
-    return 'ollama';
+    return 'nyx-native';
   }
 
   throw new Error(`Unknown model: ${modelId}. No provider mapping found.`);
@@ -104,14 +100,13 @@ export const getProviderForModel = (modelId: string): Provider => {
     throw new Error('Model ID is required but was not provided.');
   }
 
-  if (modelId.startsWith('ollama/') || modelId.startsWith('ollama:')) return 'ollama';
-  if (modelId.startsWith('lmstudio/')) return 'lmstudio';
+  if (modelId.startsWith('nyx-native/') || modelId.startsWith('nyx-native:')) return 'nyx-native';
   if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3')) return 'openai';
   if (modelId.startsWith('claude-')) return 'anthropic';
 
   // 1. Check in local GGUF model presets first
   if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'ollama';
+    return 'nyx-native';
   }
 
   // 2. Check in static AVAILABLE_MODELS presets
@@ -123,9 +118,7 @@ export const getProviderForModel = (modelId: string): Provider => {
   if (lowerId.startsWith('gemini-') || lowerId.startsWith('gemma-4')) {
     return 'gemini';
   }
-  if (lowerId.includes('lmstudio')) {
-    return 'lmstudio';
-  }
+
   if (
     lowerId.includes('llama') ||
     lowerId.includes('qwen') ||
@@ -134,12 +127,12 @@ export const getProviderForModel = (modelId: string): Provider => {
     lowerId.includes('mistral') ||
     lowerId.includes('deepseek')
   ) {
-    return 'ollama';
+    return 'nyx-native';
   }
 
   // 4. Check GGUF and custom patterns for imported models
   if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
-    return 'ollama';
+    return 'nyx-native';
   }
 
   throw new Error(`Unknown model: ${modelId}. No provider mapping found.`);
@@ -150,7 +143,7 @@ export const getProviderForModel = (modelId: string): Provider => {
  */
 export const isLocalModel = (modelId: string): boolean => {
   const provider = getProviderForModel(modelId);
-  return LOCAL_PROVIDERS.includes(provider);
+  return LOCAL_PROVIDERS.includes(provider) || provider === 'nyx-native';
 };
 
 /**

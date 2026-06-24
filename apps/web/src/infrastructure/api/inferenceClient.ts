@@ -5,6 +5,8 @@
  */
 
 import { isTransientError, formatProviderError } from './streamParser';
+import { stripThinkingContent } from '../../utils/textUtils';
+import { directFetch } from './directClient';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -120,8 +122,7 @@ async function* parseSSEStream(response: Response): AsyncGenerator<StreamChunk> 
   if (!response.body) return;
 
   // fallow-ignore-next-line code-duplication
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';
 
   try {
@@ -129,7 +130,7 @@ async function* parseSSEStream(response: Response): AsyncGenerator<StreamChunk> 
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      buffer += value;
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
@@ -146,7 +147,7 @@ async function* parseSSEStream(response: Response): AsyncGenerator<StreamChunk> 
         try {
           const parsed = JSON.parse(dataStr);
 
-          // Standard JSON format (e.g., local models via LM Studio/Ollama)
+          // Standard JSON format (e.g., local models via nyx-native)
           const delta = parsed.choices?.[0]?.delta;
           if (delta?.content) {
             yield { type: 'text', content: delta.content };
@@ -207,7 +208,7 @@ function buildPayload(
     contents: [
       ...(options?.history?.map((m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
+        parts: [{ text: stripThinkingContent(m.content) }],
       })) || []),
       { role: 'user', parts: [{ text: prompt }] },
     ],
@@ -233,6 +234,7 @@ async function makeRequest(
 
   return fetch(endpoint, {
     method: 'POST',
+    keepalive: true,
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream, application/json',
@@ -308,11 +310,11 @@ async function handleProvider(
         switch (chunk.type) {
           case 'text':
             fullText += chunk.content || '';
-            onStream({ type: 'text', content: fullText });
+            onStream({ type: 'text', content: chunk.content || '' });
             break;
           case 'reasoning':
             reasoning += chunk.content || '';
-            onStream({ type: 'reasoning', content: reasoning });
+            onStream({ type: 'reasoning', content: chunk.content || '' });
             break;
           case 'tool_call':
             toolCalls.push(chunk.metadata);
@@ -369,7 +371,6 @@ async function handleProvider(
       error.message
     );
 
-    const { directFetch } = await import('./directClient');
     const result = await directFetch(modelId, prompt, {
       apiKey: apiKey || '',
       settings,

@@ -12,6 +12,7 @@ import { HardwareAnalyzerCard } from './HardwareAnalyzerCard';
 import { HuggingFaceDownloader } from './HuggingFaceDownloader';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
+import { useModelStore } from '@src/core/stores/useModelStore';
 
 interface ModelRegistryViewProps {
   models?: Record<'nyx', string>;
@@ -36,14 +37,16 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const [filter, setFilter] = useState<'local' | 'cloud'>('local');
   const [expandedModelId, setExpandedModelId] = useState<string | null>(null);
 
-  const [loadedModel, setLoadedModel] = useState<string | null>(null);
+  const loadedLocalModel = useModelStore(s => s.loadedLocalModel);
+  const setLoadedLocalModel = useModelStore(s => s.setLoadedLocalModel);
+
   const [loadingState, setLoadingState] = useState<'idle'|'loading'|'unloading'|'uninstalling'>('idle');
 
   const handleLoadModel = async (modelId: string) => {
     try {
       setLoadingState('loading');
       await invoke('start_local_server', { modelId });
-      setLoadedModel(modelId);
+      setLoadedLocalModel(modelId);
     } catch (e) {
       console.error('Failed to load model', e);
     } finally {
@@ -55,7 +58,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     try {
       setLoadingState('unloading');
       await invoke('stop_local_server');
-      setLoadedModel(null);
+      setLoadedLocalModel(null);
     } catch (e) {
       console.error('Failed to unload model', e);
     } finally {
@@ -78,15 +81,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     }
   };
 
-  const [ollamaModels, setOllamaModels] = useState<any[]>([]);
-
   const localModelsQuery = useLocalModels(true);
-
-  useEffect(() => {
-    if (localModelsQuery.data) {
-      setOllamaModels(localModelsQuery.data.models || []);
-    }
-  }, [localModelsQuery.data]);
+  const nyxNativeModels = localModelsQuery.data?.models || [];
 
   const query = search.toLowerCase();
 
@@ -94,7 +90,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     () =>
       AVAILABLE_MODELS.filter(
         (m) =>
-          m.provider !== 'ollama' && m.provider !== 'lmstudio' &&
+          m.provider !== 'nyx-native' &&
           (m.name.toLowerCase().includes(query) || m.provider.toLowerCase().includes(query))
       ),
     [query]
@@ -204,7 +200,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   subtitle="Models hosted natively by NYX (llama.cpp)"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                  {ollamaModels.map((m, idx) => (
+                  {nyxNativeModels.map((m: any, idx: number) => (
                      <ModelCard 
                        key={m.id} 
                        index={idx} 
@@ -221,14 +217,14 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                        isExpanded={expandedModelId === m.id} 
                        onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
                        isLocal={true}
-                       isLoaded={loadedModel === m.id}
-                       loadingState={loadedModel === m.id || (loadingState === 'loading' && loadedModel === null) ? loadingState : 'idle'}
+                       isLoaded={loadedLocalModel === m.id}
+                       loadingState={loadedLocalModel === m.id || (loadingState === 'loading' && loadedLocalModel === null) ? loadingState : 'idle'}
                        onLoad={() => handleLoadModel(m.id)}
                        onUnload={() => handleUnloadModel()}
                        onUninstall={() => handleUninstallModel(m.id)}
                      />
                   ))}
-                  {ollamaModels.length === 0 && (
+                  {nyxNativeModels.length === 0 && (
                      <div className="col-span-full">
                        <EmptyState message="No local models found" hint="Download models using the Hugging Face Downloader above." />
                      </div>

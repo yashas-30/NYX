@@ -10,7 +10,18 @@
     "fs:allow-appdata-read",
     "fs:allow-appdata-write",
     "fs:allow-resource-read",
-    "http:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "http://127.0.0.1:*" },
+        { "url": "http://localhost:*" },
+        { "url": "https://*.googleapis.com/*" },
+        { "url": "https://api.anthropic.com/*" },
+        { "url": "https://api.groq.com/*" },
+        { "url": "https://api.openai.com/*" },
+        { "url": "https://*.huggingface.co/*" }
+      ]
+    },
     "store:default",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",

@@ -256,9 +256,7 @@ function logRequest(
 
   // Downgrade expected polling errors to debug so they don't spam the console
   const isExpectedPollingError = 
-    (url.includes('local-models/ollama/models') && status === 500) ||
     (url.includes('models/list') && status === 409) ||
-    (url.includes('local-models/ollama/models') && status === 503) ||
     status === 404; // TEMPORARY BYPASS: Silence mock-backend 404s
 
   if ((error || status >= 400) && !isExpectedPollingError) {
@@ -389,7 +387,9 @@ export async function fetchWithAuth(
 
       if (response.ok) {
         recordSuccess(targetUrl);
-      } else if (response.status >= 500) {
+      } else if (response.status === 502 || response.status === 504) {
+        // Only circuit-break the backend on actual gateway/proxy failures,
+        // not 500/503 which often come from LLM providers directly.
         recordFailure(targetUrl);
       }
 
@@ -414,13 +414,13 @@ export async function fetchWithAuth(
         r.reject(error);
       }
 
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || error.name === 'TimeoutError') {
         if (signal.aborted && !init?.signal?.aborted) {
           // Our timeout fired, not user abort
           logRequest(method, targetUrl, 0, latency, `Request timeout after ${timeoutMs}ms`);
           throw new Error(`Request timeout after ${timeoutMs}ms`);
         }
-        logRequest(method, targetUrl, 0, latency, 'Aborted by user');
+        logRequest(method, targetUrl, 0, latency, 'Aborted by user or explicit signal');
         throw error;
       }
 

@@ -25,7 +25,7 @@ tauri-plugin-os = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 
-tokio = { version = "1", features = ["full", "process", "sync", "time"] }
+tokio = { version = "1", features = ["full", "macros", "process", "sync", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
@@ -60,6 +60,10 @@ fastembed = "5.17.2"
 rusqlite = { version = "0.31.0", features = ["load_extension", "bundled"] }
 sqlite-vec = "0.1.9"
 walkdir = "2.5.0"
+scraper = "0.20"
+urlencoding = "2.1"
+rig-core = "0.4.0"
+genai = "0.1.13"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

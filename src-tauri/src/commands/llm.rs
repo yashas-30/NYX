@@ -42,7 +42,8 @@ pub struct UnifiedRequest {
     pub api_key: String,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
-    pub event_name: String,
+    #[serde(default)]
+    pub event_name: Option<String>,
     pub tools: Option<Value>,
 }
 
@@ -351,6 +352,7 @@ pub async fn execute_llm_stream(
 pub async fn llm_stream_request(
     app: AppHandle,
     req: UnifiedRequest,
+    on_event: tauri::ipc::Channel<StreamChunkPayload>,
 ) -> Result<(), String> {
     let event_name = req.event_name.clone();
     let mut rx = execute_llm_stream(&req).await?;
@@ -359,19 +361,26 @@ pub async fn llm_stream_request(
         while let Some(msg) = rx.recv().await {
             match msg {
                 Ok(payload) => {
-                    let _ = app.emit(&event_name, payload);
+                    let _ = on_event.send(payload.clone());
+                    if let Some(ref ev) = event_name {
+                        let _ = app.emit(ev, payload);
+                    }
                 }
                 Err(e) => {
-                    let _ = app.emit(&event_name, StreamChunkPayload {
+                    let err_payload = StreamChunkPayload {
                         event_type: "error".to_string(),
                         content: None,
                         done: Some(true),
-                        error: Some(e),
+                        error: Some(e.clone()),
                         tool_call: None,
                         name: None,
                         result: None,
                         metadata: None,
-                    });
+                    };
+                    let _ = on_event.send(err_payload.clone());
+                    if let Some(ref ev) = event_name {
+                        let _ = app.emit(ev, err_payload);
+                    }
                 }
             }
         }

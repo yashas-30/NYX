@@ -249,7 +249,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const handleSubmit = useCallback(
     (finalPrompt: string, images?: ChatImage[]) => {
       if ((!finalPrompt.trim() && (!images || images.length === 0)) || isLoading) return;
-      if (!currentModelId) {
+      
+      const { cloudModelId, localModelId } = useNyxStore.getState();
+      if (!currentModelId && !cloudModelId && !localModelId) {
         toast.error('Please select a model first');
         return;
       }
@@ -458,7 +460,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       const model = mergedModels.find((m) => m.id === modelId);
       if (!model) return;
 
-      const requiresKey = !['ollama', 'lmstudio'].includes(model.provider);
+      const requiresKey = !['nyx-native'].includes(model.provider);
       if (requiresKey && !apiKeys[model.provider]) {
         toast.warning(`${model.provider} requires an API key in Settings`);
       }

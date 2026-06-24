@@ -98,7 +98,7 @@ pub async fn download_hf_model(
     let dest_part = dest.with_extension("gguf.part");
     // Check if file exists to resume
     let mut downloaded = 0u64;
-    let mut file = if dest_part.exists() {
+    let file = if dest_part.exists() {
         let f = tokio::fs::OpenOptions::new().append(true).open(&dest_part).await.map_err(|e| e.to_string())?;
         downloaded = f.metadata().await.map_err(|e| e.to_string())?.len();
         f

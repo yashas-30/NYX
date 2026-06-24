@@ -143,6 +143,20 @@ export const useDashboardState = (onExit?: () => void) => {
         }
       }
     };
+
+    // Update API key in store and vault
+    const updateApiKey = async (provider: string, key: string) => {
+      useNyxStore.getState().setApiKeys({ [provider]: key });
+      
+      if (typeof window !== 'undefined' && (window as any).nyxIPC) {
+        const ipc = (window as any).nyxIPC;
+        try {
+          await ipc.invoke('vault:set-key', { provider, key });
+        } catch (err: any) {
+          console.error('[Vault] Failed to update key:', err);
+        }
+      }
+    };
     loadSecureKeys();
 
     return () => {

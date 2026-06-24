@@ -58,8 +58,7 @@ const CACHE_TTL_MS = 60000; // 1 minute
 const REQUEST_TIMEOUT_MS = 10000;
 
 const PROVIDER_DEFAULTS: Record<string, Partial<QuotaResult>> = {
-  'ollama': { status: 'unlimited' as const, total: Infinity, used: 0, remaining: Infinity },
-  'lmstudio': { status: 'unlimited' as const, total: Infinity, used: 0, remaining: Infinity },
+  'nyx-native': { status: 'unlimited' as const, total: Infinity, used: 0, remaining: Infinity },
 };
 
 // ---------------------------------------------------------------------------

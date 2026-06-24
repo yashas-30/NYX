@@ -21,6 +21,8 @@ import { fetchWithAuth, getSessionToken, setSessionToken } from '@src/infrastruc
 import { parseSSEStream } from '@src/infrastructure/api/streamParser';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { getEffectiveApiKey } from '@src/infrastructure/utils/provider';
+import { directFetch } from '@src/infrastructure/api/directClient';
+import { tauriLlmStream } from '@src/infrastructure/api/tauriLlmClient';
 
 export interface AIServiceStreamEvent {
   type: 'text' | 'reasoning' | 'tool_calls' | 'error';
@@ -206,15 +208,20 @@ export class AIService {
   // -------------------------------------------------------------------------
   // Main execution entry point
   // -------------------------------------------------------------------------
-  
+
   private static classifyError(error: any, provider: string) {
     const message = error?.message || String(error);
-    const isTransient = /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|rate_limit|quota|overloaded|high demand|timeout|network|econnreset|enotfound/i.test(message);
-    const isNonRetryable = /SAFETY_GATE_BLOCKED|Invalid API key|401|403|unauthorized/i.test(message);
-    
+    const isTransient =
+      /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|rate_limit|quota|overloaded|high demand|timeout|network|econnreset|enotfound/i.test(
+        message
+      );
+    const isNonRetryable = /SAFETY_GATE_BLOCKED|Invalid API key|401|403|unauthorized/i.test(
+      message
+    );
+
     return {
       retryable: isTransient && !isNonRetryable,
-      retryAfterMs: isTransient ? 2000 : 0
+      retryAfterMs: isTransient ? 2000 : 0,
     };
   }
 
@@ -231,7 +238,11 @@ export class AIService {
   ): Promise<EnhancedAIResponse> {
     const fallbackChain = [
       { model: primaryModel, provider: primaryProvider, key: apiKey },
-      { model: 'openrouter/free', provider: 'openrouter' as Provider, key: options.apiKeys?.['openrouter'] || '' },
+      {
+        model: 'openrouter/free',
+        provider: 'openrouter' as Provider,
+        key: options.apiKeys?.['openrouter'] || '',
+      },
       { model: 'pollinations/openai', provider: 'pollinations' as Provider, key: '' },
     ];
 
@@ -253,7 +264,9 @@ export class AIService {
 
         // Track which model actually served the request
         if (attempt.model !== primaryModel) {
-          console.log(`[Fallback] Used ${attempt.provider}/${attempt.model} instead of ${primaryProvider}/${primaryModel}`);
+          console.log(
+            `[Fallback] Used ${attempt.provider}/${attempt.model} instead of ${primaryProvider}/${primaryModel}`
+          );
         }
 
         return result;
@@ -266,7 +279,7 @@ export class AIService {
 
         // Wait before next attempt
         if (errorInfo.retryAfterMs) {
-          await new Promise(r => setTimeout(r, errorInfo.retryAfterMs));
+          await new Promise((r) => setTimeout(r, errorInfo.retryAfterMs));
         }
       }
     }
@@ -288,9 +301,9 @@ export class AIService {
       modelId,
       provider,
       prompt,
-      apiKey,       // 4th arg = apiKey
-      undefined,    // 5th arg = systemInstruction
-      settings,     // 6th arg = settings
+      apiKey, // 4th arg = apiKey
+      undefined, // 5th arg = systemInstruction
+      settings, // 6th arg = settings
       undefined,
       undefined,
       {}
@@ -448,28 +461,42 @@ export class AIService {
 
     this.validateApiKey(provider, apiKey);
 
-    // Cache check
-    let cacheKey = '';
-    try {
-      const cacheRes = await this.fetchWithAuth('/api/v1/cache/get', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider,
-          model: modelId,
-          prompt,
-          systemInstruction,
-          history: historyToUse || [],
-          settings: settings || {},
-          tools: options.tools || [],
-        }),
-        signal,
-      });
-      if (cacheRes.ok) {
-        const cache = await cacheRes.json();
-        cacheKey = cache.key;
-        if (cache.hit) {
-          const text = cache.text;
+    // Cache check — sequential: try cache first with a short timeout,
+    // then fall through to the actual provider. The previous "race with
+    // _executeRaw" pattern caused infinite recursion because _executeRaw
+    // was calling itself instead of a provider method.
+    const isTauri =
+      typeof window !== 'undefined' &&
+      ('__TAURI__' in window ||
+        '__TAURI_INTERNALS__' in window ||
+        ('window' in globalThis && '__TAURI_INTERNALS__' in (globalThis as any).window));
+
+    let cachePromise: Promise<any> | null = null;
+
+    if (!isTauri) {
+      try {
+        cachePromise = this.fetchWithAuth('/api/v1/cache/get', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider,
+            model: modelId,
+            prompt,
+            systemInstruction,
+            history: historyToUse || [],
+            settings: settings || {},
+            tools: options.tools || [],
+          }),
+          signal: AbortSignal.timeout(80), // Hard 80ms timeout
+        }).catch(() => null);
+
+        const cacheRes = await Promise.race([
+          cachePromise,
+          new Promise<null>((r) => setTimeout(() => r(null), 80)),
+        ]);
+
+        if (cacheRes?.hit) {
+          const text = cacheRes.text;
           const latency = Date.now() - startTime;
           const tokens = countTokens(text);
           const tps = latency > 0 ? Math.round(tokens / (latency / 1000)) : tokens;
@@ -488,11 +515,10 @@ export class AIService {
             finishReason: 'stop',
           };
         }
+      } catch {
+        // Cache miss or timeout — proceed with provider
       }
-    } catch {
-      // Cache miss — proceed
     }
-
     // Route to provider
     const providerConfig = {
       modelId,
@@ -515,8 +541,6 @@ export class AIService {
 
     let result: EnhancedAIResponse;
 
-    const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window || ('window' in globalThis && '__TAURI_INTERNALS__' in (globalThis as any).window));
-
     if (isTauri) {
       // Bypass Fastify entirely on Desktop and use native Rust IPC for zero-latency
       result = await this.executeLocal({ ...providerConfig, provider: String(provider) } as any);
@@ -532,19 +556,20 @@ export class AIService {
       }
     }
 
-    // Cache write
-    if (cacheKey && result.text) {
+    // Cache write (only if cache was attempted and we got a result)
+    if (!isTauri && cachePromise && result.text) {
+      const cacheWriteKey = `${provider}:${modelId}:${prompt.slice(0, 64)}`;
       this.fetchWithAuth('/api/v1/cache/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          key: cacheKey,
+          key: cacheWriteKey,
           data: result.text,
           provider,
           model: modelId,
         }),
       }).catch((err) => {
-        console.error(`[AIService] Cache write failed for key ${cacheKey.slice(0, 8)}...`, {
+        console.error(`[AIService] Cache write failed`, {
           error: err.message || err,
           provider,
           model: modelId,
@@ -579,7 +604,7 @@ export class AIService {
     } = config;
 
     // Direct bypass for Gemini if API key is present, avoiding the non-streaming proxy
-    const { directFetch } = await import('@src/infrastructure/api/directClient');
+    // Using static import for directFetch to avoid async module resolution overhead
 
     const result = await directFetch(modelId, prompt, {
       apiKey: apiKey || '',
@@ -588,7 +613,10 @@ export class AIService {
       history: history as any,
       signal,
       gatewayUrls,
-      images: images?.map((img: any) => ({ mimeType: img.mimeType, base64: img.data || img.base64 || '' })) as any,
+      images: images?.map((img: any) => ({
+        mimeType: img.mimeType,
+        base64: img.data || img.base64 || '',
+      })) as any,
       tools: tools as any,
       responseFormat: responseFormat as any,
       webSearch: config.webSearch,
@@ -623,7 +651,9 @@ export class AIService {
     };
   }
 
-  private static async executeLocal(config: ProviderConfig & { provider: string }): Promise<EnhancedAIResponse> {
+  private static async executeLocal(
+    config: ProviderConfig & { provider: string }
+  ): Promise<EnhancedAIResponse> {
     const {
       modelId,
       prompt,
@@ -642,49 +672,48 @@ export class AIService {
 
     const messages = this.buildMessages(prompt, systemInstruction, history);
 
-    const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window || ('window' in globalThis && '__TAURI_INTERNALS__' in (globalThis as any).window));
+    const isTauri =
+      typeof window !== 'undefined' &&
+      ('__TAURI__' in window ||
+        '__TAURI_INTERNALS__' in window ||
+        ('window' in globalThis && '__TAURI_INTERNALS__' in (globalThis as any).window));
     if (isTauri) {
       let resolvedApiKey = apiKey || '';
-      if (!resolvedApiKey && ['openrouter'].includes(provider)) {
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          const res: any = await invoke('vault:get-key', { payload: { provider } });
-          if (res.success && res.data) {
-            resolvedApiKey = res.data;
-          }
-        } catch (e) {
-          console.warn(`[AIService] Failed to get key for ${provider} from Tauri vault`, e);
-        }
+      if (!resolvedApiKey) {
+        const { apiKeys } = useNyxStore.getState();
+        resolvedApiKey = apiKeys[provider] || '';
       }
 
       try {
-        const { tauriLlmStream } = await import('@src/infrastructure/api/tauriLlmClient');
-        const parsed = await tauriLlmStream({
-          provider,
-          model_id: modelId,
-          messages,
-          system_instruction: systemInstruction,
-          api_key: resolvedApiKey,
-          temperature: settings?.temperature ?? 0.7,
-          tools,
-        }, {
-          signal,
-          timeoutMs: 120000,
-          onChunk: (delta, accumulated) => {
-            if (onStream) {
-              if (streamEvents) {
-                onStream({ type: 'text', content: delta, final: false });
-              } else {
-                onStream(accumulated);
+        const parsed = await tauriLlmStream(
+          {
+            provider,
+            model_id: modelId,
+            messages,
+            system_instruction: systemInstruction,
+            api_key: resolvedApiKey,
+            temperature: settings?.temperature ?? 0.7,
+            tools,
+          },
+          {
+            signal,
+            timeoutMs: 120000,
+            onChunk: (delta, accumulated) => {
+              if (onStream) {
+                if (streamEvents) {
+                  onStream({ type: 'text', content: delta, final: false });
+                } else {
+                  onStream(accumulated);
+                }
               }
-            }
-          },
-          onReasoning: (delta, accumulated) => {
-            if (onStream && streamEvents) {
-              onStream({ type: 'reasoning', content: delta, final: false });
-            }
-          },
-        });
+            },
+            onReasoning: (delta, accumulated) => {
+              if (onStream && streamEvents) {
+                onStream({ type: 'reasoning', content: delta, final: false });
+              }
+            },
+          }
+        );
 
         if (onStream) {
           if (streamEvents) {
@@ -701,12 +730,16 @@ export class AIService {
           text: parsed.text || '',
           model: modelId,
           provider,
-          reasoning: parsed.reasoning ? [{ content: parsed.reasoning, type: 'thinking' }] : undefined,
+          reasoning: parsed.reasoning
+            ? [{ content: parsed.reasoning, type: 'thinking' }]
+            : undefined,
           finishReason: parsed.finishReason as any,
           metrics: this.computeMetrics(parsed.text, Date.now() - (parsed.metrics.latencyMs || 0)),
         };
       } catch (err) {
-        console.warn('[AIService] Tauri native streaming failed, falling back to backend stream', err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.warn('Tauri native streaming failed:', errorMsg);
+        throw err;
       }
     }
 
@@ -816,18 +849,16 @@ export class AIService {
     if (totalTokens > 4000) {
       // Also cache the system instruction
       if (messages[0]?.role === 'system' && typeof messages[0].content === 'string') {
-          messages[0].content = [
-              { type: 'text', text: messages[0].content, cache_control: { type: 'ephemeral' } }
-          ];
+        messages[0].content = [
+          { type: 'text', text: messages[0].content, cache_control: { type: 'ephemeral' } },
+        ];
       }
       // Find the last large message and add a cache marker
       for (let i = messages.length - 1; i >= 0; i--) {
         const m = messages[i];
         if (m.role === 'user' && typeof m.content === 'string' && m.content.length > 8000) {
-           m.content = [
-             { type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }
-           ];
-           break;
+          m.content = [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }];
+          break;
         }
       }
     }
@@ -859,7 +890,7 @@ export class AIService {
   }
 
   private static validateApiKey(provider: Provider | string, key?: string) {
-    const noKeyProviders: string[] = [];
+    const noKeyProviders: string[] = ['nyx-native'];
     if (noKeyProviders.includes(String(provider))) return;
 
     if (!key?.trim()) {
@@ -972,10 +1003,11 @@ export class AIService {
       synthesisPrompt += `<response model="${res.model}" provider="${res.provider}">\n${res.text}\n</response>\n\n`;
     });
 
-    synthesisPrompt += `Synthesize these responses into a single, high-quality final answer that takes the best parts of each approach.`;
+    synthesisPrompt += `Synthesize these responses into a single, high-quality final answer that takes the best parts of each approach. Filter out any internal thinking or reasoning process (e.g. <think> blocks) from the responses and just give the final answer requested by the user. Do not include your own thinking process.`;
 
     const apiKeys = useNyxStore.getState().apiKeys;
-    const synthesizerApiKey = getEffectiveApiKey(synthesizerConfig.provider, apiKeys) || baseOptions.apiKey;
+    const synthesizerApiKey =
+      getEffectiveApiKey(synthesizerConfig.provider, apiKeys) || baseOptions.apiKey;
 
     return this.execute(
       synthesizerConfig.modelId,
@@ -1013,7 +1045,8 @@ export class AIService {
     }
 
     const apiKeys = useNyxStore.getState().apiKeys;
-    const selectedApiKey = getEffectiveApiKey(selectedVariant.config.provider, apiKeys) || baseOptions.apiKey;
+    const selectedApiKey =
+      getEffectiveApiKey(selectedVariant.config.provider, apiKeys) || baseOptions.apiKey;
 
     return this.execute(
       selectedVariant.config.modelId,
@@ -1073,7 +1106,7 @@ function getDefaultMaxTokens(provider: string): number {
     case 'gemini':
       return 8_192;
 
-      return 8_192;   // Local models — conservative to avoid OOM
+      return 8_192; // Local models — conservative to avoid OOM
     default:
       return 8_192;
   }
@@ -1088,10 +1121,10 @@ export function estimateTokens(text: string, provider: string): number {
   const len = text.length;
   switch (provider) {
     case 'gemini':
-      return Math.ceil(len / 3.5);   // Gemini SentencePiece: ~3.5 chars/token
+      return Math.ceil(len / 3.5); // Gemini SentencePiece: ~3.5 chars/token
     case 'openrouter':
     default:
-      return Math.ceil(len / 3.8);   // Conservative middle ground
+      return Math.ceil(len / 3.8); // Conservative middle ground
   }
 }
 

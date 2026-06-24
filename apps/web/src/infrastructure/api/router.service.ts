@@ -48,7 +48,7 @@ export class AutoRouterService {
 
     if (this.costVsQuality < 0.3) {
       return [
-        { provider: 'ollama', modelId: 'ollama/qwen2.5-coder-7b' },
+        { provider: 'nyx-native', modelId: 'nyx-native/qwen2.5-coder-7b' },
         { provider: 'gemini', modelId: 'gemini/gemini-3.5-flash' },
         { provider: 'gemini', modelId: 'gemini/gemma-4-26b-it' },
       ];
@@ -56,19 +56,19 @@ export class AutoRouterService {
       return [
         { provider: 'gemini', modelId: 'gemini/gemini-3.5-flash' },
         { provider: 'gemini', modelId: 'gemini/gemma-4-31b-it' },
-        { provider: 'lmstudio', modelId: 'lmstudio/qwen2.5-coder-7b' },
+        { provider: 'nyx-native', modelId: 'nyx-native/qwen2.5-coder-7b' },
       ];
     } else {
       // Balanced
       if (complexity === 'high') {
         return [
           { provider: 'gemini', modelId: 'gemini/gemini-3.5-flash' },
-          { provider: 'ollama', modelId: 'ollama/qwen2.5-coder-7b' },
+          { provider: 'nyx-native', modelId: 'nyx-native/qwen2.5-coder-7b' },
         ];
       }
       return [
         { provider: 'gemini', modelId: 'gemini/gemini-3.5-flash' },
-        { provider: 'lmstudio', modelId: 'lmstudio/qwen2.5-coder-7b' },
+        { provider: 'nyx-native', modelId: 'nyx-native/qwen2.5-coder-7b' },
       ];
     }
   }
