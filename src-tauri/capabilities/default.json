@@ -10,6 +10,7 @@
     "fs:allow-appdata-read",
     "fs:allow-appdata-write",
     "fs:allow-resource-read",
+    "core:window:allow-start-resize-dragging",
     {
       "identifier": "http:default",
       "allow": [

@@ -95,7 +95,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
   return (
     <ErrorBoundary name="AppDashboard">
-      <main className="flex h-[100dvh] w-full overflow-hidden bg-background text-foreground font-sans relative selection:bg-primary/20">
+      <main className="flex h-full w-full overflow-hidden bg-background text-foreground font-sans relative selection:bg-primary/20">
         
         {lightningState.isLightningOpen && (
           <AgentLightningPanel
@@ -129,7 +129,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         <motion.aside
           initial={false}
           animate={{
-            width: sidebarOpen ? 260 : 0,
+            width: sidebarOpen ? 240 : 0,
             opacity: sidebarOpen ? 1 : 0,
           }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}

@@ -20,6 +20,7 @@ pub mod llm;
 pub mod agents;
 pub mod rag;
 pub mod research;
+pub mod mcp_server;
 
 use commands::*;
 
@@ -35,6 +36,9 @@ pub struct AppState {
     pub pending_approvals: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
     pub pending_plugin_tools: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
     pub pending_browser_actions: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
+
+    /// Per-session conductor tx handles — reuse the same actor across multi-turn conversations.
+    pub conductor_channels: Arc<Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<agents::protocol::ConductorMessage>>>>,
 }
 
 impl Default for AppState {
@@ -48,6 +52,7 @@ impl Default for AppState {
             pending_approvals: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_plugin_tools: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             pending_browser_actions: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            conductor_channels: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -72,7 +77,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -148,9 +152,10 @@ pub fn run() {
             db::commands::db_add_memory,
             db::commands::db_get_memories,
             db::commands::db_delete_memory,
+            db::commands::db_clear_memories,
             db::commands::db_search_memories,
             orchestrate_supervisor,
-            cancel_agent_loop,       // Fix 11: expose cancellation to frontend
+            cancel_agent_loop,
             search_web_command,
             commands::agent::fetch_page_html_command,
             commands::agent::run_agent_tool,
@@ -158,7 +163,6 @@ pub fn run() {
             commands::agent::reject_tool,
             commands::agent::resolve_plugin_tool,
             commands::agent::resolve_browser_action,
-            agents::stream::start_native_agent,
             llm::download_local_model,
             llm::list_local_models,
             llm::start_local_server,
@@ -202,17 +206,10 @@ async fn setup_app(handle: &tauri::AppHandle) {
     let _ = window.show();
     let _ = window.set_focus();
 
-    #[cfg(target_os = "macos")]
-    {
-        let _ = window_vibrancy::apply_vibrancy(&window, window_vibrancy::NSVisualEffectMaterial::HudWindow, None, None);
-
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let _ = window_vibrancy::apply_mica(&window, Some(true));
-
-    }
+    // Explicitly enforce resizable state after the window is fully shown.
+    // tauri_plugin_window_state or vibrancy effects can silently override this.
+    let _ = window.set_resizable(true);
+    let _ = window.set_maximizable(true);
 
     tracing::info!("✅ NYX Tauri fully initialized");
 }
@@ -230,10 +227,13 @@ async fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
 
     WebviewWindowBuilder::new(handle, "main", url)
         .title("NYX - Native Local Intelligence & Cloud Orchestration Platform")
-        .inner_size(1440.0, 900.0)
-        .min_inner_size(900.0, 600.0)
+        .inner_size(1200.0, 760.0)
+        .min_inner_size(800.0, 560.0)
         .center()
-        .decorations(false)
+        .resizable(true)
+        .maximizable(true)
+        .minimizable(true)
+        .decorations(true)
         .shadow(true)
         .transparent(true)
         .visible(false)

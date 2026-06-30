@@ -1,5 +1,5 @@
 import { MicVAD } from "@ricky0123/vad-web";
-import { fetchWithAuth } from "../../infrastructure/api/authFetch";
+import { invoke } from '@tauri-apps/api/core';
 
 export async function initVoiceMode(
   onSpeechStart: () => void,
@@ -41,10 +41,7 @@ export async function transcribeAudio(audio: Float32Array): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetchWithAuth("/api/v1/voice/stt", {
-    method: "POST",
-    body: formData,
-  });
+  const response: any = await invoke('voice_stt', { payload: formData });
 
   if (!response.ok) {
     const errText = await response.text();

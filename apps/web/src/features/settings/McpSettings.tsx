@@ -3,7 +3,6 @@ import { Card, CardHeader, CardTitle, CardContent } from '@src/shared/components
 import { SettingsIcon as Settings, PlusIcon as Plus, Trash2Icon as Trash2 } from '@animateicons/react/lucide';
 import { Server } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 export const McpSettings: React.FC = () => {
   const [servers, setServers] = useState<any[]>([]);
@@ -12,25 +11,15 @@ export const McpSettings: React.FC = () => {
   const [newServerCommand, setNewServerCommand] = useState('');
   const [newServerUrl, setNewServerUrl] = useState('');
 
-  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-
   const fetchServers = async () => {
     try {
-      if (isTauri) {
-        const serverNames = await invoke<string[]>('mcp_list_servers');
-        setServers(serverNames.map((name) => ({
-          id: name,
-          name: name,
-          type: 'stdio',
-          command: 'Active Process'
-        })));
-      } else {
-        const res = await fetchWithAuth('/api/v1/mcp/servers');
-        if (res.ok) {
-          const data = await res.json();
-          setServers(data.servers || []);
-        }
-      }
+      const serverNames = await invoke<string[]>('mcp_list_servers');
+      setServers(serverNames.map((name) => ({
+        id: name,
+        name: name,
+        type: 'stdio',
+        command: 'Active Process'
+      })));
     } catch (e) {
       console.error('Failed to fetch MCP servers', e);
     }
@@ -42,33 +31,19 @@ export const McpSettings: React.FC = () => {
 
   const handleAddServer = async () => {
     try {
-      if (isTauri) {
-        if (newServerType === 'stdio') {
-          const parts = newServerCommand.split(' ');
-          const command = parts[0];
-          const args = parts.slice(1);
-          await invoke('mcp_start_server', {
-            name: newServerName,
-            command,
-            args,
-            env: {}
-          });
-        } else {
-          alert("SSE servers not currently supported natively by the Rust backend.");
-          return;
-        }
-      } else {
-        await fetchWithAuth('/api/v1/mcp/servers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: newServerName,
-            type: newServerType,
-            command: newServerType === 'stdio' ? newServerCommand : undefined,
-            url: newServerType === 'sse' ? newServerUrl : undefined,
-            args: []
-          })
+      if (newServerType === 'stdio') {
+        const parts = newServerCommand.split(' ');
+        const command = parts[0];
+        const args = parts.slice(1);
+        await invoke('mcp_start_server', {
+          name: newServerName,
+          command,
+          args,
+          env: {}
         });
+      } else {
+        alert("SSE servers not currently supported natively by the Rust backend.");
+        return;
       }
       fetchServers();
       setNewServerName('');
@@ -81,11 +56,7 @@ export const McpSettings: React.FC = () => {
 
   const handleRemoveServer = async (id: string) => {
     try {
-      if (isTauri) {
-        await invoke('mcp_stop_server', { name: id });
-      } else {
-        await fetchWithAuth(`/api/v1/mcp/servers/${id}`, { method: 'DELETE' });
-      }
+      await invoke('mcp_stop_server', { name: id });
       fetchServers();
     } catch (e) {
       console.error('Failed to remove server', e);

@@ -163,10 +163,7 @@ window.addEventListener('unhandledrejection', (e) => {
   document.body.appendChild(overlay);
 });
 
-// ── Transparent Global Session Fetch Interceptor ─────────────────────────────
-let cachedToken: string | null = null;
-let tokenExpiresAt = 0;
-let inFlightTokenPromise: Promise<string> | null = null;
+
 
 // ── Tauri IPC Bridge & Dynamic Port Resolution ─────────────────────────────
 let backendBaseUrl = '';
@@ -226,76 +223,6 @@ async function initBackendUrl() {
   (window as any).__NYX_BACKEND_URL__ = '';
 }
 
-async function getOrFetchSessionToken(): Promise<string> {
-  if (cachedToken && Date.now() < tokenExpiresAt - 10000) {
-    return cachedToken;
-  }
-  if (inFlightTokenPromise) {
-    return inFlightTokenPromise;
-  }
-
-  inFlightTokenPromise = (async () => {
-    try {
-      const res = await fetch('/api/v1/auth/session');
-      if (!res.ok) throw new Error(`Auth status ${res.status}`);
-      const data = await res.json();
-      cachedToken = data.token;
-      tokenExpiresAt = data.expiresAt || Date.now() + 5 * 60 * 1000;
-      return data.token || '';
-    } catch (err: any) {
-      console.error('[Session Interceptor] Failed to fetch session token:', err);
-      return '';
-    } finally {
-      inFlightTokenPromise = null;
-    }
-  })();
-
-  return inFlightTokenPromise;
-}
-
-const originalFetch = window.fetch;
-
-// Endpoints that must NEVER trigger the session token interceptor
-const BOOTSTRAP_URLS = new Set([
-  '/api/v1/auth/session',
-  '/api/v1/vault/token',
-  '/api/v1/health',
-  '/api/v1/admin/logs',
-  '/api/v1/nyx/critic/stream',
-]);
-
-window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  let urlStr = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-
-  if (urlStr.startsWith('/api/') && backendBaseUrl) {
-    urlStr = `${backendBaseUrl}${urlStr}`;
-    input = urlStr;
-  }
-
-  const isBootstrap = [...BOOTSTRAP_URLS].some((u) => urlStr.includes(u));
-  const isApiCall = urlStr.includes('/api/') && !isBootstrap;
-
-  if (isApiCall) {
-    try {
-      const token = await getOrFetchSessionToken();
-      if (token) {
-        init = init || {};
-        const headers = new Headers(init.headers);
-        if (!headers.has('Authorization')) {
-          headers.set('Authorization', `Bearer ${token}`);
-        }
-        if (!headers.has('X-NYX-Session-Token')) {
-          headers.set('X-NYX-Session-Token', token);
-        }
-        init.headers = headers;
-      }
-    } catch (err: any) {
-      console.warn('[Fetch Interceptor] Error applying auth header:', err);
-    }
-  }
-
-  return originalFetch.call(this, input, init);
-};
 
 function RootContainer() {
   const [isBackendReady, setIsBackendReady] = useState(false);
@@ -322,8 +249,8 @@ function RootContainer() {
         try {
           const base = backendBaseUrl || '';
           const url = `${base}/api/v1/health`;
-          // Use originalFetch directly — never triggers the interceptor or token fetcher
-          const res = await originalFetch(url, {
+          // Use fetch directly
+          const res = await fetch(url, {
             headers: { Accept: 'application/json' },
             signal: AbortSignal.timeout(3000),
           });

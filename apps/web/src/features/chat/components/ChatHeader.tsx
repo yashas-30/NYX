@@ -13,7 +13,7 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { ModelSelector } from '@src/shared/components/ModelSelector';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { ModelInfo } from '@src/types';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 import { useLiveTimer } from '@src/shared/hooks/useLiveTimer';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
 import { useModelStore } from '@src/core/stores/useModelStore';

@@ -1,6 +1,7 @@
+import { invoke } from '@tauri-apps/api/core';
 import React, { useState, useEffect } from 'react';
 import { toast } from '@src/shared/components/ui/sonner';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { AlertTriangle } from 'lucide-react';
 import { LazyStore as Store } from '@tauri-apps/plugin-store';
@@ -104,17 +105,12 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
       setPromptSaving(false);
     }
   };
-
   const handleQuantChange = async (quantId: QuantTierId) => {
     setSelectedQuant(quantId);
     localStorage.setItem('nyx_quant', quantId);
     setQuantSaving(true);
     try {
-      await fetchWithAuth('/api/v1/nyx/local-models/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantization: quantId }),
-      });
+      await invoke('local_models_settings', { quant: quantId });
       toast.success(`Quantization set to ${quantId} — takes effect on next model load.`);
     } catch {
       toast.info(`Quantization saved locally: ${quantId}`);

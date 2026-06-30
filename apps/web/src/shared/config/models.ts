@@ -41,33 +41,6 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     limits: { rpm: 5, tpm: 250000, rpd: 20 },
   },
   {
-    id: 'gemma-4-31b-it',
-    name: 'Gemma 4 31B',
-    provider: 'gemini',
-    description: "Google's open weights model for reasoning and math",
-    status: 'ga',
-    specs: { contextWindow: '256K', trainingData: '2026', maxOutput: '8K', modality: 'Text' },
-    features: ['Dense flagship model for workstations', 'Configurable thinking modes for logic', 'High intelligence-per-parameter'],
-    pros: ['Frontier-level reasoning in its size class', 'Highly capable in agentic workflows', 'Apache 2.0 commercial license'],
-    cons: ['Resource Intensive (requires ~19GB+ VRAM)', 'Complex ecosystem setup compared to managed APIs'],
-    limits: { rpm: 15, tpm: null, rpd: 1500 },
-  },
-  {
-    id: 'gemma-4-26b-it',
-    name: 'Gemma 4 26B',
-    provider: 'gemini',
-    description: "Google's open weights model with MoE architecture",
-    status: 'ga',
-    specs: { contextWindow: '256K', trainingData: '2026', maxOutput: '8K', modality: 'Text' },
-    features: ['Mixture of Experts (MoE) architecture', 'Optimized for fast consumer GPU performance', 'Configurable thinking modes'],
-    cons: ['Slightly lower reasoning depth than dense 31B', 'Requires MoE compatible engines for deployment'],
-    limits: { rpm: 15, tpm: null, rpd: 1500 },
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // OPENROUTER MODELS
-  // ═══════════════════════════════════════════════════════════════════════════════
-  {
     id: 'openrouter/auto',
     name: 'Auto Router (OpenRouter)',
     provider: 'openrouter',
@@ -76,22 +49,22 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     specs: { contextWindow: '128K', trainingData: '2025', maxOutput: '8K', modality: 'Text' },
   },
   {
-    id: 'meta-llama/llama-3.3-70b-instruct',
-    name: 'Llama 3.3 70B (OpenRouter)',
+    id: 'deepseek/deepseek-chat',
+    name: 'DeepSeek V3 (OpenRouter)',
     provider: 'openrouter',
-    description: "Meta's latest high-capacity Llama 3.3 model hosted via OpenRouter.",
     status: 'ga',
-    specs: { contextWindow: '128K', trainingData: '2024', maxOutput: '8K', modality: 'Text' },
+    description: 'DeepSeek\'s latest ultra-efficient and capable LLM.',
+    specs: { contextWindow: '64K', trainingData: '2025', maxOutput: '8K', modality: 'Text' },
   },
   {
-    id: 'deepseek/deepseek-r1',
+    id: 'deepseek/deepseek-reasoner',
     name: 'DeepSeek R1 (OpenRouter)',
     provider: 'openrouter',
-    description: 'DeepSeek R1 full reasoning model via OpenRouter.',
     status: 'ga',
-    supportsThinking: true,
-    specs: { contextWindow: '160K', trainingData: '2025', maxOutput: '8K', modality: 'Text' },
+    description: 'DeepSeek\'s reasoning-specialist model utilizing chain of thought.',
+    specs: { contextWindow: '64K', trainingData: '2025', maxOutput: '8K', modality: 'Text' },
   },
+
 
 
   // ═══════════════════════════════════════════════════════════════════════════════

@@ -80,6 +80,7 @@ pub async fn db_get_swarm_context(
 
 // Internal Rust API for Swarm Orchestrator
 
+#[allow(dead_code)]
 pub async fn write_swarm_context_internal(
     pool: &SqlitePool,
     session_id: &str,
@@ -430,6 +431,17 @@ pub async fn db_delete_memory(
 ) -> Result<(), String> {
     sqlx::query("DELETE FROM long_term_memories WHERE id = ?")
         .bind(id)
+        .execute(&*pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn db_clear_memories(
+    pool: State<'_, SqlitePool>,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM long_term_memories")
         .execute(&*pool)
         .await
         .map_err(|e| e.to_string())?;

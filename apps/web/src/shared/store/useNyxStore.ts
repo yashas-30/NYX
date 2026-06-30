@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { ModelProvider, ModelOption } from '@src/types';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
+import { invoke } from '@tauri-apps/api/core';
 
 export interface ModelSettings {
   temperature: number;
@@ -26,7 +27,6 @@ export interface NyxState {
   executionMode: ExecutionMode;
   workspacePath: string;
   localModelsEnabled: boolean;
-  agentLoopEnabled: boolean;
   modelSettings: ModelSettings;
   cloudModelId: string | null;
   localModelId: string | null;
@@ -48,7 +48,6 @@ export interface NyxState {
   setExecutionMode: (mode: ExecutionMode) => void;
   setWorkspacePath: (path: string) => void;
   setLocalModelsEnabled: (enabled: boolean) => void;
-  setAgentLoopEnabled: (enabled: boolean) => void;
   updateModelSettings: (settings: Partial<ModelSettings>) => void;
   setCloudModelId: (id: string | null) => void;
   setLocalModelId: (id: string | null) => void;
@@ -107,7 +106,6 @@ export const useNyxStore = create<NyxState>()(
       executionMode: 'auto',
       workspacePath: '',
       localModelsEnabled: false,
-      agentLoopEnabled: false,
       modelSettings: DEFAULT_SETTINGS,
       cloudModelId: 'gemini-2.5-flash',
       localModelId: null,
@@ -125,7 +123,6 @@ export const useNyxStore = create<NyxState>()(
       setExecutionMode: (mode) => set({ executionMode: mode }),
       setWorkspacePath: (path) => set({ workspacePath: path }),
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
-      setAgentLoopEnabled: (enabled) => set({ agentLoopEnabled: enabled }),
       updateModelSettings: (settings) =>
           set((state) => ({
             modelSettings: { ...state.modelSettings, ...settings },
@@ -198,7 +195,7 @@ export const useNyxStore = create<NyxState>()(
 
       fetchWorkspacePath: async () => {
         try {
-          const res = await fetchWithAuth('/api/v1/workspace');
+          const res: any = { ok: true, json: async () => await invoke('workspace_get') };
           if (res.ok) {
             const data = await res.json();
             set({ workspacePath: data.workspace || '' });
@@ -215,14 +212,8 @@ export const useNyxStore = create<NyxState>()(
             const directory = await ipc.showOpenDirectory();
             if (directory) {
               // Post to API to set active workspace
-              const res = await fetchWithAuth('/api/v1/workspace/select', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: directory }),
-              });
-              if (res.ok) {
-                set({ workspacePath: directory });
-              }
+              await invoke('workspace_select', { path: directory });
+              set({ workspacePath: directory });
             }
           } catch (err: any) {
             console.error('[Store] Directory selection failed:', err);
@@ -234,22 +225,11 @@ export const useNyxStore = create<NyxState>()(
 
       createWorkspace: async (path: string, name: string) => {
         try {
-          const res = await fetchWithAuth('/api/v1/workspace/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path, name }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            set({ workspacePath: data.workspace });
-            return { success: true, workspace: data.workspace };
-          }
-          const errData = await res
-            .json()
-            .catch(() => ({ error: 'Network error creating workspace' }));
-          return { success: false, error: errData.error || 'Failed to create workspace' };
+          const data: any = await invoke('workspace_create', { path, name });
+          set({ workspacePath: data.workspace });
+          return { success: true, workspace: data.workspace };
         } catch (error: any) {
-          return { success: false, error: error.message };
+          return { success: false, error: error.message || 'Failed to create workspace' };
         }
       },
 
@@ -313,8 +293,15 @@ export const useNyxStore = create<NyxState>()(
           // Local models status is handled by useProviderStatus hooks elsewhere
 
           // Check safeStorage vault configuration for cloud providers
-          const vaultRes = await fetch('/api/v1/vault/status').catch(() => null);
-          const vaultStatus = vaultRes && vaultRes.ok ? await vaultRes.json() : {};
+          let vaultStatus: Record<string, boolean> = {};
+          try {
+            const vaultRes: any = await invoke('vault:status');
+            if (vaultRes.success && vaultRes.data) {
+              vaultStatus = vaultRes.data;
+            }
+          } catch (e) {
+            console.warn('Failed to fetch vault status via IPC', e);
+          }
 
           await Promise.all(cloudProviders.map(async (p) => {
             const hasVaultKey = vaultStatus[p];
@@ -322,12 +309,8 @@ export const useNyxStore = create<NyxState>()(
 
             if (hasVaultKey || hasMemoryKey) {
               try {
-                const validateRes = await fetchWithAuth('/api/v1/vault/validate', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ provider: p, apiKey: get().apiKeys[p] || '' }),
-                });
-                newStatuses[p] = validateRes.ok ? 'online' : 'invalid-key';
+                const validateRes: any = await invoke('vault_validate', { provider: p, apiKey: get().apiKeys[p] || '' });
+                newStatuses[p] = validateRes.success ? 'online' : 'invalid-key';
               } catch {
                 newStatuses[p] = 'offline';
               }

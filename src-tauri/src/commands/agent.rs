@@ -17,6 +17,7 @@ pub struct StreamEventPayload {
 }
 
 // Built-in tools for NYX
+#[allow(dead_code)]
 pub fn get_builtin_tools() -> Value {
     json!([
         {

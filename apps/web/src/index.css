@@ -108,6 +108,7 @@
 
   html {
     @apply font-sans;
+    height: 100%;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -120,27 +121,30 @@
     background-color: var(--background) !important;
     color: var(--foreground);
     @apply selection:bg-primary/20 selection:text-primary w-full;
-    min-height: 100dvh;
-    overflow-x: hidden;
-    overflow-y: auto;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
     /* Prevent bounce-scroll on iOS which can shift fixed elements */
     overscroll-behavior: none;
     transition: background-color 0.5s var(--ease-apple), color 0.5s var(--ease-apple);
   }
 
-  /* Make background transparent when running in Tauri to enable native window vibrancy (acrylic/glass) */
+  /* Tauri WebView2 on Windows: do NOT use transparency — it breaks resize sync.
+     Use explicit solid background so the webview fills correctly on all resize ops. */
   html.is-tauri, html.is-tauri body {
-    background-color: transparent !important;
+    background-color: var(--background) !important;
   }
   html.is-tauri #root {
-    background-color: rgba(24, 23, 21, 0.4) !important; /* Semi-transparent dark overlay to keep text readable over the native blur */
+    background-color: var(--background) !important;
   }
 
   #root {
     width: 100%;
-    min-height: 100dvh;
-    /* Safe area padding for notched phones (iPhone X+) */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   /* Prevent text selection on interactive elements for a native feel */

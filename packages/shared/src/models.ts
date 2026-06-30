@@ -137,10 +137,35 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     description: "Meta's highly capable general instruction model for general analysis.",
     specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' },
   },
+  {
+    id: 'openrouter/auto',
+    name: 'Auto Router (OpenRouter)',
+    provider: 'openrouter',
+    status: 'ga',
+    description: 'OpenRouter dynamic model routing to best available provider.',
+    specs: { contextWindow: '128K', trainingData: '2026', maxOutput: '8K', modality: 'Text' },
+  },
+  {
+    id: 'deepseek/deepseek-chat',
+    name: 'DeepSeek V3 (OpenRouter)',
+    provider: 'openrouter',
+    status: 'ga',
+    description: 'DeepSeek\'s latest ultra-efficient and capable LLM.',
+    specs: { contextWindow: '64K', trainingData: '2025', maxOutput: '8K', modality: 'Text' },
+  },
+  {
+    id: 'deepseek/deepseek-reasoner',
+    name: 'DeepSeek R1 (OpenRouter)',
+    provider: 'openrouter',
+    status: 'ga',
+    description: 'DeepSeek\'s reasoning-specialist model utilizing chain of thought.',
+    specs: { contextWindow: '64K', trainingData: '2025', maxOutput: '8K', modality: 'Text' },
+  },
 ];
 
+
 // Deduplicate by ID to prevent duplicate entries in the model selector
-const ALLOWED_PROVIDERS = ['gemini', 'nyx-native'];
+const ALLOWED_PROVIDERS = ['gemini', 'openrouter', 'nyx-native'];
 const _seen = new Set<string>();
 export const AVAILABLE_MODELS: ModelOption[] = RAW_AVAILABLE_MODELS.filter((m) =>
   ALLOWED_PROVIDERS.includes(m.provider)

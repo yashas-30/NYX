@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BrainIcon as Brain, XIcon as X, PlusIcon as Plus, CheckIcon as Check, EyeIcon as Eye, EyeOffIcon as EyeOff } from '@animateicons/react/lucide';
 import { RefreshCw } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { invoke } from '@tauri-apps/api/core';
 
 interface Memory {
   id: string;
@@ -28,11 +28,8 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ isOpen, onClose }) => 
   const fetchMemories = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetchWithAuth('/api/v1/memory');
-      if (res.ok) {
-        const data = await res.json();
-        setMemories(data.memories || []);
-      }
+      const data = await invoke<Memory[]>('db_get_memories');
+      setMemories(data || []);
     } catch {
       toast.error('Failed to load memories');
     } finally {
@@ -46,7 +43,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ isOpen, onClose }) => 
 
   const deleteMemory = async (id: string) => {
     try {
-      await fetchWithAuth(`/api/v1/memory/${id}`, { method: 'DELETE' });
+      await invoke('db_delete_memory', { id });
       setMemories(prev => prev.filter(m => m.id !== id));
       toast.success('Memory removed');
     } catch {
@@ -57,18 +54,22 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ isOpen, onClose }) => 
   const addMemory = async () => {
     if (!newFact.trim()) return;
     try {
-      const res = await fetchWithAuth('/api/v1/memory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fact: newFact.trim(), category: 'manual' }),
+      const id = crypto.randomUUID();
+      const newMem = { id, fact: newFact.trim(), category: 'manual', createdAt: Date.now() };
+      
+      // We pass embedding as an empty string since we are generating manually for now, 
+      // or we can let the backend handle it if we build a proper backend pipeline.
+      await invoke('db_add_memory', {
+        id,
+        fact: newFact.trim(),
+        category: 'manual',
+        embedding: '[]',
       });
-      if (res.ok) {
-        const data = await res.json();
-        setMemories(prev => [data.memory, ...prev]);
-        setNewFact('');
-        setIsAdding(false);
-        toast.success('Memory saved');
-      }
+      
+      setMemories(prev => [newMem, ...prev]);
+      setNewFact('');
+      setIsAdding(false);
+      toast.success('Memory saved');
     } catch {
       toast.error('Failed to save memory');
     }
@@ -77,7 +78,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ isOpen, onClose }) => 
   const clearAll = async () => {
     if (!confirm('Clear all memories? This cannot be undone.')) return;
     try {
-      await fetchWithAuth('/api/v1/memory', { method: 'DELETE' });
+      await invoke('db_clear_memories');
       setMemories([]);
       toast.success('All memories cleared');
     } catch {

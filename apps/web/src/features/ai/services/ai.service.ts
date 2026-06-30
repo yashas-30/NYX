@@ -17,7 +17,8 @@ import {
   ToolCall,
 } from '@src/infrastructure/types';
 import { ContinuationManager } from '@src/infrastructure/services/continuationManager';
-import { fetchWithAuth, getSessionToken, setSessionToken } from '@src/infrastructure/api/authFetch';
+
+import { invoke } from '@tauri-apps/api/core';
 import { parseSSEStream } from '@src/infrastructure/api/streamParser';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { getEffectiveApiKey } from '@src/infrastructure/utils/provider';
@@ -176,14 +177,13 @@ export class AIService {
     }
     this.pendingVaultStatusPromise = (async () => {
       try {
-        const response = await fetchWithAuth('/api/v1/vault/status');
-        if (response.ok) {
-          const data = await response.json();
-          this.cachedVaultStatus = data;
+        const res: any = await invoke('vault:status');
+        if (res.success && res.data) {
+          this.cachedVaultStatus = res.data;
           this.cachedVaultStatusTime = Date.now();
-          return data;
+          return res.data;
         }
-      } catch {
+      } catch (e) {
         // vault status is optional
       } finally {
         this.pendingVaultStatusPromise = null;
@@ -193,17 +193,7 @@ export class AIService {
     return this.pendingVaultStatusPromise;
   }
 
-  static setSessionToken(token: string | null): void {
-    setSessionToken(token);
-  }
 
-  static getSessionToken(): string | null {
-    return getSessionToken();
-  }
-
-  static async fetchWithAuth(url: string, init?: RequestInit, isStream = false): Promise<Response> {
-    return fetchWithAuth(url, init, isStream);
-  }
 
   // -------------------------------------------------------------------------
   // Main execution entry point
@@ -329,7 +319,7 @@ export class AIService {
     }
 
     const dedupeKey = JSON.stringify({
-      sessionId: this.getSessionToken(),
+      sessionId: '',
       provider,
       model: modelId,
       prompt,
@@ -473,22 +463,19 @@ export class AIService {
 
     let cachePromise: Promise<any> | null = null;
 
-    if (!isTauri) {
-      try {
-        cachePromise = this.fetchWithAuth('/api/v1/cache/get', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            provider,
-            model: modelId,
-            prompt,
-            systemInstruction,
-            history: historyToUse || [],
-            settings: settings || {},
-            tools: options.tools || [],
-          }),
-          signal: AbortSignal.timeout(80), // Hard 80ms timeout
-        }).catch(() => null);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      cachePromise = invoke('db_get_cache', {
+        payload: {
+          provider,
+          model: modelId,
+          prompt,
+          systemInstruction,
+          history: historyToUse || [],
+          settings: settings || {},
+          tools: options.tools || [],
+        }
+      }).catch(() => null);
 
         const cacheRes = await Promise.race([
           cachePromise,
@@ -518,7 +505,6 @@ export class AIService {
       } catch {
         // Cache miss or timeout — proceed with provider
       }
-    }
     // Route to provider
     const providerConfig = {
       modelId,
@@ -559,16 +545,7 @@ export class AIService {
     // Cache write (only if cache was attempted and we got a result)
     if (!isTauri && cachePromise && result.text) {
       const cacheWriteKey = `${provider}:${modelId}:${prompt.slice(0, 64)}`;
-      this.fetchWithAuth('/api/v1/cache/set', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          key: cacheWriteKey,
-          data: result.text,
-          provider,
-          model: modelId,
-        }),
-      }).catch((err) => {
+      invoke('db_set_cache', { payload: { key: cacheWriteKey, data: result.text, provider, model: modelId } }).catch((err) => {
         console.error(`[AIService] Cache write failed`, {
           error: err.message || err,
           provider,
@@ -670,7 +647,7 @@ export class AIService {
       tools,
     } = config;
 
-    const messages = this.buildMessages(prompt, systemInstruction, history);
+    const messages = this.buildMessages(prompt, systemInstruction, history, String(provider));
 
     const isTauri =
       typeof window !== 'undefined' &&
@@ -742,30 +719,7 @@ export class AIService {
         throw err;
       }
     }
-
-    const response = await this.fetchWithAuth('/api/v1/chat/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: modelId,
-        provider: provider,
-        messages,
-        temperature: settings?.temperature ?? 0.7,
-        max_tokens: settings?.maxTokens ?? getDefaultMaxTokens(String(provider)),
-        top_p: settings?.topP,
-        top_k: settings?.topK,
-        repeat_penalty: settings?.repeatPenalty,
-        gpu_layers: settings?.gpuLayers,
-        threads: settings?.threads,
-        context_size: settings?.contextSize,
-        batch_size: settings?.batchSize,
-        mirostat: settings?.mirostat,
-        // local models don't use agentMode/webSearch
-      }),
-      signal,
-    });
-    if (!response.ok) await this.handleNonOkResponse(response, provider);
-    return this.processStream(response, modelId, provider, onStream, streamEvents);
+    throw new Error("Streaming is only supported in Tauri environment");
   }
 
   // -------------------------------------------------------------------------
@@ -835,7 +789,8 @@ export class AIService {
   private static buildMessages(
     prompt: string,
     systemInstruction?: string,
-    history?: ChatMessage[]
+    history?: ChatMessage[],
+    provider?: string
   ): Array<{ role: string; content: string | any[] }> {
     const messages: Array<{ role: string; content: string | any[] }> = [];
     if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
@@ -844,16 +799,18 @@ export class AIService {
     }
     messages.push({ role: 'user', content: prompt });
 
-    // Auto-inject cache markers for long contexts
+    // Auto-inject Anthropic prompt cache markers — Claude only.
+    // Gemini and OpenRouter do not support cache_control; injecting it sends malformed content arrays.
+    const isAnthropic = /anthropic|claude/i.test(provider ?? '');
     const totalTokens = countTokens(JSON.stringify(messages));
-    if (totalTokens > 4000) {
-      // Also cache the system instruction
+    if (isAnthropic && totalTokens > 4000) {
+      // Cache the system instruction
       if (messages[0]?.role === 'system' && typeof messages[0].content === 'string') {
         messages[0].content = [
           { type: 'text', text: messages[0].content, cache_control: { type: 'ephemeral' } },
         ];
       }
-      // Find the last large message and add a cache marker
+      // Find the last large user message and add a cache marker
       for (let i = messages.length - 1; i >= 0; i--) {
         const m = messages[i];
         if (m.role === 'user' && typeof m.content === 'string' && m.content.length > 8000) {
@@ -917,7 +874,7 @@ export class AIService {
   ): Promise<'online' | 'offline' | 'no-key'> {
     if (false) {
       try {
-        const res = await this.fetchWithAuth(`/api/v1/models/status?provider=${provider}`);
+        const res: any = await invoke('check_model_status', { provider });
         if (!res.ok) return 'offline';
         const data = await res.json();
         return data.activeModelId ? 'online' : 'offline';

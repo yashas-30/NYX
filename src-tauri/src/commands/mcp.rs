@@ -136,6 +136,60 @@ pub async fn mcp_send_request(
     }
 }
 
+pub async fn mcp_list_tools_internal(
+    name: &str,
+    mcp_manager: &Arc<McpManager>,
+) -> Result<Value, String> {
+    let request_id = {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+        NEXT_ID.fetch_add(1, Ordering::SeqCst)
+    };
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "tools/list"
+    });
+
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut pending = mcp_manager.pending_requests.lock().await;
+        pending.insert(request_id, tx);
+    }
+
+    {
+        let mut servers = mcp_manager.servers.lock().await;
+        if let Some(mcp) = servers.get_mut(name) {
+            let req_str = serde_json::to_string(&request).map_err(|e| e.to_string())? + "\n";
+            mcp.stdin.write_all(req_str.as_bytes()).await.map_err(|e| e.to_string())?;
+            mcp.stdin.flush().await.map_err(|e| e.to_string())?;
+        } else {
+            let mut pending = mcp_manager.pending_requests.lock().await;
+            pending.remove(&request_id);
+            return Err(format!("MCP server '{}' not found", name));
+        }
+    }
+
+    match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
+        Ok(Ok(response)) => {
+            if let Some(error) = response.get("error") {
+                Err(error.to_string())
+            } else if let Some(result) = response.get("result") {
+                Ok(result.clone())
+            } else {
+                Ok(response)
+            }
+        }
+        Ok(Err(_)) => Err("Oneshot sender dropped without response".to_string()),
+        Err(_) => {
+            let mut pending = mcp_manager.pending_requests.lock().await;
+            pending.remove(&request_id);
+            Err("Timeout waiting for MCP response".to_string())
+        }
+    }
+}
+
 pub async fn mcp_call_tool_internal(
     name: &str,
     tool: &str,

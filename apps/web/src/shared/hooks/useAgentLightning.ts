@@ -228,12 +228,8 @@ export const useAgentLightning = () => {
         };
 
         // Persist to backend
-        import('@src/infrastructure/api/authFetch').then(({ fetchWithAuth }) => {
-          fetchWithAuth('/api/v1/nyx/lightning/directives', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ directives: newState }),
-          }).catch((err: any) =>
+        import('@tauri-apps/api/core').then(({ invoke }) => {
+          invoke('lightning_directives', { directives: newState }).catch((err: any) =>
             console.warn('[Agent Lightning] Failed to sync directives to backend', err)
           );
         });

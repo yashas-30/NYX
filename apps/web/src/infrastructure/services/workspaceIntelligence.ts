@@ -10,7 +10,7 @@
  * the VS Code Extension Host environment).
  */
 
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -220,24 +220,7 @@ class ClaudeMdManager {
       return this.hierarchy;
     }
 
-    try {
-      const res = await fetchWithAuth('/api/v1/nyx/claude-md-hierarchy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rootPath, currentFile }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        this.hierarchy = data.files.map((f: any) => ({
-          ...f,
-          relevanceScore: this.computeRelevance(f, currentFile),
-        }));
-        this.lastScan = now;
-        PersistentStore.set('claude-md-hierarchy', this.hierarchy).catch(console.warn);
-      }
-    } catch {
-      this.hierarchy = await PersistentStore.get<ClaudeMdFile[]>('claude-md-hierarchy', []);
-    }
+    this.hierarchy = await PersistentStore.get<ClaudeMdFile[]>('claude-md-hierarchy', []);
 
     return this.hierarchy;
   }
@@ -299,21 +282,7 @@ class MemorySystem {
   }
 
   async loadFromServer(): Promise<void> {
-    try {
-      const res = await fetchWithAuth('/api/v1/nyx/memory-index', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        this.entries = data.entries;
-        this.buildIndex();
-        this.saveToStore().catch(console.warn);
-      }
-    } catch {
-      // Use cached
-    }
+    // No-op for now; depends entirely on local store
   }
 
   search(query: string, tags?: string[], limit = 5): MemoryEntry[] {
@@ -441,20 +410,7 @@ class KeywordIndex {
   private snippets: KeywordSnippet[] = [];
 
   async refresh(rootPath: string): Promise<void> {
-    try {
-      const res = await fetchWithAuth('/api/v1/nyx/keyword-index', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rootPath }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        this.snippets = data.snippets;
-        PersistentStore.set('keyword-index', this.snippets).catch(console.warn);
-      }
-    } catch {
-      this.snippets = await PersistentStore.get<KeywordSnippet[]>('keyword-index', []);
-    }
+    // No-op; fallback to store
   }
 
   search(query: string, currentFile?: string, limit = 10): KeywordSnippet[] {
@@ -777,62 +733,66 @@ export class WorkspaceIntelligence {
     }
 
     try {
-      const response = await fetchWithAuth('/api/v1/nyx/workspace-profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          openFiles: this.openFileTracker.getFiles(),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch workspace profile: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      if (data.success && data.profile) {
-        const profile: WorkspaceProfile = {
-          ...data.profile,
-          openFiles: this.openFileTracker.getFiles(),
-          claudeMdHierarchy: [],
-          memoryIndex: [],
-          keywordIndex: [],
-          sessionState: await this.sessionState.getState(),
-        };
-
-        await Promise.all([
-          this.claudeMdManager
-            .scanHierarchy(profile.rootPath, this.openFileTracker.getMostRecent() ?? undefined)
-            .then((hierarchy) => {
-              profile.claudeMdHierarchy = hierarchy;
-            }),
-          this.memorySystem.loadFromServer().then(() => {
-            profile.memoryIndex = this.memorySystem.search('', undefined, 20);
-          }),
-          this.keywordIndex.refresh(profile.rootPath).then(() => {
-            profile.keywordIndex = this.keywordIndex.search('', undefined, 50);
-          }),
-        ]);
-
-        this.profileCache = profile;
-        this.profileCacheTime = now;
-        PersistentStore.set('workspace-profile', profile).catch(console.warn);
-        return profile;
-      }
-      throw new Error(data.error || 'Unknown error');
-    } catch (err: any) {
-      console.warn('[WorkspaceIntelligence] Server fetch failed, loading from local cache:', err);
-
       const cached = await PersistentStore.get<WorkspaceProfile | null>('workspace-profile', null);
       if (cached) {
         cached.openFiles = this.openFileTracker.getFiles();
         cached.sessionState = await this.sessionState.getState();
+        
+        await Promise.all([
+          this.claudeMdManager
+            .scanHierarchy(cached.rootPath, this.openFileTracker.getMostRecent() ?? undefined)
+            .then((hierarchy) => {
+              cached.claudeMdHierarchy = hierarchy;
+            }),
+          this.memorySystem.loadFromServer().then(() => {
+            cached.memoryIndex = this.memorySystem.search('', undefined, 20);
+          }),
+          this.keywordIndex.refresh(cached.rootPath).then(() => {
+            cached.keywordIndex = this.keywordIndex.search('', undefined, 50);
+          }),
+        ]);
+
         this.profileCache = cached;
         this.profileCacheTime = now;
         return cached;
       }
-
-      return this.getFallbackProfile();
+      
+      return {
+        rootPath: '',
+        projectType: 'unknown',
+        packageManager: null,
+        entryPoints: [],
+        keyDependencies: {},
+        directoryTree: '',
+        testFramework: null,
+        lintConfig: null,
+        typescriptConfig: null,
+        recentGitCommits: [],
+        openFiles: this.openFileTracker.getFiles(),
+        claudeMdHierarchy: [],
+        memoryIndex: [],
+        keywordIndex: [],
+        sessionState: await this.sessionState.getState(),
+      };
+    } catch (err: any) {
+      console.warn('[WorkspaceIntelligence] Local cache failed:', err);
+      return {
+        rootPath: '',
+        projectType: 'unknown',
+        packageManager: null,
+        entryPoints: [],
+        keyDependencies: {},
+        directoryTree: '',
+        testFramework: null,
+        lintConfig: null,
+        typescriptConfig: null,
+        recentGitCommits: [],
+        openFiles: this.openFileTracker.getFiles(),
+        claudeMdHierarchy: [],
+        memoryIndex: [],
+        keywordIndex: [],
+        sessionState: await this.sessionState.getState(),
+      };
     }
   }
 

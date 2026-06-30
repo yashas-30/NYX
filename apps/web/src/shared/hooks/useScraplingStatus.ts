@@ -1,5 +1,6 @@
+import { invoke } from '@tauri-apps/api/core';
 import { useState, useEffect } from 'react';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 
 export type ScraplingStatus = 'checking' | 'running' | 'restarting' | 'offline';
 
@@ -10,7 +11,7 @@ export function useScraplingStatus(): ScraplingStatus {
     let active = true;
     const checkScrapling = async () => {
       try {
-        const res = await fetchWithAuth('/api/v1/admin/scrapling-status');
+        const res: any = { ok: true, json: async () => await invoke('admin_scrapling_status') };
         if (!active) return;
         if (res.ok) {
           const data = await res.json();

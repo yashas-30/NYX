@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { invoke } from '@tauri-apps/api/core';
 
 interface ModelState {
@@ -66,23 +65,8 @@ export const useModelStore = create<ModelState>((set, get) => {
       try {
         let modelsData: any[] = [];
 
-        if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
-          const tauriModels: any = await invoke('list_local_models');
-          modelsData = tauriModels || [];
-        } else {
-          const { localModelsEnabled } = get();
-          if (!localModelsEnabled) {
-            set({ localLibraryModels: [], isLoading: false });
-            return;
-          }
-          const res = await fetchWithAuth('/api/v1/nyx/local-models');
-          if (res.ok) {
-            const data = await res.json();
-            if (data.models && Array.isArray(data.models)) {
-              modelsData = data.models;
-            }
-          }
-        }
+        const tauriModels: any = await invoke('list_local_models');
+        modelsData = tauriModels || [];
 
         const completed = modelsData
           .filter((m: any) => m.status === 'completed' || m.status === 'downloading')

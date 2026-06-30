@@ -4,7 +4,7 @@
  *   rate limit parsing, batch fetching, and Claude/Kimi-parity features.
  */
 
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { invoke } from '@tauri-apps/api/core';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -170,25 +170,11 @@ async function fetchQuotaRaw(
   }
 
   try {
-    const response = await fetchWithAuth('/api/v1/models/quota', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider,
-        apiKey: apiKey ? apiKey.trim() : undefined,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`HTTP ${response.status}: ${text}`);
-    }
-
-    const data = await response.json();
+    const data: any = await invoke('get_models_quota', { provider, apiKey: apiKey ? apiKey.trim() : undefined });
+if (!data) throw new Error('No quota data returned');
     const parser = PROVIDER_PARSERS[provider] || PROVIDER_PARSERS.gemini;
 
-    return parser.parse(data, response.headers);
+    return parser.parse(data, new Headers());
   } catch (error: any) {
     // Return structured error instead of fake quota
     return {

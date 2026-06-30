@@ -12,7 +12,7 @@ import { StopCircle, Bot, MemoryStick, Cpu, Thermometer, RotateCcw, Image as Ima
 import { ModelDefinition } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
 import { analyzePrompt, optimizePromptText } from '@nyx/shared';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 import { PromptTemplateManager } from './PromptTemplateManager';
 import { SectionLabel, ParamSlider, ToolButton } from '@shared/components/PromptInputSubcomponents';
 import { LocalModelSettingsPanel } from '@shared/components/LocalModelSettingsPanel';
@@ -115,8 +115,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const [isFocused, setIsFocused] = useState(false);
   const isSubmitting = useRef(false);
   const localSettings = modelSettings;
-  const agentLoopEnabled = useNyxStore((state) => state.agentLoopEnabled);
-  const setAgentLoopEnabled = useNyxStore((state) => state.setAgentLoopEnabled);
   const cloudModelId = useNyxStore((state) => state.cloudModelId);
   const localModelId = useNyxStore((state) => state.localModelId);
 
@@ -438,7 +436,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   return (
     <div className="shrink-0 w-full flex flex-col items-center pb-4 pt-2 bg-background z-30 gap-2 px-0 md:px-24">
       <div
-        className={`relative w-full transition-all duration-500 ease-out max-w-3xl px-4 md:px-0`}
+        className={`relative w-full transition-all duration-500 ease-out px-4 md:px-0`}
       >
         {/* ── Settings Panel ────────────────────────────────────────── */}
         <LocalModelSettingsPanel
@@ -654,24 +652,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     )}
                   </AnimatePresence>
                 </div>
-
-                {/* Agent Loop Toggle */}
-                <motion.button
-                  variants={tagItemVariants}
-                  whileHover={{ y: -1.5, scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="button"
-                  onClick={() => setAgentLoopEnabled(!agentLoopEnabled)}
-                  className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[9.5px] font-bold transition-all cursor-pointer ${
-                    agentLoopEnabled
-                      ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30'
-                      : 'bg-secondary border border-border text-muted-foreground hover:text-foreground'
-                  }`}
-                  title={agentLoopEnabled ? "Agent Loop Enabled" : "Enable Agent Loop"}
-                >
-                  <Bot size={11} className={agentLoopEnabled ? "animate-pulse" : ""} />
-                  <span>Agent Loop</span>
-                </motion.button>
 
                 {isLocalModel && (
                   <motion.button

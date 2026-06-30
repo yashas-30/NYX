@@ -60,14 +60,7 @@ use std::collections::HashMap;
 pub async fn vault_status() -> VaultResult<HashMap<String, bool>> {
     let providers = vec![
         "gemini",
-        "anthropic",
-        "openai",
-        "deepseek",
         "openrouter",
-        "tavily",
-        "jina",
-        "scrapling",
-        "scrapling_url",
     ];
     let mut status_map = HashMap::new();
     for provider in providers {
@@ -87,14 +80,7 @@ pub async fn vault_status() -> VaultResult<HashMap<String, bool>> {
 pub async fn vault_list_keys() -> VaultResult<Vec<String>> {
     let providers = vec![
         "gemini",
-        "anthropic",
-        "openai",
-        "deepseek",
         "openrouter",
-        "tavily",
-        "jina",
-        "scrapling",
-        "scrapling_url",
     ];
     let mut keys = Vec::new();
     for provider in providers {

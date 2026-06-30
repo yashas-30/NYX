@@ -75,7 +75,7 @@ pub async fn execute_llm_stream(
     let max_tokens = req.max_tokens.unwrap_or(MAX_TOKENS_DEFAULT);
 
     let (url, body, provider_type) = match req.provider.as_str() {
-        "nyx-native" | "openrouter" | "openai" | "deepseek" => {
+        "nyx-native" | "openrouter" => {
             let mut msgs = vec![];
             if let Some(sys) = &req.system_instruction {
                 msgs.push(json!({"role": "system", "content": sys}));
@@ -112,7 +112,7 @@ pub async fn execute_llm_stream(
             });
 
             match req.provider.as_str() {
-                "openai" | "deepseek" | "openrouter" => {
+                "openrouter" => {
                     headers.insert(
                         "Authorization",
                         HeaderValue::from_str(&format!("Bearer {}", req.api_key))
@@ -128,15 +128,13 @@ pub async fn execute_llm_stream(
 
             let endpoint = req.endpoint_override.clone().unwrap_or_else(|| {
                 match req.provider.as_str() {
-                    "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
                     "openrouter" => "https://openrouter.ai/api/v1/chat/completions".to_string(),
-                    "deepseek" => "https://api.deepseek.com/chat/completions".to_string(),
                     "nyx-native" => "http://127.0.0.1:8080/v1/chat/completions".to_string(),
                     _ => "http://127.0.0.1:8080/v1/chat/completions".to_string(),
                 }
             });
 
-            (endpoint, body, "openai")
+            (endpoint, body, req.provider.clone())
         }
 
         "gemini" => {
@@ -197,7 +195,7 @@ pub async fn execute_llm_stream(
                 base, req.model_id
             );
 
-            (endpoint, body, "gemini")
+            (endpoint, body, "gemini".to_string())
         }
         _ => return Err(format!("Unsupported provider: {}", req.provider)),
     };
@@ -405,13 +403,31 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
     let mut events = Vec::new();
 
     match provider_type {
-        "openrouter" | "openai" => {
+        "openrouter" | "nyx-native" => {
             if let Some(choices) = v.get("choices").and_then(|c| c.as_array()) {
                 if let Some(choice) = choices.get(0) {
                     if let Some(delta) = choice.get("delta").and_then(|d| d.as_object()) {
+                        // 1. Regular text content
                         if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
-                            events.push(StreamEventParse::Text(content.to_string()));
+                            if !content.is_empty() {
+                                events.push(StreamEventParse::Text(content.to_string()));
+                            }
                         }
+                        // 2. Reasoning tokens — OpenRouter exposes these in delta.reasoning or
+                        //    delta.reasoning_content depending on the upstream provider.
+                        //    Wrap in <think>…</think> so tauriLlmClient.ts routes them to the
+                        //    reasoning accumulator (no frontend changes required).
+                        let reasoning = delta.get("reasoning")
+                            .or_else(|| delta.get("reasoning_content"))
+                            .and_then(|r| r.as_str());
+                        if let Some(r) = reasoning {
+                            if !r.is_empty() {
+                                events.push(StreamEventParse::Text(
+                                    format!("<think>{}</think>", r)
+                                ));
+                            }
+                        }
+                        // 3. Tool calls
                         if let Some(tool_calls) = delta.get("tool_calls").and_then(|tc| tc.as_array()) {
                             if let Some(tc) = tool_calls.get(0) {
                                 if let Some(func) = tc.get("function") {
@@ -430,14 +446,30 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
             }
         }
 
+
         "gemini" => {
             if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
                 if let Some(candidate) = candidates.get(0) {
                     if let Some(content) = candidate.get("content") {
                         if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
                             for part in parts {
+                                // Gemini 2.5 marks reasoning/thinking parts with "thought": true.
+                                // Route them via <think> tags so tauriLlmClient.ts sends them to
+                                // the reasoning accumulator → ThinkingBlock UI.
+                                let is_thought = part.get("thought")
+                                    .and_then(|t| t.as_bool())
+                                    .unwrap_or(false);
+
                                 if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                                    events.push(StreamEventParse::Text(text.to_string()));
+                                    if !text.is_empty() {
+                                        if is_thought {
+                                            events.push(StreamEventParse::Text(
+                                                format!("<think>{}</think>", text)
+                                            ));
+                                        } else {
+                                            events.push(StreamEventParse::Text(text.to_string()));
+                                        }
+                                    }
                                 } else if let Some(func_call) = part.get("functionCall") {
                                     if let Some(name) = func_call.get("name").and_then(|n| n.as_str()) {
                                         events.push(StreamEventParse::ToolCallStart {
@@ -457,6 +489,7 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
                 }
             }
         }
+
         _ => {}
     }
     if events.is_empty() {

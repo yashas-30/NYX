@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 import { useLocalModels } from '@src/shared/hooks/useLocalModels';
 
 // Modular Hooks
@@ -151,7 +151,7 @@ export const useDashboardState = (onExit?: () => void) => {
       if (typeof window !== 'undefined' && (window as any).nyxIPC) {
         const ipc = (window as any).nyxIPC;
         try {
-          await ipc.invoke('vault:set-key', { provider, key });
+          await ipc.invoke('vault:store-key', { payload: { provider, key } });
         } catch (err: any) {
           console.error('[Vault] Failed to update key:', err);
         }

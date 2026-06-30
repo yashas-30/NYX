@@ -6,17 +6,20 @@
   "build": {
     "beforeDevCommand": "npm run dev:web",
     "beforeBuildCommand": "npm run build:web",
-    "frontendDist": "../dist",
+    "frontendDist": "../apps/web/dist",
     "devUrl": "http://localhost:3000"
   },
   "app": {
     "windows": [
       {
         "title": "NYX - Native Local Intelligence & Cloud Orchestration Platform",
-        "width": 1440,
-        "height": 900,
-        "minWidth": 900,
-        "minHeight": 600,
+        "width": 1200,
+        "height": 760,
+        "minWidth": 800,
+        "minHeight": 560,
+        "resizable": true,
+        "maximizable": true,
+        "minimizable": true,
         "center": true,
         "transparent": true,
         "visible": false
@@ -45,7 +48,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["../dist"],
+    "resources": ["../apps/web/dist"],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" }
     },

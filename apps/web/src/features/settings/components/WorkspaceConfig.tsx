@@ -3,7 +3,6 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { GlobeIcon as Globe } from '@animateicons/react/lucide';
 import { toast } from '@src/shared/components/ui/sonner';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 
 interface WorkspaceConfigProps {
   workspacePath: string;
@@ -17,31 +16,11 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
   setWorkspacePath,
 }) => {
   const handleSelectWorkspace = async () => {
-    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     try {
-      let selectedPath: string | null = null;
-      if (isTauri) {
-        // Use Tauri native directory picker
-        selectedPath = await invoke('dialog_open_directory');
-      } else {
-        selectedPath = window.prompt("Native directory picker unavailable in browser. Please enter the absolute path to your workspace directory:");
-      }
-      
+      const selectedPath = await invoke<string | null>('dialog_open_directory');
       if (selectedPath) {
-        // Send the selected path to the Node backend
-        const res = await fetchWithAuth('/api/v1/workspace', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: selectedPath }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setWorkspacePath(data.workspace);
-          toast.success(`Active workspace updated: ${data.workspace}`);
-        } else {
-          const err = await res.json();
-          toast.error(`Error updating workspace on server: ${err.error}`);
-        }
+        setWorkspacePath(selectedPath);
+        toast.success(`Active workspace updated: ${selectedPath}`);
       }
     } catch (error: any) {
       toast.error(`Directory selection failed: ${error.message}`);
@@ -53,24 +32,9 @@ export const WorkspaceConfig: React.FC<WorkspaceConfigProps> = ({
       e.preventDefault();
       const val = e.currentTarget.value.trim();
       if (val) {
-        try {
-          const res = await fetchWithAuth('/api/v1/workspace', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: val }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setWorkspacePath(data.workspace);
-            toast.success(`Workspace updated to: ${data.workspace}`);
-            e.currentTarget.value = '';
-          } else {
-            const err = await res.json();
-            toast.error(`Error: ${err.error}`);
-          }
-        } catch (error: any) {
-          toast.error(`Failed to update workspace: ${error.message}`);
-        }
+        setWorkspacePath(val);
+        toast.success(`Workspace updated to: ${val}`);
+        e.currentTarget.value = '';
       }
     }
   };

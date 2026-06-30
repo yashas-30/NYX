@@ -7,6 +7,7 @@ import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { DebugLogger } from '@src/core/utils/DebugLogger';
 import { Providers } from './providers';
+import { WindowResizeHandles } from '@src/shared/components/WindowResizeHandles';
 
 export default function App() {
   return (
@@ -100,7 +101,7 @@ function AppContent() {
 
 
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 font-sans">
+    <div className="h-full w-full overflow-hidden bg-background text-foreground selection:bg-primary/30 font-sans">
       <ErrorBoundary>
         {window.location.pathname.startsWith('/share/') ? (
           <SharedChatView />
@@ -108,6 +109,7 @@ function AppContent() {
           <AppDashboard onExit={() => {}} />
         )}
       </ErrorBoundary>
+      <WindowResizeHandles />
 
       {/* 
       User requested to disable all toast popups app-wide

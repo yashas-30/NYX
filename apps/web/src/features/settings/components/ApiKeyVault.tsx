@@ -7,7 +7,6 @@ import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 
@@ -203,40 +202,20 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
       return;
     }
 
-    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     try {
       let allSuccess = true;
-      if (isTauri) {
-        for (const provider of Object.keys(keysToSave)) {
-          const val = keysToSave[provider];
-          if (val !== undefined && val.trim().length > 0) {
-            const res: any = await invoke('vault:store-key', { payload: { provider, key: val } });
-            if (res.success) {
-              await updateApiKey(provider, val);
-            } else {
-              allSuccess = false;
-              toast.error(`Failed to save ${provider} key: ${res.error}`);
-            }
-          } else if (val === '') {
-            await invoke('vault:delete-key', { payload: { provider } });
+      for (const provider of Object.keys(keysToSave)) {
+        const val = keysToSave[provider];
+        if (val !== undefined && val.trim().length > 0) {
+          const res: any = await invoke('vault:store-key', { payload: { provider, key: val } });
+          if (res.success) {
+            await updateApiKey(provider, val);
+          } else {
+            allSuccess = false;
+            toast.error(`Failed to save ${provider} key: ${res.error}`);
           }
-        }
-      } else {
-        const res = await fetchWithAuth('/api/v1/vault/store', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: keysToSave }),
-        });
-        if (res.ok) {
-          for (const provider of Object.keys(keysToSave)) {
-            const val = keysToSave[provider];
-            if (val !== undefined && val.trim().length > 0) {
-              await updateApiKey(provider, val);
-            }
-          }
-        } else {
-          allSuccess = false;
-          toast.error('Failed to save keys to server vault.');
+        } else if (val === '') {
+          await invoke('vault:delete-key', { payload: { provider } });
         }
       }
 
@@ -257,35 +236,14 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   const handlePurgeVault = async () => {
     const shouldDelete = await confirm('Delete all keys from server vault?', { title: 'Confirm Deletion', kind: 'warning' });
     if (shouldDelete) {
-      const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
       try {
-        if (isTauri) {
-          const allProviders = ['gemini', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
-          for (const provider of allProviders) {
-            await invoke('vault:delete-key', { payload: { provider } });
-          }
-          toast.success('All API keys removed from server vault');
-          await fetchVaultStatus();
-          clearApiKeys();
-        } else {
-          const keysPayload: Record<string, string> = {};
-          const allProviders = ['gemini', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
-          for (const provider of allProviders) {
-            keysPayload[provider] = '';
-          }
-          const res = await fetchWithAuth('/api/v1/vault/store', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keys: keysPayload }),
-          });
-          if (res.ok) {
-            toast.success('All API keys removed from server vault');
-            await fetchVaultStatus();
-            clearApiKeys();
-          } else {
-            toast.error('Failed to purge server vault.');
-          }
+        const allProviders = ['gemini', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
+        for (const provider of allProviders) {
+          await invoke('vault:delete-key', { payload: { provider } });
         }
+        toast.success('All API keys removed from server vault');
+        await fetchVaultStatus();
+        clearApiKeys();
       } catch (error: any) {
         toast.error(`Error: ${error.message}`);
       }

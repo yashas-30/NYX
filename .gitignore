@@ -85,3 +85,11 @@ scripts/debug-console.cjs
 .worktrees/
 .turbo/
 uploads/
+
+/tmp/
+
+/dist/
+/dist-desktop/
+/release/
+/playwright-report/
+/test-results/

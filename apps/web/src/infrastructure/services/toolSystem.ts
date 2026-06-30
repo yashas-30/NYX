@@ -5,8 +5,10 @@
  *              and structured tool results like Claude/Kimi.
  */
 
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { WorkspaceIntelligence } from './workspaceIntelligence';
+import { invoke } from '@tauri-apps/api/core';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -602,57 +604,40 @@ export class ToolExecutor {
       case 'read_file': {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
-        const res = await fetchWithAuth('/api/v1/nyx/read-file', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filePath: params.path,
-            startLine: params.startLine,
-            endLine: params.endLine,
-          }),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to read file');
-        return data.content;
+        try {
+          const content: string = await invoke('fs_read_file', { path: params.path });
+          if (params.startLine && params.endLine) {
+            const lines = content.split('\n');
+            return lines.slice(params.startLine - 1, params.endLine).join('\n');
+          }
+          return content;
+        } catch (e: any) {
+          throw new Error(e || 'Failed to read file');
+        }
       }
 
       // fallow-ignore-next-line code-duplication
       case 'edit_file': {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
-        const res = await fetchWithAuth('/api/v1/nyx/write-file', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filePath: params.path,
-            content: params.content,
-            overwrite: true,
-          }),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to edit file');
-        return `Successfully edited file: ${params.path}`;
+        try {
+          await invoke('fs_write_file', { path: params.path, content: params.content, overwrite: true });
+          return `Successfully edited file: ${params.path}`;
+        } catch (e: any) {
+          throw new Error(e || 'Failed to edit file');
+        }
       }
 
       // fallow-ignore-next-line code-duplication
       case 'write_file': {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
-        const res = await fetchWithAuth('/api/v1/nyx/write-file', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filePath: params.path,
-            content: params.content,
-            overwrite: params.overwrite ?? false,
-          }),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to write file');
-        return `Successfully created file: ${params.path}`;
+        try {
+          await invoke('fs_write_file', { path: params.path, content: params.content, overwrite: params.overwrite ?? false });
+          return `Successfully created file: ${params.path}`;
+        } catch (e: any) {
+          throw new Error(e || 'Failed to write file');
+        }
       }
 
 
@@ -660,99 +645,79 @@ export class ToolExecutor {
       case 'run_terminal': {
         validatePath(params.cwd);
         sanitizeCommand(params.command);
-        const res = await fetchWithAuth('/api/v1/terminal/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            command: params.command,
-            cwd: params.cwd,
-            timeout: params.timeout ?? 30000,
-          }),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || `Command failed: ${data.stderr}`);
+        try {
+          const result: any = await invoke('execute_command', { 
+            command: params.command, 
+            cwd: params.cwd || ''
+          });
+          return {
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode ?? 0,
+          };
+        } catch (e: any) {
+          throw new Error(e || `Command failed`);
         }
-        return {
-          stdout: data.stdout,
-          stderr: data.stderr,
-          exitCode: data.exitCode ?? 0,
-        };
       }
 
       case 'web_search': {
         const q = params.query || (params.queries && params.queries.length > 0 ? params.queries[0] : '');
         if (!q) throw new Error('Missing query parameter');
-        const res = await fetchWithAuth('/api/v1/nyx/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        try {
+          const storeState = useNyxStore.getState();
+          const searchProvider = storeState.searchProvider || 'duckduckgo';
+          const apiKey = storeState.apiKeys[searchProvider] || '';
+          const result: string = await invoke('search_web_command', {
             query: q,
             numResults: params.numResults ?? 5,
-          }),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Web search failed');
-        return data.results;
+            provider: searchProvider,
+            apiKey,
+          });
+          return result;
+        } catch (e: any) {
+          throw new Error(e || 'Web search failed');
+        }
       }
 
       case 'list_directory': {
         validatePath(params.path);
-        const res = await fetchWithAuth('/api/v1/nyx/list-directory', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            dirPath: params.path,
-            recursive: params.recursive ?? false,
-          }),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to list directory');
-        return data.files;
+        try {
+          const files: any = await invoke('fs_list_dir', { dirPath: params.path });
+          return files;
+        } catch (e: any) {
+          throw new Error(e || 'Failed to list directory');
+        }
       }
 
       case 'git_diff': {
         validatePath(params.path);
-        const res = await fetchWithAuth('/api/v1/nyx/git-diff', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filePath: params.path,
-            staged: params.staged ?? false,
-          }),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to fetch git diff');
-        return data.diff;
+        try {
+          const result: any = await invoke('execute_command', {
+            command: 'git',
+            cwd: params.path
+          });
+          return result.stdout;
+        } catch (e: any) {
+          throw new Error(e || 'Failed to fetch git diff');
+        }
       }
 
       case 'git_status': {
-        const res = await fetchWithAuth('/api/v1/nyx/git-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to fetch git status');
-        return data.status;
+        try {
+          const result: any = await invoke('execute_command', {
+            command: 'git status',
+            cwd: '.'
+          });
+          return result.stdout;
+        } catch (e: any) {
+          throw new Error(e || 'Failed to fetch git status');
+        }
       }
 
       case 'view_image': {
         validatePath(params.path);
-        const res = await fetchWithAuth('/api/v1/nyx/view-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filePath: params.path }),
-          signal,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to view image');
-        return data.description || data.content;
+        // Not implemented in Rust backend yet
+        throw new Error('view_image is not yet natively supported in Tauri backend');
       }
 
       default:

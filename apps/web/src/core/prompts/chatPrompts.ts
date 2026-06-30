@@ -333,12 +333,7 @@ ${context.lightningDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 
   // ── Model-Specific Optimizations ──────────────────────────────────────────
 
-  const MODEL_OPTIMIZATIONS: Record<string, string> = {
-    deepseek:
-      'You have strong reasoning capabilities. For complex questions, use step-by-step thinking inside <thinking> tags. Keep reasoning focused and under 100 words.',
-    phi: 'You excel at math, logic, and structured reasoning. Show your work for numerical problems. Use LaTeX for equations when helpful.',
-    qwen: `You have strong multilingual capabilities. Maintain fluency and cultural appropriateness in ${detectedLanguage}.`,
-  };
+  const MODEL_OPTIMIZATIONS: Record<string, string> = {};
 
   for (const [key, note] of Object.entries(MODEL_OPTIMIZATIONS)) {
     if (modelId.toLowerCase().includes(key)) {

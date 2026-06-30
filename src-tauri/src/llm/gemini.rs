@@ -14,7 +14,7 @@ impl GeminiProvider {
     pub fn new(api_key: String, model: Option<String>) -> Self {
         Self {
             api_key,
-            model: model.unwrap_or_else(|| "gemini-1.5-pro".to_string()),
+            model: model.unwrap_or_default(),
             client: Client::new(),
         }
     }

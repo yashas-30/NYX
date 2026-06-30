@@ -9,7 +9,7 @@
 [![Version](https://img.shields.io/badge/version-3.0-0ea5e9?style=flat-square)](https://github.com/yashas-30/NYX/releases)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-6-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev)
-[![Fastify](https://img.shields.io/badge/Fastify-5-000000?style=flat-square&logo=fastify&logoColor=white)](https://fastify.dev)
+[![Tauri](https://img.shields.io/badge/Tauri-2.0-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
@@ -31,7 +31,7 @@
 | 🤖 **NYX Agent Swarm**              | Client-side agent pipeline (Planner → SubagentSwarm → Optimizer) coordinating tasks        |
 | ☁️ **Cloud Orchestration**          | Gemini — unified under one interface                                                       |
 | 📚 **Codebase Knowledge**           | Index your local codebase and query it contextually during code generation                 |
-| ⚡ **Zero-Delay Streaming**         | Fastify server with TCP `setNoDelay`, DNS pre-warming, SHA-256 cache                       |
+| ⚡ **Zero-Delay Streaming**         | Tauri Rust backend with native streaming, parallel execution, and built-in SQLite          |
 | 🔐 **Secure Local Keys**            | Keys stored client-side (browser/Tauri) and cached in a memory-only server vault           |
 | 🎨 **Premium Design**               | Glassmorphism, spring physics, micro-animations, dark-first design                         |
 
@@ -54,11 +54,11 @@ cd NYX
 # Install dependencies
 pnpm install
 
-# Start dev server (Fastify server on port 3001)
-pnpm dev
+# Start the NYX Desktop application (Tauri)
+pnpm run dev:desktop
 ```
 
-Open [http://localhost:3001](http://localhost:3001) in your browser.
+Open the NYX window that appears. Note: NYX operates as a native application with a local Rust backend rather than a standalone web server.
 
 ### API Keys (Cloud Models)
 
@@ -138,37 +138,34 @@ NYX is structured as a pnpm monorepo using Turborepo for efficient building:
 NYX/
 ├── apps/
 │   ├── web/                   ← React 19 + Vite + Tailwind v4 frontend SPA
-│   ├── server/                ← Fastify Node.js backend server
 │   └── desktop/               ← Tauri v2 desktop shell wrapper
 │
 ├── packages/
 │   └── shared/                ← Shared models catalog config, schemas, and types
 │
-└── uploads/                   ← Root-level upload staging directory (served statically by Fastify)
+└── src-tauri/                 ← Native Rust backend (LLM streaming, Agents, DB)
 ```
 
-### Backend Architecture (`apps/server/`)
-- **`server/lib/unifiedEngine.ts`**: Unified inference coordinator mapping user requests to local or cloud providers.
-- **`server/lib/logger.ts`**: Pino logger with custom hook redacting API keys in logged query parameters.
-- **`server/middleware/requestSigner.ts`**: Timing-safe request signature validation utilizing unique user keys derived from the session token using `HMAC(sessionToken, globalSecret)`.
-- **`server/db/schema.sqlite.ts`** & **`server/db/schema.pg.ts`**: Physically separated schema files for SQLite (local) and PostgreSQL (production).
+### Backend Architecture (`src-tauri/`)
+- **`src/llm/`**: Unified inference coordinator handling local models (via llama.cpp) and cloud providers.
+- **`src/agents/`**: Core ReAct agent loop natively built in Rust for multi-agent capabilities.
+- **`src/db/`**: SQLite persistence with connection pooling for memories, chat history, and semantic search.
+- **`src/commands/`**: Dozens of native capabilities exposed to the frontend via Tauri IPC.
 
 ### Frontend Architecture (`apps/web/`)
 - **`web/src/features/`**: Feature-sliced architecture (e.g. `features/chat`, `features/coder`, `features/model-registry`).
-- **`web/src/core/services/ai.service.ts`**: Unified client interfacing with the backend Gateway.
+- **`web/src/core/services/ai.service.ts`**: Unified client interfacing with the Tauri IPC bridge.
 
 ---
 
 ## ⚡ Performance Architecture
 
-NYX runs on a high-throughput Fastify server:
+NYX runs on a high-throughput Native Rust backend:
 
-- **Unified Server (Port 3001)** — Serves both the React SPA static assets (via `@fastify/static`) and the API gateway endpoints under a single port.
-- **TCP `setNoDelay(true)`** — Eliminates the 40ms Nagle's Algorithm buffer for zero-delay SSE streaming.
-- **DNS pre-warming** — Background Cloudflare lookups remove first-request latency for cloud APIs.
-- **Connection keep-alives** — 75s persistent sockets, avoiding repeated TLS handshakes.
-- **Zero-copy SSE** — Server-Sent Events chunks flushed directly to the socket with no buffering overhead.
-- **SHA-256 prompt cache** — Instant response caching for identical queries.
+- **Unified Application** — Integrates seamlessly via Tauri without the overhead of an HTTP server.
+- **Native OS Integrations** — Zero-copy IPC message passing for instantaneous UI updates.
+- **Parallel Execution** — Agent actions and multi-model inferences run concurrently utilizing Tokio's async runtime.
+- **Built-in Inference** — Spawns `llama-server-vulkan` internally, removing the need for third-party middleware like Ollama.
 
 ---
 

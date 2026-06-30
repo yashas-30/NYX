@@ -22,8 +22,8 @@ import {
   ConversationState,
 } from '@src/features/ai/services/promptClassifier';
 
-import { NativeAgentService } from '../../agents/openHands.service';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { TokioOrchestratorService } from '../../agents/tokioOrchestrator.service';
+
 import { triggerMemoryCommit } from '@src/infrastructure/api/coderApi';
 import { AIService, countTokens } from '@src/features/ai/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -883,12 +883,27 @@ export const useChatPipeline = ({
         ]);
 
         // Optimize conversation history dynamically based on model tier
-        const isLocalModel = nyxProvider === 'nyx-native';
-        const maxTokens = isLocalModel ? 8192 : 32000;
-        const minPreserved = isLocalModel ? 10 : 20;
+        const isLocalModel = nyxProvider === 'nyx-native' || nyxProvider === 'local' || nyxModel.endsWith('.gguf') || nyxModel.endsWith('-local');
+        const maxTokens = isLocalModel ? 4096 : 32000;
+        const minPreserved = isLocalModel ? 4 : 20;
+
+        // For local models: sanitize assistant messages to strip raw XML tool calls
+        // that may have leaked from previous responses before sending history
+        const sanitizeForLocal = (msgs: typeof historySnapshotRef.current) => {
+          if (!isLocalModel) return msgs;
+          return msgs.map(m => {
+            if (m.role !== 'assistant') return m;
+            // Strip <tool_call>...</tool_call> and leftover XML artifacts
+            const cleaned = m.content
+              .replace(/<tool_call>.*?(<\/tool_call>)?/gs, '')
+              .replace(/Task executed but no final synthesis was generated\.?/g, '')
+              .trim();
+            return { ...m, content: cleaned };
+          }).filter(m => m.content.trim().length > 0 || m.role === 'user');
+        };
 
         const optimizedHistory = await ContextManager.optimizeContextWindow(
-          historySnapshotRef.current,
+          sanitizeForLocal(historySnapshotRef.current),
           maxTokens,
           minPreserved
         );
@@ -914,22 +929,62 @@ export const useChatPipeline = ({
           }
 
           if (fetchedMemories.length > 0) {
-            const words = sanitizedPrompt.toLowerCase().split(/\s+/);
-            const relevant = fetchedMemories.filter(m => {
-              const factLower = m.fact.toLowerCase();
-              return words.some(w => w.length > 3 && factLower.includes(w)) || 
-                     m.category.toLowerCase().includes(sanitizedPrompt.toLowerCase());
+            const promptLower = sanitizedPrompt.toLowerCase();
+            // Significant words only (strip stopwords below 4 chars)
+            const promptWords = promptLower.split(/\s+/).filter(w => w.length > 3);
+
+            // Intent → category mapping for bonus scoring
+            const intentCategoryMap: Record<string, string[]> = {
+              code_generation: ['coding', 'programming'],
+              code_debug: ['coding', 'debugging'],
+              code_review: ['coding'],
+              refactor: ['coding'],
+              architecture_design: ['coding', 'architecture'],
+              web_search: ['general'],
+              general_chat: ['general', 'preferences'],
+            };
+            const relevantCategories = intentCategoryMap[analysis.intent] ?? ['general'];
+
+            // Score each memory by multi-signal relevance
+            const scored = fetchedMemories.map(m => {
+              const factLower = (m.fact ?? '').toLowerCase();
+              const catLower = (m.category ?? '').toLowerCase();
+
+              // Signal 1: word overlap with prompt (0–1 per matching word)
+              const overlapScore = promptWords.reduce(
+                (acc, w) => acc + (factLower.includes(w) ? 1 : 0), 0
+              ) / Math.max(promptWords.length, 1);
+
+              // Signal 2: category relevance bonus
+              const catScore = relevantCategories.some(c => catLower.includes(c)) ? 0.4 : 0;
+
+              // Signal 3: recency — prefer newer memories (created_at is unix timestamp)
+              const ageSeconds = Date.now() / 1000 - (m.created_at ?? 0);
+              const recencyScore = Math.max(0, 1 - ageSeconds / (7 * 24 * 3600)); // decay over 7 days
+
+              return { memory: m, score: overlapScore + catScore + recencyScore * 0.2 };
             });
 
-            const selected = relevant.length > 0 ? relevant : fetchedMemories.slice(0, 3);
-            if (selected.length > 0) {
+            // Sort by score descending, take top 5
+            const selected = scored
+              .sort((a, b) => b.score - a.score)
+              .slice(0, 5)
+              .filter(s => s.score > 0.1) // Drop entirely irrelevant memories
+              .map(s => s.memory);
+
+            // If nothing scored above threshold, fall back to 3 most recent
+            const finalSelected = selected.length > 0 ? selected : fetchedMemories.slice(0, 3);
+
+            if (finalSelected.length > 0) {
               memoryAddon = `\n\n[Long-Term Memory / User Preferences]\nHere are relevant facts and preferences remembered about the user:\n` +
-                selected.map(m => `- ${m.fact} (${m.category})`).join('\n') + `\nUse this context to tailor your response accordingly.`;
+                finalSelected.map((m: any) => `- ${m.fact} (${m.category})`).join('\n') +
+                `\nUse this context to tailor your response accordingly.`;
             }
           }
         } catch (err) {
           console.warn('[Chat Pipeline] Failed to load long-term memories:', err);
         }
+
 
         // 4. Initialize agent with snapshot (not live ref)
         const systemPromptAddon = (options?.systemPromptAddon || '') + memoryAddon;
@@ -939,7 +994,7 @@ export const useChatPipeline = ({
         let finalModel = nyxModel;
         let finalApiKey = nyxApiKey || 'dummy_key';
 
-        const isActuallyLocal = nyxProvider === 'nyx-native';
+        const isActuallyLocal = nyxProvider === 'nyx-native' || nyxProvider === 'local' || finalModel.endsWith('.gguf') || finalModel.endsWith('-local');
 
         if (isActuallyLocal) {
           finalBaseUrl = 'http://127.0.0.1:8080/v1';
@@ -951,45 +1006,31 @@ export const useChatPipeline = ({
           else if (nyxProvider === 'groq') finalBaseUrl = 'https://api.groq.com/openai/v1';
         }
 
-        const agent = new NativeAgentService(
+        const agent = new TokioOrchestratorService(
           finalApiKey,
-          finalBaseUrl, 
-          finalModel
+          nyxProvider,
+          finalModel,
+          crypto.randomUUID()
         );
 
-        // 5. Gather search context (non-blocking UI)
-        const enableToolLoop = useNyxStore.getState().agentLoopEnabled;
-        
         // BUG 2 FIX: Actually start the search if enabled, rather than hardcoding to undefined
         let searchContextPromise: Promise<string> | undefined = undefined;
-        if (webSearchEnabled && !enableToolLoop) {
+        if (webSearchEnabled) {
            if (analysis.intent === 'web_search' || sanitizedPrompt.toLowerCase().includes('search')) {
               searchContextPromise = (async () => {
                 try {
                   const query = sanitizedPrompt;
                   const numResults = 5;
                   
-                  if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
-                    const storeState = useNyxStore.getState();
-                    const searchProvider = storeState.searchProvider || 'duckduckgo';
-                    const apiKey = storeState.apiKeys[searchProvider] || '';
-                    return await invoke<string>('search_web_command', {
-                      query,
-                      numResults,
-                      provider: searchProvider,
-                      apiKey,
-                    });
-                  } else {
-                    const res = await fetchWithAuth(
-                      `/api/v1/search?q=${encodeURIComponent(query)}&n=${numResults}`
-                    );
-                    if (!res.ok) throw new Error(`Search failed`);
-                    const data = await res.json();
-                    return (data.results || [])
-                      .slice(0, numResults)
-                      .map((r: any, i: number) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`)
-                      .join('\n\n');
-                  }
+                  const storeState = useNyxStore.getState();
+                  const searchProvider = storeState.searchProvider || 'duckduckgo';
+                  const apiKey = storeState.apiKeys[searchProvider] || '';
+                  return await invoke<string>('search_web_command', {
+                    query,
+                    numResults,
+                    provider: searchProvider,
+                    apiKey,
+                  });
                 } catch (e) {
                   console.warn('Pre-search failed:', e);
                   return '';
@@ -1229,31 +1270,17 @@ export const useChatPipeline = ({
           // 9. Update suggestions
           getSuggestions(historySnapshotRef.current);
 
-          // 10. Memory commit with retry
+          // 10. Memory commit — fire-and-forget, silent, never blocks UI
           if (text.trim()) {
-            const memoryPromise = withRetry(
-              () =>
-                triggerMemoryCommit({
-                  prompt: sanitizedPrompt,
-                  response: text,
-                  provider: nyxProvider,
-                  modelId: nyxModel,
-                  agentType: 'chat',
-                }),
-              3,
-              (attempt, delay) =>
-                console.log(`[Chat Pipeline] Memory commit retry ${attempt} in ${delay}ms`)
-            );
-
-            memoryPromise
-              .then(() =>
-                toast.success('Memory committed successfully', { position: 'bottom-right' })
-              )
-              .catch((err) => {
-                console.warn('[Chat Pipeline] Memory commit failed:', err);
-                toast.error('Failed to commit memory after retries.', { position: 'bottom-right' });
-              });
+            triggerMemoryCommit({
+              prompt: sanitizedPrompt,
+              response: text,
+              provider: nyxProvider,
+              modelId: nyxModel,
+              agentType: 'chat',
+            }).catch((err) => console.warn('[Chat Pipeline] Memory commit failed:', err));
           }
+
 
           setState((s) => ({ ...s, finishReason: finishReason as any }));
         } catch (timeoutErr: any) {
@@ -1368,7 +1395,21 @@ export const useChatPipeline = ({
       isThinking: false,
       finishReason: 'stopped',
     });
+
+    // Kill any active generation slot on the local llama-server.
+    // Without this, llama-server continues generating until context is exhausted
+    // even after the client disconnects, causing "slot exhaustion" that blocks
+    // all subsequent local model requests.
+    const activeModel = models['nyx'];
+    const currentProvider = activeModel ? detectProvider(activeModel) : null;
+    if (currentProvider === 'nyx-native') {
+      fetch('http://127.0.0.1:8080/slots/0', { method: 'DELETE' }).catch(() => {
+        // Silently ignore — server may not be running
+      });
+    }
+
   }, []);
+
 
   return {
     isLoading: state.isLoading,

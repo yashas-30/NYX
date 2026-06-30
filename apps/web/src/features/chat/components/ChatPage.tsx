@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 // fallow-ignore-file code-duplication
 /**
  * @file src/features/chat/components/ChatPage.tsx
@@ -11,7 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Folder } from 'lucide-react';
 import { ModelDefinition, ChatMessage, ToolCall } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 import { ChatHeader } from './ChatHeader';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatPromptInput } from './ChatPromptInput';
@@ -298,10 +299,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       try {
         const formData = new FormData();
         formData.append('file', file);
-        const res = await fetchWithAuth('/api/v1/documents/upload', {
-          method: 'POST',
-          body: formData,
-        });
+        const res: any = await invoke('upload_document', { file: formData.get('file') });
         if (!res.ok) throw new Error(res.statusText);
         toast.success(`Document "${file.name}" ingested into RAG memory!`);
       } catch (err: any) {

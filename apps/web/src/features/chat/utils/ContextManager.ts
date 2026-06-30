@@ -1,4 +1,5 @@
 import { ChatMessage } from '@src/infrastructure/types';
+import { countTokens } from '@src/features/ai/services/ai.service';
 
 export class ContextManager {
   /**
@@ -29,10 +30,11 @@ export class ContextManager {
       }
 
       const msg = history[i];
-      // Basic token estimation: ~4 chars per token
-      const contentTokens = msg.content ? Math.ceil(msg.content.length / 4) : 0;
-      const reasoningTokens = msg.reasoning ? Math.ceil(msg.reasoning.length / 4) : 0;
+      // Accurate token count via tiktoken cl100k_base (falls back to length/3.5 heuristic)
+      const contentTokens = msg.content ? countTokens(msg.content) : 0;
+      const reasoningTokens = msg.reasoning ? countTokens(msg.reasoning) : 0;
       const msgTokens = contentTokens + reasoningTokens + 20; // 20 tokens overhead per message
+
 
       // Always keep the last N messages
       if (history.length - i <= minPreservedMessages) {

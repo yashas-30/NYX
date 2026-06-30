@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+// Removed fetchWithAuth
 
 interface ProviderStatus {
   connected: boolean;
@@ -21,9 +21,17 @@ export function LocalProviderStatus() {
   const fetchStatus = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchWithAuth('/api/v1/nyx/local-models/status');
+      // Fetch directly from the native Llama.cpp server
+      const res = await fetch('http://127.0.0.1:8080/v1/models');
       if (res.ok) {
-        setStatus(await res.json());
+        const data = await res.json();
+        setStatus({
+          tauri: {
+            connected: true,
+            models: data.data || [{ name: 'local-model' }],
+            port: '8080',
+          }
+        });
         setLastUpdated(new Date());
       }
     } catch {

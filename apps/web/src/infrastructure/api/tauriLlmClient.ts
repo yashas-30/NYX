@@ -4,11 +4,8 @@ import { stripThinkingContent } from '../../utils/textUtils';
 
 // ── Per-provider max token defaults (Fix 2 — mirrors llm.rs constants) ───────
 const PROVIDER_MAX_TOKENS: Record<string, number> = {
-  anthropic: 32_768,
-  openai: 16_384,
   'nyx-native': 8_192,
   openrouter: 16_384,
-  deepseek: 16_384,
   gemini: 8_192,
 };
 

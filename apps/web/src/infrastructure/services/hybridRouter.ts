@@ -6,7 +6,7 @@
  */
 
 import { AVAILABLE_MODELS } from '@shared/config/models';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+import { invoke } from '@tauri-apps/api/core';
 import { Provider, RoutingDecision, SubagentTask, LocalModelState, AIResponse } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -494,13 +494,8 @@ export class HybridModelRouter {
         if (current.provider === 'nyx-native') {
           const status = await checkStatusFn(current.provider).catch(() => 'offline');
           if (status !== 'online') {
-            console.log('[FallbackChain] Booting cold local model fallback...');
-            await fetchWithAuth('/api/v1/chat/stream', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ model: current.id, provider: current.provider, messages: [{role: 'user', content: 'hello'}] }),
-            }).catch(() => {});
-            await new Promise((r) => setTimeout(r, 2000)); // Sleep to allow start
+            console.log('[FallbackChain] Booting cold local model fallback via Tauri...');
+            await invoke('start_local_server', { modelId: current.id }).catch(console.warn);
           }
         }
 
@@ -542,11 +537,7 @@ export class HybridModelRouter {
   // -------------------------------------------------------------------------
 
   private async warmModel(modelId: string): Promise<void> {
-    fetchWithAuth('/api/v1/chat/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: modelId, messages: [{role: 'user', content: 'hello'}] }),
-    }).catch(() => {});
+    invoke('start_local_server', { modelId }).catch(console.warn);
   }
 
   private async handleOOM(modelId: string): Promise<void> {

@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 /**
  * @file src/infrastructure/api/coderApi.ts
  * @description Production-grade API client with retry logic, timeouts,
@@ -195,20 +196,19 @@ export async function apiFetch(
   const signal = mergeSignals(userSignal, timeoutSignal);
 
   const doFetch = async (): Promise<Response> => {
-    const res = await AIService.fetchWithAuth(endpoint, {
-      ...fetchOptions,
-      signal,
-    });
-
-    if (!res.ok) {
-      const body = await parseErrorBody(res);
-      const error: any = new Error(`${endpoint} failed: ${res.status} ${body}`);
-      error.status = res.status;
-      error.response = res;
+    try {
+      const data = await invoke('coder_api', { endpoint, options: fetchOptions });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => data,
+        text: async () => JSON.stringify(data),
+      } as unknown as Response;
+    } catch (e: any) {
+      const error: any = new Error(`${endpoint} failed: ${e}`);
+      error.status = 500;
       throw error;
     }
-
-    return res;
   };
 
   return noRetry ? doFetch() : withRetry(doFetch, signal);

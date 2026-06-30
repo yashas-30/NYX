@@ -182,22 +182,6 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
     caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576;
-  } else if (lowerId.includes('gemma-4')) {
-    caps.supportsVision = false;
-    caps.supportsTools = true;
-    caps.contextWindow = 262144;
-  } else if (lowerId.includes('llama-3.2')) {
-    caps.supportsVision = lowerId.includes('vision');
-    caps.supportsTools = true;
-    caps.contextWindow = 128000;
-  } else if (lowerId.includes('qwen')) {
-    caps.supportsTools = true;
-    caps.contextWindow = 32768;
-  } else if (lowerId.includes('deepseek')) {
-    caps.supportsTools = false;
-    caps.contextWindow = 128000;
-  } else if (lowerId.includes('phi-4') || lowerId.includes('phi-3')) {
-    caps.contextWindow = 16384;
   }
 
   return caps;

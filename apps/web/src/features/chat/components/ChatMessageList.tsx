@@ -1143,7 +1143,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
 
                             if (isArtifactStreaming) {
                               return (
-                                <div key={`streaming-${i}`} className="rounded-md border border-border bg-surface overflow-hidden flex flex-col my-4 shadow-sm w-full max-w-4xl p-4 cursor-default">
+                                <div key={`streaming-${i}`} className="rounded-md border border-border bg-surface overflow-hidden flex flex-col my-4 shadow-sm w-full p-4 cursor-default">
                                   <div className="flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
                                       <NyxLoader size={16} className="text-primary/70 animate-pulse" />
@@ -1164,7 +1164,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                               <div 
                                 key={artifact.id || i}
                                 onClick={() => onArtifactClick?.(artifact)}
-                                className="cursor-pointer group flex items-center justify-between p-3.5 my-3 rounded-xl border border-border/60 bg-surface hover:bg-muted/30 hover:border-primary/40 hover:shadow-sm transition-all max-w-4xl"
+                                className="cursor-pointer group flex items-center justify-between p-3.5 my-3 rounded-xl border border-border/60 bg-surface hover:bg-muted/30 hover:border-primary/40 hover:shadow-sm transition-all"
                               >
                                 <div className="flex items-center gap-3 overflow-hidden">
                                   <div className="flex items-center justify-center w-9 h-9 rounded-md bg-primary/10 text-primary">
@@ -1211,7 +1211,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       <motion.div
                         initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="my-4 p-4 rounded-xl border border-amber-500/25 bg-amber-500/5 shadow-md max-w-4xl"
+                        className="my-4 p-4 rounded-xl border border-amber-500/25 bg-amber-500/5 shadow-md"
                       >
                         <div className="flex items-start gap-3">
                           <AlertTriangle className="text-amber-500 w-5 h-5 shrink-0 mt-0.5" />
@@ -1492,7 +1492,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
               const isStreaming = isLast && isLoading;
 
               return (
-                <div className="py-3 px-4 md:px-6 max-w-4xl mx-auto w-full">
+                <div className="py-3 px-4 md:px-6 w-full">
                   <MessageBubble
                     msg={msg}
                     index={index}

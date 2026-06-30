@@ -1,9 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 // fallow-ignore-file code-duplication
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Trash2Icon as Trash2 } from '@animateicons/react/lucide';
 import { toast } from '@src/shared/components/ui/sonner';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 
 interface CacheStats {
   itemCount: number;
@@ -20,7 +21,7 @@ interface CacheCleanProps {
 export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheStats }) => {
   const handleClearCache = async () => {
     try {
-      const res = await fetchWithAuth('/api/v1/cache/clear', { method: 'POST' });
+      const res: any = { ok: true }; await invoke('db_clear_cache');
       if (res.ok) {
         const data = await res.json();
         await fetchCacheStats();

@@ -5,7 +5,7 @@ import { BookOpenIcon as BookOpen, ExternalLinkIcon as ExternalLink, ZapIcon as 
 import { Network, HelpCircle, Cpu, Database, Palette } from 'lucide-react';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
 import { toast } from '@src/shared/components/ui/sonner';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 
 import { ApiKeyVault } from './ApiKeyVault';
 import { ModelSettingsSection } from './ModelSettingsSection';
@@ -53,19 +53,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [activeTab, setActiveTab] = useState<string>('api-keys');
 
   const fetchVaultStatus = async () => {
-    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     try {
-      if (isTauri) {
-        const res: any = await invoke('vault:status');
-        if (res.success && res.data) {
-          setVaultStatus(res.data);
-        }
-      } else {
-        const res = await fetch('/api/v1/vault/status');
-        if (res.ok) {
-          const data = await res.json();
-          setVaultStatus(data);
-        }
+      const res: any = await invoke('vault:status');
+      if (res.success && res.data) {
+        setVaultStatus(res.data);
       }
     } catch (e: any) {
       console.error('Failed to fetch vault status:', e);
@@ -74,13 +65,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const fetchCacheStats = async () => {
     try {
-      const res = await fetchWithAuth('/api/v1/cache/stats');
-      if (res.ok) {
-        const data = await res.json();
-        setCacheStats(data);
-      }
-    } catch (e: any) {
-      console.error('Failed to fetch cache stats:', e);
+      // In native Tauri mode, cache stats are either not applicable or handled differently.
+      // For now, stub the stats to 0.
+      setCacheStats({ itemCount: 0, totalSizeBytes: 0, hits: 0, misses: 0 });
+    } catch (err: any) {
+      console.error('Failed to fetch cache stats:', err);
     }
   };
 

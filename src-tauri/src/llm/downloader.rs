@@ -52,11 +52,11 @@ impl Downloader {
             on_progress(100.0, "Llama Server exists.");
         }
 
-        // 2. Download Model: gemma-2-2b-it-Q4_K_M.gguf
-        let model_path = models_dir.join("gemma-2-2b-it-Q4_K_M.gguf");
+        // 2. Download Model: Qwen2.5-0.5B-Instruct-GGUF (Q4_K_M)
+        let model_path = models_dir.join("qwen2.5-0.5b-instruct-q4_k_m.gguf");
         if !model_path.exists() {
-            let model_url = "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf";
-            self.download_file(model_url, &model_path, |p| on_progress(p, "Downloading Gemma 2B (Q4)...")).await?;
+            let model_url = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
+            self.download_file(model_url, &model_path, |p| on_progress(p, "Downloading Qwen2.5 0.5B (Q4)...")).await?;
         } else {
             on_progress(100.0, "Model exists.");
         }

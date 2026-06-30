@@ -1,6 +1,0 @@
-{
-  "name": "NYX",
-  "description": "NYX - A premium developer-focused interface and runner for AI agents, featuring persistent semantic memory, silent reasoning traces, local Vulkan GPU acceleration, and live web search grounding.",
-  "requestFramePermissions": [],
-  "majorCapabilities": []
-}

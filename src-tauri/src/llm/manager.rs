@@ -56,6 +56,15 @@ impl LlamaManager {
             .arg("1")
             .arg("--keep")
             .arg("-1")
+            // Use the GGUF-embedded Jinja chat template (required for correct Qwen3 ChatML formatting).
+            // Without this flag llama.cpp falls back to a generic template that misformats multi-turn
+            // conversations, causing repetition and role-token leakage in the output.
+            .arg("--jinja")
+            // Parse <think>...</think> tokens as structured reasoning output (DeepSeek/Qwen3 format).
+            // Without this the model emits thinking tokens as plain text — the frontend strips them
+            // from the visible response but the ThinkingBlock UI is never populated.
+            .arg("--reasoning-format")
+            .arg("deepseek")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()

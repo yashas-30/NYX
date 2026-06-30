@@ -79,19 +79,65 @@ pub fn get_available_tools() -> Vec<Tool> {
                 },
                 "required": ["url"]
             }),
+        },
+        Tool {
+            name: "verify_output".to_string(),
+            description: "Execute a Python script securely in an isolated Docker container to verify your logic or constraints.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "script": {
+                        "type": "string",
+                        "description": "The Python script to execute"
+                    }
+                },
+                "required": ["script"]
+            }),
         }
     ]
 }
 
-pub async fn execute_tool(name: &str, args: Value, scanner: &crate::rag::scanner::CodebaseScanner) -> Result<String, String> {
+pub async fn get_all_tools(mcp_manager: &std::sync::Arc<crate::commands::mcp::McpManager>) -> Vec<Tool> {
+    let mut all_tools = get_available_tools();
+    
+    let servers: Vec<String> = {
+        let lock = mcp_manager.servers.lock().await;
+        lock.keys().cloned().collect()
+    };
+    
+    for server in servers {
+        if let Ok(response) = crate::commands::mcp::mcp_list_tools_internal(&server, mcp_manager).await {
+            if let Some(tools_arr) = response.get("tools").and_then(|t| t.as_array()) {
+                for t in tools_arr {
+                    if let (Some(name), Some(description), Some(input_schema)) = (
+                        t.get("name").and_then(|n| n.as_str()),
+                        t.get("description").and_then(|d| d.as_str()),
+                        t.get("inputSchema")
+                    ) {
+                        all_tools.push(Tool {
+                            name: format!("{}__{}", server, name), // namespace by server to avoid conflicts
+                            description: description.to_string(),
+                            parameters: input_schema.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    
+    all_tools
+}
+
+pub async fn execute_tool(name: &str, args: Value, scanner: &crate::rag::scanner::CodebaseScanner, mcp_manager: &std::sync::Arc<crate::commands::mcp::McpManager>) -> Result<String, String> {
     match name {
         "execute_bash" => {
             let cmd = args["command"].as_str().ok_or("Missing command")?;
-            // Using powershell on Windows
-            let output = std::process::Command::new("powershell")
+            let output = tokio::process::Command::new("powershell")
+                .arg("-NonInteractive")
                 .arg("-c")
                 .arg(cmd)
                 .output()
+                .await
                 .map_err(|e| e.to_string())?;
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -123,12 +169,12 @@ pub async fn execute_tool(name: &str, args: Value, scanner: &crate::rag::scanner
                 "import sys\ntry:\n    from scrapling import Fetcher\n    fetcher = Fetcher(auto_match=False)\n    page = fetcher.get('{}')\n    print(page.text[:4000])\nexcept Exception as e:\n    print('Scrapling Error:', e)",
                 url
             );
-            let output = std::process::Command::new("python")
+            let output = tokio::process::Command::new("python")
                 .arg("-c")
                 .arg(&script)
                 .output()
+                .await
                 .map_err(|e| format!("Failed to execute python: {}", e))?;
-            
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             if stdout.is_empty() {
@@ -137,6 +183,48 @@ pub async fn execute_tool(name: &str, args: Value, scanner: &crate::rag::scanner
                 Ok(stdout)
             }
         }
-        _ => Err(format!("Unknown tool: {}", name)),
+        "verify_output" => {
+            let script = args["script"].as_str().ok_or("Missing script")?;
+            // Run in an ephemeral Alpine Python docker container with no network (non-blocking)
+            let output = tokio::process::Command::new("docker")
+                .arg("run")
+                .arg("--rm")
+                .arg("--network")
+                .arg("none")
+                .arg("-i")
+                .arg("python:3.11-alpine")
+                .arg("python")
+                .arg("-c")
+                .arg(script)
+                .output()
+                .await
+                .map_err(|e| format!("Failed to execute docker: {}", e))?;
+            
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            
+            if !stderr.is_empty() {
+                Ok(format!("STDOUT:\n{}\nSTDERR:\n{}", stdout, stderr))
+            } else {
+                Ok(stdout)
+            }
+        }
+        _ => {
+            if name.contains("__") {
+                let parts: Vec<&str> = name.splitn(2, "__").collect();
+                if parts.len() == 2 {
+                    let server_name = parts[0];
+                    let tool_name = parts[1];
+                    match crate::commands::mcp::mcp_call_tool_internal(server_name, tool_name, args, mcp_manager).await {
+                        Ok(res) => Ok(serde_json::to_string_pretty(&res).unwrap_or_default()),
+                        Err(e) => Err(format!("MCP tool error: {}", e)),
+                    }
+                } else {
+                    Err(format!("Invalid MCP tool format: {}", name))
+                }
+            } else {
+                Err(format!("Unknown tool: {}", name))
+            }
+        }
     }
 }

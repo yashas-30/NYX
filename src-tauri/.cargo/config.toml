@@ -1,0 +1,8 @@
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[env]
+# Force all cc-crate C/C++ builds to use /MD (dynamic CRT) to match ort-sys (ONNX Runtime).
+# Without this, esaxx-rs compiles with /MT (static CRT), causing LNK2038 mismatch.
+CFLAGS_x86_64_pc_windows_msvc = "/MD"
+CXXFLAGS_x86_64_pc_windows_msvc = "/MD"

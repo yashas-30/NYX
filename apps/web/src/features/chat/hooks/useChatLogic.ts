@@ -10,7 +10,6 @@ import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { useChatPipeline } from './useChatPipeline';
 import { AIService, cancelRequest, cancelAllRequests } from '@src/features/ai/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
-import { getSessionToken } from '@src/infrastructure/api/authFetch';
 import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
 import { compactHistory, compactHistoryAsync, estimateContextTokens } from '@src/infrastructure/utils/compaction';
@@ -308,7 +307,7 @@ export const useChatLogic = ({
     let tokenPollTimeout: NodeJS.Timeout;
 
     const connect = () => {
-      const token = getSessionToken();
+      const token = '';
 
       // Don't connect with an empty token — the server will reject it.
       // Poll every 500ms until a valid token is available.
@@ -470,7 +469,8 @@ export const useChatLogic = ({
     logRollout,
   });
 
-  const isLoading = chatPipeline.isLoading;
+  const [isSupervising, setIsSupervising] = useState(false);
+  const isLoading = chatPipeline.isLoading || isSupervising;
   const isSearching = chatPipeline.isSearching;
   const pipelineRunChat = chatPipeline.runChat;
   const pipelineStopChat = chatPipeline.stopChat;
@@ -590,159 +590,204 @@ export const useChatLogic = ({
 
       try {
         const { cloudModelId, localModelId } = useNyxStore.getState();
-        let modelToUse = 'gemini-3.5-flash';
 
         if (!cloudModelId && !localModelId) {
           toast.error('Please select at least one model (Cloud or Local).');
           return;
         }
 
-        let analysis: any = { needsToolUse: false, estimatedComplexity: 1, intent: 'conversation' };
-        let expertisePrompt = '';
+        const modelToUse = (cloudModelId || localModelId) as string;
 
-        if (cloudModelId && localModelId) {
-          setPlanPhase({ status: 'planning', steps: ['Analyzing prompt intent...'], completedSteps: [] });
+        const { invoke, Channel } = await import('@tauri-apps/api/core');
+        const { listen } = await import('@tauri-apps/api/event');
+
+        if (prompt.startsWith('/deep')) {
+          const queryText = prompt.replace('/deep', '').trim();
           
-          analysis = await promptAnalyzer.analyze(prompt, {
-            useEmbedding: true,
-            history: historyRef.current.map(m => m.content).slice(-5)
-          });
-
-          expertisePrompt = analysis.userExpertise === 'beginner' 
-            ? 'Explain concepts simply. Use analogies. Avoid jargon.'
-            : analysis.userExpertise === 'expert'
-              ? 'Provide highly technical, concise answers. Skip basics.'
-              : '';
-
-          // --- SOTA Intelligent Routing (Phase 2) ---
+          const assistantMsg: ChatMessage = {
+            role: 'assistant',
+            content: '',
+            timestamp: Date.now(),
+            status: 'loading',
+            reasoning: '🔬 Initializing Deep Research...\n',
+          };
+          dispatch({ type: 'APPEND', message: assistantMsg });
+          historyRef.current = [...historyRef.current, assistantMsg];
           
-          // 1. Semantic Router (Intent Matching)
-          // If the user is just asking for a boilerplate task, greeting, or conversational filler, 
-          // route to local immediately regardless of complexity.
-          const isBoilerplateIntent = ['conversation', 'command'].includes(analysis.intent || '');
+          let currentContent = '';
+          let reasoningContent = '🔬 Initializing Deep Research...\n';
           
-          // 2. Complexity Classifier (RouteLLM approach)
-          // If the intent isn't explicitly simple, we check complexity. A complexity >= 3 or 
-          // requiring deep reasoning/tools mandates the cloud model.
-          const requiresFrontierModel = (analysis.estimatedComplexity || 1) >= 3 || 
-                                        analysis.needsToolUse || 
-                                        analysis.suggestedModel === 'reasoning' ||
-                                        analysis.requiresReasoning;
-
-          if (isBoilerplateIntent && !requiresFrontierModel) {
-            modelToUse = localModelId;
-            toast.success(`Semantic Router: Fast Boilerplate detected. Routed to Local (${modelToUse})`);
-          } else if (requiresFrontierModel) {
-            modelToUse = cloudModelId;
-            toast.success(`Complexity Router: Heavy task detected. Routed to Cloud Supervisor (${modelToUse})`);
-          } else {
-            // Fallback for moderate tasks: Prefer local if it's highly confident, else cloud.
-            modelToUse = analysis.confidence > 0.85 ? localModelId : cloudModelId;
-            toast.success(`RouteLLM Threshold: Routed to ${modelToUse === localModelId ? 'Local' : 'Cloud'} (${modelToUse})`);
-          }
-        } else if (cloudModelId) {
-          modelToUse = cloudModelId;
-        } else if (localModelId) {
-          modelToUse = localModelId;
-        }
-                           
-        let systemPromptAddon = expertisePrompt;
-        
-        // --- Project Context Injection ---
-        const activeProjectId = useNyxStore.getState().activeProjectId;
-        if (activeProjectId) {
-          try {
-            const saved = localStorage.getItem('nyx_projects');
-            if (saved) {
-              const projects = JSON.parse(saved);
-              const project = projects.find((p: any) => p.id === activeProjectId);
-              if (project) {
-                let projectContext = `\nYou are chatting in Project: "${project.name}".\n`;
-                projectContext += `Project Description: ${project.description}\n`;
-                if (project.instructions) {
-                  projectContext += `Project Custom System Instructions: ${project.instructions}\n`;
-                }
-                
-                if (project.files && project.files.length > 0) {
-                  projectContext += `\nHere are the workspace files in this project context:\n`;
-                  const appendFiles = (filesList: any[]) => {
-                    filesList.forEach((file: any) => {
-                      if (file.type === 'file' && file.content) {
-                        projectContext += `\n--- FILE: ${file.name} ---\n${file.content}\n`;
-                      } else if (file.type === 'folder' && file.children) {
-                        appendFiles(file.children);
-                      }
-                    });
-                  };
-                  appendFiles(project.files);
-                }
-                systemPromptAddon += `\n${projectContext}\n`;
-              }
+          const onProgress = new Channel<any>();
+          onProgress.onmessage = (message) => {
+            const updatedHistory = [...historyRef.current];
+            const lastIdx = updatedHistory.length - 1;
+            
+            if (message.type === 'progress') {
+                reasoningContent += `> ${message.message}\n`;
+                updatedHistory[lastIdx] = {
+                    ...updatedHistory[lastIdx],
+                    reasoning: reasoningContent,
+                };
+            } else if (message.type === 'result_chunk') {
+                currentContent += message.content;
+                updatedHistory[lastIdx] = {
+                    ...updatedHistory[lastIdx],
+                    content: currentContent,
+                };
+            } else if (message.type === 'error') {
+                toast.error(message.message);
             }
-          } catch (err) {
-            console.warn('[useChatLogic] Failed to load project context:', err);
-          }
-        }
-        
-        // --- Plan Mode Parity ---
-        if ((analysis.estimatedComplexity || 1) >= 2 && !lightningEnabled) {
-          setPlanPhase({ 
-            status: 'planning', 
-            steps: ['Generating execution plan...'], 
-            completedSteps: ['Analyzing prompt intent...'] 
-          });
+            dispatch({ type: 'SET', messages: updatedHistory });
+            historyRef.current = updatedHistory;
+          };
           
           try {
-            const planResponse = await AIService.execute(
-              'gemini-3.1-flash-lite',
-              detectProvider('gemini-3.1-flash-lite'),
-              `Task: ${prompt}\n\nPlease generate a very brief, high-level implementation plan for this task in a few bullet points. Do not execute the task yet.`,
-              getEffectiveApiKey(detectProvider('gemini-3.1-flash-lite'), apiKeys),
-              'You are an AI planner.',
-              { ...modelSettings, temperature: 0.2 }
-            );
-            const planContent = planResponse.text;
-            setPlanPhase({ 
-              status: 'executing', 
-              plan: planContent, 
-              steps: ['Executing plan...'], 
-              completedSteps: ['Analyzing prompt intent...', 'Generating execution plan...'] 
+            setIsSupervising(true);
+            const result = await invoke<{ source: string; data: string; sources: Array<{ url: string; title: string; snippet: string }> }>('start_deep_research', { 
+                query: { 
+                    prompt: queryText, 
+                    depth_limit: 3, 
+                    provider: detectProvider(modelToUse), 
+                    model_id: modelToUse, 
+                    api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '' 
+                }, 
+                onProgress 
             });
-            systemPromptAddon += `\n\nExecution Plan to follow:\n${planContent}`;
-          } catch (e) {
-            console.warn('[Plan Mode] Failed to generate plan, skipping...', e);
-            setPlanPhase(null);
+            const finalHistory = [...historyRef.current];
+            const lastIdx = finalHistory.length - 1;
+            // Build citation objects from returned sources
+            const citations = (result.sources || []).map((src, i) => ({
+              id: String(i + 1),
+              index: i + 1,
+              title: src.title,
+              url: src.url,
+              snippet: src.snippet,
+            }));
+            finalHistory[lastIdx] = {
+              ...finalHistory[lastIdx],
+              status: 'success',
+              citations,
+            };
+            dispatch({ type: 'SET', messages: finalHistory });
+            historyRef.current = finalHistory;
+            persistHistory(finalHistory);
+
+          } catch (e: any) {
+            toast.error(e.toString());
+            const finalHistory = [...historyRef.current];
+            const lastIdx = finalHistory.length - 1;
+            finalHistory[lastIdx].status = 'error';
+            finalHistory[lastIdx].content += `\n\n**Deep Research Error**: ${e}`;
+            dispatch({ type: 'SET', messages: finalHistory });
+            historyRef.current = finalHistory;
+            persistHistory(finalHistory);
+          } finally {
+            setIsSupervising(false);
           }
-        } else {
-          setPlanPhase(null);
+          return;
         }
 
-        await pipelineRunChat(prompt, images, {
-          modelOverride: modelToUse,
-          systemPromptAddon: systemPromptAddon,
-          enableTools: analysis.needsToolUse,
-          expectedComplexity: analysis.estimatedComplexity,
-          skipUserMessage: true,
+        const eventName = `dag_update_${Date.now()}`;
+        
+        // Setup context for the backend Conductor
+        const context = {
+          request_id: Date.now().toString(),
+          session_id: activeSidRef.current || 'new_session',
+          provider: detectProvider(modelToUse),
+          model: modelToUse,
+          api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '',
+          max_iterations: 10,
+          system_instruction: null,
+          agent_type: 'chat',
+          is_fast_intent: true,
+        };
+
+        // Add a temporary "streaming" assistant message so the UI shows it's thinking
+        const assistantMsg: ChatMessage = {
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          status: 'loading',
+        };
+        dispatch({ type: 'APPEND', message: assistantMsg });
+        historyRef.current = [...historyRef.current, assistantMsg];
+
+        // Listen for streaming updates from Conductor
+        let currentContent = '';
+        const unlisten = await listen<any>(eventName, (event) => {
+          if (event.payload && event.payload.type === 'text') {
+            currentContent += event.payload.content || '';
+            const updatedHistory = [...historyRef.current];
+            const lastIdx = updatedHistory.length - 1;
+            if (updatedHistory[lastIdx].role === 'assistant') {
+              updatedHistory[lastIdx] = {
+                ...updatedHistory[lastIdx],
+                content: currentContent,
+              };
+            }
+            dispatch({ type: 'SET', messages: updatedHistory });
+            historyRef.current = updatedHistory;
+          }
         });
 
-        // Update token usage
+        // Let the backend Conductor orchestrate the execution
+        setIsSupervising(true);
+        const result = await invoke<string>('orchestrate_supervisor', {
+          messages: historyRef.current.slice(0, -1), // send history up to the user message
+          context,
+          eventName,
+        });
+
+        unlisten();
+
+        // Update the assistant message with the final result
+        const finalHistory = [...historyRef.current];
+        const lastIdx = finalHistory.length - 1;
+        if (finalHistory[lastIdx].role === 'assistant') {
+            finalHistory[lastIdx] = {
+                ...finalHistory[lastIdx],
+                content: result,
+                status: 'success',
+            };
+        }
+        dispatch({ type: 'SET', messages: finalHistory });
+        historyRef.current = finalHistory;
+        persistHistory(finalHistory);
+
+        // Update token usage (estimation)
         setTokensUsed((prev) => prev + estimatedInput);
       } catch (error: any) {
         if (error.name !== 'AbortError') {
-          if (error.message && error.message.includes('429')) {
+          const errorMessage = error?.message || (typeof error === 'string' ? error : '') || 'Generation failed';
+          
+          if (errorMessage.includes('429')) {
              toast.error('Rate limit reached (429). Please wait or switch models.');
              const provider = detectProvider(models.nyx);
              const apiKey = getEffectiveApiKey(provider, apiKeys) || '';
              useUsageStore.getState().resetLimitForModel(models.nyx, apiKey);
           } else {
-             toast.error(error.message || 'Generation failed');
+             toast.error(errorMessage);
           }
+          
+          // Mark the last message as error
+          const finalHistory = [...historyRef.current];
+          const lastIdx = finalHistory.length - 1;
+          if (finalHistory[lastIdx].role === 'assistant') {
+              finalHistory[lastIdx] = {
+                  ...finalHistory[lastIdx],
+                  status: 'error',
+                  content: errorMessage,
+              };
+          }
+          dispatch({ type: 'SET', messages: finalHistory });
+          historyRef.current = finalHistory;
         }
       } finally {
+        setIsSupervising(false);
         abortCtrlRef.current = null;
       }
     },
-    [pipelineRunChat, maxContextTokens, tokenBudget, tokensUsed]
+    [maxContextTokens, tokenBudget, tokensUsed, models.nyx, apiKeys]
   );
 
   // -------------------------------------------------------------------------
@@ -802,7 +847,15 @@ export const useChatLogic = ({
         }))
         .filter((img) => !!img.data);
 
-      runChatRef.current?.(userMsg.content, mappedImages, { skipUserMessage: true });
+      const { cloudModelId, localModelId } = useNyxStore.getState();
+      const modelToUse = (cloudModelId || localModelId) as string;
+
+      if (!modelToUse) {
+        toast.error('Please select at least one model (Cloud or Local).');
+        return;
+      }
+
+      runChatRef.current?.(userMsg.content, mappedImages, { skipUserMessage: true, modelOverride: modelToUse });
     },
     [persistHistory]
   );

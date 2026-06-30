@@ -1,8 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import React from 'react';
 import { motion } from 'framer-motion';
 import { BrainIcon as Brain, Trash2Icon as Trash2 } from '@animateicons/react/lucide';
 import { toast } from '@src/shared/components/ui/sonner';
-import { fetchWithAuth } from '@src/infrastructure/api/authFetch';
+
 
 interface EvolvedRule {
   metric: string;
@@ -22,10 +23,7 @@ export const EvolutionaryRules: React.FC<EvolutionaryRulesProps> = ({
 }) => {
   const handleClearRules = async () => {
     try {
-      const res = await fetchWithAuth('/api/v1/nyx/reset', { 
-        method: 'POST',
-        body: JSON.stringify({ confirm: true }),
-      });
+      const res: any = { ok: true }; await invoke('nyx_reset');
       if (res.ok) {
         setEvolvedRules([]);
         toast.success('Successfully reset evolved memory!');
