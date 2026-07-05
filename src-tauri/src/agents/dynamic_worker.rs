@@ -11,6 +11,8 @@ pub struct DynamicWorkerActor {
     pub role: String,
     pub mcp_manager: std::sync::Arc<crate::commands::mcp::McpManager>,
     pub tool_filters: Option<Vec<String>>,
+    pub api_key: Option<String>,
+    pub agent_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl DynamicWorkerActor {
@@ -22,6 +24,8 @@ impl DynamicWorkerActor {
         role: String,
         mcp_manager: std::sync::Arc<crate::commands::mcp::McpManager>,
         tool_filters: Option<Vec<String>>,
+        api_key: Option<String>,
+        agent_cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> Self {
         Self {
             node_id,
@@ -31,6 +35,8 @@ impl DynamicWorkerActor {
             role,
             mcp_manager,
             tool_filters,
+            api_key,
+            agent_cancel,
         }
     }
 
@@ -89,7 +95,18 @@ impl DynamicWorkerActor {
                 
             let is_nyx_local = self.local_model.ends_with("-local") || self.local_model.ends_with(".gguf");
 
-            let api_key = if is_nyx_native {
+            // Use the ephemerally passed api_key if available, otherwise fetch from disk
+            let api_key = if let Some(ak) = &self.api_key {
+                if !ak.trim().is_empty() {
+                    ak.clone()
+                } else {
+                    String::new()
+                }
+            } else { String::new() };
+
+            let api_key = if !api_key.is_empty() {
+                api_key
+            } else if is_nyx_native {
                 // nyx-native models run via HuggingFace Inference API
                 crate::agents::api_key_store::get_key("HUGGINGFACE_API_KEY")
             } else {
@@ -164,46 +181,63 @@ If you are asked to adhere to strict character, word, or formatting constraints,
 
             // ReAct Loop for Tool Calling
             loop {
+                if self.agent_cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                    final_content = "Cancelled by user.".to_string();
+                    success = false;
+                    break;
+                }
+
                 let chat_req = ChatRequest::new(messages.clone());
                 use futures_util::StreamExt;
 
-                // --- Route: nyx-local → llama-server sidecar (on-device) ---
+                // --- Route: nyx-local → rig-rs Agent (llama-server Local) ---
                 if is_nyx_local {
-                    let content_buf = call_local_inference(
-                        model,
-                        &messages,
-                        &self.node_id,
-                        &self.conductor_tx,
-                    ).await;
-                    let content = if content_buf.trim().is_empty() {
-                        "No response generated.".to_string()
-                    } else {
-                        content_buf
-                    };
-                    messages.push(ChatMessage::assistant(content.clone()));
-                    full_trajectory.push_str(&content);
-                    // Check for tool call (make closing tag optional for smaller local models)
-                    if let Some(caps) = regex::Regex::new(r"(?s)<tool_call>\s*<name>(.*?)</name>\s*<args>(.*?)</args>(?:\s*</tool_call>)?").unwrap().captures(&content) {
-                        let tool_name = caps.get(1).unwrap().as_str().trim();
-                        let tool_args_str = caps.get(2).unwrap().as_str().trim();
-                        let parsed_args = serde_json::from_str(tool_args_str).unwrap_or_else(|_| {
-                            serde_json::json!({"script": tool_args_str})
-                        });
-                        let dummy_scanner = crate::rag::scanner::CodebaseScanner::new(std::path::PathBuf::from(".")).await.unwrap();
-                        let tool_res = crate::agents::tools::execute_tool(tool_name, parsed_args, &dummy_scanner, &self.mcp_manager).await;
-                        let tool_output = match tool_res {
-                            Ok(out) => out,
-                            Err(e) => format!("Tool Execution Error: {}", e),
-                        };
-                        let tool_response_str = format!("\n<tool_response>\n{}\n</tool_response>\n", tool_output);
-                        messages.push(ChatMessage::user(tool_response_str.clone()));
-                        full_trajectory.push_str(&tool_response_str);
-                        continue;
-                    } else {
-                        final_content = content;
-                        break;
+                    use rig::providers::openai;
+                    use rig::completion::Prompt;
+                    
+                    // Pointing directly to llama-server's OpenAI compatible endpoint instead of Ollama
+                    let local_client = openai::Client::from_url("llama-server", "http://127.0.0.1:8080/v1");
+                    let agent = local_client.agent(model).preamble(&sys_prompt).build();
+                    
+                    let prompt_text = messages.last().map(|m| m.content.text_as_str().unwrap_or("")).unwrap_or("");
+                    
+                    match agent.prompt(prompt_text).await {
+                        Ok(content) => {
+                            messages.push(ChatMessage::assistant(content.clone()));
+                            full_trajectory.push_str(&content);
+                            
+                            if let Some(caps) = regex::Regex::new(r"(?s)<tool_call>\s*<name>(.*?)</name>\s*<args>(.*?)</args>(?:\s*</tool_call>)?").unwrap().captures(&content) {
+                                let tool_name = caps.get(1).unwrap().as_str().trim();
+                                let tool_args_str = caps.get(2).unwrap().as_str().trim();
+                                let parsed_args = serde_json::from_str(tool_args_str).unwrap_or_else(|_| {
+                                    serde_json::json!({"script": tool_args_str})
+                                });
+                                let dummy_scanner = crate::rag::scanner::CodebaseScanner::new(std::path::PathBuf::from(".")).await.unwrap();
+                                let tool_res = crate::agents::tools::execute_tool(tool_name, parsed_args, &dummy_scanner, &self.mcp_manager).await;
+                                let tool_output = match tool_res {
+                                    Ok(out) => out,
+                                    Err(e) => format!("Tool Execution Error: {}", e),
+                                };
+                                let tool_response_str = format!("\n<tool_response>\n{}\n</tool_response>\n", tool_output);
+                                messages.push(ChatMessage::user(tool_response_str.clone()));
+                                full_trajectory.push_str(&tool_response_str);
+                                continue;
+                            } else {
+                                final_content = content;
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            let _ = self.conductor_tx.send(ConductorMessage::WorkerFailed {
+                                node_id: self.node_id.clone(),
+                                error: format!("Local Rig Agent Error: {}", e),
+                            }).await;
+                            success = false;
+                            break;
+                        }
                     }
                 }
+
 
                 // --- Route: nyx-native → HuggingFace Inference API ---
                 if is_nyx_native {
@@ -244,12 +278,148 @@ If you are asked to adhere to strict character, word, or formatting constraints,
                     }
                 }
 
+                // --- Route: Native Streaming Intercept for Gemini/OpenRouter ---
+                if model.starts_with("gemini") || model.starts_with("gemma") || model.starts_with("openrouter") {
+                    let mut unified_messages = Vec::new();
+                    let mut system_instruction = None;
+
+                    for m in &messages {
+                        let content_str = m.content.text_as_str().unwrap_or("").to_string();
+                        
+                        let role = match m.role {
+                            genai::chat::ChatRole::User => "user",
+                            genai::chat::ChatRole::Assistant => "assistant",
+                            genai::chat::ChatRole::System => {
+                                system_instruction = Some(content_str);
+                                continue;
+                            },
+                            _ => "user",
+                        };
+                        unified_messages.push(crate::commands::llm::UnifiedMessage {
+                            role: role.to_string(),
+                            content: serde_json::Value::String(content_str),
+                        });
+                    }
+
+                    let provider = if model.starts_with("openrouter") {
+                        "openrouter"
+                    } else if model.starts_with("gemma") {
+                        "gemma"
+                    } else {
+                        "gemini"
+                    };
+
+                    let req = crate::commands::llm::UnifiedRequest {
+                        provider: provider.to_string(),
+                        endpoint_override: None,
+                        model_id: model.to_string(),
+                        messages: unified_messages,
+                        system_instruction,
+                        api_key: api_key.clone(),
+                        temperature: None,
+                        max_tokens: None,
+                        event_name: None,
+                        tools: None,
+                    };
+
+                    match crate::commands::llm::execute_llm_stream(&req).await {
+                        Ok(mut rx) => {
+                            let mut content_buf = String::new();
+                            while let Some(chunk_res) = rx.recv().await {
+                                if self.agent_cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                                    let _ = self.conductor_tx.send(ConductorMessage::WorkerFailed {
+                                        node_id: self.node_id.clone(),
+                                        error: "Cancelled by user.".to_string(),
+                                    }).await;
+                                    success = false;
+                                    break;
+                                }
+                                match chunk_res {
+                                    Ok(payload) => {
+                                        if payload.event_type == "text" {
+                                            if let Some(txt) = payload.content {
+                                                content_buf.push_str(&txt);
+                                                let _ = self.conductor_tx.send(ConductorMessage::WorkerChunk {
+                                                    node_id: self.node_id.clone(),
+                                                    content: txt,
+                                                }).await;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        if content_buf.trim().is_empty() {
+                                            let _ = self.conductor_tx.send(ConductorMessage::WorkerFailed {
+                                                node_id: self.node_id.clone(),
+                                                error: e,
+                                            }).await;
+                                            success = false;
+                                            break;
+                                        } else {
+                                            println!("[NYX] Ignored trailing stream error: {:?}", e);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if !success {
+                                break;
+                            }
+
+                            let content = if content_buf.trim().is_empty() {
+                                "No response generated.".to_string()
+                            } else {
+                                content_buf
+                            };
+                            messages.push(ChatMessage::assistant(content.clone()));
+                            full_trajectory.push_str(&content);
+                            if let Some(caps) = regex::Regex::new(r"(?s)<tool_call>\s*<name>(.*?)</name>\s*<args>(.*?)</args>(?:\s*</tool_call>)?").unwrap().captures(&content) {
+                                let tool_name = caps.get(1).unwrap().as_str().trim();
+                                let tool_args_str = caps.get(2).unwrap().as_str().trim();
+                                let _ = self.conductor_tx.send(ConductorMessage::WorkerUpdate {
+                                    node_id: self.node_id.clone(),
+                                    status: format!("Executing tool: {}", tool_name),
+                                }).await;
+                                let parsed_args = serde_json::from_str(tool_args_str).unwrap_or_else(|_| serde_json::json!({"script": tool_args_str}));
+                                let dummy_scanner = crate::rag::scanner::CodebaseScanner::new(std::path::PathBuf::from(".")).await.unwrap();
+                                let tool_res = crate::agents::tools::execute_tool(tool_name, parsed_args, &dummy_scanner, &self.mcp_manager).await;
+                                let tool_output = match tool_res {
+                                    Ok(out) => out,
+                                    Err(e) => format!("Tool Execution Error: {}", e),
+                                };
+                                let tool_response_str = format!("\n<tool_response>\n{}\n</tool_response>\n", tool_output);
+                                messages.push(ChatMessage::user(tool_response_str.clone()));
+                                full_trajectory.push_str(&tool_response_str);
+                                continue;
+                            } else {
+                                final_content = content;
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            let _ = self.conductor_tx.send(ConductorMessage::WorkerFailed {
+                                node_id: self.node_id.clone(),
+                                error: e,
+                            }).await;
+                            success = false;
+                            break;
+                        }
+                    }
+                }
+
                 // --- Route: cloud models → genai ---
                 match client.exec_chat_stream(model, chat_req, None).await {
 
                     Ok(mut stream) => {
                         let mut content_buf = String::new();
                         while let Some(chunk_res) = stream.stream.next().await {
+                            if self.agent_cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                                let _ = self.conductor_tx.send(ConductorMessage::WorkerFailed {
+                                    node_id: self.node_id.clone(),
+                                    error: "Cancelled by user.".to_string(),
+                                }).await;
+                                success = false;
+                                break;
+                            }
                             match chunk_res {
                                 Ok(event) => {
                                     if let genai::chat::ChatStreamEvent::Chunk(chunk) = event {
@@ -364,10 +534,10 @@ If you are asked to adhere to strict character, word, or formatting constraints,
                         .await;
                     
                     // Iterative Refinement Feedback
-                    current_task_description = format!(
-                        "{}\n\n[SYSTEM REJECTION]: Your previous output failed programmatic validation.\nViolation: {}\nYou must rewrite your response and strictly adhere to the constraints. Remember you can use verify_output to check your work first.", 
-                        task_description, violation
-                    );
+                    messages.push(ChatMessage::user(format!(
+                        "[SYSTEM REJECTION]: Your previous output failed programmatic validation.\nViolation: {}\nYou must rewrite your response and strictly adhere to the constraints. Remember you can use verify_output to check your work first.", 
+                        violation
+                    )));
                     continue;
                 }
             }
@@ -398,29 +568,48 @@ fn parse_constraints(task: &str) -> Constraints {
         forbidden_strings: Vec::new(),
         exact_lines: None,
     };
-    let task_lower = task.to_lowercase();
+
+    // IMPORTANT: Only scan the user-facing portion of the task (first 400 chars, before any
+    // injected context/history/RAG blobs are appended). This prevents conversation history
+    // that happens to mention "e-blackout" or "without the letter e" from accidentally
+    // triggering lipogram constraints on a completely unrelated request.
+    let scan_window = match task.char_indices().nth(400) {
+        Some((idx, _)) => &task[..idx],
+        None => task,
+    };
+    let task_lower = scan_window.to_lowercase();
     
-    // Check for "e-blackout" or "no letter e"
-    if task_lower.contains("e-blackout") || task_lower.contains("no letter e") || task_lower.contains("without the letter e") || task_lower.contains("e blackout") {
-        constraints.forbidden_strings.push("e".to_string());
-        constraints.forbidden_strings.push("E".to_string());
-    }
-    
-    // Check for "no letter a"
-    if task_lower.contains("no letter a") || task_lower.contains("without the letter a") {
-        constraints.forbidden_strings.push("a".to_string());
-        constraints.forbidden_strings.push("A".to_string());
-    }
-    
-    // Check for "no letter o"
-    if task_lower.contains("no letter o") || task_lower.contains("without the letter o") {
-        constraints.forbidden_strings.push("o".to_string());
-        constraints.forbidden_strings.push("O".to_string());
+    // Dynamic Regex for single letter constraints (e.g. "no letter e", "x-blackout")
+    let re_single = regex::Regex::new(r"(?i)(?:no letter|without the letter|blackout)\s+['\x22]?([a-z])['\x22]?|([a-z])-blackout").unwrap();
+    for cap in re_single.captures_iter(&task_lower) {
+        if let Some(m) = cap.get(1).or_else(|| cap.get(2)) {
+            let letter = m.as_str();
+            constraints.forbidden_strings.push(letter.to_string());
+            constraints.forbidden_strings.push(letter.to_uppercase());
+        }
     }
 
+    // Dynamic Regex for dual letter constraints (e.g. "A" & "O" Blackout, "T" & "R" Consonant Void)
+    let re_dual = regex::Regex::new(r"(?i)['\x22]([a-z])['\x22]\s*(?:&|and|or)\s*['\x22]([a-z])['\x22]\s*(?:blackout|void)").unwrap();
+    for cap in re_dual.captures_iter(&task_lower) {
+        if let Some(m1) = cap.get(1) {
+            let letter = m1.as_str();
+            constraints.forbidden_strings.push(letter.to_string());
+            constraints.forbidden_strings.push(letter.to_uppercase());
+        }
+        if let Some(m2) = cap.get(2) {
+            let letter = m2.as_str();
+            constraints.forbidden_strings.push(letter.to_string());
+            constraints.forbidden_strings.push(letter.to_uppercase());
+        }
+    }
+
+    // For structural constraints, scan the full task (numeric patterns won't false-fire from history)
+    let full_lower = task.to_lowercase();
+
     // Check for line counts: "exactly X lines"
-    if let Some(idx) = task_lower.find("exactly ") {
-        let remainder = &task_lower[idx + "exactly ".len()..];
+    if let Some(idx) = full_lower.find("exactly ") {
+        let remainder = &full_lower[idx + "exactly ".len()..];
         if let Some(space_idx) = remainder.find(" lines") {
             let num_str = &remainder[..space_idx];
             if let Ok(num) = num_str.parse::<usize>() {
@@ -539,89 +728,6 @@ async fn call_hf_inference(
 
 /// Calls the local llama-server sidecar (running on 127.0.0.1:8080).
 /// Used for nyx-local models (ending in -local).
-async fn call_local_inference(
-    _model_id: &str, // llama-server ignores this and uses the loaded model
-    messages: &[genai::chat::ChatMessage],
-    node_id: &str,
-    conductor_tx: &tokio::sync::mpsc::Sender<super::protocol::ConductorMessage>,
-) -> String {
-    // Build messages in OpenAI format
-    let local_messages: Vec<serde_json::Value> = messages.iter().map(|m| {
-        let role = match m.role {
-            genai::chat::ChatRole::System => "system",
-            genai::chat::ChatRole::User => "user",
-            genai::chat::ChatRole::Assistant => "assistant",
-            genai::chat::ChatRole::Tool => "tool",
-        };
-        serde_json::json!({
-            "role": role,
-            "content": m.content.text_as_str().unwrap_or("")
-        })
-    }).collect();
-
-    let body = serde_json::json!({
-        "messages": local_messages,
-        "stream": true,
-        "max_tokens": 4096,
-        "temperature": 0.2
-    });
-
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(300)) // Local inference can be slow
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => return format!("[Local Error: Failed to build client: {}]", e),
-    };
-
-    let result = client
-        .post("http://127.0.0.1:8080/v1/chat/completions")
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await;
-
-    let mut response = match result {
-        Ok(r) => r,
-        Err(e) => return format!("[Local Error: Request failed (Is the local model server running?): {}]", e),
-    };
-
-
-    let mut full_content = String::new();
-    let mut buffer = String::new();
-
-    while let Some(chunk_res) = response.chunk().await.unwrap_or(None) {
-        let chunk_str = String::from_utf8_lossy(&chunk_res);
-        buffer.push_str(&chunk_str);
-
-        // Process full lines
-        while let Some(newline_idx) = buffer.find('\n') {
-            let line = buffer[..newline_idx].trim().to_string();
-            buffer = buffer[newline_idx + 1..].to_string();
-
-            if line.starts_with("data: ") {
-                let data = &line[6..];
-                if data == "[DONE]" {
-                    continue;
-                }
-                
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                    if let Some(content) = json.pointer("/choices/0/delta/content").and_then(|v| v.as_str()) {
-                        if !content.is_empty() {
-                            full_content.push_str(content);
-                            let _ = conductor_tx.send(super::protocol::ConductorMessage::WorkerChunk {
-                                node_id: node_id.to_string(),
-                                content: content.to_string(),
-                            }).await;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    full_content
-}
 
 fn clean_api_error(err: &genai::Error) -> String {
     let err_str = format!("{:?}", err);

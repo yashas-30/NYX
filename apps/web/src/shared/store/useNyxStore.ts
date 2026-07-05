@@ -78,7 +78,7 @@ const DEFAULT_SETTINGS: ModelSettings = {
   topK: 40,
   gpuLayers: 99,
   threads: 4,
-  contextSize: 2048,
+  contextSize: 32768,
   batchSize: 512,
   repeatPenalty: 1.1,
   mirostat: 0,
@@ -93,7 +93,6 @@ const DEFAULT_MODEL: ModelOption = {
   status: 'ga',
   specs: {
     contextWindow: '1M',
-    trainingData: '2025',
     maxOutput: '32K',
     modality: 'Multimodal',
   },
@@ -127,8 +126,18 @@ export const useNyxStore = create<NyxState>()(
           set((state) => ({
             modelSettings: { ...state.modelSettings, ...settings },
           })),
-      setCloudModelId: (id) => set({ cloudModelId: id }),
-      setLocalModelId: (id) => set({ localModelId: id }),
+      setCloudModelId: (id) => set((state) => {
+        if (state.executionMode === 'parallel' || state.executionMode === 'ensemble' || state.executionMode === 'ab-test') {
+          return { cloudModelId: id };
+        }
+        return { cloudModelId: id, localModelId: null };
+      }),
+      setLocalModelId: (id) => set((state) => {
+        if (state.executionMode === 'parallel' || state.executionMode === 'ensemble' || state.executionMode === 'ab-test') {
+          return { localModelId: id };
+        }
+        return { localModelId: id, cloudModelId: null };
+      }),
       setModel: (mid) => set({ models: { nyx: mid } }),
       setSearchProvider: (provider) => set({ searchProvider: provider }),
       setActiveProjectId: (id) => set({ activeProjectId: id }),
@@ -326,6 +335,15 @@ export const useNyxStore = create<NyxState>()(
     }),
     {
       name: 'nyx-global-state',
+      version: 1,
+      migrate: (persistedState: any, version: number) => {
+        if (version === 0) {
+          if (persistedState.modelSettings && persistedState.modelSettings.contextSize === 2048) {
+            persistedState.modelSettings.contextSize = 32768;
+          }
+        }
+        return persistedState;
+      },
       partialize: (state) => ({
         activeMode: state.activeMode,
         executionMode: state.executionMode,

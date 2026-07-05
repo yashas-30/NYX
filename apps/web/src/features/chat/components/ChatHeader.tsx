@@ -94,33 +94,6 @@ function formatDuration(ms: number): string {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-const ContextBar: React.FC<{ used: number; limit: number }> = ({ used, limit }) => {
-  const ratio = Math.min(used / limit, 1);
-  const isWarning = ratio > CONTEXT_WARNING_THRESHOLD;
-  const isCritical = ratio > CONTEXT_CRITICAL_THRESHOLD;
-
-  return (
-    <div
-      className="flex items-center gap-2 group cursor-help"
-      title={`${formatTokens(used)} / ${formatTokens(limit)} tokens`}
-    >
-      <div className="w-16 h-1.5 rounded-md bg-muted/60 overflow-hidden">
-        <motion.div
-          className={`h-full rounded-md ${isCritical ? 'bg-red-500' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'}`}
-          initial={{ width: 0 }}
-          animate={{ width: `${ratio * 100}%` }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
-        />
-      </div>
-      <span
-        className={`text-[10px] font-mono ${isCritical ? 'text-red-400' : isWarning ? 'text-amber-400' : 'text-muted-foreground/80'} group-hover:text-muted-foreground transition-colors`}
-      >
-        {Math.round(ratio * 100)}%
-      </span>
-    </div>
-  );
-};
-
 const ConnectionDot: React.FC<{ status: ChatHeaderProps['connectionStatus'] }> = ({ status }) => {
   const colors = {
     online: 'bg-emerald-500',
@@ -452,6 +425,14 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   useEffect(() => {
     if (isEditingTitle) titleInputRef.current?.focus();
   }, [isEditingTitle]);
+
+  // Sanitize state if both models are selected (e.g., from persisted state)
+  useEffect(() => {
+    const executionMode = useNyxStore.getState().executionMode;
+    if (cloudModelId && localModelId && executionMode !== 'parallel' && executionMode !== 'ensemble' && executionMode !== 'ab-test') {
+      setLocalModelId(null);
+    }
+  }, [cloudModelId, localModelId, setLocalModelId]);
 
   const displayLatency = isLoading ? liveElapsed : metrics.latency;
   const latencyText = formatLatency(displayLatency);
