@@ -79,3 +79,85 @@ pub struct LongTermMemory {
     pub embedding: String, // JSON float array
     pub created_at: i64,
 }
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct SwarmCache {
+    pub id: String,
+    pub prompt: String,
+    pub result: String,
+    pub embedding: String, // JSON float array
+    pub created_at: i64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct ChatMemory {
+    pub id: String,
+    pub session_id: String,
+    pub content: String,
+    pub embedding: String, // JSON float array
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct ExperienceLedgerEntry {
+    pub id: String,
+    pub prompt: String,
+    pub failure_type: String,
+    pub assertion_error: String,
+    pub timestamp: i64,
+}
+
+// ── Phase 1: LLM Observability ───────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct LlmTrace {
+    pub id: String,
+    pub session_id: Option<String>,
+    pub provider: String,
+    pub model: String,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub latency_ms: i64,
+    pub cached: i64,           // 0 or 1 (SQLite bool)
+    pub error: Option<String>,
+    pub agent_node_id: Option<String>,
+    pub created_at: i64,
+}
+
+/// Aggregated stats returned to the frontend for the observability dashboard.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ModelStats {
+    pub model: String,
+    pub provider: String,
+    pub total_calls: i64,
+    pub avg_latency_ms: f64,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
+    pub error_count: i64,
+    pub cache_hits: i64,
+}
+
+// ── Phase 2: Multi-tier Memory ───────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct EpisodicMemory {
+    pub id: String,
+    pub session_id: String,
+    pub summary: String,
+    pub embedding: String,     // JSON float array
+    pub key_topics: String,    // JSON string array
+    pub created_at: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct MemoryEntity {
+    pub id: String,
+    pub entity_name: String,
+    pub entity_type: String,   // person | project | technology | preference
+    pub description: String,
+    pub confidence: f64,
+    pub last_seen: i64,
+    pub created_at: i64,
+}

@@ -458,18 +458,3 @@ function detectSafetyLevel(prompt: string): 'standard' | 'enhanced' | 'strict' {
   return 'standard';
 }
 
-// ── Backward-Compatible Exports ─────────────────────────────────────────────
-
-/** @deprecated Use buildChatPrompts instead */
-export function buildChatSystemPrompt(modelId: string, context: ChatContext): string {
-  return buildChatPrompts(modelId, context, '', [], undefined).systemPrompt;
-}
-
-/** @deprecated Use buildChatPrompts instead */
-export function buildChatUserPrompt(
-  rawPrompt: string,
-  context: ChatContext,
-  webSearchResults?: string
-): string {
-  return buildChatPrompts('', context, rawPrompt, [], webSearchResults).userPrompt;
-}

@@ -11,7 +11,7 @@ import { StopCircle, Bot, MemoryStick, Cpu, Thermometer, RotateCcw, Image as Ima
 
 import { ModelDefinition } from '@src/infrastructure/types';
 import { toast } from '@src/shared/components/ui/sonner';
-import { analyzePrompt, optimizePromptText } from '@nyx/shared';
+
 
 import { PromptTemplateManager } from './PromptTemplateManager';
 import { SectionLabel, ParamSlider, ToolButton } from '@shared/components/PromptInputSubcomponents';
@@ -525,45 +525,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     }}
                   />
                 </div>
-
-                <motion.button
-                  variants={tagItemVariants}
-                  whileHover={{ y: -1.5, scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="button"
-                  onClick={() => {
-                    if (prompt.trim()) {
-                      onPromptChange(optimizePromptText(prompt, analyzePrompt(prompt)));
-                      toast.success('Prompt optimized!');
-                    } else {
-                      toast.error('Type a prompt first to optimize it');
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/25 hover:border-cyan-500/40 transition-all text-left text-cyan-600 dark:text-cyan-300 hover:text-cyan-800 dark:hover:text-white cursor-pointer shrink-0"
-                >
-                  <span className="w-3.5 h-3.5 rounded bg-cyan-500/20 flex items-center justify-center text-[9px] font-black text-cyan-600 dark:text-cyan-400 leading-none font-mono">
-                    /
-                  </span>
-                  <span className="text-[9.5px] font-bold tracking-tight">Optimize prompt</span>
-                </motion.button>
-
-                <motion.button
-                  variants={tagItemVariants}
-                  whileHover={{ y: -1.5, scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="button"
-                  onClick={() => {
-                    onClearHistory();
-                    onPromptChange('');
-                    toast.success('Context reset');
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/25 hover:border-amber-500/40 transition-all text-left text-amber-600 dark:text-amber-300 hover:text-amber-800 dark:hover:text-white cursor-pointer shrink-0"
-                >
-                  <span className="w-3.5 h-3.5 rounded bg-amber-500/20 flex items-center justify-center text-[9px] font-black text-amber-600 dark:text-amber-400 leading-none font-mono">
-                    /
-                  </span>
-                  <span className="text-[9.5px] font-bold tracking-tight">Reset context</span>
-                </motion.button>
 
               </div>
 

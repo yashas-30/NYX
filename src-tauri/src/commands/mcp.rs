@@ -136,6 +136,7 @@ pub async fn mcp_send_request(
     }
 }
 
+#[allow(dead_code)]
 pub async fn mcp_list_tools_internal(
     name: &str,
     mcp_manager: &Arc<McpManager>,

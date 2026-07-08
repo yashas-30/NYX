@@ -102,8 +102,17 @@ impl Tool for SemanticSearchTool {
         let embeddings = self.embedder.embed(vec![query.to_string()]).await?;
         let query_vector = embeddings.into_iter().next().ok_or("Failed to generate embedding")?;
 
-        let results = self.store.search_hybrid(query_vector, limit).await?;
-        
-        Ok(serde_json::to_string(&results).map_err(|e| e.to_string())?)
+        let results = self.store.search_vector(query_vector, limit).await?;
+
+        // Format as structured JSON: [{file, chunk}]
+        let formatted: Vec<serde_json::Value> = results.into_iter().map(|(text, metadata)| {
+            let file = serde_json::from_str::<serde_json::Value>(&metadata)
+                .ok()
+                .and_then(|v| v["file"].as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| "unknown".to_string());
+            serde_json::json!({ "file": file, "content": text })
+        }).collect();
+
+        Ok(serde_json::to_string(&formatted).map_err(|e| e.to_string())?)
     }
 }

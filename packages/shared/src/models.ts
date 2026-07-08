@@ -7,7 +7,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'gemini',
     status: 'ga',
     description: 'Auto-selects the best model based on prompt complexity (e.g. Gemini 3.1 Flash Lite for fast chat, DeepSeek R1 for reasoning).',
-    specs: { contextWindow: '1M', trainingData: '2026', maxOutput: '32K', modality: 'Multimodal' },
+    specs: { contextWindow: '1M', maxOutput: '32K', modality: 'Multimodal' },
   },
   // ═══════════════════════════════════════════════════════════════════════════════
   // GEMINI DIRECT - Gemini 3.5 (GA)
@@ -18,7 +18,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'gemini',
     status: 'ga',
     description: 'Cutting-edge high performance Flash model. Limits: 5 RPM, 250k TPM, 20 RPD.',
-    specs: { contextWindow: '1M', trainingData: '2026', maxOutput: '32K', modality: 'Multimodal' },
+    specs: { contextWindow: '1M', maxOutput: '32K', modality: 'Multimodal' },
     limits: { rpm: 5, tpm: 250000, rpd: 20 },
   },
 
@@ -31,7 +31,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'gemini',
     status: 'preview',
     description: 'Balanced speed and capability Flash model (preview).',
-    specs: { contextWindow: '1M', trainingData: '2025', maxOutput: '32K', modality: 'Multimodal' },
+    specs: { contextWindow: '1M', maxOutput: '32K', modality: 'Multimodal' },
   },
 
   {
@@ -40,10 +40,9 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'gemini',
     status: 'preview',
     description: 'Lightweight, cost-efficient Flash model (preview). Limits: 15 RPM, 250k TPM, 500 RPD.',
-    specs: { contextWindow: '1M', trainingData: '2026', maxOutput: '16K', modality: 'Multimodal' },
+    specs: { contextWindow: '1M', maxOutput: '16K', modality: 'Multimodal' },
     limits: { rpm: 15, tpm: 250000, rpd: 500 },
   },
-
   // ═══════════════════════════════════════════════════════════════════════════════
   // GEMINI DIRECT - Gemini 2.5 Series (Deprecated — shutting down Oct 16, 2026)
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -54,7 +53,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     status: 'deprecated',
     shutdownDate: '2026-10-16',
     description: 'Stable Flash model. Deprecated — migrating to 3.x series. Limits: 5 RPM, 250k TPM, 20 RPD.',
-    specs: { contextWindow: '1M', trainingData: '2025', maxOutput: '32K', modality: 'Multimodal' },
+    specs: { contextWindow: '1M', maxOutput: '32K', modality: 'Multimodal' },
     limits: { rpm: 5, tpm: 250000, rpd: 20 },
   },
 
@@ -65,7 +64,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     status: 'deprecated',
     shutdownDate: '2026-10-16',
     description: 'Lightweight Flash model. Deprecated — migrating to 3.x series.',
-    specs: { contextWindow: '1M', trainingData: '2025', maxOutput: '8K', modality: 'Multimodal' },
+    specs: { contextWindow: '1M', maxOutput: '8K', modality: 'Multimodal' },
   },
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -77,9 +76,19 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'gemini',
     status: 'ga',
     description: "Google's best open weights model — reasoning and math. Limits: 15 RPM, unlimited TPM, 1500 RPD.",
-    specs: { contextWindow: '256K', trainingData: '2026', maxOutput: '8K', modality: 'Text' },
+    specs: { contextWindow: '256K', maxOutput: '8K', modality: 'Text' },
     limits: { rpm: 15, tpm: null, rpd: 1500 },
   },
+  {
+    id: 'gemma-4-26b-a4b-it',
+    name: 'Gemma 4 26B',
+    provider: 'gemini',
+    status: 'ga',
+    description: "Highly capable Gemma 4 model with strong reasoning.",
+    specs: { contextWindow: '128K', maxOutput: '8K', modality: 'Text' },
+    limits: { rpm: 15, tpm: null, rpd: 1500 },
+  },
+
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // ALIASES (latest-pointer model IDs — always resolve to current best)
@@ -90,7 +99,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'gemini',
     status: 'alias',
     description: 'Auto-resolves to the latest stable Flash model.',
-    specs: { contextWindow: '1M', trainingData: '2026', maxOutput: '32K', modality: 'Multimodal' },
+    specs: { contextWindow: '1M', maxOutput: '32K', modality: 'Multimodal' },
   },
   {
     id: 'gemini-pro-latest',
@@ -98,7 +107,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'gemini',
     status: 'alias',
     description: 'Auto-resolves to the latest stable Pro model.',
-    specs: { contextWindow: '2M', trainingData: '2026', maxOutput: '64K', modality: 'Multimodal' },
+    specs: { contextWindow: '2M', maxOutput: '64K', modality: 'Multimodal' },
   },
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -111,7 +120,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     status: 'ga',
     description:
       "The native NYX agent running locally on-device. Fully powered by Google's Gemma 4 E2B.",
-    specs: { contextWindow: '128K', trainingData: '2026', maxOutput: '4K', modality: 'Text' },
+    specs: { contextWindow: '128K', maxOutput: '4K', modality: 'Text' },
   },
   {
     id: 'qwen2.5-coder-1.5b-native',
@@ -119,7 +128,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'nyx-native',
     status: 'ga',
     description: 'Fast, lightweight Qwen model optimized specifically for coding tasks.',
-    specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' },
+    specs: { contextWindow: '4K', maxOutput: '2K', modality: 'Text' },
   },
   {
     id: 'qwen2.5-coder-3b-native',
@@ -127,7 +136,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'nyx-native',
     status: 'ga',
     description: 'Perfect balance of high intelligence and execution speed for coding.',
-    specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' },
+    specs: { contextWindow: '4K', maxOutput: '2K', modality: 'Text' },
   },
   {
     id: 'llama-3.2-3b-native',
@@ -135,7 +144,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'nyx-native',
     status: 'ga',
     description: "Meta's highly capable general instruction model for general analysis.",
-    specs: { contextWindow: '4K', trainingData: '2024', maxOutput: '2K', modality: 'Text' },
+    specs: { contextWindow: '4K', maxOutput: '2K', modality: 'Text' },
   },
   {
     id: 'openrouter/auto',
@@ -143,7 +152,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'openrouter',
     status: 'ga',
     description: 'OpenRouter dynamic model routing to best available provider.',
-    specs: { contextWindow: '128K', trainingData: '2026', maxOutput: '8K', modality: 'Text' },
+    specs: { contextWindow: '128K', maxOutput: '8K', modality: 'Text' },
   },
   {
     id: 'deepseek/deepseek-chat',
@@ -151,7 +160,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'openrouter',
     status: 'ga',
     description: 'DeepSeek\'s latest ultra-efficient and capable LLM.',
-    specs: { contextWindow: '64K', trainingData: '2025', maxOutput: '8K', modality: 'Text' },
+    specs: { contextWindow: '64K', maxOutput: '8K', modality: 'Text' },
   },
   {
     id: 'deepseek/deepseek-reasoner',
@@ -159,7 +168,7 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     provider: 'openrouter',
     status: 'ga',
     description: 'DeepSeek\'s reasoning-specialist model utilizing chain of thought.',
-    specs: { contextWindow: '64K', trainingData: '2025', maxOutput: '8K', modality: 'Text' },
+    specs: { contextWindow: '64K', maxOutput: '8K', modality: 'Text' },
   },
 ];
 

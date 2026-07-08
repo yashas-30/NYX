@@ -7,8 +7,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { ModelOption } from '@src/types';
 import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
-import { AIService } from '@src/features/ai/services/ai.service';
-import { useNyxStore, ExecutionMode } from '@src/shared/store/useNyxStore';
+
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { ModelStatusBadge } from '@src/features/model-registry/ModelStatusBadge';
 import { useModelStore } from '@src/core/stores/useModelStore';
 import { invoke } from '@tauri-apps/api/core';
@@ -94,8 +94,7 @@ export const ModelSelector: React.FC<Props> = ({
   const [isTogglingModel, setIsTogglingModel] = React.useState(false);
 
   const [expandedModelId, setExpandedModelId] = React.useState<string | null>(null);
-  const executionMode = useNyxStore((s) => s.executionMode);
-  const setExecutionMode = useNyxStore((s) => s.setExecutionMode);
+  const contextSize = useNyxStore((s) => s.modelSettings.contextSize);
 
   React.useEffect(() => {
     loadLocalLibraryModels();
@@ -105,7 +104,7 @@ export const ModelSelector: React.FC<Props> = ({
     e.stopPropagation();
     try {
       setIsTogglingModel(true);
-      await invoke('start_local_server', { modelId: id });
+      await invoke('start_local_server', { modelId: id, contextSize });
       setLoadedLocalModel(id);
       setIsTogglingModel(false);
       toast.success('Model loaded successfully');
@@ -556,27 +555,6 @@ export const ModelSelector: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Execution Mode Selector */}
-        <div className="p-1.5 border-t border-border flex items-center gap-1 bg-muted/20">
-          <span className="px-1 text-[7px] font-black uppercase tracking-[0.2em] text-muted-foreground shrink-0 w-[95px]">
-            Execution
-          </span>
-          <div className="flex-1 flex gap-1 bg-background p-0.5 rounded-md border border-border">
-            {(['auto', 'standard', 'parallel', 'ensemble', 'ab-test'] as ExecutionMode[]).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setExecutionMode(mode)}
-                className={`flex-1 py-1 rounded-md text-[7px] font-black uppercase tracking-wider transition-all ${
-                  executionMode === mode
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                }`}
-              >
-                {mode.replace('-', ' ')}
-              </button>
-            ))}
-          </div>
-        </div>
       </motion.div>
 
       {/* CSS Scrollbar Overrides */}

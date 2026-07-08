@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tokio::sync::Mutex;
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     Manager, WebviewUrl, WebviewWindowBuilder,
 };
 
@@ -19,23 +18,27 @@ mod db;
 pub mod llm;
 pub mod agents;
 pub mod rag;
+pub mod guardrails;
 pub mod research;
 pub mod mcp_server;
+pub mod orchestrator;
 
 use commands::*;
 
 /// Global application state managed by Tauri.
 pub struct AppState {
-    pub mcp_manager:  Arc<commands::mcp::McpManager>,
-    pub pty_state:    Arc<Mutex<std::collections::HashMap<String, commands::pty::PtySession>>>,
+    pub mcp_manager: Arc<commands::mcp::McpManager>,
     /// Set to `true` to cancel the currently running agent loop.
     /// The orchestrator checks this flag at the start of every ReAct iteration.
     /// Reset to `false` automatically at the start of each new run.
     pub agent_cancel: Arc<AtomicBool>,
 
-    pub pending_approvals: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
-    pub pending_plugin_tools: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
-    pub pending_browser_actions: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
+    // All pending-action maps use tokio::sync::Mutex for consistency in async
+    // commands — std::sync::Mutex held across .await points risks deadlocking
+    // the Tokio thread pool.
+    pub pending_approvals: Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
+    pub pending_plugin_tools: Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
+    pub pending_browser_actions: Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
 
     /// Per-session conductor tx handles — reuse the same actor across multi-turn conversations.
     pub conductor_channels: Arc<Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<agents::protocol::ConductorMessage>>>>,
@@ -45,20 +48,17 @@ impl Default for AppState {
     fn default() -> Self {
         let mcp_manager = Arc::new(commands::mcp::McpManager::default());
         Self {
-
             mcp_manager,
-            pty_state:    Arc::new(Mutex::new(std::collections::HashMap::new())),
             agent_cancel: Arc::new(AtomicBool::new(false)),
-            pending_approvals: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            pending_plugin_tools: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            pending_browser_actions: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            pending_approvals: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            pending_plugin_tools: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            pending_browser_actions: Arc::new(Mutex::new(std::collections::HashMap::new())),
             conductor_channels: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-use crate::commands::agent_orchestrator::{orchestrate_supervisor, cancel_agent_loop};
 
 pub fn run() {
     tracing_subscriber::fmt::init();
@@ -89,6 +89,7 @@ pub fn run() {
         .manage(commands::fs::WatcherState::default())
         .setup(|app| {
             let app_handle = app.handle().clone();
+
 
             // Set up Llama sidecar manager
             let llama_manager = std::sync::Arc::new(llm::manager::LlamaManager::new());
@@ -134,6 +135,8 @@ pub fn run() {
             execute_computer_action,
             mcp_start_server, mcp_send_request, mcp_call_tool, mcp_stop_server, mcp_list_servers,
             llm_stream_request,
+            orchestrator::commands::run_orchestrator_turn,
+            commands::system::cleanup_session_state,
             pty_spawn, pty_write, pty_resize, pty_close,
             fs_watch_start, fs_watch_stop, fs_parse_and_chunk_file,
             commands::fs::fs_read_file, commands::fs::fs_write_file, commands::fs::fs_list_dir,
@@ -151,11 +154,11 @@ pub fn run() {
             db::commands::db_get_folders,
             db::commands::db_add_memory,
             db::commands::db_get_memories,
+            db::commands::db_insert_experience_ledger,
+            db::commands::db_get_recent_experience_ledger,
             db::commands::db_delete_memory,
             db::commands::db_clear_memories,
             db::commands::db_search_memories,
-            orchestrate_supervisor,
-            cancel_agent_loop,
             search_web_command,
             commands::agent::fetch_page_html_command,
             commands::agent::run_agent_tool,
@@ -178,7 +181,16 @@ pub fn run() {
             llm::hf_get_model_readme,
             llm::hf_get_restored_downloads,
             commands::system::get_hardware_specs,
+            commands::system::get_system_diagnostics,
             research::start_deep_research,
+            commands::observability::get_llm_traces,
+            commands::observability::get_observability_summary,
+            commands::observability::prune_llm_traces,
+            commands::memory::get_episodic_memories,
+            commands::memory::get_memory_entities,
+            commands::memory::delete_entity,
+            commands::llm::get_models_quota,
+            commands::agent::codebase_search_command,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -201,10 +213,13 @@ async fn setup_app(handle: &tauri::AppHandle) {
     let window   = create_main_window(handle).await;
 
     tray::create_tray(handle, &window).expect("Failed to create tray");
-    setup_menus(handle);
 
     let _ = window.show();
     let _ = window.set_focus();
+
+    // Remove the default Windows menu bar (File, Edit, View, Window, Help)
+    #[cfg(target_os = "windows")]
+    let _ = window.remove_menu();
 
     // Explicitly enforce resizable state after the window is fully shown.
     // tauri_plugin_window_state or vibrancy effects can silently override this.
@@ -242,27 +257,6 @@ async fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
 }
 
 
-fn setup_menus(handle: &tauri::AppHandle) {
-    let menu     = Menu::new(handle).unwrap();
-    let file_menu = Submenu::new(handle, "File", true).unwrap();
-    file_menu.append(&MenuItem::new(handle, "Open Workspace", true, Some("CmdOrCtrl+O")).unwrap()).unwrap();
-    file_menu.append(&PredefinedMenuItem::separator(handle).unwrap()).unwrap();
-    file_menu.append(&PredefinedMenuItem::quit(handle, Some("Quit")).unwrap()).unwrap();
-    menu.append(&file_menu).unwrap();
-
-    let view_menu = Submenu::new(handle, "View", true).unwrap();
-    view_menu.append(&MenuItem::new(handle, "Reload", true, Some("CmdOrCtrl+R")).unwrap()).unwrap();
-    view_menu.append(&PredefinedMenuItem::separator(handle).unwrap()).unwrap();
-    view_menu.append(&PredefinedMenuItem::fullscreen(handle, Some("Toggle Fullscreen")).unwrap()).unwrap();
-    menu.append(&view_menu).unwrap();
-
-    let help_menu = Submenu::new(handle, "Help", true).unwrap();
-    help_menu.append(&MenuItem::new(handle, "Documentation", true, None::<&str>).unwrap()).unwrap();
-    help_menu.append(&MenuItem::new(handle, "Report Issue", true, None::<&str>).unwrap()).unwrap();
-    menu.append(&help_menu).unwrap();
-
-    let _ = handle.set_menu(menu);
-}
 
 fn main() {
     run();

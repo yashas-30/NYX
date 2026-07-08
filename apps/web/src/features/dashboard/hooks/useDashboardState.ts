@@ -25,15 +25,17 @@ export const useDashboardState = (onExit?: () => void) => {
     if (path === '/settings') return 'settings';
     if (path === '/compare') return 'compare';
     if (path === '/memory') return 'memory';
+    if (path === '/observability') return 'observability';
     return 'chat';
   })();
 
-  const setActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare' | 'memory') => {
+  const setActiveMode = (mode: 'settings' | 'registry' | 'chat' | 'compare' | 'memory' | 'observability') => {
     if (mode === 'chat') navigate('/chat');
     else if (mode === 'registry') navigate('/models');
     else if (mode === 'settings') navigate('/settings');
     else if (mode === 'compare') navigate('/compare');
     else if (mode === 'memory') navigate('/memory');
+    else if (mode === 'observability') navigate('/observability');
     else navigate('/chat');
   };
   const [chatSettings, setChatSettings] = useState(() => {

@@ -402,8 +402,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   const titleInputRef = useRef<HTMLInputElement>(null);
   const privacyMode = useNyxStore((state) => state.privacyMode);
   const setPrivacyMode = useNyxStore((state) => state.setPrivacyMode);
-  const showReasoning = useNyxStore((state) => state.showReasoning);
-  const setShowReasoning = useNyxStore((state) => state.setShowReasoning);
   const cloudModelId = useNyxStore((s) => s.cloudModelId);
   const localModelId = useNyxStore((s) => s.localModelId);
   const setCloudModelId = useNyxStore((s) => s.setCloudModelId);
@@ -428,8 +426,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
   // Sanitize state if both models are selected (e.g., from persisted state)
   useEffect(() => {
-    const executionMode = useNyxStore.getState().executionMode;
-    if (cloudModelId && localModelId && executionMode !== 'parallel' && executionMode !== 'ensemble' && executionMode !== 'ab-test') {
+    const isParallelAllowed = false; // Execution modes removed
+    if (cloudModelId && localModelId && !isParallelAllowed) {
       setLocalModelId(null);
     }
   }, [cloudModelId, localModelId, setLocalModelId]);
@@ -687,18 +685,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               </motion.button>
             )}
 
-            {/* Show/Hide Reasoning */}
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowReasoning(!showReasoning)}
-              className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer shrink-0 ${showReasoning
-                  ? 'text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                }`}
-              title={showReasoning ? 'Hide Reasoning Steps' : 'Show Reasoning Steps'}
-            >
-              <Cpu size={15} className={showReasoning && isLoading ? 'animate-pulse' : ''} />
-            </motion.button>
+
 
             {/* Branch Manager */}
             {onOpenBranchManager && (

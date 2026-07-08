@@ -165,9 +165,7 @@ window.addEventListener('unhandledrejection', (e) => {
 
 
 
-// ── Tauri IPC Bridge & Dynamic Port Resolution ─────────────────────────────
-let backendBaseUrl = '';
-
+// ── Tauri IPC Bridge ─────────────────────────────
 if (typeof window !== 'undefined') {
   const isTauri = !!(window as any).__TAURI__ || !!(window as any).__TAURI_INTERNALS__;
   if (isTauri) {
@@ -193,7 +191,6 @@ if (typeof window !== 'undefined') {
             }
           },
         };
-        console.log('[nyxIPC] Initialized Tauri bridge on window.nyxIPC');
       })
       .catch((err) => {
         console.error('[nyxIPC] Failed to load Tauri core APIs:', err);
@@ -201,128 +198,10 @@ if (typeof window !== 'undefined') {
   }
 }
 
-async function initBackendUrl() {
-  const isTauri =
-    typeof window !== 'undefined' &&
-    (!!(window as any).__TAURI__ || !!(window as any).__TAURI_INTERNALS__);
-  if (isTauri) {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const res = await invoke<any>('server_get_ports');
-      if (res && res.success && res.data && res.data.express_port) {
-        backendBaseUrl = `http://127.0.0.1:${res.data.express_port}`;
-        (window as any).__NYX_BACKEND_URL__ = backendBaseUrl;
-        console.log(`[Tauri] Dynamically resolved Express backend URL: ${backendBaseUrl}`);
-        return;
-      }
-    } catch (e: any) {
-      console.warn('[Tauri] Failed to query server ports via IPC:', e);
-    }
-  }
-  backendBaseUrl = '';
-  (window as any).__NYX_BACKEND_URL__ = '';
-}
-
-
-function RootContainer() {
-  const [isBackendReady, setIsBackendReady] = useState(false);
-  const [loadingMsg, setLoadingMsg] = useState('Starting NYX backend...');
-
-  useEffect(() => {
-    let mounted = true;
-    let attempt = 0;
-    const HARD_TIMEOUT_MS = 90_000; // 90s max wait — if server hasn't started by then, something is wrong
-    const startedAt = Date.now();
-
-    const checkBackend = async () => {
-      await initBackendUrl();
-      if (mounted) setIsBackendReady(true);
-      return; // TEMPORARY BYPASS: Skip backend health check while server is down
-      while (mounted) {
-        // Hard timeout guard
-        const elapsed = Date.now() - startedAt;
-        if (elapsed > HARD_TIMEOUT_MS) {
-          setLoadingMsg('Server took too long to start. Please restart the app.');
-          return;
-        }
-
-        try {
-          const base = backendBaseUrl || '';
-          const url = `${base}/api/v1/health`;
-          // Use fetch directly
-          const res = await fetch(url, {
-            headers: { Accept: 'application/json' },
-            signal: AbortSignal.timeout(3000),
-          });
-          // Only a genuine 200 OK means the server is fully up and serving
-          if (res.status === 200) {
-            if (mounted) setIsBackendReady(true);
-            return;
-          }
-        } catch {
-          // Backend not ready yet — keep polling
-        }
-
-        attempt++;
-        const elapsed2 = Date.now() - startedAt;
-        const seconds = Math.floor(elapsed2 / 1000);
-        if (seconds > 5) setLoadingMsg(`Starting NYX backend... (${seconds}s)`);
-
-        // Exponential backoff: 300ms → 600ms → 1.2s → cap at 2s
-        const delay = Math.min(300 * Math.pow(1.5, Math.min(attempt - 1, 8)), 2000);
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    };
-
-    checkBackend();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  if (!isBackendReady) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          height: '100vh',
-          width: '100vw',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#faf9f5',
-          color: '#6c6a64',
-          fontFamily: '"Inter", sans-serif',
-        }}
-      >
-        <div
-          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}
-        >
-          <div
-            style={{
-              width: '2rem',
-              height: '2rem',
-              border: '3px solid #e6dfd8',
-              borderTopColor: '#cc785c',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-            }}
-          ></div>
-          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-          <div style={{ fontSize: '13px', letterSpacing: '0.02em' }}>{loadingMsg}</div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
     <ErrorBoundary>
       <App />
     </ErrorBoundary>
-  );
-}
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <RootContainer />
   </StrictMode>
 );

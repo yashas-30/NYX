@@ -1,6 +1,6 @@
 use tauri::State;
 use sqlx::SqlitePool;
-use super::models::{ChatConversation, ChatMessage, DbSession, DbMessage, SwarmContextPool, LongTermMemory};
+use super::models::{ChatConversation, ChatMessage, DbSession, DbMessage, SwarmContextPool, LongTermMemory, ExperienceLedgerEntry};
 
 #[tauri::command]
 pub async fn db_get_chat_conversations(
@@ -115,7 +115,7 @@ pub async fn get_swarm_context_internal(
     session_id: &str,
 ) -> Result<String, sqlx::Error> {
     let ctx = sqlx::query_as::<_, SwarmContextPool>(
-        "SELECT * FROM swarm_context_pool WHERE session_id = ? ORDER BY timestamp ASC"
+        "SELECT * FROM (SELECT * FROM swarm_context_pool WHERE session_id = ? ORDER BY timestamp DESC LIMIT 20) ORDER BY timestamp ASC"
     )
     .bind(session_id)
     .fetch_all(pool)
@@ -127,10 +127,21 @@ pub async fn get_swarm_context_internal(
 
     let mut result = String::new();
     for entry in ctx {
+        let content = if entry.content.len() > 2000 {
+            format!("{}... [truncated]", &entry.content[..2000])
+        } else {
+            entry.content
+        };
         result.push_str(&format!(
             "\n\n--- Memory from {} (Task: {}) ---\n{}",
-            entry.agent_id, entry.task, entry.content
+            entry.agent_id, entry.task, content
         ));
+    }
+    
+    // Total fallback guard
+    if result.len() > 16000 {
+        let start_idx = result.len() - 16000;
+        result = format!("...[earlier memories truncated]...\n{}", &result[start_idx..]);
     }
 
     Ok(result)
@@ -180,31 +191,34 @@ pub async fn db_get_all_chat_sessions(
     .await
     .map_err(|e| e.to_string())?;
 
-    let mut sessions = Vec::new();
+    let all_msgs = sqlx::query_as::<_, super::models::ChatMessage>(
+        "SELECT * FROM chat_messages ORDER BY timestamp ASC"
+    )
+    .fetch_all(&*pool)
+    .await
+    .unwrap_or_default();
+
+    let mut msgs_by_convo: std::collections::HashMap<String, Vec<ChatMessagePayload>> = std::collections::HashMap::new();
+    
+    for m in all_msgs {
+        let payload = ChatMessagePayload {
+            id: Some(m.id),
+            role: m.role,
+            content: m.content,
+            timestamp: Some(m.timestamp),
+            is_pinned: Some(m.is_pinned == 1),
+            metrics: m.token_usage.and_then(|t| serde_json::from_str(&t).ok()),
+            attachments: m.attachments.and_then(|a| serde_json::from_str(&a).ok()),
+            model: Some(m.model),
+            reasoning: None,
+        };
+        msgs_by_convo.entry(m.conversation_id).or_default().push(payload);
+    }
+
+    let mut sessions = Vec::with_capacity(convos.len());
 
     for c in convos {
-        let msgs = sqlx::query_as::<_, super::models::ChatMessage>(
-            "SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY timestamp ASC"
-        )
-        .bind(&c.id)
-        .fetch_all(&*pool)
-        .await
-        .unwrap_or_default();
-
-        let mut message_payloads = Vec::new();
-        for m in msgs {
-            message_payloads.push(ChatMessagePayload {
-                id: Some(m.id),
-                role: m.role,
-                content: m.content,
-                timestamp: Some(m.timestamp),
-                is_pinned: Some(m.is_pinned == 1),
-                metrics: m.token_usage.and_then(|t| serde_json::from_str(&t).ok()),
-                attachments: m.attachments.and_then(|a| serde_json::from_str(&a).ok()),
-                model: Some(m.model),
-                reasoning: None,
-            });
-        }
+        let message_payloads = msgs_by_convo.remove(&c.id).unwrap_or_default();
 
         sessions.push(ChatSessionPayload {
             id: c.id,
@@ -422,6 +436,50 @@ pub async fn db_get_memories(
     .map_err(|e| e.to_string())?;
 
     Ok(memories)
+}
+
+#[tauri::command]
+pub async fn db_insert_experience_ledger(
+    pool: State<'_, SqlitePool>,
+    prompt: String,
+    failure_type: String,
+    assertion_error: String,
+) -> Result<String, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    sqlx::query(
+        "INSERT INTO experience_ledger (id, prompt, failure_type, assertion_error, timestamp) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(&id)
+    .bind(prompt)
+    .bind(failure_type)
+    .bind(assertion_error)
+    .bind(timestamp)
+    .execute(&*pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn db_get_recent_experience_ledger(
+    pool: State<'_, SqlitePool>,
+    limit: i64,
+) -> Result<Vec<ExperienceLedgerEntry>, String> {
+    let entries = sqlx::query_as::<_, ExperienceLedgerEntry>(
+        "SELECT * FROM experience_ledger ORDER BY timestamp DESC LIMIT ?"
+    )
+    .bind(limit)
+    .fetch_all(&*pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(entries)
 }
 
 #[tauri::command]

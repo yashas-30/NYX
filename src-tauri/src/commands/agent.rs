@@ -299,21 +299,6 @@ pub fn get_builtin_tools() -> Value {
         {
             "type": "function",
             "function": {
-                "name": "schedule_task",
-                "description": "Schedule a command to run after a delay.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "seconds": { "type": "number", "description": "Delay in seconds" },
-                        "command": { "type": "string", "description": "Command to run" }
-                    },
-                    "required": ["seconds", "command"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "read_pdf",
                 "description": "Read and extract plain text from a PDF file.",
                 "parameters": {
@@ -383,51 +368,6 @@ pub fn get_builtin_tools() -> Value {
                         }
                     },
                     "required": ["path", "headers", "rows"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "generate_image",
-                "description": "Generate an image file.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "prompt": { "type": "string", "description": "Text description of the image to generate" },
-                        "path": { "type": "string", "description": "Path to save generated image file" }
-                    },
-                    "required": ["prompt", "path"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "edit_image",
-                "description": "Edit/modify an image based on a prompt.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Path to original image file" },
-                        "prompt": { "type": "string", "description": "Prompt instructions to modify the image" }
-                    },
-                    "required": ["path", "prompt"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "analyze_image",
-                "description": "Analyze an image file and answer a question about it.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Path to image file" },
-                        "question": { "type": "string", "description": "Question to answer about the image content" }
-                    },
-                    "required": ["path", "question"]
                 }
             }
         },
@@ -608,38 +548,30 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         }
         "web_browse" => {
             let url = args["url"].as_str().unwrap_or("");
-            let app_handle = app.clone();
             let url_str = url.to_string();
-            
-            let res = tauri::async_runtime::block_on(async move {
-                if let Some(window) = app_handle.get_webview_window("nyx_browser") {
-                    if let Ok(parsed_url) = url::Url::parse(&url_str) {
-                        let _ = window.navigate(parsed_url);
-                    }
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    Ok("Browser overlay window navigated successfully.".to_string())
-                } else {
-                    match tauri::WebviewWindowBuilder::new(
-                        &app_handle,
-                        "nyx_browser",
-                        tauri::WebviewUrl::External(url_str.parse().unwrap())
-                    )
-                    .title("NYX Browser Overlay")
-                    .inner_size(1280.0, 720.0)
-                    .build() {
-                        Ok(win) => {
-                            let _ = win.show();
-                            let _ = win.set_focus();
-                            Ok("Created and opened browser overlay window successfully.".to_string())
-                        }
-                        Err(e) => Err(format!("Failed to create browser overlay window: {}", e))
-                    }
+            if let Some(window) = app.get_webview_window("nyx_browser") {
+                if let Ok(parsed_url) = url::Url::parse(&url_str) {
+                    let _ = window.navigate(parsed_url);
                 }
-            });
-            match res {
-                Ok(s) => s,
-                Err(e) => e,
+                let _ = window.show();
+                let _ = window.set_focus();
+                "Browser overlay window navigated successfully.".to_string()
+            } else {
+                match tauri::WebviewWindowBuilder::new(
+                    app,
+                    "nyx_browser",
+                    tauri::WebviewUrl::External(url_str.parse().unwrap())
+                )
+                .title("NYX Browser Overlay")
+                .inner_size(1280.0, 720.0)
+                .build() {
+                    Ok(win) => {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                        "Created and opened browser overlay window successfully.".to_string()
+                    }
+                    Err(e) => format!("Failed to create browser overlay window: {}", e)
+                }
             }
         }
         "browser_click" => {
@@ -712,39 +644,41 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
             }
         }
         "browser_screenshot" => {
-            let app_handle = app.clone();
-            let res = tauri::async_runtime::block_on(async move {
-                let window = app_handle.get_webview_window("nyx_browser")
-                    .ok_or_else(|| "Browser overlay window is not open.".to_string())?;
-                
-                let pos = window.outer_position().map_err(|e| e.to_string())?;
-                let size = window.outer_size().map_err(|e| e.to_string())?;
-                
-                let monitors = xcap::Monitor::all().map_err(|e| e.to_string())?;
-                let monitor = monitors.into_iter()
-                    .find(|m| m.is_primary().unwrap_or(false))
-                    .or_else(|| xcap::Monitor::all().unwrap_or_default().into_iter().next())
-                    .ok_or("No monitor found")?;
-                
-                let img = monitor.capture_image().map_err(|e| e.to_string())?;
-                
-                let x = std::cmp::max(0, pos.x) as u32;
-                let y = std::cmp::max(0, pos.y) as u32;
-                let w = std::cmp::min(size.width, img.width() - x);
-                let h = std::cmp::min(size.height, img.height() - y);
-                
-                let cropped = image::imageops::crop_imm(&img, x, y, w, h).to_image();
-                let mut buf = std::io::Cursor::new(Vec::new());
-                cropped.write_to(&mut buf, image::ImageFormat::Jpeg).map_err(|e| e.to_string())?;
-                
-                use base64::Engine;
-                let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
-                Ok(b64)
-            });
-            match res {
+            let window = match app.get_webview_window("nyx_browser") {
+                Some(w) => w,
+                None => return "Browser overlay window is not open.".to_string(),
+            };
+            let pos = match window.outer_position() {
+                Ok(p) => p,
+                Err(e) => return format!("Failed to get window position: {}", e),
+            };
+            let size = match window.outer_size() {
                 Ok(s) => s,
-                Err(e) => e,
+                Err(e) => return format!("Failed to get window size: {}", e),
+            };
+            let monitors = match xcap::Monitor::all() {
+                Ok(m) => m,
+                Err(e) => return format!("Failed to enumerate monitors: {}", e),
+            };
+            let monitor = match monitors.into_iter().find(|m| m.is_primary().unwrap_or(false))
+                .or_else(|| xcap::Monitor::all().unwrap_or_default().into_iter().next()) {
+                Some(m) => m,
+                None => return "No monitor found".to_string(),
+            };
+            let img = match monitor.capture_image() {
+                Ok(i) => i,
+                Err(e) => return format!("Screenshot capture failed: {}", e),
+            };
+            let x = std::cmp::max(0, pos.x) as u32;
+            let y = std::cmp::max(0, pos.y) as u32;
+            let w = std::cmp::min(size.width, img.width().saturating_sub(x));
+            let h = std::cmp::min(size.height, img.height().saturating_sub(y));
+            let cropped = image::imageops::crop_imm(&img, x, y, w, h).to_image();
+            let mut buf = std::io::Cursor::new(Vec::new());
+            if let Err(e) = cropped.write_to(&mut buf, image::ImageFormat::Jpeg) {
+                return format!("Failed to encode screenshot: {}", e);
             }
+            base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
         }
         "fetch_page" => {
             let url = args["url"].as_str().unwrap_or("");
@@ -889,23 +823,10 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
             }
         }
         "schedule_task" => {
-            let seconds = args["seconds"].as_u64().unwrap_or(0);
-            let command = args["command"].as_str().unwrap_or("").to_string();
-            let cmd_clone = command.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
-                let mut cmd = if cfg!(target_os = "windows") {
-                    let mut c = Command::new("powershell");
-                    c.arg("-Command").arg(&cmd_clone);
-                    c
-                } else {
-                    let mut c = Command::new("sh");
-                    c.arg("-c").arg(&cmd_clone);
-                    c
-                };
-                let _ = cmd.output().await;
-            });
-            format!("Scheduled command '{}' in {} seconds.", command, seconds)
+            // schedule_task was removed: fire-and-forget orphan tasks with no
+            // cancellation, no error reporting, and no handle tracking are
+            // unsafe. Use run_terminal_command directly instead.
+            "schedule_task has been removed. Use run_terminal_command to run commands directly.".to_string()
         }
         "read_pdf" => {
             let path = args["path"].as_str().unwrap_or("");
@@ -1042,58 +963,44 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
                 Err(e) => format!("Failed to create spreadsheet: {}", e),
             }
         }
-        "generate_image" | "edit_image" => {
-            let path = args["path"].as_str().unwrap_or("generated_image.png");
-            let prompt = args["prompt"].as_str().unwrap_or("AI generated image");
-            let dummy_png = vec![
-                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-                0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-                0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-                0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-                0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-                0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
-            ];
-            match std::fs::write(path, dummy_png) {
-                Ok(_) => format!("Image successfully generated/edited and saved to {} (Prompt: '{}')", path, prompt),
-                Err(e) => format!("Failed to save generated image to {}: {}", path, e),
-            }
-        }
-        "analyze_image" => {
-            let path = args["path"].as_str().unwrap_or("");
-            let question = args["question"].as_str().unwrap_or("What is in this image?");
-            format!("Analyzed image at {}. [Mock analysis result for question: '{}']\nThe image appears to contain visual patterns corresponding to the request context.", path, question)
+        "generate_image" | "edit_image" | "analyze_image" => {
+            // These tools are not yet implemented with a real image generation/analysis backend.
+            // They have been removed from the tool registry to prevent the LLM from calling them
+            // and receiving misleading stub responses. This branch handles any residual calls.
+            format!("Tool '{}' is not currently implemented. No image generation or analysis backend is configured.", name)
         }
         _ => {
             let call_id = uuid::Uuid::new_v4().to_string();
             let (tx, rx) = tokio::sync::oneshot::channel::<String>();
-            
+
             {
                 let app_state = app.state::<crate::AppState>();
-                let mut pending = app_state.pending_plugin_tools.lock().unwrap();
+                // tokio::sync::Mutex — must .await
+                let mut pending = app_state.pending_plugin_tools.lock().await;
                 pending.insert(call_id.clone(), tx);
             }
-            
+
             #[derive(serde::Serialize, Clone)]
             struct PluginToolPayload {
                 call_id: String,
                 name: String,
                 args: String,
             }
-            
+
             let payload = PluginToolPayload {
                 call_id: call_id.clone(),
                 name: name.to_string(),
                 args: args_json.to_string(),
             };
-            
+
             use tauri::Emitter;
             if let Err(e) = app.emit("execute_plugin_tool", payload) {
                 let app_state = app.state::<crate::AppState>();
-                let mut pending = app_state.pending_plugin_tools.lock().unwrap();
+                let mut pending = app_state.pending_plugin_tools.lock().await;
                 pending.remove(&call_id);
                 return format!("Error emitting plugin tool: {}", e);
             }
-            
+
             match rx.await {
                 Ok(result) => result,
                 Err(_) => format!("Error: Plugin tool execution timed out or failed for '{}'", name),
@@ -1310,7 +1217,7 @@ pub async fn run_agent_tool(app: tauri::AppHandle, name: String, args_json: Stri
 #[tauri::command]
 pub async fn approve_tool(app: tauri::AppHandle, approval_id: String) -> Result<(), String> {
     let app_state = app.state::<crate::AppState>();
-    let mut approvals = app_state.pending_approvals.lock().unwrap();
+    let mut approvals = app_state.pending_approvals.lock().await;
     if let Some(tx) = approvals.remove(&approval_id) {
         let _ = tx.send(true);
     }
@@ -1320,7 +1227,7 @@ pub async fn approve_tool(app: tauri::AppHandle, approval_id: String) -> Result<
 #[tauri::command]
 pub async fn reject_tool(app: tauri::AppHandle, approval_id: String) -> Result<(), String> {
     let app_state = app.state::<crate::AppState>();
-    let mut approvals = app_state.pending_approvals.lock().unwrap();
+    let mut approvals = app_state.pending_approvals.lock().await;
     if let Some(tx) = approvals.remove(&approval_id) {
         let _ = tx.send(false);
     }
@@ -1330,7 +1237,7 @@ pub async fn reject_tool(app: tauri::AppHandle, approval_id: String) -> Result<(
 #[tauri::command]
 pub async fn resolve_plugin_tool(app: tauri::AppHandle, call_id: String, result: String) -> Result<(), String> {
     let app_state = app.state::<crate::AppState>();
-    let mut pending = app_state.pending_plugin_tools.lock().unwrap();
+    let mut pending = app_state.pending_plugin_tools.lock().await;
     if let Some(tx) = pending.remove(&call_id) {
         let _ = tx.send(result);
     }
@@ -1340,26 +1247,31 @@ pub async fn resolve_plugin_tool(app: tauri::AppHandle, call_id: String, result:
 async fn run_browser_script(app: &tauri::AppHandle, js_template: &str) -> Result<String, String> {
     let window = app.get_webview_window("nyx_browser")
         .ok_or_else(|| "Browser overlay window is not open. Call web_browse first.".to_string())?;
-        
+
     let action_id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = tokio::sync::oneshot::channel::<String>();
-    
+
     {
         let app_state = app.state::<crate::AppState>();
-        let mut pending = app_state.pending_browser_actions.lock().unwrap();
+        // Use serde_json to safely serialize the action_id as a JSON string literal,
+        // preventing any future ID format changes from corrupting the injected JS.
+        let mut pending = app_state.pending_browser_actions.lock().await;
         pending.insert(action_id.clone(), tx);
     }
-    
-    let js = js_template.replace("ACTION_ID", &action_id);
-    
+
+    // Safely embed action_id as a JSON string literal — no raw string substitution.
+    let action_id_json = serde_json::to_string(&action_id).unwrap_or_default();
+    let js = js_template.replace("\"ACTION_ID\"", &action_id_json);
+
     window.eval(&js).map_err(|e| format!("Failed to evaluate script: {}", e))?;
-    
+
     match tokio::time::timeout(std::time::Duration::from_secs(10), rx).await {
         Ok(Ok(res)) => Ok(res),
         Ok(Err(_)) => Err("Browser action channel closed unexpectedly.".to_string()),
         Err(_) => {
+            // Timeout: clean up the sender so we don't leak memory.
             let app_state = app.state::<crate::AppState>();
-            let mut pending = app_state.pending_browser_actions.lock().unwrap();
+            let mut pending = app_state.pending_browser_actions.lock().await;
             pending.remove(&action_id);
             Err("Browser action timed out.".to_string())
         }
@@ -1369,9 +1281,50 @@ async fn run_browser_script(app: &tauri::AppHandle, js_template: &str) -> Result
 #[tauri::command]
 pub async fn resolve_browser_action(app: tauri::AppHandle, action_id: String, result: String) -> Result<(), String> {
     let app_state = app.state::<crate::AppState>();
-    let mut pending = app_state.pending_browser_actions.lock().unwrap();
+    let mut pending = app_state.pending_browser_actions.lock().await;
     if let Some(tx) = pending.remove(&action_id) {
         let _ = tx.send(result);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn codebase_search_command(
+    query: String,
+    limit: Option<usize>,
+    scanner: tauri::State<'_, std::sync::Arc<crate::rag::scanner::CodebaseScanner>>,
+) -> Result<Value, String> {
+    let limit = limit.unwrap_or(5);
+    
+    if !scanner.is_indexed() {
+        return Ok(json!({
+            "success": false,
+            "error": "Workspace is not indexed yet.",
+            "results": []
+        }));
+    }
+
+    match scanner.search(&query, limit).await {
+        Ok(results) => {
+            let mapped: Vec<Value> = results.into_iter().map(|(path, content, score)| {
+                json!({
+                    "path": path,
+                    "content": content,
+                    "score": score
+                })
+            }).collect();
+            
+            Ok(json!({
+                "success": true,
+                "results": mapped
+            }))
+        }
+        Err(e) => {
+            Ok(json!({
+                "success": false,
+                "error": e.to_string(),
+                "results": []
+            }))
+        }
+    }
 }

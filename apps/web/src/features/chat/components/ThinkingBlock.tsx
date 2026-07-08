@@ -416,8 +416,6 @@ function AgentProgressBar({
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseContent, isComplete = true, startedAt, agentProgress }) => {
   const [isExpanded, setIsExpanded] = useState(!isComplete);
   const smoothContent = useSmoothTypewriter(content, !isComplete);
-  const showReasoning = useNyxStore((s) => s.showReasoning);
-  const setShowReasoning = useNyxStore((s) => s.setShowReasoning);
   const segments = useMemo(() => parseThinking(smoothContent), [smoothContent]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -481,27 +479,6 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
   }, [segments, isExpanded]);
 
   if (!content?.trim()) return null;
-
-  if (!showReasoning) {
-    const timeSecs = elapsedMs > 0 ? (elapsedMs / 1000).toFixed(1) : ((Date.now() - internalStartedAt) / 1000).toFixed(1);
-    return (
-      <div className="my-2 text-[12px] text-muted-foreground/80 flex items-center gap-1.5 font-sans select-none">
-        <span className="text-indigo-400">◎</span>
-        <span>
-          {isComplete 
-            ? `Reasoned for ${timeSecs}s` 
-            : `Reasoning... (${timeSecs}s)`
-          }
-        </span>
-        <button 
-          onClick={() => setShowReasoning(true)}
-          className="text-indigo-400 hover:text-indigo-300 font-medium underline underline-offset-2 cursor-pointer outline-none bg-transparent border-none p-0 ml-1 transition-colors"
-        >
-          (show)
-        </button>
-      </div>
-    );
-  }
 
   const spring = { duration: 0.2, ease: 'easeOut' as const };
   return (

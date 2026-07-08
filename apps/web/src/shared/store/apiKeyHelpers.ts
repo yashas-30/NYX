@@ -819,37 +819,4 @@ export const updateVaultConfig = (config: Partial<VaultConfig>): void => {
 /** Get audit log entries */
 export const getAuditLog = (limit?: number): AuditLogEntry[] => registry.getAuditLog(limit);
 
-// ============================================================================
-// BACKWARD COMPATIBILITY SHIMS
-// ============================================================================
 
-/**
- * Sync wrapper for legacy callers that do not await `updateApiKey`.
- * Used by `useSecurityState` which wraps the call in `useCallback` without await.
- *
- * @deprecated Prefer the async `updateApiKey` directly.
- */
-export const updateApiKeySync = (
-  setApiKeys: Dispatch<SetStateAction<Record<string, string>>>,
-  provider: string,
-  key: string
-): void => {
-  updateApiKey(setApiKeys, provider, key).catch((err) => {
-    console.error('[Vault] Async updateApiKey failed:', err);
-    toast.error('Failed to store API key');
-  });
-};
-
-/**
- * Sync wrapper for legacy callers that do not await `clearApiKeys`.
- *
- * @deprecated Prefer the async `clearApiKeys` directly.
- */
-export const clearApiKeysSync = (
-  setApiKeys: Dispatch<SetStateAction<Record<string, string>>>
-): void => {
-  clearApiKeys(setApiKeys).catch((err) => {
-    console.error('[Vault] Async clearApiKeys failed:', err);
-    toast.error('Failed to clear API keys');
-  });
-};

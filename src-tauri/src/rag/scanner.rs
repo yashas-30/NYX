@@ -75,7 +75,11 @@ impl CodebaseScanner {
             for (chunk_idx, chunk) in chunks.iter().enumerate() {
                 let path_str = path.to_string_lossy().to_string();
                 let chunk_id = format!("{}::chunk_{}", path_str, chunk_idx);
-                let metadata = format!("file={},chunk={}", path_str, chunk_idx);
+                // Store metadata as JSON so we can reliably parse the file path back out
+                let metadata = serde_json::json!({
+                    "file": path_str,
+                    "chunk": chunk_idx
+                }).to_string();
 
                 match self.embedder.embed(vec![chunk.clone()]).await {
                     Ok(mut embeddings) => {
@@ -93,38 +97,57 @@ impl CodebaseScanner {
         }
 
         info!("Indexed {} chunks across files in {:?}", count, root);
+
+        // Build the BM25 full-text index on the 'text' column now that all
+        // chunks are inserted. This enables hybrid search (vector + keyword).
+        if count > 0 {
+            match self.db.build_fts_index().await {
+                Ok(()) => info!("FTS index built successfully ({} chunks)", count),
+                Err(e) => warn!("FTS index build failed (vector-only fallback will be used): {}", e),
+            }
+        }
+
         Ok(())
     }
 
-    /// Search for the top-k most semantically relevant chunks to a query.
-    /// Returns `(file_path, chunk_text, relevance_score)` tuples.
+    /// Search for the top-k most relevant chunks using **hybrid search**:
+    /// vector similarity (HNSW) + BM25 full-text search merged via RRF.
     ///
-    /// Uses LanceDB's HNSW-based ANN search — O(log n) rather than O(n) brute force.
+    /// Falls back gracefully to vector-only if the FTS index hasn't been built.
+    /// Returns `(file_path, chunk_text, relevance_score)` tuples.
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<(String, String, f32)>> {
         let mut query_embs = self.embedder.embed(vec![query.to_string()]).await
             .map_err(|e| anyhow::anyhow!(e))?;
         let query_emb = query_embs.remove(0);
 
-        let raw_results = self.db.search_hybrid(query_emb, limit).await
+        // Use true hybrid search: vector + BM25 fused by RRF
+        let raw_results = self.db.search_hybrid(query, query_emb, limit).await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        // LanceDB returns results ordered by distance (ascending).
-        // Convert to (path, chunk, score) tuples. Score is position-based since
-        // LanceDB's results are already ranked — top result gets score 1.0.
+        // Parse JSON metadata to extract the real file path.
+        // RRF already ranked results — preserve that order (index = rank).
         let total = raw_results.len().max(1);
         let results = raw_results
             .into_iter()
             .enumerate()
-            .map(|(i, text)| {
-                // Extract file path from the text if it was stored with a header,
-                // otherwise use "unknown" as the source path.
-                let path = "indexed_chunk".to_string();
+            .map(|(i, (text, metadata))| {
+                let path = serde_json::from_str::<serde_json::Value>(&metadata)
+                    .ok()
+                    .and_then(|v| v["file"].as_str().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "unknown".to_string());
+                // Score is proportional to rank — top result = 1.0
                 let score = 1.0 - (i as f32 / total as f32);
                 (path, text, score)
             })
             .collect();
 
         Ok(results)
+    }
+
+    /// Returns true if any documents have been indexed into this scanner's DB.
+    /// Used by the conductor to skip RAG search when no workspace is active.
+    pub fn is_indexed(&self) -> bool {
+        self.db.has_entries()
     }
 }
 

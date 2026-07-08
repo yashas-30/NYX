@@ -75,9 +75,8 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                       type="button"
                       onClick={async () => {
                         try {
-                          const modelIdParam = currentModelId ? `?modelId=${currentModelId}` : '';
-                          const res = await fetch(`/api/system${modelIdParam}`);
-                          const sys = await res.json();
+                          const { invoke } = await import('@tauri-apps/api/core');
+                          const sys = await invoke<any>('get_system_diagnostics', { modelId: currentModelId });
                           const ramGB = sys.totalmem / (1024 * 1024 * 1024);
                           const vramGB = (sys.vram || 0) / (1024 * 1024 * 1024);
 

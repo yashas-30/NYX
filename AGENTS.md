@@ -97,3 +97,4 @@ Whenever making ANY frontend design changes, creating new UI components, or impl
 3. `design-taste-frontend`
 
 Automatically assume these skills are active for the entire project folder. Do not generate basic or generic UI ("AI slop"); always strive for high-agency, premium, and motion-rich interfaces as dictated by these skills.
+

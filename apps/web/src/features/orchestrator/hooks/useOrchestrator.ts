@@ -225,7 +225,7 @@ class LocalLLMService {
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+const generateId = () => crypto.randomUUID();
 
 // ── Main Hook ─────────────────────────────────────────────────────────────────
 

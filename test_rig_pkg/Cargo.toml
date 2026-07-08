@@ -1,0 +1,9 @@
+[package]
+name = "test_rig_pkg"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rig-core = "0.4.0"
+serde = { version = "1.0.228", features = ["derive"] }
+tokio = { version = "1.52.3", features = ["full"] }

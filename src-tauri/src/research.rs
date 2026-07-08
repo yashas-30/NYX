@@ -206,47 +206,58 @@ pub async fn start_deep_research(
         let prog = on_progress.clone();
         let query = sq.query.clone();
         tasks.push(tokio::spawn(async move {
-            let _ = prog.send(json!({
-                "type": "progress",
-                "message": format!("Searching for: {}", query)
-            }));
-            
-            let urls = get_search_urls(&query).await;
-            let mut page_texts = vec![];
-            let mut page_sources: Vec<SourceEntry> = vec![];
-            
-            for url in urls {
-                let _ = prog.send(json!({
-                    "type": "progress",
-                    "message": format!("Reading: {}", url)
-                }));
-                let md = fetch_jina_markdown(&url).await;
-                if !md.is_empty() {
-                    // Extract title from first line of markdown (often starts with #)
-                    let title = md.lines()
-                        .find(|l| !l.trim().is_empty())
-                        .unwrap_or(&url)
-                        .trim_start_matches('#')
-                        .trim()
-                        .to_string();
-                    let snippet: String = md.chars().take(200).collect();
-                    page_texts.push(format!("Source: {}\n\n{}", url, md));
-                    page_sources.push(SourceEntry { url: url.clone(), title, snippet });
+            // Hard 20s timeout per sub-query so one slow/hung request
+            // doesn't block the entire pipeline.
+            let task_result = tokio::time::timeout(
+                std::time::Duration::from_secs(20),
+                async move {
+                    let _ = prog.send(json!({
+                        "type": "progress",
+                        "message": format!("Searching for: {}", query)
+                    }));
+
+                    let urls = get_search_urls(&query).await;
+                    let mut page_texts = vec![];
+                    let mut page_sources: Vec<SourceEntry> = vec![];
+
+                    for url in urls {
+                        let _ = prog.send(json!({
+                            "type": "progress",
+                            "message": format!("Reading: {}", url)
+                        }));
+                        let md = fetch_jina_markdown(&url).await;
+                        if !md.is_empty() {
+                            let title = md.lines()
+                                .find(|l| !l.trim().is_empty())
+                                .unwrap_or(&url)
+                                .trim_start_matches('#')
+                                .trim()
+                                .to_string();
+                            let snippet: String = md.chars().take(200).collect();
+                            page_texts.push(format!("Source: {}\n\n{}", url, md));
+                            page_sources.push(SourceEntry { url: url.clone(), title, snippet });
+                        }
+                    }
+                    (page_texts, page_sources)
                 }
-            }
-            (page_texts, page_sources)
+            ).await;
+
+            // On timeout return empty results rather than propagating an error.
+            task_result.unwrap_or_default()
         }));
+
     }
     
+    // Each sub-query runs in its own task with a hard 20-second timeout.
+    // If DuckDuckGo or Jina hangs, that task fails gracefully rather than
+    // stalling the entire pipeline for up to the reqwest 120s timeout.
     let results = join_all(tasks).await;
     let mut all_context = vec![];
     let mut all_sources: Vec<SourceEntry> = vec![];
     
-    for res in results {
-        if let Ok((texts, sources)) = res {
-            all_context.extend(texts);
-            all_sources.extend(sources);
-        }
+    for (texts, sources) in results.into_iter().flatten() {
+        all_context.extend(texts);
+        all_sources.extend(sources);
     }
 
     let _ = on_progress.send(json!({

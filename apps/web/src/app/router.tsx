@@ -10,9 +10,9 @@ import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 const ChatView = lazy(() => import('@src/views/ChatView'));
 const ModelRegistryView = lazy(() => import('@src/views/ModelRegistryView'));
 const SettingsView = lazy(() => import('@src/views/SettingsView'));
-const ModelComparisonView = lazy(() => import('@src/views/ModelComparisonView'));
 
 const MemoryView = lazy(() => import('@src/features/memory/MemoryView'));
+const ObservabilityView = lazy(() => import('@src/features/observability/ObservabilityView'));
 
 const LoadingFallback = () => (
   <div className="flex items-center justify-center h-full bg-background">
@@ -41,8 +41,8 @@ export interface ChatSessionHookResult {
 }
 
 interface AppRouterProps {
-  activeMode: 'chat' | 'registry' | 'settings' | 'compare' | 'memory';
-  setActiveMode: (mode: 'chat' | 'registry' | 'settings' | 'compare' | 'memory') => void;
+  activeMode: 'chat' | 'registry' | 'settings' | 'memory';
+  setActiveMode: (mode: 'chat' | 'registry' | 'settings' | 'memory') => void;
   apiKeys: Record<string, string>;
   chatSettings: ModelSettings;
   setChatSettings: (settings: ModelSettings) => void;
@@ -57,7 +57,6 @@ interface AppRouterProps {
   clearApiKeys: () => void;
   modelsState: { chat: string };
   setModelsState: React.Dispatch<React.SetStateAction<{ chat: string }>>;
-  lightningState: any;
   allModels: any[];
   onOpenLightning?: () => void;
 }
@@ -89,7 +88,6 @@ export function AppRouter({
   clearApiKeys,
   modelsState,
   setModelsState,
-  lightningState,
   allModels,
   onOpenLightning,
 }: AppRouterProps) {
@@ -110,14 +108,10 @@ export function AppRouter({
               sidebarOpen={sidebarOpen}
               onToggleSidebar={onToggleSidebar}
               activeMode="chat"
-              setActiveMode={setActiveMode as any}
+              setActiveMode={(mode: string) => setActiveMode(mode as any)}
               onOpenLightning={onOpenLightning}
               models={{ nyx: modelsState.chat }}
               setModel={(mid) => setModelsState((prev: any) => ({ ...prev, chat: mid }))}
-              lightningEnabled={lightningState.lightningEnabledChat}
-              lightningDirectives={lightningState.apoDirectives.chat}
-              logRollout={lightningState.logRollout}
-              submitReward={lightningState.submitReward}
             />
           </LazyRoute>
         }
@@ -133,7 +127,7 @@ export function AppRouter({
               apiKeys={apiKeys}
               providerStatuses={statuses}
               activeMode="registry"
-              setActiveMode={setActiveMode as any}
+              setActiveMode={(mode: string) => setActiveMode(mode as any)}
               sidebarOpen={sidebarOpen}
             />
           </LazyRoute>
@@ -148,25 +142,15 @@ export function AppRouter({
               updateApiKey={updateApiKey}
               clearApiKeys={clearApiKeys}
               activeMode="settings"
-              setActiveMode={setActiveMode as any}
+              setActiveMode={(mode: string) => setActiveMode(mode as any)}
               sidebarOpen={sidebarOpen}
             />
           </LazyRoute>
         }
       />
-      <Route
-        path="/compare"
-        element={
-          <LazyRoute name="ModelComparisonView">
-            <ModelComparisonView
-              sidebarOpen={sidebarOpen}
-              activeMode="compare"
-              setActiveMode={setActiveMode as any}
-            />
-          </LazyRoute>
-        }
-      />
+
       <Route path="/memory" element={<LazyRoute name="MemoryView"><MemoryView /></LazyRoute>} />
+      <Route path="/observability" element={<LazyRoute name="ObservabilityView"><ObservabilityView /></LazyRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

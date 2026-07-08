@@ -74,7 +74,6 @@ export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 // Model Specs schema and type
 export const ModelSpecsSchema = z.object({
   contextWindow: z.string(),
-  trainingData: z.string(),
   maxOutput: z.string(),
   modality: z.string(),
   parameters: z.string().optional(),

@@ -21,9 +21,9 @@ import { ChatSettings } from './ChatSettings';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useChatLogic } from '../hooks/useChatLogic';
 import { ArtifactCanvas } from '../../artifacts/components/ArtifactCanvas';
-import { ContextBar } from '@src/shared/components/ContextBar';
 import { MemoryPanel } from './MemoryPanel';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useModelStore } from '@src/core/stores/useModelStore';
 import { BranchingTreePanel } from './BranchingTreePanel';
 
 // ---------------------------------------------------------------------------
@@ -156,16 +156,20 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   }, [activeProjectId]);
 
   // --- Model resolution ---
-  const currentModelId = models['nyx'];
+  const cloudModelId = useNyxStore((s) => s.cloudModelId);
+  const localModelId = useNyxStore((s) => s.localModelId);
+  const currentModelId = cloudModelId || localModelId || models['nyx'];
+  const localLibraryModels = useModelStore((s) => s.localLibraryModels);
 
   const mergedModels = useMemo(() => {
     const seenIds = new Set<string>();
-    return allModels.filter((m) => {
+    const combined = [...allModels, ...localLibraryModels];
+    return combined.filter((m) => {
       if (seenIds.has(m.id)) return false;
       seenIds.add(m.id);
       return true;
     });
-  }, [allModels]);
+  }, [allModels, localLibraryModels]);
 
   const currentModel = useMemo(() => {
     if (!currentModelId) return null;
@@ -440,16 +444,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   );
 
   // --- Share chat ---
+  // NOTE: The legacy Node server share endpoint no longer exists. We generate a
+  // local deep-link URL directly from the active session ID stored in Tauri's
+  // SQLite DB — no round-trip to any backend needed.
   const handleShareChat = useCallback(async (): Promise<string> => {
     if (!chatSessions?.activeSid) throw new Error('No active session');
-    const res = await fetch(`/api/v1/conversations/${chatSessions.activeSid}/share`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!res.ok) throw new Error('Failed to share chat');
-    const data = await res.json();
-    // Return the full URL to the frontend route for shared chats
-    return `${window.location.origin}/share/${data.shareId}`;
+    return `${window.location.origin}/share/${chatSessions.activeSid}`;
   }, [chatSessions?.activeSid]);
 
   // --- Model selection switch with warnings ---
@@ -496,7 +496,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDraggingOver(false);
-      const droppedFiles = Array.from(e.dataTransfer.files);
+      const droppedFiles = Array.from(e.dataTransfer.files) as File[];
       if (droppedFiles.length > 0) {
         handleAttachFiles(droppedFiles);
       }
@@ -546,10 +546,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onTitleChange={async (title) => {
             if (chatSessions?.activeSid && title.trim()) {
               try {
-                await fetch(`/api/v1/sessions/${chatSessions.activeSid}`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ name: title.trim() }),
+                // Use native Tauri IPC — the dead Node /api/v1/sessions endpoint
+                // no longer exists. db_update_chat_session writes directly to SQLite.
+                await invoke('db_update_chat_session', {
+                  sessionId: chatSessions.activeSid,
+                  name: title.trim(),
                 });
               } catch {
                 // Non-fatal: title update failure doesn't break chat
@@ -621,9 +622,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           approveTool={approveTool}
           rejectTool={rejectTool}
         />
-
-        {/* CONTEXT BAR */}
-        <ContextBar used={metrics.contextTokens} limit={metrics.contextLimit} />
 
         {/* CHAT PROMPT INPUT */}
         <ChatPromptInput

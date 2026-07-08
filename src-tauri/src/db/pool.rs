@@ -24,7 +24,7 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
         .busy_timeout(Duration::from_millis(5000));
 
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+        .max_connections(10)
         .idle_timeout(Duration::from_secs(60))
         .connect_with(options)
         .await?;
@@ -88,8 +88,10 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
         CREATE TABLE IF NOT EXISTS swarm_context_pool (
             id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,
-            data TEXT NOT NULL,
-            created_at INTEGER,
+            agent_id TEXT NOT NULL,
+            task TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
             FOREIGN KEY (session_id) REFERENCES db_sessions(id) ON DELETE CASCADE
         );
 
@@ -100,6 +102,71 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
             embedding TEXT NOT NULL, -- JSON float array
             created_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS experience_ledger (
+            id TEXT PRIMARY KEY,
+            prompt TEXT NOT NULL,
+            failure_type TEXT NOT NULL,
+            assertion_error TEXT NOT NULL,
+            timestamp INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS swarm_cache (
+            id TEXT PRIMARY KEY,
+            prompt TEXT NOT NULL,
+            result TEXT NOT NULL,
+            embedding TEXT NOT NULL, -- JSON float array
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS chat_memory (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            embedding TEXT NOT NULL, -- JSON float array
+            created_at INTEGER NOT NULL
+        );
+
+        -- Phase 1: LLM Observability — trace every inference call
+        CREATE TABLE IF NOT EXISTS llm_traces (
+            id TEXT PRIMARY KEY,
+            session_id TEXT,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            prompt_tokens INTEGER NOT NULL DEFAULT 0,
+            completion_tokens INTEGER NOT NULL DEFAULT 0,
+            latency_ms INTEGER NOT NULL DEFAULT 0,
+            cached INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            agent_node_id TEXT,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_llm_traces_session ON llm_traces(session_id);
+        CREATE INDEX IF NOT EXISTS idx_llm_traces_model ON llm_traces(model);
+        CREATE INDEX IF NOT EXISTS idx_llm_traces_created ON llm_traces(created_at);
+
+        -- Phase 2: Multi-tier memory — episodic session summaries
+        CREATE TABLE IF NOT EXISTS episodic_memories (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            embedding TEXT NOT NULL,
+            key_topics TEXT NOT NULL DEFAULT '[]',
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_episodic_session ON episodic_memories(session_id);
+
+        -- Phase 2: Multi-tier memory — entity knowledge graph
+        CREATE TABLE IF NOT EXISTS memory_entities (
+            id TEXT PRIMARY KEY,
+            entity_name TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            description TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 1.0,
+            last_seen INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_name_type ON memory_entities(entity_name, entity_type);
     "#;
 
     sqlx::query(schema).execute(&pool).await?;

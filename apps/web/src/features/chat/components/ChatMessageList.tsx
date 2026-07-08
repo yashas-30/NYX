@@ -15,8 +15,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { CodeBlock } from '../../../components/chat/CodeBlock';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { toast } from '@src/shared/components/ui/sonner';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
@@ -158,11 +157,22 @@ const ToolCallCard: React.FC<{
           >
             <div className="pl-4 border-l border-border/40 ml-2 py-1">
               <div className="text-[10px] text-muted-foreground/80 font-mono mb-1 uppercase tracking-wider">
-                {tool.function.name}
+                {tool.function.name} Inputs
               </div>
               <pre className="text-[11px] font-mono text-foreground/80 bg-muted/20 rounded-md p-3 overflow-x-auto border border-border/30">
                 {JSON.stringify(JSON.parse(tool.function.arguments || '{}'), null, 2)}
               </pre>
+              
+              {tool.result && (
+                  <div className="mt-3">
+                      <div className="text-[10px] text-muted-foreground/80 font-mono mb-1 uppercase tracking-wider">
+                        Result
+                      </div>
+                      <pre className="text-[11px] font-mono text-foreground/80 bg-muted/20 rounded-md p-3 overflow-x-auto border border-border/30 max-h-[300px] overflow-y-auto">
+                        {tool.result}
+                      </pre>
+                  </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -255,80 +265,6 @@ const ContextIngestionCard: React.FC<{
 ContextIngestionCard.displayName = 'ContextIngestionCard';
 
 // ---------------------------------------------------------------------------
-// Code Block with Syntax Highlighting
-// ---------------------------------------------------------------------------
-
-const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [code]);
-
-  const lang = language || 'text';
-
-  return (
-    <div className="relative group/code my-4 rounded-md border border-border bg-muted overflow-hidden text-left">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-muted/50 border-b border-border">
-        <div className="flex items-center gap-2">
-          <Terminal size={11} className="text-[#58a6ff]" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-            {lang}
-          </span>
-        </div>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card border border-border text-[9px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground hover:border-border transition-all cursor-pointer"
-        >
-          {copied ? (
-            <>
-              <Check size={10} className="text-emerald-400" />
-              <span className="text-emerald-400">Copied</span>
-            </>
-          ) : (
-            <>
-              <Copy size={10} />
-              <span>Copy</span>
-            </>
-          )}
-        </motion.button>
-      </div>
-
-      {/* Syntax Highlighted Code */}
-      <div className="overflow-x-auto">
-        <SyntaxHighlighter
-          language={lang === 'text' ? 'plaintext' : lang}
-          style={vscDarkPlus}
-          customStyle={{
-            margin: 0,
-            padding: '1.25rem',
-            background: 'transparent',
-            fontSize: '12px',
-            lineHeight: 1.6,
-          }}
-          showLineNumbers
-          lineNumberStyle={{
-            color: '#484f58',
-            fontSize: '11px',
-            paddingRight: '1rem',
-            minWidth: '2.5rem',
-          }}
-        >
-          {code}
-        </SyntaxHighlighter>
-      </div>
-    </div>
-  );
-});
-CodeBlock.displayName = 'CodeBlock';
-
-// ---------------------------------------------------------------------------
 // Image Attachment Display
 // ---------------------------------------------------------------------------
 
@@ -359,7 +295,7 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
         <img
           src={
             src.startsWith('/uploads/') || src.startsWith('/api/')
-              ? `${(window as any).__NYX_BACKEND_URL__ || ''}${src}`
+              ? `${(window as Record<string, any>).__NYX_BACKEND_URL__ || ''}${src}`
               : src
           }
           alt={alt || 'Attached image'}
@@ -453,14 +389,8 @@ const MemoizedMarkdownBlock: React.FC<{
 
   const components = useMemo(
     () => ({
-      code({ className, children, ...props }: any) {
+      code({ node, inline, className, children, ...props }: any) {
         const match = /language-(\w+)/.exec(className || '');
-        const code = String(children).replace(/\n$/, '');
-
-        if (match || code.includes('\n')) {
-          return <CodeBlock language={match?.[1] || 'text'} code={code} />;
-        }
-
         return (
           <code
             className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-primary text-[11px] font-mono font-semibold"
@@ -879,9 +809,28 @@ const MessageBubble = React.memo<MessageBubbleProps>(
     const isUser = msg.role === 'user';
     const [isExpanded, setIsExpanded] = useState(false);
     const msgId = `${msg.timestamp}-${index}`;
+    
+    // Process <think> tags natively from content if reasoning is empty or merged
+    let parsedReasoning = msg.reasoning || '';
+    let parsedContent = msg.content || '';
+    
+    if (parsedContent.includes('<think>')) {
+      const match = parsedContent.match(/<think>([\s\S]*?)<\/think>/);
+      if (match) {
+        parsedReasoning = match[1];
+        parsedContent = parsedContent.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+      } else if (msg.status === 'loading') {
+        const startMatch = parsedContent.match(/<think>([\s\S]*)/);
+        if (startMatch) {
+          parsedReasoning = startMatch[1];
+          parsedContent = parsedContent.substring(0, startMatch.index).trim();
+        }
+      }
+    }
+
     // Show "Thinking..." spinner ONLY when streaming has started but no content or reasoning yet
     const isThinking =
-      isStreaming && !msg.content && !msg.reasoning &&
+      isStreaming && !parsedContent && !parsedReasoning &&
       (!msg.toolCalls || msg.toolCalls.length === 0) &&
       (msg.status === 'loading' || msg.status === undefined);
       
@@ -1045,7 +994,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                 )}
 
                 {/* Loading / Thinking state (during reasoning or initial Formulation) */}
-                {isThinking && !msg.reasoning && (
+                {isThinking && !parsedReasoning && (
                   <div className="flex items-center gap-2.5 py-1 select-none h-14">
                     <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.15em] animate-pulse">
                       Starting reasoning...
@@ -1054,16 +1003,16 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                 )}
 
                 {/* Content rendering */}
-                {(msg.content || (msg.toolCalls && msg.toolCalls.length > 0) || msg.reasoning) && (
+                {(parsedContent || (msg.toolCalls && msg.toolCalls.length > 0) || parsedReasoning) && (
                   <div className="pl-0">
                     {/* Reasoning block */}
-                    {msg.reasoning && (
+                    {parsedReasoning && (
                       <ThinkingBlock 
-                        content={msg.reasoning} 
-                        responseContent={msg.content}
+                        content={parsedReasoning} 
+                        responseContent={parsedContent}
                         isComplete={
                           (!isStreaming && msg.status !== 'loading') || 
-                          (!!msg.content && msg.content.length > 0) || 
+                          (!!parsedContent && parsedContent.length > 0) || 
                           (!!msg.toolCalls && msg.toolCalls.length > 0)
                         } 
                       />
@@ -1095,7 +1044,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                                 <ToolCallCard
                                   key={t.tool.id || t.index}
                                   tool={t.tool}
-                                  status={t.status as any}
+                                  status={t.status as 'pending' | 'running' | 'success' | 'error'}
                                 />
                               ))}
                             </>
@@ -1105,10 +1054,10 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     )}
 
                     {/* Main content */}
-                    {msg.content && msg.status !== 'error' && (
+                    {parsedContent && msg.status !== 'error' && (
                       <MarkdownContent
-                        content={msg.content}
-                        blocks={(msg as any).blocks}
+                        content={parsedContent}
+                        blocks={(msg as Record<string, any>).blocks}
                         isStreaming={isStreaming && isLast}
                         citations={msg.citations}
                       />
@@ -1118,11 +1067,11 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     {(() => {
                       const completeArtifacts = msg.artifacts || [];
                       let streamingArtifacts: any[] = [];
-                      if (isStreaming && isLast && msg.content) {
+                      if (isStreaming && isLast && parsedContent) {
                         const codeBlockRegex = /```(\w*)\n([\s\S]*?)(?:```|$)/g;
                         let match;
-                        while ((match = codeBlockRegex.exec(msg.content)) !== null) {
-                          const isClosed = msg.content.substring(match.index).includes('```', match[1].length + 3);
+                        while ((match = codeBlockRegex.exec(parsedContent)) !== null) {
+                          const isClosed = parsedContent.substring(match.index).includes('```', match[1].length + 3);
                           if (!isClosed) {
                             const lang = match[1]?.toLowerCase();
                             const isArtifactLang = ['html', 'htm', 'react', 'tsx', 'jsx', 'ts', 'js', 'typescript', 'javascript', 'python', 'json', 'csv', 'mermaid', 'svg', 'markdown', 'md'].includes(lang);
@@ -1207,7 +1156,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     )}
 
                     {/* Tool Approval UI Gate */}
-                    {(msg as any).pendingApproval && (
+                    {(msg as Record<string, any>).pendingApproval && (
                       <motion.div
                         initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -1228,21 +1177,21 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                             <div className="mt-3 bg-muted/40 border border-border/40 rounded-lg p-3 overflow-x-auto">
                               <div className="text-[11px] font-mono text-foreground font-bold mb-1.5 flex items-center gap-1.5">
                                 <Wrench size={10} className="text-muted-foreground" />
-                                <span>{(msg as any).pendingApproval.tool}</span>
+                                <span>{(msg as Record<string, any>).pendingApproval.tool}</span>
                               </div>
                               <pre className="text-[10.5px] font-mono text-muted-foreground whitespace-pre-wrap">
-                                {JSON.stringify((msg as any).pendingApproval.input || {}, null, 2)}
+                                {JSON.stringify((msg as Record<string, any>).pendingApproval.input || {}, null, 2)}
                               </pre>
                             </div>
                             <div className="flex items-center gap-3 mt-4">
                               <button
-                                onClick={() => rejectTool?.(index, (msg as any).pendingApproval.approvalId)}
+                                onClick={() => rejectTool?.(index, (msg as Record<string, any>).pendingApproval.approvalId)}
                                 className="px-3.5 py-1.5 rounded-md border border-red-500/30 text-red-500 bg-red-500/5 hover:bg-red-500/10 text-xs font-semibold cursor-pointer transition-colors"
                               >
                                 Reject Action
                               </button>
                               <button
-                                onClick={() => approveTool?.(index, (msg as any).pendingApproval.approvalId)}
+                                onClick={() => approveTool?.(index, (msg as Record<string, any>).pendingApproval.approvalId)}
                                 className="px-4 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer transition-colors shadow-sm"
                               >
                                 Approve & Execute
@@ -1258,7 +1207,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       <>
                         <MessageActions
                           index={index}
-                          content={msg.content || ''}
+                          content={parsedContent || ''}
                           onCopy={onCopy}
                           copiedId={copiedId}
                           msgId={msgId}
@@ -1276,8 +1225,8 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                 )}
 
                 {/* Empty fallback */}
-                {!msg.content &&
-                  !msg.reasoning &&
+                {!parsedContent &&
+                  !parsedReasoning &&
                   (!msg.toolCalls || msg.toolCalls.length === 0) &&
                   msg.status !== 'loading' &&
                   msg.status !== 'error' && (

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
 type Theme = 'dark';
 
@@ -25,8 +25,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('nyx-theme', 'dark');
   }, []);
 
+  const value = React.useMemo(() => ({ theme, setTheme, resolvedTheme: 'dark' as const }), [theme]);
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme: 'dark' }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );

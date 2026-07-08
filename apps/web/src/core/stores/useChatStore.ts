@@ -29,7 +29,7 @@ function isTauri(): boolean {
 
 function generateId(agentType?: 'chat' | 'coder'): string {
   const prefix = agentType ? `${agentType}-session` : 'session';
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 function deriveTitleFromMessages(messages: ChatMessage[]): string {

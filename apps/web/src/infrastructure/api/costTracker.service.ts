@@ -1,5 +1,5 @@
 import localforage from 'localforage';
-import { getEncoding } from 'js-tiktoken';
+import { countTokens } from '@src/features/ai/services/ai.service';
 
 export interface ModelPricing {
   inputPer1M: number;
@@ -12,7 +12,7 @@ export const PRICING_MATRIX: Record<string, ModelPricing> = {
 
   'gemini/gemini-2.5-flash': { inputPer1M: 0.075, outputPer1M: 0.3 },
   'gemini/gemma-4-31b-it': { inputPer1M: 0.1, outputPer1M: 0.2 },
-  'gemini/gemma-4-26b-it': { inputPer1M: 0.1, outputPer1M: 0.2 },
+  'gemini/gemma-4-26b-a4b-it': { inputPer1M: 0.1, outputPer1M: 0.2 },
 
 };
 
@@ -31,10 +31,8 @@ const usageStore = localforage.createInstance({
 });
 
 export class CostTrackerService {
-  private static encoding = getEncoding('cl100k_base');
-
   static estimateTokens(text: string): number {
-    return this.encoding.encode(text).length;
+    return countTokens(text);
   }
 
   static estimateCost(model: string, inputTokens: number, outputTokens: number = 0): number {
@@ -60,7 +58,7 @@ export class CostTrackerService {
       cost,
       timestamp: Date.now(),
     };
-    const key = `usage_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const key = `usage_${crypto.randomUUID()}`;
     await usageStore.setItem(key, record);
   }
 

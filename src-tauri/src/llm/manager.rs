@@ -15,84 +15,87 @@ impl LlamaManager {
         }
     }
 
-    pub async fn start(&self, server_path: &PathBuf, model_path: &PathBuf) -> Result<(), String> {
-        let mut process_guard = self.process.lock().await;
+    /// Original entry point — delegates to start_with_ngl with default -ngl 999.
+    /// Kept for any internal callers that don't go through the VRAM scheduler.
+    pub async fn start(&self, server_path: &PathBuf, model_path: &PathBuf, context_size: u32) -> Result<(), String> {
+        self.start_with_ngl(server_path, model_path, context_size, None).await
+    }
 
+    /// Start llama-server with an explicit ngl override from the VRAM scheduler.
+    /// If `ngl_override` is None, falls back to `-ngl 999` (all layers on GPU).
+    pub async fn start_with_ngl(&self, server_path: &PathBuf, model_path: &PathBuf, context_size: u32, ngl_override: Option<u32>) -> Result<(), String> {
+        let ngl_value = ngl_override.unwrap_or(999).to_string();
+
+        let mut process_guard = self.process.lock().await;
         if let Some(mut child) = process_guard.take() {
             info!("Stopping existing Llama Server before starting a new one...");
             let _ = child.kill().await;
         }
 
-        // Clean up any zombie processes from previous crashes
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/T", "/IM", "llama-server.exe"])
-            .output();
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/T", "/IM", "llama-server-vulkan.exe"])
-            .output();
+        let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/IM", "llama-server.exe"]).output();
+        let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/IM", "llama-server-vulkan.exe"]).output();
 
-        info!("Starting Llama Server with model: {}", model_path.display());
+        let cpu_threads = std::thread::available_parallelism()
+            .map(|n| (n.get() / 2).max(1).min(16))
+            .unwrap_or(4)
+            .to_string();
+
+        info!("Starting Llama Server: model={} ngl={} threads={}", model_path.display(), ngl_value, cpu_threads);
         let mut child = Command::new(server_path)
-            .arg("-m")
-            .arg(model_path)
-            .arg("-ngl")
-            .arg("999") // Maximize GPU layer offloading
-            .arg("--port")
-            .arg("8080")
-            .arg("--ctx-size")
-            .arg("8192")
-            .arg("--cache-type-k")
-            .arg("q8_0")
-            .arg("--cache-type-v")
-            .arg("q8_0")
+            .arg("-m").arg(model_path)
+            .arg("-ngl").arg(&ngl_value)
+            .arg("--ctx-size").arg(context_size.to_string())
+            .arg("--batch-size").arg("2048")
+            .arg("--ubatch-size").arg("512")
             .arg("--cache-prompt")
-            .arg("--batch-size")
-            .arg("512")
-            .arg("--ubatch-size")
-            .arg("512")
-            .arg("-t")
-            .arg("8") // physical core count
-            .arg("--parallel")
-            .arg("1")
-            .arg("--keep")
-            .arg("-1")
-            // Use the GGUF-embedded Jinja chat template (required for correct Qwen3 ChatML formatting).
-            // Without this flag llama.cpp falls back to a generic template that misformats multi-turn
-            // conversations, causing repetition and role-token leakage in the output.
-            .arg("--jinja")
-            // Parse <think>...</think> tokens as structured reasoning output (DeepSeek/Qwen3 format).
-            // Without this the model emits thinking tokens as plain text — the frontend strips them
-            // from the visible response but the ThinkingBlock UI is never populated.
-            .arg("--reasoning-format")
-            .arg("deepseek")
+            .arg("--cache-type-k").arg("q8_0")
+            .arg("--cache-type-v").arg("q8_0")
+            .arg("-t").arg(&cpu_threads)
+            .arg("--port").arg("8080")
+            .arg("--host").arg("127.0.0.1")
+            .arg("--keep").arg("-1")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
             .map_err(|e| format!("Failed to start llama-server: {}", e))?;
 
-        // Give it a brief moment to see if it crashes immediately
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         if let Ok(Some(status)) = child.try_wait() {
-            return Err(format!("Llama server crashed immediately on startup (Exit {}). The model architecture might not be supported or is corrupted.", status));
+            return Err(format!("Llama server crashed immediately (Exit {}). Check model compatibility.", status));
         }
 
-        *process_guard = Some(child);
+        info!("Waiting for Llama Server to be ready (ngl={})...", ngl_value);
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-        // Silent warmup request to eliminate JIT/alloc latency on the first real request
-        tokio::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-            let _ = reqwest::Client::new()
-                .post("http://127.0.0.1:8080/v1/completions")
-                .json(&serde_json::json!({
-                    "model": "warmup",
-                    "prompt": "Hi",
-                    "max_tokens": 1,
-                    "stream": false
-                }))
-                .send()
-                .await;
+        let mut ready = false;
+        for _ in 0..60 {
+            if let Ok(res) = client.get("http://127.0.0.1:8080/v1/models").send().await {
+                if res.status().is_success() { ready = true; break; }
+            }
+            if let Ok(Some(status)) = child.try_wait() {
+                return Err(format!("Llama server crashed while loading model (Exit {}).", status));
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+
+        if !ready {
+            let _ = child.kill().await;
+            return Err("Llama server failed to become ready within 120 seconds.".to_string());
+        }
+
+        info!("Warming up Llama Server KV cache (ngl={})...", ngl_value);
+        let warmup_body = serde_json::json!({
+            "messages": [{"role": "system", "content": "You are NYX."}, {"role": "user", "content": "hi"}],
+            "max_tokens": 1, "stream": false, "keep_alive": -1
         });
+        let warmup_client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(60)).build().unwrap_or_default();
+        let _ = warmup_client.post("http://127.0.0.1:8080/v1/chat/completions").json(&warmup_body).send().await;
+        info!("Llama Server ready. ngl={}", ngl_value);
 
+        *process_guard = Some(child);
         Ok(())
     }
 
@@ -101,6 +104,17 @@ impl LlamaManager {
         if let Some(mut child) = process_guard.take() {
             info!("Stopping Llama Server...");
             let _ = child.kill().await;
+        }
+
+        // Ensure all zombie instances are terminated so files are unlocked
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/IM", "llama-server.exe"])
+                .output();
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/IM", "llama-server-vulkan.exe"])
+                .output();
         }
     }
 }

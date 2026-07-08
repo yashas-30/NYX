@@ -66,8 +66,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const fetchCacheStats = async () => {
     try {
       // In native Tauri mode, cache stats are either not applicable or handled differently.
-      // For now, stub the stats to 0.
-      setCacheStats({ itemCount: 0, totalSizeBytes: 0, hits: 0, misses: 0 });
+      // Since the get_cache_stats endpoint doesn't exist yet in the Rust backend,
+      // we set this to null instead of faking zeros.
+      setCacheStats(null as any);
     } catch (err: any) {
       console.error('Failed to fetch cache stats:', err);
     }

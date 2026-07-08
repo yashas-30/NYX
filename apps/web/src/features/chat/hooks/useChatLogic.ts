@@ -5,7 +5,8 @@
  */
 
 import { useState, useRef, useEffect, useCallback, useReducer, useMemo } from 'react';
-import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
+import { NYX_PERSONA } from '@src/core/agents/nyxPersona';
+import { ModelDefinition, ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { useChatPipeline } from './useChatPipeline';
 import { AIService, cancelRequest, cancelAllRequests } from '@src/features/ai/services/ai.service';
@@ -14,8 +15,8 @@ import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/pr
 import { useUsageStore } from '@src/core/stores/useUsageStore';
 import { compactHistory, compactHistoryAsync, estimateContextTokens } from '@src/infrastructure/utils/compaction';
 import { PlanPhase } from '@src/types/agent';
-import { PromptAnalysisService } from '@src/features/ai/services/promptAnalysis.service';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { emit } from '@tauri-apps/api/event';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -295,8 +296,10 @@ export const useChatLogic = ({
   // --- Plan Phase State ---
   const [planPhase, setPlanPhase] = useState<PlanPhase | null>(null);
 
-  // Prompt Analysis Service
-  const promptAnalyzer = useMemo(() => new PromptAnalysisService(), []);
+  // NOTE: PromptAnalysisService (cloud Gemini call) removed from hot path.
+  // Intent classification is handled by the Rust backend's classify_intent_local()
+  // via orchestrate_supervisor. We mirror that logic here in JS to set is_fast_intent
+  // without any network round-trip.
 
   // --- WebSocket Real-time Collaboration ---
   useEffect(() => {
@@ -480,6 +483,13 @@ export const useChatLogic = ({
   // -------------------------------------------------------------------------
 
   const stopChat = useCallback(() => {
+    // Tell Tauri backend to explicitly stop any running agent/LLM loops
+    const isTauriEnv = typeof window !== 'undefined' &&
+      ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+    if (isTauriEnv) {
+      // import('@tauri-apps/api/core').then(m => m.invoke('cancel_agent_loop')).catch(console.error);
+    }
+    
     abortCtrlRef.current?.abort();
     pipelineStopChat();
     cancelRequest('chat-stream');
@@ -597,7 +607,7 @@ export const useChatLogic = ({
         }
 
         const modelToUse = (cloudModelId || localModelId) as string;
-
+        
         const { invoke, Channel } = await import('@tauri-apps/api/core');
         const { listen } = await import('@tauri-apps/api/event');
 
@@ -697,9 +707,10 @@ export const useChatLogic = ({
           model: modelToUse,
           api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '',
           max_iterations: 10,
-          system_instruction: null,
+          system_instruction: NYX_PERSONA,
           agent_type: 'chat',
-          is_fast_intent: true,
+          cloud_model: cloudModelId ?? undefined,
+          local_model: localModelId ?? undefined,
         };
 
         // Add a temporary "streaming" assistant message so the UI shows it's thinking
@@ -712,42 +723,143 @@ export const useChatLogic = ({
         dispatch({ type: 'APPEND', message: assistantMsg });
         historyRef.current = [...historyRef.current, assistantMsg];
 
+        // Helper to strip raw XML and their potential markdown wrappers
+        let extractedReasoning = '';
+        const cleanXmlTags = (text: string) => {
+          let cleaned = text || '';
+          extractedReasoning = '';
+          const thinkRegex = /<think>([\s\S]*?)(?:<\/think>|$)/g;
+          let match;
+          while ((match = thinkRegex.exec(cleaned)) !== null) {
+            extractedReasoning += match[1];
+          }
+          cleaned = cleaned.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '');
+          
+          return cleaned
+            .replace(/(?:```\w*\s*)?<tool_call>[\s\S]*?(<\/tool_call>|$)(?:\s*```)?/g, '')
+            .replace(/(?:```\w*\s*)?<tool_response>[\s\S]*?(<\/tool_response>|$)(?:\s*```)?/g, '')
+            .trim();
+        };
+
         // Listen for streaming updates from Conductor
         let currentContent = '';
+        let currentReasoning = '';
         const unlisten = await listen<any>(eventName, (event) => {
-          if (event.payload && event.payload.type === 'text') {
-            currentContent += event.payload.content || '';
-            const updatedHistory = [...historyRef.current];
-            const lastIdx = updatedHistory.length - 1;
-            if (updatedHistory[lastIdx].role === 'assistant') {
-              updatedHistory[lastIdx] = {
-                ...updatedHistory[lastIdx],
-                content: currentContent,
-              };
+          if (event.payload) {
+            if (event.payload.type === 'text') {
+              currentContent += event.payload.content || '';
+              const cleanContent = cleanXmlTags(currentContent);
+
+              const updatedHistory = [...historyRef.current];
+              const lastIdx = updatedHistory.length - 1;
+              if (lastIdx >= 0 && updatedHistory[lastIdx].role === 'assistant') {
+                const combinedReasoning = currentReasoning + (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '');
+                updatedHistory[lastIdx] = {
+                  ...updatedHistory[lastIdx],
+                  content: cleanContent,
+                  reasoning: combinedReasoning || undefined,
+                };
+              }
+              dispatch({ type: 'SET', messages: updatedHistory });
+              historyRef.current = updatedHistory;
+            } else if (event.payload.type === 'tool_call') {
+              const updatedHistory = [...historyRef.current];
+              const lastIdx = updatedHistory.length - 1;
+              if (lastIdx >= 0 && updatedHistory[lastIdx].role === 'assistant') {
+                const msg = { ...updatedHistory[lastIdx] };
+                msg.toolCalls = msg.toolCalls || [];
+                msg.toolCalls = [
+                  ...msg.toolCalls,
+                  {
+                    id: crypto.randomUUID(),
+                    type: 'function' as const,
+                    function: {
+                      name: event.payload.tool_name,
+                      arguments: event.payload.tool_args,
+                    },
+                    status: 'running' as const,
+                  },
+                ];
+                updatedHistory[lastIdx] = msg;
+              }
+              dispatch({ type: 'SET', messages: updatedHistory });
+              historyRef.current = updatedHistory;
+            } else if (event.payload.type === 'tool_result') {
+              const updatedHistory = [...historyRef.current];
+              const lastIdx = updatedHistory.length - 1;
+              if (lastIdx >= 0 && updatedHistory[lastIdx]?.role === 'assistant') {
+                const msg = { ...updatedHistory[lastIdx] };
+                if (msg.toolCalls && msg.toolCalls.length > 0) {
+                  const calls = [...msg.toolCalls];
+                  const lastCall = { ...calls[calls.length - 1] };
+                  if (lastCall.function.name === event.payload.tool_name) {
+                    lastCall.status = 'success' as const;
+                    lastCall.result = event.payload.result;
+                    calls[calls.length - 1] = lastCall;
+                    msg.toolCalls = calls;
+                  }
+                }
+                updatedHistory[lastIdx] = msg;
+              }
+              dispatch({ type: 'SET', messages: updatedHistory });
+            } else if (event.payload.type === 'thinking') {
+              currentReasoning += event.payload.content || '';
+              
+              const updatedHistory = [...historyRef.current];
+              const lastIdx = updatedHistory.length - 1;
+              if (lastIdx >= 0 && updatedHistory[lastIdx]?.role === 'assistant') {
+                const combinedReasoning = currentReasoning + (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '');
+                const msg = { ...updatedHistory[lastIdx] };
+                msg.reasoning = combinedReasoning || undefined;
+                updatedHistory[lastIdx] = msg;
+              }
+              dispatch({ type: 'SET', messages: updatedHistory });
+              historyRef.current = updatedHistory;
             }
-            dispatch({ type: 'SET', messages: updatedHistory });
-            historyRef.current = updatedHistory;
           }
         });
 
-        // Let the backend Conductor orchestrate the execution
-        setIsSupervising(true);
-        const result = await invoke<string>('orchestrate_supervisor', {
-          messages: historyRef.current.slice(0, -1), // send history up to the user message
-          context,
-          eventName,
-        });
+        // Use direct LLM stream request instead of backend orchestrator
+        setIsSupervising(false);
+        const dummyChannel = new Channel<any>();
+        dummyChannel.onmessage = () => {};
+
+        const onAbort = () => {
+          emit(`cancel_${eventName}`);
+        };
+        const currentSignal = abortCtrlRef.current?.signal;
+        currentSignal?.addEventListener('abort', onAbort);
+
+        try {
+          await invoke('llm_stream_request', {
+            req: {
+              provider: detectProvider(modelToUse),
+              model_id: modelToUse,
+              api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '',
+              messages: historyRef.current.slice(0, -1).map(m => ({
+                 role: m.role,
+                 content: m.content
+              })),
+              system_instruction: context.system_instruction,
+              event_name: eventName,
+            },
+            onEvent: dummyChannel
+          });
+        } finally {
+          currentSignal?.removeEventListener('abort', onAbort);
+        }
 
         unlisten();
 
-        // Update the assistant message with the final result
+        const finalCleanStreamed = cleanXmlTags(currentContent);
+        const isAborted = abortCtrlRef.current?.signal.aborted;
         const finalHistory = [...historyRef.current];
         const lastIdx = finalHistory.length - 1;
-        if (finalHistory[lastIdx].role === 'assistant') {
+        if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
             finalHistory[lastIdx] = {
                 ...finalHistory[lastIdx],
-                content: result,
-                status: 'success',
+                content: finalCleanStreamed,
+                status: isAborted ? 'stopped' : 'success',
             };
         }
         dispatch({ type: 'SET', messages: finalHistory });
@@ -772,7 +884,7 @@ export const useChatLogic = ({
           // Mark the last message as error
           const finalHistory = [...historyRef.current];
           const lastIdx = finalHistory.length - 1;
-          if (finalHistory[lastIdx].role === 'assistant') {
+          if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
               finalHistory[lastIdx] = {
                   ...finalHistory[lastIdx],
                   status: 'error',

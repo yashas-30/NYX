@@ -57,7 +57,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log(`[WS${namespace ? `:${namespace}` : ''}] Connected`);
       setIsConnected(true);
     });
 
@@ -66,18 +65,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       setIsConnected(false);
     });
 
-    socket.on('disconnect', (reason) => {
-      console.log(`[WS${namespace ? `:${namespace}` : ''}] Disconnected:`, reason);
+    socket.on('disconnect', () => {
       setIsConnected(false);
     });
 
-    socket.on('reconnect', (attemptNumber) => {
-      console.log(`[WS${namespace ? `:${namespace}` : ''}] Reconnected after ${attemptNumber} attempts`);
+    socket.on('reconnect', () => {
       setIsConnected(true);
     });
 
-    socket.on('reconnect_attempt', (attemptNumber) => {
-      console.log(`[WS${namespace ? `:${namespace}` : ''}] Reconnection attempt ${attemptNumber}`);
+    socket.on('reconnect_attempt', () => {
+      // intentionally empty
     });
 
     socket.connect();

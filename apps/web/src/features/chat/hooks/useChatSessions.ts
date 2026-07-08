@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { ChatMessage } from '@nyx/shared/types';
 export type ChatSession = any;
 
@@ -22,11 +23,8 @@ export function useChatSessions(): UseChatSessionsReturn {
   const fetchSessions = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/v1/sessions');
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data.sessions || []);
-      }
+      const data = await invoke<{ sessions: ChatSession[] }>('db_get_all_chat_sessions');
+      setSessions(data.sessions || []);
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
     } finally {
@@ -41,18 +39,11 @@ export function useChatSessions(): UseChatSessionsReturn {
   const createSession = useCallback(async (messages: ChatMessage[], modelId?: string) => {
     const name = messages[0]?.content.slice(0, 50) || 'New Chat';
     try {
-      const res = await fetch('/api/v1/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, messages, modelId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.session) {
-          setSessions((prev) => [data.session, ...prev]);
-          setActiveSid(data.session.id);
-          return data.session.id;
-        }
+      const session = await invoke<{ session: ChatSession }>('db_save_chat_session', { name, messages, modelId });
+      if (session?.session) {
+        setSessions((prev) => [session.session, ...prev]);
+        setActiveSid(session.session.id);
+        return session.session.id;
       }
     } catch (error) {
       console.error('Failed to create session:', error);
@@ -62,16 +53,10 @@ export function useChatSessions(): UseChatSessionsReturn {
 
   const updateSession = useCallback(async (sessionId: string, messages: ChatMessage[]) => {
     try {
-      const res = await fetch(`/api/v1/sessions/${sessionId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages }),
-      });
-      if (res.ok) {
-        setSessions((prev) =>
-          prev.map((s) => (s.id === sessionId ? { ...s, updatedAt: new Date().toISOString() } : s))
-        );
-      }
+      await invoke('db_save_chat_session', { sessionId, messages });
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, updatedAt: new Date().toISOString() } : s))
+      );
     } catch (error) {
       console.error('Failed to update session:', error);
     }
@@ -79,14 +64,10 @@ export function useChatSessions(): UseChatSessionsReturn {
 
   const deleteSession = useCallback(async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/v1/sessions/${sessionId}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-        if (activeSid === sessionId) {
-          setActiveSid(null);
-        }
+      await invoke('db_delete_chat_session', { sessionId });
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (activeSid === sessionId) {
+        setActiveSid(null);
       }
     } catch (error) {
       console.error('Failed to delete session:', error);

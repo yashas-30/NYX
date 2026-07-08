@@ -63,11 +63,17 @@ function exportToHTML(messages: ChatMessage[]): Blob {
 }
 
 async function exportToPDF(messages: ChatMessage[]): Promise<Blob> {
-  // Use puppeteer in server or jsPDF in client
-  const response = await fetch('/api/export/pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages })
-  });
-  return response.blob();
+  const { invoke } = await import('@tauri-apps/api/core');
+  try {
+    const base64: string = await invoke('generate_pdf', { messages });
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: 'application/pdf' });
+  } catch (error) {
+    throw new Error('Failed to generate PDF via Tauri backend');
+  }
 }

@@ -1,7 +1,7 @@
 /**
  * @file src/infrastructure/api/usageClient.ts
  * @description Production-grade quota/usage client with caching,
- *   rate limit parsing, batch fetching, and Claude/Kimi-parity features.
+ *   rate limit parsing, batch fetching, and provider-specific parsers.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -12,12 +12,15 @@ import { invoke } from '@tauri-apps/api/core';
 
 export interface QuotaResult {
   status: 'ok' | 'error' | 'unlimited' | 'unknown';
-  total: number;
-  used: number;
-  remaining: number;
-  percentUsed: number;
+  /**
+   * null when the provider does not expose quota information (status === 'unknown').
+   */
+  total: number | null;
+  used: number | null;
+  remaining: number | null;
+  percentUsed: number | null;
 
-  // Provider-specific
+  // Provider-specific cost tracking
   totalUSD?: number;
   usedUSD?: number;
   remainingUSD?: number;
@@ -119,7 +122,6 @@ interface ProviderParser {
 const PROVIDER_PARSERS: Record<string, ProviderParser> = {
   gemini: {
     parse: (data, headers) => {
-      // Gemini has generous free tier, but we can check if key is valid
       const isValid = data.status === 'ok' || data.valid === true;
 
       if (!isValid) {
@@ -136,13 +138,15 @@ const PROVIDER_PARSERS: Record<string, ProviderParser> = {
         };
       }
 
-      // Free tier: 60 RPM, 1M TPM
+      // Gemini does not expose per-key quota usage via a public endpoint.
+      // Return 'unknown' status so the UI can show "Quota tracking unavailable"
+      // rather than lying with used=0 / remaining=100%.
       return {
-        status: 'ok',
-        total: 5000000,
-        used: 0,
-        remaining: 5000000,
-        percentUsed: 0,
+        status: 'unknown',
+        total: null,
+        used: null,
+        remaining: null,
+        percentUsed: null,
         rateLimit: parseRateLimitHeaders(headers),
         provider: 'gemini',
         fetchedAt: Date.now(),
@@ -170,8 +174,11 @@ async function fetchQuotaRaw(
   }
 
   try {
-    const data: any = await invoke('get_models_quota', { provider, apiKey: apiKey ? apiKey.trim() : undefined });
-if (!data) throw new Error('No quota data returned');
+    const data: any = await invoke('get_models_quota', {
+      provider,
+      apiKey: apiKey ? apiKey.trim() : undefined,
+    });
+    if (!data) throw new Error('No quota data returned');
     const parser = PROVIDER_PARSERS[provider] || PROVIDER_PARSERS.gemini;
 
     return parser.parse(data, new Headers());
@@ -346,8 +353,8 @@ export async function fetchQuotaLegacy(
 ): Promise<{ total: number; used: number; totalUSD?: number; usedUSD?: number }> {
   const result = await fetchQuota(provider, apiKey);
   return {
-    total: result.total === Infinity ? 999999999 : result.total,
-    used: result.used,
+    total: result.total === Infinity ? 999999999 : (result.total ?? 0),
+    used: result.used ?? 0,
     totalUSD: result.totalUSD,
     usedUSD: result.usedUSD,
   };

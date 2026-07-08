@@ -26,6 +26,8 @@ interface ModelCardProps {
   onUnload?: () => void;
   onUninstall?: () => void;
   loadingState?: 'loading' | 'unloading' | 'uninstalling' | 'idle';
+  modelSizeBytes?: number;
+  systemVramBytes?: number;
 }
 
 /** Pure display model card — library view only, no add functionality */
@@ -51,8 +53,16 @@ export const ModelCard: React.FC<ModelCardProps> = ({
   onUnload,
   onUninstall,
   loadingState = 'idle',
+  modelSizeBytes,
+  systemVramBytes,
 }) => {
   const providerLabel = provider;
+
+  // Calculate VRAM requirement (file size + 1.5GB overhead approx for KV cache)
+  const requiredVram = modelSizeBytes ? modelSizeBytes + (1.5 * 1024 * 1024 * 1024) : null;
+  const vramPercent = requiredVram && systemVramBytes ? Math.min(100, Math.round((requiredVram / systemVramBytes) * 100)) : 0;
+  const isVramWarning = vramPercent > 90;
+
 
   return (
     <motion.div
@@ -216,12 +226,32 @@ export const ModelCard: React.FC<ModelCardProps> = ({
         </motion.div>
       )}
 
+      {/* Local Model VRAM Indicator */}
+      {isLocal && requiredVram && systemVramBytes && (
+        <div className="pt-3 mt-3 border-t border-border/30 flex flex-col gap-1.5">
+          <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-widest">
+            <span className={isVramWarning ? "text-orange-500" : "text-muted-foreground/80"}>
+              {isVramWarning ? '⚠️ HIGH VRAM' : 'Est. VRAM'}
+            </span>
+            <span className="text-foreground/80">
+              {(requiredVram / (1024 * 1024 * 1024)).toFixed(1)}GB / {(systemVramBytes / (1024 * 1024 * 1024)).toFixed(1)}GB
+            </span>
+          </div>
+          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden flex">
+            <div 
+              className={`h-full transition-all duration-500 ${isVramWarning ? 'bg-orange-500' : 'bg-emerald-500'}`} 
+              style={{ width: `${vramPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Local Model Actions */}
       {isLocal && (
         <div className="pt-3 mt-3 border-t border-border/30 flex justify-end gap-2">
           {onUninstall && (
             <button
-              onClick={onUninstall}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onUninstall(); }}
               disabled={loadingState === 'uninstalling'}
               className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:opacity-50 transition-colors mr-auto"
             >
@@ -230,7 +260,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
           )}
           {isLoaded ? (
             <button
-              onClick={onUnload}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onUnload?.(); }}
               disabled={loadingState === 'unloading'}
               className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
             >
@@ -238,7 +268,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
             </button>
           ) : (
             <button
-              onClick={onLoad}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onLoad?.(); }}
               disabled={loadingState === 'loading'}
               className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 transition-colors"
             >

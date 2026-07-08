@@ -173,16 +173,14 @@ pub async fn fs_list_dir(dir_path: String) -> Result<Vec<FileInfo>, String> {
     let mut result = Vec::new();
     let entries = std::fs::read_dir(&dir_path).map_err(|e| e.to_string())?;
 
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let meta = entry.metadata().map_err(|e| e.to_string())?;
-            let is_dir = meta.is_dir();
-            result.push(FileInfo {
-                name: entry.file_name().to_string_lossy().to_string(),
-                file_type: if is_dir { "directory".to_string() } else { "file".to_string() },
-                size: if is_dir { None } else { Some(meta.len()) },
-            });
-        }
+    for entry in entries.flatten() {
+        let meta = entry.metadata().map_err(|e| e.to_string())?;
+        let is_dir = meta.is_dir();
+        result.push(FileInfo {
+            name: entry.file_name().to_string_lossy().to_string(),
+            file_type: if is_dir { "directory".to_string() } else { "file".to_string() },
+            size: if is_dir { None } else { Some(meta.len()) },
+        });
     }
     Ok(result)
 }

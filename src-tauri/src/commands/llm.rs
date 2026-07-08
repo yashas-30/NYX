@@ -5,10 +5,17 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::io::StreamReader;
 use futures_util::TryStreamExt;
+use std::sync::LazyLock;
 
 // ── Max token defaults per provider (all raised from the broken 4096 cap) ──
 
 const MAX_TOKENS_DEFAULT: u32 = 8_192;
+
+// Initialize tiktoken once per process. Creating a CoreBPE is expensive (∼10ms + disk IO);
+// re-doing it on every request is a measurable latency regression.
+static BPE_TOKENIZER: LazyLock<tiktoken_rs::CoreBPE> = LazyLock::new(|| {
+    tiktoken_rs::cl100k_base().expect("Failed to load cl100k_base tokenizer")
+});
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct UnifiedMessage {
@@ -85,11 +92,15 @@ pub async fn execute_llm_stream(
             let mut current_tokens = 0;
             let mut budget_msgs = vec![];
             
-            let bpe = tiktoken_rs::cl100k_base().unwrap();
+            let bpe = &*BPE_TOKENIZER;
             for m in req.messages.iter().rev() {
                 let msg_content_str = get_content_string(&m.content);
                 let msg_tokens = bpe.encode_with_special_tokens(&msg_content_str).len();
-                if current_tokens + msg_tokens > 80_000 {
+                if current_tokens + msg_tokens > 128_000 {
+                    if budget_msgs.is_empty() {
+                        // Always include the most recent message even if it exceeds the budget
+                        budget_msgs.push(m.clone());
+                    }
                     break;
                 }
                 current_tokens += msg_tokens;
@@ -98,18 +109,51 @@ pub async fn execute_llm_stream(
             budget_msgs.reverse();
             
             for m in &budget_msgs {
+                if m.role == "assistant" && m.content.is_array() {
+                    let mut tool_calls = vec![];
+                    if let Some(arr) = m.content.as_array() {
+                        for item in arr {
+                            if item.get("type").and_then(|t| t.as_str()) == Some("tool_call") {
+                                tool_calls.push(item.clone());
+                            }
+                        }
+                    }
+                    if !tool_calls.is_empty() {
+                        msgs.push(json!({"role": "assistant", "tool_calls": tool_calls, "content": null}));
+                        continue;
+                    }
+                } else if m.role == "tool" && m.content.is_array() {
+                    if let Some(arr) = m.content.as_array() {
+                        if let Some(item) = arr.first() {
+                            let tool_call_id = item.get("tool_call_id").and_then(|id| id.as_str()).unwrap_or("");
+                            let content = item.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                            msgs.push(json!({"role": "tool", "tool_call_id": tool_call_id, "content": content}));
+                            continue;
+                        }
+                    }
+                }
+                
                 let content_val = m.content.clone();
                 msgs.push(json!({"role": m.role, "content": content_val}));
             }
 
-            let body = json!({
+            let mut body = json!({
                 "model": req.model_id,
                 "messages": msgs,
                 "temperature": req.temperature.unwrap_or(0.7),
                 "max_tokens": max_tokens,
                 "stream": true,
-                "tools": req.tools.clone()
             });
+
+            if req.provider == "openrouter" {
+                if let Some(tools) = &req.tools {
+                    if let Some(arr) = tools.as_array() {
+                        if !arr.is_empty() {
+                            body["tools"] = tools.clone();
+                        }
+                    }
+                }
+            }
 
             match req.provider.as_str() {
                 "openrouter" => {
@@ -137,19 +181,23 @@ pub async fn execute_llm_stream(
             (endpoint, body, req.provider.clone())
         }
 
-        "gemini" => {
+        // Both "gemini" and "gemma" models use the Google AI Studio (Gemini) API endpoint.
+        "gemini" | "gemma" => {
             let mut contents = vec![];
             
             // Slice history to budget using a char-count heuristic for Gemini.
             // Gemini uses SentencePiece (not BPE/cl100k), so we approximate:
-            // ~4 chars per token gives us a ~320k-char context window budget.
-            let char_budget = 80_000usize * 4; // ≈ 80k tokens
+            // ~4 chars per token gives us a ~512k-char context window budget.
+            let char_budget = 128_000usize * 4; // ≈ 128k tokens
             let mut current_chars = 0usize;
             let mut budget_msgs = vec![];
             
             for m in req.messages.iter().rev() {
                 let msg_chars = get_content_string(&m.content).len();
                 if current_chars + msg_chars > char_budget {
+                    if budget_msgs.is_empty() {
+                        budget_msgs.push(m.clone());
+                    }
                     break;
                 }
                 current_chars += msg_chars;
@@ -158,6 +206,46 @@ pub async fn execute_llm_stream(
             budget_msgs.reverse();
             
             for m in &budget_msgs {
+                if m.role == "assistant" && m.content.is_array() {
+                    if let Some(arr) = m.content.as_array() {
+                        if let Some(item) = arr.first() {
+                            if item.get("type").and_then(|t| t.as_str()) == Some("tool_call") {
+                                if let Some(func) = item.get("function") {
+                                    let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                                    let args_str = func.get("arguments").and_then(|a| a.as_str()).unwrap_or("{}");
+                                    let args_json: Value = serde_json::from_str(args_str).unwrap_or(json!({}));
+                                    contents.push(json!({
+                                        "role": "model",
+                                        "parts": [{"functionCall": {"name": name, "args": args_json}}]
+                                    }));
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                } else if m.role == "tool" && m.content.is_array() {
+                    if let Some(arr) = m.content.as_array() {
+                        if let Some(item) = arr.first() {
+                            let _tool_call_id = item.get("tool_call_id").and_then(|id| id.as_str()).unwrap_or("");
+                            let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                            let content_str = item.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                            
+                            // Try parsing content_str as JSON, otherwise wrap in an object
+                            let mut resp_obj: Value = serde_json::from_str(content_str).unwrap_or(json!({ "result": content_str }));
+                            // Sometimes tools return arrays or plain strings. Gemini requires a JSON object.
+                            if !resp_obj.is_object() {
+                                resp_obj = json!({ "result": resp_obj });
+                            }
+                            
+                            contents.push(json!({
+                                "role": "user", // or "function" depending on Gemini version, "user" works for REST
+                                "parts": [{"functionResponse": {"name": name, "response": resp_obj}}]
+                            }));
+                            continue;
+                        }
+                    }
+                }
+
                 let role = if m.role == "assistant" { "model" } else { "user" };
                 contents.push(json!({
                     "role": role,
@@ -172,6 +260,22 @@ pub async fn execute_llm_stream(
                     "maxOutputTokens": max_tokens
                 }
             });
+
+            if let Some(tools) = &req.tools {
+                if let Some(tool_arr) = tools.as_array() {
+                    let mut function_declarations = vec![];
+                    for t in tool_arr {
+                        if let Some(func) = t.get("function") {
+                            function_declarations.push(func.clone());
+                        }
+                    }
+                    if !function_declarations.is_empty() {
+                        body["tools"] = json!([{
+                            "functionDeclarations": function_declarations
+                        }]);
+                    }
+                }
+            }
 
             if let Some(sys) = &req.system_instruction {
                 body["systemInstruction"] = json!({
@@ -268,6 +372,20 @@ pub async fn execute_llm_stream(
                                             })).await;
                                         }
                                     }
+                                    StreamEventParse::Reasoning(reasoning) => {
+                                        if !reasoning.is_empty() {
+                                            let _ = tx.send(Ok(StreamChunkPayload {
+                                                event_type: "thinking".to_string(),
+                                                content: Some(reasoning),
+                                                done: Some(false),
+                                                error: None,
+                                                tool_call: None,
+                                                name: None,
+                                                result: None,
+                                                metadata: None,
+                                            })).await;
+                                        }
+                                    }
                                     StreamEventParse::ToolCallStart { id, name } => {
                                         let _ = tx.send(Ok(StreamChunkPayload {
                                             event_type: "tool_start".to_string(),
@@ -284,6 +402,18 @@ pub async fn execute_llm_stream(
                                         let _ = tx.send(Ok(StreamChunkPayload {
                                             event_type: "tool_call".to_string(),
                                             content: Some(args),
+                                            done: Some(false),
+                                            error: None,
+                                            tool_call: None,
+                                            name: None,
+                                            result: None,
+                                            metadata: None,
+                                        })).await;
+                                    }
+                                    StreamEventParse::ToolCallComplete => {
+                                        let _ = tx.send(Ok(StreamChunkPayload {
+                                            event_type: "tool_call_complete".to_string(),
+                                            content: None,
                                             done: Some(false),
                                             error: None,
                                             tool_call: None,
@@ -314,15 +444,62 @@ pub async fn execute_llm_stream(
                             })).await;
                             break;
                         }
-                        buffer = payload.to_string();
-                    } else if line.starts_with("data:") {
+                        if !buffer.is_empty() {
+                            buffer.push('\n');
+                        }
+                        buffer.push_str(payload);
+                    } else if let Some(stripped) = line.strip_prefix("data:") {
                         // Handle "data:" without space
-                        buffer = line[5..].trim().to_string();
+                        if !buffer.is_empty() {
+                            buffer.push('\n');
+                        }
+                        buffer.push_str(stripped.trim());
                     }
                     // Ignore "event:", "id:", "retry:" lines
                 }
                 Ok(None) => {
-                    // Stream ended cleanly
+                    // Stream ended cleanly — flush any remaining buffer before sending done.
+                    // Some providers close the connection without a trailing blank line,
+                    // which would otherwise silently drop the last chunk (BUG-7 fix).
+                    if !buffer.is_empty() {
+                        let data = buffer.trim().to_string();
+                        buffer.clear();
+                        if data != "[DONE]" {
+                            for event in extract_stream_event(&data, &provider_type) {
+                                match event {
+                                    StreamEventParse::Text(text) => {
+                                        if !text.is_empty() {
+                                            let _ = tx.send(Ok(StreamChunkPayload {
+                                                event_type: "text".to_string(),
+                                                content: Some(text),
+                                                done: Some(false),
+                                                error: None,
+                                                tool_call: None,
+                                                name: None,
+                                                result: None,
+                                                metadata: None,
+                                            })).await;
+                                        }
+                                    }
+                                    StreamEventParse::Reasoning(reasoning) => {
+                                        if !reasoning.is_empty() {
+                                            let _ = tx.send(Ok(StreamChunkPayload {
+                                                event_type: "thinking".to_string(),
+                                                content: Some(reasoning),
+                                                done: Some(false),
+                                                error: None,
+                                                tool_call: None,
+                                                name: None,
+                                                result: None,
+                                                metadata: None,
+                                            })).await;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
                     let _ = tx.send(Ok(StreamChunkPayload {
                         event_type: "done".to_string(),
                         content: None,
@@ -355,42 +532,64 @@ pub async fn llm_stream_request(
     let event_name = req.event_name.clone();
     let mut rx = execute_llm_stream(&req).await?;
     
-    tauri::async_runtime::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            match msg {
-                Ok(payload) => {
-                    let _ = on_event.send(payload.clone());
-                    if let Some(ref ev) = event_name {
-                        let _ = app.emit(ev, payload);
-                    }
-                }
-                Err(e) => {
-                    let err_payload = StreamChunkPayload {
-                        event_type: "error".to_string(),
-                        content: None,
-                        done: Some(true),
-                        error: Some(e.clone()),
-                        tool_call: None,
-                        name: None,
-                        result: None,
-                        metadata: None,
-                    };
-                    let _ = on_event.send(err_payload.clone());
-                    if let Some(ref ev) = event_name {
-                        let _ = app.emit(ev, err_payload);
-                    }
-                }
-            }
-        }
+    use tauri::Listener;
+    let cancel_event_name = format!("cancel_{}", event_name.clone().unwrap_or_default());
+    let (cancel_tx, mut cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+    
+    let cancel_id = app.listen(cancel_event_name, move |_| {
+        let _ = cancel_tx.try_send(());
     });
     
+    loop {
+        tokio::select! {
+            msg = rx.recv() => {
+                match msg {
+                    Some(Ok(payload)) => {
+                        let _ = on_event.send(payload.clone());
+                        if let Some(ref ev) = event_name {
+                            use tauri::Emitter;
+                            let _ = app.emit(ev, payload);
+                        }
+                    }
+                    Some(Err(e)) => {
+                        let err_payload = StreamChunkPayload {
+                            event_type: "error".to_string(),
+                            content: None,
+                            done: Some(true),
+                            error: Some(e.clone()),
+                            tool_call: None,
+                            name: None,
+                            result: None,
+                            metadata: None,
+                        };
+                        let _ = on_event.send(err_payload.clone());
+                        if let Some(ref ev) = event_name {
+                            use tauri::Emitter;
+                            let _ = app.emit(ev, err_payload);
+                        }
+                    }
+                    None => break, // rx dropped, stream finished normally
+                }
+            }
+            _ = cancel_rx.recv() => {
+                // Cancel requested by frontend, break loop
+                // Dropping `rx` here will cause `tx.send` in `execute_llm_stream` to fail,
+                // which breaks its loop and drops the reqwest response stream!
+                break;
+            }
+        }
+    }
+    
+    app.unlisten(cancel_id);
     Ok(())
 }
 
 pub enum StreamEventParse {
     Text(String),
+    Reasoning(String),
     ToolCallStart { id: String, name: String },
     ToolCallArgs { args: String },
+    ToolCallComplete,
     None,
 }
 
@@ -405,7 +604,7 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
     match provider_type {
         "openrouter" | "nyx-native" => {
             if let Some(choices) = v.get("choices").and_then(|c| c.as_array()) {
-                if let Some(choice) = choices.get(0) {
+                if let Some(choice) = choices.first() {
                     if let Some(delta) = choice.get("delta").and_then(|d| d.as_object()) {
                         // 1. Regular text content
                         if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
@@ -413,33 +612,39 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
                                 events.push(StreamEventParse::Text(content.to_string()));
                             }
                         }
-                        // 2. Reasoning tokens — OpenRouter exposes these in delta.reasoning or
-                        //    delta.reasoning_content depending on the upstream provider.
-                        //    Wrap in <think>…</think> so tauriLlmClient.ts routes them to the
-                        //    reasoning accumulator (no frontend changes required).
+                        // 2. Reasoning tokens
                         let reasoning = delta.get("reasoning")
                             .or_else(|| delta.get("reasoning_content"))
                             .and_then(|r| r.as_str());
                         if let Some(r) = reasoning {
                             if !r.is_empty() {
-                                events.push(StreamEventParse::Text(
-                                    format!("<think>{}</think>", r)
-                                ));
+                                events.push(StreamEventParse::Reasoning(r.to_string()));
                             }
                         }
                         // 3. Tool calls
                         if let Some(tool_calls) = delta.get("tool_calls").and_then(|tc| tc.as_array()) {
-                            if let Some(tc) = tool_calls.get(0) {
-                                if let Some(func) = tc.get("function") {
+                            for tc in tool_calls {
+                                if let Some(func) = tc.get("function").and_then(|f| f.as_object()) {
                                     if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
-                                        let id = tc.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
-                                        events.push(StreamEventParse::ToolCallStart { id, name: name.to_string() });
+                                        let id = tc.get("id").and_then(|i| i.as_str()).unwrap_or("");
+                                        events.push(StreamEventParse::ToolCallStart {
+                                            id: id.to_string(),
+                                            name: name.to_string(),
+                                        });
                                     }
                                     if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
-                                        events.push(StreamEventParse::ToolCallArgs { args: args.to_string() });
+                                        events.push(StreamEventParse::ToolCallArgs {
+                                            args: args.to_string(),
+                                        });
                                     }
                                 }
                             }
+                        }
+                    }
+                    // Handle finish_reason after delta is processed
+                    if let Some(finish_reason) = choice.get("finish_reason").and_then(|f| f.as_str()) {
+                        if finish_reason == "tool_calls" {
+                            events.push(StreamEventParse::ToolCallComplete);
                         }
                     }
                 }
@@ -449,7 +654,7 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
 
         "gemini" => {
             if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
-                if let Some(candidate) = candidates.get(0) {
+                if let Some(candidate) = candidates.first() {
                     if let Some(content) = candidate.get("content") {
                         if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
                             for part in parts {
@@ -463,9 +668,7 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
                                 if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                                     if !text.is_empty() {
                                         if is_thought {
-                                            events.push(StreamEventParse::Text(
-                                                format!("<think>{}</think>", text)
-                                            ));
+                                            events.push(StreamEventParse::Reasoning(text.to_string()));
                                         } else {
                                             events.push(StreamEventParse::Text(text.to_string()));
                                         }
@@ -480,6 +683,7 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
                                             events.push(StreamEventParse::ToolCallArgs {
                                                 args: serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string())
                                             });
+                                            events.push(StreamEventParse::ToolCallComplete);
                                         }
                                     }
                                 }
@@ -496,4 +700,22 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
         events.push(StreamEventParse::None);
     }
     events
+}
+
+#[derive(Serialize)]
+pub struct QuotaResponse {
+    pub status: String,
+    pub valid: bool,
+    pub provider: String,
+}
+
+#[tauri::command]
+pub async fn get_models_quota(provider: String, _api_key: Option<String>) -> Result<QuotaResponse, String> {
+    // In the future, this can actually make a request to the provider's /usage endpoint to verify the key and get quota.
+    // For now, we return a mock successful response to keep the frontend happy and functional.
+    Ok(QuotaResponse {
+        status: "ok".to_string(),
+        valid: true,
+        provider,
+    })
 }

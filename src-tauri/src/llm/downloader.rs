@@ -25,21 +25,45 @@ impl Downloader {
 
         // 1. Download llama-server.exe (Vulkan Windows build for universal GPU support)
         let server_path = bin_dir.join("llama-server-vulkan.exe");
-        if !server_path.exists() {
+        // A valid server binary must be at least 1 MB. If the file is smaller it was
+        // truncated or corrupted during a previous interrupted download — re-download it.
+        let server_needs_download = match tokio::fs::metadata(&server_path).await {
+            Ok(m) => m.len() < 1024 * 1024, // < 1 MB → corrupt
+            Err(_) => true,                   // doesn't exist
+        };
+        if server_needs_download {
+            // Remove the corrupt stub if present so the extraction rename succeeds.
+            let _ = tokio::fs::remove_file(&server_path).await;
             let server_url = "https://github.com/ggerganov/llama.cpp/releases/download/b9776/llama-b9776-bin-win-vulkan-x64.zip";
             let zip_path = bin_dir.join("llama_vulkan.zip");
             self.download_file(server_url, &zip_path, |p| on_progress(p, "Downloading llama.cpp Vulkan server...")).await?;
             
             let zip_str = zip_path.to_string_lossy().replace("\\\\?\\", "");
             let bin_str = bin_dir.to_string_lossy().replace("\\\\?\\", "");
-            let output = std::process::Command::new("powershell")
-                .arg("-c")
-                .arg(format!("Expand-Archive -Path '{}' -DestinationPath '{}' -Force", zip_str, bin_str))
-                .output()
-                .map_err(|e| e.to_string())?;
+            
+            let mut output_success = false;
+            let mut stderr_str = String::new();
+            
+            for _ in 0..5 {
+                let output = std::process::Command::new("tar")
+                    .arg("-xf")
+                    .arg(&zip_str)
+                    .arg("-C")
+                    .arg(&bin_str)
+                    .output()
+                    .map_err(|e| e.to_string())?;
+                    
+                stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
+                if output.status.success() {
+                    output_success = true;
+                    break;
+                }
                 
-            let stderr_str = String::from_utf8_lossy(&output.stderr);
-            if !output.status.success() || stderr_str.contains("Exception") || stderr_str.contains("Error") {
+                // Sleep to wait for Windows Defender or other processes to release the file lock
+                tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+            }
+            
+            if !output_success {
                 return Err(format!("Failed to unzip server: {}", stderr_str));
             }
             
@@ -73,19 +97,30 @@ impl Downloader {
 
         let total_size = response.content_length().unwrap_or(0);
         let tmp_dest = dest.with_extension("tmp");
-        let mut file = tokio::fs::File::create(&tmp_dest).await.map_err(|e| e.to_string())?;
+        let file = tokio::fs::File::create(&tmp_dest).await.map_err(|e| e.to_string())?;
+        let mut writer = tokio::io::BufWriter::with_capacity(1024 * 1024, file); // 1MB buffer for fast I/O
         
         let mut downloaded: u64 = 0;
+        let mut last_emit = std::time::Instant::now();
+
         while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
-            file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+            writer.write_all(&chunk).await.map_err(|e| e.to_string())?;
             downloaded += chunk.len() as u64;
-            if total_size > 0 {
+            
+            // Throttle IPC events to 250ms so we don't flood the frontend
+            if total_size > 0 && last_emit.elapsed().as_millis() > 250 {
                 on_progress((downloaded as f32 / total_size as f32) * 100.0);
+                last_emit = std::time::Instant::now();
             }
         }
         
-        file.flush().await.map_err(|e| e.to_string())?;
-        drop(file);
+        // Ensure final 100% emission
+        if total_size > 0 {
+            on_progress(100.0);
+        }
+        
+        writer.flush().await.map_err(|e| e.to_string())?;
+        drop(writer);
         
         tokio::fs::rename(tmp_dest, dest).await.map_err(|e| e.to_string())?;
         

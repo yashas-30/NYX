@@ -22,8 +22,7 @@ import { SendIcon as Send, Trash2Icon as Trash2, CopyIcon as Copy, CheckIcon as 
 import { Square, RefreshCw, Bot, Cpu, Clock, FileCode, Image as ImageIcon, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { CodeBlock } from '../../../components/chat/CodeBlock';
 import { toast } from '@src/shared/components/ui/sonner';
 
 // ---------------------------------------------------------------------------
@@ -234,48 +233,6 @@ const ArtifactCard: React.FC<{ artifact: Artifact }> = memo(({ artifact }) => {
   );
 });
 ArtifactCard.displayName = 'ArtifactCard';
-
-const CodeBlock: React.FC<{ language: string; code: string }> = memo(({ language, code }) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      toast.success('Code copied');
-    });
-  }, [code]);
-
-  return (
-    <div className="relative group/code my-3 rounded-md border border-[#2A2A2E] bg-[#0d1117] overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-[#161b22] border-b border-[#2A2A2E]">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[#555]">
-          {language}
-        </span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 px-2 py-1 rounded text-[9px] text-[#666] hover:text-white hover:bg-white/5 transition-all cursor-pointer"
-        >
-          {copied ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
-          <span>{copied ? 'Copied' : 'Copy'}</span>
-        </button>
-      </div>
-      <SyntaxHighlighter
-        language={language || 'text'}
-        style={vscDarkPlus}
-        customStyle={{
-          margin: 0,
-          padding: '1rem',
-          background: 'transparent',
-          fontSize: '12px',
-        }}
-      >
-        {code}
-      </SyntaxHighlighter>
-    </div>
-  );
-});
-CodeBlock.displayName = 'CodeBlock';
 
 const StreamingCursor: React.FC = memo(() => (
   <span className="inline-flex items-center ml-1 gap-0.5">

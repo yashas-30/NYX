@@ -9,7 +9,8 @@ pub mod llm;
 pub mod pty;
 pub mod fs;
 pub mod agent;
-pub mod agent_orchestrator;
+pub mod observability;
+pub mod memory;
 
 pub use dialog::*;
 pub use vault::*;

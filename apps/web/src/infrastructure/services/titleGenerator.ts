@@ -9,13 +9,11 @@ export async function generateSessionTitleAsync(
     // Route to a fast local model if hot, or fast remote
     const decision = await HybridModelRouter.routeSimpleTask('naming', apiKeys, checkStatusFn);
 
-    console.log('[TitleGenerator] Selected model for naming:', decision.modelId, 'provider:', decision.provider);
-
-    // Placeholder for actual LLM generation. 
-    // In production, this would call executeWithFallbackChain using the decision.
-    return "Generated Title";
-  } catch (err) {
-    console.error('[TitleGenerator] Failed to generate title', err);
-    return "";
+    // TODO: wire executeFn here using decision.modelId and decision.provider
+    // For now, return empty so the session uses the first user message as title.
+    void decision;
+    return '';
+  } catch {
+    return '';
   }
 }

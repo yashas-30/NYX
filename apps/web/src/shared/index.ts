@@ -1,5 +1,4 @@
 // Components
-export * from './components/AgentLightningPanel';
 export * from './components/CommandPalette';
 export * from './components/ErrorBoundary';
 export * from './components/ModelSelector';
@@ -28,8 +27,6 @@ export * from './config';
 export * from './context/ThemeContext';
 export * from './context/TokenUsageContext';
 
-// Hooks
-export * from './hooks/useAgentLightning';
 export * from './hooks/useChatSessions';
 export * from './hooks/useMessageHistory';
 

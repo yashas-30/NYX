@@ -20,11 +20,8 @@ export interface ModelSettings {
 
 export type ActiveMode = 'chat' | 'coder' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
 
-export type ExecutionMode = 'auto' | 'standard' | 'parallel' | 'ensemble' | 'ab-test';
-
 export interface NyxState {
   activeMode: ActiveMode;
-  executionMode: ExecutionMode;
   workspacePath: string;
   localModelsEnabled: boolean;
   modelSettings: ModelSettings;
@@ -40,12 +37,9 @@ export interface NyxState {
   setSearchProvider: (provider: 'duckduckgo' | 'tavily' | 'jina') => void;
   activeProjectId: string | null;
   setActiveProjectId: (id: string | null) => void;
-  showReasoning: boolean;
-  setShowReasoning: (show: boolean) => void;
 
   // Actions
   setActiveMode: (mode: ActiveMode) => void;
-  setExecutionMode: (mode: ExecutionMode) => void;
   setWorkspacePath: (path: string) => void;
   setLocalModelsEnabled: (enabled: boolean) => void;
   updateModelSettings: (settings: Partial<ModelSettings>) => void;
@@ -102,7 +96,6 @@ export const useNyxStore = create<NyxState>()(
   persist(
     (set, get) => ({
       activeMode: 'coder',
-      executionMode: 'auto',
       workspacePath: '',
       localModelsEnabled: false,
       modelSettings: DEFAULT_SETTINGS,
@@ -116,32 +109,19 @@ export const useNyxStore = create<NyxState>()(
       currentModel: DEFAULT_MODEL,
       searchProvider: 'duckduckgo',
       activeProjectId: null,
-      showReasoning: true,
 
       setActiveMode: (mode) => set({ activeMode: mode }),
-      setExecutionMode: (mode) => set({ executionMode: mode }),
       setWorkspacePath: (path) => set({ workspacePath: path }),
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
       updateModelSettings: (settings) =>
           set((state) => ({
             modelSettings: { ...state.modelSettings, ...settings },
           })),
-      setCloudModelId: (id) => set((state) => {
-        if (state.executionMode === 'parallel' || state.executionMode === 'ensemble' || state.executionMode === 'ab-test') {
-          return { cloudModelId: id };
-        }
-        return { cloudModelId: id, localModelId: null };
-      }),
-      setLocalModelId: (id) => set((state) => {
-        if (state.executionMode === 'parallel' || state.executionMode === 'ensemble' || state.executionMode === 'ab-test') {
-          return { localModelId: id };
-        }
-        return { localModelId: id, cloudModelId: null };
-      }),
+      setCloudModelId: (id) => set({ cloudModelId: id, localModelId: null }),
+      setLocalModelId: (id) => set({ localModelId: id, cloudModelId: null }),
       setModel: (mid) => set({ models: { nyx: mid } }),
       setSearchProvider: (provider) => set({ searchProvider: provider }),
       setActiveProjectId: (id) => set({ activeProjectId: id }),
-      setShowReasoning: (show) => set({ showReasoning: show }),
       setApiKeys: (keys) => set({ apiKeys: keys }),
       setPrivacyMode: (enabled) => {
         if (enabled) {
@@ -346,7 +326,6 @@ export const useNyxStore = create<NyxState>()(
       },
       partialize: (state) => ({
         activeMode: state.activeMode,
-        executionMode: state.executionMode,
         localModelsEnabled: state.localModelsEnabled,
         modelSettings: state.modelSettings,
         cloudModelId: state.cloudModelId,

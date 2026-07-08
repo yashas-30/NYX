@@ -33,22 +33,9 @@ interface EmbeddingClassifier {
 class HybridEmbeddingClassifier implements EmbeddingClassifier {
   private model: any = null;
   private ready: boolean = false;
-  private readonly fallbackEmbeddings: Map<string, number[]> = new Map();
 
   constructor() {
-    // Pre-computed centroid embeddings for common intents (fallback when model fails)
-    this.loadFallbackEmbeddings();
-  }
-
-  private loadFallbackEmbeddings() {
-    // These are simplified 384-dim centroids. In production, compute real embeddings
-    // from a dataset of 1000+ prompts per category using sentence-transformers
-    const intents = ['question', 'command', 'code', 'search', 'conversation'];
-    const tones = ['casual', 'professional', 'technical'];
-    const domains = ['software_engineering', 'science', 'finance', 'legal', 'medical', 'general'];
-    
-    // Placeholder: real implementation would load from JSON
-    // For now, we use keyword-based fallback when model unavailable
+    // Model is loaded lazily on first embed() call
   }
 
   async embed(text: string): Promise<number[]> {
@@ -68,12 +55,13 @@ class HybridEmbeddingClassifier implements EmbeddingClassifier {
   }
 
   async classify(embedding: number[], candidates: string[]): Promise<{ label: string; score: number }> {
-    // In real implementation: compare against pre-computed centroids
-    // For now: return highest confidence based on heuristic + random variance
-    const scores = candidates.map(c => ({
-      label: c,
-      score: Math.random() * 0.3 + 0.5 // Placeholder
-    }));
+    // Cosine similarity against hash-based pseudo-centroids.
+    // Each candidate's pseudo-centroid is derived from its label string.
+    const scores = candidates.map(c => {
+      const centroid = this.hashEmbedding(c);
+      const dot = embedding.reduce((s, v, i) => s + v * (centroid[i] ?? 0), 0);
+      return { label: c, score: dot };
+    });
     scores.sort((a, b) => b.score - a.score);
     return scores[0];
   }
@@ -248,21 +236,6 @@ export class PromptAnalysisService {
     let suggestedExecutionReasoning = 'Standard conversational request. Using single selected model.';
 
     const isABTest = /\b(a\/b\s*test|ab\s*test|split\s*test|ab-test)\b/i.test(lower);
-    const isParallel = /\b(compare|comparison|versus|vs|side\s*by\s*side|parallel|simultaneous|simultaneously|difference\s*between)\b/i.test(lower) ||
-                       /\b(model\s*difference|which\s*model\s*is\s*better|which\s*is\s*better)\b/i.test(lower);
-    const isEnsemble = /\b(ensemble|synthesize|synthesis|consensus|merge\s*responses|combine\s*answers|blend)\b/i.test(lower);
-
-    if (isABTest) {
-      suggestedExecutionMode = 'ab-test';
-      suggestedExecutionReasoning = 'Detected request for A/B testing of responses.';
-    } else if (isParallel) {
-      suggestedExecutionMode = 'parallel';
-      suggestedExecutionReasoning = 'Detected comparative query. Running models in parallel for side-by-side evaluation.';
-    } else if (isEnsemble) {
-      suggestedExecutionMode = 'ensemble';
-      suggestedExecutionReasoning = 'Detected request for consensus synthesis across multiple models.';
-    }
-
     return {
       intent: intentResult.intent,
       tone: toneResult.tone,
@@ -277,8 +250,6 @@ export class PromptAnalysisService {
       urgency,
       userExpertise: expertise,
       contextWindowNeeded: this.estimateContextWindow(original, complexity),
-      suggestedExecutionMode,
-      suggestedExecutionReasoning,
     };
   }
 

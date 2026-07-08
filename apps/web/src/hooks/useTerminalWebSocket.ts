@@ -84,5 +84,5 @@ export function useTerminalWebSocket(sessionId?: string) {
 }
 
 export function createTerminalSession(): string {
-  return `term-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  return `term-${crypto.randomUUID()}`;
 }

@@ -1,9 +1,6 @@
 import React from 'react';
 
-// Lazy load the Player component to optimize bundle size and speed up initial page load
-const LazyPlayer = React.lazy(() =>
-  import('@lottiefiles/react-lottie-player').then((m) => ({ default: m.Player }))
-);
+// Removed lottiefiles dependency
 
 /**
  * NYX - Custom Icons & Logos
@@ -105,94 +102,32 @@ RegistryIcon.displayName = 'RegistryIcon';
 
 export const NyxLoader = React.memo(
   ({ size = 28, className = '' }: { size?: number; className?: string }) => {
-    const [animationData, setAnimationData] = React.useState<any>(null);
-
-    React.useEffect(() => {
-      import('../circle-loading.json')
-        .then((mod) => setAnimationData(mod.default))
-        .catch((err) => console.error('Failed to load circle-loading.json:', err));
-    }, []);
-
-    if (!animationData) {
-      return (
-        <div
-          style={{ width: size, height: size }}
-          className={`${className} animate-pulse bg-muted/20 rounded-full shrink-0`}
-        />
-      );
-    }
-
     return (
-      <div style={{ width: size, height: size }} className={`${className} shrink-0 overflow-hidden transform-gpu`}>
-        <React.Suspense fallback={<div className="w-full h-full animate-pulse bg-muted/20 rounded-full" />}>
-          <LazyPlayer autoplay loop src={animationData} style={{ width: '100%', height: '100%' }} />
-        </React.Suspense>
-      </div>
+      <div
+        style={{ width: size, height: size }}
+        className={`animate-spin rounded-full border-2 border-primary border-t-transparent ${className} shrink-0`}
+      />
     );
   }
 );
-
 NyxLoader.displayName = 'NyxLoader';
 
 export const CatLoader = React.memo(
   ({ size = 28, className = '' }: { size?: number; className?: string }) => {
-    const [animationData, setAnimationData] = React.useState<any>(null);
-
-    React.useEffect(() => {
-      import('../animations/preloader_cat_new.json')
-        .then((mod) => setAnimationData(mod.default))
-        .catch((err) => console.error('Failed to load preloader_cat_new.json:', err));
-    }, []);
-
-    if (!animationData) {
-      return (
-        <div
-          style={{ width: size, height: size }}
-          className={`${className} animate-pulse bg-muted/20 rounded-md shrink-0`}
-        />
-      );
-    }
-
     return (
-      <div style={{ width: size, height: size }} className={`${className} shrink-0 overflow-hidden transform-gpu`}>
-        <React.Suspense fallback={<div className="w-full h-full animate-pulse bg-muted/20 rounded-md" />}>
-          <LazyPlayer autoplay loop src={animationData} style={{ width: '100%', height: '100%' }} />
-        </React.Suspense>
-      </div>
+      <div
+        style={{ width: size, height: size }}
+        className={`animate-pulse rounded-full border-2 border-primary/50 bg-primary/20 ${className} shrink-0`}
+      />
     );
   }
 );
-
 CatLoader.displayName = 'CatLoader';
 
 export const AnimatedLogo = React.memo(
   ({ size = 28, className = '' }: { size?: number; className?: string }) => {
-    const [animationData, setAnimationData] = React.useState<any>(null);
-
-    React.useEffect(() => {
-      import('../animations/response_complete.json')
-        .then((mod) => setAnimationData(mod.default))
-        .catch((err) => console.error('Failed to load response_complete.json:', err));
-    }, []);
-
-    if (!animationData) {
-      return (
-        <div
-          style={{ width: size, height: size }}
-          className={`${className} animate-pulse bg-muted/20 rounded-md shrink-0`}
-        />
-      );
-    }
-
-    return (
-      <div style={{ width: size, height: size }} className={`${className} shrink-0 overflow-hidden transform-gpu`}>
-        <React.Suspense fallback={<div className="w-full h-full animate-pulse bg-muted/20 rounded-md" />}>
-          <LazyPlayer autoplay loop src={animationData} style={{ width: '100%', height: '100%' }} />
-        </React.Suspense>
-      </div>
-    );
+    return <Logo size={size} className={`animate-pulse ${className}`} />;
   }
 );
-
 AnimatedLogo.displayName = 'AnimatedLogo';
 

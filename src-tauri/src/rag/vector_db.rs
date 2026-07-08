@@ -62,7 +62,7 @@ impl VectorDB {
 
     pub async fn search(&self, query_embedding: &[f32], top_k: usize) -> Vec<(String, String, f32)> {
         let vectors = self.vectors.read().await;
-        let mut results: Vec<(String, String, f32)> = vectors.iter().map(|(_, record)| {
+        let mut results: Vec<(String, String, f32)> = vectors.values().map(|record| {
             let score = cosine_similarity(query_embedding, &record.embedding);
             (record.filepath.clone(), record.content.clone(), score)
         }).collect();

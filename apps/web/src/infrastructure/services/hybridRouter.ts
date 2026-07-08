@@ -68,7 +68,7 @@ const COST_TABLE: Record<string, number> = {
 
   'gemini-2.5-flash': 0.000075,
   'gemma-4-31b-it': 0.0001,
-  'gemma-4-26b-it': 0.0001,
+  'gemma-4-26b-a4b-it': 0.0001,
   'qwen2.5-coder-1.5b-native': 0,
   'qwen2.5-coder-3b-native': 0,
   'llama-3.2-3b-native': 0,
@@ -362,10 +362,14 @@ export class HybridModelRouter {
   ): Promise<RoutingDecision> {
     return this.selectModel({
       task: {
-        type: 'planning',
+        id: crypto.randomUUID(),
+        type: 'planner',
         complexity: 'moderate',
         description: 'planning',
-      } as any as SubagentTask,
+        requiresCloud: false,
+        dependencies: [],
+        status: 'queued',
+      } as SubagentTask,
       apiKeys,
       requiresStreaming: false,
       requiresTools: false,
@@ -383,10 +387,14 @@ export class HybridModelRouter {
     // Force routing to a local model if hot, or default to fast gemini
     return this.selectModel({
       task: {
-        type: taskType,
-        complexity: 'low',
+        id: crypto.randomUUID(),
+        type: taskType as SubagentTask['type'],
+        complexity: 'simple',
         description: `Simple ${taskType} task`,
-      } as any as SubagentTask,
+        requiresCloud: false,
+        dependencies: [],
+        status: 'queued',
+      } as SubagentTask,
       apiKeys,
       requiresStreaming: false,
       requiresTools: false,
@@ -399,16 +407,17 @@ export class HybridModelRouter {
   async routeSubagent(
     task: SubagentTask,
     apiKeys: Record<string, string>,
-    checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>
+    checkStatusFn: (provider: string) => Promise<'online' | 'offline' | 'no-key'>,
+    options?: { requiresTools?: boolean; requiresVision?: boolean; maxLatencyMs?: number; preferredProviders?: string[] }
   ): Promise<RoutingDecision> {
     return this.selectModel({
       task,
       apiKeys,
       requiresStreaming: false,
-      requiresTools: (task as any).requiresTools || false,
-      requiresVision: (task as any).requiresVision || false,
-      maxLatencyMs: (task as any).maxLatencyMs,
-      preferredProviders: (task as any).preferredProviders,
+      requiresTools: options?.requiresTools || false,
+      requiresVision: options?.requiresVision || false,
+      maxLatencyMs: options?.maxLatencyMs,
+      preferredProviders: options?.preferredProviders,
     });
   }
 
@@ -447,10 +456,14 @@ export class HybridModelRouter {
     }).sort((a, b) => {
       const scoreA = this.scoreModel(a.id, a.provider, {
         task: {
-          type: 'fallback',
+          id: crypto.randomUUID(),
+          type: 'planner',
           complexity: 'moderate',
           description: 'fallback',
-        } as any as SubagentTask,
+          requiresCloud: false,
+          dependencies: [],
+          status: 'queued',
+        } as SubagentTask,
         apiKeys,
         requiresStreaming: !!onStream,
         requiresTools: false,
@@ -458,10 +471,14 @@ export class HybridModelRouter {
       });
       const scoreB = this.scoreModel(b.id, b.provider, {
         task: {
-          type: 'fallback',
+          id: crypto.randomUUID(),
+          type: 'planner',
           complexity: 'moderate',
           description: 'fallback',
-        } as any as SubagentTask,
+          requiresCloud: false,
+          dependencies: [],
+          status: 'queued',
+        } as SubagentTask,
         apiKeys,
         requiresStreaming: !!onStream,
         requiresTools: false,
@@ -487,15 +504,11 @@ export class HybridModelRouter {
       }
 
       try {
-        console.log(
-          `[FallbackChain] ${current.id} (${current.provider}) [${i + 1}/${chain.length}]`
-        );
-
         if (current.provider === 'nyx-native') {
           const status = await checkStatusFn(current.provider).catch(() => 'offline');
           if (status !== 'online') {
-            console.log('[FallbackChain] Booting cold local model fallback via Tauri...');
-            await invoke('start_local_server', { modelId: current.id }).catch(console.warn);
+            const contextSize = settings?.contextSize || 32768;
+            await invoke('start_local_server', { modelId: current.id, contextSize }).catch(console.warn);
           }
         }
 
@@ -537,7 +550,7 @@ export class HybridModelRouter {
   // -------------------------------------------------------------------------
 
   private async warmModel(modelId: string): Promise<void> {
-    invoke('start_local_server', { modelId }).catch(console.warn);
+    invoke('start_local_server', { modelId, contextSize: 32768 }).catch(console.warn);
   }
 
   private async handleOOM(modelId: string): Promise<void> {
@@ -559,8 +572,8 @@ export class HybridModelRouter {
     return model?.provider || 'unknown';
   }
 
-  private supportsStreaming(provider: string): boolean {
-    return true; // Gemini and local models natively support streaming in NYX
+  private supportsStreaming(modelId: string): boolean {
+    return true; // All natively supported models support streaming in NYX
   }
 
   private supportsTools(modelId: string): boolean {

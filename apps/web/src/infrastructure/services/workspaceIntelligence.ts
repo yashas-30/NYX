@@ -311,7 +311,7 @@ class MemorySystem {
   add(entry: Omit<MemoryEntry, 'id' | 'timestamp'>): MemoryEntry {
     const newEntry: MemoryEntry = {
       ...entry,
-      id: `mem_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      id: `mem_${crypto.randomUUID()}`,
       timestamp: new Date().toISOString(),
     };
     this.entries.unshift(newEntry);

@@ -69,7 +69,7 @@ export const useModelStore = create<ModelState>((set, get) => {
         modelsData = tauriModels || [];
 
         const completed = modelsData
-          .filter((m: any) => m.status === 'completed' || m.status === 'downloading')
+          .filter((m: any) => !m.status || m.status === 'completed' || m.status === 'downloading')
           .map((m: any) => ({
             id: m.id,
             name: m.name,
@@ -77,7 +77,6 @@ export const useModelStore = create<ModelState>((set, get) => {
             description: m.description || `Local GGUF model (${m.size || ''})`,
             specs: {
               contextWindow: m.contextLength || '8K',
-              trainingData: 'N/A',
               maxOutput: 'N/A',
               modality: 'Text',
             },

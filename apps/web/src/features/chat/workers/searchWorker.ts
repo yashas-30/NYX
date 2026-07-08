@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 export interface SearchWorkerRequest {
   prompt: string;
 }
@@ -10,17 +12,7 @@ export interface SearchWorkerResponse {
 self.onmessage = async (e: MessageEvent<SearchWorkerRequest>) => {
   const { prompt } = e.data;
   try {
-    const res = await fetch('/api/v1/nyx/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: prompt })
-    });
-    
-    if (!res.ok) {
-      throw new Error(`Search failed: ${res.statusText}`);
-    }
-    
-    const data = await res.json();
+    const data = await invoke<{ context: string }>('db_search_memories', { query: prompt });
     self.postMessage({ context: data.context || JSON.stringify(data) } as SearchWorkerResponse);
   } catch (error: any) {
     self.postMessage({ error: error.message, context: '' } as SearchWorkerResponse);

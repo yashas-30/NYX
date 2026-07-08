@@ -12,8 +12,9 @@ import { HardwareAnalyzerCard } from './HardwareAnalyzerCard';
 import { HuggingFaceDownloader } from './HuggingFaceDownloader';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
+import { listen } from '@tauri-apps/api/event';
 import { useModelStore } from '@src/core/stores/useModelStore';
-
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 interface ModelRegistryViewProps {
   models?: Record<'nyx', string>;
   selectModel?: (modelId: string) => void;
@@ -39,23 +40,46 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
   const loadedLocalModel = useModelStore(s => s.loadedLocalModel);
   const setLoadedLocalModel = useModelStore(s => s.setLoadedLocalModel);
+  const contextSize = useNyxStore(s => s.modelSettings.contextSize);
 
   const [loadingState, setLoadingState] = useState<'idle'|'loading'|'unloading'|'uninstalling'>('idle');
+  const [actionModelId, setActionModelId] = useState<string | null>(null);
+  const [hardwareSpecs, setHardwareSpecs] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    const fetchHardware = async () => {
+      try {
+        const res: any = await invoke('get_hardware_specs');
+        if (active && res.success) {
+          setHardwareSpecs(res.data);
+        }
+      } catch (e) {
+        console.error('Failed to get hardware specs', e);
+      }
+    };
+    fetchHardware();
+    const interval = setInterval(fetchHardware, 5000);
+    return () => { active = false; clearInterval(interval); };
+  }, []);
 
   const handleLoadModel = async (modelId: string) => {
     try {
+      setActionModelId(modelId);
       setLoadingState('loading');
-      await invoke('start_local_server', { modelId });
+      await invoke('start_local_server', { modelId, contextSize });
       setLoadedLocalModel(modelId);
     } catch (e) {
       console.error('Failed to load model', e);
     } finally {
       setLoadingState('idle');
+      setActionModelId(null);
     }
   };
 
   const handleUnloadModel = async () => {
     try {
+      if (loadedLocalModel) setActionModelId(loadedLocalModel);
       setLoadingState('unloading');
       await invoke('stop_local_server');
       setLoadedLocalModel(null);
@@ -63,26 +87,49 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       console.error('Failed to unload model', e);
     } finally {
       setLoadingState('idle');
+      setActionModelId(null);
     }
   };
 
   const handleUninstallModel = async (modelId: string) => {
-    const confirmed = await confirm(`Are you sure you want to uninstall ${modelId}?`);
-    if (!confirmed) return;
     try {
+      const confirmed = await confirm(`Are you sure you want to uninstall ${modelId}?`);
+      if (!confirmed) return;
+
+      setActionModelId(modelId);
+
+
+      if (loadedLocalModel === modelId) {
+        await handleUnloadModel();
+      }
+
       setLoadingState('uninstalling');
       await invoke('hf_uninstall_model', { filename: modelId });
-      localModelsQuery.refetch(); // Refresh the list
+      await localModelsQuery.refetch(); // Refresh the list
     } catch (e) {
       console.error('Failed to uninstall model', e);
       alert(`Failed to uninstall: ${e}`);
     } finally {
       setLoadingState('idle');
+      setActionModelId(null);
     }
   };
 
   const localModelsQuery = useLocalModels(true);
   const nyxNativeModels = localModelsQuery.data?.models || [];
+
+  // Auto-refresh the model list when a Tauri download completes — no page reload needed.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const isTauri = typeof window !== 'undefined' &&
+      ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+    if (!isTauri) return;
+    listen('llm-download-complete', () => {
+      localModelsQuery.refetch();
+    }).then((fn) => { unlisten = fn; }).catch(() => {});
+    return () => { unlisten?.(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const query = search.toLowerCase();
 
@@ -218,10 +265,12 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                        onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
                        isLocal={true}
                        isLoaded={loadedLocalModel === m.id}
-                       loadingState={loadedLocalModel === m.id || (loadingState === 'loading' && loadedLocalModel === null) ? loadingState : 'idle'}
+                       loadingState={actionModelId === m.id ? loadingState : 'idle'}
                        onLoad={() => handleLoadModel(m.id)}
                        onUnload={() => handleUnloadModel()}
                        onUninstall={() => handleUninstallModel(m.id)}
+                       modelSizeBytes={m.size_bytes}
+                       systemVramBytes={hardwareSpecs?.gpu_vram}
                      />
                   ))}
                   {nyxNativeModels.length === 0 && (

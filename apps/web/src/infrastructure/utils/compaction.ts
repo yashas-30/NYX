@@ -53,22 +53,23 @@ export function compactHistory(
 }
 
 /**
- * Smart asynchronous history compaction (summarizing old messages + whitelist filtering).
- * Requires an AIService instance and settings.
+ * Smart asynchronous history compaction.
+ * Summarises old messages via a native Tauri one-shot invoke so no HTTP
+ * client is needed in the frontend.
  */
 export async function compactHistoryAsync(
   messages: ChatMessage[],
   maxTokens: number,
-  aiService: any,
-  settings: any
+  _aiService?: any,   // kept for call-site compat — no longer used
+  _settings?: any,
 ): Promise<ChatMessage[]> {
   let currentTokens = estimateContextTokens(messages);
-  
+
   if (currentTokens <= maxTokens) {
     return messages;
   }
 
-  // 1. Whitelist filtering: Strip images from older messages first (keep images only in last 2 messages)
+  // 1. Strip images from older messages (keep last 2 messages intact)
   const strippedMessages = messages.map((m, idx) => {
     if (m.role === 'system' || idx >= messages.length - 2) return m;
     return { ...m, images: undefined };
@@ -79,50 +80,59 @@ export async function compactHistoryAsync(
     return strippedMessages;
   }
 
-  // 2. Smart summarization: Summarize everything except the last 4 messages and system prompt
+  // 2. Smart summarisation: collapse everything except the last 4 messages
   const systemMsg = strippedMessages.find(m => m.role === 'system');
   const otherMsgs = strippedMessages.filter(m => m.role !== 'system');
 
   if (otherMsgs.length <= 4) {
-    // Too few messages to summarize effectively, fallback to basic compaction
     return compactHistory(strippedMessages, maxTokens);
   }
 
   const msgsToSummarize = otherMsgs.slice(0, otherMsgs.length - 4);
   const msgsToKeep = otherMsgs.slice(otherMsgs.length - 4);
 
-  const summaryPrompt = `Please summarize the following conversation history concisely, retaining all critical facts, decisions, and context. Omit pleasantries. Conversation:\n\n${msgsToSummarize.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n')}`;
+  const summaryPrompt = `Summarize the following conversation concisely, retaining all critical facts, decisions, and context. Omit pleasantries.\n\n${msgsToSummarize.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n')}`;
 
   try {
-    // Use a fast model for summarization
-    const response = await aiService.execute({
-      model: 'gemini-3.1-flash-lite',
-      provider: 'google', // Adjust based on availability
-      systemPrompt: 'You are an AI context summarizer. Provide a highly condensed summary of the conversation history.',
-      prompt: summaryPrompt,
-      temperature: 0.1,
-      settings
-    });
+    // Check for Tauri environment before invoking
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-    const summaryContent = `[CONVERSATION HISTORY SUMMARY]\n${response.content}`;
-    
+    let summaryText = '';
+
+    if (isTauri) {
+      // Native one-shot invoke — Rust handles model selection and streaming internally.
+      // We use the compact_history_summarize command which runs a fast model call
+      // with no streaming overhead.
+      const result = await (window as any).__TAURI_INTERNALS__.invoke('compact_history_summarize', {
+        prompt: summaryPrompt,
+      }).catch(() => null) as string | null;
+      summaryText = result ?? '';
+    }
+
+    if (!summaryText) {
+      // Fallback: sliding window compaction if Tauri call fails or not in Tauri env
+      return compactHistory(strippedMessages, maxTokens);
+    }
+
     const summaryMsg: ChatMessage = {
       id: `summary-${Date.now()}`,
       role: 'assistant',
-      content: summaryContent,
-      timestamp: Date.now()
+      content: `[CONVERSATION HISTORY SUMMARY]\n${summaryText}`,
+      timestamp: Date.now(),
     };
 
-    const result = systemMsg ? [systemMsg, summaryMsg, ...msgsToKeep] : [summaryMsg, ...msgsToKeep];
-    
-    // If it STILL exceeds maxTokens, fallback to sliding window on the result
+    const result = systemMsg
+      ? [systemMsg, summaryMsg, ...msgsToKeep]
+      : [summaryMsg, ...msgsToKeep];
+
+    // Final safety check — if still too long, apply sliding window
     if (estimateContextTokens(result) > maxTokens) {
-       return compactHistory(result, maxTokens);
+      return compactHistory(result, maxTokens);
     }
-    
+
     return result;
   } catch (err) {
-    console.error('Error during smart compaction, falling back to basic:', err);
+    console.error('[compactHistoryAsync] Smart compaction failed, falling back to basic:', err);
     return compactHistory(strippedMessages, maxTokens);
   }
 }

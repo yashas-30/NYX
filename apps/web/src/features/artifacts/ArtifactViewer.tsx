@@ -20,9 +20,7 @@ export const ArtifactViewer: React.FC<ArtifactProps> = ({ content, language, dif
   useEffect(() => {
     // If we have streaming diffs and the editor is ready, we could apply edits directly
     // to the monaco model. For now, we update the full content string.
-    if (diffs && diffs.length > 0) {
-      console.log('Applying streaming diffs:', diffs);
-    } else {
+    if (!diffs || diffs.length === 0) {
       setRenderedContent(content);
     }
   }, [content, diffs]);

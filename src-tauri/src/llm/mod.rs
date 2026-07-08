@@ -1,6 +1,7 @@
 pub mod downloader;
 pub mod manager;
 pub mod hf_downloader;
+pub mod vram_scheduler;
 
 use tauri::{AppHandle, Manager, State, Emitter};
 use std::sync::Arc;
@@ -9,25 +10,43 @@ use crate::llm::manager::LlamaManager;
 use crate::llm::downloader::Downloader;
 use crate::llm::hf_downloader::{HfDownloaderState, download_hf_model};
 
+/// Guards concurrent download attempts.
+/// Using a Mutex<()> means the lock is released automatically
+/// when the guard is dropped — even on cancellation or panic.
+/// The AtomicBool it replaces could get stuck `true` after a panic.
+static DOWNLOAD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tauri::command]
 pub async fn download_local_model(app: AppHandle) -> Result<(), String> {
-    let app_dir = app.path().app_data_dir().map_err(|_| "Failed to get app data dir".to_string())?;
+    // Try to acquire the download lock without blocking.
+    // If already locked, another download is in progress.
+    let _lock = DOWNLOAD_LOCK.try_lock()
+        .map_err(|_| "A model is already being downloaded".to_string())?;
+
+    let app_dir = app.path().app_data_dir()
+        .map_err(|_| "Failed to get app data dir".to_string())?;
+
     let downloader = Downloader::new();
-    
     let app_clone = app.clone();
     let res = downloader.ensure_assets(&app_dir, move |progress, status| {
         let _ = app_clone.emit("llm-download-progress", serde_json::json!({
             "progress": progress,
             "status": status
         }));
-    }).await?;
-    
-    let _ = app.emit("llm-download-complete", serde_json::json!({ "model": res.0, "server": res.1 }));
-    Ok(())
+    }).await;
+    // _lock is dropped here, releasing the guard.
+
+    match res {
+        Ok(res) => {
+            let _ = app.emit("llm-download-complete", serde_json::json!({ "model": res.0, "server": res.1 }));
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 #[tauri::command]
-pub async fn start_local_server(app: AppHandle, manager: State<'_, Arc<LlamaManager>>, model_id: String) -> Result<(), String> {
+pub async fn start_local_server(app: AppHandle, manager: State<'_, Arc<LlamaManager>>, model_id: String, context_size: Option<u32>) -> Result<(), String> {
     let app_dir = app.path().app_data_dir().map_err(|_| "Failed to get app data dir".to_string())?;
     let model_path = app_dir.join("models").join(&model_id);
     let server_path = app_dir.join("binaries").join("llama-server-vulkan.exe");
@@ -36,9 +55,44 @@ pub async fn start_local_server(app: AppHandle, manager: State<'_, Arc<LlamaMana
         return Err("Model or server binary not found. Please download them first.".to_string());
     }
 
-    manager.start(&server_path, &model_path).await?;
+    // --- Phase 3: VRAM-Aware Scheduling ---
+    let model_size_gb = crate::llm::vram_scheduler::get_model_size_gb(&model_path);
+    let decision = if let Some(vram) = crate::llm::vram_scheduler::query_vram() {
+        tracing::info!(
+            "[VramScheduler] GPU: {} | Available: {} MB | Model: {:.1} GB",
+            vram.gpu_name, vram.available_mb, model_size_gb
+        );
+        let d = crate::llm::vram_scheduler::compute_spawn_decision(&vram, model_size_gb);
+
+        // Emit VRAM info to frontend so the UI can show the indicator
+        let _ = app.emit("vram-decision", serde_json::json!({
+            "ngl": d.ngl,
+            "fully_gpu": d.fully_gpu,
+            "suggest_cloud_fallback": d.suggest_cloud_fallback,
+            "message": d.message,
+            "estimated_vram_mb": d.estimated_vram_mb,
+            "available_mb": vram.available_mb,
+            "gpu_name": vram.gpu_name,
+            "model_size_gb": model_size_gb
+        }));
+
+        if d.suggest_cloud_fallback {
+            return Err(d.message);
+        }
+        Some(d.ngl)
+    } else {
+        tracing::warn!("[VramScheduler] Could not query VRAM — using default -ngl 999");
+        None // Fall through to default behavior
+    };
+
+    let mut ctx_size = context_size.unwrap_or(32768);
+    if ctx_size < 32768 {
+        ctx_size = 32768;
+    }
+    manager.start_with_ngl(&server_path, &model_path, ctx_size, decision).await?;
     Ok(())
 }
+
 
 #[tauri::command]
 pub async fn stop_local_server(manager: State<'_, Arc<LlamaManager>>) -> Result<(), String> {
@@ -53,6 +107,7 @@ pub struct LocalModelInfo {
     pub provider: String,
     pub description: String,
     pub size_bytes: u64,
+    pub status: String,
 }
 
 #[tauri::command]
@@ -61,8 +116,13 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
     let models_dir = app_dir.join("models");
     
     let mut models = Vec::new();
+    
+    if !models_dir.exists() {
+        let _ = tokio::fs::create_dir_all(&models_dir).await;
+    }
+    
     if models_dir.exists() {
-        let mut entries = tokio::fs::read_dir(models_dir).await.map_err(|e| e.to_string())?;
+        let mut entries = tokio::fs::read_dir(models_dir.clone()).await.map_err(|e| e.to_string())?;
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
             if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("gguf") {
@@ -76,10 +136,13 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                     provider: "nyx-native".to_string(),
                     description: "Locally downloaded Hugging Face GGUF model".to_string(),
                     size_bytes,
+                    status: "completed".to_string(),
                 });
             }
         }
     }
+    
+    println!("[NYX] list_local_models found {} models in {:?}", models.len(), models_dir);
     
     Ok(models)
 }
@@ -268,12 +331,37 @@ pub async fn hf_get_restored_downloads(app: AppHandle, state: State<'_, Arc<HfDo
 }
 
 #[tauri::command]
-pub async fn hf_uninstall_model(app: tauri::AppHandle, filename: String) -> Result<(), String> {
+pub async fn hf_uninstall_model(
+    app: tauri::AppHandle,
+    manager: tauri::State<'_, Arc<LlamaManager>>,
+    filename: String
+) -> Result<(), String> {
+    // Attempt to stop any running model to release locks
+    manager.stop().await;
+
     let app_dir = app.path().app_data_dir().map_err(|_| "Failed to get app data dir".to_string())?;
     let models_dir = app_dir.join("models");
     let dest = models_dir.join(&filename);
+    
     if dest.exists() {
-        tokio::fs::remove_file(dest).await.map_err(|e| e.to_string())?;
+        let mut retries = 10;
+        let mut last_error = None;
+        while dest.exists() && retries > 0 {
+            match tokio::fs::remove_file(&dest).await {
+                Ok(_) => {
+                    tracing::info!("Successfully uninstalled model: {}", filename);
+                    return Ok(());
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    retries -= 1;
+                }
+            }
+        }
+        if dest.exists() {
+            return Err(format!("Failed to uninstall model '{}' after retries. The file might still be in use. Error: {:?}", filename, last_error));
+        }
     }
     Ok(())
 }

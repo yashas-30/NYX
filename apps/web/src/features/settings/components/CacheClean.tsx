@@ -14,7 +14,7 @@ interface CacheStats {
 }
 
 interface CacheCleanProps {
-  cacheStats: CacheStats;
+  cacheStats: CacheStats | null;
   fetchCacheStats: () => Promise<void>;
 }
 
@@ -34,7 +34,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
     }
   };
 
-  const totalCalls = cacheStats.hits + cacheStats.misses;
+  const totalCalls = cacheStats ? cacheStats.hits + cacheStats.misses : 0;
 
   return (
     <div className="mt-6 group p-5 rounded-md bg-card border border-border hover:border-accent/25 transition-all duration-300 relative overflow-hidden shadow-sm border border-border">
@@ -60,7 +60,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
             CACHED QUERIES
           </span>
           <span className="text-[15px] font-black font-mono text-foreground mt-1.5">
-            {cacheStats.itemCount}
+            {cacheStats ? cacheStats.itemCount : 'N/A'}
           </span>
         </div>
         <div className="bg-background/60 border border-border rounded-md p-3 flex flex-col justify-between">
@@ -68,9 +68,11 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
             STORAGE USED
           </span>
           <span className="text-[15px] font-black font-mono text-foreground mt-1.5">
-            {cacheStats.totalSizeBytes > 1024 * 1024
-              ? `${(cacheStats.totalSizeBytes / (1024 * 1024)).toFixed(2)} MB`
-              : `${(cacheStats.totalSizeBytes / 1024).toFixed(1)} KB`}
+            {!cacheStats 
+              ? 'N/A' 
+              : cacheStats.totalSizeBytes > 1024 * 1024
+                ? `${(cacheStats.totalSizeBytes / (1024 * 1024)).toFixed(2)} MB`
+                : `${(cacheStats.totalSizeBytes / 1024).toFixed(1)} KB`}
           </span>
         </div>
         <div className="bg-background/60 border border-border rounded-md p-3 flex flex-col justify-between">
@@ -78,7 +80,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
             HIT EFFICIENCY
           </span>
           <span className="text-[15px] font-black font-mono text-accent mt-1.5">
-            {totalCalls > 0 ? `${((cacheStats.hits / totalCalls) * 100).toFixed(1)}%` : '0.0%'}
+            {cacheStats ? (totalCalls > 0 ? `${((cacheStats.hits / totalCalls) * 100).toFixed(1)}%` : '0.0%') : 'N/A'}
           </span>
         </div>
       </div>
@@ -87,7 +89,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
         <div className="flex justify-between items-center mb-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground/80">
           <span>Cache Efficiency Index</span>
           <span>
-            {cacheStats.hits} Hits / {totalCalls} Total
+            {cacheStats ? `${cacheStats.hits} Hits / ${totalCalls} Total` : 'Data Unavailable'}
           </span>
         </div>
         <div className="h-1.5 w-full bg-muted rounded-md overflow-hidden">
@@ -95,7 +97,7 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
             className="h-full bg-gradient-to-r from-accent to-emerald-500 rounded-md transition-all duration-500"
             style={{
               width:
-                totalCalls > 0 ? `${Math.min(100, (cacheStats.hits / totalCalls) * 100)}%` : '0%',
+                totalCalls > 0 && cacheStats ? `${Math.min(100, (cacheStats.hits / totalCalls) * 100)}%` : '0%',
             }}
           />
         </div>
@@ -107,11 +109,11 @@ export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheSt
           identical prompts returns results instantly, saving network credits.
         </p>
         <motion.button
-          whileTap={cacheStats.itemCount === 0 ? {} : { scale: 0.97 }}
+          whileTap={!cacheStats || cacheStats.itemCount === 0 ? {} : { scale: 0.97 }}
           onClick={handleClearCache}
-          disabled={cacheStats.itemCount === 0}
+          disabled={!cacheStats || cacheStats.itemCount === 0}
           className={`px-4 py-2.5 rounded-md border text-[11px] font-bold uppercase tracking-[0.2em] transition-all flex items-center gap-2 shrink-0 ${
-            cacheStats.itemCount === 0
+            !cacheStats || cacheStats.itemCount === 0
               ? 'bg-muted/30 border-transparent text-muted-foreground/30 cursor-not-allowed'
               : 'bg-red-500/5 border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white hover:border-red-500 cursor-pointer shadow-sm'
           }`}

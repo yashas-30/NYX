@@ -36,8 +36,10 @@ export class SettingsSyncService {
   }
 
   static async importFromVSCode(): Promise<boolean> {
-    // Simulated VS Code import logic parsing settings.json from local disk via IPC/API
-    console.log('Importing settings from VS Code...');
-    return new Promise((resolve) => setTimeout(() => resolve(true), 1500));
+    // VS Code settings import reads from the local filesystem via Tauri IPC.
+    // This feature is not yet implemented. Throw so callers can surface an error.
+    throw new Error(
+      'VS Code settings import is not yet available. This feature requires filesystem access via the desktop app.'
+    );
   }
 }

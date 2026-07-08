@@ -50,47 +50,9 @@ class TTSPlayer {
   // ── Private methods ─────────────────────────────────────────────────────────
 
   private async tryServerTTS(text: string, voice = 'alloy'): Promise<boolean> {
-    try {
-      const res = await fetch('/api/v1/voice/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text.slice(0, 4096), voice }),
-      });
-
-      // 501 = server TTS not configured, fall through to browser synthesis
-      if (res.status === 501) return false;
-      if (!res.ok) return false;
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-
-      return new Promise<boolean>((resolve) => {
-        const audio = new Audio(url);
-        this.currentAudio = audio;
-        this._isSpeaking = true;
-
-        audio.onended = () => {
-          this._isSpeaking = false;
-          URL.revokeObjectURL(url);
-          if (this.currentAudio === audio) this.currentAudio = null;
-          resolve(true);
-        };
-
-        audio.onerror = () => {
-          this._isSpeaking = false;
-          URL.revokeObjectURL(url);
-          if (this.currentAudio === audio) this.currentAudio = null;
-          resolve(false);
-        };
-
-        audio.play().catch(() => {
-          this._isSpeaking = false;
-          resolve(false);
-        });
-      });
-    } catch {
-      return false;
-    }
+    // Server TTS requires Fastify backend, which is removed in Tauri migration.
+    // We immediately fall back to browser synthesis.
+    return false;
   }
 
   private browserSpeak(text: string): void {

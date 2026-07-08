@@ -170,7 +170,7 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
     caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576;
-  } else if (lowerId.includes('gemini-1.5-pro')) {
+  } else if (lowerId.includes('gemini-3.5-pro')) {
     caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 2097152;

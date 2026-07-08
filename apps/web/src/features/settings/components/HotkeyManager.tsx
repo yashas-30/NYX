@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PlusIcon as Plus, XIcon as X } from '@animateicons/react/lucide';
 import { Keyboard } from 'lucide-react';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -9,29 +9,65 @@ interface Hotkey {
   keys: string;
 }
 
-export const HotkeyManager: React.FC = () => {
-  const [hotkeys, setHotkeys] = useState<Hotkey[]>([
-    { id: '1', action: 'Toggle Sidebar', keys: 'ctrl+b' },
-    { id: '2', action: 'Global Search', keys: 'ctrl+p' },
-    { id: '3', action: 'Run Code', keys: 'ctrl+enter' },
-  ]);
+const STORAGE_KEY = 'nyx_hotkeys';
 
+const DEFAULT_HOTKEYS: Hotkey[] = [
+  { id: 'builtin-sidebar', action: 'Toggle Sidebar', keys: 'ctrl+b' },
+  { id: 'builtin-search', action: 'Global Search', keys: 'ctrl+p' },
+  { id: 'builtin-run', action: 'Run Code', keys: 'ctrl+enter' },
+];
+
+function loadHotkeys(): Hotkey[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // ignore corrupt storage
+  }
+  return DEFAULT_HOTKEYS;
+}
+
+function saveHotkeys(hotkeys: Hotkey[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(hotkeys));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+export const HotkeyManager: React.FC = () => {
+  const [hotkeys, setHotkeys] = useState<Hotkey[]>(loadHotkeys);
   const [newAction, setNewAction] = useState('');
   const [newKeys, setNewKeys] = useState('');
 
-  // Register hotkeys globally inside the manager for demonstration (in a real app, you'd register these in a root provider)
-  useHotkeys('ctrl+b', () => console.log('Toggled Sidebar!'), { preventDefault: true });
+  // Wire built-in sidebar toggle to a custom DOM event that layout components can listen to.
+  useHotkeys(
+    'ctrl+b',
+    () => window.dispatchEvent(new CustomEvent('nyx:toggle-sidebar')),
+    { preventDefault: true }
+  );
+
+  const updateHotkeys = useCallback((next: Hotkey[]) => {
+    setHotkeys(next);
+    saveHotkeys(next);
+  }, []);
 
   const addHotkey = () => {
-    if (newAction && newKeys) {
-      setHotkeys([...hotkeys, { id: Date.now().toString(), action: newAction, keys: newKeys }]);
-      setNewAction('');
-      setNewKeys('');
-    }
+    if (!newAction.trim() || !newKeys.trim()) return;
+    const next: Hotkey[] = [
+      ...hotkeys,
+      { id: crypto.randomUUID(), action: newAction.trim(), keys: newKeys.trim() },
+    ];
+    updateHotkeys(next);
+    setNewAction('');
+    setNewKeys('');
   };
 
   const removeHotkey = (id: string) => {
-    setHotkeys(hotkeys.filter((h) => h.id !== id));
+    updateHotkeys(hotkeys.filter((h) => h.id !== id));
   };
 
   return (
@@ -70,12 +106,14 @@ export const HotkeyManager: React.FC = () => {
             className="flex-1 bg-background border border-border rounded-md px-3 py-2 text-xs text-foreground focus:outline-none focus:border-accent/50"
             value={newAction}
             onChange={(e) => setNewAction(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addHotkey()}
           />
           <input
             placeholder="Keys (e.g. ctrl+s)"
             className="flex-1 bg-background border border-border rounded-md px-3 py-2 text-xs text-foreground font-mono uppercase focus:outline-none focus:border-accent/50"
             value={newKeys}
             onChange={(e) => setNewKeys(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addHotkey()}
           />
           <button
             onClick={addHotkey}

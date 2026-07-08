@@ -23,7 +23,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // No-op: Only dark mode is supported in NYX
   };
 
-  return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
+  const value = React.useMemo(() => ({ theme, toggleTheme }), [theme]);
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };
 
 export const useTheme = () => {

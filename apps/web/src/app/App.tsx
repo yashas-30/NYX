@@ -50,7 +50,6 @@ function AppContent() {
 
           // Ensure assets exist (downloads if missing)
           await invoke('download_local_model');
-          console.log('[App] Local Llama Server assets ready');
 
           unlisten();
           unlistenComplete();
@@ -149,13 +148,14 @@ function SharedChatView() {
       return;
     }
 
-    fetch(`/api/v1/conversations/share/${shareId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Shared conversation not found or expired');
-        return res.json();
-      })
-      .then((d) => setData(d))
-      .catch((e) => setError(e.message));
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('db_get_shared_conversation', { shareId })
+        .then((d: any) => {
+          if (!d) throw new Error('Shared conversation not found or expired');
+          setData(d);
+        })
+        .catch((e: any) => setError(e.message || String(e)));
+    });
   }, []);
 
   if (error) {

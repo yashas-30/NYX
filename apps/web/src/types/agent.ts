@@ -61,7 +61,6 @@ export interface PromptAnalysis {
   urgency?: 'low' | 'medium' | 'high' | 'normal';
   userExpertise?: 'beginner' | 'intermediate' | 'expert';
   contextWindowNeeded?: number;
-  suggestedExecutionMode?: 'standard' | 'parallel' | 'ensemble' | 'ab-test';
   suggestedExecutionReasoning?: string;
 }
 

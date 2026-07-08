@@ -17,8 +17,6 @@ import { SettingsIcon as Settings, Trash2Icon as Trash2, ChevronRightIcon as Che
 import { Plus, PanelLeftOpen, MessageSquare, Library, FolderPlus, MoreHorizontal, Folder, Users, GitBranch, FileText, Image, Plug, Calendar, Code2, Brain } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
-import { useAgentLightning } from '@src/shared/hooks/useAgentLightning';
-import { AgentLightningPanel } from '@src/shared/components/AgentLightningPanel';
 
 export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -91,27 +89,11 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   };
 
   const allModels = [...AVAILABLE_MODELS, ...localLibraryModels];
-  const lightningState = useAgentLightning();
 
   return (
     <ErrorBoundary name="AppDashboard">
       <main className="flex h-full w-full overflow-hidden bg-background text-foreground font-sans relative selection:bg-primary/20">
         
-        {lightningState.isLightningOpen && (
-          <AgentLightningPanel
-            onClose={lightningState.toggleLightning}
-            agentMode={activeMode === 'chat' ? 'chat' : 'coder'}
-            directives={lightningState.apoDirectives[activeMode === 'chat' ? 'chat' : 'coder']}
-            onSaveDirectives={(dirs) =>
-              lightningState.setApoDirectives({
-                ...lightningState.apoDirectives,
-                [activeMode === 'chat' ? 'chat' : 'coder']: dirs,
-              })
-            }
-            logRollout={lightningState.logRollout}
-          />
-        )}
-
         {/* Mobile Sidebar Backdrop Overlay */}
         <AnimatePresence>
           {isMobile && sidebarOpen && (
@@ -129,7 +111,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         <motion.aside
           initial={false}
           animate={{
-            width: sidebarOpen ? 240 : 0,
+            width: sidebarOpen ? 180 : 0,
             opacity: sidebarOpen ? 1 : 0,
           }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
@@ -252,12 +234,12 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             {/* Bottom Section (Horizontal Navigation Grid) */}
             <div className="px-3 py-3.5 border-t border-border mt-auto space-y-3">
               
-              <div className="grid grid-cols-6 gap-1.5 px-1">
+              <div className="grid grid-cols-4 gap-1.5 px-1">
                 {[
                   { mode: 'registry', icon: Library, label: 'Model Library' },
-                  { mode: 'compare', icon: Activity, label: 'Model Comparison' },
                   { mode: 'settings', icon: Settings, label: 'Settings' },
                   { mode: 'memory', icon: Brain, label: 'Memory' },
+                  { mode: 'observability', icon: Layers, label: 'Observability' },
                 ].map(({ mode, icon: Icon, label }) => (
                   <button
                     key={mode}
@@ -317,7 +299,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               clearApiKeys={clearApiKeys}
               modelsState={modelsState}
               setModelsState={setModels}
-              lightningState={lightningState}
               allModels={allModels}
             />
           </AnimatePresence>

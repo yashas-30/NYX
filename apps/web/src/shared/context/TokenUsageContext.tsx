@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { fetchQuota } from '@src/infrastructure/api/usageClient';
 
 export interface TokenUsage {
@@ -91,7 +91,7 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const refreshProviderQuota = useCallback(async (provider: string, apiKey?: string) => {
     const { total, used, totalUSD, usedUSD } = await fetchQuota(provider, apiKey);
-    if (total > 0) {
+    if (total !== null && used !== null && total > 0) {
       setUsage((prev) => {
         return {
           ...prev,
@@ -101,10 +101,13 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, []);
 
+  const value = React.useMemo(
+    () => ({ usage, updateUsage, resetUsage, setQuota, refreshProviderQuota }),
+    [usage, updateUsage, resetUsage, setQuota, refreshProviderQuota]
+  );
+
   return (
-    <TokenUsageContext.Provider
-      value={{ usage, updateUsage, resetUsage, setQuota, refreshProviderQuota }}
-    >
+    <TokenUsageContext.Provider value={value}>
       {children}
     </TokenUsageContext.Provider>
   );

@@ -37,7 +37,7 @@ pub struct HardwareSpecs {
 pub async fn get_hardware_specs() -> SystemResult<HardwareSpecs> {
     let mut sys = System::new_all();
     sys.refresh_all();
-    
+
     // Stub GPU info - in a production setting we would use WMI or WGPU here
     let gpu_name = "Detected GPU (Vulkan/Metal)".to_string();
     let gpu_vram = 8 * 1024 * 1024 * 1024; // 8GB stub
@@ -50,6 +50,47 @@ pub async fn get_hardware_specs() -> SystemResult<HardwareSpecs> {
         gpu_vram,
     };
     SystemResult { success: true, data: Some(specs), error: None }
+}
+
+#[derive(Serialize)]
+pub struct OptimalLayers {
+    pub gpu_layers: u32,
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct SystemDiagnostics {
+    pub totalmem: u64,
+    pub vram: u64,
+    #[serde(rename = "optimalLayers")]
+    pub optimal_layers: Option<OptimalLayers>,
+}
+
+#[tauri::command]
+pub async fn get_system_diagnostics(model_id: Option<String>) -> SystemDiagnostics {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    // Stub VRAM - in production query real wgpu device
+    let vram = 8 * 1024 * 1024 * 1024;
+
+    let optimal_layers = if let Some(m) = model_id {
+        if m.contains("coder-1.5b") {
+            Some(OptimalLayers { gpu_layers: 99, message: "Fits easily in VRAM".to_string() })
+        } else if m.contains("3b") {
+            Some(OptimalLayers { gpu_layers: 64, message: "Offloading mostly to VRAM".to_string() })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    SystemDiagnostics {
+        totalmem: sys.total_memory(),
+        vram,
+        optimal_layers,
+    }
 }
 
 #[tauri::command]
@@ -93,7 +134,7 @@ pub struct CommandResult {
 #[tauri::command]
 pub async fn execute_command(command: String, cwd: String) -> Result<CommandResult, String> {
     use std::process::Command;
-    
+
     #[cfg(target_os = "windows")]
     let mut cmd = Command::new("cmd");
     #[cfg(target_os = "windows")]
@@ -109,10 +150,23 @@ pub async fn execute_command(command: String, cwd: String) -> Result<CommandResu
     }
 
     let output = cmd.output().map_err(|e| e.to_string())?;
-    
+
     Ok(CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         exit_code: output.status.code().unwrap_or(-1),
     })
+}
+
+#[tauri::command]
+pub async fn cleanup_session_state(
+    app_state: tauri::State<'_, crate::AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    tracing::info!("Cleaning up conductor channel for session {}", session_id);
+    // PTY sessions are cleaned up individually via pty_close.
+    // Here we only drop the conductor mpsc sender so the actor task exits.
+    let mut conductors = app_state.conductor_channels.lock().await;
+    conductors.remove(&session_id);
+    Ok(())
 }
