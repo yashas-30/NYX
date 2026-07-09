@@ -42,6 +42,8 @@ pub struct AppState {
 
     /// Per-session conductor tx handles — reuse the same actor across multi-turn conversations.
     pub conductor_channels: Arc<Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<agents::protocol::ConductorMessage>>>>,
+    pub search_provider: Arc<tokio::sync::RwLock<String>>,
+    pub search_api_key: Arc<tokio::sync::RwLock<String>>,
 }
 
 impl Default for AppState {
@@ -54,6 +56,8 @@ impl Default for AppState {
             pending_plugin_tools: Arc::new(Mutex::new(std::collections::HashMap::new())),
             pending_browser_actions: Arc::new(Mutex::new(std::collections::HashMap::new())),
             conductor_channels: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            search_provider: Arc::new(tokio::sync::RwLock::new("duckduckgo".to_string())),
+            search_api_key: Arc::new(tokio::sync::RwLock::new("".to_string())),
         }
     }
 }
@@ -137,6 +141,7 @@ pub fn run() {
             llm_stream_request,
             orchestrator::commands::run_orchestrator_turn,
             commands::system::cleanup_session_state,
+            commands::system::set_search_settings,
             pty_spawn, pty_write, pty_resize, pty_close,
             fs_watch_start, fs_watch_stop, fs_parse_and_chunk_file,
             commands::fs::fs_read_file, commands::fs::fs_write_file, commands::fs::fs_list_dir,
@@ -212,6 +217,10 @@ async fn setup_app(handle: &tauri::AppHandle) {
 
     let window   = create_main_window(handle).await;
 
+    // Maximize the window by default to fill the display as requested, 
+    // without pushing the native OS titlebar off-screen.
+    let _ = window.maximize();
+
     tray::create_tray(handle, &window).expect("Failed to create tray");
 
     let _ = window.show();
@@ -242,7 +251,7 @@ async fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
 
     WebviewWindowBuilder::new(handle, "main", url)
         .title("NYX - Native Local Intelligence & Cloud Orchestration Platform")
-        .inner_size(1200.0, 760.0)
+        .inner_size(1200.0, 760.0) // This is just the fallback before the monitor resize
         .min_inner_size(800.0, 560.0)
         .center()
         .resizable(true)

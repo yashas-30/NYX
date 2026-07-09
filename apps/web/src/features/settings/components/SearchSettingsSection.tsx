@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
-import { Globe, Search, BookOpen } from 'lucide-react';
+import { Globe, Search } from 'lucide-react';
 
 export const SearchSettingsSection: React.FC = () => {
   const searchProvider = useNyxStore((state) => state.searchProvider) || 'duckduckgo';
@@ -19,13 +19,6 @@ export const SearchSettingsSection: React.FC = () => {
       name: 'Tavily Search API',
       desc: 'Real-time search engine optimized specifically for LLMs. Returns high-quality, pre-cleaned content blocks for precise search grounding.',
       icon: <Globe className="w-5 h-5 text-accent" />,
-      requiresKey: true,
-    },
-    {
-      id: 'jina',
-      name: 'Jina Reader Search',
-      desc: 'Converts search results and web content directly into clean, LLM-friendly markdown. Ideal for long-context search analysis.',
-      icon: <BookOpen className="w-5 h-5 text-emerald-400" />,
       requiresKey: true,
     },
   ] as const;
@@ -91,7 +84,7 @@ export const SearchSettingsSection: React.FC = () => {
         })}
       </div>
       <p className="text-[10px] text-muted-foreground/60 leading-relaxed mt-4">
-        * Tavily and Jina Search require their respective API keys to be configured in the API Keys tab. If missing, searches will fail or fall back depending on agent policies.
+        * Tavily Search requires its API key to be configured in the API Keys tab. If missing, searches will fail or fall back depending on agent policies.
       </p>
     </div>
   );

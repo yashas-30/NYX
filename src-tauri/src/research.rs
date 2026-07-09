@@ -56,6 +56,7 @@ async fn run_planner(
         api_key,
         temperature: Some(0.3),
         max_tokens: Some(1024),
+        reasoning_effort: None,
         event_name: None,
         tools: None,
     };
@@ -113,11 +114,18 @@ async fn get_search_urls(query: &str) -> Vec<String> {
     urls
 }
 
-async fn fetch_jina_markdown(url: &str) -> String {
+async fn fetch_markdown(url: &str) -> String {
     let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().unwrap_or_default();
-    let jina_url = format!("https://r.jina.ai/{}", url);
-    match client.get(&jina_url).send().await {
-        Ok(res) => res.text().await.unwrap_or_default(),
+    match client.get(url).send().await {
+        Ok(res) => {
+            if let Ok(html) = res.text().await {
+                let document = scraper::Html::parse_document(&html);
+                let text = document.root_element().text().collect::<Vec<_>>().join(" ");
+                text
+            } else {
+                "".to_string()
+            }
+        },
         Err(_) => "".to_string(),
     }
 }
@@ -145,6 +153,7 @@ async fn run_publisher(
         api_key,
         temperature: Some(0.4),
         max_tokens: Some(8000),
+        reasoning_effort: None,
         event_name: None,
         tools: None,
     };
@@ -225,7 +234,7 @@ pub async fn start_deep_research(
                             "type": "progress",
                             "message": format!("Reading: {}", url)
                         }));
-                        let md = fetch_jina_markdown(&url).await;
+                        let md = fetch_markdown(&url).await;
                         if !md.is_empty() {
                             let title = md.lines()
                                 .find(|l| !l.trim().is_empty())
@@ -249,7 +258,7 @@ pub async fn start_deep_research(
     }
     
     // Each sub-query runs in its own task with a hard 20-second timeout.
-    // If DuckDuckGo or Jina hangs, that task fails gracefully rather than
+    // If a request hangs, that task fails gracefully rather than
     // stalling the entire pipeline for up to the reqwest 120s timeout.
     let results = join_all(tasks).await;
     let mut all_context = vec![];

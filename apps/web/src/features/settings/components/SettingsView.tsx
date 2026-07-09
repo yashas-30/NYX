@@ -104,72 +104,66 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       initial={{ opacity: 0, y: 20, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -20, scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
       className="h-full w-full flex flex-col min-h-0 overflow-hidden bg-background"
     >
+      {/* Settings header — tabs inline, no internal sidebar */}
       <header
-        className={`h-10 flex items-center justify-between px-6 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-card transition-all duration-300 gap-6`}
+        className={`h-10 flex items-center gap-6 px-6 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-card transition-all duration-300`}
       >
         <div className="flex items-center gap-2 shrink-0">
-          <SettingsIcon size={16} className="text-primary" />
-          <h2 className="text-xs font-bold tracking-wider text-foreground uppercase">Settings</h2>
+          <SettingsIcon size={14} className="text-primary" />
+          <h2 className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">Settings</h2>
         </div>
 
-      </header>
-
-      <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
-        {/* Settings Sidebar */}
-        <div className="w-56 flex-shrink-0 border-r border-border bg-card p-4 overflow-y-auto custom-scrollbar flex flex-col gap-1">
+        {/* Horizontal tab pills */}
+        <div className="flex items-center gap-0.5">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-medium transition-all text-left ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium transition-colors duration-150 cursor-pointer ${
                 activeTab === tab.id
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
               }`}
             >
-              <div className={activeTab === tab.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}>
-                {tab.icon}
-              </div>
+              <span className={activeTab === tab.id ? 'text-primary' : 'text-muted-foreground/60'}>{tab.icon}</span>
               {tab.label}
             </button>
           ))}
         </div>
+      </header>
 
-        {/* Content Area */}
-        <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar p-6 bg-background">
-          <div className="max-w-3xl mx-auto space-y-6 pb-12">
-            {activeTab === 'api-keys' && (
-              <ApiKeyVault
-                apiKeys={apiKeys}
-                vaultStatus={vaultStatus}
-                keysInput={keysInput}
-                setKeysInput={setKeysInput}
-                expandedProvider={expandedProvider}
-                toggleExpanded={toggleExpanded}
-                fetchVaultStatus={fetchVaultStatus}
-                clearApiKeys={clearApiKeys}
+      {/* Full-width content area */}
+      <div className="flex-1 overflow-y-auto p-6 scrollbar-none bg-background">
+        <div className="max-w-screen-xl mx-auto space-y-6 pb-12">
+          {activeTab === 'api-keys' && (
+            <ApiKeyVault
+              apiKeys={apiKeys}
+              vaultStatus={vaultStatus}
+              keysInput={keysInput}
+              setKeysInput={setKeysInput}
+              expandedProvider={expandedProvider}
+              toggleExpanded={toggleExpanded}
+              fetchVaultStatus={fetchVaultStatus}
+              clearApiKeys={clearApiKeys}
+            />
+          )}
+
+          {activeTab === 'models' && (
+            <div className="space-y-6">
+              <ModelSettingsSection
+                selectedQuant={selectedQuant}
+                setSelectedQuant={setSelectedQuant}
               />
-            )}
+              <CacheClean cacheStats={cacheStats} fetchCacheStats={fetchCacheStats} />
+            </div>
+          )}
 
-            {activeTab === 'models' && (
-              <div className="space-y-6">
-                <ModelSettingsSection
-                  selectedQuant={selectedQuant}
-                  setSelectedQuant={setSelectedQuant}
-                />
-                <CacheClean cacheStats={cacheStats} fetchCacheStats={fetchCacheStats} />
-              </div>
-            )}
-
-            {activeTab === 'search' && (
-              <SearchSettingsSection />
-            )}
-
-
-          </div>
+          {activeTab === 'search' && (
+            <SearchSettingsSection />
+          )}
         </div>
       </div>
     </motion.div>

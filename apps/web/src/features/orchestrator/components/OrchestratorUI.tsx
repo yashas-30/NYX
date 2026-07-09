@@ -581,7 +581,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
 
         {/* Messages */}
         <ScrollArea className="flex-1 relative" ref={containerRef} onScrollCapture={handleScroll}>
-          <div className="max-w-3xl mx-auto px-4 py-6 space-y-6 pb-24">
+          <div className="max-w-screen-xl mx-auto px-4 py-6 space-y-6 pb-24">
             <AnimatePresence initial={false}>
               {messages.map((msg, idx) => (
                 <motion.div
@@ -651,7 +651,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
 
         {/* Input */}
         <div className="p-4 bg-card border-t border-border shrink-0">
-          <div className="max-w-3xl mx-auto flex flex-col gap-2">
+          <div className="max-w-screen-xl mx-auto flex flex-col gap-2">
             {/* Phase indicators */}
             {isProcessing && (
               <div className="flex gap-2 text-xs font-mono mb-1 overflow-x-auto pb-1">

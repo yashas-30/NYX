@@ -19,7 +19,7 @@ import { CodeBlock } from '../../../components/chat/CodeBlock';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { toast } from '@src/shared/components/ui/sonner';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
-import { Logo, NyxLoader, CatLoader, AnimatedLogo } from '@src/assets/icons/icons';
+import { Logo, NyxLoader, AnimatedLogo } from '@src/assets/icons/icons';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ArtifactPanel } from './ArtifactPanel';
 import { Citation, CitationCard } from './CitationCard';
@@ -358,7 +358,7 @@ FileAttachment.displayName = 'FileAttachment';
 
 const StreamingCursor: React.FC = memo(() => (
   <span className="inline-flex items-center ml-1">
-    <span className="w-[7px] h-[14px] bg-primary/60 rounded-sm animate-pulse" />
+    <span className="w-[7px] h-[14px] bg-accent/70 rounded-sm animate-pulse" />
   </span>
 ));
 StreamingCursor.displayName = 'StreamingCursor';
@@ -430,7 +430,7 @@ const MemoizedMarkdownBlock: React.FC<{
       ),
       em: ({ children }: any) => <em className="italic text-foreground/90">{children}</em>,
       blockquote: ({ children }: any) => (
-        <blockquote className="my-2 pl-4 py-1 border-l border-border bg-transparent text-sm text-muted-foreground italic">
+        <blockquote className="my-2 py-3 px-4 bg-muted/30 rounded-md text-sm text-muted-foreground">
           {children}
         </blockquote>
       ),
@@ -548,7 +548,7 @@ const TtsSpeakerButton: React.FC<{
     <button
       onClick={onToggle}
       title={isSpeaking ? 'Stop reading' : 'Read aloud'}
-      className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+      className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer font-medium tracking-normal"
     >
       {isSpeaking ? <VolumeX size={10} /> : <Volume2 size={10} />}
       <span>{isSpeaking ? 'Stop' : 'Listen'}</span>
@@ -677,7 +677,7 @@ const MessageActions: React.FC<{
         )}
         <button
           onClick={() => onCopy(content, msgId)}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer font-medium tracking-normal"
         >
           {copiedId === msgId ? (
             <>
@@ -695,7 +695,7 @@ const MessageActions: React.FC<{
         {isUser && onEdit && (
           <button
             onClick={() => setIsEditing(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer font-medium"
           >
             <Pencil size={10} />
             <span>Edit</span>
@@ -705,7 +705,7 @@ const MessageActions: React.FC<{
         {!isUser && onRegenerate && (
           <button
             onClick={() => onRegenerate(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer font-medium"
             title={`Regenerate with ${activeModel || 'current model'}`}
           >
             <RefreshCw size={10} />
@@ -716,7 +716,7 @@ const MessageActions: React.FC<{
         {!isUser && onBranch && (
           <button
             onClick={() => onBranch(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer uppercase font-bold tracking-wider"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer font-medium"
           >
             <GitBranch size={10} />
             <span>Branch</span>
@@ -846,7 +846,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
       >
         {isUser ? (
           <div className="max-w-[85%] sm:max-w-[75%]">
-            <div className="py-3.5 px-5 bg-muted/10 border border-border rounded-2xl hover:bg-muted/20 transition-all shadow-sm">
+            <div className="py-3.5 px-5 bg-muted/25 border border-border rounded-2xl hover:bg-muted/30 transition-all shadow-sm">
               {msg.attachments && msg.attachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-3">
                   {msg.attachments.map((att, i) => (
@@ -937,7 +937,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               }
 
               return (
-                <div className="flex items-baseline gap-2 mb-1 select-none pl-[92px] md:pl-0">
+                <div className="flex items-baseline gap-2 mb-1 select-none pl-11">
                   <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
                     {displayName}
                   </span>
@@ -945,16 +945,8 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               );
             })()}
 
-            <div className="flex w-full gap-3 md:gap-0 items-start relative">
-              <div className="md:absolute md:-left-[92px] md:top-0 flex-shrink-0 mt-0.5 select-none">
-                <div className="w-16 h-16 flex items-center justify-center hover:scale-105 transition-all duration-300 overflow-hidden">
-                  {isLoadingIcon ? (
-                    <NyxLoader size={36} className="text-foreground animate-spin" />
-                  ) : (
-                    <AnimatedLogo size={64} className="animate-fade-in" />
-                  )}
-                </div>
-              </div>
+            <div className="flex w-full gap-3 items-start relative">
+
               <div className="flex-1 min-w-0">
                 {/* Error state */}
                 {msg.status === 'error' && (
@@ -1261,83 +1253,58 @@ MessageBubble.displayName = 'MessageBubble';
 const EmptyState: React.FC<{
   suggestedPrompts?: string[];
   onSuggestedPromptClick?: (prompt: string) => void;
-}> = memo(({ suggestedPrompts, onSuggestedPromptClick }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 8 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.2, ease: 'easeOut' }}
-    className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-6 relative overflow-hidden"
-  >
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-primary/[0.02] rounded-md blur-[90px] pointer-events-none select-none -z-10 animate-pulse" />
+}> = memo(({ suggestedPrompts, onSuggestedPromptClick }) => {
+  // 4 hardcoded context-appropriate chips shown when no model-generated suggestions available
+  const defaultChips = [
+    'Explain this codebase architecture',
+    'Debug this function for me',
+    'Write unit tests for this module',
+    'Review my code for improvements',
+  ];
+  const chips = (suggestedPrompts && suggestedPrompts.length > 0 ? suggestedPrompts : defaultChips).slice(0, 4);
 
+  return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ delay: 0.15, duration: 0.6 }}
-      className="relative cursor-default flex items-center justify-center"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+      className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6 gap-8 relative overflow-hidden"
     >
-      <motion.div
-        animate={{ y: [0, -8, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        className="relative flex items-center justify-center transform-gpu"
-      >
-        <div className="absolute w-24 h-24 bg-primary/[0.08] rounded-md blur-[45px] pointer-events-none select-none transform-gpu" />
-        <Logo
-          size={90}
-          className="relative z-10 hover:scale-105 transition-transform duration-300 transform-gpu cursor-default"
-        />
-      </motion.div>
-    </motion.div>
+      {/* Ambient radial — very subtle, non-distracting */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[480px] h-[480px] bg-primary/[0.025] rounded-full blur-[120px] pointer-events-none select-none -z-10" />
 
-    <div className="space-y-2 max-w-sm">
-      <motion.h1
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.5 }}
-        className="text-[20px] font-black tracking-tight text-foreground/80 leading-tight"
-      >
-        Chat with{' '}
-        <span className="font-black text-foreground">
+      {/* Identity text */}
+      <div className="space-y-1.5">
+        <motion.h1
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12, duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
+          className="text-[22px] font-semibold tracking-tight text-foreground leading-none"
+        >
           NY<span className="text-primary">X</span>
-        </span>
-      </motion.h1>
-      <motion.p
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4, duration: 0.5 }}
-        className="text-[10px] uppercase tracking-[0.25em] font-black text-muted-foreground/45 leading-relaxed"
-      >
-        Conversational assistant page
-      </motion.p>
-    </div>
+        </motion.h1>
+      </div>
 
-    {suggestedPrompts && suggestedPrompts.length > 0 && (
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5, duration: 0.5 }}
-        className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full mt-4"
-      >
-        {suggestedPrompts.slice(0, 4).map((p, idx) => (
+      {/* Prompt chips — stagger 30ms per chip, max 90ms total */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-xl w-full">
+        {chips.map((p, idx) => (
           <motion.button
             key={idx}
-            whileHover={{
-              scale: 1.01,
-              backgroundColor: 'var(--muted)',
-              borderColor: 'var(--border)',
-            }}
-            whileTap={{ scale: 0.99 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.24 + idx * 0.03, duration: 0.28, ease: [0.23, 1, 0.32, 1] }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => onSuggestedPromptClick?.(p)}
-            className="p-4 text-[11px] font-bold text-left rounded-md bg-card border border-border text-foreground/75 hover:text-primary transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm"
+            className="group p-3.5 text-[12px] font-medium text-left rounded-lg bg-card border border-border/60 text-foreground/60 hover:text-foreground hover:border-border hover:bg-muted/50 transition-colors duration-150 cursor-pointer flex items-center justify-between gap-3"
           >
-            <span>{p}</span>
-            <span className="text-[10px] text-primary/70 font-extrabold ml-2">➔</span>
+            <span className="leading-snug">{p}</span>
+            <span className="text-primary/40 group-hover:text-primary/70 shrink-0 transition-colors duration-150 text-[11px]">↵</span>
           </motion.button>
         ))}
-      </motion.div>
-    )}
-  </motion.div>
-));
+      </div>
+    </motion.div>
+  );
+});
 EmptyState.displayName = 'EmptyState';
 
 // ---------------------------------------------------------------------------
@@ -1394,24 +1361,26 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       >
         {history.length === 0 ? (
           isLoading ? (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.98 }} 
-              animate={{ opacity: 1, scale: 1 }} 
-              className="flex-1 flex flex-col items-center justify-center min-h-[65vh] gap-6"
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
+              className="flex-1 flex flex-col items-center justify-center min-h-[65vh] gap-4"
             >
-              <div className="relative flex items-center justify-center">
-                <div className="absolute w-12 h-12 border-2 border-primary/20 rounded-full animate-ping" />
-                <div className="w-12 h-12 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
-                <Sparkles className="absolute text-primary/60 w-4 h-4" />
+              {/* Optimistic submit indicator — 3 dots, offset stagger */}
+              <div className="flex items-center gap-1.5">
+                {[0, 1, 2].map((i) => (
+                  <motion.div
+                    key={i}
+                    animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1, 0.8] }}
+                    transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.18, ease: 'easeInOut' }}
+                    className="w-1.5 h-1.5 rounded-full bg-primary/70"
+                  />
+                ))}
               </div>
-              <motion.span 
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="text-sm text-muted-foreground/80 tracking-wide font-medium"
-              >
-                Connecting to NYX Intelligence...
-              </motion.span>
+              <span className="text-[11px] font-medium text-muted-foreground/50 tracking-wide uppercase">
+                Thinking
+              </span>
             </motion.div>
           ) : (
             <EmptyState

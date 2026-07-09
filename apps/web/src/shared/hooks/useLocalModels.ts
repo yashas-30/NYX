@@ -12,6 +12,10 @@ export interface LocalModel {
     modality: string;
   };
   status: string;
+  capabilities?: {
+    vision: boolean;
+    reasoning: boolean;
+  };
   [key: string]: any;
 }
 
@@ -53,12 +57,23 @@ export function inferModelSpecs(idOrName: string) {
     maxOutput = '4K';
   }
 
-  // Modality inference
-  if (name.includes('vl') || name.includes('vision') || name.includes('multimodal')) {
-    modality = 'Multimodal';
+  // Modality & Capabilities inference
+  const isVision = name.includes('vl') || name.includes('vision') || name.includes('multimodal') || name.includes('pixtral') || name.includes('llava');
+  const isReasoning = name.includes('r1') || name.includes('reasoning') || name.includes('thinking') || name.includes('o1') || name.includes('o3');
+
+  if (isVision) {
+    modality = 'Text + Vision';
   }
 
-  return { contextWindow, maxOutput, modality };
+  return {
+    contextWindow,
+    maxOutput,
+    modality,
+    capabilities: {
+      vision: isVision,
+      reasoning: isReasoning,
+    }
+  };
 }
 
 export function useLocalModels(enabled: boolean = true) {

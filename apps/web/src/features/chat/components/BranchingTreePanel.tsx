@@ -224,9 +224,9 @@ export const BranchingTreePanel: React.FC<BranchingTreePanelProps> = ({
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.98 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 md:p-10 bg-black/60 backdrop-blur-md"
+      className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200"
     >
-      <div className="flex flex-col w-full h-full max-w-6xl bg-card border border-border rounded-2xl shadow-md overflow-hidden">
+      <div className="flex flex-col w-full h-full max-w-[95vw] bg-card border border-border rounded-2xl shadow-md overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0 bg-muted/20">
           <div className="flex items-center gap-3">

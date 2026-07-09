@@ -55,6 +55,7 @@ impl Orchestrator {
                 api_key: request.api_key.clone(),
                 temperature: request.temperature,
                 max_tokens: request.max_tokens,
+                reasoning_effort: request.reasoning_effort.clone(),
                 event_name: request.event_name.clone(),
                 tools: request.tools.clone(),
             };

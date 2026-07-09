@@ -8,6 +8,7 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { DebugLogger } from '@src/core/utils/DebugLogger';
 import { Providers } from './providers';
 import { WindowResizeHandles } from '@src/shared/components/WindowResizeHandles';
+import { useFluidScaler } from '@src/shared/hooks/useFluidScaler';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
 }
 
 function AppContent() {
+  useFluidScaler();
   const { theme } = useTheme();
   const privacyMode = useNyxStore((state) => state.privacyMode);
   const clearPrivacyData = useNyxStore((state) => state.clearPrivacyData);
@@ -59,7 +61,30 @@ function AppContent() {
       }
     };
     initLocalLLM();
-    if (!privacyMode) return;
+    
+    // Sync search settings to backend
+    const syncSearchSettings = async () => {
+      try {
+        const { searchProvider, apiKeys } = useNyxStore.getState();
+        const apiKey = apiKeys['tavily'] || '';
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('set_search_settings', {
+          provider: searchProvider,
+          apiKey: apiKey,
+        });
+      } catch (e) {
+        console.error('Failed to sync search settings:', e);
+      }
+    };
+    
+    syncSearchSettings();
+    const unsub = useNyxStore.subscribe((state, prevState) => {
+      if (state.searchProvider !== prevState.searchProvider || state.apiKeys['tavily'] !== prevState.apiKeys['tavily']) {
+        syncSearchSettings();
+      }
+    });
+
+    if (!privacyMode) return () => unsub();
 
     let timeoutId: NodeJS.Timeout;
 
@@ -90,6 +115,7 @@ function AppContent() {
     resetTimer();
 
     return () => {
+      unsub();
       if (timeoutId) clearTimeout(timeoutId);
       events.forEach((event) => {
         window.removeEventListener(event, resetTimer);
@@ -179,7 +205,7 @@ function SharedChatView() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground max-w-4xl mx-auto border-x border-border">
+    <div className="h-screen flex flex-col bg-background text-foreground w-full max-w-screen-2xl mx-auto border-x border-border">
       <div className="p-4 border-b border-border flex justify-between items-center bg-card">
         <div>
           <h1 className="font-bold text-lg">{data.title || 'Shared Conversation'}</h1>

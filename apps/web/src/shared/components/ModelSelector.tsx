@@ -160,11 +160,36 @@ export const ModelSelector: React.FC<Props> = ({
     const nativeSource = localLibraryModels;
 
     const allSources = [...filteredAllModels, ...nativeSource];
-    return allSources.filter((m) => {
-      if (seenIds.has(m.id)) return false;
-      seenIds.add(m.id);
-      return true;
-    });
+    return allSources
+      .filter((m) => {
+        if (seenIds.has(m.id)) return false;
+        seenIds.add(m.id);
+        return true;
+      })
+      .map((m) => {
+        const idLower = m.id.toLowerCase();
+        const isVision =
+          idLower.includes('vl') ||
+          idLower.includes('vision') ||
+          idLower.includes('multimodal') ||
+          idLower.includes('pixtral') ||
+          idLower.includes('llava') ||
+          idLower.includes('gemini');
+        const isReasoning =
+          idLower.includes('r1') ||
+          idLower.includes('reasoning') ||
+          idLower.includes('thinking') ||
+          idLower.includes('o1') ||
+          idLower.includes('o3');
+
+        return {
+          ...m,
+          capabilities: (m as any).capabilities || {
+            vision: isVision,
+            reasoning: isReasoning,
+          },
+        };
+      });
   }, [allModels, localLibraryModels]);
 
   const groupedModels = useMemo(() => {
@@ -379,8 +404,11 @@ export const ModelSelector: React.FC<Props> = ({
                       >
                         <motion.div
                           variants={listItemVariants}
+                          onClick={() => {
+                            onSelect((model as any).realId || model.id);
+                          }}
                           className={`
-                            flex flex-col gap-1.5 p-1.5 rounded-md transition-all duration-300 border text-left group relative overflow-hidden h-full
+                            flex flex-col gap-1.5 p-1.5 rounded-md transition-all duration-300 border text-left group relative overflow-hidden h-full cursor-pointer
                             ${
                               isSelected
                                 ? isNoKey
@@ -391,10 +419,7 @@ export const ModelSelector: React.FC<Props> = ({
                           `}
                         >
                           <div 
-                            className="flex items-center justify-between gap-1.5 cursor-pointer"
-                            onClick={() => {
-                              onSelect((model as any).realId || model.id);
-                            }}
+                            className="flex items-center justify-between gap-1.5"
                           >
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1">
@@ -441,6 +466,16 @@ export const ModelSelector: React.FC<Props> = ({
                                 {model.specs?.contextWindow && (
                                   <span className="text-[6px] font-mono font-bold text-muted-foreground/50 bg-muted px-1 py-0.5 rounded border border-border shrink-0 ml-auto leading-none">
                                     {model.specs.contextWindow}
+                                  </span>
+                                )}
+                                {(model as any).capabilities?.vision && (
+                                  <span className="text-[6px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-1 py-0.5 rounded border border-indigo-500/20 shrink-0 leading-none">
+                                    👁️ Vision
+                                  </span>
+                                )}
+                                {(model as any).capabilities?.reasoning && (
+                                  <span className="text-[6px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 shrink-0 leading-none">
+                                    🧠 Reasoning
                                   </span>
                                 )}
                               </div>

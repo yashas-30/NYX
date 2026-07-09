@@ -16,6 +16,7 @@ export interface ModelSettings {
   repeatPenalty: number;
   mirostat: number;
   antigravity?: boolean;
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'max';
 }
 
 export type ActiveMode = 'chat' | 'coder' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
@@ -33,8 +34,8 @@ export interface NyxState {
   privacyMode: boolean;
   rememberKeys: boolean;
   currentModel: ModelOption;
-  searchProvider: 'duckduckgo' | 'tavily' | 'jina';
-  setSearchProvider: (provider: 'duckduckgo' | 'tavily' | 'jina') => void;
+  searchProvider: 'duckduckgo' | 'tavily';
+  setSearchProvider: (provider: 'duckduckgo' | 'tavily') => void;
   activeProjectId: string | null;
   setActiveProjectId: (id: string | null) => void;
 
@@ -77,6 +78,7 @@ const DEFAULT_SETTINGS: ModelSettings = {
   repeatPenalty: 1.1,
   mirostat: 0,
   antigravity: true,
+  reasoningEffort: 'medium',
 };
 
 const DEFAULT_MODEL: ModelOption = {

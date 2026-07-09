@@ -21,18 +21,10 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
   { id: 'gemini', name: 'Google Gemini', hasModels: true, modelCount: 0 },
   { id: 'openrouter', name: 'OpenRouter', hasModels: true, modelCount: 0 },
   { id: 'tavily', name: 'Tavily Search API', hasModels: false, modelCount: 0 },
-  { id: 'jina', name: 'Jina Search API', hasModels: false, modelCount: 0 },
-  {
-    id: 'scrapling',
-    name: 'Scrapling Search & Scraper (Local / Cloud)',
-    hasModels: false,
-    modelCount: 0,
-  },
 ];
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
-  scrapling: 'http://127.0.0.1:3002',
 };
 
 const getModelCountForProvider = (provider: string): number => {
@@ -237,7 +229,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     const shouldDelete = await confirm('Delete all keys from server vault?', { title: 'Confirm Deletion', kind: 'warning' });
     if (shouldDelete) {
       try {
-        const allProviders = ['gemini', 'openrouter', 'tavily', 'jina', 'scrapling', 'scrapling_url'];
+        const allProviders = ['gemini', 'openrouter', 'tavily'];
         for (const provider of allProviders) {
           await invoke('vault:delete-key', { payload: { provider } });
         }
@@ -324,72 +316,6 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {p.id === 'scrapling' ? (
-                      <div className="flex flex-col gap-2.5 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[8px] font-black uppercase text-muted-foreground/60 w-16 shrink-0">
-                            API Key:
-                          </span>
-                          <div className="relative flex-1 flex items-center">
-                            <input
-                              type={visibleKeys['scrapling'] ? 'text' : 'password'}
-                              value={keysInput['scrapling'] ?? apiKeys['scrapling'] ?? ''}
-                              onChange={(e) => {
-                                setKeysInput((prev) => ({ ...prev, scrapling: e.target.value }));
-                                triggerValidation('scrapling', e.target.value);
-                              }}
-                              placeholder={
-                                vaultStatus['scrapling']
-                                  ? '•••••••••••••••• (Optional for Local)'
-                                  : 'Enter Scrapling API Key (Optional for Local)'
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  e.currentTarget.blur();
-                                }
-                              }}
-                              className="w-full bg-background border border-border rounded-md pl-3.5 pr-10 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-accent/50 shadow-inner"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if ((validationStatus['scrapling'] || 'idle') === 'idle') {
-                                  toggleVisibility('scrapling');
-                                }
-                              }}
-                              className={`absolute right-2.5 transition-colors ${(validationStatus['scrapling'] || 'idle') === 'idle' ? 'text-muted-foreground/80 hover:text-foreground cursor-pointer' : 'text-muted-foreground/40 cursor-default'}`}
-                              title={(validationStatus['scrapling'] || 'idle') === 'idle' ? (visibleKeys['scrapling'] ? 'Hide API key' : 'Show API key') : undefined}
-                            >
-                              {(validationStatus['scrapling'] || 'idle') === 'loading' && <Loader2 size={12} className="animate-spin text-accent" />}
-                              {(validationStatus['scrapling'] || 'idle') === 'valid' && <Check size={12} className="text-emerald-400" />}
-                              {(validationStatus['scrapling'] || 'idle') === 'invalid' && <X size={12} className="text-red-400" />}
-                              {(validationStatus['scrapling'] || 'idle') === 'idle' && (visibleKeys['scrapling'] ? <EyeOff size={12} /> : <Eye size={12} />)}
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[8px] font-black uppercase text-muted-foreground/60 w-16 shrink-0">
-                            Service URL:
-                          </span>
-                          <input
-                            type="text"
-                            value={keysInput['scrapling_url'] ?? apiKeys['scrapling_url'] ?? ''}
-                            onChange={(e) =>
-                              setKeysInput((prev) => ({ ...prev, scrapling_url: e.target.value }))
-                            }
-                            placeholder="http://127.0.0.1:3002"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                e.currentTarget.blur();
-                              }
-                            }}
-                            className="flex-1 bg-background border border-border rounded-md px-3.5 py-2 text-[10px] font-mono transition-all outline-none text-foreground/80 focus:border-accent/50 shadow-inner"
-                          />
-                        </div>
-                      </div>
-                    ) : (
                       <div className="relative flex-1 flex items-center">
                         <input
                           type={visibleKeys[p.id] ? 'text' : 'password'}
@@ -423,7 +349,6 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                           {(validationStatus[p.id] || 'idle') === 'idle' && (visibleKeys[p.id] ? <EyeOff size={12} /> : <Eye size={12} />)}
                         </button>
                       </div>
-                    )}
                     {p.hasModels && (
                       <button
                         type="button"

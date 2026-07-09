@@ -435,7 +435,12 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         "web_search" => {
             let query = args["query"].as_str().unwrap_or("");
             let num_results = args["num_results"].as_u64().unwrap_or(5) as usize;
-            match search_web_command(query.to_string(), Some(num_results), None, None).await {
+            
+            let state = app.state::<crate::AppState>();
+            let search_provider = state.search_provider.read().await.clone();
+            let search_api_key = state.search_api_key.read().await.clone();
+            
+            match search_web_command(query.to_string(), Some(num_results), Some(search_provider), Some(search_api_key)).await {
                 Ok(res) => res,
                 Err(e) => format!("Search failed: {}", e),
             }
@@ -1150,38 +1155,6 @@ pub async fn search_web_command(
         } else {
             Ok(formatted_results.join("\n\n"))
         }
-    } else if search_provider == "jina" {
-        let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
-            .build()
-            .map_err(|e| e.to_string())?;
-
-        let base_url = reqwest::Url::parse("https://s.jina.ai/").map_err(|e| e.to_string())?;
-        let url = base_url.join(&query).map_err(|e| e.to_string())?;
-
-        let mut req_builder = client.get(url);
-        if let Some(key) = api_key {
-            if !key.trim().is_empty() {
-                req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
-            }
-        }
-        let res = req_builder.send()
-            .await
-            .map_err(|e| format!("Jina search request failed: {}", e))?;
-
-        if !res.status().is_success() {
-            let status = res.status();
-            let err_text = res.text().await.unwrap_or_default();
-            return Err(format!("Jina search failed ({}): {}", status, err_text));
-        }
-
-        let markdown = res.text().await.map_err(|e| format!("Jina response body reading failed: {}", e))?;
-        let truncated = if markdown.len() > 20000 {
-            format!("{}\n\n[Truncated due to length limit]", &markdown[..20000])
-        } else {
-            markdown
-        };
-        Ok(truncated)
     } else {
         // Fallback to duckduckgo
         let client = reqwest::Client::builder()

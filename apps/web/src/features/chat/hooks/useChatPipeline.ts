@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { ChatMessage, TelemetryMetrics, AISettings, StreamEvent } from '@src/infrastructure/types';
-import { getEffectiveApiKey, detectProvider } from '@src/infrastructure/utils/provider';
+import { getEffectiveApiKey, detectProvider, getModelCapabilities } from '@src/infrastructure/utils/provider';
 
 interface ChatPipelineProps {
   models: Record<'nyx', string>;
@@ -24,6 +24,7 @@ interface ChatPipelineProps {
 export const useChatPipeline = ({
   models,
   apiKeys,
+  modelSettings,
   history,
   updateHistory,
   updateMetrics,
@@ -153,15 +154,20 @@ export const useChatPipeline = ({
         messages.push({ role: 'user', content: prompt });
       }
 
+      const capabilities = getModelCapabilities(modelToUse);
+      const reasoningEffortStr = modelSettings?.reasoningEffort || 'medium';
+
       await invoke('run_orchestrator_turn', {
         request: {
           provider,
           model_id: modelToUse,
           api_key: apiKey,
           messages,
+          temperature: modelSettings?.temperature ?? 0.7,
+          reasoning_effort: reasoningEffortStr,
           system_instruction: "You are NYX, a highly capable assistant. You have access to tools like web_search (for real-time info/weather/news), conversational_memory (for saving/loading user preferences), and create_file. Use these tools proactively when the user's request requires them.",
         },
-        onEvent: channel
+        on_event: channel
       });
 
     } catch (err: any) {

@@ -148,38 +148,50 @@ export interface ModelCapabilities {
   supportsStreaming: boolean;
   supportsTools: boolean;
   supportsSystemPrompt: boolean;
+  supportsReasoning: boolean;
   contextWindow: number;
 }
 
 export const getModelCapabilities = (modelId: string): ModelCapabilities => {
   const lowerId = modelId.toLowerCase();
+  
+  const isVision =
+    lowerId.includes('vl') ||
+    lowerId.includes('vision') ||
+    lowerId.includes('multimodal') ||
+    lowerId.includes('pixtral') ||
+    lowerId.includes('llava') ||
+    lowerId.includes('gemini');
+    
+  const isReasoning =
+    lowerId.includes('r1') ||
+    lowerId.includes('reasoning') ||
+    lowerId.includes('thinking') ||
+    lowerId.includes('o1') ||
+    lowerId.includes('o3');
 
   const caps: ModelCapabilities = {
-    supportsVision: false,
+    supportsVision: isVision,
     supportsStreaming: true,
     supportsTools: false,
     supportsSystemPrompt: true,
+    supportsReasoning: isReasoning,
     contextWindow: 8192,
   };
 
   if (lowerId.includes('gemini-2.5-flash')) {
-    caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576; // 1M
   } else if (lowerId.includes('gemini-2.0-flash')) {
-    caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576;
   } else if (lowerId.includes('gemini-3.5-pro')) {
-    caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 2097152;
   } else if (lowerId.includes('gemini-3.1-flash-lite') || lowerId.includes('gemini-3.5-flash')) {
-    caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576;
   } else if (lowerId.includes('gemini')) {
-    caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576;
   }

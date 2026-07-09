@@ -26,6 +26,7 @@ export const AISettingsSchema = z.object({
   batchSize: z.number().optional(),
   mirostat: z.number().optional(),
   thinkingBudget: z.number().optional(),
+  reasoningEffort: z.enum(['low', 'medium', 'high', 'max']).optional(),
   /** Gemini: force structured JSON output. Incompatible with thinking tokens. */
   jsonMode: z.boolean().optional(),
   /** Gemini: response schema for structured JSON (paired with jsonMode). */
@@ -93,6 +94,10 @@ export const ModelOptionSchema = z.object({
   status: z.enum(['ga', 'preview', 'deprecated', 'alias']).optional().default('ga'),
   shutdownDate: z.string().optional(), // ISO date string for deprecated models
   specs: ModelSpecsSchema.optional(),
+  capabilities: z.object({
+    vision: z.boolean().optional(),
+    reasoning: z.boolean().optional(),
+  }).optional(),
   features: z.array(z.string()).optional(),
   pros: z.array(z.string()).optional(),
   cons: z.array(z.string()).optional(),

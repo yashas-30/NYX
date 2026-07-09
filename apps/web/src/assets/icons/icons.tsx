@@ -17,43 +17,13 @@ export const Logo = React.memo(
         xmlns="http://www.w3.org/2000/svg"
         className={className}
       >
-        {/* Sleek, sophisticated gold vector swift bird */}
-        <path d="M20 80C35 50 65 35 85 20C75 40 50 65 20 80Z" fill="url(#goldGradient)" />
-        <path
-          d="M30 70C45 48 68 38 80 25C72 41 52 58 30 70Z"
-          fill="url(#goldGradientLight)"
-          opacity="0.8"
-        />
-        <path
-          d="M45 80C50 68 62 55 75 45C68 55 58 68 45 80Z"
-          fill="url(#goldGradient)"
-          opacity="0.6"
-        />
-        <defs>
-          <linearGradient
-            id="goldGradient"
-            x1="20"
-            y1="80"
-            x2="85"
-            y2="20"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" stopColor="#D97706" />
-            <stop offset="50%" stopColor="#cc785c" />
-            <stop offset="100%" stopColor="#FBBF24" />
-          </linearGradient>
-          <linearGradient
-            id="goldGradientLight"
-            x1="30"
-            y1="70"
-            x2="80"
-            y2="25"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" stopColor="#cc785c" />
-            <stop offset="100%" stopColor="#FFFBEB" />
-          </linearGradient>
-        </defs>
+        <rect width="100" height="100" rx="22" fill="transparent" />
+        <g transform="translate(50, 52)" textAnchor="middle" dominantBaseline="central">
+          <text fontFamily="Georgia, serif" fontWeight="bold" fontSize="42" letterSpacing="-1">
+            <tspan fill="#3B82F6">NY</tspan>
+            <tspan fill="#60A5FA">X</tspan>
+          </text>
+        </g>
       </svg>
     );
   }

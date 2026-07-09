@@ -2,7 +2,6 @@ export const PORTS = {
   WEB: 3000,
   API: 3010,
   FASTIFY: 3001,
-  SCRAPLING: 3002,
   ANTIGRAVITY: 3003,
   FALLBACK: 12345,
 };

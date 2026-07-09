@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use serde::{Deserialize, Serialize};
 use reqwest::{Client, header::{HeaderMap, HeaderValue}};
 use serde_json::{json, Value};
@@ -42,15 +42,22 @@ fn get_content_string(val: &serde_json::Value) -> String {
 #[derive(Deserialize, Debug)]
 pub struct UnifiedRequest {
     pub provider: String,
+    #[serde(default)]
     pub endpoint_override: Option<String>,
     pub model_id: String,
     pub messages: Vec<UnifiedMessage>,
+    #[serde(default)]
     pub system_instruction: Option<String>,
     pub api_key: String,
+    #[serde(default)]
     pub temperature: Option<f32>,
+    #[serde(default)]
     pub max_tokens: Option<u32>,
     #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
     pub event_name: Option<String>,
+    #[serde(default)]
     pub tools: Option<Value>,
 }
 
@@ -84,8 +91,27 @@ pub async fn execute_llm_stream(
     let (url, body, provider_type) = match req.provider.as_str() {
         "nyx-native" | "openrouter" => {
             let mut msgs = vec![];
-            if let Some(sys) = &req.system_instruction {
-                msgs.push(json!({"role": "system", "content": sys}));
+            
+            // Map reasoning effort to a system instruction directive for local models
+            let mut final_sys = req.system_instruction.clone().unwrap_or_default();
+            if let Some(effort) = &req.reasoning_effort {
+                let directive = match effort.to_lowercase().as_str() {
+                    "low" => " Keep your reasoning brief and direct.",
+                    "medium" => " Think step-by-step before answering.",
+                    "high" => " Think deeply and comprehensively, exploring multiple angles before answering.",
+                    "max" => " Conduct an exhaustive analysis. Double check all logic and reasoning. Provide a very lengthy and detailed thought process.",
+                    _ => ""
+                };
+                if !directive.is_empty() {
+                    if !final_sys.is_empty() {
+                        final_sys.push_str("\n\n");
+                    }
+                    final_sys.push_str(&format!("Reasoning Effort Directive:{}", directive));
+                }
+            }
+
+            if !final_sys.is_empty() {
+                msgs.push(json!({"role": "system", "content": final_sys}));
             }
             
             // Slice history to budget
@@ -146,6 +172,19 @@ pub async fn execute_llm_stream(
             });
 
             if req.provider == "openrouter" {
+                let lower_id = req.model_id.to_lowercase();
+                let is_reasoning = lower_id.contains("r1") 
+                    || lower_id.contains("reasoning") 
+                    || lower_id.contains("thinking") 
+                    || lower_id.contains("o1") 
+                    || lower_id.contains("o3");
+                
+                if is_reasoning {
+                    if let Some(effort) = &req.reasoning_effort {
+                        body["reasoning_effort"] = json!(effort);
+                    }
+                }
+                
                 if let Some(tools) = &req.tools {
                     if let Some(arr) = tools.as_array() {
                         if !arr.is_empty() {
@@ -247,9 +286,50 @@ pub async fn execute_llm_stream(
                 }
 
                 let role = if m.role == "assistant" { "model" } else { "user" };
+                
+                let mut parts_arr = vec![];
+                if let Some(arr) = m.content.as_array() {
+                    for item in arr {
+                        if let Some(t) = item.get("type").and_then(|t| t.as_str()) {
+                            if t == "text" {
+                                if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                                    parts_arr.push(json!({"text": text}));
+                                }
+                            } else if t == "image_url" {
+                                if let Some(url) = item.get("image_url").and_then(|o| o.get("url")).and_then(|v| v.as_str()) {
+                                    // Parse data URL: data:image/jpeg;base64,...
+                                    if url.starts_with("data:") {
+                                        let parts: Vec<&str> = url.splitn(2, ',').collect();
+                                        if parts.len() == 2 {
+                                            let meta = parts[0]; // data:image/jpeg;base64
+                                            let data = parts[1];
+                                            let mime_part = meta.strip_prefix("data:").unwrap_or("");
+                                            let mime_type = mime_part.strip_suffix(";base64").unwrap_or(mime_part);
+                                            parts_arr.push(json!({
+                                                "inlineData": {
+                                                    "mimeType": mime_type,
+                                                    "data": data
+                                                }
+                                            }));
+                                        }
+                                    }
+                                }
+                            }
+                        } else if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                             parts_arr.push(json!({"text": text}));
+                        }
+                    }
+                } else {
+                    parts_arr.push(json!({"text": get_content_string(&m.content)}));
+                }
+
+                if parts_arr.is_empty() {
+                    parts_arr.push(json!({"text": get_content_string(&m.content)}));
+                }
+
                 contents.push(json!({
                     "role": role,
-                    "parts": [{"text": get_content_string(&m.content)}]
+                    "parts": parts_arr
                 }));
             }
 
@@ -277,10 +357,45 @@ pub async fn execute_llm_stream(
                 }
             }
 
-            if let Some(sys) = &req.system_instruction {
-                body["systemInstruction"] = json!({
-                    "parts": [{"text": sys}]
-                });
+            let mut final_sys = req.system_instruction.clone().unwrap_or_default();
+            if let Some(effort) = &req.reasoning_effort {
+                let directive = match effort.to_lowercase().as_str() {
+                    "low" => " Keep your reasoning brief and direct.",
+                    "medium" => " Think step-by-step before answering.",
+                    "high" => " Think deeply and comprehensively, exploring multiple angles before answering.",
+                    "max" => " Conduct an exhaustive analysis. Double check all logic and reasoning. Provide a very lengthy and detailed thought process.",
+                    _ => ""
+                };
+                if !directive.is_empty() {
+                    if !final_sys.is_empty() {
+                        final_sys.push_str("\n\n");
+                    }
+                    final_sys.push_str(&format!("Reasoning Effort Directive:{}", directive));
+                }
+            }
+
+            if !final_sys.is_empty() {
+                let is_gemma = req.model_id.to_lowercase().contains("gemma");
+                if is_gemma {
+                    if let Some(first) = contents.first_mut() {
+                        if let Some(parts) = first.get_mut("parts").and_then(|p| p.as_array_mut()) {
+                            if let Some(first_part) = parts.first_mut() {
+                                if let Some(text) = first_part.get_mut("text").and_then(|t| t.as_str()) {
+                                    *first_part = json!({"text": format!("System Instruction:\n{}\n\n{}", final_sys, text)});
+                                }
+                            }
+                        }
+                    } else {
+                        contents.push(json!({
+                            "role": "user",
+                            "parts": [{"text": format!("System Instruction:\n{}", final_sys)}]
+                        }));
+                    }
+                } else {
+                    body["systemInstruction"] = json!({
+                        "parts": [{"text": final_sys}]
+                    });
+                }
             }
 
             // API key goes in the x-goog-api-key header — NOT the URL query string.
@@ -421,6 +536,19 @@ pub async fn execute_llm_stream(
                                             result: None,
                                             metadata: None,
                                         })).await;
+                                    }
+                                    StreamEventParse::Error(err_msg) => {
+                                        let _ = tx.send(Ok(StreamChunkPayload {
+                                            event_type: "error".to_string(),
+                                            content: None,
+                                            done: Some(true),
+                                            error: Some(err_msg),
+                                            tool_call: None,
+                                            name: None,
+                                            result: None,
+                                            metadata: None,
+                                        })).await;
+                                        break; // Stop processing on error
                                     }
                                     StreamEventParse::None => {}
                                 }
@@ -590,6 +718,7 @@ pub enum StreamEventParse {
     ToolCallStart { id: String, name: String },
     ToolCallArgs { args: String },
     ToolCallComplete,
+    Error(String),
     None,
 }
 
@@ -598,6 +727,19 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
         Ok(val) => val,
         Err(_) => return vec![StreamEventParse::None],
     };
+
+    if let Some(error) = v.get("error") {
+        let msg = if let Some(msg) = error.get("message").and_then(|m| m.as_str()) {
+            msg.to_string()
+        } else if let Some(error_obj) = error.as_object() {
+            serde_json::to_string(error_obj).unwrap_or_else(|_| "Unknown API Error".to_string())
+        } else if let Some(error_str) = error.as_str() {
+            error_str.to_string()
+        } else {
+            "Unknown API Error".to_string()
+        };
+        return vec![StreamEventParse::Error(msg)];
+    }
 
     let mut events = Vec::new();
 
@@ -645,6 +787,10 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
                     if let Some(finish_reason) = choice.get("finish_reason").and_then(|f| f.as_str()) {
                         if finish_reason == "tool_calls" {
                             events.push(StreamEventParse::ToolCallComplete);
+                        } else if finish_reason == "length" {
+                            events.push(StreamEventParse::Error("Generation stopped: Maximum token limit reached.".to_string()));
+                        } else if finish_reason == "content_filter" {
+                            events.push(StreamEventParse::Error("Generation blocked by provider safety filters.".to_string()));
                         }
                     }
                 }
@@ -658,9 +804,6 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
                     if let Some(content) = candidate.get("content") {
                         if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
                             for part in parts {
-                                // Gemini 2.5 marks reasoning/thinking parts with "thought": true.
-                                // Route them via <think> tags so tauriLlmClient.ts sends them to
-                                // the reasoning accumulator → ThinkingBlock UI.
                                 let is_thought = part.get("thought")
                                     .and_then(|t| t.as_bool())
                                     .unwrap_or(false);
@@ -688,6 +831,17 @@ pub fn extract_stream_event(data: &str, provider_type: &str) -> Vec<StreamEventP
                                     }
                                 }
                             }
+                        }
+                    }
+                    if let Some(finish_reason) = candidate.get("finishReason").and_then(|f| f.as_str()) {
+                        if finish_reason == "SAFETY" || finish_reason == "BLOCKLIST" || finish_reason == "PROHIBITED_CONTENT" {
+                            events.push(StreamEventParse::Error(format!("Generation blocked by provider safety filters ({})", finish_reason)));
+                        } else if finish_reason == "MAX_TOKENS" {
+                            events.push(StreamEventParse::Error("Generation stopped: Maximum token limit reached.".to_string()));
+                        } else if finish_reason == "RECITATION" {
+                            events.push(StreamEventParse::Error("Generation blocked: Recitation of copyrighted material.".to_string()));
+                        } else if finish_reason == "OTHER" {
+                            events.push(StreamEventParse::Error("Generation stopped: Provider error (OTHER).".to_string()));
                         }
                     }
                 }

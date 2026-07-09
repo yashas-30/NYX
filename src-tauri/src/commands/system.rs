@@ -160,13 +160,27 @@ pub async fn execute_command(command: String, cwd: String) -> Result<CommandResu
 
 #[tauri::command]
 pub async fn cleanup_session_state(
-    app_state: tauri::State<'_, crate::AppState>,
+    app: AppHandle,
     session_id: String,
 ) -> Result<(), String> {
     tracing::info!("Cleaning up conductor channel for session {}", session_id);
     // PTY sessions are cleaned up individually via pty_close.
     // Here we only drop the conductor mpsc sender so the actor task exits.
+    let app_state = app.state::<crate::AppState>();
     let mut conductors = app_state.conductor_channels.lock().await;
     conductors.remove(&session_id);
+    app.state::<crate::AppState>().agent_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_search_settings(
+    app: AppHandle,
+    provider: String,
+    api_key: String,
+) -> Result<(), String> {
+    let state = app.state::<crate::AppState>();
+    *state.search_provider.write().await = provider;
+    *state.search_api_key.write().await = api_key;
     Ok(())
 }

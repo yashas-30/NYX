@@ -11,11 +11,12 @@ import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { useChatPipeline } from './useChatPipeline';
 import { AIService, cancelRequest, cancelAllRequests } from '@src/features/ai/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
-import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
+import { detectProvider, getEffectiveApiKey, getModelCapabilities } from '@src/infrastructure/utils/provider';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
 import { compactHistory, compactHistoryAsync, estimateContextTokens } from '@src/infrastructure/utils/compaction';
 import { PlanPhase } from '@src/types/agent';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useAppStore } from '@src/stores/useAppStore';
 import { emit } from '@tauri-apps/api/event';
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,8 @@ interface ChatLogicProps {
   submitReward?: (rolloutId: string, reward: number) => void;
   maxContextTokens?: number;
   tokenBudget?: number;
+  currentProvider?: string;
+  gatewayUrl?: string;
 }
 
 interface SessionMetadata {
@@ -222,6 +225,8 @@ export const useChatLogic = ({
   submitReward,
   maxContextTokens = 128000,
   tokenBudget = Infinity,
+  currentProvider,
+  gatewayUrl,
 }: ChatLogicProps): ChatLogicReturn => {
   // --- Model state ---
   // eslint-disable-next-line code-duplication
@@ -287,7 +292,7 @@ export const useChatLogic = ({
   // --- Token budget tracking ---
   const [tokensUsed, setTokensUsed] = useState(0);
 
-  // --- Web search (disabled by default to prevent Scrapling timeout) ---
+  // --- Web search ---
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
 
   // --- Abort controller for current generation ---
@@ -539,19 +544,13 @@ export const useChatLogic = ({
     }
   }, [isLoading]);
 
-  // Store ref for message actions to call
-  const runChatRef = useRef(pipelineRunChat);
-  useEffect(() => {
-    runChatRef.current = pipelineRunChat;
-  }, [pipelineRunChat]);
-
   // -------------------------------------------------------------------------
   // Public runChat wrapper with budget check
   // -------------------------------------------------------------------------
 
   const lastRunRef = useRef<number>(0);
   const runChat = useCallback(
-    async (prompt: string, images?: ChatImage[]): Promise<void> => {
+    async (prompt: string, images?: ChatImage[], options?: { skipUserMessage?: boolean; modelOverride?: string }): Promise<void> => {
       const now = Date.now();
       if (now - lastRunRef.current < 300) {
         return; // Debounce 300ms
@@ -584,30 +583,67 @@ export const useChatLogic = ({
 
       abortCtrlRef.current = new AbortController();
 
-      const userMsg: ChatMessage = {
-        role: 'user',
-        content: prompt,
-        timestamp: Date.now(),
-        images: images?.map((img) => ({
-          name: img.name,
-          mimeType: img.mimeType || 'image/jpeg',
-          data: img.data || '',
-        })).filter((img) => !!img.data),
-      };
-      dispatch({ type: 'APPEND', message: userMsg });
-      historyRef.current = [...historyRef.current, userMsg];
-      persistHistory(historyRef.current);
+      const { cloudModelId, localModelId } = useNyxStore.getState();
+      const modelToUse = options?.modelOverride || ((cloudModelId || localModelId) as string);
+
+      let finalPrompt = prompt;
+      const { webSearchEnabled } = useAppStore.getState();
+
+      if (webSearchEnabled && !prompt.startsWith('/deep')) {
+        const { searchProvider, apiKeys } = useNyxStore.getState();
+        const apiKey = searchProvider === 'tavily' ? getEffectiveApiKey('tavily', apiKeys) : undefined;
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          toast.info(`Searching web via ${searchProvider}...`);
+          const searchResult = await invoke<string>('search_web_command', {
+            query: prompt,
+            num_results: 5,
+            provider: searchProvider,
+            api_key: apiKey
+          });
+          
+          finalPrompt = `<context>
+${searchResult}
+</context>
+
+<instructions>
+You are an expert assistant. Use the context above to answer the user's question.
+- Answer directly and confidently as an expert — never say "based on the search results", "according to the provided context", "based on the web search", or any similar meta-commentary about how you obtained the information.
+- Synthesize the information naturally, as if it is your own knowledge.
+- Use clear markdown formatting: headers, bullet points, bold for key facts where appropriate.
+- If the context does not contain the answer, say you don't have enough information on that topic.
+</instructions>
+
+${prompt}`;
+        } catch (e) {
+          toast.error(`Web search failed: ${e}`);
+        }
+      }
+
+      const skipUserMessage = options?.skipUserMessage;
+
+      if (!skipUserMessage) {
+        const userMsg: ChatMessage = {
+          role: 'user',
+          content: prompt, // display the clean prompt without search context XML
+          timestamp: Date.now(),
+          images: images?.map((img) => ({
+            name: img.name,
+            mimeType: img.mimeType || 'image/jpeg',
+            data: img.data || '',
+          })).filter((img) => !!img.data),
+        };
+        dispatch({ type: 'APPEND', message: userMsg });
+        historyRef.current = [...historyRef.current, userMsg];
+        persistHistory(historyRef.current);
+      }
 
       try {
-        const { cloudModelId, localModelId } = useNyxStore.getState();
-
         if (!cloudModelId && !localModelId) {
           toast.error('Please select at least one model (Cloud or Local).');
           return;
         }
 
-        const modelToUse = (cloudModelId || localModelId) as string;
-        
         const { invoke, Channel } = await import('@tauri-apps/api/core');
         const { listen } = await import('@tauri-apps/api/event');
 
@@ -661,7 +697,7 @@ export const useChatLogic = ({
                     model_id: modelToUse, 
                     api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '' 
                 }, 
-                onProgress 
+                onProgress
             });
             const finalHistory = [...historyRef.current];
             const lastIdx = finalHistory.length - 1;
@@ -741,13 +777,16 @@ export const useChatLogic = ({
             .trim();
         };
 
-        // Listen for streaming updates from Conductor
         let currentContent = '';
         let currentReasoning = '';
-        const unlisten = await listen<any>(eventName, (event) => {
-          if (event.payload) {
-            if (event.payload.type === 'text') {
-              currentContent += event.payload.content || '';
+        
+        setIsSupervising(true);
+        const onProgress = new Channel<any>();
+        onProgress.onmessage = (message) => {
+          if (message) {
+            const eventType = message.event_type || message.type;
+            if (eventType === 'text') {
+              currentContent += message.content || '';
               const cleanContent = cleanXmlTags(currentContent);
 
               const updatedHistory = [...historyRef.current];
@@ -762,7 +801,7 @@ export const useChatLogic = ({
               }
               dispatch({ type: 'SET', messages: updatedHistory });
               historyRef.current = updatedHistory;
-            } else if (event.payload.type === 'tool_call') {
+            } else if (eventType === 'tool_call') {
               const updatedHistory = [...historyRef.current];
               const lastIdx = updatedHistory.length - 1;
               if (lastIdx >= 0 && updatedHistory[lastIdx].role === 'assistant') {
@@ -774,8 +813,8 @@ export const useChatLogic = ({
                     id: crypto.randomUUID(),
                     type: 'function' as const,
                     function: {
-                      name: event.payload.tool_name,
-                      arguments: event.payload.tool_args,
+                      name: message.tool_name,
+                      arguments: message.tool_args,
                     },
                     status: 'running' as const,
                   },
@@ -784,7 +823,7 @@ export const useChatLogic = ({
               }
               dispatch({ type: 'SET', messages: updatedHistory });
               historyRef.current = updatedHistory;
-            } else if (event.payload.type === 'tool_result') {
+            } else if (eventType === 'tool_result') {
               const updatedHistory = [...historyRef.current];
               const lastIdx = updatedHistory.length - 1;
               if (lastIdx >= 0 && updatedHistory[lastIdx]?.role === 'assistant') {
@@ -792,9 +831,9 @@ export const useChatLogic = ({
                 if (msg.toolCalls && msg.toolCalls.length > 0) {
                   const calls = [...msg.toolCalls];
                   const lastCall = { ...calls[calls.length - 1] };
-                  if (lastCall.function.name === event.payload.tool_name) {
+                  if (lastCall.function.name === message.tool_name) {
                     lastCall.status = 'success' as const;
-                    lastCall.result = event.payload.result;
+                    lastCall.result = message.result;
                     calls[calls.length - 1] = lastCall;
                     msg.toolCalls = calls;
                   }
@@ -802,8 +841,8 @@ export const useChatLogic = ({
                 updatedHistory[lastIdx] = msg;
               }
               dispatch({ type: 'SET', messages: updatedHistory });
-            } else if (event.payload.type === 'thinking') {
-              currentReasoning += event.payload.content || '';
+            } else if (eventType === 'thinking') {
+              currentReasoning += message.content || '';
               
               const updatedHistory = [...historyRef.current];
               const lastIdx = updatedHistory.length - 1;
@@ -815,14 +854,33 @@ export const useChatLogic = ({
               }
               dispatch({ type: 'SET', messages: updatedHistory });
               historyRef.current = updatedHistory;
+            } else if (eventType === 'done') {
+              // Stream completed — finalize
+              const finalHistory = [...historyRef.current];
+              const lastIdx = finalHistory.length - 1;
+              if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
+                finalHistory[lastIdx] = {
+                  ...finalHistory[lastIdx],
+                  status: 'success',
+                };
+              }
+              dispatch({ type: 'SET', messages: finalHistory });
+              historyRef.current = finalHistory;
+            } else if (eventType === 'error') {
+              toast.error(message.error || message.content || 'Generation error');
+              const finalHistory = [...historyRef.current];
+              const lastIdx = finalHistory.length - 1;
+              if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
+                finalHistory[lastIdx] = {
+                  ...finalHistory[lastIdx],
+                  status: 'error',
+                };
+              }
+              dispatch({ type: 'SET', messages: finalHistory });
+              historyRef.current = finalHistory;
             }
           }
-        });
-
-        // Use direct LLM stream request instead of backend orchestrator
-        setIsSupervising(false);
-        const dummyChannel = new Channel<any>();
-        dummyChannel.onmessage = () => {};
+        };
 
         const onAbort = () => {
           emit(`cancel_${eventName}`);
@@ -831,25 +889,57 @@ export const useChatLogic = ({
         currentSignal?.addEventListener('abort', onAbort);
 
         try {
+          // Build messages — use finalPrompt for the last user message so web search
+          // context reaches the model, but the chat display shows only the clean prompt.
+          const historySlice = historyRef.current.slice(0, -1);
+          const backendMessages = historySlice.map((m, i) => {
+            const textContent = (i === historySlice.length - 1 && m.role === 'user')
+              ? finalPrompt  // inject search context only for the model
+              : m.content;
+              
+            let content: any = textContent;
+            
+            // If the message has attached images, send them as a multimodal array
+            if (m.images && m.images.length > 0) {
+              content = [
+                { type: 'text', text: textContent },
+                ...m.images.map(img => ({
+                  type: 'image_url',
+                  image_url: {
+                    url: img.data?.startsWith('data:') ? img.data : `data:${img.mimeType};base64,${img.data}`
+                  }
+                }))
+              ];
+            }
+
+            return {
+              role: m.role,
+              content
+            };
+          });
+
+          const capabilities = getModelCapabilities(modelToUse);
+          const reasoningEffortStr = modelSettings?.reasoningEffort || 'medium';
+
+          const resolvedProvider = currentProvider || detectProvider(modelToUse);
+
           await invoke('llm_stream_request', {
             req: {
-              provider: detectProvider(modelToUse),
+              provider: resolvedProvider,
               model_id: modelToUse,
-              api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '',
-              messages: historyRef.current.slice(0, -1).map(m => ({
-                 role: m.role,
-                 content: m.content
-              })),
+              api_key: getEffectiveApiKey(resolvedProvider, apiKeys) || '',
+              messages: backendMessages,
+              temperature: modelSettings?.temperature ?? 0.7,
               system_instruction: context.system_instruction,
               event_name: eventName,
+              reasoning_effort: reasoningEffortStr,
+              endpoint_override: gatewayUrl,
             },
-            onEvent: dummyChannel
+            onEvent: onProgress
           });
         } finally {
           currentSignal?.removeEventListener('abort', onAbort);
         }
-
-        unlisten();
 
         const finalCleanStreamed = cleanXmlTags(currentContent);
         const isAborted = abortCtrlRef.current?.signal.aborted;
@@ -874,9 +964,9 @@ export const useChatLogic = ({
           
           if (errorMessage.includes('429')) {
              toast.error('Rate limit reached (429). Please wait or switch models.');
-             const provider = detectProvider(models.nyx);
+             const provider = detectProvider(modelToUse);
              const apiKey = getEffectiveApiKey(provider, apiKeys) || '';
-             useUsageStore.getState().resetLimitForModel(models.nyx, apiKey);
+             useUsageStore.getState().resetLimitForModel(modelToUse, apiKey);
           } else {
              toast.error(errorMessage);
           }
@@ -887,6 +977,7 @@ export const useChatLogic = ({
           if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
               finalHistory[lastIdx] = {
                   ...finalHistory[lastIdx],
+
                   status: 'error',
                   content: errorMessage,
               };
@@ -899,8 +990,14 @@ export const useChatLogic = ({
         abortCtrlRef.current = null;
       }
     },
-    [maxContextTokens, tokenBudget, tokensUsed, models.nyx, apiKeys]
+    [maxContextTokens, tokenBudget, tokensUsed, models.nyx, apiKeys, modelSettings, currentProvider, gatewayUrl]
   );
+
+  // Store ref for message actions to call
+  const runChatRef = useRef<any>(null);
+  useEffect(() => {
+    runChatRef.current = runChat;
+  }, [runChat]);
 
   // -------------------------------------------------------------------------
   // Message actions (Claude/Kimi parity)

@@ -111,8 +111,8 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         <motion.aside
           initial={false}
           animate={{
-            width: sidebarOpen ? 180 : 0,
-            opacity: sidebarOpen ? 1 : 0,
+          width: sidebarOpen ? 220 : 0,
+          opacity: sidebarOpen ? 1 : 0,
           }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
           className={`flex-shrink-0 flex border-r border-border h-full bg-card overflow-hidden z-20 ${
@@ -150,7 +150,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                       setActiveMode('chat');
                     }
                   }}
-                  className="mr-1.5 p-1 rounded border border-border bg-background/50 hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer flex items-center justify-center shrink-0 w-5 h-5"
+                  className="mr-1.5 p-1 rounded border border-border bg-background/50 hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer flex items-center justify-center shrink-0 w-6 h-6"
                   title="New Conversation"
                 >
                   <Plus size={10} strokeWidth={2.5} />
@@ -222,8 +222,8 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                   {filteredSessions.length === 0 && folders?.length === 0 && (
                     <div className="text-left py-4 pl-4">
-                      <p className="text-[9px] text-muted-foreground/60 font-semibold uppercase tracking-wider">
-                        No conversations
+                      <p className="text-[10px] text-muted-foreground/60 font-medium">
+                        No conversations yet
                       </p>
                     </div>
                   )}
@@ -236,16 +236,16 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               
               <div className="grid grid-cols-4 gap-1.5 px-1">
                 {[
-                  { mode: 'registry', icon: Library, label: 'Model Library' },
+                  { mode: 'registry', icon: Library, label: 'Models' },
                   { mode: 'settings', icon: Settings, label: 'Settings' },
                   { mode: 'memory', icon: Brain, label: 'Memory' },
-                  { mode: 'observability', icon: Layers, label: 'Observability' },
+                  { mode: 'observability', icon: Layers, label: 'Observe' },
                 ].map(({ mode, icon: Icon, label }) => (
                   <button
                     key={mode}
                     onClick={() => { setActiveMode(mode as any); }}
                     title={label}
-                    className={`aspect-square flex items-center justify-center rounded-lg transition-all cursor-pointer p-2 hover:bg-muted/50 ${
+                    className={`flex flex-col items-center justify-center gap-1 rounded-lg transition-all cursor-pointer p-2 hover:bg-muted/50 ${
                       activeMode === mode
                         ? 'text-foreground bg-muted border border-border shadow-sm'
                         : 'text-muted-foreground hover:text-foreground border border-transparent'
@@ -255,6 +255,9 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                       size={14}
                       className={activeMode === mode ? 'text-primary' : 'text-muted-foreground'}
                     />
+                    <span className={`text-[9px] font-medium leading-none tracking-tight ${
+                      activeMode === mode ? 'text-foreground' : 'text-muted-foreground/70'
+                    }`}>{label}</span>
                   </button>
                 ))}
               </div>
@@ -413,7 +416,7 @@ const SessionItem = ({ session, isActive, onClick, onDelete, folders, onMoveToFo
     >
       <button
         onClick={onClick}
-        className={`w-full flex items-center justify-between ${isNested ? 'px-2 py-1.5' : 'px-2.5 py-1.5'} rounded-md text-[11px] transition-all cursor-pointer ${
+        className={`w-full flex items-center justify-between ${isNested ? 'px-2 py-2' : 'px-2.5 py-2'} rounded-md text-xs transition-all cursor-pointer ${
           isActive
             ? 'bg-muted/80 text-foreground font-medium shadow-sm border border-border/50'
             : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground border border-transparent'

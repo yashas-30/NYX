@@ -202,6 +202,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     logRollout,
     submitReward,
     maxContextTokens: Math.floor(getModelContextWindow(currentModel) * 0.9),
+    currentProvider: currentModel?.provider || detectProvider(currentModelId),
+    gatewayUrl: gatewayUrls[currentModel?.provider || detectProvider(currentModelId)],
   });
 
   const hasAutoOpenedRef = useRef<Record<string, boolean>>({});
@@ -464,6 +466,14 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       }
 
       setModel(modelId);
+      
+      const isLocal = ['nyx-native', 'lmstudio', 'ollama'].includes(model.provider);
+      if (isLocal) {
+        useNyxStore.getState().setLocalModelId(modelId);
+      } else {
+        useNyxStore.getState().setCloudModelId(modelId);
+      }
+      
       toast.info(`Switched model to ${model.name}`);
     },
     [mergedModels, apiKeys, setModel]

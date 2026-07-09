@@ -25,6 +25,30 @@ interface ModelRegistryViewProps {
   sidebarOpen?: boolean;
 }
 
+const ModelCardSkeleton = () => (
+  <div className="flex flex-col p-4 rounded-xl border border-border bg-card/50 overflow-hidden relative min-h-[160px]">
+    <div className="absolute inset-0 -translate-x-full animate-skeleton-shimmer bg-gradient-to-r from-transparent via-muted/20 to-transparent" />
+    <div className="flex items-start justify-between gap-3 mb-3">
+      <div className="flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-md bg-muted/40" />
+        <div className="space-y-1.5">
+          <div className="w-24 h-4 rounded bg-muted/40" />
+          <div className="w-16 h-3 rounded bg-muted/40" />
+        </div>
+      </div>
+      <div className="w-12 h-5 rounded-full bg-muted/40" />
+    </div>
+    <div className="space-y-2 mb-4">
+      <div className="w-full h-3 rounded bg-muted/40" />
+      <div className="w-4/5 h-3 rounded bg-muted/40" />
+    </div>
+    <div className="flex flex-wrap gap-1.5 mt-auto">
+      <div className="w-14 h-5 rounded bg-muted/40" />
+      <div className="w-12 h-5 rounded bg-muted/40" />
+    </div>
+  </div>
+);
+
 const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   selectModel,
   apiKeys,
@@ -169,7 +193,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       initial={{ opacity: 0, y: 20, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -20, scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
@@ -247,7 +271,9 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   subtitle="Models hosted natively by NYX (llama.cpp)"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                  {nyxNativeModels.map((m: any, idx: number) => (
+                  {localModelsQuery.isLoading ? (
+                    Array.from({ length: 4 }).map((_, i) => <ModelCardSkeleton key={`skel-${i}`} />)
+                  ) : nyxNativeModels.map((m: any, idx: number) => (
                      <ModelCard 
                        key={m.id} 
                        index={idx} 
@@ -273,7 +299,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                        systemVramBytes={hardwareSpecs?.gpu_vram}
                      />
                   ))}
-                  {nyxNativeModels.length === 0 && (
+                  {!localModelsQuery.isLoading && nyxNativeModels.length === 0 && (
                      <div className="col-span-full">
                        <EmptyState message="No local models found" hint="Download models using the Hugging Face Downloader above." />
                      </div>
