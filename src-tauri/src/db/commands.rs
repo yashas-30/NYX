@@ -80,72 +80,8 @@ pub async fn db_get_swarm_context(
 
 // Internal Rust API for Swarm Orchestrator
 
-#[allow(dead_code)]
-pub async fn write_swarm_context_internal(
-    pool: &SqlitePool,
-    session_id: &str,
-    agent_id: &str,
-    task: &str,
-    content: &str,
-) -> Result<(), sqlx::Error> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
 
-    sqlx::query(
-        "INSERT INTO swarm_context_pool (id, session_id, agent_id, task, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)"
-    )
-    .bind(id)
-    .bind(session_id)
-    .bind(agent_id)
-    .bind(task)
-    .bind(content)
-    .bind(timestamp)
-    .execute(pool)
-    .await?;
 
-    Ok(())
-}
-
-#[allow(dead_code)]
-pub async fn get_swarm_context_internal(
-    pool: &SqlitePool,
-    session_id: &str,
-) -> Result<String, sqlx::Error> {
-    let ctx = sqlx::query_as::<_, SwarmContextPool>(
-        "SELECT * FROM (SELECT * FROM swarm_context_pool WHERE session_id = ? ORDER BY timestamp DESC LIMIT 20) ORDER BY timestamp ASC"
-    )
-    .bind(session_id)
-    .fetch_all(pool)
-    .await?;
-
-    if ctx.is_empty() {
-        return Ok(String::new());
-    }
-
-    let mut result = String::new();
-    for entry in ctx {
-        let content = if entry.content.len() > 2000 {
-            format!("{}... [truncated]", &entry.content[..2000])
-        } else {
-            entry.content
-        };
-        result.push_str(&format!(
-            "\n\n--- Memory from {} (Task: {}) ---\n{}",
-            entry.agent_id, entry.task, content
-        ));
-    }
-    
-    // Total fallback guard
-    if result.len() > 16000 {
-        let start_idx = result.len() - 16000;
-        result = format!("...[earlier memories truncated]...\n{}", &result[start_idx..]);
-    }
-
-    Ok(result)
-}
 
 use serde::Deserialize;
 

@@ -1,0 +1,404 @@
+[
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web for current information.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "The search query" },
+                        "num_results": { "type": "number", "description": "Number of results to return (default: 5)" }
+                    },
+                    "required": ["query"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read the contents of a file from the local filesystem.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Absolute path to the file to read" }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Write contents to a file on the local filesystem.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Absolute path to the file to write" },
+                        "content": { "type": "string", "description": "The content to write to the file" }
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "edit_file",
+                "description": "Replace a specific target block in a file with new replacement content.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Absolute path to the file" },
+                        "target": { "type": "string", "description": "The exact block of text in the file to find" },
+                        "replacement": { "type": "string", "description": "The replacement content" }
+                    },
+                    "required": ["path", "target", "replacement"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_directory",
+                "description": "List all files and folders in a directory.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Absolute path to the directory" }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "grep_search",
+                "description": "Search recursively in a directory for files containing a specific pattern.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Absolute path to the directory to search" },
+                        "query": { "type": "string", "description": "The pattern/text to search for" }
+                    },
+                    "required": ["path", "query"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "diff_files",
+                "description": "Show line-by-line differences between two files.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path_a": { "type": "string", "description": "Path to first file" },
+                        "path_b": { "type": "string", "description": "Path to second file" }
+                    },
+                    "required": ["path_a", "path_b"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "web_browse",
+                "description": "Open a Tauri-native browser overlay window to view and navigate to a URL.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": { "type": "string", "description": "URL to navigate to" }
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "fetch_page",
+                "description": "Fetch a webpage's HTML and extract its clean readable text.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": { "type": "string", "description": "URL to fetch" }
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "web_scrape",
+                "description": "Scrape specific content from a page by fetching and selecting lines containing a keyword.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": { "type": "string", "description": "URL to scrape" },
+                        "keyword": { "type": "string", "description": "Keyword to filter matching lines" }
+                    },
+                    "required": ["url", "keyword"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_python",
+                "description": "Execute a Python code script.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": { "type": "string", "description": "Python code block to run" }
+                    },
+                    "required": ["code"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_javascript",
+                "description": "Execute a Node.js JavaScript code script.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": { "type": "string", "description": "JavaScript code block to run" }
+                    },
+                    "required": ["code"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_terminal_command",
+                "description": "Execute a terminal command on the host machine. On Windows, this runs in PowerShell. On Unix, it runs in sh.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string", "description": "The terminal command to run" },
+                        "cwd": { "type": "string", "description": "Optional absolute path specifying the current working directory for the command" }
+                    },
+                    "required": ["command"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_shell",
+                "description": "Execute a shell command in a specified directory.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string", "description": "Command to run" },
+                        "cwd": { "type": "string", "description": "Directory to run the command in" }
+                    },
+                    "required": ["command", "cwd"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_test",
+                "description": "Run standard tests using a specified command.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string", "description": "Command (e.g. 'cargo test' or 'npm test')" },
+                        "cwd": { "type": "string", "description": "Directory to run tests in" }
+                    },
+                    "required": ["command", "cwd"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "lint_code",
+                "description": "Run a linter command in a specified directory.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string", "description": "Linter command (e.g. 'eslint' or 'cargo clippy')" },
+                        "cwd": { "type": "string", "description": "Directory to run linting in" }
+                    },
+                    "required": ["command", "cwd"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_system_info",
+                "description": "Retrieve CPU architecture, platform, and memory statistics of the host machine.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "take_screenshot",
+                "description": "Capture the primary display monitor screenshot and save it to the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "File path where the screenshot JPEG will be saved" }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_mcp_tool",
+                "description": "Invoke an MCP tool on a specified configured server.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "server": { "type": "string", "description": "MCP Server name" },
+                        "tool": { "type": "string", "description": "Tool name to call" },
+                        "arguments": { "type": "string", "description": "JSON arguments object passed to the tool" }
+                    },
+                    "required": ["server", "tool", "arguments"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_pdf",
+                "description": "Read and extract plain text from a PDF file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Absolute path to PDF file" }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_docx",
+                "description": "Read and extract plain text from a Word DOCX file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Absolute path to DOCX file" }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "create_presentation",
+                "description": "Create a slideshow presentation in markdown slides format.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Path to save presentation file" },
+                        "title": { "type": "string", "description": "Title of presentation" },
+                        "slides": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "List of slide texts"
+                        }
+                    },
+                    "required": ["path", "title", "slides"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "create_spreadsheet",
+                "description": "Create a CSV spreadsheet file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Path to save spreadsheet CSV" },
+                        "headers": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Spreadsheet headers"
+                        },
+                        "rows": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            },
+                            "description": "List of row cells"
+                        }
+                    },
+                    "required": ["path", "headers", "rows"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "browser_click",
+                "description": "Click an element in the Tauri browser overlay window using a CSS selector.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": { "type": "string", "description": "CSS selector of the element to click" }
+                    },
+                    "required": ["selector"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "browser_type",
+                "description": "Type text into an input field in the Tauri browser overlay window using a CSS selector.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": { "type": "string", "description": "CSS selector of the input field" },
+                        "text": { "type": "string", "description": "Text content to type" }
+                    },
+                    "required": ["selector", "text"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "browser_get_html",
+                "description": "Retrieve the full HTML outerHTML of the current page loaded in the browser overlay.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "browser_screenshot",
+                "description": "Capture a screenshot of the browser overlay window as a base64 JPEG string.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        }
+    ]

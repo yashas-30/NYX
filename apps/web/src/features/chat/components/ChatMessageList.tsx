@@ -389,11 +389,30 @@ const MemoizedMarkdownBlock: React.FC<{
 
   const components = useMemo(
     () => ({
+      pre({ children }: any) {
+        return (
+          <div className="my-4 relative rounded-lg bg-zinc-950 border border-border overflow-hidden">
+            <div className="flex items-center px-4 py-2 bg-zinc-900/50 border-b border-border/50 text-xs font-mono text-zinc-400">
+              Code
+            </div>
+            <pre className="p-4 overflow-x-auto text-[13px] text-zinc-50 font-mono leading-relaxed">
+              {children}
+            </pre>
+          </div>
+        );
+      },
       code({ node, inline, className, children, ...props }: any) {
         const match = /language-(\w+)/.exec(className || '');
+        if (!inline && match) {
+          return (
+            <code className={className} {...props}>
+              {children}
+            </code>
+          );
+        }
         return (
           <code
-            className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-primary text-[11px] font-mono font-semibold"
+            className="px-1.5 py-0.5 mx-0.5 rounded-md bg-muted/60 border border-border/60 text-primary text-[13px] font-mono"
             {...props}
           >
             {children}

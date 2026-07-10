@@ -4,36 +4,36 @@
 
 /* ── NYX Unified True-Black UI Tokens ───────────────────────── */
 :root {
-  /* Premium Minimalist True Black Palette */
-  --background: #000000;
-  --foreground: #ffffff;
+  /* Premium Minimalist Dark Grey Palette */
+  --background: #121212;
+  --foreground: #e4e4e7;
   
-  --card: #000000;
-  --card-foreground: #ffffff;
-  --popover: #000000;
-  --popover-foreground: #ffffff;
+  --card: #18181b;
+  --card-foreground: #e4e4e7;
+  --popover: #1f1f22;
+  --popover-foreground: #e4e4e7;
   
   --primary: #ffffff;
   --primary-foreground: #000000;
   
-  --secondary: #a1a1aa;
+  --secondary: #27272a;
   --secondary-foreground: #ffffff;
   
-  --muted: #000000;
+  --muted: #27272a;
   --muted-foreground: #a1a1aa;
   
-  --destructive: #a1a1aa;
-  --destructive-foreground: #000000;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
   
-  --border: #a1a1aa;
-  --border-strong: #a1a1aa;
-  --input: #a1a1aa;
-  --ring: #a1a1aa;
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --input: #27272a;
+  --ring: #3f3f46;
 
-  --accent: #a1a1aa;
-  --accent-foreground: #000000;
-  --accent-warm: #a1a1aa;
-  --accent-warm-foreground: #000000;
+  --accent: #27272a;
+  --accent-foreground: #ffffff;
+  --accent-warm: #3f3f46;
+  --accent-warm-foreground: #ffffff;
   
   /* Unified Small Geometry */
   --radius-sm: 8px;

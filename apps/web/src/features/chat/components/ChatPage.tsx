@@ -25,6 +25,7 @@ import { MemoryPanel } from './MemoryPanel';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useModelStore } from '@src/core/stores/useModelStore';
 import { BranchingTreePanel } from './BranchingTreePanel';
+import { detectProvider } from '@src/infrastructure/utils/provider';
 
 // ---------------------------------------------------------------------------
 // Types

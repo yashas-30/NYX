@@ -174,6 +174,7 @@ pub fn run() {
             llm::download_local_model,
             llm::list_local_models,
             llm::start_local_server,
+            llm::estimate_hardware_usage,
             llm::stop_local_server,
             llm::hf_set_token,
             llm::hf_download_model,

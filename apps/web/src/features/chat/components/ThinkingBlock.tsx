@@ -364,6 +364,28 @@ const PlainText: React.FC<{ content: string }> = ({ content }) => {
       <ReactMarkdown 
         remarkPlugins={[remarkGfm, remarkMath]} 
         rehypePlugins={[rehypeKatex]}
+        components={{
+          pre({ children }: any) {
+            return (
+              <div className="my-2 relative rounded-md bg-zinc-950/50 border border-border/50 overflow-hidden">
+                <pre className="p-3 overflow-x-auto text-[12px] text-zinc-300 font-mono leading-relaxed">
+                  {children}
+                </pre>
+              </div>
+            );
+          },
+          code({ node, inline, className, children, ...props }: any) {
+            const match = /language-(\w+)/.exec(className || '');
+            if (!inline && match) {
+              return <code className={className} {...props}>{children}</code>;
+            }
+            return (
+              <code className="px-1 py-0.5 mx-0.5 rounded bg-muted/60 border border-border/60 text-muted-foreground font-mono text-[12px]" {...props}>
+                {children}
+              </code>
+            );
+          }
+        }}
       >
         {content}
       </ReactMarkdown>
@@ -414,7 +436,7 @@ function AgentProgressBar({
 }
 
 export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseContent, isComplete = true, startedAt, agentProgress }) => {
-  const [isExpanded, setIsExpanded] = useState(!isComplete);
+  const [isExpanded, setIsExpanded] = useState(false);
   const smoothContent = useSmoothTypewriter(content, !isComplete);
   const segments = useMemo(() => parseThinking(smoothContent), [smoothContent]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -452,12 +474,8 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
       }
       if (s.type === 'text' && s.content.trim()) {
         const clean = s.content.replace(/\s+/g, ' ').trim();
-        
-        // Skip system/backend connection messages from the dynamic header
         if (clean.includes('Connecting to backend agent service')) continue;
-        
-        if (clean.length <= 60) return clean;
-        return '...' + clean.slice(-55).trim();
+        return 'Thinking...';
       }
     }
     
@@ -543,7 +561,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
                 elapsed={agentProgress.elapsed}
               />
             )}
-            <div ref={scrollRef} onScroll={handleScroll} className="ml-2.5 pl-4 pb-2 pt-2 mt-2 space-y-1 max-h-[600px] overflow-y-auto overscroll-contain border-l border-border/40">
+            <div ref={scrollRef} onScroll={handleScroll} className="ml-2 p-3 mt-2 space-y-1 max-h-[400px] overflow-y-auto overscroll-contain rounded-md bg-muted/20 border border-border/40 text-sm">
               {segments.map((seg, i) => {
                 switch (seg.type) {
                   case 'section':    return <SectionHeader key={i} icon={seg.icon} label={seg.label} />;

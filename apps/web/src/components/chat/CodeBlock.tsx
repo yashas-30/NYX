@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { codeToHtml } from 'shiki';
-import { useTheme } from '../ThemeProvider';
+import { useTheme } from '../../shared/context/ThemeContext';
 
 interface CodeBlockProps {
   code: string;
@@ -12,18 +12,18 @@ import { CopyIcon as Copy, DownloadIcon as Download } from '@animateicons/react/
 
 export function CodeBlock({ code, language, filename }: CodeBlockProps) {
   const [html, setHtml] = useState('');
-  const { resolvedTheme } = useTheme();
+  const { theme } = useTheme();
 
   useEffect(() => {
     const highlight = async () => {
       const highlighted = await codeToHtml(code, {
         lang: language || 'text',
-        theme: resolvedTheme === 'dark' ? 'github-dark' : 'github-light',
+        theme: theme === 'dark' ? 'github-dark' : 'github-light',
       });
       setHtml(highlighted);
     };
     highlight();
-  }, [code, language, resolvedTheme]);
+  }, [code, language, theme]);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(code);

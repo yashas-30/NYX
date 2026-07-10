@@ -516,7 +516,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md transition-all text-left shrink-0 ${
                     !supportsVision
                       ? 'bg-muted border border-border/50 text-muted-foreground/50 cursor-not-allowed'
-                      : 'bg-secondary border border-border hover:border-border/80 text-foreground cursor-pointer'
+                      : 'bg-secondary border border-border hover:border-amber-500/40 hover:text-amber-500 text-foreground cursor-pointer'
                   }`}
                   title={!supportsVision ? 'Current model does not support vision' : ''}
                 >
@@ -539,13 +539,49 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   onClick={toggleWebSearch}
                   className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border transition-all text-left cursor-pointer shrink-0 ${
                     webSearchEnabled 
-                      ? 'bg-accent/10 border-accent/40 text-accent' 
-                      : 'bg-secondary border-border hover:border-border/80 text-foreground'
+                      ? 'bg-blue-500/10 border-blue-500/40 text-blue-500' 
+                      : 'bg-secondary border-border hover:border-blue-500/40 hover:text-blue-500 text-foreground'
                   }`}
                 >
                   <Globe className="w-3.5 h-3.5" />
                   <span className="text-[9.5px] font-bold tracking-tight">Web Search</span>
                 </motion.button>
+                
+                {isLocalModel && supportsVision && (
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1.5, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => onModelSettingsChange({ ...modelSettings, visionEnabled: !modelSettings.visionEnabled })}
+                    className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border transition-all text-left cursor-pointer shrink-0 ${
+                      modelSettings.visionEnabled !== false
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-500' 
+                        : 'bg-secondary border-border hover:border-amber-500/40 hover:text-amber-500 text-foreground'
+                    }`}
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span className="text-[9.5px] font-bold tracking-tight">Vision</span>
+                  </motion.button>
+                )}
+
+                {isLocalModel && supportsReasoning && (
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1.5, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => onModelSettingsChange({ ...modelSettings, thinkingEnabled: !modelSettings.thinkingEnabled })}
+                    className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border transition-all text-left cursor-pointer shrink-0 ${
+                      modelSettings.thinkingEnabled !== false
+                        ? 'bg-purple-500/10 border-purple-500/40 text-purple-500' 
+                        : 'bg-secondary border-border hover:border-purple-500/40 hover:text-purple-500 text-foreground'
+                    }`}
+                  >
+                    <span className="text-[10px]">🧠</span>
+                    <span className="text-[9.5px] font-bold tracking-tight">Thinking</span>
+                  </motion.button>
+                )}
 
                 <div className="relative">
                     <motion.button
@@ -554,9 +590,9 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                       whileTap={{ scale: 0.98 }}
                       type="button"
                       onClick={() => setShowReasoningMenu((prev) => !prev)}
-                      className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-secondary border border-border hover:border-border/80 transition-all text-left cursor-pointer shrink-0"
+                      className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-secondary border border-border hover:border-purple-500/40 hover:text-purple-500 transition-all text-left cursor-pointer shrink-0 group"
                     >
-                      <span className="text-[10px]">🧠</span>
+                      <span className="text-[10px] group-hover:scale-110 transition-transform">🧠</span>
                       <span className="text-[9.5px] font-bold tracking-tight uppercase">
                         Effort: <span className="text-foreground">{modelSettings.reasoningEffort || 'medium'}</span>
                       </span>
@@ -565,41 +601,42 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
 
                     <AnimatePresence>
                       {showReasoningMenu && (
-                        <div key="reasoning-backdrop" className="fixed inset-0 z-40" onClick={() => setShowReasoningMenu(false)} />
-                      )}
-                      {showReasoningMenu && (
-                        <motion.div
-                          key="reasoning-menu"
-                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                          className="absolute bottom-full mb-2 left-0 w-32 bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.12)] z-50 p-1 flex flex-col gap-0.5"
-                        >
-                          <div className="px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/40 mb-1">
-                            Reasoning Effort
-                          </div>
-                          {['low', 'medium', 'high', 'max'].map((effort) => (
-                            <button
-                              key={effort}
-                              type="button"
-                              onClick={() => {
-                                onModelSettingsChange({ ...modelSettings, reasoningEffort: effort });
-                                setShowReasoningMenu(false);
-                              }}
-                              className={`flex items-center justify-between w-full px-2 py-1.5 text-left text-[10px] font-bold tracking-tight rounded-sm transition-colors ${
-                                modelSettings.reasoningEffort === effort
-                                  ? 'bg-primary/10 text-primary'
-                                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                              }`}
-                            >
-                              <span className="uppercase">{effort}</span>
-                              {modelSettings.reasoningEffort === effort && <Check size={10} />}
-                            </button>
-                          ))}
-                        </motion.div>
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowReasoningMenu(false)} />
+                          <motion.div
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                            className="absolute bottom-full mb-2 bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.12)] z-50 p-1 flex flex-col gap-0.5 min-w-[120px]"
+                          >
+                            <div className="px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/40 mb-1">
+                              Reasoning Effort
+                            </div>
+                            {['low', 'medium', 'high', 'max'].map((effort) => (
+                              <button
+                                key={effort}
+                                type="button"
+                                onClick={() => {
+                                  onModelSettingsChange({ ...modelSettings, reasoningEffort: effort });
+                                  setShowReasoningMenu(false);
+                                }}
+                                className={`flex items-center justify-between w-full px-2 py-1.5 text-left text-[10px] font-bold tracking-tight rounded-sm transition-colors ${
+                                  modelSettings.reasoningEffort === effort
+                                    ? 'bg-purple-500/10 text-purple-500'
+                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                                }`}
+                              >
+                                <span className="uppercase">{effort}</span>
+                                {modelSettings.reasoningEffort === effort && <Check size={10} />}
+                              </button>
+                            ))}
+                          </motion.div>
+                        </>
                       )}
                     </AnimatePresence>
                   </div>
+
+
 
                 <div className="flex items-center gap-1">
                   <PromptTemplateManager
@@ -625,7 +662,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     className={`flex items-center justify-center w-6 h-6 rounded-l-md border transition-all cursor-pointer shrink-0 hover:scale-105 hover:-translate-y-[1px] ${
                       isVoiceActive
                         ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400 font-bold'
-                        : 'bg-secondary border-border text-muted-foreground hover:text-foreground'
+                        : 'bg-secondary border-border text-muted-foreground hover:text-emerald-500 hover:border-emerald-500/40'
                     }`}
                     title={isVoiceActive ? 'Stop Voice Input' : 'Voice Input'}
                   >
@@ -639,7 +676,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     className={`flex items-center justify-center w-4 h-6 rounded-r-md border-y border-r transition-all cursor-pointer shrink-0 hover:scale-105 hover:-translate-y-[1px] ${
                       isVoiceActive
                         ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-secondary border-border text-muted-foreground hover:text-foreground'
+                        : 'bg-secondary border-border text-muted-foreground hover:text-emerald-500 hover:border-emerald-500/40'
                     }`}
                     title="Choose Voice Engine"
                   >

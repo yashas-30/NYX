@@ -35,30 +35,31 @@ pub struct SpawnDecision {
 
 /// Typical layer counts for common model sizes (approximate).
 /// Used when we can't parse the GGUF header directly.
-fn estimate_total_layers(model_size_gb: f32) -> u32 {
-    match model_size_gb as u32 {
-        0..=1  => 22,   // ~1B models (Phi-1.5, TinyLlama)
-        2..=3  => 28,   // 3B models (Phi-3-mini, Llama-3.2-3B)
-        4..=5  => 32,   // 4-7B models (Mistral-7B, Llama-3-8B)
-        6..=8  => 32,
-        9..=14 => 40,   // 13B models
-        15..=23 => 48,  // 20B models
-        24..=40 => 60,  // 34B models
-        41..=75 => 80,  // 70B models
-        _ => 96,        // Very large models
-    }
+pub fn estimate_total_layers(model_size_gb: f32) -> u32 {
+    if model_size_gb < 1.0 { return 24; }
+    if model_size_gb < 2.0 { return 32; }
+    if model_size_gb < 5.0 { return 40; }
+    if model_size_gb < 10.0 { return 60; }
+    80
 }
 
-/// Estimate VRAM needed (MB) to offload `ngl` layers of a model.
-/// Rule of thumb: ~(model_size_gb * 1024) / total_layers MB per layer.
-fn vram_for_ngl(model_size_gb: f32, total_layers: u32, ngl: u32) -> u64 {
-    if total_layers == 0 {
-        return 0;
+/// Baseline constant VRAM cost for CUDA/Vulkan driver + context (in MB)
+const BASE_VRAM_OVERHEAD_MB: u64 = 600;
+
+/// Estimates VRAM required if we offload `ngl` layers.
+pub fn vram_for_ngl(model_size_gb: f32, total_layers: u32, ngl: u32) -> u64 {
+    if ngl == 0 {
+        return 0; // Pure CPU mode doesn't allocate huge VRAM buffers
     }
-    let mb_per_layer = (model_size_gb * 1024.0) / total_layers as f32;
-    // Add 15% overhead for KV cache, input/output tensors
-    let raw = mb_per_layer * ngl as f32 * 1.15;
-    raw as u64
+
+    // Rough heuristic: model size in MB
+    let model_mb = (model_size_gb * 1024.0) as u64;
+    
+    // Assume linear distribution of memory across layers for weights
+    let layer_cost = model_mb / total_layers as u64;
+    
+    // Total VRAM = Overhead + (Layers offloaded * Cost per layer)
+    BASE_VRAM_OVERHEAD_MB + (layer_cost * ngl as u64)
 }
 
 /// Core scheduling logic — pure function, no I/O.

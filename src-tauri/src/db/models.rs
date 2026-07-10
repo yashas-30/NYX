@@ -61,16 +61,6 @@ pub struct SwarmContextPool {
     pub timestamp: i64,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
-pub struct ModelConfig {
-    pub id: String,
-    pub provider: String,
-    pub name: String,
-    pub config: String,
-    pub updated_at: i64,
-}
-
 #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
 pub struct LongTermMemory {
     pub id: String,
@@ -80,25 +70,6 @@ pub struct LongTermMemory {
     pub created_at: i64,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
-pub struct SwarmCache {
-    pub id: String,
-    pub prompt: String,
-    pub result: String,
-    pub embedding: String, // JSON float array
-    pub created_at: i64,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
-pub struct ChatMemory {
-    pub id: String,
-    pub session_id: String,
-    pub content: String,
-    pub embedding: String, // JSON float array
-    pub created_at: i64,
-}
 
 #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
 pub struct ExperienceLedgerEntry {

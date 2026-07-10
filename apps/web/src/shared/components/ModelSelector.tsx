@@ -95,6 +95,8 @@ export const ModelSelector: React.FC<Props> = ({
 
   const [expandedModelId, setExpandedModelId] = React.useState<string | null>(null);
   const contextSize = useNyxStore((s) => s.modelSettings.contextSize);
+  const gpuLayers = useNyxStore((s) => s.modelSettings.gpuLayers);
+  const cpuThreads = useNyxStore((s) => s.modelSettings.threads);
 
   React.useEffect(() => {
     loadLocalLibraryModels();
@@ -104,7 +106,7 @@ export const ModelSelector: React.FC<Props> = ({
     e.stopPropagation();
     try {
       setIsTogglingModel(true);
-      await invoke('start_local_server', { modelId: id, contextSize });
+      await invoke('start_local_server', { modelId: id, contextSize, gpuLayers, cpuThreads });
       setLoadedLocalModel(id);
       setIsTogglingModel(false);
       toast.success('Model loaded successfully');

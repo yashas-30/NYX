@@ -12,49 +12,7 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 
 /// Lightweight input struct — callers build this from timing + response metadata.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct TraceInput {
-    pub session_id: Option<String>,
-    pub provider: String,
-    pub model: String,
-    pub prompt_tokens: i64,
-    pub completion_tokens: i64,
-    pub latency_ms: i64,
-    pub cached: bool,
-    pub error: Option<String>,
-    pub agent_node_id: Option<String>,
-}
 
-/// Write one trace row. Designed to be called inside `tokio::spawn` so it
-/// never blocks the inference hot path.
-#[allow(dead_code)]
-pub async fn record_trace(pool: &SqlitePool, input: TraceInput) -> Result<()> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().timestamp();
-
-    sqlx::query(
-        r#"INSERT INTO llm_traces
-           (id, session_id, provider, model, prompt_tokens, completion_tokens,
-            latency_ms, cached, error, agent_node_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
-    )
-    .bind(&id)
-    .bind(&input.session_id)
-    .bind(&input.provider)
-    .bind(&input.model)
-    .bind(input.prompt_tokens)
-    .bind(input.completion_tokens)
-    .bind(input.latency_ms)
-    .bind(input.cached as i64)
-    .bind(&input.error)
-    .bind(&input.agent_node_id)
-    .bind(now)
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
 
 /// Fetch the N most recent trace rows for a given session (or all sessions).
 pub async fn get_traces(

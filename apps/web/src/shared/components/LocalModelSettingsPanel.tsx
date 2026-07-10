@@ -1,5 +1,6 @@
 // @ts-nocheck
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ZapIcon as Zap, CheckIcon as Check, LayersIcon as Layers } from '@animateicons/react/lucide';
 import { RotateCcw, MemoryStick, Thermometer, Cpu } from 'lucide-react';
@@ -38,6 +39,22 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
       : localSettings.gpuLayers < 90
         ? 'text-amber-400'
         : 'text-emerald-400';
+
+  const [hardwareEst, setHardwareEst] = useState<any>(null);
+
+  useEffect(() => {
+    if (!showSettings || !isLocalModel || !currentModelId) return;
+    const timer = setTimeout(() => {
+      invoke('estimate_hardware_usage', {
+        modelId: currentModelId,
+        contextSize: localSettings.contextSize || 32768,
+        gpuLayers: localSettings.gpuLayers || 0,
+      }).then((res: any) => {
+        setHardwareEst(res);
+      }).catch(console.warn);
+    }, 300); // debounce
+    return () => clearTimeout(timer);
+  }, [showSettings, isLocalModel, currentModelId, localSettings.gpuLayers, localSettings.contextSize]);
 
   return (
     <>
@@ -200,6 +217,23 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                             <span className="text-[7px] text-muted-foreground">CPU Only</span>
                             <span className="text-[7px] text-muted-foreground">Full VRAM</span>
                           </div>
+                          
+                          {hardwareEst && (
+                            <div className="mt-2.5 pt-2.5 border-t border-border/50">
+                              <div className="flex justify-between items-center mb-1">
+                                <span className="text-[8px] font-semibold text-muted-foreground">Estimated VRAM</span>
+                                <span className="text-[9px] font-mono text-foreground">{Math.round(hardwareEst.estimated_vram_mb / 102.4) / 10} GB / {Math.round(hardwareEst.total_vram_mb / 102.4) / 10} GB</span>
+                              </div>
+                              <div className="w-full bg-black/20 rounded-full h-1.5 overflow-hidden flex">
+                                <div className="bg-emerald-500 h-full" style={{ width: `${Math.min(100, (hardwareEst.estimated_vram_mb / Math.max(1, hardwareEst.total_vram_mb)) * 100)}%` }}></div>
+                              </div>
+                              {hardwareEst.system_ram_spill_mb > 0 && (
+                                <div className="mt-2 text-[8.5px] text-amber-500 bg-amber-500/10 p-1.5 rounded border border-amber-500/20 font-medium">
+                                  ⚠️ Spill to System RAM: {Math.round(hardwareEst.system_ram_spill_mb / 102.4) / 10} GB. Expect significant performance drop.
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </section>
 
@@ -221,6 +255,19 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                             accent="accent-foreground"
                             onChange={(v) => updateLocal('contextSize', v)}
                           />
+                          <div className="mt-4 pt-4 border-t border-border/50">
+                            <ParamSlider
+                              label="CPU Threads"
+                              hint="Threads used for CPU processing. Match physical cores."
+                              value={localSettings.threads || 4}
+                              min={1}
+                              max={32}
+                              step={1}
+                              display={(v) => `${v}`}
+                              accent="accent-foreground"
+                              onChange={(v) => updateLocal('threads', v)}
+                            />
+                          </div>
                         </div>
                       </section>
                     </div>

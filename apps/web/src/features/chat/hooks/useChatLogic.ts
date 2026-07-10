@@ -8,7 +8,6 @@ import { useState, useRef, useEffect, useCallback, useReducer, useMemo } from 'r
 import { NYX_PERSONA } from '@src/core/agents/nyxPersona';
 import { ModelDefinition, ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
-import { useChatPipeline } from './useChatPipeline';
 import { AIService, cancelRequest, cancelAllRequests } from '@src/features/ai/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
 import { detectProvider, getEffectiveApiKey, getModelCapabilities } from '@src/infrastructure/utils/provider';
@@ -452,36 +451,9 @@ export const useChatLogic = ({
   // Chat pipeline integration
   // -------------------------------------------------------------------------
 
-  const updateHistoryFromPipeline = useCallback(
-    (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
-      const nextHistory = updater(historyRef.current);
-      dispatch({ type: 'SET', messages: nextHistory });
-      historyRef.current = nextHistory;
-      persistHistory(nextHistory);
-    },
-    [persistHistory]
-  );
-
-  const chatPipeline = useChatPipeline({
-    models,
-    apiKeys,
-    modelSettings,
-    trackUsage,
-    history,
-    updateHistory: updateHistoryFromPipeline,
-    updateMetrics,
-    getSuggestions,
-    setSuggestedPrompts,
-    lightningEnabled,
-    lightningDirectives,
-    logRollout,
-  });
-
   const [isSupervising, setIsSupervising] = useState(false);
-  const isLoading = chatPipeline.isLoading || isSupervising;
-  const isSearching = chatPipeline.isSearching;
-  const pipelineRunChat = chatPipeline.runChat;
-  const pipelineStopChat = chatPipeline.stopChat;
+  const isLoading = isSupervising || !!abortCtrlRef.current;
+  const isSearching = false; // Add state if needed, or rely on tool_call events in history
 
   // -------------------------------------------------------------------------
   // Stop generation (moved before useEffect that references it)
@@ -496,9 +468,8 @@ export const useChatLogic = ({
     }
     
     abortCtrlRef.current?.abort();
-    pipelineStopChat();
     cancelRequest('chat-stream');
-  }, [pipelineStopChat]);
+  }, []);
 
   useEffect(() => {
     if (activeSid !== lastActiveSidRef.current) {
@@ -759,23 +730,9 @@ ${prompt}`;
         dispatch({ type: 'APPEND', message: assistantMsg });
         historyRef.current = [...historyRef.current, assistantMsg];
 
-        // Helper to strip raw XML and their potential markdown wrappers
+        // Simplified tag cleaner
         let extractedReasoning = '';
-        const cleanXmlTags = (text: string) => {
-          let cleaned = text || '';
-          extractedReasoning = '';
-          const thinkRegex = /<think>([\s\S]*?)(?:<\/think>|$)/g;
-          let match;
-          while ((match = thinkRegex.exec(cleaned)) !== null) {
-            extractedReasoning += match[1];
-          }
-          cleaned = cleaned.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '');
-          
-          return cleaned
-            .replace(/(?:```\w*\s*)?<tool_call>[\s\S]*?(<\/tool_call>|$)(?:\s*```)?/g, '')
-            .replace(/(?:```\w*\s*)?<tool_response>[\s\S]*?(<\/tool_response>|$)(?:\s*```)?/g, '')
-            .trim();
-        };
+        const cleanXmlTags = (text: string) => text.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '').trim();
 
         let currentContent = '';
         let currentReasoning = '';
@@ -899,8 +856,8 @@ ${prompt}`;
               
             let content: any = textContent;
             
-            // If the message has attached images, send them as a multimodal array
-            if (m.images && m.images.length > 0) {
+            // If the message has attached images and vision is not explicitly disabled
+            if (m.images && m.images.length > 0 && modelSettings?.visionEnabled !== false) {
               content = [
                 { type: 'text', text: textContent },
                 ...m.images.map(img => ({
@@ -919,7 +876,12 @@ ${prompt}`;
           });
 
           const capabilities = getModelCapabilities(modelToUse);
-          const reasoningEffortStr = modelSettings?.reasoningEffort || 'medium';
+          const reasoningEffortStr = modelSettings?.thinkingEnabled === false ? 'none' : (modelSettings?.reasoningEffort || 'medium');
+          
+          let finalSystemInstruction = context.system_instruction;
+          if (capabilities.supportsReasoning && modelSettings?.thinkingEnabled === false) {
+             finalSystemInstruction = (finalSystemInstruction || '') + '\n\nIMPORTANT: Do NOT output any reasoning or <think> tags. Provide your final answer directly without showing your thought process.';
+          }
 
           const resolvedProvider = currentProvider || detectProvider(modelToUse);
 
@@ -930,7 +892,7 @@ ${prompt}`;
               api_key: getEffectiveApiKey(resolvedProvider, apiKeys) || '',
               messages: backendMessages,
               temperature: modelSettings?.temperature ?? 0.7,
-              system_instruction: context.system_instruction,
+              system_instruction: finalSystemInstruction,
               event_name: eventName,
               reasoning_effort: reasoningEffortStr,
               endpoint_override: gatewayUrl,

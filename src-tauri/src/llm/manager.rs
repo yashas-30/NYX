@@ -18,12 +18,12 @@ impl LlamaManager {
     /// Original entry point — delegates to start_with_ngl with default -ngl 999.
     /// Kept for any internal callers that don't go through the VRAM scheduler.
     pub async fn start(&self, server_path: &PathBuf, model_path: &PathBuf, context_size: u32) -> Result<(), String> {
-        self.start_with_ngl(server_path, model_path, context_size, None).await
+        self.start_with_ngl(server_path, model_path, context_size, None, None).await
     }
 
-    /// Start llama-server with an explicit ngl override from the VRAM scheduler.
+    /// Start llama-server with an explicit ngl override and threads override from the VRAM scheduler/frontend.
     /// If `ngl_override` is None, falls back to `-ngl 999` (all layers on GPU).
-    pub async fn start_with_ngl(&self, server_path: &PathBuf, model_path: &PathBuf, context_size: u32, ngl_override: Option<u32>) -> Result<(), String> {
+    pub async fn start_with_ngl(&self, server_path: &PathBuf, model_path: &PathBuf, context_size: u32, ngl_override: Option<u32>, threads_override: Option<u32>) -> Result<(), String> {
         let ngl_value = ngl_override.unwrap_or(999).to_string();
 
         let mut process_guard = self.process.lock().await;
@@ -35,15 +35,20 @@ impl LlamaManager {
         let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/IM", "llama-server.exe"]).output();
         let _ = std::process::Command::new("taskkill").args(["/F", "/T", "/IM", "llama-server-vulkan.exe"]).output();
 
-        let cpu_threads = std::thread::available_parallelism()
-            .map(|n| (n.get() / 2).max(1).min(16))
-            .unwrap_or(4)
-            .to_string();
+        let cpu_threads = threads_override
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(|n| (n.get() / 2).max(1).min(16))
+                    .unwrap_or(4)
+                    .to_string()
+            });
 
         info!("Starting Llama Server: model={} ngl={} threads={}", model_path.display(), ngl_value, cpu_threads);
         let mut child = Command::new(server_path)
             .arg("-m").arg(model_path)
             .arg("-ngl").arg(&ngl_value)
+            .arg("--no-mmap")
             .arg("--ctx-size").arg(context_size.to_string())
             .arg("--batch-size").arg("2048")
             .arg("--ubatch-size").arg("512")

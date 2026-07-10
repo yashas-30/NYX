@@ -508,7 +508,9 @@ export class HybridModelRouter {
           const status = await checkStatusFn(current.provider).catch(() => 'offline');
           if (status !== 'online') {
             const contextSize = settings?.contextSize || 32768;
-            await invoke('start_local_server', { modelId: current.id, contextSize }).catch(console.warn);
+            const gpuLayers = settings?.gpuLayers !== undefined ? settings.gpuLayers : null;
+            const cpuThreads = settings?.threads !== undefined ? settings.threads : null;
+            await invoke('start_local_server', { modelId: current.id, contextSize, gpuLayers, cpuThreads }).catch(console.warn);
           }
         }
 
@@ -550,7 +552,7 @@ export class HybridModelRouter {
   // -------------------------------------------------------------------------
 
   private async warmModel(modelId: string): Promise<void> {
-    invoke('start_local_server', { modelId, contextSize: 32768 }).catch(console.warn);
+    invoke('start_local_server', { modelId, contextSize: 32768, gpuLayers: null, cpuThreads: null }).catch(console.warn);
   }
 
   private async handleOOM(modelId: string): Promise<void> {

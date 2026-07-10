@@ -46,7 +46,14 @@ pub async fn download_local_model(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn start_local_server(app: AppHandle, manager: State<'_, Arc<LlamaManager>>, model_id: String, context_size: Option<u32>) -> Result<(), String> {
+pub async fn start_local_server(
+    app: AppHandle, 
+    manager: State<'_, Arc<LlamaManager>>, 
+    model_id: String, 
+    context_size: Option<u32>,
+    gpu_layers: Option<u32>,
+    cpu_threads: Option<u32>,
+) -> Result<(), String> {
     let app_dir = app.path().app_data_dir().map_err(|_| "Failed to get app data dir".to_string())?;
     let model_path = app_dir.join("models").join(&model_id);
     let server_path = app_dir.join("binaries").join("llama-server-vulkan.exe");
@@ -58,19 +65,28 @@ pub async fn start_local_server(app: AppHandle, manager: State<'_, Arc<LlamaMana
     // --- Phase 3: VRAM-Aware Scheduling ---
     let model_size_gb = crate::llm::vram_scheduler::get_model_size_gb(&model_path);
     let decision = if let Some(vram) = crate::llm::vram_scheduler::query_vram() {
-        tracing::info!(
-            "[VramScheduler] GPU: {} | Available: {} MB | Model: {:.1} GB",
-            vram.gpu_name, vram.available_mb, model_size_gb
-        );
         let d = crate::llm::vram_scheduler::compute_spawn_decision(&vram, model_size_gb);
+        
+        let final_ngl = if let Some(manual_gpu_layers) = gpu_layers {
+            let total_layers = crate::llm::vram_scheduler::estimate_total_layers(model_size_gb);
+            let capped = manual_gpu_layers.min(d.ngl).min(total_layers);
+            tracing::info!("[Manual] User requested {} layers, capped to {} to prevent VRAM spill (max fit: {}, total: {})", manual_gpu_layers, capped, d.ngl, total_layers);
+            capped
+        } else {
+            tracing::info!(
+                "[VramScheduler] GPU: {} | Available: {} MB | Model: {:.1} GB -> Auto NGL: {}",
+                vram.gpu_name, vram.available_mb, model_size_gb, d.ngl
+            );
+            d.ngl
+        };
 
         // Emit VRAM info to frontend so the UI can show the indicator
         let _ = app.emit("vram-decision", serde_json::json!({
-            "ngl": d.ngl,
-            "fully_gpu": d.fully_gpu,
+            "ngl": final_ngl,
+            "fully_gpu": final_ngl >= crate::llm::vram_scheduler::estimate_total_layers(model_size_gb),
             "suggest_cloud_fallback": d.suggest_cloud_fallback,
             "message": d.message,
-            "estimated_vram_mb": d.estimated_vram_mb,
+            "estimated_vram_mb": crate::llm::vram_scheduler::vram_for_ngl(model_size_gb, crate::llm::vram_scheduler::estimate_total_layers(model_size_gb), final_ngl),
             "available_mb": vram.available_mb,
             "gpu_name": vram.gpu_name,
             "model_size_gb": model_size_gb
@@ -79,17 +95,17 @@ pub async fn start_local_server(app: AppHandle, manager: State<'_, Arc<LlamaMana
         if d.suggest_cloud_fallback {
             return Err(d.message);
         }
-        Some(d.ngl)
+        Some(final_ngl)
     } else {
-        tracing::warn!("[VramScheduler] Could not query VRAM — using default -ngl 999");
-        None // Fall through to default behavior
+        tracing::warn!("[VramScheduler] Could not query VRAM — using user preference or default");
+        gpu_layers
     };
 
     let mut ctx_size = context_size.unwrap_or(32768);
     if ctx_size < 32768 {
         ctx_size = 32768;
     }
-    manager.start_with_ngl(&server_path, &model_path, ctx_size, decision).await?;
+    manager.start_with_ngl(&server_path, &model_path, ctx_size, decision, cpu_threads).await?;
     Ok(())
 }
 
@@ -98,6 +114,57 @@ pub async fn start_local_server(app: AppHandle, manager: State<'_, Arc<LlamaMana
 pub async fn stop_local_server(manager: State<'_, Arc<LlamaManager>>) -> Result<(), String> {
     manager.stop().await;
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct HardwareEstimation {
+    pub estimated_vram_mb: u64,
+    pub system_ram_spill_mb: u64,
+    pub total_vram_mb: u64,
+    pub model_size_gb: f32,
+}
+
+#[tauri::command]
+pub async fn estimate_hardware_usage(app: AppHandle, model_id: String, context_size: Option<u32>, gpu_layers: u32) -> Result<HardwareEstimation, String> {
+    let app_dir = app.path().app_data_dir().map_err(|_| "Failed to get app data dir".to_string())?;
+    let model_path = app_dir.join("models").join(&model_id);
+
+    let model_size_gb = crate::llm::vram_scheduler::get_model_size_gb(&model_path);
+    let total_layers = crate::llm::vram_scheduler::estimate_total_layers(model_size_gb);
+    
+    let (total_vram_mb, max_ngl) = if let Some(vram) = crate::llm::vram_scheduler::query_vram() {
+        let d = crate::llm::vram_scheduler::compute_spawn_decision(&vram, model_size_gb);
+        (vram.total_mb, d.ngl)
+    } else {
+        (0, total_layers)
+    };
+    
+    // Cap gpu_layers to total_layers AND the maximum layers that fit in VRAM safely
+    let actual_gpu_layers = gpu_layers.min(total_layers).min(max_ngl);
+    let estimated_vram_mb = crate::llm::vram_scheduler::vram_for_ngl(model_size_gb, total_layers, actual_gpu_layers);
+
+    // Calculate RAM spill: if we didn't offload all layers, the remaining layers go to RAM
+    let remaining_layers = total_layers.saturating_sub(actual_gpu_layers);
+    let system_ram_spill_mb = if remaining_layers > 0 {
+        // Roughly same formula for CPU RAM footprint minus the VRAM overhead
+        let model_mb = (model_size_gb * 1024.0) as u64;
+        let layer_cost = model_mb / (total_layers as u64).max(1);
+        layer_cost * (remaining_layers as u64)
+    } else {
+        0
+    };
+
+    // Add context size cost (rough estimation, 2048 context = ~200MB, scales linearly roughly)
+    let ctx = context_size.unwrap_or(32768) as u64;
+    let ctx_cost_mb = (ctx * 200) / 2048; 
+    let final_system_ram_spill = system_ram_spill_mb + ctx_cost_mb;
+
+    Ok(HardwareEstimation {
+        estimated_vram_mb,
+        system_ram_spill_mb: final_system_ram_spill,
+        total_vram_mb,
+        model_size_gb,
+    })
 }
 
 #[derive(serde::Serialize)]

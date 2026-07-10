@@ -65,6 +65,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const loadedLocalModel = useModelStore(s => s.loadedLocalModel);
   const setLoadedLocalModel = useModelStore(s => s.setLoadedLocalModel);
   const contextSize = useNyxStore(s => s.modelSettings.contextSize);
+  const gpuLayers = useNyxStore(s => s.modelSettings.gpuLayers);
+  const cpuThreads = useNyxStore(s => s.modelSettings.threads);
 
   const [loadingState, setLoadingState] = useState<'idle'|'loading'|'unloading'|'uninstalling'>('idle');
   const [actionModelId, setActionModelId] = useState<string | null>(null);
@@ -91,7 +93,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     try {
       setActionModelId(modelId);
       setLoadingState('loading');
-      await invoke('start_local_server', { modelId, contextSize });
+      await invoke('start_local_server', { modelId, contextSize, gpuLayers, cpuThreads });
       setLoadedLocalModel(modelId);
     } catch (e) {
       console.error('Failed to load model', e);
