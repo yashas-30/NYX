@@ -97,6 +97,10 @@ export const ModelSelector: React.FC<Props> = ({
   const contextSize = useNyxStore((s) => s.modelSettings.contextSize);
   const gpuLayers = useNyxStore((s) => s.modelSettings.gpuLayers);
   const cpuThreads = useNyxStore((s) => s.modelSettings.threads);
+  const flashAttention = useNyxStore((s) => s.modelSettings.flashAttention);
+  const kvCacheType = useNyxStore((s) => s.modelSettings.kvCacheType);
+  const useMlock = useNyxStore((s) => s.modelSettings.useMlock);
+  const batchSize = useNyxStore((s) => s.modelSettings.batchSize);
 
   React.useEffect(() => {
     loadLocalLibraryModels();
@@ -106,7 +110,7 @@ export const ModelSelector: React.FC<Props> = ({
     e.stopPropagation();
     try {
       setIsTogglingModel(true);
-      await invoke('start_local_server', { modelId: id, contextSize, gpuLayers, cpuThreads });
+      await invoke('start_local_server', { modelId: id, contextSize, gpuLayers, cpuThreads, flashAttention, kvCacheType, useMlock, batchSize });
       setLoadedLocalModel(id);
       setIsTogglingModel(false);
       toast.success('Model loaded successfully');

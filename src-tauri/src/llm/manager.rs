@@ -18,12 +18,24 @@ impl LlamaManager {
     /// Original entry point — delegates to start_with_ngl with default -ngl 999.
     /// Kept for any internal callers that don't go through the VRAM scheduler.
     pub async fn start(&self, server_path: &PathBuf, model_path: &PathBuf, context_size: u32) -> Result<(), String> {
-        self.start_with_ngl(server_path, model_path, context_size, None, None).await
+        self.start_with_ngl(server_path, model_path, context_size, None, None, None, None, None, None, None).await
     }
 
     /// Start llama-server with an explicit ngl override and threads override from the VRAM scheduler/frontend.
     /// If `ngl_override` is None, falls back to `-ngl 999` (all layers on GPU).
-    pub async fn start_with_ngl(&self, server_path: &PathBuf, model_path: &PathBuf, context_size: u32, ngl_override: Option<u32>, threads_override: Option<u32>) -> Result<(), String> {
+    pub async fn start_with_ngl(
+        &self, 
+        server_path: &PathBuf, 
+        model_path: &PathBuf, 
+        context_size: u32, 
+        ngl_override: Option<u32>, 
+        threads_override: Option<u32>, 
+        device: Option<String>,
+        flash_attention: Option<bool>,
+        kv_cache_type: Option<String>,
+        use_mlock: Option<bool>,
+        batch_size: Option<u32>
+    ) -> Result<(), String> {
         let ngl_value = ngl_override.unwrap_or(999).to_string();
 
         let mut process_guard = self.process.lock().await;
@@ -44,23 +56,58 @@ impl LlamaManager {
                     .to_string()
             });
 
-        info!("Starting Llama Server: model={} ngl={} threads={}", model_path.display(), ngl_value, cpu_threads);
-        let mut child = Command::new(server_path)
+        let server_dir = server_path.parent()
+            .ok_or_else(|| "Could not determine llama-server directory".to_string())?;
+
+        info!("Starting Llama Server: model={} ngl={} threads={} dir={}", model_path.display(), ngl_value, cpu_threads, server_dir.display());
+        let mut cmd = Command::new(server_path);
+        cmd.current_dir(server_dir)
             .arg("-m").arg(model_path)
             .arg("-ngl").arg(&ngl_value)
-            .arg("--no-mmap")
-            .arg("--ctx-size").arg(context_size.to_string())
-            .arg("--batch-size").arg("2048")
-            .arg("--ubatch-size").arg("512")
+            .arg("-c").arg(context_size.to_string())
+            .arg("--batch-size").arg(batch_size.unwrap_or(2048).to_string())
+            .arg("--ubatch-size").arg(batch_size.unwrap_or(2048).to_string())
             .arg("--cache-prompt")
-            .arg("--cache-type-k").arg("q8_0")
-            .arg("--cache-type-v").arg("q8_0")
+            .arg("--cache-type-k").arg(kv_cache_type.as_deref().unwrap_or("q8_0"))
+            .arg("--cache-type-v").arg(kv_cache_type.as_deref().unwrap_or("q8_0"))
             .arg("-t").arg(&cpu_threads)
+            .arg("-np").arg("1")
             .arg("--port").arg("8080")
             .arg("--host").arg("127.0.0.1")
-            .arg("--keep").arg("-1")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .arg("--keep").arg("-1");
+
+        if flash_attention.unwrap_or(true) {
+            cmd.arg("-fa").arg("on");
+        }
+
+        if use_mlock.unwrap_or(false) {
+            cmd.arg("--mlock");
+        }
+
+        if let Some(dev_name) = device {
+            let mut resolved_device = dev_name.clone();
+            if let Ok(output) = std::process::Command::new(server_path).arg("--list-devices").output() {
+                let out_str = String::from_utf8_lossy(&output.stdout);
+                let err_str = String::from_utf8_lossy(&output.stderr);
+                for line in out_str.lines().chain(err_str.lines()) {
+                    if line.contains(&dev_name) {
+                        if let Some(idx) = line.find(':') {
+                            let parsed = line[..idx].trim();
+                            if parsed.starts_with("- ") {
+                                resolved_device = parsed[2..].trim().to_string();
+                            } else {
+                                resolved_device = parsed.to_string();
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            cmd.arg("--device").arg(resolved_device);
+        }
+
+        let mut child = cmd.stdout(std::process::Stdio::null())
+            .stderr(std::fs::File::create(server_dir.join("server_log.txt")).unwrap_or_else(|_| std::fs::File::create("nul").unwrap()))
             .spawn()
             .map_err(|e| format!("Failed to start llama-server: {}", e))?;
 

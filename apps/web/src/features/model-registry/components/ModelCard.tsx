@@ -3,8 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Info } from '@phosphor-icons/react';
 import { ModelStatusBadge } from '../ModelStatusBadge';
 import type { ModelStatus } from '@nyx/shared';
+import { invoke } from '@tauri-apps/api/core';
+import { useSettingsStore } from '@core/stores/useSettingsStore';
 
 interface ModelCardProps {
+  id?: string;
   name: string;
   provider: string;
   description: string;
@@ -32,6 +35,7 @@ interface ModelCardProps {
 
 /** Pure display model card — library view only, no add functionality */
 export const ModelCard: React.FC<ModelCardProps> = ({
+  id,
   name,
   provider,
   description,
@@ -58,10 +62,28 @@ export const ModelCard: React.FC<ModelCardProps> = ({
 }) => {
   const providerLabel = provider;
 
-  // Calculate VRAM requirement (file size + 1.5GB overhead approx for KV cache)
-  const requiredVram = modelSizeBytes ? modelSizeBytes + (1.5 * 1024 * 1024 * 1024) : null;
-  const vramPercent = requiredVram && systemVramBytes ? Math.min(100, Math.round((requiredVram / systemVramBytes) * 100)) : 0;
-  const isVramWarning = vramPercent > 90;
+  const modelSettings = useSettingsStore((s) => s.chatSettings);
+  const [hardwareEst, setHardwareEst] = React.useState<any>(null);
+
+  React.useEffect(() => {
+    if (isLocal && id) {
+      invoke('estimate_hardware_usage', {
+        modelId: id,
+        contextSize: modelSettings?.contextSize || 32768,
+        gpuLayers: modelSettings?.gpuLayers || 0,
+      }).then((res: any) => {
+        setHardwareEst(res);
+      }).catch(console.error);
+    }
+  }, [isLocal, id, modelSettings?.contextSize, modelSettings?.gpuLayers]);
+
+  // Use hardwareEst if available, otherwise fallback to basic calculations
+  const requiredVram = hardwareEst ? (hardwareEst.estimated_vram_mb * 1024 * 1024) : (modelSizeBytes ? modelSizeBytes + (400 * 1024 * 1024) : null);
+  const sysVram = hardwareEst ? (hardwareEst.total_vram_mb * 1024 * 1024) : systemVramBytes;
+  const vramPercent = requiredVram && sysVram ? Math.min(100, Math.round((requiredVram / sysVram) * 100)) : 0;
+  
+  // If the model exceeds VRAM, llama.cpp will automatically split it across CPU and GPU
+  const willSplit = hardwareEst ? (hardwareEst.system_ram_spill_mb > 0 || hardwareEst.layers_on_cpu > 0 || hardwareEst.layers_spilled > 0) : (requiredVram && sysVram ? requiredVram > sysVram : false);
 
 
   return (
@@ -76,30 +98,32 @@ export const ModelCard: React.FC<ModelCardProps> = ({
       {/* Provider badge + status */}
       <div className="flex items-start justify-between gap-3 mb-2.5">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md bg-accent/10 text-accent border border-accent/20">
-              {providerLabel}
-            </span>
-            {lifecycleStatus && (
-              <ModelStatusBadge status={lifecycleStatus} shutdownDate={shutdownDate} />
-            )}
-            {status && (
-              <span
-                className={`
-                text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border
-                ${
-                  status === 'online'
-                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                    : status === 'offline'
-                      ? 'bg-red-500/10 text-red-500 border-red-500/20'
-                      : 'bg-muted text-muted-foreground border-border'
-                }
-              `}
-              >
-                {status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Auth'}
+          {!isLocal && (
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md bg-accent/10 text-accent border border-accent/20">
+                {providerLabel}
               </span>
-            )}
-          </div>
+              {lifecycleStatus && (
+                <ModelStatusBadge status={lifecycleStatus} shutdownDate={shutdownDate} />
+              )}
+              {status && (
+                <span
+                  className={`
+                  text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border
+                  ${
+                    status === 'online'
+                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                      : status === 'offline'
+                        ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                        : 'bg-muted text-muted-foreground border-border'
+                  }
+                `}
+                >
+                  {status === 'online' ? 'Online' : status === 'offline' ? 'Offline' : 'Auth'}
+                </span>
+              )}
+            </div>
+          )}
           <h4 className="text-[12px] font-bold truncate leading-tight tracking-tight text-foreground group-hover:text-accent transition-colors">
             {name}
           </h4>
@@ -227,22 +251,30 @@ export const ModelCard: React.FC<ModelCardProps> = ({
       )}
 
       {/* Local Model VRAM Indicator */}
-      {isLocal && requiredVram && systemVramBytes && (
+      {isLocal && requiredVram && sysVram && (
         <div className="pt-3 mt-3 border-t border-border/30 flex flex-col gap-1.5">
-          <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-widest">
-            <span className={isVramWarning ? "text-orange-500" : "text-muted-foreground/80"}>
-              {isVramWarning ? '⚠️ HIGH VRAM' : 'Est. VRAM'}
+          <div className="flex items-center justify-between mb-1.5">
+            <span className={`text-[9px] font-bold tracking-widest ${willSplit ? 'text-amber-500' : 'text-muted-foreground'}`}>
+              {willSplit ? '⚡ SHARED GPU MEMORY (PCIE)' : 'MODEL SIZE'}
             </span>
-            <span className="text-foreground/80">
-              {(requiredVram / (1024 * 1024 * 1024)).toFixed(1)}GB / {(systemVramBytes / (1024 * 1024 * 1024)).toFixed(1)}GB
+            <span className="text-foreground/80 text-[9px]">
+              {(requiredVram / (1024 * 1024 * 1024)).toFixed(1)}GB / {(sysVram / (1024 * 1024 * 1024)).toFixed(1)}GB
             </span>
           </div>
-          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden flex">
+          <div className="h-1.5 w-full bg-border/40 rounded-full overflow-hidden flex">
             <div 
-              className={`h-full transition-all duration-500 ${isVramWarning ? 'bg-orange-500' : 'bg-emerald-500'}`} 
+              className={`h-full ${willSplit ? 'bg-amber-500' : 'bg-emerald-500'} transition-all duration-500`}
               style={{ width: `${vramPercent}%` }}
             />
           </div>
+          {hardwareEst?.layers_on_gpu !== undefined && (
+            <div className="flex justify-between items-center text-[8px] text-muted-foreground mt-0.5">
+              <span>GPU Layers: {hardwareEst.layers_on_gpu} (100%)</span>
+              {willSplit && (
+                <span className="text-amber-500/80">Spilled to RAM: {(hardwareEst.system_ram_spill_mb / 1024).toFixed(1)}GB</span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -270,7 +302,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onLoad?.(); }}
               disabled={loadingState === 'loading'}
-              className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
             >
               {loadingState === 'loading' ? 'Loading to GPU...' : 'Load to GPU'}
             </button>

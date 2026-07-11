@@ -30,7 +30,7 @@ pub fn create_tray(app: &tauri::AppHandle, _window: &WebviewWindow) -> anyhow::R
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.show();
                         let _ = window.set_focus();
-                        let _ = app.emit_to("main", "navigate", "/coder");
+                        let _ = app.emit_to("main", "navigate", "/chat");
                     }
                 }
                 "update" => {}

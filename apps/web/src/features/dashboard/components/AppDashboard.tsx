@@ -138,7 +138,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     size={13}
                     className={activeMode === 'chat' ? 'text-primary' : 'text-muted-foreground'}
                   />
-                  <span>NYX</span>
+                  <span>Chat</span>
                 </button>
                 <motion.button
                   whileHover={{ scale: 1.05, backgroundColor: 'var(--muted)' }}

@@ -285,11 +285,12 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         "fetch_page" => {
             let url = args["url"].as_str().unwrap_or("");
             match fetch_page_html_command(url.to_string()).await {
-                Ok(html) => {
-                    let re = regex::Regex::new(r"<[^>]*>").unwrap();
-                    let plain = re.replace_all(&html, " ");
-                    let re_space = regex::Regex::new(r"\s+").unwrap();
-                    let cleaned = re_space.replace_all(&plain, " ").trim().to_string();
+                Ok((html, is_raw)) => {
+                    let cleaned = if is_raw {
+                        html
+                    } else {
+                        extract_clean_text(&html)
+                    };
                     if cleaned.len() > 15000 {
                         format!("{}... [Truncated]", &cleaned[..15000])
                     } else {
@@ -303,9 +304,12 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
             let url = args["url"].as_str().unwrap_or("");
             let keyword = args["keyword"].as_str().unwrap_or("");
             match fetch_page_html_command(url.to_string()).await {
-                Ok(html) => {
-                    let re = regex::Regex::new(r"<[^>]*>").unwrap();
-                    let plain = re.replace_all(&html, "\n");
+                Ok((html, is_raw)) => {
+                    let plain = if is_raw {
+                        html
+                    } else {
+                        extract_clean_text(&html)
+                    };
                     let mut matches = Vec::new();
                     for line in plain.lines() {
                         if line.contains(keyword) {
@@ -612,9 +616,10 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
 }
 
 #[tauri::command]
-pub async fn fetch_page_html_command(url: String) -> Result<String, String> {
+pub async fn fetch_page_html_command(url: String) -> Result<(String, bool), String> {
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0")
+        .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -627,8 +632,50 @@ pub async fn fetch_page_html_command(url: String) -> Result<String, String> {
         return Err(format!("Fetch failed with status: {}", res.status()));
     }
 
+    let is_raw = url.to_lowercase().ends_with(".md")
+        || url.to_lowercase().ends_with(".txt")
+        || url.to_lowercase().ends_with(".csv")
+        || url.to_lowercase().ends_with(".json")
+        || res.headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| {
+                let s = s.to_lowercase();
+                s.contains("text/markdown") || s.contains("text/plain") || s.contains("text/csv") || s.contains("application/json")
+            })
+            .unwrap_or(false);
+
     let html = res.text().await.map_err(|e| e.to_string())?;
-    Ok(html)
+    Ok((html, is_raw))
+}
+
+pub fn extract_clean_text(html: &str) -> String {
+    let document = scraper::Html::parse_document(html);
+    let mut text = String::new();
+
+    for node in document.tree.nodes() {
+        if let scraper::node::Node::Text(text_node) = node.value() {
+            let mut is_ignored = false;
+            let mut current = node.parent();
+            while let Some(parent) = current {
+                if let scraper::node::Node::Element(el) = parent.value() {
+                    let name = el.name();
+                    if name == "script" || name == "style" || name == "noscript" || name == "svg" {
+                        is_ignored = true;
+                        break;
+                    }
+                }
+                current = parent.parent();
+            }
+            if !is_ignored {
+                text.push_str(&text_node.text);
+                text.push(' ');
+            }
+        }
+    }
+
+    let re_space = regex::Regex::new(r"\s+").unwrap();
+    re_space.replace_all(&text, " ").trim().to_string()
 }
 
 fn decode_percent(s: &str) -> String {
@@ -650,12 +697,12 @@ fn decode_percent(s: &str) -> String {
     decoded
 }
 
-fn parse_duckduckgo_html(html: &str, num_results: usize) -> String {
+fn parse_duckduckgo_html(html: &str, num_results: usize) -> Vec<(String, String, String)> {
     let title_regex = regex::Regex::new(r#"(?s)<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#).unwrap();
     let snippet_regex = regex::Regex::new(r#"(?s)<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#).unwrap();
     
     let blocks: Vec<&str> = html.split(r#"<div class="result results_links"#).collect();
-    let mut formatted_results = Vec::new();
+    let mut results = Vec::new();
     let mut count = 0;
     
     for block in blocks.iter().skip(1) {
@@ -694,17 +741,34 @@ fn parse_duckduckgo_html(html: &str, num_results: usize) -> String {
         
         if !title.is_empty() && !url.is_empty() {
             count += 1;
-            formatted_results.push(format!("[{}] {}\n{}\n{}", count, title, url, snippet));
+            results.push((title, url, snippet));
         }
     }
     
-    if formatted_results.is_empty() {
-        "No results found.".to_string()
-    } else {
-        formatted_results.join("\n\n")
-    }
+    results
 }
 
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let dot_product: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 { 0.0 } else { dot_product / (norm_a * norm_b) }
+}
+
+fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let end = std::cmp::min(i + chunk_size, chars.len());
+        chunks.push(chars[i..end].iter().collect::<String>());
+        if end == chars.len() {
+            break;
+        }
+        i += chunk_size - overlap;
+    }
+    chunks
+}
 #[tauri::command]
 pub async fn search_web_command(
     query: String,
@@ -715,6 +779,9 @@ pub async fn search_web_command(
     let search_provider = provider.unwrap_or_else(|| "duckduckgo".to_string());
     let limit = num_results.unwrap_or(5);
 
+    let embedder = crate::rag::embeddings::Embedder::new().map_err(|e| e.to_string())?;
+    let query_embedding = embedder.embed(vec![query.clone()]).await.map_err(|e| e.to_string())?.into_iter().next().unwrap_or_default();
+
     if search_provider == "tavily" {
         let key = api_key.ok_or_else(|| "Tavily API key is missing".to_string())?;
         if key.trim().is_empty() {
@@ -723,9 +790,10 @@ pub async fn search_web_command(
         let client = reqwest::Client::new();
         let res = client.post("https://api.tavily.com/search")
             .header("Authorization", format!("Bearer {}", key))
-            .json(&json!({
+            .json(&serde_json::json!({
                 "query": query,
-                "max_results": limit
+                "max_results": limit,
+                "include_raw_content": true
             }))
             .send()
             .await
@@ -737,21 +805,60 @@ pub async fn search_web_command(
             return Err(format!("Tavily search failed ({}): {}", status, err_text));
         }
 
-        let response_data: Value = res.json().await.map_err(|e| format!("Tavily response parsing failed: {}", e))?;
+        let response_data: serde_json::Value = res.json().await.map_err(|e| format!("Tavily response parsing failed: {}", e))?;
         let results = response_data["results"].as_array().ok_or_else(|| "Tavily results is not an array".to_string())?;
         
+        let mut all_chunks = Vec::new();
+        for r in results.iter() {
+            let title = r["title"].as_str().unwrap_or("").to_string();
+            let url = r["url"].as_str().unwrap_or("").to_string();
+            let content = r["content"].as_str().unwrap_or("").to_string();
+            let raw_content = r["raw_content"].as_str().unwrap_or("");
+            
+            let display_content = if !raw_content.is_empty() {
+                let is_raw = url.to_lowercase().ends_with(".md")
+                    || url.to_lowercase().ends_with(".txt")
+                    || url.to_lowercase().ends_with(".csv")
+                    || url.to_lowercase().ends_with(".json");
+                if is_raw {
+                    raw_content.to_string()
+                } else {
+                    extract_clean_text(raw_content)
+                }
+            } else {
+                content.to_string()
+            };
+            
+            let chunks = chunk_text(&display_content, 1000, 200);
+            for chunk in chunks {
+                all_chunks.push((title.clone(), url.clone(), chunk));
+            }
+        }
+        
+        let chunk_texts: Vec<String> = all_chunks.iter().map(|(_, _, c)| c.clone()).collect();
+        let chunk_embeddings = embedder.embed(chunk_texts).await.unwrap_or_default();
+        
+        let mut scored_chunks: Vec<(f32, String, String, String)> = Vec::new();
+        for (i, emb) in chunk_embeddings.iter().enumerate() {
+            if i >= all_chunks.len() { break; }
+            let score = cosine_similarity(&query_embedding, emb);
+            let (title, url, content) = &all_chunks[i];
+            scored_chunks.push((score, title.clone(), url.clone(), content.clone()));
+        }
+        
+        scored_chunks.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        
         let mut formatted_results = Vec::new();
-        for (i, r) in results.iter().enumerate() {
-            let title = r["title"].as_str().unwrap_or("");
-            let url = r["url"].as_str().unwrap_or("");
-            let content = r["content"].as_str().unwrap_or("");
+        for (i, (_score, title, url, content)) in scored_chunks.into_iter().take(limit).enumerate() {
             formatted_results.push(format!("[{}] {}\n{}\n{}", i + 1, title, url, content));
         }
+
         if formatted_results.is_empty() {
             Ok("No results found.".to_string())
         } else {
             Ok(formatted_results.join("\n\n"))
         }
+
     } else {
         // Fallback to duckduckgo
         let client = reqwest::Client::builder()
@@ -774,8 +881,57 @@ pub async fn search_web_command(
         }
 
         let html = res.text().await.map_err(|e| e.to_string())?;
-        let parsed = parse_duckduckgo_html(&html, limit);
-        Ok(parsed)
+        let parsed_items = parse_duckduckgo_html(&html, limit);
+        
+        let fetch_futures = parsed_items.into_iter().map(|(title, page_url, snippet)| {
+            async move {
+                let display_content = match fetch_page_html_command(page_url.clone()).await {
+                    Ok((page_html, is_raw)) => {
+                        if is_raw {
+                            page_html
+                        } else {
+                            extract_clean_text(&page_html)
+                        }
+                    }
+                    Err(_) => snippet,
+                };
+                (title, page_url, display_content)
+            }
+        });
+
+        let fetched_pages = futures::future::join_all(fetch_futures).await;
+        
+        let mut all_chunks = Vec::new();
+        for (title, url, content) in fetched_pages {
+            let chunks = chunk_text(&content, 1000, 200);
+            for chunk in chunks {
+                all_chunks.push((title.clone(), url.clone(), chunk));
+            }
+        }
+        
+        let chunk_texts: Vec<String> = all_chunks.iter().map(|(_, _, c)| c.clone()).collect();
+        let chunk_embeddings = embedder.embed(chunk_texts).await.unwrap_or_default();
+        
+        let mut scored_chunks: Vec<(f32, String, String, String)> = Vec::new();
+        for (i, emb) in chunk_embeddings.iter().enumerate() {
+            if i >= all_chunks.len() { break; }
+            let score = cosine_similarity(&query_embedding, emb);
+            let (title, url, content) = &all_chunks[i];
+            scored_chunks.push((score, title.clone(), url.clone(), content.clone()));
+        }
+        
+        scored_chunks.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        
+        let mut formatted_results = Vec::new();
+        for (i, (_score, title, url, content)) in scored_chunks.into_iter().take(limit).enumerate() {
+            formatted_results.push(format!("[{}] {}\n{}\n{}", i + 1, title, url, content));
+        }
+
+        if formatted_results.is_empty() {
+            Ok("No results found.".to_string())
+        } else {
+            Ok(formatted_results.join("\n\n"))
+        }
     }
 }
 

@@ -57,7 +57,12 @@ function AppContent() {
           unlistenComplete();
         }
       } catch (err) {
-        console.error('[App] Failed to init Local LLM:', err);
+        if (String(err).includes('already being downloaded')) {
+          // Benign error due to React StrictMode or concurrent effect firing
+          console.log('[App] Local LLM init skipped: download already in progress');
+        } else {
+          console.error('[App] Failed to init Local LLM:', err);
+        }
       }
     };
     initLocalLLM();

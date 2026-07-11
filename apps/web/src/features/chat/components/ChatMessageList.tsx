@@ -495,7 +495,7 @@ const MemoizedMarkdownBlock: React.FC<{
       ),
       td: ({ children }: any) => (
         <td className="px-3 py-2 text-foreground/80 border-b border-border">{children}</td>
-      ),
+      )
     }),
     [citations]
   );
@@ -833,17 +833,20 @@ const MessageBubble = React.memo<MessageBubbleProps>(
     let parsedReasoning = msg.reasoning || '';
     let parsedContent = msg.content || '';
     
-    if (parsedContent.includes('<think>')) {
-      const match = parsedContent.match(/<think>([\s\S]*?)<\/think>/);
-      if (match) {
-        parsedReasoning = match[1];
-        parsedContent = parsedContent.replace(/<think>[\s\S]*?<\/think>/, '').trim();
-      } else if (msg.status === 'loading') {
-        const startMatch = parsedContent.match(/<think>([\s\S]*)/);
-        if (startMatch) {
-          parsedReasoning = startMatch[1];
-          parsedContent = parsedContent.substring(0, startMatch.index).trim();
-        }
+    const thinkStartMatch = parsedContent.match(/<(?:think|thought)>/i);
+    if (thinkStartMatch) {
+      const startIndex = thinkStartMatch.index!;
+      const endMatch = parsedContent.match(/<\/(?:think|thought)>/i);
+      
+      if (endMatch && typeof endMatch.index !== 'undefined' && endMatch.index > startIndex) {
+        const extracted = parsedContent.substring(startIndex + thinkStartMatch[0].length, endMatch.index).trim();
+        parsedReasoning = parsedReasoning ? `${parsedReasoning}\n${extracted}` : extracted;
+        parsedContent = (parsedContent.substring(0, startIndex) + parsedContent.substring(endMatch.index + endMatch[0].length)).trim();
+      } else {
+        // No closing tag found, assume everything after <think> is reasoning
+        const extracted = parsedContent.substring(startIndex + thinkStartMatch[0].length).trim();
+        parsedReasoning = parsedReasoning ? `${parsedReasoning}\n${extracted}` : extracted;
+        parsedContent = parsedContent.substring(0, startIndex).trim();
       }
     }
 
@@ -956,7 +959,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               }
 
               return (
-                <div className="flex items-baseline gap-2 mb-1 select-none pl-11">
+                <div className="flex items-baseline gap-2 mb-1 select-none">
                   <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
                     {displayName}
                   </span>
@@ -986,11 +989,11 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       ? errorMessage.substring(7) 
                       : errorMessage;
                     return (
-                      <div className="flex items-center gap-2 py-2 px-3 rounded-md bg-red-500/5 border border-red-500/10">
-                        <AlertTriangle size={14} className="text-red-400 shrink-0" />
-                        <p className="text-sm text-red-400/90 font-medium">
+                      <div className="flex items-start gap-2 py-2 px-3 rounded-md bg-red-500/5 border border-red-500/10 overflow-hidden mt-1">
+                        <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                        <div className="text-sm text-red-400/90 font-medium whitespace-pre-wrap break-words max-w-full font-mono overflow-auto">
                           {cleanErrorMessage}
-                        </p>
+                        </div>
                       </div>
                     );
                   })()
@@ -1006,10 +1009,12 @@ const MessageBubble = React.memo<MessageBubbleProps>(
 
                 {/* Loading / Thinking state (during reasoning or initial Formulation) */}
                 {isThinking && !parsedReasoning && (
-                  <div className="flex items-center gap-2.5 py-1 select-none h-14">
-                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.15em] animate-pulse">
-                      Starting reasoning...
-                    </span>
+                  <div className="pl-0">
+                    <ThinkingBlock 
+                      content="Initializing thinking process... (Processing context)" 
+                      responseContent=""
+                      isComplete={false}
+                    />
                   </div>
                 )}
 
@@ -1300,7 +1305,7 @@ const EmptyState: React.FC<{
           transition={{ delay: 0.12, duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
           className="text-[22px] font-semibold tracking-tight text-foreground leading-none"
         >
-          NY<span className="text-primary">X</span>
+          Chat
         </motion.h1>
       </div>
 

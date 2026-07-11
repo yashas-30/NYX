@@ -38,12 +38,16 @@ pub async fn get_hardware_specs() -> SystemResult<HardwareSpecs> {
     let mut sys = System::new_all();
     sys.refresh_all();
 
-    // Stub GPU info - in a production setting we would use WMI or WGPU here
-    let gpu_name = "Detected GPU (Vulkan/Metal)".to_string();
-    let gpu_vram = 8 * 1024 * 1024 * 1024; // 8GB stub
+    let cpu_cores = sys.physical_core_count().unwrap_or_else(|| sys.cpus().len());
+
+    let (gpu_name, gpu_vram) = if let Some(vram) = crate::llm::vram_scheduler::query_vram() {
+        (vram.gpu_name, vram.total_mb * 1024 * 1024)
+    } else {
+        ("Unknown GPU".to_string(), 0)
+    };
 
     let specs = HardwareSpecs {
-        cpu_cores: sys.cpus().len(),
+        cpu_cores,
         total_ram: sys.total_memory(),
         free_ram: sys.available_memory(),
         gpu_name,
@@ -71,16 +75,21 @@ pub async fn get_system_diagnostics(model_id: Option<String>) -> SystemDiagnosti
     let mut sys = System::new_all();
     sys.refresh_all();
 
-    // Stub VRAM - in production query real wgpu device
-    let vram = 8 * 1024 * 1024 * 1024;
+    let vram = crate::llm::vram_scheduler::query_vram()
+        .map(|v| v.total_mb * 1024 * 1024)
+        .unwrap_or(0); // Fallback to 0 if it fails
 
     let optimal_layers = if let Some(m) = model_id {
-        if m.contains("coder-1.5b") {
-            Some(OptimalLayers { gpu_layers: 99, message: "Fits easily in VRAM".to_string() })
-        } else if m.contains("3b") {
-            Some(OptimalLayers { gpu_layers: 64, message: "Offloading mostly to VRAM".to_string() })
+        // Create a dummy path to get the model size for estimation, 
+        // in real usage we'd have the full path, but get_model_size_gb defaults to 4GB if missing
+        let path = std::path::PathBuf::from(&m);
+        let model_size_gb = crate::llm::vram_scheduler::get_model_size_gb(&path);
+        
+        if let Some(vram_info) = crate::llm::vram_scheduler::query_vram() {
+            let decision = crate::llm::vram_scheduler::compute_spawn_decision(&vram_info, model_size_gb, 32768);
+            Some(OptimalLayers { gpu_layers: decision.ngl, message: decision.message })
         } else {
-            None
+            Some(OptimalLayers { gpu_layers: 0, message: "Could not detect GPU VRAM. Falling back to CPU.".to_string() })
         }
     } else {
         None

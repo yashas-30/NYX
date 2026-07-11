@@ -37,17 +37,18 @@ pub struct SpawnDecision {
 /// Used when we can't parse the GGUF header directly.
 pub fn estimate_total_layers(model_size_gb: f32) -> u32 {
     if model_size_gb < 1.0 { return 24; }
-    if model_size_gb < 2.0 { return 32; }
-    if model_size_gb < 5.0 { return 40; }
-    if model_size_gb < 10.0 { return 60; }
+    if model_size_gb < 4.5 { return 32; }
+    if model_size_gb < 6.0 { return 42; } // e.g., Gemma 2 9B
+    if model_size_gb < 9.0 { return 48; } // e.g., Qwen 2.5 14B
+    if model_size_gb < 15.0 { return 60; }
     80
 }
 
 /// Baseline constant VRAM cost for CUDA/Vulkan driver + context (in MB)
-const BASE_VRAM_OVERHEAD_MB: u64 = 600;
+const BASE_VRAM_OVERHEAD_MB: u64 = 150;
 
 /// Estimates VRAM required if we offload `ngl` layers.
-pub fn vram_for_ngl(model_size_gb: f32, total_layers: u32, ngl: u32) -> u64 {
+pub fn vram_for_ngl(model_size_gb: f32, total_layers: u32, ngl: u32, context_size: u32) -> u64 {
     if ngl == 0 {
         return 0; // Pure CPU mode doesn't allocate huge VRAM buffers
     }
@@ -58,8 +59,23 @@ pub fn vram_for_ngl(model_size_gb: f32, total_layers: u32, ngl: u32) -> u64 {
     // Assume linear distribution of memory across layers for weights
     let layer_cost = model_mb / total_layers as u64;
     
-    // Total VRAM = Overhead + (Layers offloaded * Cost per layer)
-    BASE_VRAM_OVERHEAD_MB + (layer_cost * ngl as u64)
+    // KV Cache Heuristic:
+    // ~10MB to 30MB per 1024 tokens depending on model size proxy
+    let kv_mb_per_1k = 10.0 + (model_size_gb * 2.0).min(30.0);
+    let total_kv_mb = (context_size as f32 / 1024.0) * kv_mb_per_1k;
+    // KV Cache is offloaded proportionally to the layers offloaded
+    let offloaded_kv_mb = (total_kv_mb * (ngl as f32 / total_layers as f32)) as u64;
+    
+    // Compute Buffer Heuristic:
+    // llama.cpp requires a compute buffer for intermediate tensor evaluations (e.g. logits).
+    // Models with large vocabularies (like Qwen) require massive compute buffers.
+    // Qwen 3.5 9B needs ~1.05 GB just for its compute buffer.
+    let compute_buffer_mb = 400 
+        + (model_size_gb * 100.0) as u64 
+        + (context_size as u64 / 1024) * 32;
+    
+    // Total VRAM = Overhead + Compute Buffer + (Layers offloaded * Cost per layer) + Offloaded KV Cache
+    BASE_VRAM_OVERHEAD_MB + compute_buffer_mb + (layer_cost * ngl as u64) + offloaded_kv_mb
 }
 
 /// Core scheduling logic — pure function, no I/O.
@@ -70,50 +86,42 @@ pub fn vram_for_ngl(model_size_gb: f32, total_layers: u32, ngl: u32) -> u64 {
 ///
 /// # Returns
 /// A `SpawnDecision` with the recommended -ngl and a human message.
-pub fn compute_spawn_decision(vram: &VramInfo, model_size_gb: f32) -> SpawnDecision {
-    let total_layers = estimate_total_layers(model_size_gb);
-    // Leave 512 MB headroom for OS + WebView2 + Tauri
-    let usable_mb = vram.available_mb.saturating_sub(512);
+pub fn compute_spawn_decision(vram: &VramInfo, model_size_gb: f32, context_size: u32) -> SpawnDecision {
+    let _total_layers = estimate_total_layers(model_size_gb);
+    
+    // We enforce 100% GPU processing by always passing -ngl 999.
+    // If the model exceeds dedicated VRAM, the graphics driver will automatically 
+    // allocate the overflow in system memory and access it via PCIe paging.
+    let best_ngl = 999;
+    
+    // Calculate the estimated size of the model (without KV cache, as we use --no-kv-offload)
+    let model_mb = (model_size_gb * 1024.0) as u64;
+    let compute_buffer_mb = 400 
+        + (model_size_gb * 100.0) as u64 
+        + (context_size as u64 / 1024) * 32;
+    let estimated_vram_mb = BASE_VRAM_OVERHEAD_MB + compute_buffer_mb + model_mb;
 
-    // Binary search for max ngl that fits in available VRAM
-    let mut best_ngl = 0u32;
-    for ngl in (0..=total_layers).rev() {
-        let needed = vram_for_ngl(model_size_gb, total_layers, ngl);
-        if needed <= usable_mb {
-            best_ngl = ngl;
-            break;
-        }
-    }
+    let fully_gpu = estimated_vram_mb <= vram.available_mb;
+    let suggest_cloud_fallback = false;
 
-    let estimated_vram_mb = vram_for_ngl(model_size_gb, total_layers, best_ngl);
-    let fully_gpu = best_ngl >= total_layers;
-    let suggest_cloud_fallback = best_ngl == 0;
-
-    let message = if suggest_cloud_fallback {
+    let message = if fully_gpu {
         format!(
-            "⚠️ Insufficient VRAM: {:.1} GB model requires ~{} MB but only {} MB available. \
-             Consider using a cloud model or a Q2/Q3 quantization.",
-            model_size_gb,
-            vram_for_ngl(model_size_gb, total_layers, total_layers),
-            vram.available_mb
-        )
-    } else if fully_gpu {
-        format!(
-            "✅ Model fits fully in VRAM ({} MB estimated / {} MB available). \
-             All {} layers on GPU for maximum speed.",
-            estimated_vram_mb, vram.available_mb, total_layers
+            "✅ Model fits fully in Dedicated VRAM ({} MB estimated / {} MB available). \
+             KV cache is in system memory. Running 100% on GPU.",
+            estimated_vram_mb, vram.available_mb
         )
     } else {
         format!(
-            "⚡ Partial GPU offload: {}/{} layers on GPU ({} MB VRAM). \
-             Remaining layers run on CPU — inference will be slower.",
-            best_ngl, total_layers, estimated_vram_mb
+            "⚡ Model exceeds Dedicated VRAM ({} MB estimated / {} MB available). \
+             Completely filling GPU; remaining layers & KV cache are in system memory. \
+             Processing entirely on GPU via PCIe.",
+            estimated_vram_mb, vram.available_mb
         )
     };
 
     info!(
-        "[VramScheduler] model={:.1}GB total_layers={} ngl={} vram_available={}MB fully_gpu={} suggest_cloud={}",
-        model_size_gb, total_layers, best_ngl, vram.available_mb, fully_gpu, suggest_cloud_fallback
+        "[VramScheduler] model={:.1}GB estimated_vram={}MB vram_available={}MB fully_gpu={} suggest_cloud={}",
+        model_size_gb, estimated_vram_mb, vram.available_mb, fully_gpu, suggest_cloud_fallback
     );
 
     SpawnDecision {
@@ -144,8 +152,39 @@ pub fn query_vram() -> Option<VramInfo> {
 
 #[cfg(target_os = "windows")]
 fn query_vram_windows() -> Option<VramInfo> {
-    // Use the existing system_gpu_info logic from commands/system.rs
-    // We query WMI via PowerShell to get VRAM — consistent with what the UI already shows.
+    // 1. Try nvidia-smi for accurate VRAM (WMI AdapterRAM is capped at 4GB due to uint32 limits)
+    if let Ok(output) = std::process::Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=name,memory.total,memory.used",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut best_gpu: Option<VramInfo> = None;
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+                if parts.len() >= 3 {
+                    let name = parts[0].to_string();
+                    if let (Ok(total_mb), Ok(used_mb)) = (parts[1].parse::<u64>(), parts[2].parse::<u64>()) {
+                        let available_mb = total_mb.saturating_sub(used_mb);
+                        if best_gpu.as_ref().map_or(true, |g| total_mb > g.total_mb) {
+                            best_gpu = Some(VramInfo {
+                                total_mb,
+                                used_mb,
+                                available_mb,
+                                gpu_name: name,
+                            });
+                        }
+                    }
+                }
+            }
+            if best_gpu.is_some() { return best_gpu; }
+        }
+    }
+
+    // 2. Fallback to WMI if nvidia-smi fails
     let output = std::process::Command::new("powershell")
         .args([
             "-NonInteractive",
@@ -158,20 +197,24 @@ fn query_vram_windows() -> Option<VramInfo> {
     let json_str = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value = serde_json::from_str(json_str.trim()).ok()?;
 
-    // Handle both single GPU (object) and multiple GPUs (array)
-    let gpu = if parsed.is_array() {
-        parsed.as_array()?.first()?.clone()
+    let gpu = if let Some(arr) = parsed.as_array() {
+        arr.iter().max_by_key(|g| g["AdapterRAM"].as_u64().unwrap_or(0)).cloned().unwrap_or(parsed.clone())
     } else {
         parsed
     };
 
     let name = gpu["Name"].as_str().unwrap_or("Unknown GPU").to_string();
-    let total_bytes = gpu["AdapterRAM"].as_u64().unwrap_or(0);
+    let mut total_bytes = gpu["AdapterRAM"].as_u64().unwrap_or(0);
+    
+    // WMI AdapterRAM is 32-bit uint. If it's maxed out (4294967296 bytes) or close, 
+    // it's highly likely to be a modern GPU with 8GB+. We assume 8GB minimum for these cases.
+    if total_bytes >= 4_000_000_000 {
+        total_bytes = 8_589_934_592; // 8GB fallback
+    }
+
     let total_mb = total_bytes / (1024 * 1024);
 
-    // WMI doesn't give real-time VRAM usage; estimate used from running processes
-    // Conservative: assume 15% is already used by OS/driver
-    let used_mb = total_mb / 7;
+    let used_mb = 640; // Assume 640MB OS/Desktop overhead for WMI fallback
     let available_mb = total_mb.saturating_sub(used_mb);
 
     if total_mb == 0 {

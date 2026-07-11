@@ -14,13 +14,8 @@ impl Downloader {
         }
     }
 
-    /// Downloads the GGUF model and the llama-server.exe
-    /// Returns the path to the model and the executable.
-    pub async fn ensure_assets(&self, data_dir: &Path, on_progress: impl Fn(f32, &str) + Send + 'static) -> Result<(PathBuf, PathBuf), String> {
-        let models_dir = data_dir.join("models");
+    pub async fn ensure_server(&self, data_dir: &Path, on_progress: impl Fn(f32, &str) + Send + 'static) -> Result<PathBuf, String> {
         let bin_dir = data_dir.join("binaries");
-
-        tokio::fs::create_dir_all(&models_dir).await.map_err(|e| e.to_string())?;
         tokio::fs::create_dir_all(&bin_dir).await.map_err(|e| e.to_string())?;
 
         // 1. Download llama-server.exe (Vulkan Windows build for universal GPU support)
@@ -75,6 +70,18 @@ impl Downloader {
         } else {
             on_progress(100.0, "Llama Server exists.");
         }
+
+        Ok(server_path)
+    }
+
+    /// Downloads the GGUF model and the llama-server.exe
+    /// Returns the path to the model and the executable.
+    pub async fn ensure_assets(&self, data_dir: &Path, on_progress: impl Fn(f32, &str) + Send + 'static + Clone) -> Result<(PathBuf, PathBuf), String> {
+        let models_dir = data_dir.join("models");
+        tokio::fs::create_dir_all(&models_dir).await.map_err(|e| e.to_string())?;
+
+        let on_progress_server = on_progress.clone();
+        let server_path = self.ensure_server(data_dir, on_progress_server).await?;
 
         // 2. Download Model: Qwen2.5-0.5B-Instruct-GGUF (Q4_K_M)
         let model_path = models_dir.join("qwen2.5-0.5b-instruct-q4_k_m.gguf");

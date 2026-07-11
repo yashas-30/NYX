@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "NYX",
-  "version": "3.0.0",
+  "version": "0.5.0",
   "identifier": "com.nyx.desktop",
   "build": {
     "beforeDevCommand": "npm run dev:web",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "NYX - Native Local Intelligence & Cloud Orchestration Platform",
+        "title": "NYX",
         "width": 1200,
         "height": 760,
         "minWidth": 800,

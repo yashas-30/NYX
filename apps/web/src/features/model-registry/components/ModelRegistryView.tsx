@@ -67,6 +67,10 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const contextSize = useNyxStore(s => s.modelSettings.contextSize);
   const gpuLayers = useNyxStore(s => s.modelSettings.gpuLayers);
   const cpuThreads = useNyxStore(s => s.modelSettings.threads);
+  const flashAttention = useNyxStore(s => s.modelSettings.flashAttention);
+  const kvCacheType = useNyxStore(s => s.modelSettings.kvCacheType);
+  const useMlock = useNyxStore(s => s.modelSettings.useMlock);
+  const batchSize = useNyxStore(s => s.modelSettings.batchSize);
 
   const [loadingState, setLoadingState] = useState<'idle'|'loading'|'unloading'|'uninstalling'>('idle');
   const [actionModelId, setActionModelId] = useState<string | null>(null);
@@ -93,7 +97,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     try {
       setActionModelId(modelId);
       setLoadingState('loading');
-      await invoke('start_local_server', { modelId, contextSize, gpuLayers, cpuThreads });
+      await invoke('start_local_server', { modelId, contextSize, gpuLayers, cpuThreads, flashAttention, kvCacheType, useMlock, batchSize });
       setLoadedLocalModel(modelId);
     } catch (e) {
       console.error('Failed to load model', e);
@@ -269,8 +273,8 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
               <section className="space-y-4 p-6 rounded-2xl bg-card border border-border mt-6 shadow-sm">
                 <SectionHeader
                   icon={<Cpu size={18} weight="duotone" className="text-orange-500" />}
-                  title="Local Model Library"
-                  subtitle="Models hosted natively by NYX (llama.cpp)"
+                  title="NYX Native"
+                  subtitle="Models hosted locally on your machine."
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
                   {localModelsQuery.isLoading ? (
@@ -278,6 +282,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                   ) : nyxNativeModels.map((m: any, idx: number) => (
                      <ModelCard 
                        key={m.id} 
+                       id={m.id}
                        index={idx} 
                        name={m.name} 
                        provider={m.provider} 
@@ -332,6 +337,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     {models.map((m, idx) => (
                       <ModelCard
                         key={m.id}
+                        id={m.id}
                         index={idx}
                         name={m.name}
                         provider={m.provider}

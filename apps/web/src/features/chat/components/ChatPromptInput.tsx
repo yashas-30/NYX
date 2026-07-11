@@ -352,10 +352,13 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
       gpuLayers: 99,
       threads: 4,
       contextSize: 4096,
-      batchSize: 512,
+      batchSize: 2048,
       temperature: 0.7,
       topP: 0.95,
       topK: 40,
+      flashAttention: true,
+      kvCacheType: 'q8_0',
+      useMlock: false,
     });
     toast.success('Settings reset to defaults');
   }, [modelSettings, onModelSettingsChange]);

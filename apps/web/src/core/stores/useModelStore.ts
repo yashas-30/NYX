@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 
 interface ModelState {
-  modelsState: Record<'chat' | 'coder', string>;
+  modelsState: { chat: string };
   localModelsEnabled: boolean;
   localLibraryModels: any[];
   isLoading: boolean;
@@ -10,8 +10,8 @@ interface ModelState {
   loadedLocalModel: string | null;
 
   // Actions
-  setModels: (models: Record<'chat' | 'coder', string>) => void;
-  setModel: (activeMode: 'chat' | 'coder' | 'settings' | 'registry', mid: string) => void;
+  setModels: (models: { chat: string }) => void;
+  setModel: (activeMode: 'chat' | 'settings' | 'registry', mid: string) => void;
   setLocalModelsEnabled: (enabled: boolean) => void;
   setLoadedLocalModel: (modelId: string | null) => void;
   loadLocalLibraryModels: () => Promise<void>;
@@ -21,7 +21,6 @@ export const useModelStore = create<ModelState>((set, get) => {
   return {
     modelsState: {
       chat: '',
-      coder: '',
     },
     localModelsEnabled: false,
     localLibraryModels: [],
@@ -34,7 +33,7 @@ export const useModelStore = create<ModelState>((set, get) => {
     },
 
     setModel: (activeMode, mid) => {
-      const targetKey = activeMode === 'chat' ? 'chat' : 'coder';
+      const targetKey = 'chat'; // Now exclusively chat
       set((state) => {
         const nextModels = {
           ...state.modelsState,

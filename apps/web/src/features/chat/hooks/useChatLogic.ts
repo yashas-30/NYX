@@ -380,14 +380,15 @@ export const useChatLogic = ({
   const persistHistory = useCallback(
     (messages: ChatMessage[], options?: { newSession?: boolean; title?: string }) => {
       const sid = activeSidRef.current;
+      const validMessages = messages.filter(m => m.status !== 'error');
 
       if (!sid || options?.newSession) {
         if (isCreatingSessionRef.current) return;
         isCreatingSessionRef.current = true;
 
-        const title = options?.title || generateTitle(messages);
+        const title = options?.title || generateTitle(validMessages);
         try {
-          const newSid = chatSessions.createSession?.(messages, { title });
+          const newSid = chatSessions.createSession?.(validMessages, { title });
           if (newSid) {
             activeSidRef.current = newSid;
             newlyCreatedSidRef.current = newSid;
@@ -399,7 +400,7 @@ export const useChatLogic = ({
         return;
       }
 
-      chatSessions.updateSession?.(sid, messages);
+      chatSessions.updateSession?.(sid, validMessages);
     },
     [chatSessions, sessionTitle]
   );
@@ -577,13 +578,13 @@ export const useChatLogic = ({
 ${searchResult}
 </context>
 
-<instructions>
-You are an expert assistant. Use the context above to answer the user's question.
-- Answer directly and confidently as an expert — never say "based on the search results", "according to the provided context", "based on the web search", or any similar meta-commentary about how you obtained the information.
+<web_search_instructions>
+Use the context above to answer the user's question.
+- Answer directly and confidently — never say "based on the search results", "according to the provided context", "based on the web search", or any similar meta-commentary about how you obtained the information.
 - Synthesize the information naturally, as if it is your own knowledge.
 - Use clear markdown formatting: headers, bullet points, bold for key facts where appropriate.
 - If the context does not contain the answer, say you don't have enough information on that topic.
-</instructions>
+</web_search_instructions>
 
 ${prompt}`;
         } catch (e) {
@@ -610,7 +611,9 @@ ${prompt}`;
       }
 
       try {
-        if (!cloudModelId && !localModelId) {
+        const modelToUse = options?.modelOverride || (cloudModelId || localModelId) as string;
+
+        if (!modelToUse) {
           toast.error('Please select at least one model (Cloud or Local).');
           return;
         }
@@ -627,6 +630,7 @@ ${prompt}`;
             timestamp: Date.now(),
             status: 'loading',
             reasoning: '🔬 Initializing Deep Research...\n',
+            model: modelToUse,
           };
           dispatch({ type: 'APPEND', message: assistantMsg });
           historyRef.current = [...historyRef.current, assistantMsg];
@@ -726,38 +730,58 @@ ${prompt}`;
           content: '',
           timestamp: Date.now(),
           status: 'loading',
+          model: modelToUse,
         };
         dispatch({ type: 'APPEND', message: assistantMsg });
         historyRef.current = [...historyRef.current, assistantMsg];
 
-        // Simplified tag cleaner
-        let extractedReasoning = '';
-        const cleanXmlTags = (text: string) => text.replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '').trim();
-
         let currentContent = '';
         let currentReasoning = '';
+        let lastUpdateTime = 0;
+        const THROTTLE_MS = 50;
         
         setIsSupervising(true);
         const onProgress = new Channel<any>();
         onProgress.onmessage = (message) => {
           if (message) {
             const eventType = message.event_type || message.type;
+            const now = Date.now();
+
             if (eventType === 'text') {
               currentContent += message.content || '';
-              const cleanContent = cleanXmlTags(currentContent);
-
-              const updatedHistory = [...historyRef.current];
-              const lastIdx = updatedHistory.length - 1;
-              if (lastIdx >= 0 && updatedHistory[lastIdx].role === 'assistant') {
-                const combinedReasoning = currentReasoning + (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '');
-                updatedHistory[lastIdx] = {
-                  ...updatedHistory[lastIdx],
-                  content: cleanContent,
-                  reasoning: combinedReasoning || undefined,
-                };
+              
+              let displayContent = currentContent;
+              let extractedReasoning = '';
+              const thinkStartMatch = currentContent.match(/<think>/i);
+              
+              if (thinkStartMatch) {
+                const startIndex = thinkStartMatch.index!;
+                const thinkEndMatch = currentContent.match(/<\/think>/i);
+                
+                if (thinkEndMatch && typeof thinkEndMatch.index === 'number') {
+                  extractedReasoning = currentContent.substring(startIndex + 7, thinkEndMatch.index).trim();
+                  displayContent = currentContent.substring(0, startIndex) + currentContent.substring(thinkEndMatch.index + 8);
+                } else {
+                  extractedReasoning = currentContent.substring(startIndex + 7).trim();
+                  displayContent = currentContent.substring(0, startIndex);
+                }
               }
-              dispatch({ type: 'SET', messages: updatedHistory });
-              historyRef.current = updatedHistory;
+
+              if (now - lastUpdateTime > THROTTLE_MS) {
+                lastUpdateTime = now;
+                const updatedHistory = [...historyRef.current];
+                const lastIdx = updatedHistory.length - 1;
+                if (lastIdx >= 0 && updatedHistory[lastIdx].role === 'assistant') {
+                  const combinedReasoning = currentReasoning + (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '');
+                  updatedHistory[lastIdx] = {
+                    ...updatedHistory[lastIdx],
+                    content: displayContent.trim(),
+                    reasoning: combinedReasoning || undefined,
+                  };
+                }
+                dispatch({ type: 'SET', messages: updatedHistory });
+                historyRef.current = updatedHistory;
+              }
             } else if (eventType === 'tool_call') {
               const updatedHistory = [...historyRef.current];
               const lastIdx = updatedHistory.length - 1;
@@ -801,25 +825,47 @@ ${prompt}`;
             } else if (eventType === 'thinking') {
               currentReasoning += message.content || '';
               
-              const updatedHistory = [...historyRef.current];
-              const lastIdx = updatedHistory.length - 1;
-              if (lastIdx >= 0 && updatedHistory[lastIdx]?.role === 'assistant') {
-                const combinedReasoning = currentReasoning + (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '');
-                const msg = { ...updatedHistory[lastIdx] };
-                msg.reasoning = combinedReasoning || undefined;
-                updatedHistory[lastIdx] = msg;
+              if (now - lastUpdateTime > THROTTLE_MS) {
+                lastUpdateTime = now;
+                const updatedHistory = [...historyRef.current];
+                const lastIdx = updatedHistory.length - 1;
+                if (lastIdx >= 0 && updatedHistory[lastIdx]?.role === 'assistant') {
+                  const msg = { ...updatedHistory[lastIdx] };
+                  msg.reasoning = currentReasoning || undefined;
+                  updatedHistory[lastIdx] = msg;
+                }
+                dispatch({ type: 'SET', messages: updatedHistory });
+                historyRef.current = updatedHistory;
               }
-              dispatch({ type: 'SET', messages: updatedHistory });
-              historyRef.current = updatedHistory;
             } else if (eventType === 'done') {
-              // Stream completed — finalize
+              // Ensure final content is written out
               const finalHistory = [...historyRef.current];
               const lastIdx = finalHistory.length - 1;
               if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
-                finalHistory[lastIdx] = {
-                  ...finalHistory[lastIdx],
-                  status: 'success',
-                };
+                  let displayContent = currentContent;
+                  let extractedReasoning = '';
+                  const thinkStartMatch = currentContent.match(/<think>/i);
+                  
+                  if (thinkStartMatch) {
+                    const startIndex = thinkStartMatch.index!;
+                    const thinkEndMatch = currentContent.match(/<\/think>/i);
+                    
+                    if (thinkEndMatch && typeof thinkEndMatch.index === 'number') {
+                      extractedReasoning = currentContent.substring(startIndex + 7, thinkEndMatch.index).trim();
+                      displayContent = currentContent.substring(0, startIndex) + currentContent.substring(thinkEndMatch.index + 8);
+                    } else {
+                      extractedReasoning = currentContent.substring(startIndex + 7).trim();
+                      displayContent = currentContent.substring(0, startIndex);
+                    }
+                  }
+                  const combinedReasoning = currentReasoning + (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '');
+
+                  finalHistory[lastIdx] = {
+                    ...finalHistory[lastIdx],
+                    content: displayContent.trim(),
+                    reasoning: combinedReasoning || undefined,
+                    status: 'success',
+                  };
               }
               dispatch({ type: 'SET', messages: finalHistory });
               historyRef.current = finalHistory;
@@ -903,14 +949,25 @@ ${prompt}`;
           currentSignal?.removeEventListener('abort', onAbort);
         }
 
-        const finalCleanStreamed = cleanXmlTags(currentContent);
+        let finalCleanStreamed = currentContent;
+        const finalThinkStartMatch = currentContent.match(/<think>/i);
+        if (finalThinkStartMatch && typeof finalThinkStartMatch.index === 'number') {
+          const startIndex = finalThinkStartMatch.index;
+          const finalThinkEndMatch = currentContent.match(/<\/think>/i);
+          if (finalThinkEndMatch && typeof finalThinkEndMatch.index === 'number') {
+            finalCleanStreamed = currentContent.substring(0, startIndex) + currentContent.substring(finalThinkEndMatch.index + 8);
+          } else {
+            finalCleanStreamed = currentContent.substring(0, startIndex);
+          }
+        }
+        
         const isAborted = abortCtrlRef.current?.signal.aborted;
         const finalHistory = [...historyRef.current];
         const lastIdx = finalHistory.length - 1;
         if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
             finalHistory[lastIdx] = {
                 ...finalHistory[lastIdx],
-                content: finalCleanStreamed,
+                content: finalCleanStreamed.trim(),
                 status: isAborted ? 'stopped' : 'success',
             };
         }
@@ -946,6 +1003,7 @@ ${prompt}`;
           }
           dispatch({ type: 'SET', messages: finalHistory });
           historyRef.current = finalHistory;
+          persistHistory(finalHistory);
         }
       } finally {
         setIsSupervising(false);

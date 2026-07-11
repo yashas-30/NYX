@@ -27,9 +27,8 @@ function isTauri(): boolean {
     ('__TAURI__' in window || '__TAURI_INTERNALS__' in window || '_tauri' in window);
 }
 
-function generateId(agentType?: 'chat' | 'coder'): string {
-  const prefix = agentType ? `${agentType}-session` : 'session';
-  return `${prefix}-${crypto.randomUUID()}`;
+function generateId(): string {
+  return `session-${crypto.randomUUID()}`;
 }
 
 function deriveTitleFromMessages(messages: ChatMessage[]): string {
@@ -39,17 +38,7 @@ function deriveTitleFromMessages(messages: ChatMessage[]): string {
   return words.length > 0 ? words : 'New Chat';
 }
 
-function matchesAgentType(sid: string, agentType?: 'chat' | 'coder'): boolean {
-  if (agentType === 'coder') {
-    return sid.startsWith('coder-session-');
-  } else if (agentType === 'chat') {
-    return (
-      sid.startsWith('chat-session-') ||
-      (!sid.startsWith('coder-session-') && !sid.startsWith('chat-session-'))
-    );
-  }
-  return true;
-}
+
 
 // Map Rust ChatSessionPayload -> frontend ChatSession
 function mapRustSession(s: any): ChatSession {
@@ -78,7 +67,9 @@ function toRustPayload(session: ChatSession): any {
   return {
     id: session.id,
     title: session.title,
-    messages: session.messages.map((m: any) => ({
+    messages: session.messages
+      .filter((m: any) => m.status !== 'error')
+      .map((m: any) => ({
       id: m.id ?? null,
       role: m.role,
       content: m.content,
@@ -100,36 +91,38 @@ function toRustPayload(session: ChatSession): any {
 
 interface ChatStoreState {
   regularSessions: ChatSession[];
-  activeSidChat: string | null;
-  activeSidCoder: string | null;
+  activeSid: string | null;
   folders: Folder[];
   isLoading: boolean;
   syncTimeout: NodeJS.Timeout | null;
 
   // Actions
-  loadSessions: (agentType?: 'chat' | 'coder') => Promise<void>;
-  createSession: (agentType?: 'chat' | 'coder', initialMessages?: ChatMessage[]) => string;
-  updateSession: (agentType: 'chat' | 'coder' | undefined, sid: string, messages: ChatMessage[]) => void;
-  deleteSession: (agentType: 'chat' | 'coder' | undefined, sid: string) => void;
-  switchSession: (agentType: 'chat' | 'coder' | undefined, sid: string | null) => void;
+  loadSessions: () => Promise<void>;
+  createSession: (initialMessages?: ChatMessage[]) => string;
+  updateSession: (sid: string, messages: ChatMessage[]) => void;
+  deleteSession: (sid: string) => void;
+  switchSession: (sid: string | null) => void;
   createFolder: (name: string) => Promise<string | undefined>;
   deleteFolder: (id: string) => Promise<void>;
   updateSessionMeta: (
-    agentType: 'chat' | 'coder' | undefined,
     sid: string,
     meta: { folderId?: string | null; tags?: string | null }
   ) => void;
 
   // Getters (computed properties)
-  getSessions: (agentType?: 'chat' | 'coder') => ChatSession[];
-  getActiveSid: (agentType?: 'chat' | 'coder') => string | null;
-  getActiveSession: (agentType?: 'chat' | 'coder') => ChatSession | null;
+  getSessions: () => ChatSession[];
+  getActiveSid: () => string | null;
+  getActiveSession: () => ChatSession | null;
 }
 
 export const useChatStore = create<ChatStoreState>((set, get) => {
   const persistSessions = (sessions: ChatSession[]) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.slice(0, MAX_SESSIONS)));
+      const filteredSessions = sessions.map(s => ({
+        ...s,
+        messages: s.messages.filter(m => m.status !== 'error')
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filteredSessions.slice(0, MAX_SESSIONS)));
     } catch (e: any) {
       console.warn('[useChatStore] Failed to save sessions to localStorage:', e);
     }
@@ -152,27 +145,26 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
 
   return {
     regularSessions: [],
-    activeSidChat: null,
-    activeSidCoder: null,
+    activeSid: null,
     folders: [],
     isLoading: false,
     syncTimeout: null,
 
-    getSessions: (agentType) => {
-      return get().regularSessions.filter((s) => matchesAgentType(s.id, agentType));
+    getSessions: () => {
+      return get().regularSessions;
     },
 
-    getActiveSid: (agentType) => {
-      return agentType === 'coder' ? get().activeSidCoder : get().activeSidChat;
+    getActiveSid: () => {
+      return get().activeSid;
     },
 
-    getActiveSession: (agentType) => {
-      const activeSid = agentType === 'coder' ? get().activeSidCoder : get().activeSidChat;
+    getActiveSession: () => {
+      const activeSid = get().activeSid;
       if (!activeSid) return null;
       return get().regularSessions.find((s) => s.id === activeSid) ?? null;
     },
 
-    loadSessions: async (agentType) => {
+    loadSessions: async () => {
       set({ isLoading: true });
 
       try {
@@ -184,9 +176,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
           ]);
 
           const serverSessions: ChatSession[] = rawSessions.map(mapRustSession);
-          const filtered = agentType
-            ? serverSessions.filter((s) => matchesAgentType(s.id, agentType))
-            : serverSessions;
+          const filtered = serverSessions;
 
           const folders: Folder[] = (rawFolders || []).map((f: any) => ({
             id: f.id,
@@ -214,19 +204,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
             const sorted = merged.sort((a, b) => b.updatedAt - a.updatedAt);
             persistSessions(sorted);
 
-            let activeSidChat = state.activeSidChat;
-            let activeSidCoder = state.activeSidCoder;
-
-            if ((agentType === 'coder' || !agentType) && !activeSidCoder) {
-              const match = sorted.find((s) => matchesAgentType(s.id, 'coder'));
-              if (match) activeSidCoder = match.id;
-            }
-            if ((agentType === 'chat' || !agentType) && !activeSidChat) {
-              const match = sorted.find((s) => matchesAgentType(s.id, 'chat'));
-              if (match) activeSidChat = match.id;
-            }
-
-            return { regularSessions: sorted, activeSidChat, activeSidCoder, folders };
+            let activeSid = state.activeSid;
+            if (!activeSid && sorted.length > 0) activeSid = sorted[0].id;
+            return { regularSessions: sorted, activeSid, folders };
           });
         } else {
           // ── Fallback: localStorage (web-only / dev mode without Tauri) ──
@@ -236,17 +216,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
             if (Array.isArray(parsed)) {
               set((state) => {
                 const sorted = parsed.sort((a, b) => b.updatedAt - a.updatedAt);
-                let activeSidChat = state.activeSidChat;
-                let activeSidCoder = state.activeSidCoder;
-                if (!activeSidCoder) {
-                  const m = sorted.find((s) => matchesAgentType(s.id, 'coder'));
-                  if (m) activeSidCoder = m.id;
-                }
-                if (!activeSidChat) {
-                  const m = sorted.find((s) => matchesAgentType(s.id, 'chat'));
-                  if (m) activeSidChat = m.id;
-                }
-                return { regularSessions: sorted, activeSidChat, activeSidCoder };
+                let activeSid = state.activeSid;
+                if (!activeSid && sorted.length > 0) activeSid = sorted[0].id;
+                return { regularSessions: sorted, activeSid };
               });
             }
           }
@@ -266,8 +238,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       }
     },
 
-    createSession: (agentType, initialMessages = []) => {
-      const id = generateId(agentType);
+    createSession: (initialMessages = []) => {
+      const id = generateId();
       const now = Date.now();
       const session: ChatSession = {
         id,
@@ -280,11 +252,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       set((state) => {
         const updatedSessions = [session, ...state.regularSessions];
         persistSessions(updatedSessions);
-        if (agentType === 'coder') {
-          return { regularSessions: updatedSessions, activeSidCoder: id };
-        } else {
-          return { regularSessions: updatedSessions, activeSidChat: id };
-        }
+        return { regularSessions: updatedSessions, activeSid: id };
       });
 
       // Persist to SQLite
@@ -297,7 +265,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       return id;
     },
 
-    updateSession: (agentType, sid, messages) => {
+    updateSession: (sid, messages) => {
       const now = Date.now();
       let latestUpdated: ChatSession | null = null;
 
@@ -324,14 +292,13 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       }
     },
 
-    deleteSession: (agentType, sid) => {
+    deleteSession: (sid) => {
       set((state) => {
         const updatedSessions = state.regularSessions.filter((s) => s.id !== sid);
         persistSessions(updatedSessions);
         return {
           regularSessions: updatedSessions,
-          activeSidChat: state.activeSidChat === sid ? null : state.activeSidChat,
-          activeSidCoder: state.activeSidCoder === sid ? null : state.activeSidCoder,
+          activeSid: state.activeSid === sid ? null : state.activeSid,
         };
       });
 
@@ -342,12 +309,8 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       }
     },
 
-    switchSession: (agentType, sid) => {
-      if (agentType === 'coder') {
-        set({ activeSidCoder: sid });
-      } else {
-        set({ activeSidChat: sid });
-      }
+    switchSession: (sid) => {
+      set({ activeSid: sid });
     },
 
     createFolder: async (name) => {
@@ -378,7 +341,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       }
     },
 
-    updateSessionMeta: (agentType, sid, meta) => {
+    updateSessionMeta: (sid, meta) => {
       set((state) => {
         const updatedSessions = state.regularSessions.map((s) => {
           if (s.id === sid) {

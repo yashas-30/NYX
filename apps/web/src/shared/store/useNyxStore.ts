@@ -17,9 +17,12 @@ export interface ModelSettings {
   mirostat: number;
   antigravity?: boolean;
   reasoningEffort?: 'low' | 'medium' | 'high' | 'max';
+  flashAttention?: boolean;
+  kvCacheType?: string;
+  useMlock?: boolean;
 }
 
-export type ActiveMode = 'chat' | 'coder' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
+export type ActiveMode = 'chat' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
 
 export interface NyxState {
   activeMode: ActiveMode;
@@ -73,12 +76,15 @@ const DEFAULT_SETTINGS: ModelSettings = {
   topK: 40,
   gpuLayers: 99,
   threads: 4,
-  contextSize: 32768,
-  batchSize: 512,
+  contextSize: 8192,
+  batchSize: 2048,
   repeatPenalty: 1.1,
   mirostat: 0,
   antigravity: true,
   reasoningEffort: 'medium',
+  flashAttention: true,
+  kvCacheType: 'q8_0',
+  useMlock: false,
 };
 
 const DEFAULT_MODEL: ModelOption = {
@@ -97,7 +103,7 @@ const DEFAULT_MODEL: ModelOption = {
 export const useNyxStore = create<NyxState>()(
   persist(
     (set, get) => ({
-      activeMode: 'coder',
+      activeMode: 'chat',
       workspacePath: '',
       localModelsEnabled: false,
       modelSettings: DEFAULT_SETTINGS,
@@ -317,11 +323,16 @@ export const useNyxStore = create<NyxState>()(
     }),
     {
       name: 'nyx-global-state',
-      version: 1,
+      version: 2,
       migrate: (persistedState: any, version: number) => {
         if (version === 0) {
           if (persistedState.modelSettings && persistedState.modelSettings.contextSize === 2048) {
             persistedState.modelSettings.contextSize = 32768;
+          }
+        }
+        if (version <= 1) {
+          if (persistedState.modelSettings && persistedState.modelSettings.contextSize === 32768) {
+            persistedState.modelSettings.contextSize = 8192;
           }
         }
         return persistedState;

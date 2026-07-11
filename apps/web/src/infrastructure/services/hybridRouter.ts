@@ -507,10 +507,14 @@ export class HybridModelRouter {
         if (current.provider === 'nyx-native') {
           const status = await checkStatusFn(current.provider).catch(() => 'offline');
           if (status !== 'online') {
-            const contextSize = settings?.contextSize || 32768;
+            const contextSize = settings?.contextSize || 8192;
             const gpuLayers = settings?.gpuLayers !== undefined ? settings.gpuLayers : null;
             const cpuThreads = settings?.threads !== undefined ? settings.threads : null;
-            await invoke('start_local_server', { modelId: current.id, contextSize, gpuLayers, cpuThreads }).catch(console.warn);
+            const flashAttention = settings?.flashAttention !== undefined ? settings.flashAttention : null;
+            const kvCacheType = settings?.kvCacheType || null;
+            const useMlock = settings?.useMlock !== undefined ? settings.useMlock : null;
+            const batchSize = settings?.batchSize || null;
+            await invoke('start_local_server', { modelId: current.id, contextSize, gpuLayers, cpuThreads, flashAttention, kvCacheType, useMlock, batchSize }).catch(console.warn);
           }
         }
 
@@ -552,7 +556,29 @@ export class HybridModelRouter {
   // -------------------------------------------------------------------------
 
   private async warmModel(modelId: string): Promise<void> {
-    invoke('start_local_server', { modelId, contextSize: 32768, gpuLayers: null, cpuThreads: null }).catch(console.warn);
+    let gpuLayers: number | null = null;
+    let cpuThreads: number | null = null;
+    let contextSize: number = 8192;
+    try {
+      const saved = localStorage.getItem('nyx_chat_settings');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        if (typeof settings.gpuLayers === 'number') gpuLayers = settings.gpuLayers;
+        if (typeof settings.threads === 'number') cpuThreads = settings.threads;
+        if (typeof settings.contextSize === 'number') contextSize = settings.contextSize;
+      }
+    } catch {}
+
+    invoke('start_local_server', { 
+      modelId, 
+      contextSize, 
+      gpuLayers, 
+      cpuThreads, 
+      flashAttention: null, 
+      kvCacheType: null, 
+      useMlock: null, 
+      batchSize: null 
+    }).catch(console.warn);
   }
 
   private async handleOOM(modelId: string): Promise<void> {

@@ -1,6 +1,6 @@
 [package]
 name = "nyx"
-version = "3.0.0"
+version = "0.5.0"
 description = "NYX - Native Local Intelligence & Cloud Orchestration Platform"
 authors = ["NYX Dev Team"]
 edition = "2021"

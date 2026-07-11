@@ -178,7 +178,8 @@ export const HuggingFaceDownloader: React.FC = () => {
       await invoke('hf_download_model', {
         url,
         modelId,
-        filename
+        filename,
+        repoId: selectedModel
       });
     } catch (err) {
       console.error(err);
@@ -272,8 +273,20 @@ export const HuggingFaceDownloader: React.FC = () => {
             onChange={e => setSearchQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
             placeholder="Search Hugging Face for models (e.g. Llama-3, Qwen)..."
-            className="bg-background border border-border rounded-md text-xs py-2 pl-8 pr-2 outline-none focus:border-primary w-full"
+            className="bg-background border border-border rounded-md text-xs py-2 pl-8 pr-8 outline-none focus:border-primary w-full"
           />
+          {searchQuery && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setSearchResults([]);
+                setSelectedModel(null);
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
         <button 
           onClick={handleSearch}

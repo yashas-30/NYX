@@ -79,7 +79,7 @@ pub async fn execute_llm_stream(
     req: &UnifiedRequest,
 ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunkPayload, String>>, String> {
     let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .connect_timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
 

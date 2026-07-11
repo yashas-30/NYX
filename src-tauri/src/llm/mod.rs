@@ -53,25 +53,58 @@ pub async fn start_local_server(
     context_size: Option<u32>,
     gpu_layers: Option<u32>,
     cpu_threads: Option<u32>,
+    flash_attention: Option<bool>,
+    kv_cache_type: Option<String>,
+    use_mlock: Option<bool>,
+    batch_size: Option<u32>,
 ) -> Result<(), String> {
     let app_dir = app.path().app_data_dir().map_err(|_| "Failed to get app data dir".to_string())?;
     let model_path = app_dir.join("models").join(&model_id);
     let server_path = app_dir.join("binaries").join("llama-server-vulkan.exe");
 
-    if !model_path.exists() || !server_path.exists() {
-        return Err("Model or server binary not found. Please download them first.".to_string());
+    if !model_path.exists() {
+        return Err("Model not found. Please download it first.".to_string());
+    }
+
+    // A valid server binary must be at least 1 MB.
+    let server_needs_download = match tokio::fs::metadata(&server_path).await {
+        Ok(m) => m.len() < 1024 * 1024,
+        Err(_) => true,
+    };
+
+    if server_needs_download {
+        let _lock = DOWNLOAD_LOCK.lock().await;
+
+        let server_still_needs_download = match tokio::fs::metadata(&server_path).await {
+            Ok(m) => m.len() < 1024 * 1024,
+            Err(_) => true,
+        };
+
+        if server_still_needs_download {
+            let downloader = crate::llm::downloader::Downloader::new();
+            let app_clone = app.clone();
+            downloader.ensure_server(&app_dir, move |progress, status| {
+                let _ = app_clone.emit("llm-download-progress", serde_json::json!({
+                    "progress": progress,
+                    "status": status
+                }));
+            }).await?;
+        }
     }
 
     // --- Phase 3: VRAM-Aware Scheduling ---
     let model_size_gb = crate::llm::vram_scheduler::get_model_size_gb(&model_path);
-    let decision = if let Some(vram) = crate::llm::vram_scheduler::query_vram() {
-        let d = crate::llm::vram_scheduler::compute_spawn_decision(&vram, model_size_gb);
+    let ctx_size = context_size.unwrap_or(32768);
+    let (decision, device_name) = if let Some(vram) = crate::llm::vram_scheduler::query_vram() {
+        let d = crate::llm::vram_scheduler::compute_spawn_decision(&vram, model_size_gb, ctx_size);
         
         let final_ngl = if let Some(manual_gpu_layers) = gpu_layers {
-            let total_layers = crate::llm::vram_scheduler::estimate_total_layers(model_size_gb);
-            let capped = manual_gpu_layers.min(d.ngl).min(total_layers);
-            tracing::info!("[Manual] User requested {} layers, capped to {} to prevent VRAM spill (max fit: {}, total: {})", manual_gpu_layers, capped, d.ngl, total_layers);
-            capped
+            let estimated_max = crate::llm::vram_scheduler::estimate_total_layers(model_size_gb);
+            if manual_gpu_layers >= estimated_max {
+                999 // If they dragged the slider to max, guarantee full offloading
+            } else {
+                manual_gpu_layers
+            }
         } else {
             tracing::info!(
                 "[VramScheduler] GPU: {} | Available: {} MB | Model: {:.1} GB -> Auto NGL: {}",
@@ -86,7 +119,7 @@ pub async fn start_local_server(
             "fully_gpu": final_ngl >= crate::llm::vram_scheduler::estimate_total_layers(model_size_gb),
             "suggest_cloud_fallback": d.suggest_cloud_fallback,
             "message": d.message,
-            "estimated_vram_mb": crate::llm::vram_scheduler::vram_for_ngl(model_size_gb, crate::llm::vram_scheduler::estimate_total_layers(model_size_gb), final_ngl),
+            "estimated_vram_mb": crate::llm::vram_scheduler::vram_for_ngl(model_size_gb, crate::llm::vram_scheduler::estimate_total_layers(model_size_gb), final_ngl, ctx_size),
             "available_mb": vram.available_mb,
             "gpu_name": vram.gpu_name,
             "model_size_gb": model_size_gb
@@ -95,17 +128,13 @@ pub async fn start_local_server(
         if d.suggest_cloud_fallback {
             return Err(d.message);
         }
-        Some(final_ngl)
+        (Some(final_ngl), Some(vram.gpu_name.clone()))
     } else {
         tracing::warn!("[VramScheduler] Could not query VRAM — using user preference or default");
-        gpu_layers
+        (Some(gpu_layers.unwrap_or(999)), None)
     };
 
-    let mut ctx_size = context_size.unwrap_or(32768);
-    if ctx_size < 32768 {
-        ctx_size = 32768;
-    }
-    manager.start_with_ngl(&server_path, &model_path, ctx_size, decision, cpu_threads).await?;
+    manager.start_with_ngl(&server_path, &model_path, ctx_size, decision, cpu_threads, device_name, flash_attention, kv_cache_type, use_mlock, batch_size).await?;
     Ok(())
 }
 
@@ -122,48 +151,70 @@ pub struct HardwareEstimation {
     pub system_ram_spill_mb: u64,
     pub total_vram_mb: u64,
     pub model_size_gb: f32,
+    pub layers_on_gpu: u32,
+    pub layers_on_cpu: u32,
+    pub layers_spilled: u32,
+    pub total_layers: u32,
+    pub max_gpu_layers: u32,
+    pub context_vram_mb: u64,
+    pub context_ram_mb: u64,
 }
 
 #[tauri::command]
-pub async fn estimate_hardware_usage(app: AppHandle, model_id: String, context_size: Option<u32>, gpu_layers: u32) -> Result<HardwareEstimation, String> {
+pub async fn estimate_hardware_usage(app: AppHandle, model_id: String, context_size: Option<u32>, _gpu_layers: u32) -> Result<HardwareEstimation, String> {
     let app_dir = app.path().app_data_dir().map_err(|_| "Failed to get app data dir".to_string())?;
-    let model_path = app_dir.join("models").join(&model_id);
+    let models_dir = app_dir.join("models");
+    let model_path = models_dir.join(&model_id);
+    
+    if !model_path.exists() {
+        return Err("Model not found".to_string());
+    }
 
-    let model_size_gb = crate::llm::vram_scheduler::get_model_size_gb(&model_path);
-    let total_layers = crate::llm::vram_scheduler::estimate_total_layers(model_size_gb);
+    let metadata = tokio::fs::metadata(&model_path).await.map_err(|e| e.to_string())?;
+    let size_bytes = metadata.len();
+    let model_size_gb = size_bytes as f32 / (1024.0 * 1024.0 * 1024.0);
+    
+    let ctx_size = context_size.unwrap_or(32768);
+    let total_layers = vram_scheduler::estimate_total_layers(model_size_gb);
+    let _actual_gpu_layers = total_layers;
     
     let (total_vram_mb, max_ngl) = if let Some(vram) = crate::llm::vram_scheduler::query_vram() {
-        let d = crate::llm::vram_scheduler::compute_spawn_decision(&vram, model_size_gb);
+        let d = crate::llm::vram_scheduler::compute_spawn_decision(&vram, model_size_gb, ctx_size);
         (vram.total_mb, d.ngl)
     } else {
         (0, total_layers)
     };
     
-    // Cap gpu_layers to total_layers AND the maximum layers that fit in VRAM safely
-    let actual_gpu_layers = gpu_layers.min(total_layers).min(max_ngl);
-    let estimated_vram_mb = crate::llm::vram_scheduler::vram_for_ngl(model_size_gb, total_layers, actual_gpu_layers);
+    let fit_in_vram_layers = total_layers;
+    let remaining_layers = 0;
+    let layers_spilled = 0;
 
-    // Calculate RAM spill: if we didn't offload all layers, the remaining layers go to RAM
-    let remaining_layers = total_layers.saturating_sub(actual_gpu_layers);
-    let system_ram_spill_mb = if remaining_layers > 0 {
-        // Roughly same formula for CPU RAM footprint minus the VRAM overhead
-        let model_mb = (model_size_gb * 1024.0) as u64;
-        let layer_cost = model_mb / (total_layers as u64).max(1);
-        layer_cost * (remaining_layers as u64)
+    let model_mb = (model_size_gb * 1024.0) as u64;
+    let estimated_vram_mb = model_mb; // User explicitly requested ACTUAL model size, not estimated overhead
+
+    let system_ram_spill_mb = if estimated_vram_mb > total_vram_mb {
+        estimated_vram_mb - total_vram_mb
     } else {
         0
     };
 
-    // Add context size cost (rough estimation, 2048 context = ~200MB, scales linearly roughly)
-    let ctx = context_size.unwrap_or(32768) as u64;
-    let ctx_cost_mb = (ctx * 200) / 2048; 
-    let final_system_ram_spill = system_ram_spill_mb + ctx_cost_mb;
+    let kv_mb_per_1k = 10.0 + (model_size_gb * 2.0).min(30.0);
+    let total_kv_mb = (ctx_size as f32 / 1024.0) * kv_mb_per_1k;
+    let context_vram_mb = 0; // KV cache is now forced to system RAM
+    let context_ram_mb = total_kv_mb as u64;
 
     Ok(HardwareEstimation {
         estimated_vram_mb,
-        system_ram_spill_mb: final_system_ram_spill,
+        system_ram_spill_mb,
         total_vram_mb,
         model_size_gb,
+        layers_on_gpu: fit_in_vram_layers,
+        layers_on_cpu: remaining_layers,
+        layers_spilled,
+        total_layers,
+        max_gpu_layers: max_ngl,
+        context_vram_mb,
+        context_ram_mb,
     })
 }
 
@@ -197,11 +248,22 @@ pub async fn list_local_models(app: AppHandle) -> Result<Vec<LocalModelInfo>, St
                 let metadata = entry.metadata().await.ok();
                 let size_bytes = metadata.map(|m| m.len()).unwrap_or(0);
                 
+                let meta_path = path.with_extension("gguf.meta.json");
+                let mut description = "Local GGUF model".to_string();
+                
+                if let Ok(meta_content) = tokio::fs::read_to_string(&meta_path).await {
+                    if let Ok(meta_json) = serde_json::from_str::<serde_json::Value>(&meta_content) {
+                        if let Some(author) = meta_json.get("author").and_then(|v| v.as_str()) {
+                            description = format!("Downloaded from {}", author);
+                        }
+                    }
+                }
+                
                 models.push(LocalModelInfo {
                     id: name.clone(),
                     name: name.clone(),
                     provider: "nyx-native".to_string(),
-                    description: "Locally downloaded Hugging Face GGUF model".to_string(),
+                    description,
                     size_bytes,
                     status: "completed".to_string(),
                 });
@@ -229,6 +291,7 @@ pub async fn hf_download_model(
     url: String,
     model_id: String,
     filename: String,
+    repo_id: Option<String>,
 ) -> Result<(), String> {
     let app_dir = app.path().app_data_dir().map_err(|_| "Failed to get app data dir".to_string())?;
     let models_dir = app_dir.join("models");
@@ -248,6 +311,8 @@ pub async fn hf_download_model(
     // Spawn task to not block command
     tokio::spawn(async move {
         let mid_emit = mid.clone();
+        let repo_id_clone = repo_id.clone();
+        
         let res = download_hf_model(state_clone, url, dest.clone(), mid.clone(), move |pct, downloaded, total| {
             let _ = app_clone.emit("hf-download-progress", serde_json::json!({
                 "model_id": mid_emit,
@@ -259,6 +324,16 @@ pub async fn hf_download_model(
         
         match res {
             Ok(_) => {
+                if let Some(rid) = repo_id_clone {
+                    let author = rid.split('/').next().unwrap_or("Hugging Face").to_string();
+                    let meta_path = dest.with_extension("gguf.meta.json");
+                    let meta_json = serde_json::json!({
+                        "author": author,
+                        "repo_id": rid,
+                    });
+                    let _ = tokio::fs::write(meta_path, meta_json.to_string()).await;
+                }
+
                 let _ = app.emit("hf-download-complete", serde_json::json!({
                     "model_id": mid,
                     "filename": filename,
@@ -312,7 +387,7 @@ pub async fn hf_resume_download(app: AppHandle, model_id: String, state: State<'
     
     if is_restored {
         if let Some((url, filename)) = restored_info {
-            return hf_download_model(app, state, url, model_id, filename).await;
+            return hf_download_model(app, state, url, model_id, filename, None).await;
         }
     }
 
