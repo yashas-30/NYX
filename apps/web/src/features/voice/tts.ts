@@ -55,6 +55,20 @@ class TTSPlayer {
     return false;
   }
 
+  private getBestVoice(): SpeechSynthesisVoice | null {
+    if (!window.speechSynthesis) return null;
+    const voices = window.speechSynthesis.getVoices();
+    return (
+      voices.find(v => v.name.includes('Natural') && v.lang.startsWith('en')) ||
+      voices.find(v => v.name.includes('Premium') && v.lang.startsWith('en')) ||
+      voices.find(v => v.name.includes('Google') && v.lang.startsWith('en')) ||
+      voices.find(v => v.name.includes('Microsoft') && v.lang.startsWith('en')) ||
+      voices.find(v => v.lang.startsWith('en')) ||
+      voices[0] ||
+      null
+    );
+  }
+
   private browserSpeak(text: string): void {
     if (!window.speechSynthesis) return;
 
@@ -68,6 +82,12 @@ class TTSPlayer {
       .trim();
 
     const utterance = new SpeechSynthesisUtterance(clean.slice(0, 5000));
+    
+    const bestVoice = this.getBestVoice();
+    if (bestVoice) {
+      utterance.voice = bestVoice;
+    }
+    
     utterance.rate = 1.05;
     utterance.pitch = 1.0;
 

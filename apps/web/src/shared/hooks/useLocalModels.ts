@@ -65,7 +65,12 @@ export function inferModelSpecs(idOrName: string) {
     modality = 'Text + Vision';
   }
 
+  // Extract quantization (e.g. Q4_K_M, Q8_0, f16)
+  const quantMatch = name.match(/-(q[0-9a-z_]+|f16|f32)\.gguf$/i) || name.match(/_(q[0-9a-z_]+|f16|f32)\.gguf$/i);
+  const quantization = quantMatch ? quantMatch[1].toUpperCase() : 'Unknown';
+
   return {
+    quantization,
     contextWindow,
     maxOutput,
     modality,
@@ -90,7 +95,8 @@ export function useLocalModels(enabled: boolean = true) {
               ...specs,
               size: (m.size_bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
             },
-            status: 'online',
+            capabilities: specs.capabilities,
+            status: m.status || 'completed',
             features: ['Local', 'GGUF'],
             pros: ['Private', 'Fast', 'No Cloud'],
             cons: ['Requires RAM/VRAM']

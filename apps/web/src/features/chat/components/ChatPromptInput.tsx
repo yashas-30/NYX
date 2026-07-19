@@ -303,6 +303,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
 
   const capabilities = getModelCapabilities(currentModelId || '');
   const supportsVision = capabilities.supportsVision;
+  const canAttachFiles = supportsVision;
   const supportsReasoning = capabilities.supportsReasoning;
   const [showReasoningMenu, setShowReasoningMenu] = useState(false);
 
@@ -511,17 +512,17 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
               <div className="flex items-center gap-1.5">
                 <motion.button
                   variants={tagItemVariants}
-                  whileHover={supportsVision ? { y: -1.5, scale: 1.02 } : {}}
-                  whileTap={supportsVision ? { scale: 0.98 } : {}}
+                  whileHover={canAttachFiles ? { y: -1.5, scale: 1.02 } : {}}
+                  whileTap={canAttachFiles ? { scale: 0.98 } : {}}
                   type="button"
                   onClick={handleImageUploadClick}
-                  disabled={isUploadingImage || !supportsVision}
+                  disabled={isUploadingImage || !canAttachFiles}
                   className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md transition-all text-left shrink-0 ${
-                    !supportsVision
+                    !canAttachFiles
                       ? 'bg-muted border border-border/50 text-muted-foreground/50 cursor-not-allowed'
                       : 'bg-secondary border border-border hover:border-amber-500/40 hover:text-amber-500 text-foreground cursor-pointer'
                   }`}
-                  title={!supportsVision ? 'Current model does not support vision' : ''}
+                  title={!canAttachFiles ? 'Current model does not support file attachment' : ''}
                 >
                   <ImageIcon className="w-3.5 h-3.5 opacity-70" />
                   <span className="text-[9.5px] font-bold tracking-tight">{isUploadingImage ? 'Uploading...' : 'Attach File'}</span>
@@ -532,7 +533,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   ref={fileInputRef}
                   onChange={handleImageChange}
                   className="hidden"
-                  disabled={!supportsVision}
+                  disabled={!canAttachFiles}
                 />
                 <motion.button
                   variants={tagItemVariants}
@@ -586,7 +587,8 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   </motion.button>
                 )}
 
-                <div className="relative">
+                {supportsReasoning && (
+                  <div className="relative">
                     <motion.button
                       variants={tagItemVariants}
                       whileHover={{ y: -1.5, scale: 1.02 }}
@@ -638,6 +640,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                       )}
                     </AnimatePresence>
                   </div>
+                )}
 
 
 

@@ -69,21 +69,35 @@ export const ModelCard: React.FC<ModelCardProps> = ({
     if (isLocal && id) {
       invoke('estimate_hardware_usage', {
         modelId: id,
-        contextSize: modelSettings?.contextSize || 32768,
-        gpuLayers: modelSettings?.gpuLayers || 0,
+        contextSize: modelSettings?.contextSize || 4096,
+        gpuLayers: 99,
       }).then((res: any) => {
         setHardwareEst(res);
       }).catch(console.error);
     }
-  }, [isLocal, id, modelSettings?.contextSize, modelSettings?.gpuLayers]);
+  }, [isLocal, id, modelSettings?.contextSize, modelSettings?.threads]);
 
-  // Use hardwareEst if available, otherwise fallback to basic calculations
-  const requiredVram = hardwareEst ? (hardwareEst.estimated_vram_mb * 1024 * 1024) : (modelSizeBytes ? modelSizeBytes + (400 * 1024 * 1024) : null);
-  const sysVram = hardwareEst ? (hardwareEst.total_vram_mb * 1024 * 1024) : systemVramBytes;
-  const vramPercent = requiredVram && sysVram ? Math.min(100, Math.round((requiredVram / sysVram) * 100)) : 0;
+  const modelVramMb = hardwareEst ? hardwareEst.estimated_vram_mb : (modelSizeBytes ? modelSizeBytes / (1024 * 1024) : 0);
+  const totalVramMb = hardwareEst ? hardwareEst.vram_total_mb : (systemVramBytes ? systemVramBytes / (1024 * 1024) : 0);
   
-  // If the model exceeds VRAM, llama.cpp will automatically split it across CPU and GPU
-  const willSplit = hardwareEst ? (hardwareEst.system_ram_spill_mb > 0 || hardwareEst.layers_on_cpu > 0 || hardwareEst.layers_spilled > 0) : (requiredVram && sysVram ? requiredVram > sysVram : false);
+  const vramPercent = modelVramMb && totalVramMb
+    ? Math.min(100, Math.round((modelVramMb / totalVramMb) * 100))
+    : 0;
+    
+  const strategyLabel = hardwareEst?.strategy === 'FullDedicatedGpu' ? '✅ FULL GPU' :
+                        hardwareEst?.strategy === 'SharedGpuMemory' ? '⚡ SHARED MEM' :
+                        hardwareEst?.strategy === 'IntegratedGpu' ? '🔄 iGPU RAM' :
+                        hardwareEst?.strategy === 'CpuOnly' ? '🖥️ CPU ONLY' : 'UNKNOWN';
+
+  const strategyColor = hardwareEst?.strategy === 'FullDedicatedGpu' ? 'text-emerald-500' :
+                        hardwareEst?.strategy === 'SharedGpuMemory' ? 'text-blue-500' :
+                        hardwareEst?.strategy === 'IntegratedGpu' ? 'text-amber-500' :
+                        'text-muted-foreground';
+  const barColor = hardwareEst?.strategy === 'FullDedicatedGpu' ? 'bg-emerald-500' :
+                   hardwareEst?.strategy === 'SharedGpuMemory' ? 'bg-blue-500' :
+                   hardwareEst?.strategy === 'IntegratedGpu' ? 'bg-amber-500' :
+                   'bg-muted-foreground';
+
 
 
   return (
@@ -129,7 +143,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
           </h4>
         </div>
         {/* Info Button */}
-        {(features || pros || cons) && (
+        {!isLocal && (features || pros || cons) && (
           <button 
             onClick={onToggleExpand} 
             className={`p-1.5 rounded-md transition-colors shrink-0 ${isExpanded ? 'bg-primary/20 text-primary' : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'}`}
@@ -193,7 +207,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
 
       {/* Expanded Details */}
       <AnimatePresence>
-        {isExpanded && (features || pros || cons) && (
+        {!isLocal && isExpanded && (features || pros || cons) && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
@@ -250,33 +264,47 @@ export const ModelCard: React.FC<ModelCardProps> = ({
         </motion.div>
       )}
 
-      {/* Local Model VRAM Indicator */}
-      {isLocal && requiredVram && sysVram && (
+      {isLocal && (modelVramMb > 0) && (
         <div className="pt-3 mt-3 border-t border-border/30 flex flex-col gap-1.5">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className={`text-[9px] font-bold tracking-widest ${willSplit ? 'text-amber-500' : 'text-muted-foreground'}`}>
-              {willSplit ? '⚡ SHARED GPU MEMORY (PCIE)' : 'MODEL SIZE'}
-            </span>
-            <span className="text-foreground/80 text-[9px]">
-              {(requiredVram / (1024 * 1024 * 1024)).toFixed(1)}GB / {(sysVram / (1024 * 1024 * 1024)).toFixed(1)}GB
-            </span>
+          <div className="flex flex-col gap-1 mb-1.5">
+            <div className="flex items-center justify-between">
+              <span className={`text-[9px] font-bold tracking-widest ${strategyColor}`}>
+                {strategyLabel}
+              </span>
+              <span className="text-foreground/80 text-[9px] font-medium">
+                Model Size: {modelSizeBytes ? (modelSizeBytes / (1024 * 1024 * 1024)).toFixed(1) : '?.?'} GB
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-foreground/70 text-[9px]">
+                VRAM: {(modelVramMb / 1024).toFixed(1)}GB est. / {(totalVramMb / 1024).toFixed(1)}GB total
+              </span>
+              {hardwareEst && hardwareEst.estimated_ram_mb > 0 && !hardwareEst.fully_gpu && (
+                <span className="text-amber-500/80 text-[9px] font-medium">
+                  System RAM: {(hardwareEst.estimated_ram_mb / 1024).toFixed(1)}GB est.
+                </span>
+              )}
+            </div>
           </div>
           <div className="h-1.5 w-full bg-border/40 rounded-full overflow-hidden flex">
-            <div 
-              className={`h-full ${willSplit ? 'bg-amber-500' : 'bg-emerald-500'} transition-all duration-500`}
-              style={{ width: `${vramPercent}%` }}
+            <div
+              className={`h-full ${barColor} transition-all duration-500`}
+              style={{ width: `${Math.min(vramPercent, 100)}%` }}
             />
           </div>
-          {hardwareEst?.layers_on_gpu !== undefined && (
-            <div className="flex justify-between items-center text-[8px] text-muted-foreground mt-0.5">
-              <span>GPU Layers: {hardwareEst.layers_on_gpu} (100%)</span>
-              {willSplit && (
-                <span className="text-amber-500/80">Spilled to RAM: {(hardwareEst.system_ram_spill_mb / 1024).toFixed(1)}GB</span>
-              )}
+          {hardwareEst && (
+            <div className="flex flex-col gap-0.5 text-[8px] text-muted-foreground mt-0.5">
+              <div className="flex justify-between items-center">
+                 <span>GPU: {hardwareEst.gpu_name}</span>
+              </div>
+              <div className="text-[8px] text-muted-foreground/60 line-clamp-1">
+                 {hardwareEst.message}
+              </div>
             </div>
           )}
         </div>
       )}
+
 
       {/* Local Model Actions */}
       {isLocal && (

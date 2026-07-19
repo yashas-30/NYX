@@ -53,6 +53,7 @@
     "react-router-dom": "^7.17.0",
     "react-virtuoso": "^4.18.7",
     "rehype-katex": "^7.0.1",
+    "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "shiki": "^4.2.0",

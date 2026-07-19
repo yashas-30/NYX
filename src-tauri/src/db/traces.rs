@@ -1,17 +1,57 @@
-// src-tauri/src/db/traces.rs
-//
-// Phase 1: LLM Observability
-//
-// Provides fire-and-forget trace recording for every LLM inference call.
-// Called from agent_orchestrator.rs and dynamic_worker.rs after each
-// streaming completion, injecting latency, token counts, and error info
-// into the `llm_traces` SQLite table without blocking the hot path.
+// Fix #12: Fire-and-forget trace recording.
+// Recording an LLM trace must NEVER add latency to the streaming response path.
+// `record_trace` clones the minimal data it needs, spawns a Tokio task, and
+// returns immediately. The background task does the SQLite INSERT. If the
+// pool is busy or full, the write races at most one task slot; it never blocks
+// the caller.
 
 use crate::db::models::{LlmTrace, ModelStats};
 use anyhow::Result;
 use sqlx::SqlitePool;
 
 /// Lightweight input struct — callers build this from timing + response metadata.
+#[derive(Debug, Clone)]
+pub struct TraceInput {
+    pub session_id: Option<String>,
+    pub provider: String,
+    pub model: String,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub latency_ms: i64,
+    pub cached: bool,
+    pub error: Option<String>,
+    pub agent_node_id: Option<String>,
+}
+
+/// Record an LLM trace without blocking the caller.
+///
+/// The INSERT is performed in a background Tokio task so streaming latency
+/// is unaffected even if the SQLite pool is momentarily saturated.
+pub fn record_trace(pool: SqlitePool, input: TraceInput) {
+    tokio::spawn(async move {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().timestamp();
+        let _ = sqlx::query(
+            "INSERT INTO llm_traces \
+             (id, session_id, provider, model, prompt_tokens, completion_tokens, \
+              latency_ms, cached, error, agent_node_id, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&id)
+        .bind(&input.session_id)
+        .bind(&input.provider)
+        .bind(&input.model)
+        .bind(input.prompt_tokens)
+        .bind(input.completion_tokens)
+        .bind(input.latency_ms)
+        .bind(input.cached as i64)
+        .bind(&input.error)
+        .bind(&input.agent_node_id)
+        .bind(now)
+        .execute(&pool)
+        .await;
+    });
+}
 
 
 /// Fetch the N most recent trace rows for a given session (or all sessions).

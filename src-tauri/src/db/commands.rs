@@ -1,6 +1,6 @@
 use tauri::State;
 use sqlx::SqlitePool;
-use super::models::{ChatConversation, ChatMessage, DbSession, DbMessage, SwarmContextPool, LongTermMemory, ExperienceLedgerEntry};
+use super::models::{ChatConversation, ChatMessage, DbSession, DbMessage, SwarmContextPool, LongTermMemory, ExperienceLedgerEntry, decode_embedding};
 
 #[tauri::command]
 pub async fn db_get_chat_conversations(
@@ -342,7 +342,9 @@ pub async fn db_add_memory(
     id: String,
     fact: String,
     category: String,
-    embedding: String, // JSON float array
+    // Fix #8: Accept raw LE-f32 BLOB bytes from caller. Callers that previously
+    // passed a JSON string must now use encode_embedding() before calling.
+    embedding: Vec<u8>,
 ) -> Result<(), String> {
     let now = chrono::Utc::now().timestamp();
     sqlx::query(
@@ -356,6 +358,13 @@ pub async fn db_add_memory(
     .execute(&*pool)
     .await
     .map_err(|e| e.to_string())?;
+
+    // Auto-prune to keep only the newest 2000 memories
+    let _ = sqlx::query(
+        "DELETE FROM long_term_memories WHERE id NOT IN (SELECT id FROM long_term_memories ORDER BY created_at DESC LIMIT 2000)"
+    )
+    .execute(&*pool)
+    .await;
 
     Ok(())
 }
@@ -442,7 +451,23 @@ pub async fn db_clear_memories(
     Ok(())
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[tauri::command]
+pub async fn db_prune_memories(
+    pool: State<'_, SqlitePool>,
+    limit: i64,
+) -> Result<u64, String> {
+    let result = sqlx::query(
+        "DELETE FROM long_term_memories WHERE id NOT IN (SELECT id FROM long_term_memories ORDER BY created_at DESC LIMIT ?)"
+    )
+    .bind(limit)
+    .execute(&*pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    Ok(result.rows_affected())
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 pub struct MemorySearchResult {
     pub id: String,
     pub fact: String,
@@ -457,43 +482,44 @@ pub async fn db_search_memories(
     query_embedding: Vec<f32>,
     top_k: usize,
 ) -> Result<Vec<MemorySearchResult>, String> {
-    let memories = db_get_memories(pool).await?;
-    let mut results: Vec<MemorySearchResult> = Vec::new();
-
-    for m in memories {
-        let embedding_arr: Vec<f32> = serde_json::from_str(&m.embedding).unwrap_or_default();
-        let similarity = if !embedding_arr.is_empty() && embedding_arr.len() == query_embedding.len() {
-            let mut dot_product = 0.0;
-            let mut norm_a = 0.0;
-            let mut norm_b = 0.0;
-            for i in 0..query_embedding.len() {
-                dot_product += query_embedding[i] * embedding_arr[i];
-                norm_a += query_embedding[i] * query_embedding[i];
-                norm_b += embedding_arr[i] * embedding_arr[i];
-            }
-            if norm_a == 0.0 || norm_b == 0.0 {
-                0.0
-            } else {
-                dot_product / (norm_a.sqrt() * norm_b.sqrt())
-            }
-        } else {
-            0.0
-        };
-
-        results.push(MemorySearchResult {
-            id: m.id,
-            fact: m.fact,
-            category: m.category,
-            created_at: m.created_at,
-            similarity,
-        });
+    if query_embedding.is_empty() {
+        return Ok(Vec::new());
     }
 
-    // Sort descending by similarity
-    results.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
-    
-    // Take top_k
-    results.truncate(top_k);
+    // Fix #8: encode query as LE-f32 bytes and compare against BLOB column.
+    // Fetch all rows and do cosine similarity in Rust — sqlite-vec expects its own
+    // binary format for vec_distance_cosine, so we use Rust-side dot product instead.
+    let rows = sqlx::query_as::<_, LongTermMemory>(
+        "SELECT * FROM long_term_memories ORDER BY created_at DESC LIMIT 5000"
+    )
+    .fetch_all(&*pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
-    Ok(results)
+    let mut scored: Vec<MemorySearchResult> = rows
+        .into_iter()
+        .filter_map(|m| {
+            let emb = decode_embedding(&m.embedding);
+            if emb.len() != query_embedding.len() { return None; }
+            let score = cosine_similarity(&query_embedding, &emb);
+            Some(MemorySearchResult {
+                id: m.id,
+                fact: m.fact,
+                category: m.category,
+                created_at: m.created_at,
+                similarity: score,
+            })
+        })
+        .collect();
+
+    scored.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(top_k);
+    Ok(scored)
+}
+
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 { 0.0 } else { dot / (norm_a * norm_b) }
 }

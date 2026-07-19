@@ -15,6 +15,7 @@ export interface ModelSettings {
   maxContextTokens?: number;
   preservationTurns?: number;
   contextMode?: 'off' | 'prune' | 'summarize';
+  kvCacheType?: 'auto' | 'f16' | 'q8_0' | 'q4_0' | 'q4_1';
 }
 
 const DEFAULT_CHAT_SETTINGS: ModelSettings = {
@@ -28,6 +29,7 @@ const DEFAULT_CHAT_SETTINGS: ModelSettings = {
   batchSize: 512,
   repeatPenalty: 1.1,
   mirostat: 0,
+  kvCacheType: 'auto',
   antigravity: true,
   maxContextTokens: 32000,
   preservationTurns: 6,
@@ -49,7 +51,10 @@ export const useSettingsStore = create<SettingsState>((set) => {
     const saved = localStorage.getItem('nyx_chat_settings');
     if (saved) {
       try {
-        return { ...DEFAULT_CHAT_SETTINGS, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        // Force context size to 4096 on startup regardless of what was saved
+        parsed.contextSize = 4096;
+        return { ...DEFAULT_CHAT_SETTINGS, ...parsed };
       } catch {}
     }
     return DEFAULT_CHAT_SETTINGS;

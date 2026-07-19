@@ -202,7 +202,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     lightningDirectives,
     logRollout,
     submitReward,
-    maxContextTokens: Math.floor(getModelContextWindow(currentModel) * 0.9),
+    maxContextTokens: modelSettings?.contextSize && modelSettings.contextSize > 0 
+      ? Math.floor(modelSettings.contextSize * 0.9) 
+      : Math.floor(getModelContextWindow(currentModel) * 0.9),
     currentProvider: currentModel?.provider || detectProvider(currentModelId),
     gatewayUrl: gatewayUrls[currentModel?.provider || detectProvider(currentModelId)],
   });
@@ -248,9 +250,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       tps: parentMetrics?.tps || 0,
       totalMessages: history.length,
       contextTokens,
-      contextLimit: getModelContextWindow(currentModel),
+      contextLimit: modelSettings?.contextSize && modelSettings.contextSize > 0 
+        ? modelSettings.contextSize 
+        : getModelContextWindow(currentModel),
     }),
-    [parentMetrics, history.length, contextTokens, currentModel]
+    [parentMetrics, history.length, contextTokens, currentModel, modelSettings]
   );
 
   // --- Submit handler ---

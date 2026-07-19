@@ -1,4 +1,4 @@
-// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // Force Windows to use Dedicated GPU (High Performance) for this application and WebView2
 #[no_mangle]
@@ -89,17 +89,23 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
+        .manage({
+            // Register Arc<McpManager> separately so MCP commands can access it
+            // via State<'_, Arc<McpManager>> without going through AppState.
+            // The instance is the same Arc as AppState.mcp_manager (same allocation).
+            std::sync::Arc::new(commands::mcp::McpManager::default())
+        })
         .manage(commands::pty::PtyState::default())
         .manage(commands::fs::WatcherState::default())
         .setup(|app| {
             let app_handle = app.handle().clone();
 
 
-            // Set up Llama sidecar manager
-            let llama_manager = std::sync::Arc::new(llm::manager::LlamaManager::new());
+            // Set up Llama sidecar manager (now from local_orchestrator)
+            let llama_manager = std::sync::Arc::new(llm::local_orchestrator::LlamaManager::new());
             app_handle.manage(llama_manager);
 
-            let hf_state = std::sync::Arc::new(llm::hf_downloader::HfDownloaderState::new());
+            let hf_state = std::sync::Arc::new(llm::local_orchestrator::HfDownloaderState::new());
             app_handle.manage(hf_state);
 
             let data_dir = app
@@ -125,8 +131,15 @@ pub fn run() {
             // ── Spawn the rest of the UI setup asynchronously ─────────────────
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                // Pre-load the ONNX embedding model in the background so the 
+                // first web search or codebase scan doesn't hang.
+                tauri::async_runtime::spawn_blocking(|| {
+                    crate::rag::embeddings::warm_up();
+                });
+                
                 setup_app(&handle).await;
             });
+
 
             Ok(())
         })
@@ -138,7 +151,7 @@ pub fn run() {
             app_get_version, app_open_external,
             execute_computer_action,
             mcp_start_server, mcp_send_request, mcp_call_tool, mcp_stop_server, mcp_list_servers,
-            llm_stream_request,
+            llm::cloud_orchestrator::llm_stream_request,
             orchestrator::commands::run_orchestrator_turn,
             commands::system::cleanup_session_state,
             commands::system::set_search_settings,
@@ -163,6 +176,7 @@ pub fn run() {
             db::commands::db_get_recent_experience_ledger,
             db::commands::db_delete_memory,
             db::commands::db_clear_memories,
+            db::commands::db_prune_memories,
             db::commands::db_search_memories,
             search_web_command,
             commands::agent::fetch_page_html_command,
@@ -171,21 +185,27 @@ pub fn run() {
             commands::agent::reject_tool,
             commands::agent::resolve_plugin_tool,
             commands::agent::resolve_browser_action,
-            llm::download_local_model,
-            llm::list_local_models,
-            llm::start_local_server,
-            llm::estimate_hardware_usage,
-            llm::stop_local_server,
-            llm::hf_set_token,
-            llm::hf_download_model,
-            llm::hf_pause_download,
-            llm::hf_resume_download,
-            llm::hf_cancel_download,
-            llm::hf_uninstall_model,
-            llm::hf_search_models,
-            llm::hf_get_model_files,
-            llm::hf_get_model_readme,
-            llm::hf_get_restored_downloads,
+            // Local model orchestration (must use actual defining module path for #[tauri::command] symbols)
+            llm::local_orchestrator::analyze_hardware,
+            llm::local_orchestrator::download_local_model,
+            llm::local_orchestrator::list_local_models,
+            llm::local_orchestrator::start_local_server,
+            llm::local_orchestrator::estimate_hardware_usage,
+            llm::local_orchestrator::stop_local_server,
+            llm::local_orchestrator::check_local_server_status,
+            llm::local_orchestrator::hf_set_token,
+            llm::local_orchestrator::hf_download_model,
+            llm::local_orchestrator::hf_pause_download,
+            llm::local_orchestrator::hf_resume_download,
+            llm::local_orchestrator::hf_cancel_download,
+            llm::local_orchestrator::hf_uninstall_model,
+            llm::local_orchestrator::hf_search_models,
+            llm::local_orchestrator::hf_get_model_files,
+            llm::local_orchestrator::hf_get_model_readme,
+            llm::local_orchestrator::hf_get_restored_downloads,
+            llm::local_orchestrator::get_llamacpp_version,
+            // Cloud model orchestration
+            llm::cloud_orchestrator::get_models_quota,
             commands::system::get_hardware_specs,
             commands::system::get_system_diagnostics,
             research::start_deep_research,
@@ -195,7 +215,6 @@ pub fn run() {
             commands::memory::get_episodic_memories,
             commands::memory::get_memory_entities,
             commands::memory::delete_entity,
-            commands::llm::get_models_quota,
             commands::agent::codebase_search_command,
         ])
         .on_window_event(|window, event| {

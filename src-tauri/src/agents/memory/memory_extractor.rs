@@ -117,8 +117,8 @@ pub async fn extract_and_store(
         .map_err(|e| anyhow!("Failed to create embedder: {}", e))?;
     let embeddings = embedder.embed(vec![summary.clone()]).await
         .map_err(|e| anyhow!("Embedding failed: {}", e))?;
-    let emb_json = serde_json::to_string(&embeddings[0])
-        .unwrap_or_else(|_| "[]".to_string());
+    // Fix #8: encode as LE-f32 BLOB bytes, not JSON string.
+    let emb_blob = crate::db::models::encode_embedding(&embeddings[0]);
 
     // Store episodic memory
     let episodic_id = uuid::Uuid::new_v4().to_string();
@@ -131,7 +131,7 @@ pub async fn extract_and_store(
     .bind(&episodic_id)
     .bind(session_id)
     .bind(&summary)
-    .bind(&emb_json)
+    .bind(&emb_blob)
     .bind(&key_topics)
     .bind(now)
     .execute(pool)
@@ -196,7 +196,9 @@ pub async fn search_episodic(
     let mut scored: Vec<(String, String, String, f32)> = all_episodes
         .into_iter()
         .filter_map(|ep| {
-            let emb: Vec<f32> = serde_json::from_str(&ep.embedding).ok()?;
+            // Fix #8: decode LE-f32 BLOB instead of parsing JSON.
+            let emb = crate::db::models::decode_embedding(&ep.embedding);
+            if emb.is_empty() { return None; }
             let score = cosine_similarity(query_embedding, &emb);
             Some((ep.session_id, ep.summary, ep.key_topics, score))
         })

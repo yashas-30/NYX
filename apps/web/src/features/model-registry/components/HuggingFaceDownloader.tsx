@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { DownloadSimple, Pause, Play, X, Key, MagnifyingGlass, HardDrives, User, Star, Download, FileText, CheckCircle } from '@phosphor-icons/react';
+import { motion } from 'framer-motion';
 
 interface DownloadProgress {
   model_id: string;
@@ -16,6 +17,7 @@ interface RestoredDownload {
   url: string;
   total_size: number;
   downloaded: number;
+  is_running: boolean;
 }
 
 interface HfModelResult {
@@ -89,7 +91,7 @@ export const HuggingFaceDownloader: React.FC = () => {
             downloaded: r.downloaded,
             total: r.total_size,
           };
-          newPaused[r.model_id] = true;
+          newPaused[r.model_id] = !r.is_running;
         });
         setActiveDownloads(prev => ({ ...prev, ...newActive }));
         setPaused(prev => ({ ...prev, ...newPaused }));
@@ -298,10 +300,10 @@ export const HuggingFaceDownloader: React.FC = () => {
       </div>
 
       {searchResults.length > 0 && (
-        <div className="flex gap-4 h-[600px] border border-border rounded-xl overflow-hidden bg-background/50 shadow-inner">
+        <div className="flex h-[600px] border border-border rounded-xl overflow-hidden bg-background shadow-sm">
           
-          {/* Left Pane: Search Results (35%) */}
-          <div className="w-[35%] border-r border-border overflow-y-auto custom-scrollbar bg-card/30">
+          {/* Left Pane: Search Results */}
+          <div className="w-[240px] shrink-0 border-r border-border overflow-y-auto custom-scrollbar bg-background">
             {searchResults.map(model => {
               const { creator, name } = getCreatorAndName(model.id);
               const isSelected = selectedModel === model.id;
@@ -310,13 +312,19 @@ export const HuggingFaceDownloader: React.FC = () => {
                 <div 
                   key={model.id}
                   onClick={() => selectModel(model.id)}
-                  className={`p-4 cursor-pointer border-b border-border transition-all duration-200 group relative ${
+                  className={`p-3 cursor-pointer border-b border-border/50 transition-all duration-200 group relative ${
                     isSelected 
-                      ? 'bg-primary/10 border-l-4 border-l-primary' 
-                      : 'hover:bg-muted/50 border-l-4 border-l-transparent'
+                      ? 'bg-primary/5' 
+                      : 'hover:bg-muted/30'
                   }`}
                 >
-                  <div className="flex flex-col gap-1">
+                  {isSelected && (
+                    <motion.div 
+                      layoutId="activeModelIndicator"
+                      className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full"
+                    />
+                  )}
+                  <div className="flex flex-col gap-1 pl-1">
                     <div className="flex items-center gap-1.5 text-muted-foreground mb-0.5">
                       <User size={12} weight="fill" />
                       <span className="text-[10px] font-semibold tracking-wider uppercase truncate">{creator}</span>
@@ -341,8 +349,8 @@ export const HuggingFaceDownloader: React.FC = () => {
             })}
           </div>
           
-          {/* Right Pane: Selected Model Details (65%) */}
-          <div className="w-[65%] flex flex-col h-full bg-background relative">
+          {/* Right Pane: Selected Model Details */}
+          <div className="flex-1 flex flex-col h-full bg-background relative">
             {selectedModel ? (
               isLoadingFiles ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm z-10">
@@ -353,40 +361,47 @@ export const HuggingFaceDownloader: React.FC = () => {
                 <div className="flex flex-col h-full overflow-hidden">
                   
                   {/* Header */}
-                  <div className="p-6 border-b border-border bg-card/40 flex-shrink-0">
-                    <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                      <User size={14} weight="duotone" />
-                      <span className="text-xs font-bold uppercase tracking-wider">{getCreatorAndName(selectedModel).creator}</span>
-                    </div>
-                    <h2 className="text-2xl font-black text-foreground tracking-tight break-all leading-tight">
-                      {getCreatorAndName(selectedModel).name}
-                    </h2>
+                  <div className="p-8 border-b border-border bg-gradient-to-b from-card/40 to-background flex-shrink-0 relative overflow-hidden">
+                    {/* Decorative subtle background elements */}
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none" />
                     
-                    <div className="flex flex-wrap gap-2 mt-4">
-                      <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5">
-                        <FileText size={12} weight="bold" />
-                        GGUF
-                      </span>
-                      <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-muted text-muted-foreground border border-border">
-                        Text Generation
-                      </span>
+                    <div className="relative z-10">
+                      <div className="flex items-center gap-2 text-muted-foreground mb-3">
+                        <User size={16} weight="duotone" className="text-primary/70" />
+                        <span className="text-sm font-semibold tracking-wide text-foreground/80">{getCreatorAndName(selectedModel).creator}</span>
+                      </div>
+                      <h2 className="text-3xl font-bold text-foreground tracking-tight break-all leading-tight mb-4">
+                        {getCreatorAndName(selectedModel).name}
+                      </h2>
+                      
+                      <div className="flex flex-wrap gap-2">
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5 shadow-sm">
+                          <FileText size={14} weight="fill" />
+                          GGUF Format
+                        </span>
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-muted/80 text-muted-foreground border border-border/50 shadow-sm">
+                          Text Generation
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   {/* Content Split (Readme + Files) */}
-                  <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col p-6 gap-8">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col p-8 gap-10">
                     
                     {/* Readme Section */}
                     {modelDescription && (
-                      <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-2">
-                          <FileText size={16} weight="duotone" className="text-muted-foreground" />
-                          <h3 className="text-sm font-bold text-foreground">Model Card</h3>
-                        </div>
-                        <div className="bg-card border border-border/60 rounded-xl p-4 text-xs text-muted-foreground shadow-sm">
-                          <div className="max-h-48 overflow-y-auto custom-scrollbar whitespace-pre-wrap font-mono leading-relaxed">
-                            {modelDescription.substring(0, 1500)}
-                            {modelDescription.length > 1500 ? '...\n\n[Full description truncated for UI]' : ''}
+                      <div className="flex flex-col gap-4">
+                        <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                          <FileText size={20} weight="duotone" className="text-primary/70" />
+                          Model Card
+                        </h3>
+                        <div className="text-sm text-foreground/80 leading-relaxed font-sans">
+                          <div className="whitespace-pre-wrap">
+                            {modelDescription.substring(0, 5000)}
+                            {modelDescription.length > 5000 ? (
+                              <span className="text-muted-foreground italic ml-2">...[Description truncated]</span>
+                            ) : ''}
                           </div>
                         </div>
                       </div>
@@ -405,25 +420,25 @@ export const HuggingFaceDownloader: React.FC = () => {
                       </div>
                       
                       {modelFiles.length > 0 ? (
-                        <div className="grid grid-cols-1 gap-3">
+                        <div className="grid grid-cols-1 gap-4">
                           {modelFiles.map(file => {
                             const recommended = recommendQuantization(file.filename);
                             return (
-                              <div key={file.filename} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-card border rounded-xl p-3.5 transition-all hover:shadow-md ${recommended ? 'border-green-500/30 bg-green-500/5' : 'border-border/60 hover:border-border'}`}>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-sm font-bold text-foreground break-all" title={file.filename}>
+                              <div key={file.filename} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-background border rounded-xl p-4 transition-all duration-300 hover:shadow-sm ${recommended ? 'border-green-500/30 hover:border-green-500/50' : 'border-border/60 hover:border-border'}`}>
+                                <div className="flex flex-col min-w-0 flex-1 gap-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-semibold text-foreground break-all" title={file.filename}>
                                       {file.filename}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-3">
-                                    <span className="text-xs font-medium text-muted-foreground bg-background px-2 py-0.5 rounded border border-border shadow-sm">
+                                    <span className="text-xs font-medium text-muted-foreground">
                                       {formatSize(file.size)}
                                     </span>
                                     {recommended && (
-                                      <span className="flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400 font-bold uppercase tracking-wider bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
+                                      <span className="flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400 font-bold uppercase tracking-wider bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">
                                         <CheckCircle size={12} weight="bold" />
-                                        Recommended for your RAM
+                                        Recommended Size
                                       </span>
                                     )}
                                   </div>

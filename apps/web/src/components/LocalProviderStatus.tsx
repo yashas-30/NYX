@@ -21,10 +21,11 @@ export function LocalProviderStatus() {
   const fetchStatus = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch directly from the native Llama.cpp server
-      const res = await fetch('http://127.0.0.1:8080/v1/models');
-      if (res.ok) {
-        const data = await res.json();
+      // Use Tauri's invoke to check the local server — avoids WebView CSP blocking
+      // direct fetch() calls to 127.0.0.1 on some OS configurations.
+      const { invoke } = await import('@tauri-apps/api/core');
+      const data: any = await invoke('check_local_server_status').catch(() => null);
+      if (data) {
         setStatus({
           tauri: {
             connected: true,
@@ -33,9 +34,11 @@ export function LocalProviderStatus() {
           }
         });
         setLastUpdated(new Date());
+      } else {
+        setStatus({ tauri: { connected: false, models: [], port: '8080' } });
       }
     } catch {
-      // silently fail
+      setStatus({ tauri: { connected: false, models: [], port: '8080' } });
     } finally {
       setLoading(false);
     }

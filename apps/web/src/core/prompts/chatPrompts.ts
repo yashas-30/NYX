@@ -14,6 +14,7 @@ export interface ChatContext {
   lightningDirectives?: string[];
   availableTools?: ToolDefinition[];
   enableReasoning?: boolean;
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | 'max';
   enableCitations?: boolean;
   maxResponseTokens?: number;
   historySummary?: string;
@@ -64,22 +65,6 @@ class PromptLRUCache {
   }
 }
 
-const promptCache = new PromptLRUCache();
-
-function generateCacheKey(
-  modelId: string,
-  context: ChatContext,
-  rawPrompt: string,
-  historyLength: number
-): string {
-  // Simple hash of full prompt
-  const promptHash = rawPrompt.split('').reduce((a, b) => {
-    a = (a << 5) - a + b.charCodeAt(0);
-    return a & a;
-  }, 0);
-  return `${modelId}:${context.conversationTone}:${context.detectedLanguage}:${historyLength}:${promptHash}`;
-}
-
 // ── Token Estimation (rough: ~4 chars per token) ─────────────────────────────
 
 function estimateTokens(text?: string): number {
@@ -96,14 +81,8 @@ export function buildChatPrompts(
   history: ChatMessage[],
   webSearchResults?: string
 ): ChatPromptBuildResult {
-  const cacheKey = generateCacheKey(modelId, context, rawPrompt, history.length);
-  const cached = promptCache.get(cacheKey);
-  if (cached && !webSearchResults) {
-    // Return cached if available and no dynamic web search
-    return cached;
-  }
+  const now = new Date();
 
-  const now = new Date(); // Fresh date per call
   const contextBreakdown: Record<string, number> = {};
 
   // Build system prompt
@@ -126,7 +105,7 @@ export function buildChatPrompts(
 
   const totalTokens = Object.values(contextBreakdown).reduce((a, b) => a + b, 0);
 
-  const result: ChatPromptBuildResult = {
+  return {
     systemPrompt,
     userPrompt: historyText ? `${historyText}\n\n${userPrompt}` : userPrompt,
     metadata: {
@@ -136,13 +115,9 @@ export function buildChatPrompts(
       safetyLevel: detectSafetyLevel(rawPrompt),
     },
   };
-
-  if (!webSearchResults) {
-    promptCache.set(cacheKey, result);
-  }
-
-  return result;
 }
+
+import { NYX_PERSONA } from '../agents/nyxPersona';
 
 // ── System Prompt Builder ─────────────────────────────────────────────────────
 
@@ -154,6 +129,7 @@ function buildChatSystemPromptInternal(modelId: string, context: ChatContext, no
     conversationTone,
     detectedLanguage,
     enableReasoning,
+    reasoningEffort,
     enableCitations,
     availableTools,
   } = context;
@@ -170,8 +146,12 @@ function buildChatSystemPromptInternal(modelId: string, context: ChatContext, no
 
   parts.push(`<identity>
 You are NYX, a powerful and friendly chatbot developed by Yashas. You use local models and free cloud models for response generation. You communicate naturally and conversationally, like a knowledgeable colleague. Never claim to be made by OpenAI, Google, Anthropic, Moonshot AI, or any other company.
+
+${NYX_PERSONA}
+
+Never claim to be made by OpenAI, Google, Anthropic, Moonshot AI, or any other company.
+
 Current Date: ${dateStr}
-Current Time: ${timeStr}
 Current Year: ${now.getFullYear()}
 </identity>`);
 
@@ -230,9 +210,9 @@ Examples: "The core mechanism is...", "At the protocol level, this works by..."
 
   const detailLevel = userPreferences?.detailPreference || 'balanced';
   const lengthGuide: Record<string, string> = {
-    concise: 'Keep responses under 150 words. One paragraph preferred. Be direct.',
+    concise: 'Keep responses concise and direct. One paragraph preferred.',
     balanced:
-      'Keep responses under 400 words. Use paragraphs with occasional bullets for complex topics.',
+      'Provide a balanced, well-structured response. Use paragraphs with occasional bullets for complex topics. No arbitrary length limit.',
     thorough:
       'Provide comprehensive responses. Use sections, examples, and depth. No arbitrary length limit.',
   };
@@ -257,16 +237,24 @@ Examples: "The core mechanism is...", "At the protocol level, this works by..."
     parts.push(`<web_search_guidelines>
 When [RESEARCH] results are provided in the user message:
 - Treat search results as PRIMARY source for temporal/factual/current events
-- Cite sources using [^1^], [^2^] format referencing the result number
 - Prioritize search context over training knowledge cutoff
 - Do NOT say "As of my knowledge cutoff" or "As an AI language model" when search results contain the answer
 - If search results are insufficient, say so explicitly rather than guessing
+- Do NOT add inline citations like [1] or [^1^] inside your sentences, and do NOT append a Sources section at the end. The user interface will automatically display the sources.
 </web_search_guidelines>`);
   }
 
   // ── Reasoning Visibility (Claude-style thinking) ──────────────────────────
 
-  if (enableReasoning) {
+  if (enableReasoning && reasoningEffort !== 'none') {
+    const effortGuide: Record<string, string> = {
+      low: 'Keep thinking concise (1-2 sentences). Just identify the core intent.',
+      medium: 'Think step-by-step. Provide a structured and moderate amount of reasoning.',
+      high: 'Think deeply and comprehensively. Explore multiple angles, consider edge cases, and evaluate alternatives.',
+      max: 'Conduct an exhaustive analysis. Break down every aspect of the problem in great detail. Provide a very lengthy thought process.'
+    };
+    const effortInstruction = effortGuide[reasoningEffort || 'medium'] || effortGuide.medium;
+
     parts.push(`<reasoning>
 For complex questions, show your reasoning process inside <thinking> tags before the final answer.
 Example:
@@ -275,7 +263,7 @@ The user is asking about X. Key factors are A, B, C.
 A leads to... B suggests... Therefore...
 </thinking>
 
-Keep thinking concise (2-4 sentences). The user can expand/collapse this section.
+${effortInstruction} The user can expand/collapse this section.
 </reasoning>`);
   }
 

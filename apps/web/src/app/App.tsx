@@ -50,19 +50,20 @@ function AppContent() {
              toastId = undefined;
           });
 
-          // Ensure assets exist (downloads if missing)
-          await invoke('download_local_model');
-
-          unlisten();
-          unlistenComplete();
+          // Ensure assets exist (downloads if missing) - run in background
+          invoke('download_local_model').catch(err => {
+            if (String(err).includes('already being downloaded')) {
+              console.log('[App] Local LLM init skipped: download already in progress');
+            } else {
+              console.error('[App] Failed to init Local LLM:', err);
+            }
+          }).finally(() => {
+            unlisten();
+            unlistenComplete();
+          });
         }
       } catch (err) {
-        if (String(err).includes('already being downloaded')) {
-          // Benign error due to React StrictMode or concurrent effect firing
-          console.log('[App] Local LLM init skipped: download already in progress');
-        } else {
-          console.error('[App] Failed to init Local LLM:', err);
-        }
+        console.error('[App] Init Local LLM failed:', err);
       }
     };
     initLocalLLM();
@@ -131,7 +132,7 @@ function AppContent() {
 
 
   return (
-    <div className="h-full w-full overflow-hidden bg-background text-foreground selection:bg-primary/30 font-sans">
+    <div className="h-screen w-full overflow-hidden bg-background text-foreground selection:bg-primary/30 font-sans">
       <ErrorBoundary>
         {window.location.pathname.startsWith('/share/') ? (
           <SharedChatView />

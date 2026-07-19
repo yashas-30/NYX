@@ -1,17 +1,18 @@
 // fallow-ignore-file code-duplication
 import React, { useMemo, useEffect, useRef } from 'react';
 import { SearchIcon as Search, CheckIcon as Check, InfoIcon as Info, XIcon as X, SparklesIcon as Sparkles, ZapIcon as Zap } from '@animateicons/react/lucide';
-import { Bot, RefreshCw, HardDrive, Cpu, AlertCircle } from 'lucide-react';
+import { Bot, RefreshCw, HardDrive, Cpu, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { ModelOption } from '@src/types';
 import { ProviderIcon, getProviderLabel } from '@src/shared/components/ui/ProviderIcon';
 
-import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useNyxStore, DEFAULT_SETTINGS } from '@src/shared/store/useNyxStore';
 import { ModelStatusBadge } from '@src/features/model-registry/ModelStatusBadge';
 import { useModelStore } from '@src/core/stores/useModelStore';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 
 interface Props {
@@ -91,50 +92,147 @@ export const ModelSelector: React.FC<Props> = ({
   const loadedLocalModel = useModelStore((s) => s.loadedLocalModel);
   const setLoadedLocalModel = useModelStore((s) => s.setLoadedLocalModel);
   const loadLocalLibraryModels = useModelStore((s) => s.loadLocalLibraryModels);
-  const [isTogglingModel, setIsTogglingModel] = React.useState(false);
+  const [togglingModelId, setTogglingModelId] = React.useState<string | null>(null);
+  const [loadingStatus, setLoadingStatus] = React.useState<string | null>(null);
+  
+  const modelConfigs = useNyxStore((s) => s.modelConfigs);
+  const updateModelConfig = useNyxStore((s) => s.updateModelConfig);
+  const executionMode = useNyxStore((s) => s.executionMode);
+  const setExecutionMode = useNyxStore((s) => s.setExecutionMode);
 
   const [expandedModelId, setExpandedModelId] = React.useState<string | null>(null);
-  const contextSize = useNyxStore((s) => s.modelSettings.contextSize);
-  const gpuLayers = useNyxStore((s) => s.modelSettings.gpuLayers);
-  const cpuThreads = useNyxStore((s) => s.modelSettings.threads);
-  const flashAttention = useNyxStore((s) => s.modelSettings.flashAttention);
-  const kvCacheType = useNyxStore((s) => s.modelSettings.kvCacheType);
-  const useMlock = useNyxStore((s) => s.modelSettings.useMlock);
-  const batchSize = useNyxStore((s) => s.modelSettings.batchSize);
+  // Config is pulled dynamically inside handleLoadModel
 
   React.useEffect(() => {
     loadLocalLibraryModels();
-  }, [loadLocalLibraryModels]);
+  }, []);
 
   const handleLoadModel = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      setIsTogglingModel(true);
-      await invoke('start_local_server', { modelId: id, contextSize, gpuLayers, cpuThreads, flashAttention, kvCacheType, useMlock, batchSize });
+      setTogglingModelId(id);
+      setLoadingStatus('Starting...');
+
+      const state = useNyxStore.getState();
+      const targetConfig = state.modelConfigs?.[id] || DEFAULT_SETTINGS;
+      const { contextSize, gpuLayers, threads: cpuThreads, flashAttention, kvCacheType, useMlock, batchSize, draftModelId, disableKvOffload } = targetConfig;
+
+      let resolvedKvCacheType = kvCacheType;
+      if (kvCacheType === 'auto') {
+        const model = allModels.find(m => m.id === id);
+        const quantization = (model?.specs as any)?.quantization?.toLowerCase() || '';
+        if (quantization.includes('q4') || quantization.includes('q5') || quantization.includes('q6') || quantization.includes('q2') || quantization.includes('q3')) {
+          resolvedKvCacheType = 'q4_0';
+        } else if (quantization.includes('f16') || quantization.includes('f32')) {
+          resolvedKvCacheType = 'f16';
+        } else {
+          resolvedKvCacheType = 'q8_0';
+        }
+      }
+
+      // Use a deferred pattern so we can:
+      // 1. Capture resolve/reject before creating listeners
+      // 2. Await all listeners (guarantees they're registered) before invoke()
+      // This eliminates the race condition where llm-server-ready fires
+      // before the handler is attached.
+      let deferredResolve!: () => void;
+      let deferredReject!: (err: Error) => void;
+
+      const readyPromise = new Promise<void>((res, rej) => {
+        deferredResolve = res;
+        deferredReject = rej;
+      });
+
+      // Declare cleanup/timeout before Promise.all so listener callbacks can call them.
+      // (const is block-scoped and the callbacks close over these refs)
+      let unlistenFns: Array<() => void> = [];
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+      const cleanup = () => {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        for (const fn of unlistenFns) fn();
+        unlistenFns = [];
+      };
+
+      // Now that resolve/reject exist, register all listeners and AWAIT them
+      const [unlistenLoading, unlistenReady, unlistenError, unlistenVram] = await Promise.all([
+        listen<{ elapsed_secs?: number; status?: string }>('llm-server-loading', (event) => {
+          const { elapsed_secs, status } = event.payload;
+          if (status) {
+            setLoadingStatus(status);
+          } else if (elapsed_secs !== undefined) {
+            const timeStr = elapsed_secs > 60 ? `${Math.floor(elapsed_secs / 60)}m ${Math.floor(elapsed_secs % 60)}s` : `${elapsed_secs}s`;
+            setLoadingStatus(`Loading model... ${timeStr}`);
+          }
+        }),
+        listen<{ status: string }>('llm-server-ready', () => {
+          cleanup();
+          deferredResolve();
+        }),
+        listen<{ error: string }>('llm-server-error', (event) => {
+          cleanup();
+          deferredReject(new Error(event.payload.error));
+        }),
+        listen<{ ngl: number, fully_gpu: boolean, suggest_cloud_fallback: boolean, message: string }>('vram-decision', (event) => {
+          if (event.payload.suggest_cloud_fallback) {
+            toast.warning(event.payload.message, { duration: 10000, id: 'vram-decision' });
+          } else {
+            toast.info(event.payload.message, { id: 'vram-decision' });
+          }
+        }),
+      ]);
+
+      unlistenFns = [unlistenLoading, unlistenReady, unlistenError, unlistenVram];
+
+      timeoutId = setTimeout(() => {
+        cleanup();
+        deferredReject(new Error('Model load timed out after 300 seconds.'));
+      }, 300_000);
+
+      // Listeners are fully registered — safe to invoke now
+      invoke('start_local_server', {
+        modelId: id,
+        contextSize: contextSize ?? 0,
+        gpuLayers,
+        cpuThreads,
+        flashAttention,
+        kvCacheType: resolvedKvCacheType,
+        useMlock,
+        batchSize,
+        draftModelId,
+        disableKvOffload,
+      }).catch((err) => {
+        cleanup();
+        deferredReject(new Error(String(err)));
+      });
+
+      await readyPromise;
+
       setLoadedLocalModel(id);
-      setIsTogglingModel(false);
-      toast.success('Model loaded successfully');
-      // Automatically select it as well
+      setTogglingModelId(null);
+      setLoadingStatus(null);
+      toast.success('Model loaded!');
       onSelect(id);
     } catch (err: any) {
       console.error(err);
-      toast.error(err || 'Failed to load model');
-      setIsTogglingModel(false);
+      toast.error(String(err?.message || err || 'Failed to load model'));
+      setTogglingModelId(null);
+      setLoadingStatus(null);
     }
   };
 
   const handleUnloadModel = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      setIsTogglingModel(true);
+      setTogglingModelId(loadedLocalModel);
       await invoke('stop_local_server');
       setLoadedLocalModel(null);
-      setIsTogglingModel(false);
+      setTogglingModelId(null);
       toast.success('Model unloaded successfully');
     } catch (err: any) {
       console.error(err);
       toast.error(err || 'Failed to unload model');
-      setIsTogglingModel(false);
+      setTogglingModelId(null);
     }
   };
 
@@ -360,9 +458,29 @@ export const ModelSelector: React.FC<Props> = ({
           <div className="flex-1 bg-muted/10 border border-border rounded-md overflow-hidden flex flex-col">
             {/* Context Sub-header */}
             <div className="p-1.5 px-2 border-b border-border flex items-center justify-between bg-muted/20">
-              <span className="text-[7px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-                Units
-              </span>
+              <div className="flex items-center gap-1 bg-background border border-border rounded-md p-0.5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setExecutionMode('default'); }}
+                  className={`px-2 py-0.5 rounded-sm text-[8px] font-black uppercase tracking-widest transition-colors cursor-pointer ${executionMode === 'default' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Default
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setExecutionMode('chat'); }}
+                  className={`px-2 py-0.5 rounded-sm text-[8px] font-black uppercase tracking-widest transition-colors cursor-pointer ${executionMode === 'chat' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Chatbot
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setExecutionMode('coder'); }}
+                  className={`px-2 py-0.5 rounded-sm text-[8px] font-black uppercase tracking-widest transition-colors cursor-pointer ${executionMode === 'coder' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Coderbot
+                </button>
+              </div>
               <div className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-[7px] font-mono font-black text-foreground">
                 {filteredModels.length.toString().padStart(2, '0')}
               </div>
@@ -469,17 +587,22 @@ export const ModelSelector: React.FC<Props> = ({
                                 )}
 
                                 {/* Inline Monospace Specs Badge */}
+                                {(model as any).specs?.quantization && (model as any).specs.quantization !== 'Unknown' && (
+                                  <span className="text-[6px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 shrink-0 ml-auto leading-none">
+                                    {(model as any).specs.quantization}
+                                  </span>
+                                )}
                                 {model.specs?.contextWindow && (
-                                  <span className="text-[6px] font-mono font-bold text-muted-foreground/50 bg-muted px-1 py-0.5 rounded border border-border shrink-0 ml-auto leading-none">
+                                  <span className={`text-[6px] font-mono font-bold text-muted-foreground/50 bg-muted px-1 py-0.5 rounded border border-border shrink-0 leading-none ${(model as any).specs?.quantization && (model as any).specs.quantization !== 'Unknown' ? '' : 'ml-auto'}`}>
                                     {model.specs.contextWindow}
                                   </span>
                                 )}
-                                {(model as any).capabilities?.vision && (
+                                {((model as any).capabilities?.vision) && (
                                   <span className="text-[6px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-1 py-0.5 rounded border border-indigo-500/20 shrink-0 leading-none">
                                     👁️ Vision
                                   </span>
                                 )}
-                                {(model as any).capabilities?.reasoning && (
+                                {((model as any).capabilities?.reasoning) && (
                                   <span className="text-[6px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 shrink-0 leading-none">
                                     🧠 Reasoning
                                   </span>
@@ -492,8 +615,8 @@ export const ModelSelector: React.FC<Props> = ({
                             </div>
 
                             <div className="flex items-center gap-1 shrink-0">
-                              {/* Info Button */}
-                              {(model.features || model.pros || model.cons) && (
+                              {/* Settings / Info Button */}
+                              {(model.features || model.pros || model.cons || model.provider === 'nyx-native') && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -505,7 +628,7 @@ export const ModelSelector: React.FC<Props> = ({
                                       ? 'bg-primary/20 text-primary' 
                                       : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                                   }`}
-                                  title="View features"
+                                  title={model.provider === 'nyx-native' ? "Model Settings & Info" : "View features"}
                                 >
                                   <Info size={12} />
                                 </button>
@@ -514,8 +637,12 @@ export const ModelSelector: React.FC<Props> = ({
                                 {model.provider === 'nyx-native' && (
                                   <button
                                     type="button"
-                                    onClick={(e) => loadedLocalModel === model.id ? handleUnloadModel(e) : handleLoadModel(model.id, e)}
-                                    disabled={isTogglingModel}
+                                    onClick={(e) =>
+                                      loadedLocalModel === model.id
+                                        ? handleUnloadModel(e)
+                                        : handleLoadModel(model.id, e)
+                                    }
+                                    disabled={togglingModelId !== null}
                                     className={`
                                       px-2 py-0.5 rounded border text-[7px] font-bold tracking-wider uppercase transition-colors
                                       ${
@@ -523,10 +650,16 @@ export const ModelSelector: React.FC<Props> = ({
                                           ? 'bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20'
                                           : 'bg-primary/10 border-primary/20 text-primary hover:bg-primary/20'
                                       }
-                                      ${isTogglingModel ? 'opacity-50 cursor-not-allowed' : ''}
+                                      ${togglingModelId !== null ? 'opacity-50 cursor-not-allowed' : ''}
                                     `}
                                   >
-                                    {loadedLocalModel === model.id ? 'Unload' : 'Load'}
+                                    {togglingModelId === model.id
+                                      ? loadingStatus || 'STARTING...'
+                                      : loadedLocalModel === model.id
+                                      ? 'UNLOAD'
+                                      : togglingModelId !== null
+                                      ? 'WAIT'
+                                      : 'LOAD'}
                                   </button>
                                 )}
                               
@@ -544,7 +677,7 @@ export const ModelSelector: React.FC<Props> = ({
 
                           {/* Expanded Details */}
                           <AnimatePresence>
-                            {isExpanded && (model.features || model.pros || model.cons) && (
+                            {isExpanded && (model.features || model.pros || model.cons || model.provider === 'nyx-native') && (
                               <motion.div
                                 initial={{ height: 0, opacity: 0 }}
                                 animate={{ height: 'auto', opacity: 1 }}
@@ -552,6 +685,8 @@ export const ModelSelector: React.FC<Props> = ({
                                 className="overflow-hidden"
                               >
                                 <div className="pt-2 mt-1 border-t border-border/30 flex flex-col gap-2">
+
+                                  
                                   {model.features && model.features.length > 0 && (
                                     <div>
                                       <span className="text-[7px] font-black uppercase tracking-widest text-muted-foreground/80">Features</span>

@@ -1,12 +1,11 @@
-// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ZapIcon as Zap, CheckIcon as Check, LayersIcon as Layers } from '@animateicons/react/lucide';
-import { RotateCcw, MemoryStick, Thermometer, Cpu, Settings2 } from 'lucide-react';
+import { RotateCcw, MemoryStick, Thermometer, Cpu, Settings2, Rocket } from 'lucide-react';
 import { toast } from 'sonner';
 import { SectionLabel, ParamSlider } from '@shared/components/PromptInputSubcomponents';
-import { useSettingsStore } from '@core/stores/useSettingsStore';
 import { useModelStore } from '@core/stores/useModelStore';
 
 interface LocalModelSettingsPanelProps {
@@ -37,49 +36,119 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
   const localSettings = modelSettings || {};
 
   useEffect(() => {
-    // Auto-migrate legacy default context size 2048 to 4096
-    if (localSettings.contextSize === 2048) {
-      updateLocal('contextSize', 4096);
-    }
+    // Legacy migrations removed
   }, []);
 
   const [hardwareEst, setHardwareEst] = useState<any>(null);
 
-  const targetLayers = hardwareEst ? Math.min(localSettings.gpuLayers, hardwareEst.total_layers) : localSettings.gpuLayers;
-
   const actualGpuModeLabel = hardwareEst 
-    ? (targetLayers === 0 ? 'CPU Only' : (targetLayers < hardwareEst.total_layers ? 'CPU + GPU Split' : 'Full GPU Computation'))
+    ? (hardwareEst.strategy === 'FullDedicated' ? 'Full GPU Computation' :
+       hardwareEst.strategy === 'SharedMemory' ? 'GPU + PCIe Shared RAM' :
+       hardwareEst.strategy === 'IntegratedMemory' ? 'Integrated GPU' : 'CPU Only')
     : gpuModeLabel;
 
   const actualGpuColor = hardwareEst
-    ? (targetLayers === 0 ? 'text-muted-foreground' : (targetLayers < hardwareEst.total_layers ? 'text-amber-500' : 'text-emerald-500'))
-    : (localSettings.gpuLayers === 0 ? 'text-muted-foreground' : (localSettings.gpuLayers < 90 ? 'text-amber-400' : 'text-emerald-400'));
+    ? (hardwareEst.strategy === 'FullDedicated' ? 'text-emerald-500' :
+       hardwareEst.strategy === 'SharedMemory' ? 'text-blue-500' :
+       hardwareEst.strategy === 'IntegratedMemory' ? 'text-amber-500' : 'text-muted-foreground')
+    : 'text-muted-foreground';
 
   const loadedLocalModel = useModelStore((s) => s.loadedLocalModel);
   const setLoadedLocalModel = useModelStore((s) => s.setLoadedLocalModel);
+  const localLibraryModels = useModelStore((s) => s.localLibraryModels);
   const [isRestarting, setIsRestarting] = useState(false);
+
+  const currentDef = localLibraryModels.find(m => m.id === currentModelId);
+  let maxContext = 131072; // Absolute fallback max
+  if (currentDef?.specs?.contextWindow) {
+    const val = String(currentDef.specs.contextWindow).toUpperCase();
+    if (val.includes('K')) {
+      maxContext = parseInt(val.replace('K', '').trim()) * 1024;
+    } else {
+      maxContext = parseInt(val.trim()) || 131072;
+    }
+  }
+
 
   const handleApplyRestart = async () => {
     if (!currentModelId) return;
+    setIsRestarting(true);
+    toast.info('Applying settings & restarting server...');
+
+    let deferredResolve!: () => void;
+    let deferredReject!: (err: Error) => void;
+    const readyPromise = new Promise<void>((res, rej) => {
+      deferredResolve = res;
+      deferredReject = rej;
+    });
+
+    let unlistenFns: Array<() => void> = [];
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      for (const fn of unlistenFns) fn();
+      unlistenFns = [];
+    };
+
     try {
-      setIsRestarting(true);
-      toast.info('Applying settings & restarting server...');
+      const [unlistenLoading, unlistenReady, unlistenError, unlistenVram] = await Promise.all([
+        listen<{ elapsed_secs?: number; status?: string }>('llm-server-loading', (event) => {
+          const { elapsed_secs, status } = event.payload;
+          if (status) toast.info(status, { id: 'restart-status' });
+          else if (elapsed_secs !== undefined) {
+            const timeStr = elapsed_secs > 60 ? `${Math.floor(elapsed_secs / 60)}m ${Math.floor(elapsed_secs % 60)}s` : `${elapsed_secs}s`;
+            toast.info(`Loading... ${timeStr}`, { id: 'restart-status' });
+          }
+        }),
+        listen<{ status: string }>('llm-server-ready', () => {
+          cleanup();
+          deferredResolve();
+        }),
+        listen<{ error: string }>('llm-server-error', (event) => {
+          cleanup();
+          deferredReject(new Error(event.payload.error));
+        }),
+        listen<{ ngl: number, fully_gpu: boolean, suggest_cloud_fallback: boolean, message: string }>('vram-decision', (event) => {
+          if (event.payload.suggest_cloud_fallback) {
+            toast.warning(event.payload.message, { duration: 10000, id: 'vram-decision' });
+          } else {
+            toast.info(event.payload.message, { id: 'vram-decision' });
+          }
+        }),
+      ]);
+
+      unlistenFns = [unlistenLoading, unlistenReady, unlistenError, unlistenVram];
+      timeoutId = setTimeout(() => {
+        cleanup();
+        deferredReject(new Error('Model load timed out after 300 seconds.'));
+      }, 300_000);
+
       await invoke('stop_local_server');
-      await invoke('start_local_server', {
+
+      invoke('start_local_server', {
         modelId: currentModelId,
-        contextSize: localSettings.contextSize || 32768,
+        contextSize: localSettings.contextSize ?? 0,
         gpuLayers: localSettings.gpuLayers,
-        cpuThreads: localSettings.threads || 4,
+        cpuThreads: localSettings.threads || 0,
         flashAttention: localSettings.flashAttention ?? true,
-        kvCacheType: localSettings.kvCacheType || 'q8_0',
+        kvCacheType: localSettings.kvCacheType || 'auto',
         useMlock: localSettings.useMlock ?? false,
-        batchSize: localSettings.batchSize || 2048
+        batchSize: localSettings.batchSize || 0,
+        draftModelId: localSettings.draftModelId,
+        disableKvOffload: localSettings.disableKvOffload ?? false,
+      }).catch((err: unknown) => {
+        cleanup();
+        deferredReject(new Error(String(err)));
       });
+
+      await readyPromise;
+
       setLoadedLocalModel(currentModelId);
-      toast.success('Model restarted with new settings!');
+      toast.success('Model restarted with new settings!', { id: 'restart-status' });
       setShowSettings(false);
-    } catch (err: any) {
-      toast.error(err || 'Failed to restart model');
+    } catch (err: unknown) {
+      cleanup();
+      toast.error(String((err as Error)?.message || err || 'Failed to restart model'), { id: 'restart-status' });
     } finally {
       setIsRestarting(false);
     }
@@ -90,14 +159,14 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
     const timer = setTimeout(() => {
       invoke('estimate_hardware_usage', {
         modelId: currentModelId,
-        contextSize: localSettings.contextSize || 32768,
-        gpuLayers: localSettings.gpuLayers || 0,
+        contextSize: localSettings.contextSize || 8192,
+        gpuLayers: 99,
       }).then((res: any) => {
         setHardwareEst(res);
       }).catch(console.warn);
     }, 300); // debounce
     return () => clearTimeout(timer);
-  }, [showSettings, isLocalModel, currentModelId, localSettings.gpuLayers, localSettings.contextSize]);
+  }, [showSettings, isLocalModel, currentModelId, localSettings.contextSize]);
 
   return (
     <>
@@ -125,7 +194,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                         Local Inference
                       </p>
                       <p className="text-[8px] text-muted-foreground font-semibold uppercase tracking-wider mt-0.5">
-                        {currentModelId?.name || 'GGUF Model'} · settings
+                        {currentModelId || 'GGUF Model'} · settings
                       </p>
                     </div>
                   </div>
@@ -247,55 +316,55 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                         <div className="mt-3 p-3.5 rounded-md bg-muted/20 border border-border space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider">
-                              GPU Layers (ngl)
+                              GPU Offload Strategy
                             </span>
                             <div className="flex items-center gap-1.5">
                               <span
-                                className={`text-[8px] font-black uppercase tracking-wider ${actualGpuColor}`}
+                                className={`text-[9px] font-black uppercase tracking-wider ${actualGpuColor}`}
                               >
                                 {actualGpuModeLabel}
                               </span>
-                              <span className="text-[10px] font-mono font-bold text-foreground tabular-nums">
-                                {hardwareEst ? Math.min(localSettings.gpuLayers, hardwareEst.total_layers) : localSettings.gpuLayers} {hardwareEst ? `/ ${hardwareEst.total_layers}` : ''}
-                              </span>
                             </div>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={hardwareEst ? hardwareEst.total_layers : 99}
-                            step={1}
-                            value={hardwareEst ? Math.min(localSettings.gpuLayers, hardwareEst.total_layers) : localSettings.gpuLayers}
-                            onChange={(e) => {
-                              updateLocal('gpuLayers', Number(e.target.value));
-                            }}
-                            className="w-full h-1.5 rounded-md appearance-none cursor-pointer accent-foreground bg-muted"
-                          />
-                          <div className="flex justify-between">
-                            <span className="text-[7px] text-muted-foreground">CPU Only</span>
-                            <span className="text-[7px] text-muted-foreground">{hardwareEst && hardwareEst.max_gpu_layers < hardwareEst.total_layers ? 'Max VRAM' : 'Full GPU'}</span>
                           </div>
                           
                           {hardwareEst && (
                             <div className="mt-2.5 pt-2.5 border-t border-border/50">
                               <div className="flex justify-between items-center mb-1">
-                                <span className="text-[8px] font-semibold text-muted-foreground">Estimated VRAM</span>
-                                <span className="text-[9px] font-mono text-foreground">{Math.round(hardwareEst.estimated_vram_mb / 102.4) / 10} GB / {Math.round(hardwareEst.total_vram_mb / 102.4) / 10} GB</span>
+                                <span className="text-[8px] font-semibold text-muted-foreground">
+                                  VRAM Usage ({hardwareEst.model_size_gb.toFixed(1)}GB Model | CTX: {localSettings.contextSize === 0 ? 'Default' : `${Math.round((localSettings.contextSize || 8192) / 1024)}K`})
+                                </span>
+                                <span className="text-[9px] font-mono text-foreground">
+                                  {Math.round(hardwareEst.estimated_vram_mb / 102.4) / 10} GB / {Math.round(hardwareEst.available_vram_mb / 102.4) / 10} GB avail.
+                                </span>
                               </div>
                               <div className="w-full bg-black/20 rounded-full h-1.5 overflow-hidden flex">
-                                <div className="bg-emerald-500 h-full" style={{ width: `${Math.min(100, (hardwareEst.estimated_vram_mb / Math.max(1, hardwareEst.total_vram_mb)) * 100)}%` }}></div>
+                                {(() => {
+                                  const pct = Math.min(100, (hardwareEst.estimated_vram_mb / Math.max(1, hardwareEst.available_vram_mb)) * 100);
+                                  const color = hardwareEst.strategy === 'FullDedicated' ? 'bg-emerald-500' :
+                                                hardwareEst.strategy === 'SharedMemory' ? 'bg-blue-500' :
+                                                hardwareEst.strategy === 'IntegratedMemory' ? 'bg-amber-500' : 'bg-muted-foreground';
+                                  return <div className={`${color} h-full transition-all`} style={{ width: `${pct}%` }} />;
+                                })()}
                               </div>
-                              {hardwareEst.layers_on_gpu !== undefined && (
-                                <div className="mt-1 flex justify-between text-[8px] font-medium text-muted-foreground">
-                                  <span>Dedicated VRAM: {hardwareEst.layers_on_gpu} layers</span>
-                                  {hardwareEst.layers_on_cpu > 0 && <span>CPU: {hardwareEst.layers_on_cpu} layers</span>}
-                                </div>
+                              {!hardwareEst.fully_gpu && (
+                                <>
+                                  <div className="flex justify-between items-center mb-1 mt-2">
+                                    <span className="text-[8px] font-semibold text-muted-foreground">System RAM (Spillover)</span>
+                                    <span className="text-[9px] font-mono text-foreground">
+                                      {Math.round(hardwareEst.estimated_ram_mb / 102.4) / 10} GB
+                                    </span>
+                                  </div>
+                                  <div className="w-full bg-black/20 rounded-full h-1.5 overflow-hidden flex">
+                                    <div className="bg-purple-500 h-full transition-all" style={{ width: `${Math.min(100, (hardwareEst.estimated_ram_mb / hardwareEst.ram_total_mb) * 100)}%` }} />
+                                  </div>
+                                </>
                               )}
-                              {hardwareEst.system_ram_spill_mb > 0 && (
-                                <div className="mt-2 text-[8.5px] text-amber-500 bg-amber-500/10 p-1.5 rounded border border-amber-500/20 font-medium">
-                                  ⚠️ GPU Spilling to System RAM: {Math.round(hardwareEst.system_ram_spill_mb / 102.4) / 10} GB ({hardwareEst.layers_spilled} layers). Computation runs on GPU but memory is shared, causing slowdowns.
-                                </div>
-                              )}
+                              <div className="mt-2 flex flex-col gap-1 text-[8px] font-medium text-muted-foreground">
+                                <span>Detected GPU: {hardwareEst.gpu_name}</span>
+                                <span className="text-[8px] text-muted-foreground/60 leading-tight">
+                                  {hardwareEst.message}
+                                </span>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -310,24 +379,16 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                         <div className="mt-3">
                           <ParamSlider
                             label="Context Size"
-                            hint="Tokens the model attends to. More = larger RAM footprint."
+                            hint="Tokens the model attends to. 0 = model default."
                             value={localSettings.contextSize}
-                            min={512}
-                            max={32768}
+                            min={0}
+                            max={maxContext}
                             step={512}
-                            display={(v) => `${Math.round(v / 1024)}K`}
+                            display={(v) => v === 0 ? "Default" : `${Math.round(v / 1024)}K`}
                             accent="accent-foreground"
                             onChange={(v) => updateLocal('contextSize', v)}
                           />
-                          {hardwareEst && (
-                            <div className="mt-2 flex items-center justify-between text-[8px] font-medium text-muted-foreground bg-muted/30 px-2 py-1.5 rounded border border-border/50">
-                              <span>Context Cost:</span>
-                              <div className="flex gap-2">
-                                {hardwareEst.context_vram_mb > 0 && <span className="text-emerald-400">VRAM: +{hardwareEst.context_vram_mb} MB</span>}
-                                {hardwareEst.context_ram_mb > 0 && <span className="text-amber-400">RAM: +{hardwareEst.context_ram_mb} MB</span>}
-                              </div>
-                            </div>
-                          )}
+
                           <div className="mt-4 pt-4 border-t border-border/50">
                             <ParamSlider
                               label="CPU Threads"
@@ -422,10 +483,11 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                           <div className="pt-2 border-t border-border/50">
                             <label className="text-[10px] font-bold text-foreground block mb-1.5">KV Cache Quantization</label>
                             <select
-                              value={localSettings.kvCacheType || 'q8_0'}
+                              value={localSettings.kvCacheType || 'auto'}
                               onChange={(e) => updateLocal('kvCacheType', e.target.value)}
                               className="w-full bg-muted/30 border border-border rounded-md text-[10px] px-2 py-1.5 text-foreground outline-none"
                             >
+                              <option value="auto">Auto (Match Model)</option>
                               <option value="f16">FP16 (High Quality, High VRAM)</option>
                               <option value="q8_0">Q8_0 (Recommended, Balanced)</option>
                               <option value="q4_0">Q4_0 (Max VRAM Savings)</option>
@@ -435,15 +497,40 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                           <div className="pt-2 border-t border-border/50">
                             <ParamSlider
                               label="Batch Size"
-                              hint="Maximum logical batch size."
-                              value={localSettings.batchSize || 2048}
-                              min={512}
+                              hint="Maximum logical batch size. 0 = Hardware Optimized."
+                              value={localSettings.batchSize || 0}
+                              min={0}
                               max={4096}
                               step={512}
-                              display={(v) => `${v}`}
+                              display={(v) => v === 0 ? "Auto" : `${v}`}
                               accent="accent-foreground"
                               onChange={(v) => updateLocal('batchSize', v)}
                             />
+                          </div>
+                        </div>
+                      </section>
+                      <section>
+                        <SectionLabel
+                          icon={<Rocket size={9} />}
+                          label="Advanced Orchestration"
+                          color="text-foreground"
+                        />
+                        <div className="mt-3 space-y-4">
+
+                          <div className="flex items-center justify-between pt-2">
+                            <div>
+                              <p className="text-[10px] font-bold text-foreground">Strict VRAM Enforcer</p>
+                              <p className="text-[9px] text-muted-foreground mt-0.5">Disable KV Cache Offload to prevent PCIe bottlenecks</p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={localSettings.disableKvOffload ?? false}
+                                onChange={(e) => updateLocal('disableKvOffload', e.target.checked)}
+                              />
+                              <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                            </label>
                           </div>
                         </div>
                       </section>

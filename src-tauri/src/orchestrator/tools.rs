@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use crate::commands::agent::search_web_command;
-use std::fs;
 use std::path::PathBuf;
+use tokio::fs;
 
 #[async_trait]
 pub trait Tool: Send + Sync {
@@ -117,8 +117,8 @@ impl Tool for ConversationalMemoryTool {
             // Generate a real embedding so future semantic searches return correct results.
             let embeddings = embedder.embed(vec![fact.to_string()]).await?;
             let vector = embeddings.into_iter().next().ok_or("Embedder returned no vectors")?;
-            let embedding_json = serde_json::to_string(&vector)
-                .map_err(|e| format!("Failed to serialize embedding: {}", e))?;
+            // Fix #8: encode as LE-f32 BLOB bytes, not JSON string.
+            let embedding_blob = crate::db::models::encode_embedding(&vector);
 
             let id = uuid::Uuid::new_v4().to_string();
             crate::db::commands::db_add_memory(
@@ -126,7 +126,7 @@ impl Tool for ConversationalMemoryTool {
                 id,
                 fact.to_string(),
                 "general".to_string(),
-                embedding_json,
+                embedding_blob,
             ).await.map_err(|e| e.to_string())?;
 
             Ok(json!({"status": "success", "message": "Fact saved to long term memory."}))
@@ -193,12 +193,12 @@ impl Tool for CreateFileTool {
         path.push("NYX_Files");
         
         if !path.exists() {
-            fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+        fs::create_dir_all(&path).await.map_err(|e| e.to_string())?;
         }
         
         path.push(filename);
         
-        fs::write(&path, content).map_err(|e| e.to_string())?;
+        fs::write(&path, content).await.map_err(|e| e.to_string())?;
         
         Ok(json!({"status": "success", "path": path.to_string_lossy().to_string()}))
     }

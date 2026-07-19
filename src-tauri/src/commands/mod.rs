@@ -19,7 +19,7 @@ pub use system::*;
 pub use app::*;
 pub use computer_use::*;
 pub use mcp::*;
-pub use llm::*;
+// llm module is accessed via crate::commands::llm:: or crate::llm:: directly
 pub use pty::*;
 pub use fs::*;
 pub use agent::*;

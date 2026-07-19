@@ -1,26 +1,26 @@
-use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::fs;
 use tokio::process::Command;
 use std::process::Stdio;
 use tauri::Manager;
 use base64::Engine;
+use std::sync::LazyLock;
+use std::time::Duration;
 
-#[allow(dead_code)]
-#[derive(Serialize, Clone)]
-pub struct StreamEventPayload {
-    pub event_type: String, // "text", "tool_start", "tool_result", "done", "error"
-    pub content: String,
-    pub tool_name: Option<String>,
-    pub tool_args: Option<String>,
-    pub request_id: String,
-}
+// Fix #6: Shared HTTP client with connection pool reuse.
+// Previously every web fetch and page load created its own Client, discarding
+// the connection pool each time. A single LazyLock client reuses HTTP/2
+// connections and amortises TLS handshakes across concurrent requests.
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0")
+        .timeout(Duration::from_secs(10))
+        .pool_max_idle_per_host(8)
+        .connection_verbose(false)
+        .build()
+        .expect("Failed to build shared HTTP client")
+});
 
-// Built-in tools for NYX
-#[allow(dead_code)]
-pub fn get_builtin_tools() -> Value {
-    serde_json::from_str(include_str!("builtin_tools.json")).unwrap()
-}
 
 pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -> String {
     let args: Value = match serde_json::from_str(args_json) {
@@ -78,12 +78,15 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         }
         "list_directory" => {
             let path = args["path"].as_str().unwrap_or(".");
-            match std::fs::read_dir(path) {
-                Ok(entries) => {
+            match tokio::fs::read_dir(path).await {
+                Ok(mut entries) => {
                     let mut list = Vec::new();
-                    for entry in entries.flatten() {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
                         let name = entry.file_name().to_string_lossy().to_string();
-                        let file_type = if entry.path().is_dir() { "directory" } else { "file" };
+                        let file_type = match entry.file_type().await {
+                            Ok(ft) if ft.is_dir() => "directory",
+                            _ => "file",
+                        };
                         list.push(format!("- {} ({})", name, file_type));
                     }
                     list.join("\n")
@@ -94,27 +97,32 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         "grep_search" => {
             let path = args["path"].as_str().unwrap_or(".");
             let query = args["query"].as_str().unwrap_or("");
-            fn search_dir(dir: &std::path::Path, query: &str, results: &mut Vec<String>) {
-                if let Ok(entries) = std::fs::read_dir(dir) {
-                    for entry in entries.flatten() {
+            let mut results = Vec::new();
+            let mut dirs = vec![std::path::PathBuf::from(path)];
+            
+            while let Some(dir) = dirs.pop() {
+                if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
                         let p = entry.path();
-                        if p.is_dir() {
-                            search_dir(&p, query, results);
-                        } else if p.is_file() {
-                            if let Ok(content) = std::fs::read_to_string(&p) {
-                                for (line_num, line) in content.lines().enumerate() {
-                                    if line.contains(query) {
-                                        results.push(format!("{}:{}: {}", p.display(), line_num + 1, line.trim()));
-                                        if results.len() > 50 { return; }
+                        if let Ok(ft) = entry.file_type().await {
+                            if ft.is_dir() {
+                                dirs.push(p);
+                            } else if ft.is_file() {
+                                if let Ok(content) = tokio::fs::read_to_string(&p).await {
+                                    for (line_num, line) in content.lines().enumerate() {
+                                        if line.contains(query) {
+                                            results.push(format!("{}:{}: {}", p.display(), line_num + 1, line.trim()));
+                                            if results.len() > 50 { break; }
+                                        }
                                     }
                                 }
                             }
                         }
+                        if results.len() > 50 { break; }
                     }
                 }
+                if results.len() > 50 { break; }
             }
-            let mut results = Vec::new();
-            search_dir(std::path::Path::new(path), query, &mut results);
             if results.is_empty() {
                 "No matches found.".to_string()
             } else {
@@ -398,7 +406,7 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
             match super::computer_use::execute_computer_action("screenshot".to_string(), "{}".to_string()).await {
                 Ok(b64) => {
                     if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
-                        match std::fs::write(path, bytes) {
+                        match tokio::fs::write(path, bytes).await {
                             Ok(_) => format!("Screenshot saved to {}", path),
                             Err(e) => format!("Screenshot captured but failed to save to {}: {}", path, e),
                         }
@@ -436,7 +444,7 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         }
         "read_pdf" => {
             let path = args["path"].as_str().unwrap_or("");
-            match std::fs::read(path) {
+            match tokio::fs::read(path).await {
                 Ok(bytes) => {
                     let mut text = String::new();
                     let mut in_parentheses = false;
@@ -471,7 +479,7 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         }
         "read_docx" => {
             let path = args["path"].as_str().unwrap_or("");
-            match std::fs::read(path) {
+            match tokio::fs::read(path).await {
                 Ok(bytes) => {
                     let mut text = String::new();
                     let mut in_tag = false;
@@ -617,13 +625,8 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
 
 #[tauri::command]
 pub async fn fetch_page_html_command(url: String) -> Result<(String, bool), String> {
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0")
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let res = client.get(&url)
+    // Fix #6: Reuse the shared pooled client instead of constructing a new one per call.
+    let res = HTTP_CLIENT.get(&url)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -748,13 +751,6 @@ fn parse_duckduckgo_html(html: &str, num_results: usize) -> Vec<(String, String,
     results
 }
 
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    let dot_product: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 { 0.0 } else { dot_product / (norm_a * norm_b) }
-}
-
 fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
     let mut chunks = Vec::new();
     let chars: Vec<char> = text.chars().collect();
@@ -778,9 +774,6 @@ pub async fn search_web_command(
 ) -> Result<String, String> {
     let search_provider = provider.unwrap_or_else(|| "duckduckgo".to_string());
     let limit = num_results.unwrap_or(5);
-
-    let embedder = crate::rag::embeddings::Embedder::new().map_err(|e| e.to_string())?;
-    let query_embedding = embedder.embed(vec![query.clone()]).await.map_err(|e| e.to_string())?.into_iter().next().unwrap_or_default();
 
     if search_provider == "tavily" {
         let key = api_key.ok_or_else(|| "Tavily API key is missing".to_string())?;
@@ -808,7 +801,10 @@ pub async fn search_web_command(
         let response_data: serde_json::Value = res.json().await.map_err(|e| format!("Tavily response parsing failed: {}", e))?;
         let results = response_data["results"].as_array().ok_or_else(|| "Tavily results is not an array".to_string())?;
         
-        let mut all_chunks = Vec::new();
+        let mut formatted_results = Vec::new();
+        let mut unique_urls: Vec<String> = Vec::new();
+        
+        // Take the first 3 chunks of each result up to 15 chunks total to bypass slow local embeddings
         for r in results.iter() {
             let title = r["title"].as_str().unwrap_or("").to_string();
             let url = r["url"].as_str().unwrap_or("").to_string();
@@ -830,27 +826,23 @@ pub async fn search_web_command(
             };
             
             let chunks = chunk_text(&display_content, 1000, 200);
-            for chunk in chunks {
-                all_chunks.push((title.clone(), url.clone(), chunk));
+            
+            let id = if let Some(idx) = unique_urls.iter().position(|u| u == &url) {
+                idx + 1
+            } else {
+                unique_urls.push(url.clone());
+                unique_urls.len()
+            };
+
+            for chunk in chunks.into_iter().take(3) {
+                formatted_results.push(format!("[{}] {}\n{}\n{}", id, title, url, chunk));
+                if formatted_results.len() >= 15 {
+                    break;
+                }
             }
-        }
-        
-        let chunk_texts: Vec<String> = all_chunks.iter().map(|(_, _, c)| c.clone()).collect();
-        let chunk_embeddings = embedder.embed(chunk_texts).await.unwrap_or_default();
-        
-        let mut scored_chunks: Vec<(f32, String, String, String)> = Vec::new();
-        for (i, emb) in chunk_embeddings.iter().enumerate() {
-            if i >= all_chunks.len() { break; }
-            let score = cosine_similarity(&query_embedding, emb);
-            let (title, url, content) = &all_chunks[i];
-            scored_chunks.push((score, title.clone(), url.clone(), content.clone()));
-        }
-        
-        scored_chunks.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        
-        let mut formatted_results = Vec::new();
-        for (i, (_score, title, url, content)) in scored_chunks.into_iter().take(limit).enumerate() {
-            formatted_results.push(format!("[{}] {}\n{}\n{}", i + 1, title, url, content));
+            if formatted_results.len() >= 15 {
+                break;
+            }
         }
 
         if formatted_results.is_empty() {
@@ -860,18 +852,13 @@ pub async fn search_web_command(
         }
 
     } else {
-        // Fallback to duckduckgo
-        let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
-            .build()
-            .map_err(|e| e.to_string())?;
-
+        // Fallback to duckduckgo — reuse shared client.
         let url = reqwest::Url::parse_with_params(
             "https://html.duckduckgo.com/html/",
             &[("q", &query)]
         ).map_err(|e| e.to_string())?;
         
-        let res = client.get(url)
+        let res = HTTP_CLIENT.get(url)
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -901,30 +888,29 @@ pub async fn search_web_command(
 
         let fetched_pages = futures::future::join_all(fetch_futures).await;
         
-        let mut all_chunks = Vec::new();
+        let mut formatted_results = Vec::new();
+        let mut unique_urls: Vec<String> = Vec::new();
+
+        // Fast path: Take the first 3 chunks of each page up to 15 chunks total 
         for (title, url, content) in fetched_pages {
             let chunks = chunk_text(&content, 1000, 200);
-            for chunk in chunks {
-                all_chunks.push((title.clone(), url.clone(), chunk));
+            
+            let id = if let Some(idx) = unique_urls.iter().position(|u| u == &url) {
+                idx + 1
+            } else {
+                unique_urls.push(url.clone());
+                unique_urls.len()
+            };
+
+            for chunk in chunks.into_iter().take(3) {
+                formatted_results.push(format!("[{}] {}\n{}\n{}", id, title, url, chunk));
+                if formatted_results.len() >= 15 {
+                    break;
+                }
             }
-        }
-        
-        let chunk_texts: Vec<String> = all_chunks.iter().map(|(_, _, c)| c.clone()).collect();
-        let chunk_embeddings = embedder.embed(chunk_texts).await.unwrap_or_default();
-        
-        let mut scored_chunks: Vec<(f32, String, String, String)> = Vec::new();
-        for (i, emb) in chunk_embeddings.iter().enumerate() {
-            if i >= all_chunks.len() { break; }
-            let score = cosine_similarity(&query_embedding, emb);
-            let (title, url, content) = &all_chunks[i];
-            scored_chunks.push((score, title.clone(), url.clone(), content.clone()));
-        }
-        
-        scored_chunks.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        
-        let mut formatted_results = Vec::new();
-        for (i, (_score, title, url, content)) in scored_chunks.into_iter().take(limit).enumerate() {
-            formatted_results.push(format!("[{}] {}\n{}\n{}", i + 1, title, url, content));
+            if formatted_results.len() >= 15 {
+                break;
+            }
         }
 
         if formatted_results.is_empty() {
@@ -985,9 +971,8 @@ async fn run_browser_script(app: &tauri::AppHandle, js_template: &str) -> Result
         pending.insert(action_id.clone(), tx);
     }
 
-    // Safely embed action_id as a JSON string literal — no raw string substitution.
-    let action_id_json = serde_json::to_string(&action_id).unwrap_or_default();
-    let js = js_template.replace("\"ACTION_ID\"", &action_id_json);
+    // Safely embed action_id via simple replacement (template already contains quotes)
+    let js = js_template.replace("ACTION_ID", &action_id);
 
     window.eval(&js).map_err(|e| format!("Failed to evaluate script: {}", e))?;
 

@@ -14,7 +14,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { useModelStore } from '@src/core/stores/useModelStore';
-import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useNyxStore, DEFAULT_SETTINGS } from '@shared/store/useNyxStore';
+import { toast } from 'sonner';
 interface ModelRegistryViewProps {
   models?: Record<'nyx', string>;
   selectModel?: (modelId: string) => void;
@@ -64,13 +65,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
   const loadedLocalModel = useModelStore(s => s.loadedLocalModel);
   const setLoadedLocalModel = useModelStore(s => s.setLoadedLocalModel);
-  const contextSize = useNyxStore(s => s.modelSettings.contextSize);
-  const gpuLayers = useNyxStore(s => s.modelSettings.gpuLayers);
-  const cpuThreads = useNyxStore(s => s.modelSettings.threads);
-  const flashAttention = useNyxStore(s => s.modelSettings.flashAttention);
-  const kvCacheType = useNyxStore(s => s.modelSettings.kvCacheType);
-  const useMlock = useNyxStore(s => s.modelSettings.useMlock);
-  const batchSize = useNyxStore(s => s.modelSettings.batchSize);
+  const updateModelSettings = useNyxStore(s => s.updateModelSettings);
 
   const [loadingState, setLoadingState] = useState<'idle'|'loading'|'unloading'|'uninstalling'>('idle');
   const [actionModelId, setActionModelId] = useState<string | null>(null);
@@ -97,7 +92,59 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
     try {
       setActionModelId(modelId);
       setLoadingState('loading');
-      await invoke('start_local_server', { modelId, contextSize, gpuLayers, cpuThreads, flashAttention, kvCacheType, useMlock, batchSize });
+      
+      let deferredResolve!: () => void;
+      let deferredReject!: (err: Error) => void;
+      const readyPromise = new Promise<void>((res, rej) => {
+        deferredResolve = res;
+        deferredReject = rej;
+      });
+
+      let unlistenFns: Array<() => void> = [];
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        for (const fn of unlistenFns) fn();
+        unlistenFns = [];
+      };
+
+      const [unlistenLoading, unlistenReady, unlistenError, unlistenVram] = await Promise.all([
+        listen<{ elapsed_secs?: number; status?: string }>('llm-server-loading', () => {}), // optionally we could show status
+        listen<{ status: string }>('llm-server-ready', () => {
+          cleanup();
+          deferredResolve();
+        }),
+        listen<{ error: string }>('llm-server-error', (event) => {
+          cleanup();
+          deferredReject(new Error(event.payload.error));
+        }),
+        listen<{ ngl: number, fully_gpu: boolean, suggest_cloud_fallback: boolean, message: string }>('vram-decision', (event) => {
+          if (event.payload.suggest_cloud_fallback) {
+            toast.warning(event.payload.message, { duration: 10000, id: 'vram-decision' });
+          } else {
+            toast.info(event.payload.message, { id: 'vram-decision' });
+          }
+        }),
+      ]);
+
+      unlistenFns = [unlistenLoading, unlistenReady, unlistenError, unlistenVram];
+      timeoutId = setTimeout(() => {
+        cleanup();
+        deferredReject(new Error('Model load timed out after 300 seconds.'));
+      }, 300_000);
+
+      const state = useNyxStore.getState();
+      const targetConfig = state.modelConfigs?.[modelId] || DEFAULT_SETTINGS;
+      const { contextSize, gpuLayers, threads: cpuThreads, flashAttention, kvCacheType, useMlock, batchSize, draftModelId, disableKvOffload } = targetConfig;
+
+      invoke('start_local_server', { 
+        modelId, contextSize, gpuLayers, cpuThreads, flashAttention, kvCacheType, useMlock, batchSize, draftModelId, disableKvOffload
+      }).catch((err) => {
+        cleanup();
+        deferredReject(new Error(String(err)));
+      });
+
+      await readyPromise;
       setLoadedLocalModel(modelId);
     } catch (e) {
       console.error('Failed to load model', e);

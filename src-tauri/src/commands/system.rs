@@ -35,23 +35,14 @@ pub struct HardwareSpecs {
 
 #[tauri::command]
 pub async fn get_hardware_specs() -> SystemResult<HardwareSpecs> {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
-    let cpu_cores = sys.physical_core_count().unwrap_or_else(|| sys.cpus().len());
-
-    let (gpu_name, gpu_vram) = if let Some(vram) = crate::llm::vram_scheduler::query_vram() {
-        (vram.gpu_name, vram.total_mb * 1024 * 1024)
-    } else {
-        ("Unknown GPU".to_string(), 0)
-    };
+    let hw = crate::llm::local_orchestrator::HardwareSnapshot::collect(None).await;
 
     let specs = HardwareSpecs {
-        cpu_cores,
-        total_ram: sys.total_memory(),
-        free_ram: sys.available_memory(),
-        gpu_name,
-        gpu_vram,
+        cpu_cores: hw.cpu_physical_cores as usize,
+        total_ram: hw.ram_total_mb * 1024 * 1024,
+        free_ram: hw.ram_available_mb * 1024 * 1024,
+        gpu_name: hw.gpu_name,
+        gpu_vram: hw.vram_total_mb * 1024 * 1024,
     };
     SystemResult { success: true, data: Some(specs), error: None }
 }
@@ -72,32 +63,23 @@ pub struct SystemDiagnostics {
 
 #[tauri::command]
 pub async fn get_system_diagnostics(model_id: Option<String>) -> SystemDiagnostics {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
-    let vram = crate::llm::vram_scheduler::query_vram()
-        .map(|v| v.total_mb * 1024 * 1024)
-        .unwrap_or(0); // Fallback to 0 if it fails
+    let hw = crate::llm::local_orchestrator::HardwareSnapshot::collect(None).await;
 
     let optimal_layers = if let Some(m) = model_id {
-        // Create a dummy path to get the model size for estimation, 
-        // in real usage we'd have the full path, but get_model_size_gb defaults to 4GB if missing
         let path = std::path::PathBuf::from(&m);
-        let model_size_gb = crate::llm::vram_scheduler::get_model_size_gb(&path);
-        
-        if let Some(vram_info) = crate::llm::vram_scheduler::query_vram() {
-            let decision = crate::llm::vram_scheduler::compute_spawn_decision(&vram_info, model_size_gb, 32768);
-            Some(OptimalLayers { gpu_layers: decision.ngl, message: decision.message })
-        } else {
-            Some(OptimalLayers { gpu_layers: 0, message: "Could not detect GPU VRAM. Falling back to CPU.".to_string() })
-        }
+        let model_size_gb = if path.exists() {
+            tokio::fs::metadata(&path).await.map(|meta| meta.len() as f32 / (1024.0 * 1024.0 * 1024.0)).unwrap_or(4.0)
+        } else { 4.0 };
+
+        let decision = crate::llm::local_orchestrator::compute_ngl_decision(&hw, None, model_size_gb, 32768);
+        Some(OptimalLayers { gpu_layers: decision.ngl, message: decision.message })
     } else {
         None
     };
 
     SystemDiagnostics {
-        totalmem: sys.total_memory(),
-        vram,
+        totalmem: hw.ram_total_mb * 1024 * 1024,
+        vram: hw.vram_total_mb * 1024 * 1024,
         optimal_layers,
     }
 }
@@ -142,7 +124,7 @@ pub struct CommandResult {
 
 #[tauri::command]
 pub async fn execute_command(command: String, cwd: String) -> Result<CommandResult, String> {
-    use std::process::Command;
+    use tokio::process::Command;
 
     #[cfg(target_os = "windows")]
     let mut cmd = Command::new("cmd");
@@ -158,7 +140,7 @@ pub async fn execute_command(command: String, cwd: String) -> Result<CommandResu
         cmd.current_dir(cwd);
     }
 
-    let output = cmd.output().map_err(|e| e.to_string())?;
+    let output = cmd.output().await.map_err(|e| e.to_string())?;
 
     Ok(CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),

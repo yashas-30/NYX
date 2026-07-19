@@ -1,5 +1,5 @@
 // fallow-ignore-file code-duplication
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './app/App';
 import { ErrorBoundary } from './core/components/ErrorBoundary';
@@ -97,7 +97,17 @@ function convertModernColor(colorStr: any): any {
   return colorStr;
 }
 
+// ── getComputedStyle color polyfill for Framer Motion / oklch support ──
+// Performance note: COLOR_PROPS is allocated once at module load, not per-call.
+// The Proxy is still needed because CSSStyleDeclaration is read-only, but the
+// Set allocation is now O(1) instead of O(n) per getComputedStyle call.
 if (typeof window !== 'undefined') {
+  const COLOR_PROPS = new Set([
+    'backgroundColor', 'color', 'borderColor',
+    'borderTopColor', 'borderBottomColor', 'borderLeftColor',
+    'borderRightColor', 'outlineColor', 'textDecorationColor',
+  ]);
+
   const originalGetComputedStyle = window.getComputedStyle;
   window.getComputedStyle = function (
     elt: Element,
@@ -106,35 +116,18 @@ if (typeof window !== 'undefined') {
     const style = originalGetComputedStyle(elt, pseudoElt);
     return new Proxy(style, {
       get(target: any, prop: string | symbol) {
-        const val = target[prop];
-        if (typeof val === 'function') {
-          if (prop === 'getPropertyValue') {
-            return function (propertyName: string) {
-              const rawVal = target.getPropertyValue(propertyName);
-              return convertModernColor(rawVal);
-            };
-          }
-          return val.bind(target);
+        if (prop === 'getPropertyValue') {
+          return (propertyName: string) =>
+            convertModernColor(target.getPropertyValue(propertyName));
         }
-        if (typeof prop === 'string') {
-          const colorProps = new Set([
-            'backgroundColor',
-            'color',
-            'borderColor',
-            'borderTopColor',
-            'borderBottomColor',
-            'borderLeftColor',
-            'borderRightColor',
-            'outlineColor',
-            'textDecorationColor',
-          ]);
-          if (colorProps.has(prop)) {
-            return convertModernColor(val);
-          }
+        const val = target[prop];
+        if (typeof val === 'function') return val.bind(target);
+        if (typeof prop === 'string' && COLOR_PROPS.has(prop)) {
+          return convertModernColor(val);
         }
         return val;
       },
-    });
+    }) as CSSStyleDeclaration;
   };
 }
 
@@ -199,9 +192,7 @@ if (typeof window !== 'undefined') {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </StrictMode>
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
 );

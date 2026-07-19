@@ -137,7 +137,22 @@ export class ContinuationManager {
         limit = limit ? Math.min(limit, hardLimit) : hardLimit;
       }
     } else if (provider === 'nyx-native') {
-      limit = limit ? Math.min(limit, 8192) : 4096;
+      // Use the user's configured context size, capped at 40% for output headroom.
+      // Zustand persists modelSettings to localStorage under the 'nyx-store' key.
+      let localCtxSize = 4096;
+      try {
+        const raw = typeof localStorage !== 'undefined'
+          ? localStorage.getItem('nyx-store')
+          : null;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          localCtxSize = parsed?.state?.modelSettings?.contextSize ?? 4096;
+        }
+      } catch {
+        // Fallback to conservative default
+      }
+      const cap = Math.floor(localCtxSize * 0.40);
+      limit = limit ? Math.min(limit, cap) : cap;
     }
 
     return limit || 4096;

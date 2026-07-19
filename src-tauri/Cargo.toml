@@ -5,6 +5,7 @@ description = "NYX - Native Local Intelligence & Cloud Orchestration Platform"
 authors = ["NYX Dev Team"]
 edition = "2021"
 rust-version = "1.77"
+default-run = "nyx"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -33,6 +34,8 @@ eventsource-stream = "0.2.3"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "chrono", "json"] }
 tokio-util = { version = "0.7", features = ["io", "codec"] }
 futures-util = "0.3"
+rig = { package = "rig-core", version = "0.40.0" }
+turbovec = "0.9.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
@@ -62,10 +65,9 @@ sqlite-vec = "0.1.9"
 walkdir = "2.5.0"
 scraper = "0.20"
 urlencoding = "2.1"
-rig-core = "0.4.0"
 genai = "0.1.13"
 dashmap = "5"
-wasmtime = "21.0.1"
+
 lancedb = "0.30.0"
 lance-index = "=7.0.0"
 
@@ -74,9 +76,13 @@ arrow = "58.3.0"
 arrow-array = "58.3.0"
 arrow-schema = "58.3.0"
 futures = "0.3.32"
-langgraph = "0.2.5"
-sruim-crewai = "0.1.0"
-swarm-engine = "0.1.6"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+# ── Debug build profile ────────────────────────────────────────────────────────
+# split-debuginfo = "packed"  consolidates debug symbols into a single PDB file
+# instead of splitting across many streams, preventing LNK1318 (LIMIT 12) errors
+# that occur on large builds when mspdbsrv.exe hits its concurrent stream limit.
+[profile.dev]
+split-debuginfo = "packed"

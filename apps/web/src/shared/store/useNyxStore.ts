@@ -9,7 +9,7 @@ export interface ModelSettings {
   maxTokens: number;
   topP: number;
   topK: number;
-  gpuLayers: number;
+  gpuLayers?: number;
   threads: number;
   contextSize: number;
   batchSize: number;
@@ -20,6 +20,10 @@ export interface ModelSettings {
   flashAttention?: boolean;
   kvCacheType?: string;
   useMlock?: boolean;
+  draftModelId?: string;
+  disableKvOffload?: boolean;
+  visionEnabled?: boolean;
+  thinkingEnabled?: boolean;
 }
 
 export type ActiveMode = 'chat' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
@@ -29,6 +33,7 @@ export interface NyxState {
   workspacePath: string;
   localModelsEnabled: boolean;
   modelSettings: ModelSettings;
+  modelConfigs?: Record<string, ModelSettings>;
   cloudModelId: string | null;
   localModelId: string | null;
   models: Record<'nyx', string>;
@@ -41,12 +46,15 @@ export interface NyxState {
   setSearchProvider: (provider: 'duckduckgo' | 'tavily') => void;
   activeProjectId: string | null;
   setActiveProjectId: (id: string | null) => void;
+  executionMode: 'chat' | 'coder' | 'default';
 
   // Actions
   setActiveMode: (mode: ActiveMode) => void;
+  setExecutionMode: (mode: 'chat' | 'coder' | 'default') => void;
   setWorkspacePath: (path: string) => void;
   setLocalModelsEnabled: (enabled: boolean) => void;
   updateModelSettings: (settings: Partial<ModelSettings>) => void;
+  updateModelConfig: (id: string, settings: Partial<ModelSettings>) => void;
   setCloudModelId: (id: string | null) => void;
   setLocalModelId: (id: string | null) => void;
   setModel: (mid: string) => void;
@@ -67,24 +75,27 @@ export interface NyxState {
   ) => Promise<{ success: boolean; workspace?: string; error?: string }>;
   loadSecureKeys: () => Promise<void>;
   refreshStatuses: () => Promise<void>;
+  deleteApiKey: (provider: string) => Promise<boolean>;
 }
 
-const DEFAULT_SETTINGS: ModelSettings = {
+export const DEFAULT_SETTINGS: ModelSettings = {
   temperature: 0.7,
   maxTokens: 16384,
   topP: 0.95,
   topK: 40,
-  gpuLayers: 99,
-  threads: 4,
+  gpuLayers: undefined,
+  threads: 0,
   contextSize: 8192,
-  batchSize: 2048,
+  batchSize: 0,
   repeatPenalty: 1.1,
   mirostat: 0,
   antigravity: true,
   reasoningEffort: 'medium',
   flashAttention: true,
-  kvCacheType: 'q8_0',
+  kvCacheType: 'auto',
   useMlock: false,
+  draftModelId: '',
+  disableKvOffload: false,
 };
 
 const DEFAULT_MODEL: ModelOption = {
@@ -117,16 +128,60 @@ export const useNyxStore = create<NyxState>()(
       currentModel: DEFAULT_MODEL,
       searchProvider: 'duckduckgo',
       activeProjectId: null,
+      executionMode: 'default',
 
       setActiveMode: (mode) => set({ activeMode: mode }),
+      setExecutionMode: (mode) => set({ executionMode: mode }),
       setWorkspacePath: (path) => set({ workspacePath: path }),
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
       updateModelSettings: (settings) =>
-          set((state) => ({
-            modelSettings: { ...state.modelSettings, ...settings },
-          })),
-      setCloudModelId: (id) => set({ cloudModelId: id, localModelId: null }),
-      setLocalModelId: (id) => set({ localModelId: id, cloudModelId: null }),
+          set((state) => {
+            const newSettings = { ...state.modelSettings, ...settings };
+            const configs = state.modelConfigs || {};
+            // Determine the active model ID correctly instead of relying on currentModel (which might be stale)
+            const activeId = state.localModelId || state.cloudModelId || state.models.nyx;
+            return {
+              modelSettings: newSettings,
+              modelConfigs: { ...configs, [activeId]: newSettings }
+            };
+          }),
+      updateModelConfig: (id, settings) =>
+          set((state) => {
+            const configs = state.modelConfigs || {};
+            const currentConfig = configs[id] || state.modelSettings;
+            const newConfig = { ...currentConfig, ...settings };
+            
+            // If the updated model is currently active, also update modelSettings
+            const activeId = state.localModelId || state.cloudModelId || state.models.nyx;
+            if (activeId === id) {
+              return {
+                modelSettings: newConfig,
+                modelConfigs: { ...configs, [id]: newConfig }
+              };
+            }
+            
+            return {
+              modelConfigs: { ...configs, [id]: newConfig }
+            };
+          }),
+      setCloudModelId: (id) => set((state) => {
+        const configs = state.modelConfigs || {};
+        const storedSettings = id ? configs[id] : undefined;
+        return { 
+          cloudModelId: id, 
+          localModelId: null,
+          modelSettings: storedSettings || DEFAULT_SETTINGS
+        };
+      }),
+      setLocalModelId: (id) => set((state) => {
+        const configs = state.modelConfigs || {};
+        const storedSettings = id ? configs[id] : undefined;
+        return { 
+          localModelId: id, 
+          cloudModelId: null,
+          modelSettings: storedSettings || DEFAULT_SETTINGS
+        };
+      }),
       setModel: (mid) => set({ models: { nyx: mid } }),
       setSearchProvider: (provider) => set({ searchProvider: provider }),
       setActiveProjectId: (id) => set({ activeProjectId: id }),
@@ -142,7 +197,14 @@ export const useNyxStore = create<NyxState>()(
       clearPrivacyData: () => {
         set({ apiKeys: {}, statuses: {} });
       },
-      setCurrentModel: (model) => set({ currentModel: model }),
+      setCurrentModel: (model) => set((state) => {
+        const configs = state.modelConfigs || {};
+        const storedSettings = configs[model.id];
+        return { 
+          currentModel: model,
+          modelSettings: storedSettings || DEFAULT_SETTINGS
+        };
+      }),
 
       updateApiKey: async (provider, key) => {
         const { privacyMode, rememberKeys } = get();
@@ -323,24 +385,21 @@ export const useNyxStore = create<NyxState>()(
     }),
     {
       name: 'nyx-global-state',
-      version: 2,
+      version: 5,
       migrate: (persistedState: any, version: number) => {
-        if (version === 0) {
-          if (persistedState.modelSettings && persistedState.modelSettings.contextSize === 2048) {
-            persistedState.modelSettings.contextSize = 32768;
-          }
-        }
-        if (version <= 1) {
-          if (persistedState.modelSettings && persistedState.modelSettings.contextSize === 32768) {
-            persistedState.modelSettings.contextSize = 8192;
+        if (version <= 4) {
+          if (persistedState.modelSettings && persistedState.modelSettings.gpuLayers === 99) {
+            persistedState.modelSettings.gpuLayers = undefined;
           }
         }
         return persistedState;
       },
       partialize: (state) => ({
         activeMode: state.activeMode,
+        executionMode: state.executionMode,
         localModelsEnabled: state.localModelsEnabled,
         modelSettings: state.modelSettings,
+        modelConfigs: state.modelConfigs,
         cloudModelId: state.cloudModelId,
         localModelId: state.localModelId,
         models: state.models,

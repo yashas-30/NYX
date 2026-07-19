@@ -13,10 +13,13 @@ import { toast } from '@src/shared/components/ui/sonner';
 import { detectProvider, getEffectiveApiKey, getModelCapabilities } from '@src/infrastructure/utils/provider';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
 import { compactHistory, compactHistoryAsync, estimateContextTokens } from '@src/infrastructure/utils/compaction';
+import { buildChatPrompts, ChatContext } from '@src/core/prompts/chatPrompts';
+import { stripThinkingContent } from '@src/utils/textUtils';
 import { PlanPhase } from '@src/types/agent';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { invoke, Channel } from '@tauri-apps/api/core';
+import { emit, listen } from '@tauri-apps/api/event';
 import { useAppStore } from '@src/stores/useAppStore';
-import { emit } from '@tauri-apps/api/event';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -198,8 +201,10 @@ function generateTitle(messages: ChatMessage[]): string {
 
 // eslint-disable-next-line code-duplication
 function areMessagesEqual(a: ChatMessage[], b: ChatMessage[]): boolean {
+  if (a === b) return true;
   if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
+  for (let i = a.length - 1; i >= 0; i--) {
+    if (a[i] === b[i]) continue;
     if (a[i].role !== b[i].role) return false;
     if (a[i].content !== b[i].content) return false;
     if (a[i].status !== b[i].status) return false;
@@ -292,7 +297,7 @@ export const useChatLogic = ({
   const [tokensUsed, setTokensUsed] = useState(0);
 
   // --- Web search ---
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const webSearchEnabled = useAppStore((state) => state.webSearchEnabled);
 
   // --- Abort controller for current generation ---
   const abortCtrlRef = useRef<AbortController | null>(null);
@@ -306,65 +311,13 @@ export const useChatLogic = ({
   // without any network round-trip.
 
   // --- WebSocket Real-time Collaboration ---
+  // NOTE: WebSocket sync is disabled — no auth token is available in the
+  // standalone Tauri app. The effect previously entered an infinite 500ms
+  // poll loop on every session switch, leaking CPU and memory.
+  // Re-enable this block only when a real /ws/session-sync endpoint exists.
   useEffect(() => {
-    if (!chatSessions?.activeSid) return;
-
-    let ws: WebSocket | null = null;
-    let reconnectTimeout: NodeJS.Timeout;
-    let tokenPollTimeout: NodeJS.Timeout;
-
-    const connect = () => {
-      const token = '';
-
-      // Don't connect with an empty token — the server will reject it.
-      // Poll every 500ms until a valid token is available.
-      if (!token) {
-        tokenPollTimeout = setTimeout(connect, 500);
-        return;
-      }
-
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws/session-sync?sessionId=${chatSessions.activeSid}&token=${token}`;
-
-      ws = new WebSocket(wsUrl);
-
-      let reconnectAttempts = 0;
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'history_update' && data.messages) {
-            if (!areMessagesEqual(data.messages, historyRef.current)) {
-              dispatch({ type: 'SET', messages: data.messages });
-            }
-          }
-        } catch (e) {
-          console.debug('[ChatLogic] WebSocket message parse error:', e);
-        }
-      };
-
-      ws.onopen = () => {
-        reconnectAttempts = 0;
-      };
-
-      ws.onclose = () => {
-        reconnectAttempts++;
-        const delay = Math.min(3000 * Math.pow(1.5, reconnectAttempts - 1), 30000);
-        reconnectTimeout = setTimeout(connect, delay);
-      };
-
-      ws.onerror = () => {
-        // Suppress native error logging is impossible, but we avoid adding our own spam
-      };
-    };
-
-    connect();
-
-    return () => {
-      clearTimeout(reconnectTimeout);
-      clearTimeout(tokenPollTimeout);
-      ws?.close();
-    };
+    // No-op: no WS endpoint configured.
+    return;
   }, [chatSessions?.activeSid]);
 
 
@@ -540,12 +493,16 @@ export const useChatLogic = ({
       const contextTokens = estimateContextTokens(historyRef.current);
       const projectedTotal = contextTokens + estimatedInput + 4096; // Assume 4k output
 
-      if (projectedTotal > maxContextTokens) {
+      // For local models, use the actual configured context size rather than the cloud 128k default.
+      // This ensures compaction fires before the local server hits its context limit.
+      const { cloudModelId: _earlyCloudId } = useNyxStore.getState();
+      const resolvedProviderEarly = currentProvider || (_earlyCloudId != null ? 'gemini' : 'nyx-native');
+      const isLocalModel = resolvedProviderEarly === 'nyx-native';
+      const effectiveMaxCtx = maxContextTokens;
+      let llmHistory = historyRef.current;
+      if (projectedTotal > effectiveMaxCtx) {
         toast.info('Compacting context to fit token limit...');
-        const compacted = await compactHistoryAsync(historyRef.current, maxContextTokens - estimatedInput - 4096, AIService, modelSettings);
-        dispatch({ type: 'SET', messages: compacted });
-        historyRef.current = compacted;
-        persistHistory(compacted);
+        llmHistory = await compactHistoryAsync(historyRef.current, effectiveMaxCtx - estimatedInput - 4096, AIService, modelSettings);
       }
 
       if (tokensUsed + estimatedInput > tokenBudget) {
@@ -555,47 +512,15 @@ export const useChatLogic = ({
 
       abortCtrlRef.current = new AbortController();
 
-      const { cloudModelId, localModelId } = useNyxStore.getState();
+      const { cloudModelId, localModelId, executionMode } = useNyxStore.getState();
       const modelToUse = options?.modelOverride || ((cloudModelId || localModelId) as string);
 
       let finalPrompt = prompt;
-      const { webSearchEnabled } = useAppStore.getState();
-
-      if (webSearchEnabled && !prompt.startsWith('/deep')) {
-        const { searchProvider, apiKeys } = useNyxStore.getState();
-        const apiKey = searchProvider === 'tavily' ? getEffectiveApiKey('tavily', apiKeys) : undefined;
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          toast.info(`Searching web via ${searchProvider}...`);
-          const searchResult = await invoke<string>('search_web_command', {
-            query: prompt,
-            num_results: 5,
-            provider: searchProvider,
-            api_key: apiKey
-          });
-          
-          finalPrompt = `<context>
-${searchResult}
-</context>
-
-<web_search_instructions>
-Use the context above to answer the user's question.
-- Answer directly and confidently — never say "based on the search results", "according to the provided context", "based on the web search", or any similar meta-commentary about how you obtained the information.
-- Synthesize the information naturally, as if it is your own knowledge.
-- Use clear markdown formatting: headers, bullet points, bold for key facts where appropriate.
-- If the context does not contain the answer, say you don't have enough information on that topic.
-</web_search_instructions>
-
-${prompt}`;
-        } catch (e) {
-          toast.error(`Web search failed: ${e}`);
-        }
-      }
-
       const skipUserMessage = options?.skipUserMessage;
 
       if (!skipUserMessage) {
         const userMsg: ChatMessage = {
+          id: crypto.randomUUID(),
           role: 'user',
           content: prompt, // display the clean prompt without search context XML
           timestamp: Date.now(),
@@ -608,6 +533,87 @@ ${prompt}`;
         dispatch({ type: 'APPEND', message: userMsg });
         historyRef.current = [...historyRef.current, userMsg];
         persistHistory(historyRef.current);
+        llmHistory = [...llmHistory, userMsg];
+      }
+
+      // Add a temporary "streaming" assistant message so the UI shows it's thinking immediately
+      const assistantMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        status: 'loading',
+        model: modelToUse,
+      };
+
+      if (prompt.startsWith('/deep')) {
+        // Deep research has its own assistant message
+      } else {
+        dispatch({ type: 'APPEND', message: assistantMsg });
+        historyRef.current = [...historyRef.current, assistantMsg];
+      }
+
+      // Yield to React renderer so the messages appear instantly
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      let searchResult: string | undefined;
+
+      if (webSearchEnabled && !prompt.startsWith('/deep')) {
+        // Resolve configuration
+        const { searchProvider, apiKeys, executionMode } = useNyxStore.getState();
+        const apiKey = searchProvider === 'tavily' ? getEffectiveApiKey('tavily', apiKeys) : undefined;
+        try {
+          const lastIdx = historyRef.current.length - 1;
+          const searchingHistory = [...historyRef.current];
+          searchingHistory[lastIdx] = {
+            ...searchingHistory[lastIdx],
+            reasoning: '> Searching the web for relevant information...\n'
+          };
+          dispatch({ type: 'SET', messages: searchingHistory });
+          historyRef.current = searchingHistory;
+
+          toast.info(`Searching web via ${searchProvider}...`);
+          searchResult = await Promise.race([
+            invoke<string>('search_web_command', {
+              query: prompt,
+              num_results: 5,
+              provider: searchProvider,
+              api_key: apiKey
+            }),
+            new Promise<never>((_, reject) => {
+              const signal = abortCtrlRef.current?.signal;
+              if (signal?.aborted) reject(new DOMException('Aborted', 'AbortError'));
+              signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+            })
+          ]);
+
+          if (abortCtrlRef.current?.signal.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+          }
+
+          const processingHistory = [...historyRef.current];
+          processingHistory[lastIdx] = {
+            ...processingHistory[lastIdx],
+            reasoning: processingHistory[lastIdx].reasoning + '> Processing search results and sending to model...\n'
+          };
+          dispatch({ type: 'SET', messages: processingHistory });
+          historyRef.current = processingHistory;
+
+          if (searchResult) {
+            finalPrompt = `[RESEARCH]\n${searchResult}\n[/RESEARCH]\n\n${prompt}`;
+          }
+        } catch (e: any) {
+          if (e.name === 'AbortError' || e.message === 'Aborted') {
+            throw e; // Re-throw to outer catch block to stop generation
+          }
+          const msg = e?.message || String(e);
+          console.error('[web search] failed:', e);
+          toast.error(`Web search failed: ${msg}`);
+        }
+      }
+
+      if (abortCtrlRef.current?.signal.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
       }
 
       try {
@@ -618,13 +624,13 @@ ${prompt}`;
           return;
         }
 
-        const { invoke, Channel } = await import('@tauri-apps/api/core');
-        const { listen } = await import('@tauri-apps/api/event');
+
 
         if (prompt.startsWith('/deep')) {
           const queryText = prompt.replace('/deep', '').trim();
           
           const assistantMsg: ChatMessage = {
+            id: crypto.randomUUID(),
             role: 'assistant',
             content: '',
             timestamp: Date.now(),
@@ -664,16 +670,23 @@ ${prompt}`;
           
           try {
             setIsSupervising(true);
-            const result = await invoke<{ source: string; data: string; sources: Array<{ url: string; title: string; snippet: string }> }>('start_deep_research', { 
-                query: { 
-                    prompt: queryText, 
-                    depth_limit: 3, 
-                    provider: detectProvider(modelToUse), 
-                    model_id: modelToUse, 
-                    api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '' 
-                }, 
-                onProgress
-            });
+            const result = await Promise.race([
+              invoke<{ source: string; data: string; sources: Array<{ url: string; title: string; snippet: string }> }>('start_deep_research', { 
+                  query: { 
+                      prompt: queryText, 
+                      depth_limit: 3, 
+                      provider: detectProvider(modelToUse), 
+                      model_id: modelToUse, 
+                      api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '' 
+                  }, 
+                  onProgress
+              }),
+              new Promise<never>((_, reject) => {
+                const signal = abortCtrlRef.current?.signal;
+                if (signal?.aborted) reject(new DOMException('Aborted', 'AbortError'));
+                signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+              })
+            ]);
             const finalHistory = [...historyRef.current];
             const lastIdx = finalHistory.length - 1;
             // Build citation objects from returned sources
@@ -710,33 +723,27 @@ ${prompt}`;
 
         const eventName = `dag_update_${Date.now()}`;
         
-        // Setup context for the backend Conductor
-        const context = {
-          request_id: Date.now().toString(),
-          session_id: activeSidRef.current || 'new_session',
-          provider: detectProvider(modelToUse),
-          model: modelToUse,
-          api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '',
-          max_iterations: 10,
-          system_instruction: NYX_PERSONA,
-          agent_type: 'chat',
-          cloud_model: cloudModelId ?? undefined,
-          local_model: localModelId ?? undefined,
+        const reasoningEffortStr = modelSettings?.thinkingEnabled === false ? 'none' : (modelSettings?.reasoningEffort || 'medium');
+        
+        const chatContext: ChatContext = {
+          conversationTone: 'casual',
+          detectedLanguage: 'English',
+          previousMessages: historyRef.current.length,
+          enableReasoning: modelSettings?.thinkingEnabled !== false,
+          reasoningEffort: reasoningEffortStr,
         };
+        
+        // Let chatPrompts.ts handle the searchResult injection using its [RESEARCH] tags
+        const promptResult = buildChatPrompts(modelToUse, chatContext, prompt, llmHistory, searchResult);
 
-        // Add a temporary "streaming" assistant message so the UI shows it's thinking
-        const assistantMsg: ChatMessage = {
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-          status: 'loading',
-          model: modelToUse,
-        };
-        dispatch({ type: 'APPEND', message: assistantMsg });
-        historyRef.current = [...historyRef.current, assistantMsg];
+
 
         let currentContent = '';
-        let currentReasoning = '';
+        let currentReasoning = historyRef.current[historyRef.current.length - 1]?.reasoning || '';
+        let thinkStartIdx = -1;
+        let thinkTagLen = 0;
+        let thinkEndIdx = -1;
+        let thinkEndTagLen = 0;
         let lastUpdateTime = 0;
         const THROTTLE_MS = 50;
         
@@ -750,92 +757,112 @@ ${prompt}`;
             if (eventType === 'text') {
               currentContent += message.content || '';
               
+              if (thinkStartIdx === -1) {
+                const match = currentContent.match(/<(?:think|thought|thinking)>/i);
+                if (match) {
+                  thinkStartIdx = match.index!;
+                  thinkTagLen = match[0].length;
+                }
+              }
+              
+              if (thinkStartIdx !== -1 && thinkEndIdx === -1) {
+                const searchArea = currentContent.substring(thinkStartIdx + thinkTagLen);
+                const match = searchArea.match(/<\/(?:think|thought|thinking)>/i);
+                if (match) {
+                  thinkEndIdx = thinkStartIdx + thinkTagLen + match.index!;
+                  thinkEndTagLen = match[0].length;
+                }
+              }
+
               let displayContent = currentContent;
               let extractedReasoning = '';
-              const thinkStartMatch = currentContent.match(/<think>/i);
-              
-              if (thinkStartMatch) {
-                const startIndex = thinkStartMatch.index!;
-                const thinkEndMatch = currentContent.match(/<\/think>/i);
-                
-                if (thinkEndMatch && typeof thinkEndMatch.index === 'number') {
-                  extractedReasoning = currentContent.substring(startIndex + 7, thinkEndMatch.index).trim();
-                  displayContent = currentContent.substring(0, startIndex) + currentContent.substring(thinkEndMatch.index + 8);
+
+              if (thinkStartIdx !== -1) {
+                if (thinkEndIdx !== -1) {
+                  extractedReasoning = currentContent.substring(thinkStartIdx + thinkTagLen, thinkEndIdx).trim();
+                  displayContent = currentContent.substring(0, thinkStartIdx) + currentContent.substring(thinkEndIdx + thinkEndTagLen);
                 } else {
-                  extractedReasoning = currentContent.substring(startIndex + 7).trim();
-                  displayContent = currentContent.substring(0, startIndex);
+                  extractedReasoning = currentContent.substring(thinkStartIdx + thinkTagLen).trim();
+                  displayContent = currentContent.substring(0, thinkStartIdx);
                 }
               }
 
               if (now - lastUpdateTime > THROTTLE_MS) {
                 lastUpdateTime = now;
-                const updatedHistory = [...historyRef.current];
-                const lastIdx = updatedHistory.length - 1;
-                if (lastIdx >= 0 && updatedHistory[lastIdx].role === 'assistant') {
+                const lastIdx = historyRef.current.length - 1;
+                if (lastIdx >= 0 && historyRef.current[lastIdx].role === 'assistant') {
                   const combinedReasoning = currentReasoning + (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '');
-                  updatedHistory[lastIdx] = {
-                    ...updatedHistory[lastIdx],
-                    content: displayContent.trim(),
-                    reasoning: combinedReasoning || undefined,
-                  };
+                  dispatch({
+                    type: 'UPDATE',
+                    index: lastIdx,
+                    updater: (msg) => ({
+                      ...msg,
+                      content: displayContent.trim(),
+                      reasoning: combinedReasoning || undefined,
+                    }),
+                  });
+                  // Keep historyRef in sync for synchronous reads in the same tick
+                  historyRef.current = historyRef.current.map((m, i) =>
+                    i === lastIdx
+                      ? { ...m, content: displayContent.trim(), reasoning: combinedReasoning || undefined }
+                      : m
+                  );
                 }
-                dispatch({ type: 'SET', messages: updatedHistory });
-                historyRef.current = updatedHistory;
               }
             } else if (eventType === 'tool_call') {
-              const updatedHistory = [...historyRef.current];
-              const lastIdx = updatedHistory.length - 1;
-              if (lastIdx >= 0 && updatedHistory[lastIdx].role === 'assistant') {
-                const msg = { ...updatedHistory[lastIdx] };
-                msg.toolCalls = msg.toolCalls || [];
-                msg.toolCalls = [
-                  ...msg.toolCalls,
-                  {
-                    id: crypto.randomUUID(),
-                    type: 'function' as const,
-                    function: {
-                      name: message.tool_name,
-                      arguments: message.tool_args,
-                    },
-                    status: 'running' as const,
-                  },
-                ];
-                updatedHistory[lastIdx] = msg;
+              const lastIdx = historyRef.current.length - 1;
+              if (lastIdx >= 0 && historyRef.current[lastIdx].role === 'assistant') {
+                const newCall = {
+                  id: crypto.randomUUID(),
+                  type: 'function' as const,
+                  function: { name: message.tool_name, arguments: message.tool_args },
+                  status: 'running' as const,
+                };
+                dispatch({
+                  type: 'UPDATE',
+                  index: lastIdx,
+                  updater: (msg) => ({
+                    ...msg,
+                    toolCalls: [...(msg.toolCalls || []), newCall],
+                  }),
+                });
+                historyRef.current = historyRef.current.map((m, i) =>
+                  i === lastIdx ? { ...m, toolCalls: [...(m.toolCalls || []), newCall] } : m
+                );
               }
-              dispatch({ type: 'SET', messages: updatedHistory });
-              historyRef.current = updatedHistory;
             } else if (eventType === 'tool_result') {
-              const updatedHistory = [...historyRef.current];
-              const lastIdx = updatedHistory.length - 1;
-              if (lastIdx >= 0 && updatedHistory[lastIdx]?.role === 'assistant') {
-                const msg = { ...updatedHistory[lastIdx] };
-                if (msg.toolCalls && msg.toolCalls.length > 0) {
-                  const calls = [...msg.toolCalls];
-                  const lastCall = { ...calls[calls.length - 1] };
-                  if (lastCall.function.name === message.tool_name) {
-                    lastCall.status = 'success' as const;
-                    lastCall.result = message.result;
-                    calls[calls.length - 1] = lastCall;
-                    msg.toolCalls = calls;
-                  }
-                }
-                updatedHistory[lastIdx] = msg;
+              const lastIdx = historyRef.current.length - 1;
+              if (lastIdx >= 0 && historyRef.current[lastIdx]?.role === 'assistant') {
+                dispatch({
+                  type: 'UPDATE',
+                  index: lastIdx,
+                  updater: (msg) => {
+                    if (!msg.toolCalls || msg.toolCalls.length === 0) return msg;
+                    const calls = [...msg.toolCalls];
+                    const lastCallIdx = calls.length - 1;
+                    if (calls[lastCallIdx].function.name === message.tool_name) {
+                      calls[lastCallIdx] = { ...calls[lastCallIdx], status: 'success' as const, result: message.result };
+                    }
+                    return { ...msg, toolCalls: calls };
+                  },
+                });
               }
-              dispatch({ type: 'SET', messages: updatedHistory });
             } else if (eventType === 'thinking') {
               currentReasoning += message.content || '';
               
               if (now - lastUpdateTime > THROTTLE_MS) {
                 lastUpdateTime = now;
-                const updatedHistory = [...historyRef.current];
-                const lastIdx = updatedHistory.length - 1;
-                if (lastIdx >= 0 && updatedHistory[lastIdx]?.role === 'assistant') {
-                  const msg = { ...updatedHistory[lastIdx] };
-                  msg.reasoning = currentReasoning || undefined;
-                  updatedHistory[lastIdx] = msg;
+                const lastIdx = historyRef.current.length - 1;
+                if (lastIdx >= 0 && historyRef.current[lastIdx]?.role === 'assistant') {
+                  dispatch({
+                    type: 'UPDATE',
+                    index: lastIdx,
+                    updater: (msg) => ({ ...msg, reasoning: currentReasoning || undefined }),
+                  });
+                  historyRef.current = historyRef.current.map((m, i) =>
+                    i === lastIdx ? { ...m, reasoning: currentReasoning || undefined } : m
+                  );
                 }
-                dispatch({ type: 'SET', messages: updatedHistory });
-                historyRef.current = updatedHistory;
               }
             } else if (eventType === 'done') {
               // Ensure final content is written out
@@ -844,20 +871,17 @@ ${prompt}`;
               if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
                   let displayContent = currentContent;
                   let extractedReasoning = '';
-                  const thinkStartMatch = currentContent.match(/<think>/i);
-                  
-                  if (thinkStartMatch) {
-                    const startIndex = thinkStartMatch.index!;
-                    const thinkEndMatch = currentContent.match(/<\/think>/i);
-                    
-                    if (thinkEndMatch && typeof thinkEndMatch.index === 'number') {
-                      extractedReasoning = currentContent.substring(startIndex + 7, thinkEndMatch.index).trim();
-                      displayContent = currentContent.substring(0, startIndex) + currentContent.substring(thinkEndMatch.index + 8);
+
+                  if (thinkStartIdx !== -1) {
+                    if (thinkEndIdx !== -1) {
+                      extractedReasoning = currentContent.substring(thinkStartIdx + thinkTagLen, thinkEndIdx).trim();
+                      displayContent = currentContent.substring(0, thinkStartIdx) + currentContent.substring(thinkEndIdx + thinkEndTagLen);
                     } else {
-                      extractedReasoning = currentContent.substring(startIndex + 7).trim();
-                      displayContent = currentContent.substring(0, startIndex);
+                      extractedReasoning = currentContent.substring(thinkStartIdx + thinkTagLen).trim();
+                      displayContent = currentContent.substring(0, thinkStartIdx);
                     }
                   }
+
                   const combinedReasoning = currentReasoning + (extractedReasoning ? (currentReasoning ? '\n' : '') + extractedReasoning : '');
 
                   finalHistory[lastIdx] = {
@@ -894,9 +918,8 @@ ${prompt}`;
         try {
           // Build messages — use finalPrompt for the last user message so web search
           // context reaches the model, but the chat display shows only the clean prompt.
-          const historySlice = historyRef.current.slice(0, -1);
-          const backendMessages = historySlice.map((m, i) => {
-            const textContent = (i === historySlice.length - 1 && m.role === 'user')
+          const backendMessages = llmHistory.map((m, i) => {
+            const textContent = (i === llmHistory.length - 1 && m.role === 'user')
               ? finalPrompt  // inject search context only for the model
               : m.content;
               
@@ -924,12 +947,41 @@ ${prompt}`;
           const capabilities = getModelCapabilities(modelToUse);
           const reasoningEffortStr = modelSettings?.thinkingEnabled === false ? 'none' : (modelSettings?.reasoningEffort || 'medium');
           
-          let finalSystemInstruction = context.system_instruction;
+          let finalSystemInstruction = promptResult.systemPrompt;
           if (capabilities.supportsReasoning && modelSettings?.thinkingEnabled === false) {
              finalSystemInstruction = (finalSystemInstruction || '') + '\n\nIMPORTANT: Do NOT output any reasoning or <think> tags. Provide your final answer directly without showing your thought process.';
           }
 
           const resolvedProvider = currentProvider || detectProvider(modelToUse);
+
+          if (abortCtrlRef.current?.signal.aborted) {
+            throw new Error('Aborted');
+          }
+
+          // Calculate exact input tokens to dynamically maximize context window
+          let finalTotalInputTokens = Math.ceil((finalSystemInstruction || '').length / 4);
+          for (const m of backendMessages) {
+             if (typeof m.content === 'string') {
+                finalTotalInputTokens += Math.ceil(m.content.length / 4);
+             } else if (Array.isArray(m.content)) {
+                for (const part of m.content) {
+                   if (part.type === 'text') {
+                     finalTotalInputTokens += Math.ceil(part.text.length / 4);
+                   }
+                   if (part.type === 'image_url') {
+                     finalTotalInputTokens += 512;
+                   }
+                }
+             }
+          }
+          
+          let dynamicMaxTokens = maxContextTokens - finalTotalInputTokens - 500; // 500 token safety buffer
+          if (dynamicMaxTokens < 512) {
+             dynamicMaxTokens = 512; // Ensure at least a minimum output capability
+          }
+          
+          const userMaxTokens = modelSettings?.maxTokens && modelSettings.maxTokens > 0 ? modelSettings.maxTokens : undefined;
+          const finalMaxTokens = userMaxTokens ?? dynamicMaxTokens;
 
           await invoke('llm_stream_request', {
             req: {
@@ -938,10 +990,15 @@ ${prompt}`;
               api_key: getEffectiveApiKey(resolvedProvider, apiKeys) || '',
               messages: backendMessages,
               temperature: modelSettings?.temperature ?? 0.7,
+              top_p: modelSettings?.topP ?? 0.95,
+              top_k: modelSettings?.topK ?? 40,
+              repeat_penalty: modelSettings?.repeatPenalty ?? 1.1,
               system_instruction: finalSystemInstruction,
               event_name: eventName,
               reasoning_effort: reasoningEffortStr,
               endpoint_override: gatewayUrl,
+              max_tokens: finalMaxTokens,
+              execution_mode: executionMode,
             },
             onEvent: onProgress
           });
@@ -949,17 +1006,7 @@ ${prompt}`;
           currentSignal?.removeEventListener('abort', onAbort);
         }
 
-        let finalCleanStreamed = currentContent;
-        const finalThinkStartMatch = currentContent.match(/<think>/i);
-        if (finalThinkStartMatch && typeof finalThinkStartMatch.index === 'number') {
-          const startIndex = finalThinkStartMatch.index;
-          const finalThinkEndMatch = currentContent.match(/<\/think>/i);
-          if (finalThinkEndMatch && typeof finalThinkEndMatch.index === 'number') {
-            finalCleanStreamed = currentContent.substring(0, startIndex) + currentContent.substring(finalThinkEndMatch.index + 8);
-          } else {
-            finalCleanStreamed = currentContent.substring(0, startIndex);
-          }
-        }
+        const finalCleanStreamed = stripThinkingContent(currentContent);
         
         const isAborted = abortCtrlRef.current?.signal.aborted;
         const finalHistory = [...historyRef.current];
@@ -978,7 +1025,7 @@ ${prompt}`;
         // Update token usage (estimation)
         setTokensUsed((prev) => prev + estimatedInput);
       } catch (error: any) {
-        if (error.name !== 'AbortError') {
+        if (error.name !== 'AbortError' && error.message !== 'Aborted') {
           const errorMessage = error?.message || (typeof error === 'string' ? error : '') || 'Generation failed';
           
           if (errorMessage.includes('429')) {
@@ -1004,13 +1051,27 @@ ${prompt}`;
           dispatch({ type: 'SET', messages: finalHistory });
           historyRef.current = finalHistory;
           persistHistory(finalHistory);
+        } else {
+          // Handle AbortError specifically to mark status as stopped
+          const finalHistory = [...historyRef.current];
+          const lastIdx = finalHistory.length - 1;
+          if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
+              finalHistory[lastIdx] = {
+                  ...finalHistory[lastIdx],
+                  status: 'stopped',
+                  content: stripThinkingContent(finalHistory[lastIdx].content || '').trim(),
+              };
+          }
+          dispatch({ type: 'SET', messages: finalHistory });
+          historyRef.current = finalHistory;
+          persistHistory(finalHistory);
         }
       } finally {
         setIsSupervising(false);
         abortCtrlRef.current = null;
       }
     },
-    [maxContextTokens, tokenBudget, tokensUsed, models.nyx, apiKeys, modelSettings, currentProvider, gatewayUrl]
+    [maxContextTokens, tokenBudget, tokensUsed, models.nyx, apiKeys, modelSettings, currentProvider, gatewayUrl, webSearchEnabled]
   );
 
   // Store ref for message actions to call
@@ -1176,7 +1237,6 @@ ${prompt}`;
         ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
       
       if (isTauriEnv) {
-        const { invoke } = await import('@tauri-apps/api/core');
         await invoke('approve_tool', { approvalId });
       }
       
@@ -1196,7 +1256,6 @@ ${prompt}`;
         ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
       
       if (isTauriEnv) {
-        const { invoke } = await import('@tauri-apps/api/core');
         await invoke('reject_tool', { approvalId });
       }
       

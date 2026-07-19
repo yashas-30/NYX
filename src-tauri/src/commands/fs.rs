@@ -1,9 +1,12 @@
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
+use tokio::sync::Mutex;
 
+// Fix #2: tokio::sync::Mutex instead of std::sync::Mutex — safe to lock
+// inside async Tauri commands without blocking the Tokio thread pool.
 pub struct WatcherState {
     pub watchers: Arc<Mutex<HashMap<String, RecommendedWatcher>>>,
 }
@@ -48,7 +51,8 @@ pub async fn fs_watch_start(
     let mode = if recursive { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
     watcher.watch(Path::new(&path), mode).map_err(|e| e.to_string())?;
 
-    state.watchers.lock().unwrap().insert(id, watcher);
+    // Fix #2: .lock().await — uses tokio Mutex, never blocks the executor.
+    state.watchers.lock().await.insert(id, watcher);
     Ok(())
 }
 
@@ -57,12 +61,10 @@ pub async fn fs_watch_stop(
     state: State<'_, WatcherState>,
     id: String,
 ) -> Result<(), String> {
-    let mut watchers = state.watchers.lock().unwrap();
-    if let Some(_watcher) = watchers.remove(&id) {
-        // Drop the watcher to stop watching
-        // But before drop, unwatch isn't strictly necessary, but good practice if needed
-        // The Drop trait handles cleanup.
-    }
+    // Fix #2: .lock().await — tokio Mutex, non-blocking.
+    let mut watchers = state.watchers.lock().await;
+    // Removing the watcher drops it, which calls Watcher::Drop and stops watching.
+    watchers.remove(&id);
     Ok(())
 }
 
@@ -72,13 +74,7 @@ pub async fn fs_parse_and_chunk_file(
     chunk_size: usize,
     _overlap: usize,
 ) -> Result<Vec<String>, String> {
-    use std::fs::File;
-    use std::io::{Read, BufReader};
-
-    let file = File::open(&path).map_err(|e| e.to_string())?;
-    let mut reader = BufReader::new(file);
-    let mut contents = String::new();
-    reader.read_to_string(&mut contents).map_err(|e| e.to_string())?;
+    let contents = tokio::fs::read_to_string(&path).await.map_err(|e| e.to_string())?;
 
     if contents.is_empty() {
         return Ok(Vec::new());
@@ -137,9 +133,21 @@ pub struct FileInfo {
     size: Option<u64>,
 }
 
+/// Fix #15: Guard against accidentally reading multi-GB binaries into memory.
+const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+
 #[tauri::command]
 pub async fn fs_read_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    // Check file size first to avoid OOM on large binaries.
+    let meta = tokio::fs::metadata(&path).await.map_err(|e| e.to_string())?;
+    if meta.len() > MAX_READ_BYTES {
+        return Err(format!(
+            "File is too large to read directly ({} MB). Maximum is {} MB.",
+            meta.len() / (1024 * 1024),
+            MAX_READ_BYTES / (1024 * 1024)
+        ));
+    }
+    tokio::fs::read_to_string(&path).await.map_err(|e| e.to_string())
 }
 
 #[derive(serde::Serialize)]
@@ -153,12 +161,12 @@ pub struct FileWriteResult {
 
 #[tauri::command]
 pub async fn fs_write_file(path: String, content: String, overwrite: bool) -> Result<FileWriteResult, String> {
-    let existed = std::path::Path::new(&path).exists();
+    let existed = tokio::fs::metadata(&path).await.is_ok();
     if existed && !overwrite {
         return Err(format!("File {} already exists and overwrite is false", path));
     }
     
-    std::fs::write(&path, &content).map_err(|e| e.to_string())?;
+    tokio::fs::write(&path, &content).await.map_err(|e| e.to_string())?;
     
     Ok(FileWriteResult {
         success: true,
@@ -171,10 +179,10 @@ pub async fn fs_write_file(path: String, content: String, overwrite: bool) -> Re
 #[tauri::command]
 pub async fn fs_list_dir(dir_path: String) -> Result<Vec<FileInfo>, String> {
     let mut result = Vec::new();
-    let entries = std::fs::read_dir(&dir_path).map_err(|e| e.to_string())?;
+    let mut entries = tokio::fs::read_dir(&dir_path).await.map_err(|e| e.to_string())?;
 
-    for entry in entries.flatten() {
-        let meta = entry.metadata().map_err(|e| e.to_string())?;
+    while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
+        let meta = entry.metadata().await.map_err(|e| e.to_string())?;
         let is_dir = meta.is_dir();
         result.push(FileInfo {
             name: entry.file_name().to_string_lossy().to_string(),

@@ -13,10 +13,11 @@ import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { CodeBlock } from '../../../components/chat/CodeBlock';
-import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
+
 import { toast } from '@src/shared/components/ui/sonner';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
 import { Logo, NyxLoader, AnimatedLogo } from '@src/assets/icons/icons';
@@ -501,7 +502,7 @@ const MemoizedMarkdownBlock: React.FC<{
   );
 
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={components}>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} rehypePlugins={[rehypeKatex]} components={components}>
       {processedContent}
     </ReactMarkdown>
   );
@@ -732,15 +733,6 @@ const MessageActions: React.FC<{
           </button>
         )}
 
-        {!isUser && onBranch && (
-          <button
-            onClick={() => onBranch(index)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer font-medium"
-          >
-            <GitBranch size={10} />
-            <span>Branch</span>
-          </button>
-        )}
 
         {!isUser && content && <TtsSpeakerButton isSpeaking={isSpeaking} onToggle={handleTtsToggle} />}
       </div>
@@ -833,10 +825,10 @@ const MessageBubble = React.memo<MessageBubbleProps>(
     let parsedReasoning = msg.reasoning || '';
     let parsedContent = msg.content || '';
     
-    const thinkStartMatch = parsedContent.match(/<(?:think|thought)>/i);
+    const thinkStartMatch = parsedContent.match(/<(?:think|thought|thinking)>/i);
     if (thinkStartMatch) {
       const startIndex = thinkStartMatch.index!;
-      const endMatch = parsedContent.match(/<\/(?:think|thought)>/i);
+      const endMatch = parsedContent.match(/<\/(?:think|thought|thinking)>/i);
       
       if (endMatch && typeof endMatch.index !== 'undefined' && endMatch.index > startIndex) {
         const extracted = parsedContent.substring(startIndex + thinkStartMatch[0].length, endMatch.index).trim();
@@ -1008,32 +1000,24 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                 )}
 
                 {/* Loading / Thinking state (during reasoning or initial Formulation) */}
-                {isThinking && !parsedReasoning && (
+                {(isThinking || parsedReasoning) && (
                   <div className="pl-0">
                     <ThinkingBlock 
-                      content="Initializing thinking process... (Processing context)" 
-                      responseContent=""
-                      isComplete={false}
+                      content={parsedReasoning} 
+                      isStarting={isThinking && !parsedReasoning}
+                      responseContent={parsedContent}
+                      isComplete={
+                        (!isStreaming && msg.status !== 'loading') || 
+                        (!!parsedContent && parsedContent.length > 0) || 
+                        (!!msg.toolCalls && msg.toolCalls.length > 0)
+                      }
                     />
                   </div>
                 )}
 
                 {/* Content rendering */}
-                {(parsedContent || (msg.toolCalls && msg.toolCalls.length > 0) || parsedReasoning) && (
+                {(parsedContent || (msg.toolCalls && msg.toolCalls.length > 0)) && (
                   <div className="pl-0">
-                    {/* Reasoning block */}
-                    {parsedReasoning && (
-                      <ThinkingBlock 
-                        content={parsedReasoning} 
-                        responseContent={parsedContent}
-                        isComplete={
-                          (!isStreaming && msg.status !== 'loading') || 
-                          (!!parsedContent && parsedContent.length > 0) || 
-                          (!!msg.toolCalls && msg.toolCalls.length > 0)
-                        } 
-                      />
-                    )}
-
                     {/* Tool calls */}
                     {msg.toolCalls && msg.toolCalls.length > 0 && (
                       <div className="space-y-1">
@@ -1356,13 +1340,39 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const jumpToBottom = useCallback(() => {
-    virtuosoRef.current?.scrollToIndex({ index: history.length - 1, behavior: 'smooth' });
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
     setAutoScroll(true);
     setShowJumpToBottom(false);
-  }, [history.length]);
+  }, []);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const isAtBottom = Math.abs(target.scrollHeight - target.clientHeight - target.scrollTop) < 50;
+    
+    if (isAtBottom) {
+      if (!autoScroll) setAutoScroll(true);
+      if (showJumpToBottom) setShowJumpToBottom(false);
+    } else {
+      if (autoScroll) setAutoScroll(false);
+      if (!showJumpToBottom) setShowJumpToBottom(true);
+    }
+  }, [autoScroll, showJumpToBottom]);
+
+  // Auto-scroll logic when history updates or streaming occurs
+  useEffect(() => {
+    if (autoScroll && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, [history, autoScroll, isLoading]);
 
   // Keyboard shortcut: Escape to stop auto-scroll
   useEffect(() => {
@@ -1413,28 +1423,17 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             />
           )
         ) : (
-          <Virtuoso
-            ref={virtuosoRef}
-            data={history}
-            className="w-full h-full custom-scrollbar"
-            atBottomStateChange={(atBottom) => {
-              if (atBottom) {
-                setAutoScroll(true);
-                setShowJumpToBottom(false);
-              } else {
-                setAutoScroll(false);
-                setShowJumpToBottom(true);
-              }
-            }}
-            followOutput={autoScroll ? "smooth" : false}
-            itemContent={(index, msg) => {
-              if (!msg) return null;
-
+          <div 
+            ref={scrollContainerRef}
+            className="w-full h-full overflow-y-auto custom-scrollbar flex flex-col"
+            onScroll={handleScroll}
+          >
+            {history.map((msg, index) => {
               const isLast = index === history.length - 1;
               const isStreaming = isLast && isLoading;
 
               return (
-                <div className="py-3 px-4 md:px-6 w-full">
+                <div key={msg.id || index} className="py-3 px-4 md:px-6 w-full shrink-0">
                   <MessageBubble
                     msg={msg}
                     index={index}
@@ -1454,8 +1453,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                   />
                 </div>
               );
-            }}
-          />
+            })}
+            <div ref={bottomRef} className="h-4 shrink-0" />
+          </div>
         )}
       </div>
 

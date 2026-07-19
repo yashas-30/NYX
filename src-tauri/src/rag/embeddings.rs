@@ -12,12 +12,19 @@ static EMBEDDER: OnceLock<Mutex<TextEmbedding>> = OnceLock::new();
 
 fn get_embedder() -> &'static Mutex<TextEmbedding> {
     EMBEDDER.get_or_init(|| {
-        let model = TextEmbedding::try_new(
+        let mut model = TextEmbedding::try_new(
             InitOptions::new(EmbeddingModel::AllMiniLML6V2)
                 .with_show_download_progress(true),
         )
         .or_else(|_| TextEmbedding::try_new(InitOptions::default()))
         .expect("Failed to initialize fastembed embedding model");
+        
+        // 🚀 WARMUP INFERENCE: ONNX Runtime does lazy graph optimization and memory
+        // allocation during the very first forward pass. By running a dummy string 
+        // through it now (on the background thread), the first user search will be 
+        // instantly fast and won't suffer this execution provider cold-start penalty.
+        let _ = model.embed(vec!["warmup".to_string()], None);
+        
         Mutex::new(model)
     })
 }

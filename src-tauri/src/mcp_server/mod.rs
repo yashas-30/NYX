@@ -1,5 +1,5 @@
 use serde_json::Value;
-pub mod wasm_runner;
+
 use async_trait::async_trait;
 
 pub struct McpServer {
@@ -23,9 +23,7 @@ impl McpServer {
         };
         server.register_tool(Box::new(ReadFileTool));
         server.register_tool(Box::new(SemanticSearchTool::new(store, embedder)));
-        if let Ok(sandbox) = wasm_runner::WasmSandbox::new() {
-            server.register_tool(Box::new(wasm_runner::WasmTool::new(std::sync::Arc::new(sandbox))));
-        }
+
         server
     }
 

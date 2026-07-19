@@ -21,6 +21,7 @@ function getIconFromEmoji(key: string, className = "w-3.5 h-3.5") {
 }
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 
@@ -28,6 +29,7 @@ interface ThinkingBlockProps {
   content: string;
   responseContent?: string;
   isComplete?: boolean;
+  isStarting?: boolean;
   startedAt?: number;
   agentProgress?: {
     step: number;
@@ -38,9 +40,10 @@ interface ThinkingBlockProps {
 }
 
 // ─── Phase detection ───────────────────────────────────────────────────────────
-type ThinkingPhase = 'analyzing' | 'tool_evaluating' | 'synthesizing' | 'complete';
+type ThinkingPhase = 'starting' | 'analyzing' | 'tool_evaluating' | 'synthesizing' | 'complete';
 
-function detectPhase(content: string): ThinkingPhase {
+function detectPhase(content: string, isStarting?: boolean): ThinkingPhase {
+  if (isStarting && !content) return 'starting';
   if (!content || content.length < 10) return 'analyzing';
   // Only process the last 1500 chars to avoid main thread blocking on huge strings
   const scanArea = content.length > 2000 ? content.slice(-1500) : content;
@@ -75,6 +78,7 @@ function detectPhase(content: string): ThinkingPhase {
 }
 
 const PHASE_CONFIG: Record<ThinkingPhase, { label: string; color: string; icon: string }> = {
+  starting:       { label: 'Initializing...',  color: '#94A3B8',              icon: '◎' },
   analyzing:      { label: 'Analyzing',        color: '#818CF8',              icon: '◎' },
   tool_evaluating:{ label: 'Evaluating Tools', color: '#F59E0B',              icon: '⚡' },
   synthesizing:   { label: 'Synthesizing',     color: '#34D399',              icon: '✦' },
@@ -121,7 +125,15 @@ function parseThinking(raw: string): Segment[] {
   const segments: Segment[] = [];
   for (const line of lines) {
     const t = line.trim();
-    if (!t) continue;
+    
+    // If it's an empty line, preserve it by appending a newline to the previous text segment
+    if (!t) {
+      const prev = segments[segments.length - 1];
+      if (prev && prev.type === 'text') {
+        prev.content += '\n\n';
+      }
+      continue;
+    }
 
     // Agent turn header: Agent turn 1/15…
     const turnMatch = t.match(/^Agent\s+turn\s+(\d+)\/(\d+)/i);
@@ -362,7 +374,7 @@ const PlainText: React.FC<{ content: string }> = ({ content }) => {
   return (
     <div className="text-[13px] font-sans leading-relaxed py-1 animate-fade-in text-muted-foreground border-l border-muted-foreground/20 pl-3 ml-1" style={{ whiteSpace: 'pre-wrap' }}>
       <ReactMarkdown 
-        remarkPlugins={[remarkGfm, remarkMath]} 
+        remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} 
         rehypePlugins={[rehypeKatex]}
         components={{
           pre({ children }: any) {
@@ -435,7 +447,7 @@ function AgentProgressBar({
   );
 }
 
-export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseContent, isComplete = true, startedAt, agentProgress }) => {
+export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseContent, isComplete = true, isStarting = false, startedAt, agentProgress }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const smoothContent = useSmoothTypewriter(content, !isComplete);
   const segments = useMemo(() => parseThinking(smoothContent), [smoothContent]);
@@ -454,8 +466,8 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
 
   const currentPhase: ThinkingPhase = useMemo(() => {
     if (isComplete) return 'complete';
-    return detectPhase(smoothContent);
-  }, [smoothContent, isComplete]);
+    return detectPhase(smoothContent, isStarting);
+  }, [smoothContent, isComplete, isStarting]);
 
   const currentStatusText = useMemo(() => {
     if (isComplete) return 'Complete';
@@ -475,6 +487,14 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
       if (s.type === 'text' && s.content.trim()) {
         const clean = s.content.replace(/\s+/g, ' ').trim();
         if (clean.includes('Connecting to backend agent service')) continue;
+        
+        const lines = s.content.split('\n').filter(Boolean);
+        const lastLine = lines[lines.length - 1]?.trim() || '';
+        const statusMatch = lastLine.match(/^>\s*(.+?\.\.\.)/);
+        if (statusMatch) {
+          return statusMatch[1];
+        }
+        
         return 'Thinking...';
       }
     }
@@ -496,7 +516,18 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
     }
   }, [segments, isExpanded]);
 
-  if (!content?.trim()) return null;
+  const hasActualReasoning = useMemo(() => {
+    if (!content) return false;
+    const stripped = content
+      .split('\n')
+      .filter(line => !line.trim().startsWith('>'))
+      .join('')
+      .trim();
+    return stripped.length > 0;
+  }, [content]);
+
+  if (!content?.trim() && !isStarting) return null;
+  if (isComplete && !hasActualReasoning) return null;
 
   const spring = { duration: 0.2, ease: 'easeOut' as const };
   return (
@@ -507,11 +538,11 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
       className="my-2 mb-4 overflow-hidden"
     >
       <motion.button
-        onClick={() => setIsExpanded(v => !v)}
-        whileHover={{ opacity: 0.8 }}
-        whileTap={{ scale: 0.995 }}
+        onClick={() => { if (hasActualReasoning) setIsExpanded(v => !v); }}
+        whileHover={hasActualReasoning ? { opacity: 0.8 } : {}}
+        whileTap={hasActualReasoning ? { scale: 0.995 } : {}}
         transition={spring}
-        className="flex items-center gap-2 outline-none cursor-pointer group"
+        className={`flex items-center gap-2 outline-none ${hasActualReasoning ? 'cursor-pointer group' : 'cursor-default'}`}
       >
         <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted/40 group-hover:bg-muted/60 transition-colors">
           {!isComplete ? (
@@ -521,10 +552,12 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
               className="w-1.5 h-1.5 rounded-full"
               style={{ background: PHASE_CONFIG[currentPhase].color }}
             />
-          ) : (
+          ) : hasActualReasoning ? (
             <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={spring}>
               <CaretDown weight="bold" className="w-3 h-3 text-muted-foreground" />
             </motion.div>
+          ) : (
+            <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />
           )}
         </div>
         
@@ -537,8 +570,15 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
         {(elapsedMs > 0 || isComplete) && (
           <div className="flex items-center gap-2 ml-1">
             <span className="text-[11px] font-sans text-muted-foreground/60">
-              {((elapsedMs || (Date.now() - internalStartedAt)) / 1000).toFixed(1)}s
-              {content && ` • ${Math.round(content.length / 4)} tokens reasoning`}
+              {(() => {
+                const totalSecs = (elapsedMs || (Date.now() - internalStartedAt)) / 1000;
+                if (totalSecs >= 60) {
+                  const m = Math.floor(totalSecs / 60);
+                  const s = (totalSecs % 60).toFixed(1);
+                  return `${m}m ${s}s`;
+                }
+                return `${totalSecs.toFixed(1)}s`;
+              })()}
               {responseContent && ` • ${Math.round(responseContent.length / 4)} tokens response`}
             </span>
           </div>

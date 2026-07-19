@@ -5,6 +5,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 
 // ---------------------------------------------------------------------------
 // Token counting with tiktoken (cl100k_base)
@@ -99,7 +100,7 @@ export class AIService {
   }
 
   public static async checkStatus(provider: string, apiKey: string): Promise<'online' | 'offline' | 'no-key'> {
-    if (!apiKey && provider !== 'local') return 'no-key';
+    if (!apiKey && provider !== 'local' && provider !== 'nyx-native') return 'no-key';
 
     const isTauri =
       typeof window !== 'undefined' &&
@@ -107,18 +108,26 @@ export class AIService {
 
     if (!isTauri) {
       // In web-only builds we cannot ping providers — treat key presence as online.
-      return apiKey ? 'online' : 'no-key';
+      return (apiKey || provider === 'nyx-native' || provider === 'local') ? 'online' : 'no-key';
     }
 
     try {
+      if (provider === 'nyx-native' || provider === 'local') {
+        const res = await tauriFetch('http://127.0.0.1:8080/v1/models', { method: 'GET' }).catch(() => null);
+        return res?.ok ? 'online' : 'offline';
+      }
+
       const result = await invoke<{ reachable: boolean }>(
         'check_provider_reachable',
         { provider, apiKey: apiKey || null }
       );
       return result.reachable ? 'online' : 'offline';
     } catch {
+      if (provider === 'nyx-native' || provider === 'local') {
+         return 'offline';
+      }
       // IPC not available for this provider yet — degrade gracefully.
-      return apiKey ? 'online' : 'no-key';
+      return (apiKey || provider === 'nyx-native' || provider === 'local') ? 'online' : 'no-key';
     }
   }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ChatMessage } from '@nyx/shared/types';
 export type ChatSession = any;
@@ -9,8 +9,8 @@ interface UseChatSessionsReturn {
   activeSession: ChatSession | null;
   isLoading: boolean;
   setActiveSid: (id: string | null) => void;
-  createSession: (messages: ChatMessage[], modelId?: string) => Promise<string | null>;
-  updateSession: (sessionId: string, messages: ChatMessage[]) => Promise<void>;
+  createSession: (messages: ChatMessage[], options?: { title?: string, modelId?: string }) => string;
+  updateSession: (sessionId: string, messages: ChatMessage[]) => void;
   deleteSession: (sessionId: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -19,6 +19,12 @@ export function useChatSessions(): UseChatSessionsReturn {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSid, setActiveSid] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Keep a ref of sessions for callbacks to avoid dependency cycles
+  const sessionsRef = useRef<ChatSession[]>([]);
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
 
   const fetchSessions = useCallback(async () => {
     setIsLoading(true);
@@ -36,35 +42,51 @@ export function useChatSessions(): UseChatSessionsReturn {
     fetchSessions();
   }, [fetchSessions]);
 
-  const createSession = useCallback(async (messages: ChatMessage[], modelId?: string) => {
-    const name = messages[0]?.content.slice(0, 50) || 'New Chat';
-    try {
-      const session = await invoke<{ session: ChatSession }>('db_save_chat_session', { name, messages, modelId });
-      if (session?.session) {
-        setSessions((prev) => [session.session, ...prev]);
-        setActiveSid(session.session.id);
-        return session.session.id;
-      }
-    } catch (error) {
-      console.error('Failed to create session:', error);
-    }
-    return null;
+  const createSession = useCallback((messages: ChatMessage[], options?: { title?: string, modelId?: string }) => {
+    const sessionId = crypto.randomUUID();
+    const title = options?.title || messages[0]?.content?.slice(0, 50) || 'New Chat';
+    
+    const newSession = {
+      id: sessionId,
+      title,
+      messages,
+      model: options?.modelId || 'default',
+      created_at: Math.floor(Date.now() / 1000),
+      updated_at: Math.floor(Date.now() / 1000)
+    };
+
+    setSessions((prev) => [newSession, ...prev]);
+    setActiveSid(sessionId);
+
+    invoke('db_save_chat_session', { session: newSession }).catch(err => {
+      console.error('Failed to save new session to db:', err);
+    });
+
+    return sessionId;
   }, []);
 
-  const updateSession = useCallback(async (sessionId: string, messages: ChatMessage[]) => {
-    try {
-      await invoke('db_save_chat_session', { sessionId, messages });
-      setSessions((prev) =>
-        prev.map((s) => (s.id === sessionId ? { ...s, updatedAt: new Date().toISOString() } : s))
-      );
-    } catch (error) {
-      console.error('Failed to update session:', error);
-    }
+  const updateSession = useCallback((sessionId: string, messages: ChatMessage[]) => {
+    const existing = sessionsRef.current.find(s => s.id === sessionId);
+    if (!existing) return;
+
+    const updatedSession = {
+      ...existing,
+      messages,
+      updated_at: Math.floor(Date.now() / 1000)
+    };
+
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? updatedSession : s))
+    );
+
+    invoke('db_save_chat_session', { session: updatedSession }).catch(err => {
+      console.error('Failed to update session in db:', err);
+    });
   }, []);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     try {
-      await invoke('db_delete_chat_session', { sessionId });
+      await invoke('db_delete_chat_session', { id: sessionId });
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       if (activeSid === sessionId) {
         setActiveSid(null);

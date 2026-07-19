@@ -42,7 +42,9 @@ export const useDashboardState = (onExit?: () => void) => {
     const saved = localStorage.getItem('nyx_chat_settings');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        parsed.contextSize = 4096;
+        return parsed;
       } catch {}
     }
     return {
@@ -195,6 +197,15 @@ export const useDashboardState = (onExit?: () => void) => {
     setModels((prev) => ({
       ...prev,
       chat: mid,
+    }));
+    setChatSettings((prev: any) => ({
+      ...prev,
+      contextSize: 4096,
+      gpuLayers: 99,
+      threads: 4,
+      batchSize: 512,
+      useMlock: false,
+      disableKvOffload: false,
     }));
   };
 

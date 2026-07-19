@@ -505,17 +505,9 @@ export class HybridModelRouter {
 
       try {
         if (current.provider === 'nyx-native') {
-          const status = await checkStatusFn(current.provider).catch(() => 'offline');
-          if (status !== 'online') {
-            const contextSize = settings?.contextSize || 8192;
-            const gpuLayers = settings?.gpuLayers !== undefined ? settings.gpuLayers : null;
-            const cpuThreads = settings?.threads !== undefined ? settings.threads : null;
-            const flashAttention = settings?.flashAttention !== undefined ? settings.flashAttention : null;
-            const kvCacheType = settings?.kvCacheType || null;
-            const useMlock = settings?.useMlock !== undefined ? settings.useMlock : null;
-            const batchSize = settings?.batchSize || null;
-            await invoke('start_local_server', { modelId: current.id, contextSize, gpuLayers, cpuThreads, flashAttention, kvCacheType, useMlock, batchSize }).catch(console.warn);
-          }
+          // Trust the server is already starting/started from ModelSelector.
+          // The backend fetch will naturally fail if it's genuinely down, and we'll fallback to cloud.
+          // We do not want to block execution or kill a booting server here!
         }
 
         const startTime = performance.now();
@@ -555,30 +547,57 @@ export class HybridModelRouter {
   // Helpers
   // -------------------------------------------------------------------------
 
-  private async warmModel(modelId: string): Promise<void> {
-    let gpuLayers: number | null = null;
-    let cpuThreads: number | null = null;
-    let contextSize: number = 8192;
-    try {
-      const saved = localStorage.getItem('nyx_chat_settings');
-      if (saved) {
-        const settings = JSON.parse(saved);
-        if (typeof settings.gpuLayers === 'number') gpuLayers = settings.gpuLayers;
-        if (typeof settings.threads === 'number') cpuThreads = settings.threads;
-        if (typeof settings.contextSize === 'number') contextSize = settings.contextSize;
-      }
-    } catch {}
+  private warmingPromises = new Map<string, Promise<void>>();
 
-    invoke('start_local_server', { 
-      modelId, 
-      contextSize, 
-      gpuLayers, 
-      cpuThreads, 
-      flashAttention: null, 
-      kvCacheType: null, 
-      useMlock: null, 
-      batchSize: null 
-    }).catch(console.warn);
+  private async warmModel(modelId: string): Promise<void> {
+    if (this.warmingPromises.has(modelId)) {
+      return this.warmingPromises.get(modelId);
+    }
+    
+    const promise = (async () => {
+      let gpuLayers: number | null = null;
+      let cpuThreads: number | null = null;
+      let contextSize: number = 8192;
+      let draftModelId: string | null = null;
+      let disableKvOffload: boolean | null = null;
+      try {
+        const saved = localStorage.getItem('nyx-global-state');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const state = parsed?.state;
+          const settings = state?.modelConfigs?.[modelId] || state?.modelSettings;
+          if (settings) {
+            if (typeof settings.gpuLayers === 'number') gpuLayers = settings.gpuLayers;
+            if (typeof settings.threads === 'number') cpuThreads = settings.threads;
+            if (typeof settings.contextSize === 'number') contextSize = settings.contextSize;
+            if (typeof settings.draftModelId === 'string') draftModelId = settings.draftModelId;
+            if (typeof settings.disableKvOffload === 'boolean') disableKvOffload = settings.disableKvOffload;
+          }
+        }
+      } catch {}
+
+      try {
+        await invoke('start_local_server', { 
+          modelId, 
+          contextSize, 
+          gpuLayers, 
+          cpuThreads, 
+          flashAttention: null, 
+          kvCacheType: null, 
+          useMlock: null, 
+          batchSize: null,
+          draftModelId,
+          disableKvOffload
+        });
+      } catch (err) {
+        console.warn('Failed to warm model:', err);
+      } finally {
+        this.warmingPromises.delete(modelId);
+      }
+    })();
+    
+    this.warmingPromises.set(modelId, promise);
+    return promise;
   }
 
   private async handleOOM(modelId: string): Promise<void> {

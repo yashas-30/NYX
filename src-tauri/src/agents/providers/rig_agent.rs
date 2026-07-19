@@ -2,6 +2,7 @@ use rig::{
     completion::Prompt,
     providers::openai::Client,
 };
+use rig::client::CompletionClient;
 
 pub struct RigAgent {
     pub model_name: String,
@@ -20,7 +21,10 @@ impl RigAgent {
         );
 
         if self.model_name.starts_with("gemini") {
-            let client = rig::providers::gemini::Client::new(&self.api_key);
+            let client = match rig::providers::gemini::Client::new(&self.api_key) {
+                Ok(c) => c,
+                Err(e) => return Err(format!("Rig Gemini init Error: {}", e)),
+            };
             let agent = client.agent(&self.model_name)
                 .preamble(&system_prompt)
                 .build();
@@ -37,7 +41,10 @@ impl RigAgent {
                 ("https://api.openai.com/v1", self.api_key.as_str())
             };
 
-            let client = Client::from_url(actual_key, url);
+            let client = match Client::builder().api_key(actual_key).base_url(url).build() {
+                Ok(c) => c,
+                Err(e) => return Err(format!("Rig OpenAI/Local init Error: {}", e)),
+            };
             let agent = client.agent(&self.model_name)
                 .preamble(&system_prompt)
                 .build();

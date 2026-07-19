@@ -6,3 +6,8 @@ rustflags = ["-C", "target-feature=-crt-static"]
 # Without this, esaxx-rs compiles with /MT (static CRT), causing LNK2038 mismatch.
 CFLAGS_x86_64_pc_windows_msvc = "/MD"
 CXXFLAGS_x86_64_pc_windows_msvc = "/MD"
+
+[build]
+# Redirect build artifacts to C: drive — the E: SSD (86 GB) fills up with 70+ GB
+# of debug objects. C: has 177 GB free and handles the target dir comfortably.
+target-dir = "C:\\cargo-targets\\nyx"

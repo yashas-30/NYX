@@ -59,6 +59,12 @@ async fn run_planner(
         reasoning_effort: None,
         event_name: None,
         tools: None,
+        repeat_penalty: None,
+        presence_penalty: None,
+        frequency_penalty: None,
+        top_k: None,
+        top_p: None,
+        execution_mode: Some("chat".to_string()),
     };
     
     let mut rx = execute_llm_stream(&req).await?;
@@ -156,6 +162,12 @@ async fn run_publisher(
         reasoning_effort: None,
         event_name: None,
         tools: None,
+        repeat_penalty: None,
+        presence_penalty: None,
+        frequency_penalty: None,
+        top_k: None,
+        top_p: None,
+        execution_mode: Some("chat".to_string()),
     };
     
     let mut rx = execute_llm_stream(&req).await?;

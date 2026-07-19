@@ -14,6 +14,14 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
         std::fs::create_dir_all(parent).ok();
     }
 
+    // Register sqlite-vec extension globally for all SQLite connections in this process.
+    // This allows sqlx to use sqlite-vec natively.
+    unsafe {
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+            sqlite_vec::sqlite3_vec_init as *const (),
+        )));
+    }
+
     info!("Initializing SQLite connection pool at: {:?}", db_path);
 
     let db_url = format!("sqlite:{}", db_path.to_string_lossy());
@@ -99,7 +107,7 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
             id TEXT PRIMARY KEY,
             fact TEXT NOT NULL,
             category TEXT NOT NULL,
-            embedding TEXT NOT NULL, -- JSON float array
+            embedding BLOB NOT NULL, -- raw little-endian f32 bytes (Vec<u8>)
             created_at INTEGER NOT NULL
         );
 
@@ -150,7 +158,7 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
             id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,
             summary TEXT NOT NULL,
-            embedding TEXT NOT NULL,
+            embedding BLOB NOT NULL, -- raw little-endian f32 bytes (Vec<u8>)
             key_topics TEXT NOT NULL DEFAULT '[]',
             created_at INTEGER NOT NULL
         );
