@@ -29,7 +29,12 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
     let options = SqliteConnectOptions::from_str(&db_url)?
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
-        .busy_timeout(Duration::from_millis(5000));
+        .busy_timeout(Duration::from_millis(5000))
+        .pragma("synchronous", "NORMAL")
+        .pragma("mmap_size", "268435456")
+        .pragma("cache_size", "-64000")
+        .pragma("temp_store", "MEMORY")
+        .pragma("foreign_keys", "ON");
 
     let pool = SqlitePoolOptions::new()
         .max_connections(10)
@@ -127,6 +132,21 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
             created_at INTEGER NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS web_search_cache (
+            query_hash TEXT PRIMARY KEY,
+            cleaned_query TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            response_data TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS web_page_cache (
+            url_hash TEXT PRIMARY KEY,
+            canonical_url TEXT NOT NULL,
+            cleaned_text TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS chat_memory (
             id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,
@@ -175,6 +195,26 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
             created_at INTEGER NOT NULL
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_name_type ON memory_entities(entity_name, entity_type);
+
+        CREATE TABLE IF NOT EXISTS local_models (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            repo_id TEXT,
+            filename TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            model_type TEXT NOT NULL,
+            architecture TEXT,
+            context_length INTEGER,
+            has_mmproj INTEGER DEFAULT 0,
+            downloaded_at INTEGER NOT NULL,
+            last_used_at INTEGER,
+            use_count INTEGER DEFAULT 0,
+            rating INTEGER DEFAULT 0,
+            is_favorite INTEGER DEFAULT 0,
+            tags TEXT,
+            preset_config TEXT
+        );
     "#;
 
     sqlx::query(schema).execute(&pool).await?;

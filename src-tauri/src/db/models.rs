@@ -163,3 +163,25 @@ pub struct MemoryEntity {
     pub last_seen: i64,
     pub created_at: i64,
 }
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
+pub struct LocalModel {
+    pub id: String,
+    pub name: String,
+    pub repo_id: Option<String>,
+    pub filename: String,
+    pub file_path: String,
+    pub size_bytes: i64,
+    pub model_type: String,
+    pub architecture: Option<String>,
+    pub context_length: Option<i32>,
+    pub has_mmproj: i32,
+    pub downloaded_at: i64,
+    pub last_used_at: Option<i64>,
+    pub use_count: i32,
+    pub rating: i32,
+    pub is_favorite: i32,
+    pub tags: Option<String>,
+    pub preset_config: Option<String>,
+}
+
