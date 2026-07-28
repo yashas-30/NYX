@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 // Force Windows to use Dedicated GPU (High Performance) for this application and WebView2
 #[no_mangle]
 pub static NvOptimusEnablement: u32 = 1;
@@ -24,6 +27,14 @@ pub mod mcp_server;
 pub mod orchestrator;
 
 use commands::*;
+use crate::commands::db::{
+    db_get_local_models,
+    db_upsert_local_model,
+    db_update_model_preset,
+    db_update_model_metadata,
+    db_delete_local_model,
+};
+
 
 /// Global application state managed by Tauri.
 pub struct AppState {
@@ -114,23 +125,40 @@ pub fn run() {
                 .expect("Could not determine app data directory");
             std::fs::create_dir_all(&data_dir).expect("Could not create app data directory");
             
-            // Set up RAG CodebaseScanner
-            let rag_db_path = data_dir.join("rag.db");
-            if let Ok(scanner) = tauri::async_runtime::block_on(crate::rag::scanner::CodebaseScanner::new(rag_db_path)) {
-                app_handle.manage(std::sync::Arc::new(scanner));
-            } else {
-                tracing::error!("Failed to initialize CodebaseScanner");
-            }
-
             let db_path = data_dir.join("nyx.db");
 
             let pool = tauri::async_runtime::block_on(db::pool::init_db_pool(db_path))
                 .expect("Failed to initialize SQLite database pool");
             app.manage(pool);
 
-            // ── Spawn the rest of the UI setup asynchronously ─────────────────
+            // ── Spawn the rest of the UI setup, CodebaseScanner & binary auto-updater asynchronously ─
             let handle = app.handle().clone();
+            let rag_db_path = data_dir.join("rag.db");
             tauri::async_runtime::spawn(async move {
+                let handle_rag = handle.clone();
+                let rag_path = rag_db_path.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(scanner) = crate::rag::scanner::CodebaseScanner::new(rag_path).await {
+                        handle_rag.manage(std::sync::Arc::new(scanner));
+                        tracing::info!("[RAG] CodebaseScanner initialized asynchronously");
+                    } else {
+                        tracing::error!("Failed to initialize CodebaseScanner");
+                    }
+                });
+
+                // Auto-check and update local binaries on app startup / restart
+                let handle_update = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(app_dir) = handle_update.path().app_data_dir() {
+                        tracing::info!("[AutoUpdate] Checking for binary & library updates on startup...");
+                        let downloader = crate::llm::local_orchestrator::Downloader::new();
+                        let hw = crate::llm::local_orchestrator::HardwareSnapshot::collect().await;
+                        let _ = downloader.ensure_server(&app_dir, &hw.gpu_backend, |_p, msg| {
+                            tracing::info!("[AutoUpdate] {}", msg);
+                        }).await;
+                    }
+                });
+
                 // Pre-load the ONNX embedding model in the background so the 
                 // first web search or codebase scan doesn't hang.
                 tauri::async_runtime::spawn_blocking(|| {
@@ -152,32 +180,40 @@ pub fn run() {
             execute_computer_action,
             mcp_start_server, mcp_send_request, mcp_call_tool, mcp_stop_server, mcp_list_servers,
             llm::cloud_orchestrator::llm_stream_request,
-            orchestrator::commands::run_orchestrator_turn,
+            llm::local_inference::llm_local_stream_request,
+            commands::orchestrator::run_orchestrator_turn,
+            commands::lucifer::run_lucifer_turn,
+            commands::lucifer::analyze_lucifer_turn,
             commands::system::cleanup_session_state,
             commands::system::set_search_settings,
             pty_spawn, pty_write, pty_resize, pty_close,
             fs_watch_start, fs_watch_stop, fs_parse_and_chunk_file,
             commands::fs::fs_read_file, commands::fs::fs_write_file, commands::fs::fs_list_dir,
-            db::commands::db_get_chat_conversations,
-            db::commands::db_get_chat_messages,
-            db::commands::db_get_all_chat_sessions,
-            db::commands::db_get_db_sessions,
-            db::commands::db_get_db_messages,
-            db::commands::db_get_swarm_context,
-            db::commands::db_save_chat_session,
-            db::commands::db_delete_chat_session,
-            db::commands::db_update_chat_session_meta,
-            db::commands::db_create_folder,
-            db::commands::db_delete_folder,
-            db::commands::db_get_folders,
-            db::commands::db_add_memory,
-            db::commands::db_get_memories,
-            db::commands::db_insert_experience_ledger,
-            db::commands::db_get_recent_experience_ledger,
-            db::commands::db_delete_memory,
-            db::commands::db_clear_memories,
-            db::commands::db_prune_memories,
-            db::commands::db_search_memories,
+            commands::db::db_get_chat_conversations,
+            commands::db::db_get_chat_messages,
+            commands::db::db_get_all_chat_sessions,
+            commands::db::db_get_db_sessions,
+            commands::db::db_get_db_messages,
+            commands::db::db_get_swarm_context,
+            commands::db::db_save_chat_session,
+            commands::db::db_delete_chat_session,
+            commands::db::db_update_chat_session_meta,
+            commands::db::db_create_folder,
+            commands::db::db_delete_folder,
+            commands::db::db_get_folders,
+            commands::db::db_add_memory,
+            commands::db::db_get_memories,
+            commands::db::db_insert_experience_ledger,
+            commands::db::db_get_recent_experience_ledger,
+            commands::db::db_delete_memory,
+            commands::db::db_clear_memories,
+            commands::db::db_prune_memories,
+            commands::db::db_search_memories,
+            db_get_local_models,
+            db_upsert_local_model,
+            db_update_model_preset,
+            db_update_model_metadata,
+            db_delete_local_model,
             search_web_command,
             commands::agent::fetch_page_html_command,
             commands::agent::run_agent_tool,
@@ -185,7 +221,7 @@ pub fn run() {
             commands::agent::reject_tool,
             commands::agent::resolve_plugin_tool,
             commands::agent::resolve_browser_action,
-            // Local model orchestration (must use actual defining module path for #[tauri::command] symbols)
+            // Local model orchestration
             llm::local_orchestrator::analyze_hardware,
             llm::local_orchestrator::download_local_model,
             llm::local_orchestrator::list_local_models,
@@ -193,6 +229,7 @@ pub fn run() {
             llm::local_orchestrator::estimate_hardware_usage,
             llm::local_orchestrator::stop_local_server,
             llm::local_orchestrator::check_local_server_status,
+
             llm::local_orchestrator::hf_set_token,
             llm::local_orchestrator::hf_download_model,
             llm::local_orchestrator::hf_pause_download,
@@ -204,6 +241,9 @@ pub fn run() {
             llm::local_orchestrator::hf_get_model_readme,
             llm::local_orchestrator::hf_get_restored_downloads,
             llm::local_orchestrator::get_llamacpp_version,
+            llm::local_orchestrator::check_and_update_binaries,
+            llm::diffusers::generate_local_image,
+            llm::ocr::run_local_ocr,
             // Cloud model orchestration
             llm::cloud_orchestrator::get_models_quota,
             commands::system::get_hardware_specs,
@@ -215,6 +255,7 @@ pub fn run() {
             commands::memory::get_episodic_memories,
             commands::memory::get_memory_entities,
             commands::memory::delete_entity,
+            commands::memory::extract_session_memory,
             commands::agent::codebase_search_command,
         ])
         .on_window_event(|window, event| {
