@@ -34,9 +34,7 @@ import { detectProvider } from '@src/infrastructure/utils/provider';
 interface ChatPageProps {
   allModels: ModelDefinition[];
   apiKeys: Record<string, string>;
-  modelSettings: any;
   trackUsage: (provider: string, tokens: number) => void;
-  setModelSettings: (settings: any) => void;
   providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;
   gatewayUrls?: Record<string, string>;
   activeMode?: 'chat' | 'coder' | 'registry' | 'settings';
@@ -69,12 +67,35 @@ interface ChatImage {
 
 function getModelContextWindow(model: any): number {
   if (!model) return 128000;
-  if (typeof model.contextWindow === 'number') return model.contextWindow;
-  if (typeof model.contextWindow === 'string') {
-    const parsed = parseInt(model.contextWindow);
+  if (typeof model === 'number') return model;
+  if (typeof model === 'string') {
+    const parsed = parseInt(model);
     if (!isNaN(parsed)) {
-      if (model.contextWindow.toLowerCase().includes('m')) return parsed * 1000000;
-      if (model.contextWindow.toLowerCase().includes('k')) return parsed * 1000;
+      const lower = model.toLowerCase();
+      if (lower.includes('m')) return parsed * 1000000;
+      if (lower.includes('k')) return parsed * 1000;
+      return parsed;
+    }
+  }
+  if (typeof model.contextWindow === 'number') return model.contextWindow;
+  if (typeof model.context_window === 'number') return model.context_window;
+  if (model.contextWindow) {
+    const valStr = String(model.contextWindow);
+    const parsed = parseInt(valStr);
+    if (!isNaN(parsed)) {
+      const lower = valStr.toLowerCase();
+      if (lower.includes('m')) return parsed * 1000000;
+      if (lower.includes('k')) return parsed * 1000;
+      return parsed;
+    }
+  }
+  if (model.context_window) {
+    const valStr = String(model.context_window);
+    const parsed = parseInt(valStr);
+    if (!isNaN(parsed)) {
+      const lower = valStr.toLowerCase();
+      if (lower.includes('m')) return parsed * 1000000;
+      if (lower.includes('k')) return parsed * 1000;
       return parsed;
     }
   }
@@ -82,10 +103,12 @@ function getModelContextWindow(model: any): number {
   if (model.specs && model.specs.contextWindow) {
     const val = model.specs.contextWindow;
     if (typeof val === 'number') return val;
-    const parsed = parseInt(String(val));
+    const valStr = String(val);
+    const parsed = parseInt(valStr);
     if (!isNaN(parsed)) {
-      if (String(val).toLowerCase().includes('m')) return parsed * 1000000;
-      if (String(val).toLowerCase().includes('k')) return parsed * 1000;
+      const lower = valStr.toLowerCase();
+      if (lower.includes('m')) return parsed * 1000000;
+      if (lower.includes('k')) return parsed * 1000;
       return parsed;
     }
   }
@@ -99,9 +122,7 @@ function getModelContextWindow(model: any): number {
 export const ChatPage: React.FC<ChatPageProps> = ({
   allModels,
   apiKeys,
-  modelSettings,
   trackUsage,
-  setModelSettings,
   providerStatuses = {},
   gatewayUrls = {},
   activeMode = 'chat',
@@ -156,10 +177,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     return null;
   }, [activeProjectId]);
 
-  // --- Model resolution ---
   const cloudModelId = useNyxStore((s) => s.cloudModelId);
   const localModelId = useNyxStore((s) => s.localModelId);
-  const currentModelId = cloudModelId || localModelId || models['nyx'];
+  
+  // Since selecting a model clears the opposing state, we can just pick whichever is set.
+  const currentModelId = localModelId || cloudModelId || models['nyx'];
   const localLibraryModels = useModelStore((s) => s.localLibraryModels);
 
   const mergedModels = useMemo(() => {
@@ -177,6 +199,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     return mergedModels.find((m) => m.id === currentModelId) || null;
   }, [currentModelId, mergedModels]);
 
+  const storeModelConfigs = useNyxStore((s) => s.modelConfigs);
+  const storeModelSettings = useNyxStore((s) => s.modelSettings);
+  const activeSettings = useMemo(() => {
+    if (!currentModelId) return storeModelSettings;
+    return (storeModelConfigs && storeModelConfigs[currentModelId]) || storeModelSettings;
+  }, [currentModelId, storeModelConfigs, storeModelSettings]);
+
   const {
     activeAgent,
     isLoading,
@@ -191,9 +220,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     branchFromMessage: handleBranch,
     approveTool,
     rejectTool,
+    activeStreamMessage,
   } = useChatLogic({
     apiKeys,
-    modelSettings,
+    modelSettings: activeSettings,
     trackUsage,
     models,
     setModel,
@@ -202,8 +232,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     lightningDirectives,
     logRollout,
     submitReward,
-    maxContextTokens: modelSettings?.contextSize && modelSettings.contextSize > 0 
-      ? Math.floor(modelSettings.contextSize * 0.9) 
+    maxContextTokens: activeSettings?.contextSize && activeSettings.contextSize > 0 
+      ? Math.floor(activeSettings.contextSize * 0.9) 
       : Math.floor(getModelContextWindow(currentModel) * 0.9),
     currentProvider: currentModel?.provider || detectProvider(currentModelId),
     gatewayUrl: gatewayUrls[currentModel?.provider || detectProvider(currentModelId)],
@@ -250,28 +280,39 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       tps: parentMetrics?.tps || 0,
       totalMessages: history.length,
       contextTokens,
-      contextLimit: modelSettings?.contextSize && modelSettings.contextSize > 0 
-        ? modelSettings.contextSize 
+      contextLimit: activeSettings?.contextSize && activeSettings.contextSize > 0 
+        ? activeSettings.contextSize 
         : getModelContextWindow(currentModel),
     }),
-    [parentMetrics, history.length, contextTokens, currentModel, modelSettings]
+    [parentMetrics, history.length, contextTokens, currentModel, activeSettings]
   );
 
   // --- Submit handler ---
   const handleSubmit = useCallback(
-    (finalPrompt: string, images?: ChatImage[]) => {
-      if ((!finalPrompt.trim() && (!images || images.length === 0)) || isLoading) return;
+    async (finalPrompt: string, images?: ChatImage[]): Promise<boolean> => {
+      if ((!finalPrompt.trim() && (!images || images.length === 0)) || isLoading) return false;
       
       const { cloudModelId, localModelId } = useNyxStore.getState();
       if (!currentModelId && !cloudModelId && !localModelId) {
         toast.error('Please select a model first');
-        return;
+        return false;
       }
-      parentRunChat(finalPrompt, images || pendingImages);
+
+      // Optimistically clear the input so it doesn't stay in the text box while generating
+      const previousPrompt = prompt;
+      const previousImages = pendingImages;
       setPrompt('');
       setPendingImages([]);
+
+      const success = await parentRunChat(finalPrompt, images || pendingImages);
+      if (!success) {
+        // Restore if failed to start
+        setPrompt(previousPrompt);
+        setPendingImages(previousImages);
+      }
+      return success;
     },
-    [isLoading, currentModelId, parentRunChat, pendingImages]
+    [isLoading, currentModelId, parentRunChat, pendingImages, prompt]
   );
 
   // --- Copy handler ---
@@ -289,6 +330,68 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   }, []);
 
   // --- Image & Document attachment handlers ---
+  function compressAndResizeImage(file: File, maxDimension = 1024, quality = 0.85): Promise<ChatImage> {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const rawDataUrl = (e.target?.result as string) || '';
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve({
+              name: file.name.replace(/\.[^/.]+$/, '.jpg'),
+              mimeType: 'image/jpeg',
+              data: compressedDataUrl.split(',')[1] || '',
+            });
+          } else {
+            resolve({
+              name: file.name,
+              mimeType: file.type || 'image/jpeg',
+              data: rawDataUrl.split(',')[1] || '',
+            });
+          }
+        };
+        img.onerror = () => {
+          resolve({
+            name: file.name,
+            mimeType: file.type || 'image/jpeg',
+            data: rawDataUrl.split(',')[1] || '',
+          });
+        };
+        img.src = rawDataUrl;
+      };
+      reader.onerror = () => {
+        resolve({
+          name: file.name,
+          mimeType: file.type || 'image/jpeg',
+          data: '',
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   const handleAttachFiles = useCallback((files: File[]) => {
     const images: File[] = [];
     const documents: File[] = [];
@@ -318,20 +421,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       }
     });
 
-    // Handle Images
-    const promises = images.map((file) => {
-      return new Promise<ChatImage>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          resolve({
-            name: file.name,
-            mimeType: file.type,
-            data: (e.target?.result as string)?.split(',')[1] || '',
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-    });
+    // Handle Images with ultra-fast canvas compression & max-dimension downscaling
+    const promises = images.map((file) => compressAndResizeImage(file));
 
     if (images.length > 0) {
       Promise.all(promises).then((newImages) => {
@@ -460,6 +551,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   }, [chatSessions?.activeSid]);
 
   // --- Model selection switch with warnings ---
+  // Combined into single store call to avoid double state updates.
+  // The store's setCloudModelId/setLocalModelId handle the nullification internally.
   const handleModelChange = useCallback(
     (modelId: string) => {
       const model = mergedModels.find((m) => m.id === modelId);
@@ -470,8 +563,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         toast.warning(`${model.provider} requires an API key in Settings`);
       }
 
-      setModel(modelId);
-      
       const isLocal = ['nyx-native', 'lmstudio', 'ollama'].includes(model.provider);
       if (isLocal) {
         useNyxStore.getState().setLocalModelId(modelId);
@@ -479,7 +570,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         useNyxStore.getState().setCloudModelId(modelId);
       }
       
-      toast.info(`Switched model to ${model.name}`);
+      // setModel must be called AFTER the store update to avoid the parent overwriting
+      setModel(modelId);
     },
     [mergedModels, apiKeys, setModel]
   );
@@ -563,9 +655,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               try {
                 // Use native Tauri IPC — the dead Node /api/v1/sessions endpoint
                 // no longer exists. db_update_chat_session writes directly to SQLite.
-                await invoke('db_update_chat_session', {
+                await invoke('db_update_chat_session_meta', {
                   sessionId: chatSessions.activeSid,
-                  name: title.trim(),
+                  title: title.trim(),
                 });
               } catch {
                 // Non-fatal: title update failure doesn't break chat
@@ -618,6 +710,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         {/* CHAT MESSAGE LIST */}
         <ChatMessageList
           history={history}
+          activeStreamMessage={activeStreamMessage}
           activeAgent={activeAgent}
           isLoading={isLoading}
           onCopy={copyToClipboard}
@@ -647,10 +740,18 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onStop={stopChat}
           currentModelId={currentModelId}
           currentModel={currentModel}
-          onClearHistory={parentClearHistory}
+          providerStatuses={providerStatuses}
+          gatewayUrls={gatewayUrls}
           onModelSelect={handleModelChange}
-          onModelSettingsChange={setModelSettings}
-          modelSettings={modelSettings}
+          onClearHistory={parentClearHistory}
+          onModelSettingsChange={(settings) => {
+            if (currentModelId) {
+              useNyxStore.getState().updateModelConfig(currentModelId, settings);
+            } else {
+              useNyxStore.getState().updateModelSettings(settings);
+            }
+          }}
+          modelSettings={activeSettings}
           suggestedPrompts={suggestedPrompts}
           onSuggestedPromptClick={(p) => {
             setPrompt(p);

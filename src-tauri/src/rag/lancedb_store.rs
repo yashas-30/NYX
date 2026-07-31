@@ -2,7 +2,7 @@ use lancedb::{connect, Connection, Table};
 use lancedb::index::Index;
 use lance_index::scalar::FullTextSearchQuery;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use arrow_schema::{DataType, Field, Schema};
 use arrow_array::{Array, RecordBatch, StringArray, Float32Array, FixedSizeListArray};
 use futures_util::StreamExt;
@@ -12,7 +12,7 @@ use tracing::info;
 
 pub struct LanceDbStore {
     db: Arc<Mutex<Option<Connection>>>,
-    table: Arc<Mutex<Option<Table>>>,
+    table: Arc<RwLock<Option<Table>>>,
     /// Tracks whether any rows have been inserted (set atomically on first insert).
     /// Allows the conductor to skip RAG search without acquiring any async lock.
     entry_count: Arc<std::sync::atomic::AtomicUsize>,
@@ -24,7 +24,7 @@ impl LanceDbStore {
     pub fn new() -> Self {
         Self {
             db: Arc::new(Mutex::new(None)),
-            table: Arc::new(Mutex::new(None)),
+            table: Arc::new(RwLock::new(None)),
             entry_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             fts_indexed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
@@ -87,12 +87,12 @@ impl LanceDbStore {
         };
 
         *self.db.lock().await = Some(connection);
-        *self.table.lock().await = Some(table);
+        *self.table.write().await = Some(table);
         Ok(())
     }
 
     pub async fn insert(&self, id: String, text: String, vector: Vec<f32>, metadata: String) -> Result<(), String> {
-        let table_guard = self.table.lock().await;
+        let table_guard = self.table.write().await;
         let table = table_guard.as_ref().ok_or("Table not initialized")?;
 
         let schema = Arc::new(Schema::new(vec![
@@ -141,7 +141,7 @@ impl LanceDbStore {
     /// Must be called after all inserts are complete — typically at the end
     /// of `index_workspace()`. Safe to call multiple times (LanceDB replaces).
     pub async fn build_fts_index(&self) -> Result<(), String> {
-        let table_guard = self.table.lock().await;
+        let table_guard = self.table.read().await;
         let table = table_guard.as_ref().ok_or("Table not initialized")?;
 
         table.create_index(&["text"], Index::FTS(Default::default()))
@@ -163,7 +163,7 @@ impl LanceDbStore {
     /// Pure vector (HNSW) search. Returns `(text, metadata)` pairs ranked by
     /// cosine similarity (closest first).
     pub async fn search_vector(&self, query_vector: Vec<f32>, limit: usize) -> Result<Vec<(String, String)>, String> {
-        let table_guard = self.table.lock().await;
+        let table_guard = self.table.read().await;
         let table = table_guard.as_ref().ok_or("Table not initialized")?;
 
         let mut results = table
@@ -208,14 +208,17 @@ impl LanceDbStore {
 
     /// BM25 full-text search. Returns `(text, metadata)` pairs ranked by
     /// keyword relevance (Tantivy/BM25 scoring).
-    /// Falls back to empty results if FTS index hasn't been built yet.
+    /// Auto-triggers build_fts_index if new entries were added.
     pub async fn search_fts(&self, query_text: &str, limit: usize) -> Result<Vec<(String, String)>, String> {
         if !self.fts_indexed.load(std::sync::atomic::Ordering::Relaxed) {
-            // FTS index not built yet — return empty rather than error
-            return Ok(Vec::new());
+            if self.has_entries() {
+                let _ = self.build_fts_index().await;
+            } else {
+                return Ok(Vec::new());
+            }
         }
 
-        let table_guard = self.table.lock().await;
+        let table_guard = self.table.read().await;
         let table = table_guard.as_ref().ok_or("Table not initialized")?;
 
         let mut results = table

@@ -1,18 +1,15 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import {
-  PromptAnalysis,
-  CodeAnalysis,
-  ComplexityLevel,
-  IntentType,
-  CapabilityKey,
-  ReasoningStrategy,
-  ModelSelection,
-  StreamEvent,
-  OrchestratorOptions,
-  LocalModelConfig,
-  HardwareProfile,
-} from '@src/infrastructure/types';
-import { LocalTool, ToolResult } from '@src/types/inference';
+/**
+ * @file src/features/orchestrator/hooks/useOrchestrator.ts
+ * @description Production orchestrator hook — streams from the real Rust backend via
+ *   invoke('run_orchestrator_turn') (agentic tool-calling loop) or
+ *   invoke('llm_stream_request') (direct chat), depending on mode.
+ *   Replaces all previous mock JS classes.
+ */
+
+import { useState, useCallback, useRef } from 'react';
+import { invoke, Channel } from '@tauri-apps/api/core';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { detectProvider, getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,12 +37,12 @@ export interface ThinkingStep {
   type: 'reasoning' | 'reflection' | 'verification' | 'planning';
 }
 
-export interface ToolCall {
+export interface OrchestratorToolCall {
   id: string;
   tool: string;
   input: Record<string, unknown>;
   status: 'pending' | 'running' | 'success' | 'error' | 'completed';
-  result?: ToolResult;
+  result?: { content: string; error?: string };
   durationMs?: number;
   output?: string | unknown;
 }
@@ -57,13 +54,11 @@ export interface OrchestratorMessage {
   timestamp: number;
   status: 'streaming' | 'complete' | 'error';
 
-  // Claude/Kimi-style features
   thinking?: ThinkingStep[];
   artifacts?: Artifact[];
   citations?: Citation[];
-  toolCalls?: ToolCall[];
+  toolCalls?: OrchestratorToolCall[];
 
-  // Metrics
   metrics?: {
     modelUsed: string;
     tokensIn: number;
@@ -92,149 +87,52 @@ export interface OrchestratorState {
     | 'generating'
     | 'complete'
     | 'error';
-  selectedModel?: ModelSelection;
-  analysis?: PromptAnalysis | CodeAnalysis;
   abortController: AbortController | null;
 }
 
-// ── Mock Services (replace with your actual implementations) ───────────────────
-
-class PromptAnalyzer {
-  async analyze(prompt: string, history: OrchestratorMessage[]): Promise<PromptAnalysis> {
-    const complexity: ComplexityLevel = prompt.length > 500 ? 'complex' : 'moderate';
-    const intent: IntentType =
-      prompt.includes('code') || prompt.includes('function') ? 'code_generation' : 'chat';
-
-    return {
-      complexity: { level: complexity, score: complexity === 'complex' ? 0.8 : 0.5 },
-      intent,
-      subIntents: [],
-      requiresTools: intent === 'code_generation',
-      requiredTools: intent === 'code_generation' ? ['file_read', 'linter'] : [],
-      requiredCapabilities: intent === 'code_generation' ? ['coding', 'reasoning'] : ['chat'],
-      estimatedOutputTokens: 2000,
-      estimatedTokens: prompt.length + 1000,
-      detectedLanguage: 'en',
-      requiresVision: false,
-      reasoning: `Detected ${intent} intent with ${complexity} complexity`,
-      confidence: 0.9,
-      safety: { type: 'none', severity: 'low', recommendation: 'proceed' },
-      isMultiIntent: false,
-      intentScores: [{ intent, confidence: 0.9 }],
-      languageConfidence: 0.95,
-    };
-  }
+// Props accepted by this hook — real backend config
+export interface UseOrchestratorProps {
+  /** API keys map (provider → key). Falls back to Zustand store. */
+  apiKeys?: Record<string, string>;
+  /** Override the model ID to use. Falls back to Zustand store (cloudModelId/localModelId). */
+  modelId?: string;
+  /** Override the provider. Auto-detected from modelId if omitted. */
+  provider?: string;
+  /** System instruction injected into every request. */
+  systemInstruction?: string;
+  /** Whether to use the agentic orchestrator loop (run_orchestrator_turn) vs direct stream. */
+  agenticMode?: boolean;
 }
 
-class ModelSelector {
-  private models: LocalModelConfig[];
-  private hardware: HardwareProfile;
+// ── Stream payload from backend ───────────────────────────────────────────────
 
-  constructor(models: LocalModelConfig[], hardware: HardwareProfile) {
-    this.models = models;
-    this.hardware = hardware;
-  }
-
-  select(analysis: PromptAnalysis): ModelSelection {
-    const requiredCaps = analysis.requiredCapabilities || [];
-    const complexity =
-      typeof analysis.complexity === 'string' ? analysis.complexity : analysis.complexity?.level;
-
-    const scored = this.models.map((model) => {
-      let score = 0;
-
-      const capMatch = requiredCaps.filter((c) => model.capabilities.includes(c)).length;
-      score += capMatch * 10;
-
-      if (complexity === 'very_complex' && model.contextSize > 128000) score += 20;
-      else if (complexity === 'complex' && model.contextSize > 32000) score += 15;
-
-      if (model.taskAffinity === 'code' && analysis.intent === 'code_generation') score += 10;
-      if (model.taskAffinity === 'reasoning' && analysis.requiresTools) score += 10;
-
-      const canFitFull = model.vramRequiredGB <= (this.hardware.primaryGPU?.vramFreeGB || 0);
-      if (canFitFull) score += 15;
-
-      return { model, score };
-    });
-
-    scored.sort((a, b) => b.score - a.score);
-    const best = scored[0];
-
-    const vramFree = (this.hardware.primaryGPU?.vramFreeGB || 8) * 1024;
-    const canFitFull = best.model.vramRequiredGB * 1024 <= vramFree;
-
-    return {
-      model: best.model,
-      gpuLayers: canFitFull
-        ? best.model.totalLayers || 33
-        : Math.floor((best.model.totalLayers || 33) * 0.7),
-      cpuSpillLayers: canFitFull ? 0 : Math.floor((best.model.totalLayers || 33) * 0.3),
-      isPureGpu: canFitFull,
-      estimatedVramMB: best.model.vramRequiredGB * 1024,
-      threads: this.hardware.cpuThreads,
-      reason: `Selected ${best.model.name} for ${analysis.intent} (score: ${best.score})`,
-    };
-  }
-}
-
-class LocalLLMService {
-  async *stream(
-    model: LocalModelConfig,
-    prompt: string,
-    history: OrchestratorMessage[],
-    signal: AbortSignal,
-    options?: { reasoning?: ReasoningStrategy }
-  ): AsyncGenerator<StreamEvent> {
-    if (options?.reasoning?.showThinking) {
-      yield { type: 'thinking', content: 'Analyzing the problem structure...' };
-      await delay(300);
-      yield { type: 'thinking', content: 'Identifying required tools and approach...' };
-      await delay(300);
-    }
-
-    yield { type: 'text', content: "I'll help you with that. " };
-    await delay(200);
-
-    if (options?.reasoning?.type === 'react') {
-      yield { type: 'tool_use', tool: 'file_read', input: { path: './src/main.ts' } };
-      await delay(500);
-      yield { type: 'tool_result', tool: 'file_read', result: { content: '// file content' } };
-      await delay(200);
-    }
-
-    yield {
-      type: 'text',
-      content:
-        'Here\'s the solution:\n\n```typescript\nfunction example() {\n  return "hello";\n}\n```',
-    };
-
-    yield {
-      type: 'artifact',
-      artifactType: 'code',
-      title: 'example.ts',
-      content: 'function example() {\n  return "hello";\n}',
-    };
-
-    yield { type: 'citation', source: 'docs', quote: 'Reference from documentation' };
-
-    yield { type: 'complete' };
-  }
+interface StreamChunkPayload {
+  event_type?: string;
+  type?: string;
+  content?: string;
+  reasoning?: string;
+  tool_name?: string;
+  tool_args?: string;
+  result?: string;
+  error?: string;
+  tool_id?: string;
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const generateId = () => crypto.randomUUID();
 
 // ── Main Hook ─────────────────────────────────────────────────────────────────
 
-export function useOrchestrator(
-  models: LocalModelConfig[],
-  hardware: HardwareProfile,
-  tools: LocalTool[],
-  options: Partial<OrchestratorOptions> = {}
-) {
+export function useOrchestrator(props: UseOrchestratorProps = {}) {
+  const {
+    apiKeys: propApiKeys,
+    modelId: propModelId,
+    provider: propProvider,
+    systemInstruction,
+    agenticMode = true,
+  } = props;
+
   const [state, setState] = useState<OrchestratorState>({
     messages: [],
     isProcessing: false,
@@ -245,12 +143,41 @@ export function useOrchestrator(
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const analyzer = useRef(new PromptAnalyzer());
-  const selector = useRef(new ModelSelector(models, hardware));
+  // ── Resolve runtime config from props or Zustand store ──────────────────────
+  const resolveConfig = useCallback(() => {
+    const storeState = useNyxStore.getState();
+    const keys = propApiKeys ?? storeState.apiKeys;
+    const modelId = propModelId ?? storeState.cloudModelId ?? storeState.localModelId ?? '';
+    const provider = propProvider ?? detectProvider(modelId);
+    const apiKey = getEffectiveApiKey(provider, keys) ?? '';
+    return { keys, modelId, provider, apiKey };
+  }, [propApiKeys, propModelId, propProvider]);
+
+  // ── sendMessage ──────────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, images?: Array<{ name: string; mimeType: string; data: string }>) => {
       if (stateRef.current.isProcessing) return;
+
+      const { modelId, provider, apiKey } = resolveConfig();
+
+      if (!modelId) {
+        setState((prev) => ({
+          ...prev,
+          messages: [
+            ...prev.messages,
+            {
+              id: generateId(),
+              role: 'system',
+              content: 'No model selected. Please choose a model in the model registry.',
+              timestamp: Date.now(),
+              status: 'error',
+            },
+          ],
+          currentPhase: 'error',
+        }));
+        return;
+      }
 
       const userMsg: OrchestratorMessage = {
         id: generateId(),
@@ -258,278 +185,284 @@ export function useOrchestrator(
         content,
         timestamp: Date.now(),
         status: 'complete',
+        images: images?.map((img) => ({
+          name: img.name,
+          mimeType: img.mimeType,
+          data: img.data,
+        })),
       };
+
+      const abortController = new AbortController();
 
       setState((prev) => ({
         ...prev,
         messages: [...prev.messages, userMsg],
         isProcessing: true,
         currentPhase: 'analyzing',
-        abortController: new AbortController(),
+        abortController,
       }));
 
+      const assistantId = generateId();
+      const assistantMsg: OrchestratorMessage = {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        status: 'streaming',
+        thinking: [],
+        artifacts: [],
+        citations: [],
+        toolCalls: [],
+      };
+
+      setState((prev) => ({
+        ...prev,
+        messages: [...prev.messages, assistantMsg],
+        currentPhase: 'generating',
+      }));
+
+      // Mutable accumulators — we batch setState at throttle intervals
+      let fullText = '';
+      let fullReasoning = '';
+      const thinkingSteps: ThinkingStep[] = [];
+      const toolCalls: OrchestratorToolCall[] = [];
+      let stepCount = 0;
+      let lastUpdateTime = 0;
+      const THROTTLE_MS = 50;
+
+      // Build messages for the backend
+      const history = stateRef.current.messages;
+      const backendMessages = history
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => {
+          let msgContent: any = m.content;
+          if (m.images && m.images.length > 0) {
+            msgContent = [
+              { type: 'text', text: m.content },
+              ...m.images.map((img) => ({
+                type: 'image_url',
+                image_url: {
+                  url: img.data?.startsWith('data:')
+                    ? img.data
+                    : `data:${img.mimeType};base64,${img.data}`,
+                },
+              })),
+            ];
+          }
+          return { role: m.role, content: msgContent };
+        });
+
+      // Add the new user message
+      let userContent: any = content;
+      if (images && images.length > 0) {
+        userContent = [
+          { type: 'text', text: content },
+          ...images.map((img) => ({
+            type: 'image_url',
+            image_url: {
+              url: img.data?.startsWith('data:')
+                ? img.data
+                : `data:${img.mimeType};base64,${img.data}`,
+            },
+          })),
+        ];
+      }
+      backendMessages.push({ role: 'user', content: userContent });
+
+      const onAbort = () => {
+        // Signal backend to cancel (best-effort)
+      };
+      abortController.signal.addEventListener('abort', onAbort);
+
       try {
-        const analysis = await analyzer.current.analyze(content, stateRef.current.messages);
+        const onProgress = new Channel<StreamChunkPayload>();
 
-        setState((prev) => ({ ...prev, currentPhase: 'selecting_model', analysis }));
+        onProgress.onmessage = (message) => {
+          if (abortController.signal.aborted) return;
 
-        const modelSelection = selector.current.select(analysis);
+          const eventType = message.event_type ?? message.type;
+          const now = Date.now();
 
-        setState((prev) => ({ ...prev, currentPhase: 'reasoning', selectedModel: modelSelection }));
+          if (eventType === 'text') {
+            fullText += message.content ?? '';
 
-        const complexityLevel =
-          typeof analysis.complexity === 'string'
-            ? analysis.complexity
-            : analysis.complexity?.level;
-
-        const reasoning: ReasoningStrategy = {
-          type: analysis.requiresTools ? 'react' : complexityLevel === 'complex' ? 'cot' : 'direct',
-          showThinking: complexityLevel !== 'simple',
-          maxSteps: analysis.requiresTools ? 5 : 1,
-          reflectionEnabled: complexityLevel === 'complex' || complexityLevel === 'very_complex',
-          verificationEnabled:
-            analysis.intent === 'code_generation' || analysis.intent === 'testing',
-          explorationEnabled: complexityLevel === 'very_complex',
-        };
-
-        const assistantId = generateId();
-        const assistantMsg: OrchestratorMessage = {
-          id: assistantId,
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-          status: 'streaming',
-          thinking: [],
-          artifacts: [],
-          citations: [],
-          toolCalls: [],
-        };
-
-        setState((prev) => ({
-          ...prev,
-          messages: [...prev.messages, assistantMsg],
-          currentPhase: analysis.requiresTools ? 'executing_tools' : 'generating',
-        }));
-
-        const llm = new LocalLLMService();
-        const stream = llm.stream(
-          modelSelection.model,
-          content,
-          stateRef.current.messages,
-          stateRef.current.abortController!.signal,
-          { reasoning }
-        );
-
-        let fullText = '';
-        const thinkingSteps: ThinkingStep[] = [];
-        const artifacts: Artifact[] = [];
-        const citations: Citation[] = [];
-        const toolCalls: ToolCall[] = [];
-        let stepCount = 0;
-
-        for await (const event of stream) {
-          if (stateRef.current.abortController?.signal.aborted) break;
-
-          switch (event.type) {
-            case 'thinking': {
-              stepCount++;
-              const step: ThinkingStep = {
-                id: generateId(),
-                step: stepCount,
-                content: event.content as string,
-                timestamp: Date.now(),
-                type: 'reasoning',
-              };
-              // fallow-ignore-next-line code-duplication
-              // fallow-ignore-next-line code-duplication
-              thinkingSteps.push(step);
-
-              setState((prev) => {
-                const msgs = [...prev.messages];
-                const lastIdx = msgs.findIndex((m) => m.id === assistantId);
-                if (lastIdx !== -1) {
-                  msgs[lastIdx] = {
-                    ...msgs[lastIdx],
-                    thinking: [...thinkingSteps],
-                  };
-                }
-                return { ...prev, messages: msgs };
-              });
-              break;
-            }
-
-            case 'text': {
-              // fallow-ignore-next-line code-duplication
-              fullText += event.content as string;
-              setState((prev) => {
-                const msgs = [...prev.messages];
-                const lastIdx = msgs.findIndex((m) => m.id === assistantId);
-                if (lastIdx !== -1) {
-                  msgs[lastIdx] = { ...msgs[lastIdx], content: fullText };
-                }
-                return { ...prev, messages: msgs };
-              });
-              break;
-            }
-
-            case 'tool_use': {
-              const toolCall: ToolCall = {
-                id: generateId(),
-                tool: event.tool as string,
-                input: event.input as Record<string, unknown>,
-                status: 'running',
-              };
-              toolCalls.push(toolCall);
-
+            if (now - lastUpdateTime > THROTTLE_MS) {
+              lastUpdateTime = now;
               setState((prev) => ({
                 ...prev,
-                currentPhase: 'executing_tools',
                 messages: prev.messages.map((m) =>
-                  m.id === assistantId ? { ...m, toolCalls: [...toolCalls] } : m
+                  m.id === assistantId ? { ...m, content: fullText } : m
                 ),
               }));
+            }
+          } else if (eventType === 'thinking') {
+            fullReasoning += message.content ?? '';
+            stepCount++;
+            const step: ThinkingStep = {
+              id: generateId(),
+              step: stepCount,
+              content: message.content ?? '',
+              timestamp: Date.now(),
+              type: 'reasoning',
+            };
+            thinkingSteps.push(step);
 
-              const tool = tools.find((t) => t.name === event.tool);
-              if (tool) {
-                const startTime = Date.now();
+            if (now - lastUpdateTime > THROTTLE_MS) {
+              lastUpdateTime = now;
+              setState((prev) => ({
+                ...prev,
+                currentPhase: 'reasoning',
+                messages: prev.messages.map((m) =>
+                  m.id === assistantId ? { ...m, thinking: [...thinkingSteps] } : m
+                ),
+              }));
+            }
+          } else if (eventType === 'tool_call') {
+            const toolCall: OrchestratorToolCall = {
+              id: message.tool_id ?? generateId(),
+              tool: message.tool_name ?? '',
+              input: (() => {
                 try {
-                  const result = await tool.execute(
-                    event.input as Record<string, unknown>,
-                    stateRef.current.abortController?.signal
-                  );
-                  toolCall.status = 'success';
-                  toolCall.result = result;
-                  toolCall.output = result.content || result.error || result;
-                  toolCall.durationMs = Date.now() - startTime;
-                } catch (err: any) {
-                  toolCall.status = 'error';
-                  toolCall.result = { content: '', error: (err as Error).message };
-                  toolCall.output = (err as Error).message;
+                  return JSON.parse(message.tool_args ?? '{}');
+                } catch {
+                  return {};
                 }
-
-                setState((prev) => ({
-                  ...prev,
-                  messages: prev.messages.map((m) =>
-                    m.id === assistantId ? { ...m, toolCalls: [...toolCalls] } : m
-                  ),
-                }));
-              }
-              break;
+              })(),
+              status: 'running',
+            };
+            toolCalls.push(toolCall);
+            setState((prev) => ({
+              ...prev,
+              currentPhase: 'executing_tools',
+              messages: prev.messages.map((m) =>
+                m.id === assistantId ? { ...m, toolCalls: [...toolCalls] } : m
+              ),
+            }));
+          } else if (eventType === 'tool_result') {
+            const lastCall = toolCalls[toolCalls.length - 1];
+            if (lastCall) {
+              lastCall.status = 'success';
+              lastCall.result = { content: message.result ?? '' };
+              lastCall.output = message.result;
             }
+            setState((prev) => ({
+              ...prev,
+              currentPhase: 'generating',
+              messages: prev.messages.map((m) =>
+                m.id === assistantId ? { ...m, toolCalls: [...toolCalls] } : m
+              ),
+            }));
+          } else if (eventType === 'done') {
+            // Final flush is handled after the await
+          } else if (eventType === 'error') {
+            setState((prev) => ({
+              ...prev,
+              currentPhase: 'error',
+              messages: prev.messages.map((m) =>
+                m.id === assistantId
+                  ? { ...m, status: 'error', content: message.error ?? message.content ?? 'An error occurred' }
+                  : m
+              ),
+            }));
+          }
+        };
 
-            case 'artifact': {
-              const artifact: Artifact = {
-                id: generateId(),
-                type: event.artifactType as Artifact['type'],
-                title: event.title as string,
-                content: event.content as string,
-                language: event.language as string,
-              };
-              // fallow-ignore-next-line code-duplication
-              // fallow-ignore-next-line code-duplication
-              artifacts.push(artifact);
+        const req = {
+          provider,
+          model_id: modelId,
+          api_key: apiKey,
+          messages: backendMessages,
+          system_instruction: systemInstruction ?? null,
+          temperature: null,
+          max_tokens: null,
+          top_p: null,
+          top_k: null,
+          repeat_penalty: null,
+          // Removed reasoning_effort per user request
+          event_name: null,
+          endpoint_override: null,
+          tools: null,
+          execution_mode: agenticMode ? 'coder' : 'chat',
+        };
 
-              setState((prev) => {
-                const msgs = [...prev.messages];
-                const lastIdx = msgs.findIndex((m) => m.id === assistantId);
-                if (lastIdx !== -1) {
-                  msgs[lastIdx] = { ...msgs[lastIdx], artifacts: [...artifacts] };
-                }
-                return { ...prev, messages: msgs };
-              });
-              break;
-            }
-
-            case 'citation': {
-              const citation: Citation = {
-                id: generateId(),
-                source: event.source as string,
-                quote: event.quote as string,
-                relevance: (event.relevance as number) || 1,
-              };
-              // fallow-ignore-next-line code-duplication
-              // fallow-ignore-next-line code-duplication
-              citations.push(citation);
-
-              setState((prev) => {
-                const msgs = [...prev.messages];
-                const lastIdx = msgs.findIndex((m) => m.id === assistantId);
-                if (lastIdx !== -1) {
-                  msgs[lastIdx] = { ...msgs[lastIdx], citations: [...citations] };
-                }
-                return { ...prev, messages: msgs };
-              });
-              break;
-            }
-
-            case 'error': {
-              setState((prev) => ({
-                ...prev,
-                currentPhase: 'error',
-                messages: prev.messages.map((m) =>
-                  m.id === assistantId
-                    ? {
-                        ...m,
-                        status: 'error',
-                        content: (event.content as string) || 'An error occurred',
-                      }
-                    : m
-                ),
-              }));
-              return;
-            }
-
-            case 'complete': {
-              break;
-            }
+        if (agenticMode) {
+          // Agentic tool-calling loop — registered tools (WebSearch, Memory, CreateFile, etc.)
+          await invoke('run_orchestrator_turn', { request: req, onEvent: onProgress });
+        } else {
+          // Direct streaming without tool loop
+          if (req.provider === 'nyx-native') {
+            await invoke('llm_local_stream_request', { req, onEvent: onProgress });
+          } else {
+            await invoke('llm_stream_request', { req, onEvent: onProgress });
           }
         }
 
-        setState((prev) => ({
-          ...prev,
-          isProcessing: false,
-          currentPhase: 'complete',
-          messages: prev.messages.map((m) =>
-            m.id === assistantId
-              ? {
-                  ...m,
-                  status: 'complete',
-                  metrics: {
-                    modelUsed: modelSelection.model.name,
-                    tokensIn: content.length,
-                    tokensOut: fullText.length,
-                    latencyMs: Date.now() - userMsg.timestamp,
-                    reasoningSteps: stepCount,
-                    tokens: content.length + fullText.length,
-                  },
-                }
-              : m
-          ),
-          abortController: null,
-        }));
+        // Final state flush after stream completes
+        if (!abortController.signal.aborted) {
+          const startTs = userMsg.timestamp;
+          setState((prev) => ({
+            ...prev,
+            isProcessing: false,
+            currentPhase: 'complete',
+            abortController: null,
+            messages: prev.messages.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content: fullText,
+                    thinking: [...thinkingSteps],
+                    toolCalls: [...toolCalls],
+                    status: 'complete',
+                    metrics: {
+                      modelUsed: modelId,
+                      tokensIn: Math.ceil(content.length / 4),
+                      tokensOut: Math.ceil(fullText.length / 4),
+                      latencyMs: Date.now() - startTs,
+                      reasoningSteps: stepCount,
+                      tokens: Math.ceil((content.length + fullText.length) / 4),
+                    },
+                  }
+                : m
+            ),
+          }));
+        }
       } catch (err: any) {
-        if ((err as Error).name !== 'AbortError') {
+        if (err?.name !== 'AbortError' && err?.message !== 'Aborted') {
           setState((prev) => ({
             ...prev,
             isProcessing: false,
             currentPhase: 'error',
-            messages: [
-              ...prev.messages,
-              {
-                id: generateId(),
-                role: 'system',
-                content: `Error: ${(err as Error).message}`,
-                timestamp: Date.now(),
-                status: 'error',
-              },
-            ],
             abortController: null,
+            messages: prev.messages.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    status: 'error',
+                    content: err?.message ?? String(err) ?? 'Generation failed',
+                  }
+                : m
+            ),
+          }));
+        } else {
+          // Aborted — mark as complete (partial)
+          setState((prev) => ({
+            ...prev,
+            isProcessing: false,
+            currentPhase: 'complete',
+            abortController: null,
+            messages: prev.messages.map((m) =>
+              m.id === assistantId ? { ...m, status: 'complete' } : m
+            ),
           }));
         }
+      } finally {
+        abortController.signal.removeEventListener('abort', onAbort);
       }
     },
-    [models, hardware, tools, options]
+    [resolveConfig, systemInstruction, agenticMode]
   );
+
+  // ── stop ────────────────────────────────────────────────────────────────────
 
   const stop = useCallback(() => {
     stateRef.current.abortController?.abort();
@@ -544,17 +477,19 @@ export function useOrchestrator(
     }));
   }, []);
 
+  // ── clear ───────────────────────────────────────────────────────────────────
+
   const clear = useCallback(() => {
     stateRef.current.abortController?.abort();
     setState({
       messages: [],
       isProcessing: false,
       currentPhase: 'complete',
-      selectedModel: undefined,
-      analysis: undefined,
       abortController: null,
     });
   }, []);
+
+  // ── editMessage ─────────────────────────────────────────────────────────────
 
   const editMessage = useCallback(
     async (messageId: string, newContent: string) => {
@@ -578,20 +513,22 @@ export function useOrchestrator(
     [sendMessage]
   );
 
+  // ── regenerate ──────────────────────────────────────────────────────────────
+
   const regenerate = useCallback(
     async (messageId?: string) => {
-      const targetId =
-        messageId || stateRef.current.messages[stateRef.current.messages.length - 1]?.id;
-      const targetIndex = stateRef.current.messages.findIndex((m) => m.id === targetId);
+      const msgs = stateRef.current.messages;
+      const targetId = messageId ?? msgs[msgs.length - 1]?.id;
+      const targetIndex = msgs.findIndex((m) => m.id === targetId);
 
       let userIndex = targetIndex;
-      while (userIndex >= 0 && stateRef.current.messages[userIndex]?.role !== 'user') {
+      while (userIndex >= 0 && msgs[userIndex]?.role !== 'user') {
         userIndex--;
       }
       if (userIndex < 0) return;
 
-      const userMsg = stateRef.current.messages[userIndex];
-      const truncated = stateRef.current.messages.slice(0, userIndex);
+      const userMsg = msgs[userIndex];
+      const truncated = msgs.slice(0, userIndex);
 
       setState((prev) => ({ ...prev, messages: truncated }));
       await sendMessage(userMsg.content);

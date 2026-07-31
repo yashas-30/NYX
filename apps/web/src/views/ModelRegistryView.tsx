@@ -1,1 +1,3 @@
-export { ModelRegistryView as default } from '@src/features/model-registry';
+import { ModelRegistryView } from '@src/features/model-registry';
+
+export default ModelRegistryView;

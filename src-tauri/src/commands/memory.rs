@@ -69,3 +69,37 @@ pub async fn delete_entity(
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn extract_session_memory(
+    pool: State<'_, SqlitePool>,
+    session_id: String,
+) -> Result<(), String> {
+    let msgs = sqlx::query_as::<_, crate::db::models::ChatMessage>(
+        "SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY timestamp ASC"
+    )
+    .bind(&session_id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let snapshots: Vec<crate::agents::memory::memory_extractor::MessageSnapshot> = msgs
+        .into_iter()
+        .map(|m| crate::agents::memory::memory_extractor::MessageSnapshot {
+            role: m.role,
+            content: m.content,
+        })
+        .collect();
+
+    crate::agents::memory::memory_extractor::extract_and_store(
+        pool.inner(),
+        &session_id,
+        &snapshots,
+        "",
+        "gemini-2.0-flash",
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}

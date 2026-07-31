@@ -1,6 +1,6 @@
-// src/features/chat/promptBuilders.ts
-
-import { ChatMessage } from '@src/infrastructure/types';
+import { NYX_PERSONA } from '../agents/nyxPersona';
+import { LUCIFER_PERSONA } from '../agents/luciferPersona';
+import type { ChatMessage } from '@src/infrastructure/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -13,11 +13,16 @@ export interface ChatContext {
   previousMessages: number;
   lightningDirectives?: string[];
   availableTools?: ToolDefinition[];
-  enableReasoning?: boolean;
-  reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | 'max';
   enableCitations?: boolean;
   maxResponseTokens?: number;
   historySummary?: string;
+  reasoningEnabled?: boolean;
+  /** True when the request goes to a local GGUF model via llama-server.
+   *  Skips citation rules — they waste tokens and aren't useful on local models. */
+  localModel?: boolean;
+  customSystemPrompt?: string;
+  hasWebSearch?: boolean;
+  isLuciferMode?: boolean;
 }
 
 export interface UserPreferences {
@@ -45,26 +50,6 @@ export interface ChatPromptBuildResult {
   };
 }
 
-class PromptLRUCache {
-  private cache = new Map<string, ChatPromptBuildResult>();
-  private maxSize = 100;
-
-  get(key: string) {
-    if (!this.cache.has(key)) return undefined;
-    const val = this.cache.get(key)!;
-    this.cache.delete(key);
-    this.cache.set(key, val);
-    return val;
-  }
-
-  set(key: string, val: ChatPromptBuildResult) {
-    if (this.cache.size >= this.maxSize) {
-      this.cache.delete(this.cache.keys().next().value!);
-    }
-    this.cache.set(key, val);
-  }
-}
-
 // ── Token Estimation (rough: ~4 chars per token) ─────────────────────────────
 
 function estimateTokens(text?: string): number {
@@ -73,349 +58,160 @@ function estimateTokens(text?: string): number {
 }
 
 // ── Main Builder ─────────────────────────────────────────────────────────────
+//
+// IMPORTANT: This returns:
+//   - systemPrompt: injected as system_instruction to the backend
+//   - userPrompt:   the raw user text (possibly with [RESEARCH] prepended)
+//
+// The chat HISTORY is already passed separately as the `messages` array in
+// useChatLogic.ts — do NOT concatenate history here or it will be doubled.
 
 export function buildChatPrompts(
   modelId: string,
   context: ChatContext,
   rawPrompt: string,
-  history: ChatMessage[],
+  _history: ChatMessage[],
   webSearchResults?: string
 ): ChatPromptBuildResult {
   const now = new Date();
-
   const contextBreakdown: Record<string, number> = {};
 
-  // Build system prompt
   const systemPrompt = buildChatSystemPromptInternal(modelId, context, now);
   contextBreakdown.system = estimateTokens(systemPrompt);
 
-  // Build user prompt with history injection
-  const userPrompt = buildChatUserPromptInternal(
-    rawPrompt,
-    context,
-    history,
-    webSearchResults,
-    now
-  );
+  // Build user-facing prompt — web search context prepended if available.
+  // DO NOT include history here; it's already in backendMessages in useChatLogic.
+  let userPrompt = rawPrompt;
+  if (webSearchResults) {
+    userPrompt = `[RESEARCH]\n${webSearchResults}\n[/RESEARCH]\n\n${rawPrompt}`;
+  }
   contextBreakdown.user = estimateTokens(userPrompt);
-
-  // History tokens
-  const historyText = formatHistoryForPrompt(history, context.previousMessages);
-  contextBreakdown.history = estimateTokens(historyText);
-
-  const totalTokens = Object.values(contextBreakdown).reduce((a, b) => a + b, 0);
 
   return {
     systemPrompt,
-    userPrompt: historyText ? `${historyText}\n\n${userPrompt}` : userPrompt,
+    userPrompt,
     metadata: {
-      version: '1.0.0',
-      estimatedTokens: totalTokens,
+      version: '2.1.0',
+      estimatedTokens: Object.values(contextBreakdown).reduce((a, b) => a + b, 0),
       contextBreakdown,
       safetyLevel: detectSafetyLevel(rawPrompt),
     },
   };
 }
 
-import { NYX_PERSONA } from '../agents/nyxPersona';
-
 // ── System Prompt Builder ─────────────────────────────────────────────────────
-
-function buildChatSystemPromptInternal(modelId: string, context: ChatContext, now: Date): string {
-  const parts: string[] = [];
+//
+// Design principle (2026):
+//   • Flat prose only — no XML tag wrappers.  XML tags were ~200 tokens of
+//     structural noise.  Frontier models parse prose structure natively.
+//     GGUF models tokenise XML tags as raw text anyway.
+//   • Target: ≤180 tokens for local, ≤250 tokens for cloud.
+//
+function buildChatSystemPromptInternal(
+  _modelId: string,
+  context: ChatContext,
+  now: Date
+): string {
   const {
     userName,
     userPreferences,
     conversationTone,
     detectedLanguage,
-    enableReasoning,
-    reasoningEffort,
-    enableCitations,
     availableTools,
+    lightningDirectives,
+    reasoningEnabled,
+    localModel,
+    customSystemPrompt,
   } = context;
 
-  // ── Identity & Temporal Context ───────────────────────────────────────────
-
-  const dateStr = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-  parts.push(`<identity>
-You are NYX, a powerful and friendly chatbot developed by Yashas. You use local models and free cloud models for response generation. You communicate naturally and conversationally, like a knowledgeable colleague. Never claim to be made by OpenAI, Google, Anthropic, Moonshot AI, or any other company.
-
-${NYX_PERSONA}
-
-Never claim to be made by OpenAI, Google, Anthropic, Moonshot AI, or any other company.
-
-Current Date: ${dateStr}
-Current Year: ${now.getFullYear()}
-</identity>`);
-
-  // ── Personalization (Kimi-style memory) ───────────────────────────────────
-
-  if (userName || userPreferences?.preferredName) {
-    const name = userPreferences?.preferredName || userName;
-    parts.push(`<user_profile>
-The user's preferred name is "${name}". Address them by this name naturally.
-${userPreferences?.expertiseLevel ? `Their expertise level: ${userPreferences.expertiseLevel}. Adjust technical depth accordingly.` : ''}
-${userPreferences?.detailPreference ? `Their detail preference: ${userPreferences.detailPreference}.` : ''}
-${userPreferences?.formatPreference ? `Their format preference: ${userPreferences.formatPreference}.` : ''}
-${userPreferences?.lastTopics?.length ? `Recent topics discussed: ${userPreferences.lastTopics.slice(-3).join(', ')}.` : ''}
-</user_profile>`);
-  }
-
-  // ── Role Definition ───────────────────────────────────────────────────────
-
-  parts.push(`<role>
-You are a general conversational assistant. Your capabilities:
-- Answer questions, explain concepts, brainstorm ideas
-- Analyze text, summarize content, compare options
-- Help with writing, editing, and creative tasks
-- Provide recommendations and guidance
-
-You CANNOT:
-- Execute code or commands
-- Access the file system
-- Browse the internet in real-time (unless search results are provided in context)
-- Generate and run production code autonomously
-</role>`);
-
-  // ── Personality (Tone-Adaptive) ───────────────────────────────────────────
-
-  const toneInstructions: Record<string, string> = {
-    casual: `<personality>
-Tone: Warm, friendly, approachable. Use natural language, occasional light humor, and relevant emojis (1-2 per response max). 
-Structure: Conversational flow, avoid rigid formatting unless requested.
-Examples: "Hey! 😊 Great question...", "No worries, here's the deal..."
-</personality>`,
-    professional: `<personality>
-Tone: Clear, respectful, business-appropriate. No slang or emojis.
-Structure: Use bullet points and headers for complex info. Lead with the key takeaway.
-Examples: "Here are the three main considerations...", "To summarize:..."
-</personality>`,
-    technical: `<personality>
-Tone: Precise, accurate, thorough. Use correct terminology.
-Structure: Brief summary first, then detailed explanation on request. Use code blocks for technical terms.
-Examples: "The core mechanism is...", "At the protocol level, this works by..."
-</personality>`,
-  };
-
-  parts.push(toneInstructions[conversationTone] || toneInstructions.professional);
-
-  // ── Response Guidelines (Adaptive Length) ─────────────────────────────────
-
-  const detailLevel = userPreferences?.detailPreference || 'balanced';
-  const lengthGuide: Record<string, string> = {
-    concise: 'Keep responses concise and direct. One paragraph preferred.',
-    balanced:
-      'Provide a balanced, well-structured response. Use paragraphs with occasional bullets for complex topics. No arbitrary length limit.',
-    thorough:
-      'Provide comprehensive responses. Use sections, examples, and depth. No arbitrary length limit.',
-  };
-
-  parts.push(`<response_rules>
-- ${lengthGuide[detailLevel]}
-- Answer directly without unnecessary preamble ("Sure!", "I'd be happy to help")
-- DO NOT output any internal monologues, chain-of-thought, drafting, or 'thinking' process.
-- DO NOT analyze the user's intent or explain what the user wants. Respond directly to the prompt.
-- Provide a structured response without saying "User Intent:" or "What I should do:".
-- DO NOT wrap your entire response in a markdown code block (like \`\`\`text or \`\`\`markdown). Output regular markdown directly so it renders properly.
-- If unsure, express confidence level: "I'm confident that..." / "I believe..." / "I'm uncertain about..."
-- For multi-part questions, address each part explicitly
-- Use markdown: **bold** for emphasis, \`code\` for technical terms, lists for sequences
-- Match the user's language: respond in ${detectedLanguage}
-- When declining a request, explain why briefly and suggest alternatives
-</response_rules>`);
-
-  // ── Web Search Grounding (Claude-style citations) ─────────────────────────
-
-  if (enableCitations !== false) {
-    parts.push(`<web_search_guidelines>
-When [RESEARCH] results are provided in the user message:
-- Treat search results as PRIMARY source for temporal/factual/current events
-- Prioritize search context over training knowledge cutoff
-- Do NOT say "As of my knowledge cutoff" or "As an AI language model" when search results contain the answer
-- If search results are insufficient, say so explicitly rather than guessing
-- Do NOT add inline citations like [1] or [^1^] inside your sentences, and do NOT append a Sources section at the end. The user interface will automatically display the sources.
-</web_search_guidelines>`);
-  }
-
-  // ── Reasoning Visibility (Claude-style thinking) ──────────────────────────
-
-  if (enableReasoning && reasoningEffort !== 'none') {
-    const effortGuide: Record<string, string> = {
-      low: 'Keep thinking concise (1-2 sentences). Just identify the core intent.',
-      medium: 'Think step-by-step. Provide a structured and moderate amount of reasoning.',
-      high: 'Think deeply and comprehensively. Explore multiple angles, consider edge cases, and evaluate alternatives.',
-      max: 'Conduct an exhaustive analysis. Break down every aspect of the problem in great detail. Provide a very lengthy thought process.'
-    };
-    const effortInstruction = effortGuide[reasoningEffort || 'medium'] || effortGuide.medium;
-
-    parts.push(`<reasoning>
-For complex questions, show your reasoning process inside <thinking> tags before the final answer.
-Example:
-<thinking>
-The user is asking about X. Key factors are A, B, C. 
-A leads to... B suggests... Therefore...
-</thinking>
-
-${effortInstruction} The user can expand/collapse this section.
-</reasoning>`);
-  }
-
-  // ── Tool Definitions (if available) ───────────────────────────────────────
-
-  if (availableTools && availableTools.length > 0) {
-    parts.push(`<tools>
-You have access to the following tools. Use them when appropriate:
-${availableTools.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
-
-To use a tool, respond with:
-<tool_call>
-{"name": "tool_name", "parameters": {...}}
-</tool_call>
-</tools>`);
-  }
-
-  // ── Anti-Hallucination (Nuance over blanket refusal) ──────────────────────
-
-  parts.push(`<grounding_rules>
-1. Distinguish facts from inference:
-   - FACT (training data): State confidently
-   - INFERENCE (logical deduction): Preface with "Based on this, it seems..."
-   - UNKNOWN: Say "I don't have reliable information about that" and suggest how to find out
-
-2. Never invent:
-   - Specific statistics without source
-   - URLs, credentials, API keys, passwords
-   - Names of people, products, or organizations you're uncertain about
-
-3. For current events: If no search results provided, acknowledge your knowledge cutoff (${now.getFullYear()}-01) rather than guessing
-</grounding_rules>`);
-
-  // ── Safety & Refusals ─────────────────────────────────────────────────────
-
-  // fallow-ignore-next-line code-duplication
-  parts.push(`<safety>
-Refuse requests involving:
-- Illegal activities, violence, self-harm
-- Generation of malware, exploits, or harmful code
-- Creation of deceptive content (deepfakes, scams)
-- Private information about non-public individuals
-
-Refusal format: "I can't help with that because [brief reason]. I'd be happy to help with [alternative]."
-</safety>`);
-
-  // ── Dynamic APO Directives (Highest Priority) ─────────────────────────────
-
-  if (context.lightningDirectives && context.lightningDirectives.length > 0) {
-    parts.push(`<directives priority="maximum">
-The following user-optimized directives override general instructions:
-${context.lightningDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n')}
-</directives>`);
-  }
-
-  // ── Model-Specific Optimizations ──────────────────────────────────────────
-
-  const MODEL_OPTIMIZATIONS: Record<string, string> = {};
-
-  for (const [key, note] of Object.entries(MODEL_OPTIMIZATIONS)) {
-    if (modelId.toLowerCase().includes(key)) {
-      parts.push(`<model_note>\n${note}\n</model_note>`);
-    }
-  }
-
-  return parts.join('\n\n');
-}
-
-// ── User Prompt Builder ───────────────────────────────────────────────────────
-
-function buildChatUserPromptInternal(
-  rawPrompt: string,
-  context: ChatContext,
-  history: ChatMessage[],
-  webSearchResults: string | undefined,
-  now: Date
-): string {
   const parts: string[] = [];
 
-  // Web search context (if available)
-  if (webSearchResults) {
-    parts.push(`[RESEARCH]
-${webSearchResults}
-[END RESEARCH]`);
-  }
-
-  // Recent conversation summary (for continuity)
-  if (context.historySummary) {
-    parts.push(`<conversation_context>\n${context.historySummary}\n</conversation_context>`);
-  } else if (history.length > 0 && context.previousMessages > 0) {
-    const recentHistory = history.slice(-context.previousMessages);
-    const summary = summarizeHistory(recentHistory);
-    if (summary) {
-      parts.push(`<conversation_context>\n${summary}\n</conversation_context>`);
+  // ── Core Identity ─────────────────────────────────────────────────────────
+  if (context.isLuciferMode) {
+    parts.push(LUCIFER_PERSONA);
+    if (customSystemPrompt && customSystemPrompt.trim().length > 0 && !customSystemPrompt.includes('Lucifer')) {
+      parts.push(customSystemPrompt.trim());
     }
+  } else if (customSystemPrompt && customSystemPrompt.trim().length > 0) {
+    parts.push(customSystemPrompt.trim());
+  } else {
+    parts.push(NYX_PERSONA);
   }
 
-  // Topic domain hint
-  if (context.topicDomain) {
-    parts.push(`<topic_domain>${context.topicDomain}</topic_domain>`);
+  // ── Date ──────────────────────────────────────────────────────────────────
+  parts.push(
+    `Today is ${now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })}.`
+  );
+
+  // ── User personalization (only when known) ────────────────────────────────
+  const name = userPreferences?.preferredName || userName;
+  if (name) {
+    const detail = userPreferences?.detailPreference
+      ? ` Prefer ${userPreferences.detailPreference} responses.`
+      : '';
+    parts.push(`The user's name is ${name}.${detail}`);
   }
 
-  // User message
-  parts.push(`<user_message>
-${rawPrompt}
-</user_message>`);
+  // ── Tone (only for non-default values) ───────────────────────────────────
+  if (conversationTone === 'professional') {
+    parts.push('Adopt a professional, direct tone. Avoid slang and emoji.');
+  } else if (conversationTone === 'technical') {
+    parts.push('Be technically precise. Use correct terminology. Show code in fenced blocks.');
+  }
+  // casual = default NYX persona tone — no extra instruction
 
-  // Language hint for non-English
-  if (context.detectedLanguage.toLowerCase() !== 'english') {
-    parts.push(`<instruction>Respond in ${context.detectedLanguage}.</instruction>`);
+  // ── Core response rules ───────────────────────────────────────────────────
+  parts.push(
+    `STRICT DIRECTNESS MANDATE:\n` +
+    `- Answer directly without conversational preamble, greetings, or prompt restatements.\n` +
+    `- Respond in ${detectedLanguage}.\n` +
+    `- Use markdown formatting naturally. Never explain tool execution or search steps.`
+  );
+
+  // ── Reasoning control (only when explicitly configured) ──────────────────
+  if (reasoningEnabled === false) {
+    parts.push('Do not output <think> reasoning tags. Reply directly.');
+  } else if (reasoningEnabled === true) {
+    parts.push('Use <think>…</think> to reason before your final answer.');
+  }
+
+  // ── Web search grounding ──────────────────────────────────────────────────
+  if (context.hasWebSearch) {
+    parts.push(
+      'CRITICAL REAL-TIME ACCESS NOTICE: Real-time live web search results are attached in the user prompt under [LIVE WEB SEARCH RESULTS]. You HAVE live web search access for this request. Read and use the facts inside [LIVE WEB SEARCH RESULTS] to directly answer the user\'s question accurately. Do NOT state that you lack real-time information.'
+    );
+  } else {
+    parts.push(
+      'When live web search results appear in the user prompt, use the facts provided to answer the user\'s question directly.'
+    );
+  }
+
+  // ── Tool definitions (cloud only, when tools are registered) ─────────────
+  if (!localModel && availableTools && availableTools.length > 0) {
+    const toolList = availableTools
+      .map((t) => `- ${t.name}: ${t.description}`)
+      .join('\n');
+    parts.push(
+      `Available tools:\n${toolList}\n\n` +
+        'Call tools by responding with:\n' +
+        '<tool_call>\n{"name": "tool_name", "parameters": {...}}\n</tool_call>'
+    );
+  }
+
+  // ── Lightning directives (highest priority — always last) ─────────────────
+  if (lightningDirectives && lightningDirectives.length > 0) {
+    parts.push(
+      'Critical instructions (override all above):\n' +
+        lightningDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n')
+    );
   }
 
   return parts.join('\n\n');
-}
-
-// ── History Formatter (Sliding Window with Summarization) ───────────────────
-
-function formatHistoryForPrompt(history: ChatMessage[], maxMessages: number): string {
-  if (!history.length || maxMessages <= 0) return '';
-
-  const recent = history.slice(-maxMessages);
-  const formatted = recent
-    .map((msg, i) => {
-      const role = msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
-      const content =
-        msg.content.length > 2000 ? msg.content.slice(0, 2000) + '... [truncated]' : msg.content;
-      return `[${role}]: ${content}`;
-    })
-    .join('\n\n');
-
-  return `<conversation_history>
-${formatted}
-</conversation_history>`;
-}
-
-function summarizeHistory(history: ChatMessage[]): string {
-  if (history.length < 3) return '';
-
-  const topics = new Set<string>();
-  const lastUserMsgs = history.filter((m) => m.role === 'user').slice(-3);
-
-  for (const msg of lastUserMsgs) {
-    const words = msg.content
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 5);
-    words.slice(0, 5).forEach((w) => topics.add(w));
-  }
-
-  if (topics.size === 0) return '';
-
-  return `Recent discussion topics: ${Array.from(topics).slice(0, 8).join(', ')}. Maintain continuity with these themes.`;
 }
 
 // ── Safety Level Detection ────────────────────────────────────────────────────
@@ -423,13 +219,12 @@ function summarizeHistory(history: ChatMessage[]): string {
 function detectSafetyLevel(prompt: string): 'standard' | 'enhanced' | 'strict' {
   const lower = prompt.toLowerCase();
 
-  // Safe contexts (defensive security work)
+  // Legitimate security work — keep at standard
   const safeContexts = [
     /how\s+(to|do\s+i)\s+(fix|patch|secure|harden|protect)/i,
     /(audit|review|assessment)\s+of\s+(my|our|the)\s+(security|auth|system)/i,
     /prevent\s+(hacking|exploits|attacks)/i,
   ];
-
   if (safeContexts.some((p) => p.test(lower))) return 'standard';
 
   const sensitivePatterns = [
@@ -440,9 +235,7 @@ function detectSafetyLevel(prompt: string): 'standard' | 'enhanced' | 'strict' {
   ];
 
   const matchCount = sensitivePatterns.filter((p) => p.test(lower)).length;
-
   if (matchCount >= 2) return 'strict';
   if (matchCount === 1) return 'enhanced';
   return 'standard';
 }
-

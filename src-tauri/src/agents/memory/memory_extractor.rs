@@ -64,48 +64,93 @@ pub async fn extract_and_store(
 
     let full_prompt = format!("{}{}", EXTRACTION_PROMPT, conversation_text);
 
-    // Call the LLM for extraction (use a fast/cheap model)
-    let extraction_model = if model.contains("flash") || model.contains("mini") || model.contains("haiku") {
-        model.to_string()
-    } else if !api_key.is_empty() {
-        // Default to gemini-flash for cheap extraction
-        "gemini-2.0-flash".to_string()
+    let mut summary = String::new();
+    let mut key_topics = "[]".to_string();
+    let mut entities: Vec<serde_json::Value> = Vec::new();
+
+    // Check environment for API key if empty
+    let effective_key = if !api_key.is_empty() {
+        api_key.to_string()
     } else {
-        // No cloud key available — skip extraction
-        info!("[MemoryExtractor] No API key, skipping extraction for session {}", session_id);
-        return Ok(());
+        std::env::var("GEMINI_API_KEY")
+            .or_else(|_| std::env::var("OPENAI_API_KEY"))
+            .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
+            .unwrap_or_default()
     };
 
-    let client = Client::builder().build();
+    if !effective_key.is_empty() {
+        let extraction_model = if model.contains("flash") || model.contains("mini") || model.contains("haiku") {
+            model.to_string()
+        } else {
+            "gemini-2.0-flash".to_string()
+        };
 
-    let chat_req = ChatRequest::new(vec![
-        ChatMessage::system("You are a memory extraction assistant. Respond with JSON only."),
-        ChatMessage::user(&full_prompt),
-    ]);
+        let client = Client::builder().build();
+        let chat_req = ChatRequest::new(vec![
+            ChatMessage::system("You are a memory extraction assistant. Respond with JSON only."),
+            ChatMessage::user(&full_prompt),
+        ]);
 
-    let response = client
-        .exec_chat(&extraction_model, chat_req, None)
-        .await
-        .map_err(|e| anyhow!("Extraction LLM call failed: {}", e))?;
+        if let Ok(response) = client.exec_chat(&extraction_model, chat_req, None).await {
+            if let Some(raw_json) = response.content_text_into_string() {
+                let json_str = raw_json
+                    .trim()
+                    .trim_start_matches("```json")
+                    .trim_start_matches("```")
+                    .trim_end_matches("```")
+                    .trim();
 
-    let raw_json = response
-        .content_text_into_string()
-        .ok_or_else(|| anyhow!("Empty extraction response"))?;
+                if let Ok(extracted) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    summary = extracted["summary"].as_str().unwrap_or("").to_string();
+                    key_topics = extracted["key_topics"].to_string();
+                    entities = extracted["entities"].as_array().cloned().unwrap_or_default();
+                }
+            }
+        }
+    }
 
-    // Strip potential markdown code fences
-    let json_str = raw_json
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
+    // Heuristic fallback if LLM extraction failed or no key available
+    if summary.is_empty() {
+        let first_user = messages.iter().find(|m| m.role == "user").map(|m| m.content.as_str()).unwrap_or("");
+        let first_assistant = messages.iter().find(|m| m.role == "assistant").map(|m| m.content.as_str()).unwrap_or("");
 
-    let extracted: serde_json::Value = serde_json::from_str(json_str)
-        .map_err(|e| anyhow!("Failed to parse extraction JSON: {} | raw: {}", e, &json_str[..json_str.len().min(200)]))?;
+        let u_snippet = if first_user.len() > 120 { &first_user[..120] } else { first_user };
+        let a_snippet = if first_assistant.len() > 120 { &first_assistant[..120] } else { first_assistant };
 
-    let summary = extracted["summary"].as_str().unwrap_or("").to_string();
-    let key_topics = extracted["key_topics"].to_string(); // Keep as JSON array string
-    let entities = extracted["entities"].as_array().cloned().unwrap_or_default();
+        summary = format!("Session Task: {} | Outcome: {}", u_snippet.trim(), a_snippet.trim());
+
+        // Extract key topics & technologies heuristically
+        let mut detected_topics: Vec<String> = Vec::new();
+        let mut detected_entities: Vec<serde_json::Value> = Vec::new();
+
+        let known_techs = [
+            ("Rust", "technology", "System programming language"),
+            ("React", "technology", "Frontend UI library"),
+            ("TypeScript", "technology", "Typed JavaScript language"),
+            ("Python", "technology", "Data science & AI language"),
+            ("SQLite", "technology", "Embedded database engine"),
+            ("Tauri", "technology", "Desktop application framework"),
+            ("Vite", "technology", "Frontend build tool"),
+            ("Docker", "technology", "Containerization platform"),
+            ("GraphQL", "technology", "API query language"),
+            ("REST API", "technology", "Web API architecture"),
+        ];
+
+        let combined_text = conversation_text.to_lowercase();
+        for (tech, category, desc) in known_techs {
+            if combined_text.contains(&tech.to_lowercase()) {
+                detected_topics.push(tech.to_lowercase());
+                detected_entities.push(serde_json::json!({
+                    "name": tech,
+                    "type": category,
+                    "description": desc
+                }));
+            }
+        }
+
+        key_topics = serde_json::to_string(&detected_topics).unwrap_or_else(|_| "[]".to_string());
+        entities = detected_entities;
+    }
 
     if summary.is_empty() {
         warn!("[MemoryExtractor] Empty summary from extraction, skipping");

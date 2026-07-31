@@ -37,6 +37,7 @@ interface ThinkingBlockProps {
     currentAgent?: string;
     elapsed?: number;
   };
+  thinkingTimeMs?: number;
 }
 
 // ─── Phase detection ───────────────────────────────────────────────────────────
@@ -447,8 +448,24 @@ function AgentProgressBar({
   );
 }
 
-export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseContent, isComplete = true, isStarting = false, startedAt, agentProgress }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseContent, isComplete = true, isStarting = false, startedAt, agentProgress, thinkingTimeMs }) => {
+  // Auto-expand while thinking is in progress; collapse when done so the user
+  // can re-open it manually to review the full trace.
+  const [isExpanded, setIsExpanded] = useState(!isComplete);
+
+  // When streaming starts (isComplete flips false → true), collapse automatically.
+  // When a new stream begins (isComplete true → false), expand automatically.
+  const prevIsComplete = useRef(isComplete);
+  useEffect(() => {
+    if (prevIsComplete.current !== isComplete) {
+      prevIsComplete.current = isComplete;
+      // Stream just finished → collapse so the response is prominent
+      if (isComplete) setIsExpanded(false);
+      // New stream started → expand to show live reasoning
+      else setIsExpanded(true);
+    }
+  }, [isComplete]);
+
   const smoothContent = useSmoothTypewriter(content, !isComplete);
   const segments = useMemo(() => parseThinking(smoothContent), [smoothContent]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -538,11 +555,14 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
       className="my-2 mb-4 overflow-hidden"
     >
       <motion.button
-        onClick={() => { if (hasActualReasoning) setIsExpanded(v => !v); }}
-        whileHover={hasActualReasoning ? { opacity: 0.8 } : {}}
-        whileTap={hasActualReasoning ? { scale: 0.995 } : {}}
+        onClick={() => {
+          // Allow toggle during streaming (live view) or when there's reasoning to show
+          if (!isComplete || hasActualReasoning) setIsExpanded(v => !v);
+        }}
+        whileHover={(!isComplete || hasActualReasoning) ? { opacity: 0.8 } : {}}
+        whileTap={(!isComplete || hasActualReasoning) ? { scale: 0.995 } : {}}
         transition={spring}
-        className={`flex items-center gap-2 outline-none ${hasActualReasoning ? 'cursor-pointer group' : 'cursor-default'}`}
+        className={`flex items-center gap-2 outline-none ${(!isComplete || hasActualReasoning) ? 'cursor-pointer group' : 'cursor-default'}`}
       >
         <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted/40 group-hover:bg-muted/60 transition-colors">
           {!isComplete ? (
@@ -567,11 +587,15 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
           </span>
         </div>
 
-        {(elapsedMs > 0 || isComplete) && (
+        {(elapsedMs > 0 || isComplete || thinkingTimeMs) && (
           <div className="flex items-center gap-2 ml-1">
             <span className="text-[11px] font-sans text-muted-foreground/60">
               {(() => {
-                const totalSecs = (elapsedMs || (Date.now() - internalStartedAt)) / 1000;
+                const ms = thinkingTimeMs || elapsedMs || (isComplete ? 0 : (Date.now() - internalStartedAt));
+                const totalSecs = ms / 1000;
+                if (isComplete && totalSecs < 0.1) {
+                  return null; // hide if reset to 0 and complete
+                }
                 if (totalSecs >= 60) {
                   const m = Math.floor(totalSecs / 60);
                   const s = (totalSecs % 60).toFixed(1);
@@ -602,6 +626,17 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
               />
             )}
             <div ref={scrollRef} onScroll={handleScroll} className="ml-2 p-3 mt-2 space-y-1 max-h-[400px] overflow-y-auto overscroll-contain rounded-md bg-muted/20 border border-border/40 text-sm">
+              {/* Show animated placeholder while waiting for the first thinking token */}
+              {isStarting && !content && (
+                <div className="flex items-center gap-2 py-2 px-1">
+                  <motion.div
+                    className="w-1.5 h-1.5 rounded-full bg-violet-400/60"
+                    animate={{ opacity: [0.3, 1, 0.3] }}
+                    transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                  <span className="text-[12px] font-mono text-muted-foreground/50">Waiting for reasoning tokens...</span>
+                </div>
+              )}
               {segments.map((seg, i) => {
                 switch (seg.type) {
                   case 'section':    return <SectionHeader key={i} icon={seg.icon} label={seg.label} />;

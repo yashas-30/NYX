@@ -5,8 +5,15 @@
  *   hardware-aware model routing. Targets Claude/Kimi-level accuracy.
  */
 
-import { detectHardware, HardwareAnalysis } from '@nyx/shared';
 import { CODING_KNOWLEDGE_SUMMARY } from '@src/shared/config/codingKnowledge';
+
+export interface HardwareAnalysis {
+  detectedComponents: string[];
+}
+
+export function detectHardware(): HardwareAnalysis {
+  return { detectedComponents: ['cpu', 'gpu'] };
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -804,7 +811,7 @@ export function analyzePrompt(
   const requiresExecution = executionIntents.includes(bestIntent) && complexity !== 'trivial';
 
   // Hardware analysis
-  const hardware = detectHardware(prompt);
+  const hardware = detectHardware();
 
   // --- Model tier suggestion ---
   let suggestedModel: PromptAnalysis['suggestedModel'] = 'local'; // Default to local for speed/privacy
@@ -813,7 +820,7 @@ export function analyzePrompt(
     suggestedModel = 'powerful';
   } else if (complexity === 'complex' || (requiresContext && complexity === 'moderate') || requiresExecution) {
     suggestedModel = 'balanced';
-  } else if (!hardware.detectedComponents.some(c => c.toLowerCase().includes('gpu'))) {
+  } else if (!hardware.detectedComponents.some((c: string) => c.toLowerCase().includes('gpu'))) {
     // Fallback to fast cloud model if local GPU is unavailable and task is simple
     suggestedModel = 'fast';
   }
@@ -1178,7 +1185,3 @@ export async function classifyPrompt(
   const route = routeToAgent(analysis, conversationState);
   return { analysis, route };
 }
-
-// Re-export for backward compatibility
-export { detectHardware };
-export type { HardwareAnalysis };

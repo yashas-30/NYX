@@ -1,8 +1,10 @@
-use crate::llm::cloud_orchestrator::{StreamChunkPayload, UnifiedRequest};
+use crate::llm::types::{StreamChunkPayload, UnifiedRequest};
+use tauri::AppHandle;
 
 /// Execute a streaming LLM request using the rig-core framework to augment memory/agent context,
 /// then delegate to the robust NYX orchestrators (local/cloud) for actual streaming inference.
 pub async fn execute_rig_stream(
+    app: &AppHandle,
     req: &UnifiedRequest,
 ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunkPayload, String>>, String> {
     
@@ -37,5 +39,20 @@ pub async fn execute_rig_stream(
     augmented_req.execution_mode = None;
     
     // Delegate to NYX's robust model orchestrator (supports all providers, images, quotas, properly formatted endpoints)
-    crate::llm::cloud_orchestrator::execute_cloud_stream(&augmented_req).await
+    if augmented_req.provider == "nyx-native" {
+        use futures_util::StreamExt;
+        let stream = crate::llm::local_inference::execute_local_stream(app, &augmented_req).await?;
+        let (itx, irx) = tokio::sync::mpsc::channel(256);
+        tauri::async_runtime::spawn(async move {
+            tokio::pin!(stream);
+            while let Some(res) = stream.next().await {
+                if itx.send(res).await.is_err() {
+                    break;
+                }
+            }
+        });
+        Ok(irx)
+    } else {
+        crate::llm::cloud_orchestrator::execute_cloud_stream(&augmented_req).await
+    }
 }

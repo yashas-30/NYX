@@ -16,14 +16,13 @@ export interface ModelSettings {
   repeatPenalty: number;
   mirostat: number;
   antigravity?: boolean;
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'max';
   flashAttention?: boolean;
   kvCacheType?: string;
   useMlock?: boolean;
   draftModelId?: string;
   disableKvOffload?: boolean;
-  visionEnabled?: boolean;
-  thinkingEnabled?: boolean;
+  splitMode?: string;
+  tensorSplit?: string;
 }
 
 export type ActiveMode = 'chat' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
@@ -34,6 +33,7 @@ export interface NyxState {
   localModelsEnabled: boolean;
   modelSettings: ModelSettings;
   modelConfigs?: Record<string, ModelSettings>;
+  modelSystemPrompts?: Record<string, string>;
   cloudModelId: string | null;
   localModelId: string | null;
   models: Record<'nyx', string>;
@@ -47,6 +47,8 @@ export interface NyxState {
   activeProjectId: string | null;
   setActiveProjectId: (id: string | null) => void;
   executionMode: 'chat' | 'coder' | 'default';
+  advancedLocalModelSettings: boolean;
+  setAdvancedLocalModelSettings: (enabled: boolean) => void;
 
   // Actions
   setActiveMode: (mode: ActiveMode) => void;
@@ -55,6 +57,7 @@ export interface NyxState {
   setLocalModelsEnabled: (enabled: boolean) => void;
   updateModelSettings: (settings: Partial<ModelSettings>) => void;
   updateModelConfig: (id: string, settings: Partial<ModelSettings>) => void;
+  updateModelSystemPrompt: (id: string, prompt: string) => void;
   setCloudModelId: (id: string | null) => void;
   setLocalModelId: (id: string | null) => void;
   setModel: (mid: string) => void;
@@ -90,7 +93,6 @@ export const DEFAULT_SETTINGS: ModelSettings = {
   repeatPenalty: 1.1,
   mirostat: 0,
   antigravity: true,
-  reasoningEffort: 'medium',
   flashAttention: true,
   kvCacheType: 'auto',
   useMlock: false,
@@ -99,10 +101,10 @@ export const DEFAULT_SETTINGS: ModelSettings = {
 };
 
 const DEFAULT_MODEL: ModelOption = {
-  id: 'gemini-2.5-flash',
-  name: 'Gemini 2.5 Flash',
+  id: 'gemini-3.6-flash',
+  name: 'Gemini 3.6 Flash',
   provider: 'gemini',
-  description: 'Highly Stable Flash model.',
+  description: 'Next-generation Gemini 3.6 Flash model with ultra-fast inference and advanced reasoning.',
   status: 'ga',
   specs: {
     contextWindow: '1M',
@@ -118,7 +120,7 @@ export const useNyxStore = create<NyxState>()(
       workspacePath: '',
       localModelsEnabled: false,
       modelSettings: DEFAULT_SETTINGS,
-      cloudModelId: 'gemini-2.5-flash',
+      cloudModelId: 'gemini-3.6-flash',
       localModelId: null,
       models: { nyx: '' },
       apiKeys: {},
@@ -129,11 +131,13 @@ export const useNyxStore = create<NyxState>()(
       searchProvider: 'duckduckgo',
       activeProjectId: null,
       executionMode: 'default',
+      advancedLocalModelSettings: false,
 
       setActiveMode: (mode) => set({ activeMode: mode }),
       setExecutionMode: (mode) => set({ executionMode: mode }),
       setWorkspacePath: (path) => set({ workspacePath: path }),
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
+      setAdvancedLocalModelSettings: (enabled) => set({ advancedLocalModelSettings: enabled }),
       updateModelSettings: (settings) =>
           set((state) => {
             const newSettings = { ...state.modelSettings, ...settings };
@@ -164,6 +168,12 @@ export const useNyxStore = create<NyxState>()(
               modelConfigs: { ...configs, [id]: newConfig }
             };
           }),
+      updateModelSystemPrompt: (id, prompt) => set((state) => {
+        const prompts = state.modelSystemPrompts || {};
+        return {
+          modelSystemPrompts: { ...prompts, [id]: prompt }
+        };
+      }),
       setCloudModelId: (id) => set((state) => {
         const configs = state.modelConfigs || {};
         const storedSettings = id ? configs[id] : undefined;
@@ -407,6 +417,7 @@ export const useNyxStore = create<NyxState>()(
         rememberKeys: state.rememberKeys,
         currentModel: state.currentModel,
         searchProvider: state.searchProvider,
+        advancedLocalModelSettings: state.advancedLocalModelSettings,
       }),
     }
   )

@@ -4,13 +4,14 @@ import {
   Brain, Plus, Trash2, Search, Sparkles, Database, RefreshCw, Tag, Clock, ArrowRight,
   Layers, Users, Activity, List
 } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { toast } from '@src/shared/components/ui/sonner';
 
 interface LongTermMemory {
   id: string;
   fact: string;
   category: string;
-  embedding: string;
+  embedding?: any;
   created_at: number;
   similarity?: number;
 }
@@ -33,43 +34,16 @@ interface MemoryEntity {
   created_at: number;
 }
 
-const isTauriEnv = typeof window !== 'undefined' &&
-  ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-
-async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauriEnv) throw new Error(`Tauri not available for command: ${cmd}`);
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<T>(cmd, args);
+function formatDate(ts?: number): string {
+  if (!ts) return 'N/A';
+  const ms = ts < 1e11 ? ts * 1000 : ts;
+  return new Date(ms).toLocaleDateString();
 }
 
-let embeddingWorker: Worker | null = null;
-let messageIdCounter = 0;
-const pendingResolvers = new Map<number, { resolve: (val: any) => void; reject: (err: any) => void }>();
-
-function initWorker() {
-  if (typeof window === 'undefined') return;
-  if (!embeddingWorker) {
-    embeddingWorker = new Worker(new URL('../../workers/embedding.worker.ts', import.meta.url), { type: 'module' });
-    embeddingWorker.onmessage = (e) => {
-      const { id, embedding, error } = e.data;
-      const resolver = pendingResolvers.get(id);
-      if (resolver) {
-        if (error) resolver.reject(new Error(error));
-        else resolver.resolve(embedding);
-        pendingResolvers.delete(id);
-      }
-    };
-  }
-}
-
-async function embedText(text: string): Promise<number[] | null> {
-  initWorker();
-  if (!embeddingWorker) return null;
-  return new Promise((resolve, reject) => {
-    const id = ++messageIdCounter;
-    pendingResolvers.set(id, { resolve, reject });
-    embeddingWorker!.postMessage({ id, text });
-  });
+function formatDateTime(ts?: number): string {
+  if (!ts) return 'N/A';
+  const ms = ts < 1e11 ? ts * 1000 : ts;
+  return new Date(ms).toLocaleString();
 }
 
 export default function MemoryView() {
@@ -91,24 +65,17 @@ export default function MemoryView() {
   const fetchMemories = async () => {
     setIsLoading(true);
     try {
-      if (isTauriEnv) {
-        // Fetch all 3 tiers in parallel
-        const [mems, eps, ents] = await Promise.all([
-          tauriInvoke<LongTermMemory[]>('db_get_memories').catch(() => []),
-          tauriInvoke<EpisodicMemory[]>('get_episodic_memories', { limit: 50 }).catch(() => []),
-          tauriInvoke<MemoryEntity[]>('get_memory_entities', { limit: 100 }).catch(() => [])
-        ]);
-        setMemories(mems);
-        setEpisodes(eps);
-        setEntities(ents);
-      } else {
-        setMemories([]);
-        setEpisodes([]);
-        setEntities([]);
-      }
+      const [mems, eps, ents] = await Promise.all([
+        invoke<LongTermMemory[]>('db_get_memories').catch(() => []),
+        invoke<EpisodicMemory[]>('get_episodic_memories', { limit: 50 }).catch(() => []),
+        invoke<MemoryEntity[]>('get_memory_entities', { limit: 100 }).catch(() => [])
+      ]);
+      setMemories(mems || []);
+      setEpisodes(eps || []);
+      setEntities(ents || []);
       setSearchResults(null);
     } catch (err: any) {
-      toast.error(`Failed to load memories: ${err.message || String(err)}`);
+      console.warn('Failed to load memories:', err);
     } finally {
       setIsLoading(false);
     }
@@ -124,30 +91,16 @@ export default function MemoryView() {
       setSearchResults(null);
       return;
     }
-    if (activeTab !== 'facts') {
-        // Just local filter for other tabs for now
-        return;
-    }
     
     setIsSearching(true);
     try {
-      if (isTauriEnv) {
-        const embedding = await embedText(searchQuery);
-        if (!embedding) {
-          throw new Error('Local embedding generation failed. Model may still be downloading.');
-        }
-        const results = await tauriInvoke<any[]>('db_search_memories', {
-          queryEmbedding: embedding,
-          topK: 5
-        });
-        setSearchResults(results.map(r => ({
-          id: r.id, fact: r.fact, category: r.category, embedding: '[]', created_at: r.created_at, similarity: r.similarity
-        })));
-      } else {
-        setSearchResults([]);
-      }
+      const results = await invoke<LongTermMemory[]>('db_search_memories', {
+        query: searchQuery.trim(),
+        topK: 10
+      });
+      setSearchResults(results || []);
     } catch (err: any) {
-      toast.error(`Vector search failed: ${err.message}`);
+      toast.error(`Search failed: ${err.message || String(err)}`);
     } finally {
       setIsSearching(false);
     }
@@ -158,46 +111,38 @@ export default function MemoryView() {
     if (!newFact.trim()) return;
     try {
       const id = crypto.randomUUID();
-      let embeddingStr = '[]';
-      if (isTauriEnv) {
-        const embedding = await embedText(newFact.trim());
-        if (!embedding) {
-           throw new Error('Embedding failed to generate.');
-        }
-        embeddingStr = JSON.stringify(embedding);
-        await tauriInvoke('db_add_memory', { id, fact: newFact.trim(), category: newCategory, embedding: embeddingStr });
-      }
+      await invoke('db_add_memory', {
+        id,
+        fact: newFact.trim(),
+        category: newCategory,
+      });
       toast.success('Successfully remembered fact!');
       setNewFact('');
       setIsAdding(false);
       fetchMemories();
     } catch (err: any) {
-      toast.error(`Failed to save memory: ${err.message}`);
+      toast.error(`Failed to save memory: ${err.message || String(err)}`);
     }
   };
 
   const handleDeleteMemory = async (id: string) => {
     try {
-      if (isTauriEnv) {
-        await tauriInvoke('db_delete_memory', { id });
-      }
+      await invoke('db_delete_memory', { id });
       toast.success('Fact forgotten.');
       fetchMemories();
     } catch (err: any) {
-      toast.error(`Failed to delete memory: ${err.message}`);
+      toast.error(`Failed to delete memory: ${err.message || String(err)}`);
     }
   };
   
   const handleDeleteEntity = async (id: string) => {
-      try {
-          if (isTauriEnv) {
-              await tauriInvoke('delete_entity', { id });
-          }
-          toast.success('Entity forgotten.');
-          fetchMemories();
-      } catch (err: any) {
-          toast.error(`Failed to delete entity: ${err.message}`);
-      }
+    try {
+      await invoke('delete_entity', { id });
+      toast.success('Entity forgotten.');
+      fetchMemories();
+    } catch (err: any) {
+      toast.error(`Failed to delete entity: ${err.message || String(err)}`);
+    }
   };
 
   const activeMemories = searchResults || memories;
@@ -365,7 +310,7 @@ export default function MemoryView() {
                     </div>
                     <p className="text-sm leading-relaxed text-foreground/90 mb-4 flex-1">{m.fact}</p>
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground/60 border-t border-border/40 pt-3">
-                      <span className="flex items-center gap-1"><Clock size={10} />{new Date(m.created_at).toLocaleDateString()}</span>
+                      <span className="flex items-center gap-1"><Clock size={10} />{formatDate(m.created_at)}</span>
                       <button onClick={() => handleDeleteMemory(m.id)} className="p-1 hover:text-red-400 hover:bg-red-500/10 rounded"><Trash2 size={13} /></button>
                     </div>
                   </motion.div>
@@ -392,7 +337,7 @@ export default function MemoryView() {
                           <div key={e.id} className="p-4 bg-card border border-border rounded-xl shadow-sm">
                               <div className="flex items-center justify-between mb-2">
                                   <span className="text-xs font-mono text-muted-foreground">Session: {e.session_id.substring(0,8)}...</span>
-                                  <span className="text-xs text-muted-foreground">{new Date(e.created_at).toLocaleString()}</span>
+                                  <span className="text-xs text-muted-foreground">{formatDateTime(e.created_at)}</span>
                               </div>
                               <p className="text-sm text-foreground/90 mb-3">{e.summary}</p>
                               {topics.length > 0 && (
@@ -436,7 +381,7 @@ export default function MemoryView() {
                                       <td className="px-4 py-3"><span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full">{ent.entity_type}</span></td>
                                       <td className="px-4 py-3 text-muted-foreground truncate max-w-[200px]" title={ent.description}>{ent.description}</td>
                                       <td className="px-4 py-3 font-mono">{(ent.confidence * 100).toFixed(0)}%</td>
-                                      <td className="px-4 py-3 text-xs text-muted-foreground">{new Date(ent.last_seen).toLocaleDateString()}</td>
+                                      <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(ent.last_seen)}</td>
                                       <td className="px-4 py-3 text-right">
                                           <button onClick={() => handleDeleteEntity(ent.id)} className="text-muted-foreground hover:text-red-400 p-1">
                                               <Trash2 size={14} />

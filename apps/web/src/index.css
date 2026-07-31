@@ -3,6 +3,11 @@
 
 
 /* ── NYX Unified True-Black UI Tokens ───────────────────────── */
+.contain-render {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 120px;
+}
+
 :root {
   /* Premium Minimalist Dark Grey Palette */
   --background: #121212;

@@ -1,7 +1,6 @@
 // Fix #1: Use tokio::sync::Mutex instead of std::sync::Mutex to avoid
 // blocking the Tokio thread pool inside async commands.
-// Fix #3: Raise PTY read buffer from 1 KB to 8 KB so burst output
-// (e.g. `cargo build`) coalesces into fewer IPC events.
+// Fix #3: UTF-8 string streaming (eliminates JSON byte array expansion).
 // Fix #14: Use a shared stop flag so the reader thread exits cleanly
 // when pty_close is called, preventing zombie threads.
 
@@ -21,8 +20,6 @@ pub struct PtySession {
 
 #[derive(Default)]
 pub struct PtyState {
-    // tokio::sync::Mutex: safe to lock inside async Tauri commands without
-    // blocking the Tokio executor.
     pub sessions: Arc<Mutex<HashMap<String, PtySession>>>,
 }
 
@@ -77,8 +74,8 @@ pub async fn pty_spawn(
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let data = buf[..n].to_vec();
-                    let _ = app.emit(&format!("pty-data-{}", id_clone), data);
+                    let text = String::from_utf8_lossy(&buf[..n]);
+                    let _ = app.emit(&format!("pty-data-{}", id_clone), text);
                 }
                 Err(_) => break,
             }
@@ -100,7 +97,6 @@ pub async fn pty_write(
     id: String,
     data: String,
 ) -> Result<(), String> {
-    // Fix #1: .lock().await instead of .lock().unwrap()
     if let Some(session) = state.sessions.lock().await.get_mut(&id) {
         session.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
     }
@@ -114,7 +110,6 @@ pub async fn pty_resize(
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
-    // Fix #1: .lock().await instead of .lock().unwrap()
     if let Some(session) = state.sessions.lock().await.get_mut(&id) {
         session.master.resize(PtySize {
             rows,
@@ -131,7 +126,6 @@ pub async fn pty_close(
     state: State<'_, PtyState>,
     id: String,
 ) -> Result<(), String> {
-    // Fix #14: signal the reader thread to stop before dropping the session.
     let mut sessions = state.sessions.lock().await;
     if let Some(session) = sessions.get(&id) {
         session.stop.store(true, Ordering::Relaxed);

@@ -10,11 +10,14 @@
 // Re-export everything so that existing call sites (research.rs, main.rs,
 // orchestrator/*.rs) continue to compile without modification.
 
-// Cloud types & commands
-pub use crate::llm::cloud_orchestrator::{
+pub use crate::llm::types::{
     UnifiedRequest,
     UnifiedMessage,
     StreamChunkPayload,
+};
+
+// Cloud types & commands
+pub use crate::llm::cloud_orchestrator::{
     QuotaResponse,
     execute_cloud_stream as execute_llm_stream,
     llm_stream_request,
@@ -53,3 +56,13 @@ pub use crate::llm::local_orchestrator::{
     hf_get_model_readme,
     get_llamacpp_version,
 };
+
+pub use crate::llm::local_inference::{
+    execute_local_stream,
+    llm_local_stream_request,
+};
+
+pub use crate::llm::diffusers::generate_local_image;
+pub use crate::llm::ocr::run_local_ocr;
+
+

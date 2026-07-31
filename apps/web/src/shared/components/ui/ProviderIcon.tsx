@@ -51,6 +51,7 @@ export const ProviderIcon: React.FC<ProviderIconProps> = ({
 // Matches PROVIDER_LABELS in provider.ts for unified naming.
 export function getProviderLabel(provider: string | undefined): string {
   if (!provider) return 'node';
+  if (provider === 'all') return 'All Models';
   if (provider === 'nyx-native') return 'Local (Native)';
   if (provider === 'google') return 'Google';
   if (provider === 'meta') return 'Meta (Llama)';

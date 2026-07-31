@@ -63,6 +63,8 @@ const POOL_REFRESH_INTERVAL_MS = 30000;
 
 // Cost estimates (USD per 1K tokens) for Gemini and Local models
 const COST_TABLE: Record<string, number> = {
+  'gemini-3.6-flash': 0.000075,
+  'gemini-3.5-flash-lite': 0.00003,
   'gemini-3.5-flash': 0.000075,
   'gemini-3-flash': 0.000075,
 
@@ -119,14 +121,18 @@ export class HybridModelRouter {
     }
     try {
 
-      let data: any = { models: [], activeModelId: null };
+      let models: any[] = [];
+      let activeModelId: string | null = null;
       if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
         const { invoke } = await import('@tauri-apps/api/core');
-        data.models = await invoke('list_local_models');
+        models = await invoke('list_local_models');
+        try {
+          const status: any = await invoke('check_local_server_status');
+          if (status && status.running && (status.model_id || status.active_model_id)) {
+            activeModelId = status.model_id || status.active_model_id;
+          }
+        } catch {}
       }
-
-      const activeModelId = data.activeModelId;
-      const models = data.models || [];
 
       for (const m of models) {
         const isHot = activeModelId === m.id;
@@ -310,12 +316,28 @@ export class HybridModelRouter {
     const localEnabled =
       typeof localStorage !== 'undefined' &&
       localStorage.getItem('llm_ref_local_models_enabled') === 'true';
-    const candidates = AVAILABLE_MODELS.filter((m) => {
-      // Exclusively support Gemini and local models
-      if (m.provider === 'nyx-native') return localEnabled;
-      if (m.provider === 'gemini') return !!context.apiKeys['gemini']?.trim();
-      return false;
-    });
+    const candidates = [
+      ...AVAILABLE_MODELS.filter((m) => {
+        if (m.provider === 'nyx-native') return localEnabled;
+        if (m.provider === 'gemini') return !!context.apiKeys['gemini']?.trim();
+        return false;
+      }),
+      ...Array.from(this.localModelPool.values())
+        .filter((lm) => localEnabled && !AVAILABLE_MODELS.some((am) => am.id === ((lm as any).id || lm.modelId)))
+        .map((lm) => {
+          const m = lm as any;
+          return {
+            id: m.id ?? lm.modelId,
+            name: m.name ?? lm.modelId,
+            provider: 'nyx-native' as Provider,
+            contextWindow: m.contextWindow || 8192,
+            qualityScore: 75,
+            speedScore: 90,
+            costScore: 100,
+            strengths: ['local-inference'],
+          };
+        }),
+    ];
 
     const scored = candidates
       .map((m) => ({
@@ -505,9 +527,8 @@ export class HybridModelRouter {
 
       try {
         if (current.provider === 'nyx-native') {
-          // Trust the server is already starting/started from ModelSelector.
-          // The backend fetch will naturally fail if it's genuinely down, and we'll fallback to cloud.
-          // We do not want to block execution or kill a booting server here!
+          // Ensure the local model server is booted before firing the HTTP prompt fetch
+          await this.warmModel(current.id);
         }
 
         const startTime = performance.now();
@@ -576,12 +597,16 @@ export class HybridModelRouter {
         }
       } catch {}
 
+      const validGpuLayers = (typeof gpuLayers === 'number' && gpuLayers >= 0) ? Math.floor(gpuLayers) : 99;
+      const validCpuThreads = (typeof cpuThreads === 'number' && cpuThreads > 0) ? Math.floor(cpuThreads) : null;
+      const validContextSize = (typeof contextSize === 'number' && contextSize >= 512) ? Math.floor(contextSize) : null;
+
       try {
         await invoke('start_local_server', { 
           modelId, 
-          contextSize, 
-          gpuLayers, 
-          cpuThreads, 
+          contextSize: validContextSize, 
+          gpuLayers: validGpuLayers, 
+          cpuThreads: validCpuThreads, 
           flashAttention: null, 
           kvCacheType: null, 
           useMlock: null, 

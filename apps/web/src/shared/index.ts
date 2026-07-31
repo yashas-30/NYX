@@ -1,7 +1,7 @@
 // Components
 export * from './components/CommandPalette';
 export * from './components/ErrorBoundary';
-export * from './components/ModelSelector';
+
 export * from './components/Tooltip';
 
 // UI Components

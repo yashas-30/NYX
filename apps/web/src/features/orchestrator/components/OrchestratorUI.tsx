@@ -10,10 +10,9 @@ import {
   useOrchestrator,
   OrchestratorMessage,
   ThinkingStep,
-  ToolCall,
+  OrchestratorToolCall,
   Artifact,
 } from '../hooks/useOrchestrator';
-import { LocalModelConfig, HardwareProfile, LocalTool } from '@src/infrastructure/types/agentTypes';
 import { Button } from '@src/shared/components/ui/button';
 import { ScrollArea } from '@src/shared/components/ui/scroll-area';
 import { Input } from '@src/shared/components/ui/input';
@@ -30,9 +29,16 @@ import { toast } from '@src/shared/components/ui/sonner';
 // ---------------------------------------------------------------------------
 
 interface OrchestratorUIProps {
-  models: LocalModelConfig[];
-  hardware: HardwareProfile;
-  tools: LocalTool[];
+  /** API keys map passed from the parent (AppDashboard / router). */
+  apiKeys?: Record<string, string>;
+  /** Override the model to use. Falls back to Zustand store. */
+  modelId?: string;
+  /** Override the provider. Auto-detected if omitted. */
+  provider?: string;
+  /** System instruction injected into every request. */
+  systemInstruction?: string;
+  /** Use the agentic orchestrator loop (tool calling). Default: true. */
+  agenticMode?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +149,7 @@ const ThinkingBlock: React.FC<{ steps: ThinkingStep[]; isStreaming?: boolean }> 
 );
 ThinkingBlock.displayName = 'ThinkingBlock';
 
-const ToolCallCard: React.FC<{ call: ToolCall }> = memo(({ call }) => {
+const ToolCallCard: React.FC<{ call: OrchestratorToolCall }> = memo(({ call }) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -472,7 +478,13 @@ function useSmartScroll<T>(deps: React.DependencyList) {
 // Main Component
 // ---------------------------------------------------------------------------
 
-export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps) {
+export function OrchestratorUI({
+  apiKeys,
+  modelId,
+  provider,
+  systemInstruction,
+  agenticMode = true,
+}: OrchestratorUIProps) {
   const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -481,13 +493,11 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
     messages,
     isProcessing,
     currentPhase,
-    selectedModel,
-    analysis,
     sendMessage,
     stop,
     clear,
     regenerate,
-  } = useOrchestrator(models, hardware, tools);
+  } = useOrchestrator({ apiKeys, modelId, provider, systemInstruction, agenticMode });
 
   const { containerRef, scrollToBottom, handleScroll, showJumpButton } = useSmartScroll([
     messages,
@@ -689,78 +699,7 @@ export function OrchestratorUI({ models, hardware, tools }: OrchestratorUIProps)
         </div>
         <ScrollArea className="flex-1 p-4 bg-background/30">
           <div className="space-y-6">
-            {/* Active Model */}
-            {selectedModel && (
-              <div className="space-y-2">
-                <h4 className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">
-                  Active Route
-                </h4>
-                <div className="bg-card border border-border rounded-md p-3 text-xs space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-primary font-medium text-[13px]">
-                      {selectedModel.model.name}
-                    </span>
-                    <span className="text-muted-foreground bg-muted px-1.5 py-0.5 rounded text-[10px]">
-                      {selectedModel.isPureGpu ? 'GPU' : 'Split'}
-                    </span>
-                  </div>
-                  <p className="text-muted-foreground leading-relaxed text-[11px]">{selectedModel.reason}</p>
-                  <div className="flex gap-2 pt-2 border-t border-border">
-                    <span className="bg-muted px-2 py-0.5 rounded text-[10px] text-muted-foreground">
-                      {selectedModel.gpuLayers} Layers
-                    </span>
-                    <span className="bg-muted px-2 py-0.5 rounded text-[10px] text-muted-foreground">
-                      {Math.round(selectedModel.estimatedVramMB)}MB
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Analysis */}
-            {analysis && (
-              <div className="space-y-2">
-                <h4 className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">
-                  Intent Analysis
-                </h4>
-                <div className="bg-card border border-border rounded-md p-3 text-xs space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Intent</span>
-                    <span className="text-emerald-400 font-medium">{analysis.intent}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Complexity</span>
-                    <span className="text-amber-400 font-medium">
-                      {typeof analysis.complexity === 'string'
-                        ? analysis.complexity
-                        : analysis.complexity?.level || 'moderate'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Tools</span>
-                    <span className="text-purple-400 font-medium">
-                      {analysis.requiresTools ? 'Required' : 'None'}
-                    </span>
-                  </div>
-
-                  {analysis.reasoning && (
-                    <p className="text-muted-foreground text-[11px] leading-relaxed pt-2 border-t border-border">
-                      {analysis.reasoning}
-                    </p>
-                  )}
-                  {analysis.confidence && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Confidence</span>
-                      <span className="text-primary font-medium">
-                        {Math.round(analysis.confidence * 100)}%
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Token usage */}
+            {/* Model & analysis info removed — now provided by real backend */}
             {messages.length > 0 && (
               <div className="space-y-2">
                 <h4 className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">

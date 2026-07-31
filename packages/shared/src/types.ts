@@ -61,6 +61,7 @@ export const ChatMessageSchema = z.object({
     mimeType: z.string().optional(),
   })).optional(),
   reasoning: z.string().optional(),
+  thinkingTimeMs: z.number().optional(),
   model: z.string().optional(),
   toolCalls: z.array(z.any()).optional(),
   citations: z.array(z.any()).optional(),

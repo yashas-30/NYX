@@ -39,8 +39,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const {
     activeMode,
     setActiveMode,
-    chatSettings,
-    setChatSettings,
     apiKeys,
     updateApiKey,
     clearApiKeys,
@@ -289,8 +287,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               activeMode={activeMode}
               setActiveMode={setActiveMode}
               apiKeys={apiKeys}
-              chatSettings={chatSettings}
-              setChatSettings={setChatSettings}
               trackUsage={trackUsage}
               statuses={statuses}
               chatSessions={activeSessions}

@@ -57,13 +57,10 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ isOpen, onClose }) => 
       const id = crypto.randomUUID();
       const newMem = { id, fact: newFact.trim(), category: 'manual', createdAt: Date.now() };
       
-      // We pass embedding as an empty string since we are generating manually for now, 
-      // or we can let the backend handle it if we build a proper backend pipeline.
       await invoke('db_add_memory', {
         id,
         fact: newFact.trim(),
         category: 'manual',
-        embedding: '[]',
       });
       
       setMemories(prev => [newMem, ...prev]);

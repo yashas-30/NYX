@@ -29,7 +29,7 @@
 
 
 use reqwest::{Client, header::{HeaderMap, HeaderValue}};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Listener};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -45,9 +45,12 @@ use std::sync::LazyLock;
 /// Avoids DNS resolution + TLS handshake + TCP connection on every LLM call.
 static CLOUD_HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
     Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .tcp_keepalive(std::time::Duration::from_secs(60))
-        .pool_max_idle_per_host(4)
+        .http2_keep_alive_interval(std::time::Duration::from_secs(15))
+        .http2_keep_alive_timeout(std::time::Duration::from_secs(5))
+        .tcp_nodelay(true)
+        .tcp_keepalive(std::time::Duration::from_secs(120))
+        .pool_max_idle_per_host(64)
+        .connect_timeout(std::time::Duration::from_secs(10))
         .build()
         .expect("Failed to build cloud HTTP client")
 });
@@ -63,99 +66,8 @@ const CONTEXT_BUDGET_CHARS: usize = 128_000 * 4; // ≈ 512 k chars
 /// Gemini's context window is 1M tokens; use a comfortable 256k-token budget.
 const GEMINI_CONTEXT_BUDGET_CHARS: usize = 256_000 * 4;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct UnifiedMessage {
-    pub role: String,
-    pub content: serde_json::Value,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct UnifiedRequest {
-    pub provider: String,
-    #[serde(default)]
-    pub endpoint_override: Option<String>,
-    pub model_id: String,
-    pub messages: Vec<UnifiedMessage>,
-    #[serde(default)]
-    pub system_instruction: Option<String>,
-    pub api_key: String,
-    #[serde(default)]
-    pub temperature: Option<f32>,
-    #[serde(default)]
-    pub max_tokens: Option<u32>,
-    #[serde(default)]
-    pub top_p: Option<f32>,
-    #[serde(default)]
-    pub top_k: Option<u32>,
-    #[serde(default)]
-    pub repeat_penalty: Option<f32>,
-    #[serde(default)]
-    pub presence_penalty: Option<f32>,
-    #[serde(default)]
-    pub frequency_penalty: Option<f32>,
-    #[serde(default)]
-    pub reasoning_effort: Option<String>,
-    #[serde(default)]
-    pub event_name: Option<String>,
-    #[serde(default)]
-    pub tools: Option<Value>,
-    #[serde(default)]
-    pub execution_mode: Option<String>,
-}
-
-/// Full stream event payload sent to the frontend via Tauri IPC channel.
-#[derive(Serialize, Clone)]
-pub struct StreamChunkPayload {
-    #[serde(rename = "type")]
-    pub event_type: String, // "text" | "thinking" | "tool_start" | "tool_call" |
-                            // "tool_call_complete" | "tool_result" | "done" | "error"
-    pub content: Option<String>,
-    pub done: Option<bool>,
-    pub error: Option<String>,
-    pub tool_call: Option<Value>,
-    pub name: Option<String>,
-    pub result: Option<Value>,
-    pub metadata: Option<Value>,
-}
-
-impl StreamChunkPayload {
-    pub fn text(content: String) -> Self {
-        Self { event_type: "text".into(), content: Some(content),
-               done: Some(false), error: None, tool_call: None,
-               name: None, result: None, metadata: None }
-    }
-    fn thinking(content: String) -> Self {
-        Self { event_type: "thinking".into(), content: Some(content),
-               done: Some(false), error: None, tool_call: None,
-               name: None, result: None, metadata: None }
-    }
-    fn tool_start(id: String, name: String) -> Self {
-        Self { event_type: "tool_start".into(), content: None,
-               done: Some(false), error: None,
-               tool_call: Some(json!({"id": id})),
-               name: Some(name), result: None, metadata: None }
-    }
-    fn tool_args(args: String) -> Self {
-        Self { event_type: "tool_call".into(), content: Some(args),
-               done: Some(false), error: None, tool_call: None,
-               name: None, result: None, metadata: None }
-    }
-    pub fn tool_complete() -> Self {
-        Self { event_type: "tool_call_complete".into(), content: None,
-               done: Some(false), error: None, tool_call: None,
-               name: None, result: None, metadata: None }
-    }
-    pub fn done() -> Self {
-        Self { event_type: "done".into(), content: None, done: Some(true),
-               error: None, tool_call: None, name: None, result: None,
-               metadata: None }
-    }
-    pub fn error(msg: String) -> Self {
-        Self { event_type: "error".into(), content: None, done: Some(true),
-               error: Some(msg), tool_call: None, name: None, result: None,
-               metadata: None }
-    }
-}
+use crate::llm::types::sanitize_messages_for_api;
+pub use crate::llm::types::{UnifiedMessage, UnifiedRequest, StreamChunkPayload};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // § 2 — CONTENT HELPERS
@@ -174,32 +86,24 @@ fn get_content_string(val: &serde_json::Value) -> String {
     }
 }
 
-fn reasoning_directive(effort: &str) -> &'static str {
-    match effort.to_lowercase().as_str() {
-        "low"    => " Keep your reasoning brief and direct.",
-        "medium" => " Think step-by-step before answering.",
-        "high"   => " Think deeply and comprehensively, exploring multiple angles before answering.",
-        "max"    => " Conduct an exhaustive analysis. Double-check all logic and reasoning. Provide a very detailed thought process.",
-        _ => "",
-    }
-}
-
 /// Slice a message list to stay within the context budget (character-based).
 /// Always keeps at least the most-recent message even if it exceeds the budget.
 fn budget_messages(messages: &[UnifiedMessage], budget_chars: usize) -> Vec<UnifiedMessage> {
+    if messages.is_empty() {
+        return Vec::new();
+    }
     let mut total = 0usize;
-    let mut result: Vec<UnifiedMessage> = Vec::new();
+    let mut start_idx = messages.len();
 
-    for m in messages.iter().rev() {
+    for (i, m) in messages.iter().enumerate().rev() {
         let chars = get_content_string(&m.content).len();
-        if total + chars > budget_chars && !result.is_empty() {
+        if total + chars > budget_chars && start_idx < messages.len() {
             break;
         }
         total += chars;
-        result.push(m.clone());
+        start_idx = i;
     }
-    result.reverse();
-    result
+    messages[start_idx..].to_vec()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,102 +114,42 @@ fn build_openai_compat_request(
     req: &UnifiedRequest,
 ) -> Result<(String, Value, HeaderMap), String> {
     let max_tokens = req.max_tokens.unwrap_or(MAX_TOKENS_DEFAULT);
+    let system_text = req.system_instruction.clone().unwrap_or_default();
+    let budget = CONTEXT_BUDGET_CHARS;
+    let budgeted = budget_messages(&req.messages, budget);
 
-    // Build system message with optional reasoning directive.
-    let mut system_text = req.system_instruction.clone().unwrap_or_default();
-    if let Some(effort) = &req.reasoning_effort {
-        let directive = reasoning_directive(effort);
-        if !directive.is_empty() {
-            if !system_text.is_empty() { system_text.push_str("\n\n"); }
-            system_text.push_str(&format!("Reasoning Effort Directive:{}", directive));
+    // Flatten text-only arrays to plain strings (avoids unnecessary multimodal paths).
+    let mut flattened: Vec<UnifiedMessage> = budgeted.into_iter().collect();
+    for m in flattened.iter_mut() {
+        if let Some(arr) = m.content.as_array() {
+            if arr.iter().all(|item| item.get("type").and_then(|t| t.as_str()) == Some("text")) {
+                let text_only = get_content_string(&m.content);
+                m.content = json!(text_only);
+            }
         }
     }
 
-    let budget = if req.provider == "nyx-native" {
-        // Local models typically have 4K–8K context windows.
-        // Keep well within the model's context window to ensure GPU processes
-        // the KV cache in VRAM. Sending too much context causes KV cache overflow
-        // which forces llama.cpp to fall back to CPU, making GPU idle.
-        // 6k tokens × 4 chars/token = 24k chars. Leave room for system prompt + output.
-        24_000
-    } else {
-        CONTEXT_BUDGET_CHARS
-    };
-
-    let mut budgeted = budget_messages(&req.messages, budget);
-
-    // Many local models (e.g. Mistral v0.3) use strict Jinja templates that crash if the first role is "system".
-    // We merge the system prompt into the very first user message to guarantee compatibility.
-    if req.provider == "nyx-native" && !system_text.is_empty() {
-        if let Some(first_user) = budgeted.iter_mut().find(|m| m.role == "user") {
-            let old_content = get_content_string(&first_user.content);
-            first_user.content = json!(format!("{}\n\n{}", system_text, old_content));
-            system_text.clear();
-        }
-    }
-
+    // Build messages array with shared tool-call sanitizer.
     let mut msgs: Vec<Value> = Vec::new();
     if !system_text.is_empty() {
         msgs.push(json!({"role": "system", "content": system_text}));
     }
+    msgs.extend(sanitize_messages_for_api(&flattened));
 
-    for m in &budgeted {
-        // Reconstruct tool-call assistant turns.
-        if m.role == "assistant" && m.content.is_array() {
-            let mut tool_calls: Vec<Value> = Vec::new();
-            if let Some(arr) = m.content.as_array() {
-                for item in arr {
-                    if item.get("type").and_then(|t| t.as_str()) == Some("tool_call") {
-                        tool_calls.push(item.clone());
-                    }
-                }
-            }
-            if !tool_calls.is_empty() {
-                msgs.push(json!({"role": "assistant", "tool_calls": tool_calls, "content": null}));
-                continue;
-            }
-        }
+    // No sanitization for strict Jinja templates required for cloud APIs.
 
-        // Tool result turns.
-        if m.role == "tool" && m.content.is_array() {
-            if let Some(item) = m.content.as_array().and_then(|a| a.first()) {
-                let tool_call_id = item.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("");
-                let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                msgs.push(json!({"role": "tool", "tool_call_id": tool_call_id, "content": content}));
-                continue;
-            }
-        }
-
-        msgs.push(json!({"role": m.role, "content": m.content.clone()}));
-    }
-
-    // Sanitize messages for strict Jinja templates (like Mistral v0.3)
-    if req.provider == "nyx-native" {
-        let mut sanitized: Vec<Value> = Vec::new();
-        for m in msgs {
-            let role = m.get("role").and_then(|r| r.as_str()).unwrap_or("");
+    // Force reasoning models to skip thinking by pre-filling the assistant response
+    if req.reasoning_enabled == Some(false) {
+        let is_reasoning_model = req.model_id.to_lowercase().contains("r1") 
+            || req.model_id.to_lowercase().contains("reasoning")
+            || req.model_id.to_lowercase().contains("think")
+            || req.model_id.to_lowercase().contains("qwq")
+            || req.model_id.to_lowercase().contains("o1")
+            || req.model_id.to_lowercase().contains("o3");
             
-            // Drop leading assistant or tool messages so it always starts with user (or system)
-            if sanitized.is_empty() && role != "user" && role != "system" {
-                continue;
-            }
-
-            if let Some(last) = sanitized.last_mut() {
-                let last_role = last.get("role").and_then(|r| r.as_str()).unwrap_or("");
-                
-                // Merge consecutive messages of the same role (user + user, or assistant + assistant)
-                if last_role == role && (role == "user" || role == "assistant") {
-                    let last_content = last.get("content").and_then(|c| c.as_str());
-                    let curr_content = m.get("content").and_then(|c| c.as_str());
-                    if let (Some(l_str), Some(c_str)) = (last_content, curr_content) {
-                        last["content"] = json!(format!("{}\n\n{}", l_str, c_str));
-                        continue;
-                    }
-                }
-            }
-            sanitized.push(m);
+        if is_reasoning_model {
+            msgs.push(json!({"role": "assistant", "content": "</think>\n"}));
         }
-        msgs = sanitized;
     }
 
     let mut body = json!({
@@ -343,17 +187,6 @@ fn build_openai_compat_request(
             headers.insert("HTTP-Referer", HeaderValue::from_static("https://nyx.local"));
             headers.insert("X-Title", HeaderValue::from_static("NYX"));
 
-            // Reasoning effort for OpenRouter reasoning models.
-            let lower = req.model_id.to_lowercase();
-            let is_reasoning = lower.contains("r1") || lower.contains("o1")
-                || lower.contains("o3") || lower.contains("thinking")
-                || lower.contains("reasoning");
-            if is_reasoning {
-                if let Some(effort) = &req.reasoning_effort {
-                    body["reasoning_effort"] = json!(effort);
-                }
-            }
-
             // Tools for OpenRouter.
             if let Some(tools) = &req.tools {
                 if tools.as_array().map(|a| !a.is_empty()).unwrap_or(false) {
@@ -365,28 +198,58 @@ fn build_openai_compat_request(
                 .unwrap_or_else(|| "https://openrouter.ai/api/v1/chat/completions".to_string())
         }
 
-        "nyx-native" => {
-            // No auth header for local server.
-            if let Some(tools) = &req.tools {
-                if tools.as_array().map(|a| !a.is_empty()).unwrap_or(false) {
-                    body["tools"] = tools.clone();
-                }
-            }
-            req.endpoint_override.clone()
-                .unwrap_or_else(|| "http://127.0.0.1:8080/v1/chat/completions".to_string())
-        }
-
         _other => {
             // Generic OpenAI-compatible endpoint with bearer auth.
             headers.insert("Authorization",
                 HeaderValue::from_str(&format!("Bearer {}", req.api_key))
                     .map_err(|e| e.to_string())?);
             req.endpoint_override.clone()
-                .unwrap_or_else(|| format!("http://127.0.0.1:8080/v1/chat/completions"))
+                .unwrap_or_else(|| {
+                    let p = crate::llm::local_orchestrator::SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
+                    let port = if p > 0 { p } else { 8080 };
+                    format!("http://127.0.0.1:{}/v1/chat/completions", port)
+                })
         }
     };
 
     Ok((endpoint, body, headers))
+}
+
+/// Ensure the messages array satisfies Gemini's strict alternation rules:
+///   1. First turn must have role "user" (not "assistant" / "tool").
+///   2. Consecutive turns must alternate between "user" and "assistant"/"model".
+///
+/// Strategy:
+///   - Drop any leading non-user turns (they're orphaned history after budgeting).
+///   - Merge consecutive same-role turns by concatenating their text content.
+fn sanitize_gemini_turns(messages: Vec<UnifiedMessage>) -> Vec<UnifiedMessage> {
+    use serde_json::json;
+
+    // Step 1: drop leading assistant/tool messages.
+    let messages: Vec<_> = messages
+        .into_iter()
+        .skip_while(|m| m.role != "user")
+        .collect();
+
+    if messages.is_empty() {
+        return messages;
+    }
+
+    // Step 2: merge consecutive same-role turns.
+    let mut out: Vec<UnifiedMessage> = Vec::new();
+    for m in messages {
+        if let Some(last) = out.last_mut() {
+            if last.role == m.role {
+                // Merge by appending text content.
+                let existing = get_content_string(&last.content);
+                let incoming = get_content_string(&m.content);
+                last.content = json!(format!("{}\n\n{}", existing, incoming));
+                continue;
+            }
+        }
+        out.push(m);
+    }
+    out
 }
 
 fn build_gemini_request(
@@ -395,7 +258,16 @@ fn build_gemini_request(
     let max_tokens = req.max_tokens.unwrap_or(MAX_TOKENS_DEFAULT);
     let budgeted = budget_messages(&req.messages, GEMINI_CONTEXT_BUDGET_CHARS);
 
+    // ── Gemini turn-alternation sanitization ──────────────────────────────────
+    // Gemini requires: first turn = user, strict user↔model alternation.
+    // `budget_messages` may slice mid-conversation producing assistant-first or
+    // consecutive same-role sequences.  Drop leading non-user messages and merge
+    // consecutive same-role turns to avoid the
+    // "model output must contain either output text or tool calls" 400 error.
+    let budgeted = sanitize_gemini_turns(budgeted);
+
     let is_gemma = req.model_id.to_lowercase().contains("gemma");
+
     let mut contents: Vec<Value> = Vec::new();
 
     for m in &budgeted {
@@ -490,14 +362,7 @@ fn build_gemini_request(
     });
 
     // System instruction.
-    let mut system_text = req.system_instruction.clone().unwrap_or_default();
-    if let Some(effort) = &req.reasoning_effort {
-        let directive = reasoning_directive(effort);
-        if !directive.is_empty() {
-            if !system_text.is_empty() { system_text.push_str("\n\n"); }
-            system_text.push_str(&format!("Reasoning Effort Directive:{}", directive));
-        }
-    }
+    let system_text = req.system_instruction.clone().unwrap_or_default();
 
     if !system_text.is_empty() {
         if is_gemma {
@@ -689,15 +554,22 @@ pub async fn execute_cloud_stream(
 ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunkPayload, String>>, String> {
     // Build provider-specific URL, body, and headers.
     let (url, body, headers, provider_type) = match req.provider.as_str() {
-        "nyx-native" | "openrouter" => {
+        "openrouter" | "ollama" | "lmstudio" | "vllm" | "custom" | "openai" => {
             let (url, body, headers) = build_openai_compat_request(req)?;
             (url, body, headers, req.provider.clone())
+        }
+        "nyx-native" => {
+            return Err("Local models must use the local orchestrator, not cloud orchestrator.".into());
         }
         "gemini" | "gemma" => {
             let (url, body, headers) = build_gemini_request(req)?;
             (url, body, headers, "gemini".to_string())
         }
-        other => return Err(format!("Unsupported provider: '{}'", other)),
+        _other => {
+            // Default fallback for unrecognized OpenAI-compatible providers
+            let (url, body, headers) = build_openai_compat_request(req)?;
+            (url, body, headers, req.provider.clone())
+        }
     };
 
     // Fix #10: Reuse the shared pooled client instead of constructing a new one per call.
@@ -721,7 +593,7 @@ pub async fn execute_cloud_stream(
             std::io::Error::new(std::io::ErrorKind::Other, e)
         });
         let stream_reader = StreamReader::new(byte_stream);
-        let mut lines = BufReader::new(stream_reader).lines();
+        let mut lines = BufReader::with_capacity(64 * 1024, stream_reader).lines();
         let mut buffer = String::new();
 
         'outer: loop {
@@ -763,6 +635,17 @@ pub async fn execute_cloud_stream(
                         buffer.push_str(stripped.trim());
                     }
                     // Ignore event:, id:, retry: lines.
+
+                    let trimmed = buffer.trim();
+                    if trimmed.starts_with('{') && trimmed.ends_with('}') {
+                        if serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
+                            let data = trimmed.to_string();
+                            buffer.clear();
+                            for ev in parse_sse_event(&data, &provider_type) {
+                                if !emit_event(&tx, ev).await { break 'outer; }
+                            }
+                        }
+                    }
                 }
 
                 Ok(None) => {
@@ -852,8 +735,10 @@ pub async fn llm_stream_request(
     let mut completion_chars = 0;
     let mut final_error: Option<String> = None;
 
-    let mut rx = if req.execution_mode.is_some() && req.execution_mode.as_deref() != Some("default") {
-        crate::llm::rig_orchestrator::execute_rig_stream(&req).await?
+    let mut rx = if req.provider == "nyx-native" {
+        return Err("llm_stream_request cannot be used for local models. Use llm_local_stream_request instead.".into());
+    } else if req.execution_mode.is_some() && req.execution_mode.as_deref() != Some("default") {
+        crate::llm::rig_orchestrator::execute_rig_stream(&app, &req).await?
     } else {
         execute_cloud_stream(&req).await?
     };
@@ -876,17 +761,19 @@ pub async fn llm_stream_request(
                         if payload.event_type == "error" {
                             final_error = payload.error.clone();
                         }
-                        let _ = on_event.send(payload.clone());
-                        if let Some(ref ev) = event_name {
-                            let _ = app.emit(ev, payload);
+                        if on_event.send(payload.clone()).is_err() {
+                            if let Some(ref ev) = event_name {
+                                let _ = app.emit(ev, payload);
+                            }
                         }
                     }
                     Some(Err(e)) => {
                         final_error = Some(e.clone());
                         let err = StreamChunkPayload::error(e);
-                        let _ = on_event.send(err.clone());
-                        if let Some(ref ev) = event_name {
-                            let _ = app.emit(ev, err);
+                        if on_event.send(err.clone()).is_err() {
+                            if let Some(ref ev) = event_name {
+                                let _ = app.emit(ev, err);
+                            }
                         }
                     }
                     None => break, // rx closed = stream finished
@@ -959,7 +846,9 @@ pub async fn get_models_quota(
             .timeout(std::time::Duration::from_secs(2))
             .build()
             .map_err(|e| e.to_string())?;
-        let reachable = client.get("http://127.0.0.1:8080/v1/models")
+        let p = crate::llm::local_orchestrator::SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
+        let port = if p > 0 { p } else { 8080 };
+        let reachable = client.get(format!("http://127.0.0.1:{}/v1/models", port))
             .send().await
             .map(|r| r.status().is_success())
             .unwrap_or(false);

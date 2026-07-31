@@ -1,8 +1,10 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Listener, Manager};
 use serde_json::{json, Value};
-use crate::llm::cloud_orchestrator::{
-    UnifiedRequest, UnifiedMessage, StreamChunkPayload, execute_cloud_stream
+use crate::llm::types::{
+    UnifiedRequest, UnifiedMessage, StreamChunkPayload
 };
+use crate::llm::cloud_orchestrator::execute_cloud_stream;
+use crate::llm::local_inference::execute_local_stream;
 use crate::orchestrator::tools::Tool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -49,6 +51,15 @@ impl Orchestrator {
             request.tools = Some(json!(tool_schemas));
         }
 
+        // Set up cancellation listener so the frontend's Stop button works
+        // during agentic mode. Without this, the orchestrator loop runs until
+        // the LLM finishes or hits the 12-iteration cap, ignoring user abort.
+        let cancel_name = format!("cancel_{}", request.event_name.clone().unwrap_or_default());
+        let (cancel_tx, mut cancel_rx) = tokio::sync::mpsc::channel::<()>(1);
+        let cancel_id = app.listen(cancel_name.clone(), move |_| {
+            let _ = cancel_tx.try_send(());
+        });
+
         // Loop handles LLM -> Tool Call -> Tool Result -> LLM -> Done
         // Bounded to MAX_ORCHESTRATOR_ITERATIONS to prevent runaway tool loops.
         let mut iteration = 0usize;
@@ -74,11 +85,29 @@ impl Orchestrator {
             // Fix #13: execute_cloud_stream takes &UnifiedRequest — no need to clone
             // the entire request (including the full message history) on every iteration.
             // request is mutated in place after tool calls; we just borrow it here.
-            let mut inner_rx = match execute_cloud_stream(&request).await {
-                Ok(rx) => rx,
-                Err(e) => {
+            let mut inner_rx = if request.provider == "nyx-native" {
+                use futures_util::StreamExt;
+                let stream = execute_local_stream(&app, &request).await.map_err(|e| {
                     let _ = tx.send(StreamChunkPayload::error(e.clone()));
-                    return Err(e);
+                    e
+                })?;
+                let (itx, irx) = tokio::sync::mpsc::channel(256);
+                tauri::async_runtime::spawn(async move {
+                    tokio::pin!(stream);
+                    while let Some(res) = stream.next().await {
+                        if itx.send(res).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+                irx
+            } else {
+                match execute_cloud_stream(&request).await {
+                    Ok(rx) => rx,
+                    Err(e) => {
+                        let _ = tx.send(StreamChunkPayload::error(e.clone()));
+                        return Err(e);
+                    }
                 }
             };
 
@@ -90,7 +119,18 @@ impl Orchestrator {
             let mut pending_tools: Vec<PendingToolCall> = Vec::new();
             let mut requires_another_turn = false;
 
-            while let Some(res) = inner_rx.recv().await {
+            loop {
+                let res = tokio::select! {
+                    _ = cancel_rx.recv() => {
+                        let _ = tx.send(StreamChunkPayload::done());
+                        app.unlisten(cancel_id);
+                        return Ok(());
+                    }
+                    msg = inner_rx.recv() => match msg {
+                        Some(r) => r,
+                        None => break,
+                    }
+                };
                 match res {
                     Ok(payload) => {
                         if let Some(text) = &payload.content {
@@ -142,6 +182,7 @@ impl Orchestrator {
                                 agent_node_id: None,
                             });
                             
+                            app.unlisten(cancel_id);
                             return Ok(());
                         } else if payload.event_type == "error" {
                             final_error = payload.error.clone();
@@ -160,6 +201,7 @@ impl Orchestrator {
                                 agent_node_id: None,
                             });
 
+                            app.unlisten(cancel_id);
                             return Err(payload.error.unwrap_or_default());
                         }
                     }
@@ -180,6 +222,7 @@ impl Orchestrator {
                             agent_node_id: None,
                         });
 
+                        app.unlisten(cancel_id);
                         return Err(e);
                     }
                 }

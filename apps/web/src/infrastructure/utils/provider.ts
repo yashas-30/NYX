@@ -47,61 +47,76 @@ const LOCAL_MODEL_IDS = new Set([
 ]);
 
 /**
+/**
+ * Helper to safely extract string ID from model parameters (handles strings, objects, nulls)
+ */
+const resolveModelIdString = (modelId: any): string => {
+  if (!modelId) return '';
+  if (typeof modelId === 'string') return modelId;
+  if (typeof modelId === 'object') return modelId.id || modelId.name || String(modelId);
+  return String(modelId);
+};
+
+/**
  * Structured provider detection that checks in priority order.
  */
-export const detectProvider = (modelId: string): Provider => {
-  if (!modelId) return 'gemini';
+export const detectProvider = (modelId: any): Provider => {
+  if (typeof modelId === 'object' && modelId?.provider) {
+    return modelId.provider as Provider;
+  }
 
-  // 1. Detect explicit provider prefixes (from local model registry)
-  if (modelId.startsWith('huggingface/')) return 'huggingface' as Provider;
+  const idStr = resolveModelIdString(modelId);
+  if (!idStr) return 'gemini';
+  const lowerId = idStr.toLowerCase();
 
-  // 2. Check in local GGUF model presets first
-  if (LOCAL_MODEL_IDS.has(modelId)) {
+  // 1. Explicit Local Server Prefixes & Extensions
+  if (
+    lowerId.startsWith('ollama/') ||
+    lowerId.startsWith('vllm/') ||
+    lowerId.startsWith('lmstudio/') ||
+    lowerId.startsWith('local/') ||
+    lowerId.endsWith('.gguf') ||
+    lowerId.includes('.gguf') ||
+    lowerId.endsWith('.safetensors') ||
+    lowerId.endsWith('.bin') ||
+    lowerId.endsWith('.pt') ||
+    lowerId.endsWith('.pth') ||
+    lowerId.endsWith('.onnx') ||
+    lowerId.endsWith('.ckpt') ||
+    lowerId.startsWith('custom-')
+  ) {
     return 'nyx-native' as Provider;
   }
 
-  // 3. Check in static AVAILABLE_MODELS presets
-  const availableModel = AVAILABLE_MODELS.find((m) => m.id === modelId);
+  // 2. Explicit Cloud Provider Prefixes
+  if (lowerId.startsWith('huggingface/')) return 'huggingface' as Provider;
+  if (lowerId.startsWith('groq/')) return 'groq' as Provider;
+  if (lowerId.startsWith('anthropic/') || lowerId.includes('claude')) return 'anthropic' as Provider;
+  if (lowerId.startsWith('openrouter/') || lowerId.startsWith('deepseek/')) return 'openrouter' as Provider;
+
+  // 3. Static catalog lookup
+  const availableModel = AVAILABLE_MODELS.find((m) => m.id === idStr);
   if (availableModel) return availableModel.provider;
 
-  // 4. Check GGUF and custom patterns for imported models
-  const lowerId = modelId.toLowerCase();
-  if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
+  if (LOCAL_MODEL_IDS.has(idStr)) {
     return 'nyx-native' as Provider;
   }
 
-  return 'gemini';
+  // 4. Default for unknown cloud models (use OpenRouter instead of forcing Gemini)
+  return 'openrouter' as Provider;
 };
 
 /**
  * Gets provider from model ID with proper fallback to AVAILABLE_MODELS.
  */
-export const getProviderForModel = (modelId: string): Provider => {
-  // 1. Detect explicit provider prefixes (from local model registry)
-  if (modelId.startsWith('huggingface/')) return 'huggingface' as Provider;
-
-  // 2. Check in local GGUF model presets first
-  if (LOCAL_MODEL_IDS.has(modelId)) {
-    return 'nyx-native' as Provider;
-  }
-
-  // 3. Check in static AVAILABLE_MODELS presets
-  const availableModel = AVAILABLE_MODELS.find((m) => m.id === modelId);
-  if (availableModel) return availableModel.provider;
-
-  // 4. Check GGUF and custom patterns for imported models
-  const lowerId = modelId.toLowerCase();
-  if (lowerId.endsWith('.gguf') || lowerId.includes('.gguf') || lowerId.startsWith('custom-')) {
-    return 'nyx-native' as Provider;
-  }
-
-  return 'gemini';
+export const getProviderForModel = (modelId: any): Provider => {
+  return detectProvider(modelId);
 };
 
 /**
  * Checks if a model ID refers to a local instance.
  */
-export const isLocalModel = (modelId: string): boolean => {
+export const isLocalModel = (modelId: any): boolean => {
   const provider = getProviderForModel(modelId);
   return LOCAL_PROVIDERS.includes(provider);
 };
@@ -152,8 +167,9 @@ export interface ModelCapabilities {
   contextWindow: number;
 }
 
-export const getModelCapabilities = (modelId: string): ModelCapabilities => {
-  const lowerId = modelId.toLowerCase();
+export const getModelCapabilities = (modelId: any): ModelCapabilities => {
+  const idStr = resolveModelIdString(modelId);
+  const lowerId = idStr.toLowerCase();
   
   const isVision =
     lowerId.includes('vl') ||
@@ -161,12 +177,20 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
     lowerId.includes('multimodal') ||
     lowerId.includes('pixtral') ||
     lowerId.includes('llava') ||
+    lowerId.includes('minicpm-v') ||
+    lowerId.includes('idefics') ||
+    lowerId.includes('deepseek-vl') ||
+    lowerId.includes('internvl') ||
+    lowerId.includes('moondream') ||
     lowerId.includes('gemini');
-    
+
   const isReasoning =
     lowerId.includes('r1') ||
     lowerId.includes('reasoning') ||
     lowerId.includes('thinking') ||
+    lowerId.includes('thinker') ||
+    lowerId.includes('qwq') ||
+    lowerId.includes('skywork-o') ||
     lowerId.includes('o1') ||
     lowerId.includes('o3');
 
@@ -179,7 +203,7 @@ export const getModelCapabilities = (modelId: string): ModelCapabilities => {
     contextWindow: 8192,
   };
 
-  if (lowerId.includes('gemini-2.5-flash')) {
+  if (lowerId.includes('gemini-3.6-flash') || lowerId.includes('gemini-3.5-flash-lite')) {
     caps.supportsTools = true;
     caps.contextWindow = 1048576; // 1M
   } else if (lowerId.includes('gemini-2.0-flash')) {
@@ -233,3 +257,27 @@ export const isModelHealthy = (modelId: string): boolean => {
   }
   return true;
 };
+
+/**
+ * Returns true if the model is a reasoning/thinking model that emits a
+ * <think> block or a dedicated `thinking` event before its response.
+ *
+ * Detection is purely by model-name pattern so it works for both cloud
+ * models (deepseek-r1 on OpenRouter) and local GGUF files the user drops
+ * in (e.g. "qwq-32b-q4_k_m.gguf").
+ */
+export const isReasoningModel = (modelId: any): boolean => {
+  const idStr = resolveModelIdString(modelId);
+  if (!idStr) return false;
+  const lower = idStr.toLowerCase();
+
+  // Strict pattern matching for genuine reasoning models (DeepSeek R1, QwQ, o1, o3, etc.)
+  // Avoids false-positive matches on standard instruct models (e.g. HyperCLOVAX, Llama, Gemma, Gemini)
+  return (
+    /\b(?:deepseek-r1|deepseek-reasoner|qwq|sky-t1|o1|o3|o1-mini|o1-preview|o3-mini)\b/i.test(lower) ||
+    /[-_/](?:r1|qwq|reasoner|thinking|reasoning)(?:[-_/\.]|$)/i.test(lower) ||
+    lower.includes('deepseek/deepseek-r') ||
+    lower.includes('qwen/qwq')
+  );
+};
+

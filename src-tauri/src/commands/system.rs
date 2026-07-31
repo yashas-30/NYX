@@ -35,7 +35,7 @@ pub struct HardwareSpecs {
 
 #[tauri::command]
 pub async fn get_hardware_specs() -> SystemResult<HardwareSpecs> {
-    let hw = crate::llm::local_orchestrator::HardwareSnapshot::collect(None).await;
+    let hw = crate::llm::local_orchestrator::HardwareSnapshot::collect().await;
 
     let specs = HardwareSpecs {
         cpu_cores: hw.cpu_physical_cores as usize,
@@ -63,7 +63,7 @@ pub struct SystemDiagnostics {
 
 #[tauri::command]
 pub async fn get_system_diagnostics(model_id: Option<String>) -> SystemDiagnostics {
-    let hw = crate::llm::local_orchestrator::HardwareSnapshot::collect(None).await;
+    let hw = crate::llm::local_orchestrator::HardwareSnapshot::collect().await;
 
     let optimal_layers = if let Some(m) = model_id {
         let path = std::path::PathBuf::from(&m);
@@ -71,7 +71,7 @@ pub async fn get_system_diagnostics(model_id: Option<String>) -> SystemDiagnosti
             tokio::fs::metadata(&path).await.map(|meta| meta.len() as f32 / (1024.0 * 1024.0 * 1024.0)).unwrap_or(4.0)
         } else { 4.0 };
 
-        let decision = crate::llm::local_orchestrator::compute_ngl_decision(&hw, None, model_size_gb, 32768);
+        let decision = crate::llm::local_orchestrator::compute_ngl_decision(&hw, None, model_size_gb, 8192);
         Some(OptimalLayers { gpu_layers: decision.ngl, message: decision.message })
     } else {
         None

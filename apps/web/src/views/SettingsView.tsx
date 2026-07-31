@@ -1,1 +1,3 @@
-export { SettingsPage as default } from '@src/features/settings';
+import { SettingsPage } from '@src/features/settings';
+
+export default SettingsPage;

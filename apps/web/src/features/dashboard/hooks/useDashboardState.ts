@@ -38,28 +38,6 @@ export const useDashboardState = (onExit?: () => void) => {
     else if (mode === 'observability') navigate('/observability');
     else navigate('/chat');
   };
-  const [chatSettings, setChatSettings] = useState(() => {
-    const saved = localStorage.getItem('nyx_chat_settings');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        parsed.contextSize = 4096;
-        return parsed;
-      } catch {}
-    }
-    return {
-      temperature: 0.7,
-      maxTokens: 8192,
-      topP: 0.95,
-      topK: 40,
-      gpuLayers: 99,
-      threads: 4,
-      contextSize: 2048,
-      batchSize: 512,
-      repeatPenalty: 1.1,
-      mirostat: 0,
-    };
-  });
 
   const [models, setModels] = useState<Record<'chat', string>>({
     chat: '',
@@ -187,25 +165,10 @@ export const useDashboardState = (onExit?: () => void) => {
     localStorage.setItem('nyx_chat_models', JSON.stringify(models));
   }, [models]);
 
-
-
-  useEffect(() => {
-    localStorage.setItem('nyx_chat_settings', JSON.stringify(chatSettings));
-  }, [chatSettings]);
-
   const setModel = (mid: string) => {
     setModels((prev) => ({
       ...prev,
       chat: mid,
-    }));
-    setChatSettings((prev: any) => ({
-      ...prev,
-      contextSize: 4096,
-      gpuLayers: 99,
-      threads: 4,
-      batchSize: 512,
-      useMlock: false,
-      disableKvOffload: false,
     }));
   };
 
@@ -213,8 +176,7 @@ export const useDashboardState = (onExit?: () => void) => {
     // Top-level State
     activeMode,
     setActiveMode,
-    chatSettings,
-    setChatSettings,
+    apiKeys,
     onExit,
 
     // Coder states — NYX only
@@ -230,7 +192,6 @@ export const useDashboardState = (onExit?: () => void) => {
     localLibraryModels,
 
     // Security
-    apiKeys,
     updateApiKey,
     clearApiKeys,
     gatewayUrls,

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Info } from '@phosphor-icons/react';
+import { Info, Pause, Play, X } from '@phosphor-icons/react';
 import { ModelStatusBadge } from '../ModelStatusBadge';
 import type { ModelStatus } from '@nyx/shared';
 import { invoke } from '@tauri-apps/api/core';
-import { useSettingsStore } from '@core/stores/useSettingsStore';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
+import type { DownloadState } from '../../hf-explorer/types';
 
 interface ModelCardProps {
   id?: string;
@@ -31,6 +32,10 @@ interface ModelCardProps {
   loadingState?: 'loading' | 'unloading' | 'uninstalling' | 'idle';
   modelSizeBytes?: number;
   systemVramBytes?: number;
+  downloadState?: DownloadState;
+  onPauseDownload?: () => void;
+  onResumeDownload?: () => void;
+  onCancelDownload?: () => void;
 }
 
 /** Pure display model card — library view only, no add functionality */
@@ -59,23 +64,29 @@ export const ModelCard: React.FC<ModelCardProps> = ({
   loadingState = 'idle',
   modelSizeBytes,
   systemVramBytes,
+  downloadState,
+  onPauseDownload,
+  onResumeDownload,
+  onCancelDownload,
 }) => {
   const providerLabel = provider;
 
-  const modelSettings = useSettingsStore((s) => s.chatSettings);
+  const modelConfigs = useNyxStore((s) => s.modelConfigs);
+  const targetConfig = id ? modelConfigs?.[id] : undefined;
+
   const [hardwareEst, setHardwareEst] = React.useState<any>(null);
 
   React.useEffect(() => {
     if (isLocal && id) {
       invoke('estimate_hardware_usage', {
         modelId: id,
-        contextSize: modelSettings?.contextSize || 4096,
-        gpuLayers: 99,
+        contextSize: targetConfig?.contextSize || undefined,
+        gpuLayers: targetConfig?.gpuLayers || 99,
       }).then((res: any) => {
         setHardwareEst(res);
       }).catch(console.error);
     }
-  }, [isLocal, id, modelSettings?.contextSize, modelSettings?.threads]);
+  }, [isLocal, id, targetConfig?.contextSize, targetConfig?.gpuLayers]);
 
   const modelVramMb = hardwareEst ? hardwareEst.estimated_vram_mb : (modelSizeBytes ? modelSizeBytes / (1024 * 1024) : 0);
   const totalVramMb = hardwareEst ? hardwareEst.vram_total_mb : (systemVramBytes ? systemVramBytes / (1024 * 1024) : 0);
@@ -305,6 +316,65 @@ export const ModelCard: React.FC<ModelCardProps> = ({
         </div>
       )}
 
+
+      {/* Downloading / Paused State Controls */}
+      {isLocal && downloadState && (downloadState.status === 'downloading' || downloadState.status === 'paused' || downloadState.status === 'error') && (
+        <div className="pt-3 mt-3 border-t border-border/30 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
+              {downloadState.status === 'downloading' && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />}
+              {downloadState.status === 'paused' && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+              {downloadState.status === 'error' && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+              {downloadState.status}
+            </span>
+            <span className="text-[10px] font-mono text-muted-foreground">
+              {downloadState.progress.toFixed(0)}%
+            </span>
+          </div>
+
+          <div className="h-1.5 w-full bg-muted/60 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-300 ${
+                downloadState.status === 'error'
+                  ? 'bg-red-500'
+                  : downloadState.status === 'paused'
+                    ? 'bg-amber-400'
+                    : 'bg-primary'
+              }`}
+              style={{ width: `${downloadState.progress}%` }}
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-1.5 mt-1">
+            {downloadState.status === 'downloading' && onPauseDownload && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPauseDownload(); }}
+                className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 flex items-center gap-1 transition-colors"
+              >
+                <Pause size={10} weight="fill" /> Pause
+              </button>
+            )}
+
+            {(downloadState.status === 'paused' || downloadState.status === 'error') && onResumeDownload && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onResumeDownload(); }}
+                className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 flex items-center gap-1 transition-colors"
+              >
+                <Play size={10} weight="fill" /> Resume
+              </button>
+            )}
+
+            {onCancelDownload && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCancelDownload(); }}
+                className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center gap-1 transition-colors"
+              >
+                <X size={10} weight="bold" /> Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Local Model Actions */}
       {isLocal && (

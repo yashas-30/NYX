@@ -25,9 +25,6 @@ export const HardwareAnalyzerCard: React.FC = () => {
       }
     }
     loadSpecs();
-    
-    const interval = setInterval(loadSpecs, 5000);
-    return () => clearInterval(interval);
   }, []);
 
   if (!specs) return null;

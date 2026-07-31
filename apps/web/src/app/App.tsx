@@ -26,6 +26,8 @@ function AppContent() {
 
   useEffect(() => {
     DebugLogger.init();
+    let unlistenDownload: (() => void) | null = null;
+    let unlistenDownloadComplete: (() => void) | null = null;
 
     // Initialize Local LLM Environment
     const initLocalLLM = async () => {
@@ -36,19 +38,19 @@ function AppContent() {
           
           let toastId: string | number | undefined;
           
-          const unlisten = await listen<{ progress: number; status: string }>('llm-download-progress', (event) => {
+          unlistenDownload = (await listen<{ progress: number; status: string }>('llm-download-progress', (event) => {
              const { progress, status } = event.payload;
              if (!toastId && progress < 100) {
                toastId = toast.loading(`Initializing Local Intelligence: ${status}`, { duration: Infinity });
              } else if (toastId && progress < 100) {
                toast.loading(`${status} (${Math.round(progress)}%)`, { id: toastId });
              }
-          });
+          }));
 
-          const unlistenComplete = await listen('llm-download-complete', () => {
+          unlistenDownloadComplete = (await listen('llm-download-complete', () => {
              if (toastId) toast.success('Local model downloaded successfully!', { id: toastId });
              toastId = undefined;
-          });
+          }));
 
           // Ensure assets exist (downloads if missing) - run in background
           invoke('download_local_model').catch(err => {
@@ -57,9 +59,6 @@ function AppContent() {
             } else {
               console.error('[App] Failed to init Local LLM:', err);
             }
-          }).finally(() => {
-            unlisten();
-            unlistenComplete();
           });
         }
       } catch (err) {
@@ -90,7 +89,13 @@ function AppContent() {
       }
     });
 
-    if (!privacyMode) return () => unsub();
+    if (!privacyMode) {
+      return () => {
+        unsub();
+        unlistenDownload?.();
+        unlistenDownloadComplete?.();
+      };
+    }
 
     let timeoutId: NodeJS.Timeout;
 
@@ -122,6 +127,8 @@ function AppContent() {
 
     return () => {
       unsub();
+      unlistenDownload?.();
+      unlistenDownloadComplete?.();
       if (timeoutId) clearTimeout(timeoutId);
       events.forEach((event) => {
         window.removeEventListener(event, resetTimer);

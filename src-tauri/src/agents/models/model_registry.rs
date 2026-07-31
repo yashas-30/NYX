@@ -24,10 +24,15 @@ pub enum ReasoningDepth {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PromptTemplate {
-    ChatML,   // Most GGUF models (mistral, llama)
+    ChatML,   // Mistral, Qwen, ChatML
+    Llama3,   // Meta Llama 3 / 3.1 / 3.2 / 3.3
+    Llama2,   // Meta Llama 2 / CodeLlama
+    DeepSeek, // DeepSeek R1 / V3
+    Qwen,     // Qwen 2.5
     Gemma,    // Google Gemma models
     Phi,      // Microsoft Phi models
-    Standard, // Cloud APIs (no special formatting needed)
+    CommandR, // Cohere Command R
+    Standard, // Cloud APIs
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +45,7 @@ pub struct ModelCapabilityProfile {
     pub instruction_following: InstructionQuality,
     pub reasoning_depth: ReasoningDepth,
     pub prompt_template: PromptTemplate,
+    pub stop_sequences: Vec<String>,
     pub max_output_tokens: usize,
     pub supports_streaming: bool,
 }
@@ -58,6 +64,7 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             instruction_following: InstructionQuality::Excellent,
             reasoning_depth: ReasoningDepth::Extended,
             prompt_template: PromptTemplate::Standard,
+            stop_sequences: vec![],
             max_output_tokens: 8192,
             supports_streaming: true,
         },
@@ -71,6 +78,7 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             instruction_following: InstructionQuality::Excellent,
             reasoning_depth: if m.starts_with("o") { ReasoningDepth::Extended } else { ReasoningDepth::Standard },
             prompt_template: PromptTemplate::Standard,
+            stop_sequences: vec![],
             max_output_tokens: 16384,
             supports_streaming: true,
         },
@@ -84,6 +92,7 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             instruction_following: InstructionQuality::Excellent,
             reasoning_depth: ReasoningDepth::Extended,
             prompt_template: PromptTemplate::Standard,
+            stop_sequences: vec![],
             max_output_tokens: 8192,
             supports_streaming: true,
         },
@@ -98,6 +107,7 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             instruction_following: InstructionQuality::Good,
             reasoning_depth: ReasoningDepth::Standard,
             prompt_template: PromptTemplate::Standard,
+            stop_sequences: vec![],
             max_output_tokens: 8192,
             supports_streaming: true,
         },
@@ -111,6 +121,7 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             instruction_following: InstructionQuality::Good,
             reasoning_depth: ReasoningDepth::Standard,
             prompt_template: PromptTemplate::Standard,
+            stop_sequences: vec![],
             max_output_tokens: 8192,
             supports_streaming: true,
         },
@@ -125,6 +136,7 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             instruction_following: InstructionQuality::Excellent,
             reasoning_depth: ReasoningDepth::Extended,
             prompt_template: PromptTemplate::Standard,
+            stop_sequences: vec![],
             max_output_tokens: 8192,
             supports_streaming: true,
         },
@@ -138,12 +150,41 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             instruction_following: InstructionQuality::Excellent,
             reasoning_depth: ReasoningDepth::Standard,
             prompt_template: PromptTemplate::Standard,
+            stop_sequences: vec![],
             max_output_tokens: 8192,
             supports_streaming: true,
         },
 
-        // Local GGUF — detect by filename patterns
-        m if m.contains("26b") || m.contains("27b") || m.contains("31b") => ModelCapabilityProfile {
+        // Local GGUF & Native Models — Architecture Specific Matchers
+        m if m.contains("llama-3") || m.contains("llama3") => ModelCapabilityProfile {
+            model_id: model_id.to_string(),
+            tier: if m.contains("70b") { ModelTier::Strong } else { ModelTier::Mid },
+            context_window: 128_000,
+            supports_function_calling: true,
+            supports_system_prompt: true,
+            instruction_following: InstructionQuality::Good,
+            reasoning_depth: if m.contains("70b") { ReasoningDepth::Standard } else { ReasoningDepth::Basic },
+            prompt_template: PromptTemplate::Llama3,
+            stop_sequences: vec!["<|eot_id|>".into(), "<|end_of_text|>".into()],
+            max_output_tokens: 8192,
+            supports_streaming: true,
+        },
+
+        m if m.contains("qwen") => ModelCapabilityProfile {
+            model_id: model_id.to_string(),
+            tier: if m.contains("72b") || m.contains("32b") { ModelTier::Strong } else { ModelTier::Mid },
+            context_window: 128_000,
+            supports_function_calling: true,
+            supports_system_prompt: true,
+            instruction_following: InstructionQuality::Good,
+            reasoning_depth: ReasoningDepth::Standard,
+            prompt_template: PromptTemplate::Qwen,
+            stop_sequences: vec!["<|im_end|>".into(), "<|endoftext|>".into()],
+            max_output_tokens: 8192,
+            supports_streaming: true,
+        },
+
+        m if m.contains("deepseek") => ModelCapabilityProfile {
             model_id: model_id.to_string(),
             tier: ModelTier::Strong,
             context_window: 128_000,
@@ -151,8 +192,37 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             supports_system_prompt: true,
             instruction_following: InstructionQuality::Good,
             reasoning_depth: ReasoningDepth::Extended,
-            prompt_template: if m.contains("gemma") { PromptTemplate::Gemma } else { PromptTemplate::ChatML },
+            prompt_template: PromptTemplate::DeepSeek,
+            stop_sequences: vec!["<|end_of_sentence|>".into(), "<|im_end|>".into()],
             max_output_tokens: 8192,
+            supports_streaming: true,
+        },
+
+        m if m.contains("gemma") => ModelCapabilityProfile {
+            model_id: model_id.to_string(),
+            tier: ModelTier::Mid,
+            context_window: 8_192,
+            supports_function_calling: true,
+            supports_system_prompt: true,
+            instruction_following: InstructionQuality::Good,
+            reasoning_depth: ReasoningDepth::Basic,
+            prompt_template: PromptTemplate::Gemma,
+            stop_sequences: vec!["<end_of_turn>".into()],
+            max_output_tokens: 4096,
+            supports_streaming: true,
+        },
+
+        m if m.contains("phi") => ModelCapabilityProfile {
+            model_id: model_id.to_string(),
+            tier: ModelTier::Mid,
+            context_window: 128_000,
+            supports_function_calling: true,
+            supports_system_prompt: true,
+            instruction_following: InstructionQuality::Good,
+            reasoning_depth: ReasoningDepth::Basic,
+            prompt_template: PromptTemplate::Phi,
+            stop_sequences: vec!["<|end|>".into(), "<|endoftext|>".into()],
+            max_output_tokens: 4096,
             supports_streaming: true,
         },
 
@@ -164,7 +234,8 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             supports_system_prompt: true,
             instruction_following: InstructionQuality::Good,
             reasoning_depth: ReasoningDepth::Standard,
-            prompt_template: if m.contains("gemma") { PromptTemplate::Gemma } else { PromptTemplate::ChatML },
+            prompt_template: PromptTemplate::ChatML,
+            stop_sequences: vec!["<|im_end|>".into()],
             max_output_tokens: 4096,
             supports_streaming: true,
         },
@@ -177,7 +248,8 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
             supports_system_prompt: true,
             instruction_following: InstructionQuality::Fair,
             reasoning_depth: ReasoningDepth::Basic,
-            prompt_template: if m.contains("phi") { PromptTemplate::Phi } else { PromptTemplate::ChatML },
+            prompt_template: PromptTemplate::ChatML,
+            stop_sequences: vec!["<|im_end|>".into()],
             max_output_tokens: 4096,
             supports_streaming: true,
         },
@@ -185,12 +257,13 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
         m if m.contains("7b") || m.contains("8b") || m.contains("9b") => ModelCapabilityProfile {
             model_id: model_id.to_string(),
             tier: ModelTier::Mid,
-            context_window: 4_096,
-            supports_function_calling: false,
+            context_window: 8_192,
+            supports_function_calling: true,
             supports_system_prompt: true,
             instruction_following: InstructionQuality::Fair,
             reasoning_depth: ReasoningDepth::Basic,
-            prompt_template: if m.contains("gemma") { PromptTemplate::Gemma } else { PromptTemplate::ChatML },
+            prompt_template: PromptTemplate::ChatML,
+            stop_sequences: vec!["<|im_end|>".into()],
             max_output_tokens: 2048,
             supports_streaming: true,
         },
@@ -198,27 +271,29 @@ pub fn get_profile(model_id: &str) -> ModelCapabilityProfile {
         m if m.contains("1b") || m.contains("2b") || m.contains("3b") => ModelCapabilityProfile {
             model_id: model_id.to_string(),
             tier: ModelTier::Weak,
-            context_window: 2_048,
+            context_window: 4_096,
             supports_function_calling: false,
             supports_system_prompt: true,
             instruction_following: InstructionQuality::Poor,
             reasoning_depth: ReasoningDepth::Limited,
             prompt_template: PromptTemplate::ChatML,
+            stop_sequences: vec!["<|im_end|>".into()],
             max_output_tokens: 1024,
             supports_streaming: true,
         },
 
-        // Safe default for unknown models (assume Mid tier, standard limits)
+        // Safe default for unknown models
         _ => ModelCapabilityProfile {
             model_id: model_id.to_string(),
             tier: ModelTier::Mid,
-            context_window: 4_096,
+            context_window: 8_192,
             supports_function_calling: false,
             supports_system_prompt: true,
             instruction_following: InstructionQuality::Fair,
             reasoning_depth: ReasoningDepth::Basic,
-            prompt_template: PromptTemplate::Standard,
-            max_output_tokens: 2048,
+            prompt_template: PromptTemplate::ChatML,
+            stop_sequences: vec!["<|im_end|>".into()],
+            max_output_tokens: 4096,
             supports_streaming: true,
         },
     }

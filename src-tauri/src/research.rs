@@ -56,15 +56,21 @@ async fn run_planner(
         api_key,
         temperature: Some(0.3),
         max_tokens: Some(1024),
-        reasoning_effort: None,
+
         event_name: None,
         tools: None,
+        response_format: None,
+        stop: None,
         repeat_penalty: None,
         presence_penalty: None,
         frequency_penalty: None,
         top_k: None,
         top_p: None,
         execution_mode: Some("chat".to_string()),
+        reasoning_enabled: None,
+        context_window: None,
+        capabilities: None,
+        tool_choice: None,
     };
     
     let mut rx = execute_llm_stream(&req).await?;
@@ -88,11 +94,10 @@ async fn run_planner(
 }
 
 async fn get_search_urls(query: &str) -> Vec<String> {
-    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().unwrap_or_default();
     let url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding::encode(query));
     let mut urls = Vec::new();
     
-    if let Ok(res) = client.get(&url).header("User-Agent", "Mozilla/5.0").send().await {
+    if let Ok(res) = crate::commands::agent::HTTP_CLIENT.get(&url).send().await {
         if let Ok(text) = res.text().await {
             let re = regex::Regex::new(r#"(?s)<a[^>]*class="result__url"[^>]*href="([^"]+)"[^>]*>"#).unwrap();
             for cap in re.captures_iter(&text) {
@@ -121,18 +126,15 @@ async fn get_search_urls(query: &str) -> Vec<String> {
 }
 
 async fn fetch_markdown(url: &str) -> String {
-    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().unwrap_or_default();
-    match client.get(url).send().await {
+    match crate::commands::agent::HTTP_CLIENT.get(url).send().await {
         Ok(res) => {
             if let Ok(html) = res.text().await {
-                let document = scraper::Html::parse_document(&html);
-                let text = document.root_element().text().collect::<Vec<_>>().join(" ");
-                text
+                crate::commands::agent::extract_clean_text(&html, url)
             } else {
-                "".to_string()
+                String::new()
             }
         },
-        Err(_) => "".to_string(),
+        Err(_) => String::new(),
     }
 }
 
@@ -159,15 +161,21 @@ async fn run_publisher(
         api_key,
         temperature: Some(0.4),
         max_tokens: Some(8000),
-        reasoning_effort: None,
+
         event_name: None,
         tools: None,
+        response_format: None,
+        stop: None,
         repeat_penalty: None,
         presence_penalty: None,
         frequency_penalty: None,
         top_k: None,
         top_p: None,
         execution_mode: Some("chat".to_string()),
+        reasoning_enabled: None,
+        context_window: None,
+        capabilities: None,
+        tool_choice: None,
     };
     
     let mut rx = execute_llm_stream(&req).await?;
@@ -203,7 +211,7 @@ pub async fn start_deep_research(
     }));
 
     let provider = query.provider.unwrap_or_else(|| "openrouter".to_string());
-    let model_id = query.model_id.unwrap_or_else(|| "google/gemini-2.5-flash".to_string());
+    let model_id = query.model_id.unwrap_or_else(|| "google/gemini-3.6-flash".to_string());
     let api_key = query.api_key.unwrap_or_default();
     
     if api_key.is_empty() && provider != "nyx-native" {
@@ -223,14 +231,16 @@ pub async fn start_deep_research(
     }));
 
     let mut tasks = vec![];
+    let visited_urls = std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashSet::<String>::new()));
+
     for sq in planner_res.sub_queries {
         let prog = on_progress.clone();
         let query = sq.query.clone();
+        let visited = visited_urls.clone();
+
         tasks.push(tokio::spawn(async move {
-            // Hard 20s timeout per sub-query so one slow/hung request
-            // doesn't block the entire pipeline.
             let task_result = tokio::time::timeout(
-                std::time::Duration::from_secs(20),
+                std::time::Duration::from_secs(12),
                 async move {
                     let _ = prog.send(json!({
                         "type": "progress",
@@ -238,15 +248,36 @@ pub async fn start_deep_research(
                     }));
 
                     let urls = get_search_urls(&query).await;
+                    let mut unique_urls = vec![];
+                    
+                    {
+                        let mut set = visited.lock().await;
+                        for u in urls {
+                            if set.insert(u.clone()) {
+                                unique_urls.push(u);
+                            }
+                        }
+                    }
+
+                    // Parallel page fetching
+                    let page_tasks: Vec<_> = unique_urls.into_iter().map(|url| {
+                        let prog_inner = prog.clone();
+                        tokio::spawn(async move {
+                            let _ = prog_inner.send(json!({
+                                "type": "progress",
+                                "message": format!("Reading: {}", url)
+                            }));
+                            let md = fetch_markdown(&url).await;
+                            (url, md)
+                        })
+                    }).collect();
+
+                    let page_results = join_all(page_tasks).await;
                     let mut page_texts = vec![];
                     let mut page_sources: Vec<SourceEntry> = vec![];
 
-                    for url in urls {
-                        let _ = prog.send(json!({
-                            "type": "progress",
-                            "message": format!("Reading: {}", url)
-                        }));
-                        let md = fetch_markdown(&url).await;
+                    for item in page_results.into_iter().flatten() {
+                        let (url, md) = item;
                         if !md.is_empty() {
                             let title = md.lines()
                                 .find(|l| !l.trim().is_empty())
@@ -254,24 +285,22 @@ pub async fn start_deep_research(
                                 .trim_start_matches('#')
                                 .trim()
                                 .to_string();
-                            let snippet: String = md.chars().take(200).collect();
-                            page_texts.push(format!("Source: {}\n\n{}", url, md));
-                            page_sources.push(SourceEntry { url: url.clone(), title, snippet });
+                            
+                            let snippet: String = md.chars().take(250).collect();
+                            // Keep max 2,500 chars per page to avoid context window explosion
+                            let bounded_md: String = md.chars().take(2500).collect();
+                            page_texts.push(format!("Source: {}\n\n{}", url, bounded_md));
+                            page_sources.push(SourceEntry { url, title, snippet });
                         }
                     }
                     (page_texts, page_sources)
                 }
             ).await;
 
-            // On timeout return empty results rather than propagating an error.
             task_result.unwrap_or_default()
         }));
-
     }
-    
-    // Each sub-query runs in its own task with a hard 20-second timeout.
-    // If a request hangs, that task fails gracefully rather than
-    // stalling the entire pipeline for up to the reqwest 120s timeout.
+
     let results = join_all(tasks).await;
     let mut all_context = vec![];
     let mut all_sources: Vec<SourceEntry> = vec![];

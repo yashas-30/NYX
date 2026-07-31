@@ -52,28 +52,17 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
   const [systemPrompt, setSystemPrompt] = useState('');
   const [promptSaving, setPromptSaving] = useState(false);
 
-  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const modelSystemPrompts = useNyxStore((s) => s.modelSystemPrompts);
+  const updateModelSystemPrompt = useNyxStore((s) => s.updateModelSystemPrompt);
+  
+  const advancedLocalModelSettings = useNyxStore((s) => s.advancedLocalModelSettings);
+  const setAdvancedLocalModelSettings = useNyxStore((s) => s.setAdvancedLocalModelSettings);
 
   useEffect(() => {
-    if (!currentModelId) return;
-    const loadPrompt = async () => {
-      try {
-        let prompts: Record<string, string> = {};
-        if (isTauri) {
-          prompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
-        } else {
-          const stored = localStorage.getItem('nyx_model_prompts');
-          if (stored) {
-            try { prompts = JSON.parse(stored); } catch (e) {}
-          }
-        }
-        setSystemPrompt(prompts[currentModelId] || '');
-      } catch (e) {
-        console.error('Failed to load system prompt:', e);
-      }
-    };
-    loadPrompt();
-  }, [currentModelId, isTauri]);
+    if (currentModelId) {
+      setSystemPrompt(modelSystemPrompts?.[currentModelId] || '');
+    }
+  }, [currentModelId, modelSystemPrompts]);
 
   const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setSystemPrompt(e.target.value);
@@ -83,20 +72,7 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
     if (!currentModelId) return;
     setPromptSaving(true);
     try {
-      let prompts: Record<string, string> = {};
-      if (isTauri) {
-        prompts = await settingsStore.get<Record<string, string>>('modelSystemPrompts') || {};
-        prompts[currentModelId] = systemPrompt;
-        await settingsStore.set('modelSystemPrompts', prompts);
-        await settingsStore.save();
-      } else {
-        const stored = localStorage.getItem('nyx_model_prompts');
-        if (stored) {
-          try { prompts = JSON.parse(stored); } catch (e) {}
-        }
-        prompts[currentModelId] = systemPrompt;
-        localStorage.setItem('nyx_model_prompts', JSON.stringify(prompts));
-      }
+      updateModelSystemPrompt(currentModelId, systemPrompt);
       toast.success('System prompt saved for ' + currentModelId);
     } catch (e) {
       console.error('Failed to save system prompt:', e);
@@ -245,6 +221,30 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
             Select a model first to configure its system prompt.
           </div>
         )}
+      </div>
+      
+      {/* Advanced Settings Toggle */}
+      <div className="pt-4 mt-4 border-t border-white/[0.05]">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-accent">
+              ADVANCED
+            </p>
+            <h3 className="text-xs font-bold text-foreground mt-0.5">Advanced Local Model Settings</h3>
+            <p className="text-[10px] text-muted-foreground mt-0.5 max-w-[80%]">
+              Shows advanced options like sampling penalties, memory locks, multi-gpu splitting, and KV cache quantizations in the local inference panel.
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              className="sr-only peer"
+              checked={advancedLocalModelSettings}
+              onChange={(e) => setAdvancedLocalModelSettings(e.target.checked)}
+            />
+            <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500" />
+          </label>
+        </div>
       </div>
     </div>
   );

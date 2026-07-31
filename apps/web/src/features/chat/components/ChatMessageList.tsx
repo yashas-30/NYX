@@ -8,7 +8,7 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CopyIcon as Copy, CheckIcon as Check, TerminalIcon as Terminal, ThumbsUpIcon as ThumbsUp, ThumbsDownIcon as ThumbsDown, GitBranchIcon as GitBranch, ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, XIcon as X, SparklesIcon as Sparkles, DownloadIcon as Download } from '@animateicons/react/lucide';
-import { ArrowDown, Pencil, RefreshCw, Wrench, FileText, Image as ImageIcon, Clock, AlertTriangle, Loader2, Square, Volume2, VolumeX } from 'lucide-react';
+import { ArrowDown, Pencil, RefreshCw, Wrench, FileText, Image as ImageIcon, Clock, AlertTriangle, Loader2, Square, Volume2, VolumeX, Pin, PinOff, Shield, Zap } from 'lucide-react';
 import { ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -18,15 +18,15 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { CodeBlock } from '../../../components/chat/CodeBlock';
 
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { toast } from '@src/shared/components/ui/sonner';
 import { AVAILABLE_MODELS } from '@src/shared/config/models';
 import { Logo, NyxLoader, AnimatedLogo } from '@src/assets/icons/icons';
+import { useAppStore } from '@src/stores/useAppStore';
 import { ThinkingBlock } from './ThinkingBlock';
+import { isReasoningModel } from '@src/infrastructure/utils/provider';
 import { ArtifactPanel } from './ArtifactPanel';
 import { Citation, CitationCard } from './CitationCard';
-import { SearchResultsPanel } from './SearchResultsPanel';
-import { MemoryPanel } from './MemoryPanel';
-import { ArtifactViewer } from '../../../components/artifacts/ArtifactViewer';
 import { tts } from '@src/features/voice/tts';
 
 // ---------------------------------------------------------------------------
@@ -38,6 +38,7 @@ export type { Citation };
 
 export interface ChatMessageListProps {
   history: ChatMessage[];
+  activeStreamMessage?: ChatMessage | null;
   activeAgent: 'nyx';
   isLoading: boolean;
   onCopy: (text: string, id: string) => void;
@@ -54,6 +55,7 @@ export interface ChatMessageListProps {
   onArtifactClick?: (artifact: any) => void;
   approveTool?: (index: number, approvalId: string) => void;
   rejectTool?: (index: number, approvalId: string) => void;
+  onPinToggle?: (index: number) => void;
 }
 
 interface MessageBubbleProps {
@@ -72,15 +74,21 @@ interface MessageBubbleProps {
   onArtifactClick?: (artifact: any) => void;
   approveTool?: (index: number, approvalId: string) => void;
   rejectTool?: (index: number, approvalId: string) => void;
+  onPinToggle?: (index: number) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Tool Call Visualizer
 // ---------------------------------------------------------------------------
 
-const formatToolAction = (name: string, argsStr: string, status: string) => {
+const formatToolAction = (rawName: any, argsInput: any, status: string) => {
+  const name = typeof rawName === 'string' ? rawName : (rawName ? String(rawName) : 'tool');
   let args: any = {};
-  try { args = JSON.parse(argsStr || '{}'); } catch {}
+  if (typeof argsInput === 'object' && argsInput !== null) {
+    args = argsInput;
+  } else if (typeof argsInput === 'string') {
+    try { args = JSON.parse(argsInput || '{}'); } catch {}
+  }
 
   const isDone = status === 'completed' || status === 'success';
   const prefix = isDone ? 'Finished' : (status === 'error' ? 'Failed to' : 'Using');
@@ -90,7 +98,7 @@ const formatToolAction = (name: string, argsStr: string, status: string) => {
     case 'web_search':
       return isDone ? 'Searched the web' : 'Searching the web...';
     case 'agent_handoff':
-      return isDone ? `Received context from ${args.agent}` : `Handed off task to ${args.agent}...`;
+      return isDone ? `Received context from ${args.agent || 'agent'}` : `Handed off task to ${args.agent || 'agent'}...`;
     case 'calculator':
       return isDone ? 'Calculated result' : 'Calculating...';
     case 'getWeather':
@@ -103,7 +111,6 @@ const formatToolAction = (name: string, argsStr: string, status: string) => {
     case 'list_dir':
       return isDone ? 'Listed directory contents' : 'Listing directory...';
     default:
-      // Generic fallback: "searchWeb" -> "Search web"
       const formattedName = name.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim();
       return `${prefix} ${formattedName.toLowerCase()}...`;
   }
@@ -118,7 +125,20 @@ const ToolCallCard: React.FC<{
   const isError = status === 'error';
   const isDone = status === 'completed' || status === 'success';
 
-  const actionText = formatToolAction(tool.function.name, tool.function.arguments, status);
+  const toolName = tool?.function?.name || (tool as any)?.name || (tool as any)?.tool || 'tool';
+  const rawArgs = tool?.function?.arguments || (tool as any)?.args || (tool as any)?.arguments || '{}';
+  const actionText = formatToolAction(toolName, rawArgs, status);
+
+  let formattedArgs = rawArgs;
+  if (typeof rawArgs === 'string') {
+    try {
+      formattedArgs = JSON.stringify(JSON.parse(rawArgs || '{}'), null, 2);
+    } catch {
+      formattedArgs = rawArgs;
+    }
+  } else if (typeof rawArgs === 'object' && rawArgs !== null) {
+    formattedArgs = JSON.stringify(rawArgs, null, 2);
+  }
 
   return (
     <motion.div
@@ -158,10 +178,10 @@ const ToolCallCard: React.FC<{
           >
             <div className="pl-4 border-l border-border/40 ml-2 py-1">
               <div className="text-[10px] text-muted-foreground/80 font-mono mb-1 uppercase tracking-wider">
-                {tool.function.name} Inputs
+                {toolName} Inputs
               </div>
               <pre className="text-[11px] font-mono text-foreground/80 bg-muted/20 rounded-md p-3 overflow-x-auto border border-border/30">
-                {JSON.stringify(JSON.parse(tool.function.arguments || '{}'), null, 2)}
+                {formattedArgs}
               </pre>
               
               {tool.result && (
@@ -250,12 +270,15 @@ const ContextIngestionCard: React.FC<{
             className="overflow-hidden"
           >
             <div className="px-3.5 pb-3 pt-1 border-t border-border flex flex-col gap-2">
-              {tools.map((t, i) => (
-                <div key={i} className="text-[11px] font-mono text-foreground/80 bg-muted/30 rounded px-2 py-1 flex justify-between items-center">
-                  <span className="truncate">{t.tool.function.name}</span>
-                  <span className="text-[9px] text-muted-foreground/50 shrink-0">{t.status}</span>
-                </div>
-              ))}
+              {tools.map((t, i) => {
+                const name = t.tool?.function?.name || (t.tool as any)?.name || (t.tool as any)?.tool || 'Tool';
+                return (
+                  <div key={i} className="text-[11px] font-mono text-foreground/80 bg-muted/30 rounded px-2 py-1 flex justify-between items-center">
+                    <span className="truncate">{name}</span>
+                    <span className="text-[9px] text-muted-foreground/50 shrink-0">{t.status}</span>
+                  </div>
+                );
+              })}
             </div>
           </motion.div>
         )}
@@ -272,6 +295,25 @@ ContextIngestionCard.displayName = 'ContextIngestionCard';
 const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, alt }) => {
   const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState(false);
+
+  const displaySrc = useMemo(() => {
+    if (!src) return '';
+    if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('http://') || src.startsWith('https://')) {
+      return src;
+    }
+    if (src.startsWith('/uploads/') || src.startsWith('/api/')) {
+      return `${(window as Record<string, any>).__NYX_BACKEND_URL__ || ''}${src}`;
+    }
+    if (src.startsWith('file://') || src.startsWith('C:') || src.startsWith('D:') || (src.startsWith('/') && !src.startsWith('/assets'))) {
+      try {
+        const cleanPath = src.replace(/^file:\/\/\/?/, '');
+        return convertFileSrc(cleanPath);
+      } catch {
+        return src;
+      }
+    }
+    return src;
+  }, [src]);
 
   return (
     <motion.div
@@ -294,11 +336,7 @@ const ImageAttachment: React.FC<{ src: string; alt?: string }> = memo(({ src, al
           </div>
         )}
         <img
-          src={
-            src.startsWith('/uploads/') || src.startsWith('/api/')
-              ? `${(window as Record<string, any>).__NYX_BACKEND_URL__ || ''}${src}`
-              : src
-          }
+          src={displaySrc}
           alt={alt || 'Attached image'}
           className={`max-h-64 object-contain transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={() => setLoaded(true)}
@@ -354,12 +392,16 @@ FileAttachment.displayName = 'FileAttachment';
 
 
 // ---------------------------------------------------------------------------
-// Streaming Cursor
+// Streaming Cursor & Loader
 // ---------------------------------------------------------------------------
 
-const StreamingCursor: React.FC = memo(() => (
-  <span className="inline-flex items-center ml-1">
-    <span className="w-[7px] h-[14px] bg-accent/70 rounded-sm animate-pulse" />
+const StreamingCursor = memo(() => (
+  <span className="inline-flex items-center justify-center ml-1 align-baseline">
+    <motion.span
+      className="inline-block w-2.5 h-2.5 rounded-full bg-primary/80"
+      animate={{ scale: [0.7, 1.2, 0.7], opacity: [0.4, 1, 0.4] }}
+      transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+    />
   </span>
 ));
 StreamingCursor.displayName = 'StreamingCursor';
@@ -391,25 +433,14 @@ const MemoizedMarkdownBlock: React.FC<{
   const components = useMemo(
     () => ({
       pre({ children }: any) {
-        return (
-          <div className="my-4 relative rounded-lg bg-zinc-950 border border-border overflow-hidden">
-            <div className="flex items-center px-4 py-2 bg-zinc-900/50 border-b border-border/50 text-xs font-mono text-zinc-400">
-              Code
-            </div>
-            <pre className="p-4 overflow-x-auto text-[13px] text-zinc-50 font-mono leading-relaxed">
-              {children}
-            </pre>
-          </div>
-        );
+        // pre is always the wrapper around code. If code returned a CodeBlock,
+        // render it directly (no pre wrapper). Otherwise render the styled pre.
+        return children;
       },
       code({ node, inline, className, children, ...props }: any) {
         const match = /language-(\w+)/.exec(className || '');
         if (!inline && match) {
-          return (
-            <code className={className} {...props}>
-              {children}
-            </code>
-          );
+          return <CodeBlock code={String(children)} language={match[1]} />;
         }
         return (
           <code
@@ -435,8 +466,10 @@ const MemoizedMarkdownBlock: React.FC<{
           {children}
         </h3>
       ),
+      // Use div instead of p to allow block-level children (e.g. ImageAttachment renders a div).
+      // Styled identically to a paragraph — avoids the `<div> inside <p>` hydration error.
       p: ({ children }: any) => (
-        <p className="text-[15px] md:text-[16px] font-sans antialiased leading-[1.75] tracking-[0.01em] text-foreground/90 my-3 animate-smooth-reveal">{children}</p>
+        <div className="text-[15px] md:text-[16px] font-sans antialiased leading-[1.75] tracking-[0.01em] text-foreground/90 my-3 animate-smooth-reveal">{children}</div>
       ),
       ul: ({ children }: any) => (
         <ul className="list-disc pl-6 space-y-2 my-4 text-[15px] md:text-[16px] font-sans antialiased text-foreground/85 animate-smooth-reveal">{children}</ul>
@@ -496,7 +529,9 @@ const MemoizedMarkdownBlock: React.FC<{
       ),
       td: ({ children }: any) => (
         <td className="px-3 py-2 text-foreground/80 border-b border-border">{children}</td>
-      )
+      ),
+      // Guard against empty src — an empty string triggers the browser to re-fetch the whole page.
+      img: ({ src, alt }: any) => src ? <ImageAttachment src={src} alt={alt} /> : null
     }),
     [citations]
   );
@@ -584,9 +619,11 @@ TtsSpeakerButton.displayName = 'TtsSpeakerButton';
 const MessageActions: React.FC<{
   index: number;
   content: string;
+  isPinned?: boolean;
   onEdit?: (index: number, content: string) => void;
   onRegenerate?: (index: number) => void;
   onBranch?: (index: number) => void;
+  onPinToggle?: (index: number) => void;
   onCopy: (text: string, id: string) => void;
   copiedId: string | null;
   msgId: string;
@@ -599,9 +636,11 @@ const MessageActions: React.FC<{
   ({
     index,
     content,
+    isPinned,
     onEdit,
     onRegenerate,
     onBranch,
+    onPinToggle,
     onCopy,
     copiedId,
     msgId,
@@ -735,6 +774,17 @@ const MessageActions: React.FC<{
 
 
         {!isUser && content && <TtsSpeakerButton isSpeaking={isSpeaking} onToggle={handleTtsToggle} />}
+
+        {onPinToggle && (
+          <button
+            onClick={() => onPinToggle(index)}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer font-medium"
+            title={isPinned ? 'Unpin message' : 'Pin message'}
+          >
+            {isPinned ? <PinOff size={10} /> : <Pin size={10} />}
+            <span>{isPinned ? 'Unpin' : 'Pin'}</span>
+          </button>
+        )}
       </div>
     );
   }
@@ -796,6 +846,56 @@ FeedbackButtons.displayName = 'FeedbackButtons';
 
 
 // ---------------------------------------------------------------------------
+// Sources Toggle (compact replacement for SearchResultsPanel)
+// ---------------------------------------------------------------------------
+
+const SourcesToggle: React.FC<{
+  citations: Array<{ id: string; index: number; title: string; url: string; snippet: string }>;
+}> = memo(({ citations }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] text-muted-foreground hover:text-primary hover:bg-muted/40 transition-all cursor-pointer font-medium tracking-normal"
+      >
+        {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        <span>{citations.length} source{citations.length !== 1 ? 's' : ''}</span>
+      </button>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-1.5 flex flex-col gap-1.5">
+              {citations.map((cite) => (
+                <a
+                  key={cite.id}
+                  href={cite.url || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex flex-col gap-0.5 px-3 py-2 rounded-md bg-muted/20 border border-border/50 hover:bg-muted/40 transition-colors text-left text-[12px]"
+                >
+                  <span className="font-medium text-foreground/90 truncate">{cite.title || cite.url}</span>
+                  {cite.snippet && (
+                    <span className="text-muted-foreground line-clamp-2">{cite.snippet}</span>
+                  )}
+                </a>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+});
+SourcesToggle.displayName = 'SourcesToggle';
+
+// ---------------------------------------------------------------------------
 // Message Bubble
 // ---------------------------------------------------------------------------
 
@@ -816,37 +916,90 @@ const MessageBubble = React.memo<MessageBubbleProps>(
     onArtifactClick,
     approveTool,
     rejectTool,
+    onPinToggle,
   }) => {
     const isUser = msg.role === 'user';
     const [isExpanded, setIsExpanded] = useState(false);
     const msgId = `${msg.timestamp}-${index}`;
+    const reasoningEnabled = isReasoningModel(msg.model || activeModel);
     
+    // Hide internal tool result/error feedback messages from rendering in the chat UI
+    if (isUser && typeof msg.content === 'string' && (
+      msg.content.startsWith('[TOOL_RESULT for') || 
+      msg.content.startsWith('[TOOL_ERROR for') || 
+      msg.content.startsWith('[AVAILABLE TOOLS]')
+    )) {
+      return null;
+    }
+
     // Process <think> tags natively from content if reasoning is empty or merged
     let parsedReasoning = msg.reasoning || '';
     let parsedContent = msg.content || '';
+
+    // Clean inline tool tags from assistant messages
+    if (!isUser && typeof parsedContent === 'string') {
+      parsedContent = parsedContent
+        .replace(/\[TOOL_RESULT for [^\]]+\]:\s*[\s\S]*?(?=\n\n|\n[A-Z]|$)/g, '')
+        .replace(/\[TOOL_ERROR for [^\]]+\]:\s*[\s\S]*?(?=\n\n|\n[A-Z]|$)/g, '')
+        .replace(/\*Lucifer Executing Tool:\s*`[^`]+`\.\.\.\*/g, '')
+        .trim();
+    }
     
     const thinkStartMatch = parsedContent.match(/<(?:think|thought|thinking)>/i);
     if (thinkStartMatch) {
       const startIndex = thinkStartMatch.index!;
       const endMatch = parsedContent.match(/<\/(?:think|thought|thinking)>/i);
       
-      if (endMatch && typeof endMatch.index !== 'undefined' && endMatch.index > startIndex) {
-        const extracted = parsedContent.substring(startIndex + thinkStartMatch[0].length, endMatch.index).trim();
-        parsedReasoning = parsedReasoning ? `${parsedReasoning}\n${extracted}` : extracted;
-        parsedContent = (parsedContent.substring(0, startIndex) + parsedContent.substring(endMatch.index + endMatch[0].length)).trim();
+      const innerText = (endMatch && typeof endMatch.index !== 'undefined' && endMatch.index > startIndex)
+        ? parsedContent.substring(startIndex + thinkStartMatch[0].length, endMatch.index).trim()
+        : parsedContent.substring(startIndex + thinkStartMatch[0].length).trim();
+
+      const outsideText = (endMatch && typeof endMatch.index !== 'undefined' && endMatch.index > startIndex)
+        ? (parsedContent.substring(0, startIndex) + parsedContent.substring(endMatch.index + endMatch[0].length)).trim()
+        : parsedContent.substring(0, startIndex).trim();
+
+      if (!reasoningEnabled) {
+        // Non-reasoning model outputted <think> — strip tags, keep content
+        parsedContent = outsideText ? `${outsideText}\n${innerText}` : innerText;
+      } else if (!outsideText && innerText) {
+        // Safety net: Reasoning model put 100% of text in <think> — show innerText as message content
+        parsedContent = innerText;
       } else {
-        // No closing tag found, assume everything after <think> is reasoning
-        const extracted = parsedContent.substring(startIndex + thinkStartMatch[0].length).trim();
-        parsedReasoning = parsedReasoning ? `${parsedReasoning}\n${extracted}` : extracted;
-        parsedContent = parsedContent.substring(0, startIndex).trim();
+        parsedReasoning = parsedReasoning ? `${parsedReasoning}\n${innerText}` : innerText;
+        parsedContent = outsideText;
       }
     }
+
+    // Ref-guarded streaming artifact detection — avoids inline regex every render
+    const artifactContentRef = useRef('');
+    const streamingArtifacts: any[] = useMemo(() => {
+      if (!isStreaming || !isLast || !parsedContent) return [];
+      // Skip if content hasn't changed since last detection
+      if (artifactContentRef.current === parsedContent) return [];
+      
+      const codeBlockRegex = /```(\w*)\n([\s\S]*?)(?:```|$)/g;
+      const detected: any[] = [];
+      let match;
+      while ((match = codeBlockRegex.exec(parsedContent)) !== null) {
+        const isClosed = parsedContent.substring(match.index).includes('```', match[1].length + 3);
+        if (!isClosed) {
+          const lang = match[1]?.toLowerCase();
+          const isArtifactLang = ['html', 'htm', 'react', 'tsx', 'jsx', 'ts', 'js', 'typescript', 'javascript', 'python', 'json', 'csv', 'mermaid', 'svg', 'markdown', 'md'].includes(lang);
+          if (isArtifactLang) {
+            detected.push({ id: 'streaming-artifact', type: 'code', title: 'Generating...', content: '' });
+          }
+        }
+      }
+      artifactContentRef.current = parsedContent;
+      return detected;
+    }, [isStreaming, isLast, parsedContent]);
 
     // Show "Thinking..." spinner ONLY when streaming has started but no content or reasoning yet
     const isThinking =
       isStreaming && !parsedContent && !parsedReasoning &&
       (!msg.toolCalls || msg.toolCalls.length === 0) &&
-      (msg.status === 'loading' || msg.status === undefined);
+      (msg.status === 'loading' || msg.status === undefined) &&
+      reasoningEnabled;
       
     // Used to show the animated loader instead of the cat icon during response generation
     const isLoadingIcon = (msg.status === 'loading' || msg.status === undefined) && (isStreaming && isLast);
@@ -929,17 +1082,23 @@ const MessageBubble = React.memo<MessageBubbleProps>(
               siblingCount={msg.siblingCount}
               currentIndex={msg.currentIndex}
               onBranchChange={onBranchChange}
+              isPinned={msg.isPinned}
+              onPinToggle={onPinToggle}
             />
           </div>
         ) : (
           <div className="flex flex-col w-full animate-fade-in relative">
             {/* Clean Header with Message-Specific Model Resolution */}
             {(() => {
-              const messageModel = msg.model || activeModel;
-              if (!messageModel || messageModel.toLowerCase() === 'default') return null;
+              const rawModel: any = msg.model || activeModel;
+              const messageModel = typeof rawModel === 'string'
+                ? rawModel
+                : (rawModel && typeof rawModel === 'object' ? (rawModel.id || rawModel.name || '') : String(rawModel || ''));
+
+              if (!messageModel || String(messageModel).toLowerCase() === 'default') return null;
               const found = AVAILABLE_MODELS.find((m) => m.id === messageModel);
-              const displayName = found ? found.name : messageModel;
-              if (displayName.toLowerCase() === 'default') return null;
+              const displayName = found ? found.name : (rawModel && typeof rawModel === 'object' ? (rawModel.name || messageModel) : messageModel);
+              if (!displayName || String(displayName).toLowerCase() === 'default') return null;
 
               if (
                 !(msg.content ||
@@ -1006,12 +1165,20 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       content={parsedReasoning} 
                       isStarting={isThinking && !parsedReasoning}
                       responseContent={parsedContent}
+                      thinkingTimeMs={msg.thinkingTimeMs}
                       isComplete={
                         (!isStreaming && msg.status !== 'loading') || 
                         (!!parsedContent && parsedContent.length > 0) || 
                         (!!msg.toolCalls && msg.toolCalls.length > 0)
                       }
                     />
+                  </div>
+                )}
+
+                {/* Simple Loader (when reasoning is off but waiting for first token) */}
+                {isLoadingIcon && !isThinking && !parsedReasoning && !parsedContent && (!msg.toolCalls || msg.toolCalls.length === 0) && (
+                  <div className="py-2">
+                    <StreamingCursor />
                   </div>
                 )}
 
@@ -1023,19 +1190,23 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       <div className="space-y-1">
                         {(() => {
                           const retrievalNames = ['search', 'read', 'memory', 'query', 'retrieve'];
-                          const isRetrieval = (name: string) => retrievalNames.some(rn => name.toLowerCase().includes(rn));
+                          const getToolName = (tool: any) => tool?.function?.name || tool?.name || tool?.tool || '';
+                          const isRetrieval = (tool: any) => {
+                            const name = String(getToolName(tool) || '');
+                            return retrievalNames.some(rn => name.toLowerCase().includes(rn));
+                          };
                           
                           const retrievalTools = msg.toolCalls!.map((tool, i) => ({
                             tool,
                             status: tool.status || (isStreaming && isLast && i === msg.toolCalls!.length - 1 ? 'running' : 'completed'),
                             index: i
-                          })).filter(t => isRetrieval(t.tool.function.name));
+                          })).filter(t => isRetrieval(t.tool));
 
                           const otherTools = msg.toolCalls!.map((tool, i) => ({
                             tool,
                             status: tool.status || (isStreaming && isLast && i === msg.toolCalls!.length - 1 ? 'running' : 'completed'),
                             index: i
-                          })).filter(t => !isRetrieval(t.tool.function.name));
+                          })).filter(t => !isRetrieval(t.tool));
 
                           return (
                             <>
@@ -1057,7 +1228,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     {parsedContent && msg.status !== 'error' && (
                       <MarkdownContent
                         content={parsedContent}
-                        blocks={(msg as Record<string, any>).blocks}
+                        blocks={(msg as any).blocks}
                         isStreaming={isStreaming && isLast}
                         citations={msg.citations}
                       />
@@ -1066,22 +1237,6 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     {/* Artifacts */}
                     {(() => {
                       const completeArtifacts = msg.artifacts || [];
-                      let streamingArtifacts: any[] = [];
-                      if (isStreaming && isLast && parsedContent) {
-                        const codeBlockRegex = /```(\w*)\n([\s\S]*?)(?:```|$)/g;
-                        let match;
-                        while ((match = codeBlockRegex.exec(parsedContent)) !== null) {
-                          const isClosed = parsedContent.substring(match.index).includes('```', match[1].length + 3);
-                          if (!isClosed) {
-                            const lang = match[1]?.toLowerCase();
-                            const isArtifactLang = ['html', 'htm', 'react', 'tsx', 'jsx', 'ts', 'js', 'typescript', 'javascript', 'python', 'json', 'csv', 'mermaid', 'svg', 'markdown', 'md'].includes(lang);
-                            if (isArtifactLang) {
-                              streamingArtifacts.push({ id: 'streaming-artifact', type: 'code', title: 'Generating...', content: '' });
-                            }
-                          }
-                        }
-                      }
-                      
                       const allArtifacts = [...completeArtifacts, ...streamingArtifacts];
                       if (allArtifacts.length === 0) return null;
                       
@@ -1142,9 +1297,9 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       );
                     })()}
 
-                    {/* Citations — rendered via SearchResultsPanel */}
+                    {/* Citations — compact source toggle */}
                     {msg.citations && msg.citations.length > 0 && (
-                      <SearchResultsPanel
+                      <SourcesToggle
                         citations={msg.citations.map((cite, i) => ({
                           id: cite.id ?? String(i),
                           index: i + 1,
@@ -1156,44 +1311,59 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                     )}
 
                     {/* Tool Approval UI Gate */}
-                    {(msg as Record<string, any>).pendingApproval && (
+                    {msg.pendingApproval && (
                       <motion.div
-                        initial={{ opacity: 0, scale: 0.98 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="my-4 p-4 rounded-xl border border-amber-500/25 bg-amber-500/5 shadow-md"
+                        initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        className="my-4 p-5 rounded-2xl border border-purple-500/30 bg-purple-950/10 dark:bg-purple-950/20 backdrop-blur-md shadow-xl relative overflow-hidden"
                       >
-                        <div className="flex items-start gap-3">
-                          <AlertTriangle className="text-amber-500 w-5 h-5 shrink-0 mt-0.5" />
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+                        <div className="flex items-start gap-3.5 relative z-10">
+                          <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                            <Shield size={18} className="animate-pulse" />
+                          </div>
                           <div className="flex-1 min-w-0">
-                            <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                              <span>Tool Authorization Required</span>
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-mono font-bold uppercase">
-                                Gate
-                              </span>
-                            </h4>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <h4 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
+                                <span>Lucifer Agent Tool Authorization</span>
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-bold uppercase tracking-wider border border-purple-500/30">
+                                  Action Gate
+                                </span>
+                              </h4>
+                            </div>
                             <p className="text-xs text-muted-foreground mt-1">
-                              The agent wants to execute a destructive or modifying action. Please review the parameters below before allowing:
+                              Lucifer Supreme Agent requests permission to execute the following tool operation:
                             </p>
-                            <div className="mt-3 bg-muted/40 border border-border/40 rounded-lg p-3 overflow-x-auto">
-                              <div className="text-[11px] font-mono text-foreground font-bold mb-1.5 flex items-center gap-1.5">
-                                <Wrench size={10} className="text-muted-foreground" />
-                                <span>{(msg as Record<string, any>).pendingApproval.tool}</span>
+                            
+                            <div className="mt-3.5 bg-muted/40 border border-border/50 rounded-xl p-3.5 font-mono">
+                              <div className="text-[11px] text-purple-300 font-bold mb-2 flex items-center gap-2">
+                                <Zap size={12} className="text-purple-400" />
+                                <span>{(msg.pendingApproval as any).tool}</span>
                               </div>
-                              <pre className="text-[10.5px] font-mono text-muted-foreground whitespace-pre-wrap">
-                                {JSON.stringify((msg as Record<string, any>).pendingApproval.input || {}, null, 2)}
+                              <pre className="text-[11px] text-foreground/90 whitespace-pre-wrap bg-background/60 p-2.5 rounded-lg border border-border/40 max-h-[200px] overflow-y-auto">
+                                {JSON.stringify((msg.pendingApproval as any).input || {}, null, 2)}
                               </pre>
                             </div>
+
                             <div className="flex items-center gap-3 mt-4">
                               <button
-                                onClick={() => rejectTool?.(index, (msg as Record<string, any>).pendingApproval.approvalId)}
-                                className="px-3.5 py-1.5 rounded-md border border-red-500/30 text-red-500 bg-red-500/5 hover:bg-red-500/10 text-xs font-semibold cursor-pointer transition-colors"
+                                onClick={() => {
+                                  rejectTool?.(index, (msg.pendingApproval as any).approvalId);
+                                  toast.error('Action Rejected', { description: 'Lucifer tool execution cancelled.' });
+                                }}
+                                className="px-4 py-2 rounded-xl border border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5"
                               >
+                                <X size={14} />
                                 Reject Action
                               </button>
                               <button
-                                onClick={() => approveTool?.(index, (msg as Record<string, any>).pendingApproval.approvalId)}
-                                className="px-4 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer transition-colors shadow-sm"
+                                onClick={() => {
+                                  approveTool?.(index, (msg.pendingApproval as any).approvalId);
+                                  toast.success('Action Approved', { description: 'Executing Lucifer tool...' });
+                                }}
+                                className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold cursor-pointer transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2"
                               >
+                                <Check size={14} />
                                 Approve & Execute
                               </button>
                             </div>
@@ -1217,6 +1387,8 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           activeModel={activeModel}
                           siblingCount={msg.siblingCount}
                           currentIndex={msg.currentIndex}
+                          isPinned={msg.isPinned}
+                          onPinToggle={onPinToggle}
                         />
                         <FeedbackButtons msg={msg} submitReward={submitReward} />
                       </>
@@ -1262,14 +1434,28 @@ const EmptyState: React.FC<{
   suggestedPrompts?: string[];
   onSuggestedPromptClick?: (prompt: string) => void;
 }> = memo(({ suggestedPrompts, onSuggestedPromptClick }) => {
-  // 4 hardcoded context-appropriate chips shown when no model-generated suggestions available
-  const defaultChips = [
-    'Explain this codebase architecture',
-    'Debug this function for me',
-    'Write unit tests for this module',
-    'Review my code for improvements',
-  ];
-  const chips = (suggestedPrompts && suggestedPrompts.length > 0 ? suggestedPrompts : defaultChips).slice(0, 4);
+  // Only render chips when model-generated suggestions are provided
+  const chips = (suggestedPrompts || []).slice(0, 4);
+  if (chips.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+        className="flex flex-col items-center justify-center min-h-[65vh] text-center px-6"
+      >
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[480px] h-[480px] bg-primary/[0.025] rounded-full blur-[120px] pointer-events-none select-none -z-10" />
+        <motion.h1
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12, duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
+          className="text-[22px] font-semibold tracking-tight text-foreground leading-none"
+        >
+          Chat
+        </motion.h1>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -1321,6 +1507,7 @@ EmptyState.displayName = 'EmptyState';
 
 export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   history,
+  activeStreamMessage,
   activeAgent,
   isLoading,
   onCopy,
@@ -1336,12 +1523,14 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   onBranchChange,
   approveTool,
   rejectTool,
+  onPinToggle,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const webSearchEnabled = useAppStore(state => state.webSearchEnabled);
 
   const jumpToBottom = useCallback(() => {
     if (scrollContainerRef.current) {
@@ -1372,7 +1561,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     if (autoScroll && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
-  }, [history, autoScroll, isLoading]);
+  }, [history, autoScroll, isLoading, activeStreamMessage]);
 
   // Keyboard shortcut: Escape to stop auto-scroll
   useEffect(() => {
@@ -1401,20 +1590,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
               transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
               className="flex-1 flex flex-col items-center justify-center min-h-[65vh] gap-4"
             >
-              {/* Optimistic submit indicator — 3 dots, offset stagger */}
-              <div className="flex items-center gap-1.5">
-                {[0, 1, 2].map((i) => (
-                  <motion.div
-                    key={i}
-                    animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1, 0.8] }}
-                    transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.18, ease: 'easeInOut' }}
-                    className="w-1.5 h-1.5 rounded-full bg-primary/70"
-                  />
-                ))}
+              <div className="flex items-center gap-2">
+                <StreamingCursor />
               </div>
-              <span className="text-[11px] font-medium text-muted-foreground/50 tracking-wide uppercase">
-                Thinking
-              </span>
             </motion.div>
           ) : (
             <EmptyState
@@ -1425,12 +1603,12 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
         ) : (
           <div 
             ref={scrollContainerRef}
-            className="w-full h-full overflow-y-auto custom-scrollbar flex flex-col"
+            className="absolute inset-0 overflow-y-auto custom-scrollbar flex flex-col"
             onScroll={handleScroll}
           >
-            {history.map((msg, index) => {
-              const isLast = index === history.length - 1;
-              const isStreaming = isLast && isLoading;
+            {(activeStreamMessage ? [...history, activeStreamMessage] : history).map((msg, index, arr) => {
+              const isLast = index === arr.length - 1;
+              const isStreaming = isLast && (activeStreamMessage ? true : isLoading);
 
               return (
                 <div key={msg.id || index} className="py-3 px-4 md:px-6 w-full shrink-0">
@@ -1450,11 +1628,12 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                     onArtifactClick={onArtifactClick}
                     approveTool={approveTool}
                     rejectTool={rejectTool}
+                    onPinToggle={onPinToggle}
                   />
                 </div>
               );
             })}
-            <div ref={bottomRef} className="h-4 shrink-0" />
+            <div ref={bottomRef} className="h-4" />
           </div>
         )}
       </div>

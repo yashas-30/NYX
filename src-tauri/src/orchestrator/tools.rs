@@ -121,12 +121,12 @@ impl Tool for ConversationalMemoryTool {
             let embedding_blob = crate::db::models::encode_embedding(&vector);
 
             let id = uuid::Uuid::new_v4().to_string();
-            crate::db::commands::db_add_memory(
+            crate::commands::db::db_add_memory(
                 pool,
-                id,
+                Some(id),
                 fact.to_string(),
-                "general".to_string(),
-                embedding_blob,
+                Some("general".to_string()),
+                Some(serde_json::to_value(embedding_blob).unwrap_or_default()),
             ).await.map_err(|e| e.to_string())?;
 
             Ok(json!({"status": "success", "message": "Fact saved to long term memory."}))
@@ -140,10 +140,11 @@ impl Tool for ConversationalMemoryTool {
             let embeddings = embedder.embed(vec![query.to_string()]).await?;
             let query_vector = embeddings.into_iter().next().ok_or("Embedder returned no vectors")?;
 
-            let results = crate::db::commands::db_search_memories(
+            let results = crate::commands::db::db_search_memories(
                 pool,
-                query_vector,
-                5,
+                Some(query.to_string()),
+                Some(query_vector),
+                Some(5),
             ).await.map_err(|e| e.to_string())?;
             Ok(json!(results))
         }

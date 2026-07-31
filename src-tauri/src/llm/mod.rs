@@ -5,12 +5,24 @@
 pub mod local_orchestrator;
 pub mod cloud_orchestrator;
 pub mod rig_orchestrator;
+pub mod types;
+pub mod local_inference;
+pub mod local;
+pub mod model_formats;
+pub mod diffusers;
+pub mod ocr;
+
+pub use model_formats::ModelFormat;
+
 
 // ── Cloud Orchestrator public API ────────────────────────────────────────────
-pub use cloud_orchestrator::{
+pub use types::{
     UnifiedRequest,
     UnifiedMessage,
     StreamChunkPayload,
+};
+
+pub use cloud_orchestrator::{
     QuotaResponse,
     execute_cloud_stream,
     llm_stream_request,
@@ -26,6 +38,7 @@ pub use local_orchestrator::{
     GpuBackend,
     LlamaManager,
     LlamaServerConfig,
+    Downloader,
     HfDownloaderState,
     RestoredDownload,
     HfModelResult,
@@ -52,4 +65,11 @@ pub use local_orchestrator::{
     hf_get_model_files,
     hf_get_model_readme,
     get_llamacpp_version,
+    check_and_update_binaries,
+};
+
+// ── Local Inference public API ──────────────────────────────────────────────────
+pub use local_inference::{
+    execute_local_stream,
+    llm_local_stream_request,
 };

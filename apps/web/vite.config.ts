@@ -102,13 +102,14 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
+              if (id.includes('shiki')) return 'vendor-shiki';
+              if (id.includes('katex') || id.includes('rehype-katex') || id.includes('remark-math')) return 'vendor-katex';
+              if (id.includes('react-markdown') || id.includes('remark') || id.includes('rehype')) return 'vendor-markdown';
+              if (id.includes('@tanstack/react-virtual')) return 'vendor-virtual';
               if (id.includes('lucide-react')) return 'vendor-icons';
               if (id.includes('motion')) return 'vendor-animation';
               if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
-              if (id.includes('lottie-web') || id.includes('lottie')) return 'vendor-lottie';
               if (id.includes('@codemirror')) return 'vendor-codemirror';
-              if (id.includes('react-syntax-highlighter') || id.includes('refractor'))
-                return 'vendor-syntax';
               if (id.includes('@base-ui')) return 'vendor-base-ui';
             }
           },

@@ -1,24 +1,17 @@
 /**
  * @file src/app/router.tsx
- * @description Standard React Router configuration for NYX features using lazy loading.
+ * @description Instant view router for NYX with pre-loaded routes and sub-50ms KeepAlive tab switching.
  */
 
-import React, { lazy, Suspense, useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 
-const ChatView = lazy(() => import('@src/views/ChatView'));
-const ModelRegistryView = lazy(() => import('@src/views/ModelRegistryView'));
-const SettingsView = lazy(() => import('@src/views/SettingsView'));
-
-const MemoryView = lazy(() => import('@src/features/memory/MemoryView'));
-const ObservabilityView = lazy(() => import('@src/features/observability/ObservabilityView'));
-
-const LoadingFallback = () => (
-  <div className="flex items-center justify-center h-full bg-background">
-    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-md animate-spin" />
-  </div>
-);
+import ChatView from '@src/views/ChatView';
+import ModelRegistryView from '@src/views/ModelRegistryView';
+import SettingsView from '@src/views/SettingsView';
+import MemoryView from '@src/features/memory/MemoryView';
+import ObservabilityView from '@src/features/observability/ObservabilityView';
 
 export interface ModelSettings {
   temperature?: number;
@@ -44,8 +37,6 @@ interface AppRouterProps {
   activeMode: string;
   setActiveMode: (mode: string) => void;
   apiKeys: Record<string, string>;
-  chatSettings: ModelSettings;
-  setChatSettings: (settings: ModelSettings) => void;
   trackUsage: (provider: string, tokens: number) => void;
   statuses: Record<string, 'online' | 'offline' | 'no-key'>;
   chatSessions: ChatSessionHookResult;
@@ -61,28 +52,20 @@ interface AppRouterProps {
   onOpenLightning?: () => void;
 }
 
-function LazyRoute({ children, name }: { children: React.ReactNode; name: string }) {
-  return (
-    <ErrorBoundary name={name}>
-      <Suspense fallback={<LoadingFallback />}>
-        {children}
-      </Suspense>
-    </ErrorBoundary>
-  );
-}
-
-function KeepAlive({ active, children }: { active: boolean; children: React.ReactNode }) {
+function KeepAlive({ active, name, children }: { active: boolean; name: string; children: React.ReactNode }) {
   const [hasMounted, setHasMounted] = useState(active);
-  
+
   if (active && !hasMounted) {
     setHasMounted(true);
   }
-  
+
   if (!hasMounted && !active) return null;
-  
+
   return (
     <div className={active ? 'h-full w-full flex flex-col flex-1 overflow-hidden relative' : 'hidden'}>
-      {children}
+      <ErrorBoundary name={name}>
+        {children}
+      </ErrorBoundary>
     </div>
   );
 }
@@ -91,8 +74,6 @@ export function AppRouter({
   activeMode,
   setActiveMode,
   apiKeys,
-  chatSettings,
-  setChatSettings,
   trackUsage,
   statuses,
   chatSessions,
@@ -109,71 +90,63 @@ export function AppRouter({
 }: AppRouterProps) {
   return (
     <>
-      <KeepAlive active={activeMode === 'chat'}>
-        <LazyRoute name="ChatPage">
-          <ChatView
-            allModels={allModels}
-            apiKeys={apiKeys}
-            modelSettings={chatSettings}
-            trackUsage={trackUsage}
-            setModelSettings={setChatSettings}
-            providerStatuses={statuses}
-            chatSessions={chatSessions}
-            sidebarOpen={sidebarOpen}
-            onToggleSidebar={onToggleSidebar}
-            activeMode="chat"
-            setActiveMode={(mode: string) => setActiveMode(mode as any)}
-            onOpenLightning={onOpenLightning}
-            models={{ nyx: modelsState.chat }}
-            setModel={(mid) => setModelsState((prev: any) => ({ ...prev, chat: mid }))}
-          />
-        </LazyRoute>
-      </KeepAlive>
-      
-      <KeepAlive active={activeMode === 'registry'}>
-        <LazyRoute name="ModelRegistryView">
-          <ModelRegistryView
-            models={models}
-            selectModel={setModel}
-            apiKeys={apiKeys}
-            providerStatuses={statuses}
-            activeMode="registry"
-            setActiveMode={(mode: string) => setActiveMode(mode as any)}
-            sidebarOpen={sidebarOpen}
-          />
-        </LazyRoute>
-      </KeepAlive>
-      
-      <KeepAlive active={activeMode === 'settings'}>
-        <LazyRoute name="SettingsPage">
-          <SettingsView
-            apiKeys={apiKeys}
-            updateApiKey={updateApiKey}
-            clearApiKeys={clearApiKeys}
-            activeMode="settings"
-            setActiveMode={(mode: string) => setActiveMode(mode as any)}
-            sidebarOpen={sidebarOpen}
-          />
-        </LazyRoute>
+      <KeepAlive active={activeMode === 'chat'} name="ChatPage">
+        <ChatView
+          allModels={allModels}
+          apiKeys={apiKeys}
+          trackUsage={trackUsage}
+          providerStatuses={statuses}
+          chatSessions={chatSessions}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={onToggleSidebar}
+          activeMode="chat"
+          setActiveMode={(mode: string) => setActiveMode(mode as any)}
+          onOpenLightning={onOpenLightning}
+          models={{ nyx: modelsState.chat }}
+          setModel={(mid) => setModelsState((prev: any) => ({ ...prev, chat: mid }))}
+        />
       </KeepAlive>
 
-      <KeepAlive active={activeMode === 'memory'}>
-        <LazyRoute name="MemoryView">
-          <MemoryView />
-        </LazyRoute>
+      <KeepAlive active={activeMode === 'registry'} name="ModelRegistryView">
+        <ModelRegistryView
+          models={models}
+          selectModel={setModel}
+          apiKeys={apiKeys}
+          providerStatuses={statuses}
+          activeMode="registry"
+          setActiveMode={(mode: string) => setActiveMode(mode as any)}
+          sidebarOpen={sidebarOpen}
+        />
       </KeepAlive>
-      
-      <KeepAlive active={activeMode === 'observability'}>
-        <LazyRoute name="ObservabilityView">
-          <ObservabilityView />
-        </LazyRoute>
+
+      <KeepAlive active={activeMode === 'settings'} name="SettingsPage">
+        <SettingsView
+          apiKeys={apiKeys}
+          updateApiKey={updateApiKey}
+          clearApiKeys={clearApiKeys}
+          activeMode="settings"
+          setActiveMode={(mode: string) => setActiveMode(mode as any)}
+          sidebarOpen={sidebarOpen}
+        />
       </KeepAlive>
-      
+
+      <KeepAlive active={activeMode === 'memory'} name="MemoryView">
+        <MemoryView />
+      </KeepAlive>
+
+      <KeepAlive active={activeMode === 'observability'} name="ObservabilityView">
+        <ObservabilityView />
+      </KeepAlive>
+
       <Routes>
-        <Route path="*" element={
-          !['chat', 'registry', 'settings', 'memory', 'observability'].includes(activeMode) ? 
-          <Navigate to="/" replace /> : null
-        } />
+        <Route
+          path="*"
+          element={
+            !['chat', 'registry', 'settings', 'memory', 'observability'].includes(activeMode) ? (
+              <Navigate to="/" replace />
+            ) : null
+          }
+        />
       </Routes>
     </>
   );

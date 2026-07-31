@@ -11,6 +11,9 @@ pub mod fs;
 pub mod agent;
 pub mod observability;
 pub mod memory;
+pub mod db;
+pub mod orchestrator;
+pub mod lucifer;
 
 pub use dialog::*;
 pub use vault::*;

@@ -1,1 +1,3 @@
-export { ChatPage as default } from '@src/features/chat';
+import { ChatPage } from '@src/features/chat';
+
+export default ChatPage;

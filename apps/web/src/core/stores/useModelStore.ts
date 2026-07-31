@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { inferModelSpecs } from '@shared/hooks/useLocalModels';
+import { inferModelSpecs, formatContextWindow } from '@shared/hooks/useLocalModels';
 
 interface ModelState {
   modelsState: { chat: string };
@@ -9,6 +9,8 @@ interface ModelState {
   isLoading: boolean;
 
   loadedLocalModel: string | null;
+  /** True when the currently loaded local model is a text-to-image generation model */
+  isActiveModelImageGen: boolean;
 
   // Actions
   setModels: (models: { chat: string }) => void;
@@ -26,6 +28,7 @@ export const useModelStore = create<ModelState>((set, get) => {
     localModelsEnabled: false,
     localLibraryModels: [],
     loadedLocalModel: null,
+    isActiveModelImageGen: false,
     isLoading: false,
 
     setModels: (models) => {
@@ -57,7 +60,16 @@ export const useModelStore = create<ModelState>((set, get) => {
     },
 
     setLoadedLocalModel: (modelId) => {
-      set({ loadedLocalModel: modelId });
+      const lib = get().localLibraryModels;
+      const def = modelId ? lib.find((m: any) => m.id === modelId) : null;
+      const imageGen = !!(def?.capabilities?.imageGen) ||
+        // Fallback: check known image-model keywords in the ID itself
+        (!!modelId && [
+          'text_encoder', 'text-encoder', 'vae', 'transformer',
+          'flux', 'diffusion', 'stable', 'sdxl', 'sd3', 'sd1', 'sd2',
+          'controlnet', 'lora', 'unet',
+        ].some(kw => modelId.toLowerCase().includes(kw)));
+      set({ loadedLocalModel: modelId, isActiveModelImageGen: imageGen });
     },
 
     loadLocalLibraryModels: async () => {
@@ -71,39 +83,102 @@ export const useModelStore = create<ModelState>((set, get) => {
         const completed = modelsData
           .filter((m: any) => !m.status || m.status === 'completed')
           .map((m: any) => {
-            // Prefer the context_length the Rust backend resolved from the filename;
-            // fall back to the JS inference if the field is absent (older binary).
-            const contextWindow =
-              m.context_length ||
-              m.contextLength ||
-              inferModelSpecs(m.name).contextWindow;
+            const rawCtx = m.context_length || m.contextLength || m.max_context_length;
+            const contextWindow = formatContextWindow(rawCtx, m.name);
+
+            const nameLower = m.name?.toLowerCase() || '';
+            const repoIdLower = m.repo_id?.toLowerCase() || '';
+            const searchStr = `${nameLower} ${repoIdLower}`;
+
+            const isImageGen =
+              m.model_type === 'text-to-image' ||  // Rust backend sets this for diffusion models by name/type
+              searchStr.includes('flux') ||
+              searchStr.includes('diffusion') ||
+              searchStr.includes('diffus') ||
+              searchStr.includes('sdxl') ||
+              searchStr.includes('sd_') ||
+              searchStr.includes('sd3') ||
+              searchStr.includes('sd-') ||
+              searchStr.includes('sd1') ||
+              searchStr.includes('sd2') ||
+              searchStr.includes('sd5') ||
+              searchStr.includes('stable') ||
+              searchStr.includes('turbo') ||
+              searchStr.includes('inpainting') ||
+              searchStr.includes('pix2pix') ||
+              searchStr.includes('text-to-image') ||
+              searchStr.includes('image-gen') ||
+              searchStr.includes('midjourney') ||
+              searchStr.includes('playground') ||
+              searchStr.includes('wan') ||
+              searchStr.includes('hunyuan') ||
+              searchStr.includes('kolors') ||
+              searchStr.includes('cogvideo') ||
+              searchStr.includes('controlnet') ||
+              searchStr.includes('lora') ||
+              searchStr.includes('v1-5') ||
+              searchStr.includes('v2-1') ||
+              // Standalone diffusers subcomponents (text_encoder, vae, transformer folders)
+              searchStr.includes('text_encoder') ||
+              searchStr.includes('text-encoder') ||
+              searchStr.includes('vae') ||
+              (searchStr.includes('transformer') && !searchStr.includes('sentence-transformer')) ||
+              m.id?.endsWith('.ckpt');
 
             const isVision =
-              m.name?.toLowerCase().includes('vl') ||
-              m.name?.toLowerCase().includes('vision') ||
-              m.name?.toLowerCase().includes('llava');
+              m.has_mmproj ||
+              searchStr.includes('vl') ||
+              searchStr.includes('vision') ||
+              searchStr.includes('multimodal') ||
+              searchStr.includes('pixtral') ||
+              searchStr.includes('llava') ||
+              searchStr.includes('minicpm-v') ||
+              searchStr.includes('idefics') ||
+              searchStr.includes('deepseek-vl') ||
+              searchStr.includes('internvl') ||
+              searchStr.includes('moondream');
 
             const isReasoning =
-              m.name?.toLowerCase().includes('r1') ||
-              m.name?.toLowerCase().includes('reasoning') ||
-              m.name?.toLowerCase().includes('thinking') ||
-              m.name?.toLowerCase().includes('o1') ||
+              searchStr.includes('r1') ||
+              searchStr.includes('reasoning') ||
+              searchStr.includes('thinking') ||
+              searchStr.includes('thinker') ||
+              searchStr.includes('qwq') ||
+              searchStr.includes('skywork-o') ||
+              searchStr.includes('o1') ||
               m.name?.toLowerCase().includes('o3');
+
+            const isOnnx = m.model_type === 'onnx';
+            const isPytorch = m.model_type === 'pytorch';
+
+            const modality = isImageGen
+              ? 'Text-to-Image'
+              : isOnnx
+              ? 'ONNX'
+              : isPytorch
+              ? 'PyTorch Native'
+              : isVision
+              ? 'Text + Vision'
+              : 'Text';
 
             return {
               id: m.id,
               name: m.name,
               provider: 'nyx-native',
-              description: m.description || `Local GGUF model (${m.size || ''})`,
+              description: m.description || `Local model (${m.size || ''})`,
               specs: {
-                contextWindow,
+                contextWindow: (isImageGen || isOnnx || isPytorch) ? 'N/A' : contextWindow,
                 maxOutput: 'N/A',
-                modality: isVision ? 'Text + Vision' : 'Text',
+                modality,
               },
               capabilities: {
                 vision: isVision,
                 reasoning: isReasoning,
+                imageGen: isImageGen,
+                onnx: isOnnx,
+                pytorch: isPytorch,
               },
+              model_type: m.model_type || (isImageGen ? 'text-to-image' : isOnnx ? 'onnx' : isPytorch ? 'pytorch' : 'text-generation'),
               status: m.status,
             };
           });
@@ -116,3 +191,20 @@ export const useModelStore = create<ModelState>((set, get) => {
     },
   };
 });
+
+// Immediately trigger local model loading on store instantiation
+useModelStore.getState().loadLocalLibraryModels();
+
+// Listen for download completion events globally to refresh model store automatically
+if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
+  import('@tauri-apps/api/event')
+    .then(({ listen }) => {
+      listen('hf-download-complete', () => {
+        useModelStore.getState().loadLocalLibraryModels();
+      });
+      listen('llm-download-complete', () => {
+        useModelStore.getState().loadLocalLibraryModels();
+      });
+    })
+    .catch(() => {});
+}

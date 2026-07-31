@@ -10,7 +10,7 @@ import { Trash2Icon as Trash2, BrainIcon as Brain, ChevronDownIcon as ChevronDow
 import { PanelLeftOpen, PanelLeftClose, Share2, Unlock, Square, Bot, Cpu, Clock, MessageSquare, FileText, MoreHorizontal, Keyboard, AlertCircle, HardDrive, GitBranch } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
-import { ModelSelector } from '@src/shared/components/ModelSelector';
+import { ModelSelector } from '@src/features/model-registry/ui/ModelSelector';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { ModelInfo } from '@src/types';
 
@@ -574,8 +574,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
         {/* Right zone: Actions */}
         <div className="flex items-center gap-1 sm:gap-2 min-w-0 shrink-0 justify-end">
-
-
           <div className="flex items-center gap-1 shrink-0">
             {/* Share & Export */}
             <ShareMenu onExport={onExportChat} title={sessionTitle} onShareChat={onShareChat} />

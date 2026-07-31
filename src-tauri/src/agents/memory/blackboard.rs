@@ -42,4 +42,31 @@ impl Blackboard {
         all.sort_by_key(|e| e.timestamp);
         all
     }
+
+    pub fn read_recent(&self, limit: usize) -> Vec<MemoryEntry> {
+        let mut all = self.read_all();
+        if all.len() > limit {
+            all.drain(0..all.len() - limit);
+        }
+        all
+    }
+
+    pub fn search_relevant(&self, query: &str, limit: usize) -> Vec<MemoryEntry> {
+        let query_lower = query.to_lowercase();
+        let terms: Vec<&str> = query_lower.split_whitespace().collect();
+        let mut all = self.read_all();
+        
+        if terms.is_empty() {
+            return self.read_recent(limit);
+        }
+
+        all.sort_by_key(|e| {
+            let content_lower = e.content.to_lowercase();
+            let score: usize = terms.iter().filter(|&&t| content_lower.contains(t)).count();
+            std::cmp::Reverse(score)
+        });
+
+        all.truncate(limit);
+        all
+    }
 }

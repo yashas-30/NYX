@@ -7,7 +7,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SendIcon as Send, XIcon as X, ZapIcon as Zap, InfoIcon as Info, ChevronDownIcon as ChevronDown, MicIcon as Mic, SlidersHorizontalIcon as SlidersHorizontal, LayersIcon as Layers, CheckIcon as Check } from '@animateicons/react/lucide';
-import { StopCircle, Bot, MemoryStick, Cpu, Thermometer, RotateCcw, Image as ImageIcon, Globe } from 'lucide-react';
+import { StopCircle, Bot, MemoryStick, Cpu, Thermometer, RotateCcw, Image as ImageIcon, Globe, Brain } from 'lucide-react';
 
 import { ModelDefinition } from '@src/infrastructure/types';
 import { getModelCapabilities } from '@src/infrastructure/utils/provider';
@@ -22,6 +22,7 @@ import { VoiceOverlay } from '@src/features/voice/VoiceOverlay';
 import { SpeechToTextHelper } from '@src/features/voice/speechToText';
 import { MicVAD } from '@ricky0123/vad-web';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useModelStore } from '@src/core/stores/useModelStore';
 import { useAppStore } from '@src/stores/useAppStore';
 
 
@@ -31,7 +32,7 @@ interface ChatPromptInputProps {
   onSubmit: (
     finalPrompt: string,
     images?: { name: string; mimeType: string; data: string }[]
-  ) => void;
+  ) => boolean | Promise<boolean>;
   isLoading: boolean;
   onStop: () => void;
   currentModelId: string | null;
@@ -296,16 +297,77 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   };
 
   const providerStr = String(currentModel?.provider ?? '');
+  // Also check localModelId directly — a local model might not yet be in
+  // mergedModels (store still loading), but localModelId is always set.
+  const localModelId_store = useNyxStore((state) => state.localModelId);
   const isLocalModel = !!(
     currentModelId &&
-    (providerStr === 'nyx-native' || (!currentModel && currentModelId))
+    (
+      providerStr === 'nyx-native' ||
+      (!currentModel && currentModelId) ||
+      localModelId_store === currentModelId
+    )
   );
 
+  // Look up the active local model's capabilities from useModelStore directly.
+  // This is the most reliable source: it reads from the Rust backend via
+  // loadLocalLibraryModels() and isn't subject to the prop chain being stale.
+  const localLibraryModels = useModelStore((s) => s.localLibraryModels);
+  const localModelDef = localLibraryModels.find((m) => m.id === currentModelId);
+
+  // ── Context window max ────────────────────────────────────────────────────
+  let maxContext = 8192;
+  if (localModelDef?.specs?.contextWindow) {
+    const val = String(localModelDef.specs.contextWindow).toUpperCase();
+    const cleanVal = val.replace(/\(.*?\)/g, '').trim(); 
+    
+    if (cleanVal.includes('B')) {
+      maxContext = parseInt(cleanVal.replace('B', '').trim()) * 1024 * 1024 * 1024;
+    } else if (cleanVal.includes('M')) {
+      maxContext = parseInt(cleanVal.replace('M', '').trim()) * 1024 * 1024;
+    } else if (cleanVal.includes('K')) {
+      maxContext = parseInt(cleanVal.replace('K', '').trim()) * 1024;
+    } else {
+      maxContext = parseInt(cleanVal.trim()) || 8192;
+    }
+  }
+
+  // If the saved context exceeds this model's max, auto-correct to the model's max.
+  const storedCtx = localSettings.contextSize ?? 8192;
+  const effectiveCtx = storedCtx > maxContext ? maxContext : storedCtx;
+
+  // Auto-save the corrected value so the next model load uses the right context.
+  useEffect(() => {
+    if (storedCtx > maxContext && currentModelId) {
+      updateLocal('contextSize', maxContext);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentModelId, maxContext]);
+
   const capabilities = getModelCapabilities(currentModelId || '');
-  const supportsVision = capabilities.supportsVision;
+  // Priority: 1) useModelStore metadata  2) currentModel prop metadata  3) string heuristic
+  const supportsVision = localModelDef
+    ? !!(localModelDef.capabilities?.vision)
+    : currentModel != null && 'capabilities' in currentModel
+      ? !!(currentModel as any).capabilities?.vision
+      : capabilities.supportsVision;
+  const supportsReasoning = localModelDef
+    ? !!(localModelDef.capabilities?.reasoning)
+    : currentModel != null && 'capabilities' in currentModel
+      ? !!(currentModel as any).capabilities?.reasoning
+      : capabilities.supportsReasoning;
   const canAttachFiles = supportsVision;
-  const supportsReasoning = capabilities.supportsReasoning;
   const [showReasoningMenu, setShowReasoningMenu] = useState(false);
+
+  const loadLocalLibraryModels = useModelStore((s) => s.loadLocalLibraryModels);
+
+  // Eagerly load local model metadata if a local model is active but the
+  // store list is empty (e.g. ModelSelector hasn't mounted yet this session).
+  useEffect(() => {
+    if (isLocalModel && localLibraryModels.length === 0) {
+      loadLocalLibraryModels();
+    }
+  }, [isLocalModel, localLibraryModels.length, loadLocalLibraryModels]);
 
   useEffect(() => {
     if (isLocalModel) {
@@ -350,18 +412,9 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const resetLocalSettings = useCallback(() => {
     onModelSettingsChange({
       ...modelSettings,
-      gpuLayers: 99,
-      threads: 4,
-      contextSize: 4096,
-      batchSize: 2048,
-      temperature: 0.7,
-      topP: 0.95,
-      topK: 40,
-      flashAttention: true,
-      kvCacheType: 'q8_0',
-      useMlock: false,
+      // 0 = auto � let the SmartNglScheduler decide from live VRAM measurement.\r\n      gpuLayers: undefined,\r\n      // 0 = auto � backend uses 8192 by default, auto-reduced for VRAM if needed.\r\n      contextSize: 0,\r\n      // 0 = auto � scheduler picks optimal ubatch size from VRAM headroom.\r\n      batchSize: 0,\r\n      // 0 = auto � scheduler picks physical CPU core count.\r\n      threads: 0,\r\n      temperature: 0.7,\r\n      topP: 0.95,\r\n      topK: 40,\r\n      flashAttention: true,\r\n      // auto = backend selects q8_0, q5_0, or q4_0 by VRAM headroom.\r\n      kvCacheType: 'auto',\r\n      useMlock: false,\r\n      disableKvOffload: false,
     });
-    toast.success('Settings reset to defaults');
+    toast.success('Settings reset to smart auto-defaults');
   }, [modelSettings, onModelSettingsChange]);
 
   const adjustHeight = (reset?: boolean) => {
@@ -414,11 +467,25 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
     }
 
     isSubmitting.current = true;
+    
+    // Capture the current prompt and images before clearing them optimistically
+    const submittedPrompt = prompt;
+    const submittedImages = selectedImages;
+    
+    // Optimistically clear the input UI instantly from the component's side
+    onPromptChange('');
+    updateImages([]);
+    adjustHeight(true);
+    
     try {
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-      onSubmit(prompt, selectedImages);
-      updateImages([]);
-      adjustHeight(true);
+      
+      // Pass the captured values to the submit handler
+      await onSubmit(submittedPrompt, submittedImages);
+      
+      // Note: We no longer clear the prompt here at the end. 
+      // If we did, and the user started typing a new prompt during generation, it would be wiped out.
+      // The parent component (ChatPage) handles restoring the prompt if generation fails.
     } finally {
       setTimeout(() => {
         isSubmitting.current = false;
@@ -550,99 +617,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   <Globe className="w-3.5 h-3.5" />
                   <span className="text-[9.5px] font-bold tracking-tight">Web Search</span>
                 </motion.button>
-                
-                {isLocalModel && supportsVision && (
-                  <motion.button
-                    variants={tagItemVariants}
-                    whileHover={{ y: -1.5, scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="button"
-                    onClick={() => onModelSettingsChange({ ...modelSettings, visionEnabled: !modelSettings.visionEnabled })}
-                    className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border transition-all text-left cursor-pointer shrink-0 ${
-                      modelSettings.visionEnabled !== false
-                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-500' 
-                        : 'bg-secondary border-border hover:border-amber-500/40 hover:text-amber-500 text-foreground'
-                    }`}
-                  >
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span className="text-[9.5px] font-bold tracking-tight">Vision</span>
-                  </motion.button>
-                )}
-
-                {isLocalModel && supportsReasoning && (
-                  <motion.button
-                    variants={tagItemVariants}
-                    whileHover={{ y: -1.5, scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="button"
-                    onClick={() => onModelSettingsChange({ ...modelSettings, thinkingEnabled: !modelSettings.thinkingEnabled })}
-                    className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border transition-all text-left cursor-pointer shrink-0 ${
-                      modelSettings.thinkingEnabled !== false
-                        ? 'bg-purple-500/10 border-purple-500/40 text-purple-500' 
-                        : 'bg-secondary border-border hover:border-purple-500/40 hover:text-purple-500 text-foreground'
-                    }`}
-                  >
-                    <span className="text-[10px]">🧠</span>
-                    <span className="text-[9.5px] font-bold tracking-tight">Thinking</span>
-                  </motion.button>
-                )}
-
-                {supportsReasoning && (
-                  <div className="relative">
-                    <motion.button
-                      variants={tagItemVariants}
-                      whileHover={{ y: -1.5, scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      type="button"
-                      onClick={() => setShowReasoningMenu((prev) => !prev)}
-                      className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-secondary border border-border hover:border-purple-500/40 hover:text-purple-500 transition-all text-left cursor-pointer shrink-0 group"
-                    >
-                      <span className="text-[10px] group-hover:scale-110 transition-transform">🧠</span>
-                      <span className="text-[9.5px] font-bold tracking-tight uppercase">
-                        Effort: <span className="text-foreground">{modelSettings.reasoningEffort || 'medium'}</span>
-                      </span>
-                      <ChevronDown size={10} className="text-muted-foreground ml-0.5" />
-                    </motion.button>
-
-                    <AnimatePresence>
-                      {showReasoningMenu && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setShowReasoningMenu(false)} />
-                          <motion.div
-                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                            className="absolute bottom-full mb-2 bg-popover border border-border rounded-md shadow-[0_8px_32px_rgba(0,0,0,0.12)] z-50 p-1 flex flex-col gap-0.5 min-w-[120px]"
-                          >
-                            <div className="px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/40 mb-1">
-                              Reasoning Effort
-                            </div>
-                            {['low', 'medium', 'high', 'max'].map((effort) => (
-                              <button
-                                key={effort}
-                                type="button"
-                                onClick={() => {
-                                  onModelSettingsChange({ ...modelSettings, reasoningEffort: effort });
-                                  setShowReasoningMenu(false);
-                                }}
-                                className={`flex items-center justify-between w-full px-2 py-1.5 text-left text-[10px] font-bold tracking-tight rounded-sm transition-colors ${
-                                  modelSettings.reasoningEffort === effort
-                                    ? 'bg-purple-500/10 text-purple-500'
-                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                                }`}
-                              >
-                                <span className="uppercase">{effort}</span>
-                                {modelSettings.reasoningEffort === effort && <Check size={10} />}
-                              </button>
-                            ))}
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
-
-
 
                 <div className="flex items-center gap-1">
                   <PromptTemplateManager
@@ -652,6 +626,26 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     }}
                   />
                 </div>
+
+                {isLocalModel && (
+                  <motion.button
+                    variants={tagItemVariants}
+                    whileHover={{ y: -1.5, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => {
+                      setShowSettings((v) => !v);
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border transition-all text-left cursor-pointer shrink-0 ${
+                      showSettings
+                        ? 'bg-accent/10 border-accent/40 text-accent'
+                        : 'bg-secondary border-border hover:border-accent/40 hover:text-accent text-foreground'
+                    }`}
+                  >
+                    <SlidersHorizontal size={14} className="w-3.5 h-3.5" />
+                    <span className="text-[9.5px] font-bold tracking-tight">Model Config</span>
+                  </motion.button>
+                )}
 
               {/* Divider */}
               <div className="w-px h-4 bg-border/60 mx-0.5" />
@@ -743,25 +737,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   </AnimatePresence>
                 </div>
 
-                {isLocalModel && (
-                  <motion.button
-                    variants={tagItemVariants}
-                    whileHover={{ y: -1.5, scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="button"
-                    onClick={() => {
-                      setShowSettings((v) => !v);
-                    }}
-                    className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[9.5px] font-bold transition-all cursor-pointer ${
-                      showSettings
-                        ? 'bg-accent/10 text-accent border border-accent/30'
-                        : 'bg-secondary border border-border text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <SlidersHorizontal size={10} />
-                    <span>Configure</span>
-                  </motion.button>
-                )}
               </div>
             </motion.div>
 

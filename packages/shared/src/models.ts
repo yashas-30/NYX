@@ -43,28 +43,24 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
     specs: { contextWindow: '1M', maxOutput: '16K', modality: 'Multimodal' },
     limits: { rpm: 15, tpm: 250000, rpd: 500 },
   },
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // GEMINI DIRECT - Gemini 2.5 Series (Deprecated — shutting down Oct 16, 2026)
-  // ═══════════════════════════════════════════════════════════════════════════════
   {
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
+    id: 'gemini-3.6-flash',
+    name: 'Gemini 3.6 Flash',
     provider: 'gemini',
-    status: 'deprecated',
-    shutdownDate: '2026-10-16',
-    description: 'Stable Flash model. Deprecated — migrating to 3.x series. Limits: 5 RPM, 250k TPM, 20 RPD.',
+    status: 'ga',
+    description: 'Next-generation Gemini 3.6 Flash model with ultra-fast inference and advanced reasoning.',
     specs: { contextWindow: '1M', maxOutput: '32K', modality: 'Multimodal' },
-    limits: { rpm: 5, tpm: 250000, rpd: 20 },
+    limits: { rpm: 15, tpm: 1000000, rpd: 1500 },
   },
 
   {
-    id: 'gemini-2.5-flash-lite',
-    name: 'Gemini 2.5 Flash Lite',
+    id: 'gemini-3.5-flash-lite',
+    name: 'Gemini 3.5 Flash Lite',
     provider: 'gemini',
-    status: 'deprecated',
-    shutdownDate: '2026-10-16',
-    description: 'Lightweight Flash model. Deprecated — migrating to 3.x series.',
-    specs: { contextWindow: '1M', maxOutput: '8K', modality: 'Multimodal' },
+    status: 'ga',
+    description: 'Extremely fast, lightweight Gemini 3.5 Flash Lite model for ultra-low latency workflows.',
+    specs: { contextWindow: '1M', maxOutput: '32K', modality: 'Multimodal' },
+    limits: { rpm: 30, tpm: 1000000, rpd: 2000 },
   },
 
   // ═══════════════════════════════════════════════════════════════════════════════

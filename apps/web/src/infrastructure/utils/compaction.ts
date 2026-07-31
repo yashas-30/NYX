@@ -100,12 +100,10 @@ export async function compactHistoryAsync(
     let summaryText = '';
 
     if (isTauri) {
-      // Native one-shot invoke — Rust handles model selection and streaming internally.
-      // We use the compact_history_summarize command which runs a fast model call
-      // with no streaming overhead.
-      const result = await (window as any).__TAURI_INTERNALS__.invoke('compact_history_summarize', {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<string>('compact_history_summarize', {
         prompt: summaryPrompt,
-      }).catch(() => null) as string | null;
+      }).catch(() => null);
       summaryText = result ?? '';
     }
 

@@ -35,7 +35,6 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "chrono"
 tokio-util = { version = "0.7", features = ["io", "codec"] }
 futures-util = "0.3"
 rig = { package = "rig-core", version = "0.40.0" }
-turbovec = "0.9.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
@@ -67,6 +66,7 @@ scraper = "0.20"
 urlencoding = "2.1"
 genai = "0.1.13"
 dashmap = "5"
+mimalloc = "0.1"
 
 lancedb = "0.30.0"
 lance-index = "=7.0.0"
@@ -76,6 +76,8 @@ arrow = "58.3.0"
 arrow-array = "58.3.0"
 arrow-schema = "58.3.0"
 futures = "0.3.32"
+zip = "4.2.0"
+async-stream = "0.3.6"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
@@ -86,3 +88,9 @@ custom-protocol = ["tauri/custom-protocol"]
 # that occur on large builds when mspdbsrv.exe hits its concurrent stream limit.
 [profile.dev]
 split-debuginfo = "packed"
+
+[profile.release]
+opt-level = 3
+lto = "fat"          # Cross-crate inlining — 10-20% inference speed improvement
+codegen-units = 1    # Required for fat LTO; single compilation unit
+strip = true         # Remove debug symbols; smaller portable binary

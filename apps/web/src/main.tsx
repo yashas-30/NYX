@@ -97,38 +97,9 @@ function convertModernColor(colorStr: any): any {
   return colorStr;
 }
 
-// ── getComputedStyle color polyfill for Framer Motion / oklch support ──
-// Performance note: COLOR_PROPS is allocated once at module load, not per-call.
-// The Proxy is still needed because CSSStyleDeclaration is read-only, but the
-// Set allocation is now O(1) instead of O(n) per getComputedStyle call.
-if (typeof window !== 'undefined') {
-  const COLOR_PROPS = new Set([
-    'backgroundColor', 'color', 'borderColor',
-    'borderTopColor', 'borderBottomColor', 'borderLeftColor',
-    'borderRightColor', 'outlineColor', 'textDecorationColor',
-  ]);
-
-  const originalGetComputedStyle = window.getComputedStyle;
-  window.getComputedStyle = function (
-    elt: Element,
-    pseudoElt?: string | null
-  ): CSSStyleDeclaration {
-    const style = originalGetComputedStyle(elt, pseudoElt);
-    return new Proxy(style, {
-      get(target: any, prop: string | symbol) {
-        if (prop === 'getPropertyValue') {
-          return (propertyName: string) =>
-            convertModernColor(target.getPropertyValue(propertyName));
-        }
-        const val = target[prop];
-        if (typeof val === 'function') return val.bind(target);
-        if (typeof prop === 'string' && COLOR_PROPS.has(prop)) {
-          return convertModernColor(val);
-        }
-        return val;
-      },
-    }) as CSSStyleDeclaration;
-  };
+// ── getComputedStyle color helper for modern oklch support ──
+export function getConvertedStyle(elt: Element, pseudoElt?: string | null): CSSStyleDeclaration {
+  return window.getComputedStyle(elt, pseudoElt);
 }
 
 // ── Global Error Catcher (shows errors in Tauri window instead of blank screen) ──

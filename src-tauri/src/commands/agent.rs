@@ -11,7 +11,7 @@ use std::time::Duration;
 // Previously every web fetch and page load created its own Client, discarding
 // the connection pool each time. A single LazyLock client reuses HTTP/2
 // connections and amortises TLS handshakes across concurrent requests.
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+pub static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0")
         .timeout(Duration::from_secs(10))
@@ -20,6 +20,8 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .build()
         .expect("Failed to build shared HTTP client")
 });
+
+pub static SEARCH_CACHE: LazyLock<dashmap::DashMap<String, String>> = LazyLock::new(dashmap::DashMap::new);
 
 
 pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -> String {
@@ -159,29 +161,10 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         "web_browse" => {
             let url = args["url"].as_str().unwrap_or("");
             let url_str = url.to_string();
-            if let Some(window) = app.get_webview_window("nyx_browser") {
-                if let Ok(parsed_url) = url::Url::parse(&url_str) {
-                    let _ = window.navigate(parsed_url);
-                }
-                let _ = window.show();
-                let _ = window.set_focus();
-                "Browser overlay window navigated successfully.".to_string()
-            } else {
-                match tauri::WebviewWindowBuilder::new(
-                    app,
-                    "nyx_browser",
-                    tauri::WebviewUrl::External(url_str.parse().unwrap())
-                )
-                .title("NYX Browser Overlay")
-                .inner_size(1280.0, 720.0)
-                .build() {
-                    Ok(win) => {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                        "Created and opened browser overlay window successfully.".to_string()
-                    }
-                    Err(e) => format!("Failed to create browser overlay window: {}", e)
-                }
+            use tauri::Emitter;
+            match app.emit("open_browser_window", serde_json::json!({ "url": url_str })) {
+                Ok(_) => "Sent open_browser_window event to frontend successfully.".to_string(),
+                Err(e) => format!("Failed to emit open_browser_window event: {}", e)
             }
         }
         "browser_click" => {
@@ -297,7 +280,7 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
                     let cleaned = if is_raw {
                         html
                     } else {
-                        extract_clean_text(&html)
+                        extract_clean_text(&html, url)
                     };
                     if cleaned.len() > 15000 {
                         format!("{}... [Truncated]", &cleaned[..15000])
@@ -316,7 +299,7 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
                     let plain = if is_raw {
                         html
                     } else {
-                        extract_clean_text(&html)
+                        extract_clean_text(&html, url)
                     };
                     let mut matches = Vec::new();
                     for line in plain.lines() {
@@ -652,102 +635,304 @@ pub async fn fetch_page_html_command(url: String) -> Result<(String, bool), Stri
     Ok((html, is_raw))
 }
 
-pub fn extract_clean_text(html: &str) -> String {
+use scraper::ElementRef;
+
+pub fn extract_clean_text(html: &str, base_url: &str) -> String {
     let document = scraper::Html::parse_document(html);
-    let mut text = String::new();
+    let base_url_parsed = url::Url::parse(base_url).ok();
 
-    for node in document.tree.nodes() {
-        if let scraper::node::Node::Text(text_node) = node.value() {
-            let mut is_ignored = false;
-            let mut current = node.parent();
-            while let Some(parent) = current {
-                if let scraper::node::Node::Element(el) = parent.value() {
-                    let name = el.name();
-                    if name == "script" || name == "style" || name == "noscript" || name == "svg" {
-                        is_ignored = true;
-                        break;
-                    }
+    let main_selectors = [
+        "article", "main", "[role=\"main\"]", "#content", "#main",
+        ".main-content", ".post-content", ".article-body", ".entry-content"
+    ];
+
+    let mut target_element = document.root_element();
+    for sel_str in &main_selectors {
+        if let Ok(selector) = scraper::Selector::parse(sel_str) {
+            if let Some(el) = document.select(&selector).next() {
+                let el_text_len: usize = el.text().map(|t| t.len()).sum();
+                if el_text_len > 200 {
+                    target_element = el;
+                    break;
                 }
-                current = parent.parent();
-            }
-            if !is_ignored {
-                text.push_str(&text_node.text);
-                text.push(' ');
             }
         }
     }
 
-    let re_space = regex::Regex::new(r"\s+").unwrap();
-    re_space.replace_all(&text, " ").trim().to_string()
-}
+    let mut markdown = String::with_capacity(html.len() / 2);
+    walk_and_clean_node(target_element, &mut markdown, &base_url_parsed);
 
-fn decode_percent(s: &str) -> String {
-    let mut decoded = String::new();
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '%' {
-            let h1 = chars.next().unwrap_or('0');
-            let h2 = chars.next().unwrap_or('0');
-            if let Ok(val) = u8::from_str_radix(&format!("{}{}", h1, h2), 16) {
-                decoded.push(val as char);
+    let lines: Vec<&str> = markdown
+        .lines()
+        .map(|l| l.trim_end())
+        .collect();
+
+    let mut cleaned_lines = Vec::new();
+    let mut blank_count = 0;
+
+    for line in lines {
+        if line.trim().is_empty() {
+            blank_count += 1;
+            if blank_count <= 2 {
+                cleaned_lines.push("");
             }
-        } else if c == '+' {
-            decoded.push(' ');
         } else {
-            decoded.push(c);
+            blank_count = 0;
+            cleaned_lines.push(line);
         }
     }
-    decoded
+
+    cleaned_lines.join("\n").trim().to_string()
 }
 
-fn parse_duckduckgo_html(html: &str, num_results: usize) -> Vec<(String, String, String)> {
-    let title_regex = regex::Regex::new(r#"(?s)<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#).unwrap();
-    let snippet_regex = regex::Regex::new(r#"(?s)<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#).unwrap();
-    
-    let blocks: Vec<&str> = html.split(r#"<div class="result results_links"#).collect();
-    let mut results = Vec::new();
-    let mut count = 0;
-    
-    for block in blocks.iter().skip(1) {
-        if count >= num_results { break; }
-        
-        let mut title = String::new();
-        let mut url = String::new();
-        let mut snippet = String::new();
-        
-        if let Some(caps) = title_regex.captures(block) {
-            let raw_url = caps.get(1).map_or("", |m| m.as_str());
-            title = caps.get(2).map_or("", |m| m.as_str())
-                .replace("<b>", "").replace("</b>", "")
-                .replace("&amp;", "&").replace("&#x27;", "'").replace("&quot;", "\"")
-                .trim().to_string();
-            
-            if let Some(pos) = raw_url.find("uddg=") {
-                let encoded_url = &raw_url[pos + 5..];
-                let decoded = decode_percent(encoded_url);
-                if let Some(end_pos) = decoded.find('&') {
-                    url = decoded[..end_pos].to_string();
-                } else {
-                    url = decoded;
+fn is_noise_element(el: &ElementRef) -> bool {
+    let tag = el.value().name();
+
+    let noise_tags = [
+        "script", "style", "noscript", "svg", "nav", "header", "footer",
+        "aside", "form", "iframe", "head", "dialog", "template", "menu", "button"
+    ];
+    if noise_tags.contains(&tag) {
+        return true;
+    }
+
+    let attr_check = |attr_val: Option<&str>| -> bool {
+        if let Some(val) = attr_val {
+            let lower = val.to_lowercase();
+            let keywords = [
+                "nav", "navbar", "footer", "header", "sidebar", "banner", "ad-",
+                "adsense", "cookie", "popup", "consent", "social", "share",
+                "comments", "disqus", "modal", "overlay", "widget", "menu"
+            ];
+            for kw in &keywords {
+                if lower.contains(kw) {
+                    return true;
+                }
+            }
+        }
+        false
+    };
+
+    if attr_check(el.value().attr("class"))
+        || attr_check(el.value().attr("id"))
+        || attr_check(el.value().attr("role"))
+    {
+        return true;
+    }
+
+    false
+}
+
+fn walk_and_clean_node(
+    element: ElementRef,
+    out: &mut String,
+    base_url: &Option<url::Url>,
+) {
+    if is_noise_element(&element) {
+        return;
+    }
+
+    let tag = element.value().name();
+
+    match tag {
+        "h1" => out.push_str("\n\n# "),
+        "h2" => out.push_str("\n\n## "),
+        "h3" => out.push_str("\n\n### "),
+        "h4" => out.push_str("\n\n#### "),
+        "h5" => out.push_str("\n\n##### "),
+        "h6" => out.push_str("\n\n###### "),
+        "p" => out.push_str("\n\n"),
+        "br" => out.push('\n'),
+        "li" => out.push_str("\n- "),
+        "blockquote" => out.push_str("\n\n> "),
+        "pre" | "code" => {
+            if tag == "pre" {
+                out.push_str("\n\n```\n");
+            } else if !out.ends_with("```\n") && !out.ends_with('`') {
+                out.push('`');
+            }
+        }
+        "tr" => out.push('\n'),
+        "td" | "th" => out.push_str(" | "),
+        "hr" => out.push_str("\n\n---\n\n"),
+        _ => {}
+    }
+
+    for child in element.children() {
+        if let Some(text_node) = child.value().as_text() {
+            let t = text_node.trim();
+            if !t.is_empty() {
+                let clean_text = regex::Regex::new(r"[ \t]+")
+                    .unwrap()
+                    .replace_all(text_node, " ");
+                out.push_str(&clean_text);
+            }
+        } else if let Some(child_el) = ElementRef::wrap(child) {
+            let child_tag = child_el.value().name();
+            if child_tag == "a" {
+                let href = child_el.value().attr("href").unwrap_or("");
+                let anchor_text: String = child_el.text().collect::<Vec<_>>().join(" ").trim().to_string();
+                if !anchor_text.is_empty() && !href.is_empty() && !href.starts_with('#') && !href.starts_with("javascript:") {
+                    let absolute_href = if let Some(ref base) = base_url {
+                        base.join(href).map(|u| u.to_string()).unwrap_or_else(|_| href.to_string())
+                    } else {
+                        href.to_string()
+                    };
+                    out.push_str(&format!(" [{}]({}) ", anchor_text, absolute_href));
+                } else if !anchor_text.is_empty() {
+                    out.push_str(&anchor_text);
+                }
+            } else if child_tag == "img" {
+                let alt = child_el.value().attr("alt").unwrap_or("").trim();
+                let src = child_el.value().attr("src").unwrap_or("");
+                if !src.is_empty() && !src.starts_with("data:") && alt.len() > 3 {
+                    let absolute_src = if let Some(ref base) = base_url {
+                        base.join(src).map(|u| u.to_string()).unwrap_or_else(|_| src.to_string())
+                    } else {
+                        src.to_string()
+                    };
+                    out.push_str(&format!(" ![{}]({}) ", alt, absolute_src));
                 }
             } else {
-                url = raw_url.to_string();
+                walk_and_clean_node(child_el, out, base_url);
             }
         }
-        
-        if let Some(caps) = snippet_regex.captures(block) {
-            snippet = caps.get(1).map_or("", |m| m.as_str())
-                .replace("<b>", "").replace("</b>", "")
-                .replace("&amp;", "&").replace("&#x27;", "'").replace("&quot;", "\"")
-                .trim().to_string();
+    }
+
+    match tag {
+        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" => out.push_str("\n\n"),
+        "pre" => out.push_str("\n```\n\n"),
+        "code" => {
+            if !out.ends_with('`') {
+                out.push('`');
+            }
         }
-        
-        if !title.is_empty() && !url.is_empty() {
-            count += 1;
-            results.push((title, url, snippet));
+        _ => {}
+    }
+}
+fn decontextualize_query(raw_query: &str) -> String {
+    let text = raw_query.trim();
+    // Remove slash commands if present
+    let text = if text.starts_with("/web") {
+        text.trim_start_matches("/web").trim()
+    } else if text.starts_with("/deep") {
+        text.trim_start_matches("/deep").trim()
+    } else {
+        text
+    };
+
+    let prefixes = [
+        "can you search the web for",
+        "can you search for",
+        "please search for",
+        "search the web for",
+        "search for",
+        "look up",
+        "find information about",
+        "find out about",
+        "tell me about",
+        "what is",
+        "what are",
+        "who is",
+        "who are",
+        "where is",
+        "how to",
+        "can you tell me",
+        "please find",
+    ];
+
+    let lower = text.to_lowercase();
+    for prefix in &prefixes {
+        if lower.starts_with(prefix) {
+            let stripped = text[prefix.len()..].trim();
+            if !stripped.is_empty() {
+                return stripped.to_string();
+            }
         }
     }
-    
+
+    text.to_string()
+}
+
+fn parse_duckduckgo_lite(html: &str, num_results: usize) -> Vec<(String, String, String)> {
+    static LINK_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"(?s)<a[^>]*class="result-link"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#).unwrap()
+    });
+    static SNIPPET_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"(?s)<td[^>]*class="result-snippet"[^>]*>(.*?)</td>"#).unwrap()
+    });
+    static LINK_RE_ALT: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"(?s)<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#).unwrap()
+    });
+    static SNIPPET_RE_ALT: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"(?s)<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#).unwrap()
+    });
+    static TAG_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"<[^>]*>"#).unwrap()
+    });
+
+    let mut results = Vec::new();
+    let links: Vec<_> = LINK_RE.captures_iter(html).collect();
+    let snippets: Vec<_> = SNIPPET_RE.captures_iter(html).collect();
+
+    for i in 0..links.len().min(snippets.len()).min(num_results) {
+        let raw_url = links[i].get(1).map_or("", |m| m.as_str());
+        let raw_title = links[i].get(2).map_or("", |m| m.as_str());
+        let raw_snippet = snippets[i].get(1).map_or("", |m| m.as_str());
+
+        let title = TAG_RE.replace_all(raw_title, "").trim().to_string();
+        let snippet = TAG_RE.replace_all(raw_snippet, "").trim().to_string();
+
+        let real_url = if raw_url.contains("uddg=") {
+            if let Some(pos) = raw_url.find("uddg=") {
+                let encoded = &raw_url[pos + 5..];
+                let end_pos = encoded.find('&').unwrap_or(encoded.len());
+                urlencoding::decode(&encoded[..end_pos]).unwrap_or(std::borrow::Cow::Borrowed(raw_url)).to_string()
+            } else {
+                raw_url.to_string()
+            }
+        } else {
+            raw_url.to_string()
+        };
+
+        if !title.is_empty() && !real_url.is_empty() {
+            results.push((title, real_url, snippet));
+        }
+    }
+
+    if !results.is_empty() {
+        return results;
+    }
+
+    // Secondary fallback for html.duckduckgo.com layout
+    let alt_links: Vec<_> = LINK_RE_ALT.captures_iter(html).collect();
+    let alt_snippets: Vec<_> = SNIPPET_RE_ALT.captures_iter(html).collect();
+
+    for i in 0..alt_links.len().min(num_results) {
+        let raw_url = alt_links[i].get(1).map_or("", |m| m.as_str());
+        let raw_title = alt_links[i].get(2).map_or("", |m| m.as_str());
+        let raw_snippet = if i < alt_snippets.len() { alt_snippets[i].get(1).map_or("", |m| m.as_str()) } else { "" };
+
+        let title = TAG_RE.replace_all(raw_title, "").trim().to_string();
+        let snippet = TAG_RE.replace_all(raw_snippet, "").trim().to_string();
+
+        let real_url = if raw_url.contains("uddg=") {
+            if let Some(pos) = raw_url.find("uddg=") {
+                let encoded = &raw_url[pos + 5..];
+                let end_pos = encoded.find('&').unwrap_or(encoded.len());
+                urlencoding::decode(&encoded[..end_pos]).unwrap_or(std::borrow::Cow::Borrowed(raw_url)).to_string()
+            } else {
+                raw_url.to_string()
+            }
+        } else {
+            raw_url.to_string()
+        };
+
+        if !title.is_empty() && !real_url.is_empty() {
+            results.push((title, real_url, snippet));
+        }
+    }
+
     results
 }
 
@@ -765,6 +950,7 @@ fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
     }
     chunks
 }
+
 #[tauri::command]
 pub async fn search_web_command(
     query: String,
@@ -774,14 +960,19 @@ pub async fn search_web_command(
 ) -> Result<String, String> {
     let search_provider = provider.unwrap_or_else(|| "duckduckgo".to_string());
     let limit = num_results.unwrap_or(5);
+    let cleaned_query = decontextualize_query(&query);
 
-    if search_provider == "tavily" {
+    let cache_key = format!("{}:{}:{}", search_provider, limit, cleaned_query.to_lowercase());
+    if let Some(cached) = SEARCH_CACHE.get(&cache_key) {
+        return Ok(cached.value().clone());
+    }
+
+    let result = if search_provider == "tavily" {
         let key = api_key.ok_or_else(|| "Tavily API key is missing".to_string())?;
         if key.trim().is_empty() {
             return Err("Tavily API key is empty".to_string());
         }
-        let client = reqwest::Client::new();
-        let res = client.post("https://api.tavily.com/search")
+        let res = HTTP_CLIENT.post("https://api.tavily.com/search")
             .header("Authorization", format!("Bearer {}", key))
             .json(&serde_json::json!({
                 "query": query,
@@ -804,7 +995,6 @@ pub async fn search_web_command(
         let mut formatted_results = Vec::new();
         let mut unique_urls: Vec<String> = Vec::new();
         
-        // Take the first 3 chunks of each result up to 15 chunks total to bypass slow local embeddings
         for r in results.iter() {
             let title = r["title"].as_str().unwrap_or("").to_string();
             let url = r["url"].as_str().unwrap_or("").to_string();
@@ -819,7 +1009,7 @@ pub async fn search_web_command(
                 if is_raw {
                     raw_content.to_string()
                 } else {
-                    extract_clean_text(raw_content)
+                    extract_clean_text(raw_content, &url)
                 }
             } else {
                 content.to_string()
@@ -834,91 +1024,65 @@ pub async fn search_web_command(
                 unique_urls.len()
             };
 
-            for chunk in chunks.into_iter().take(3) {
+            for chunk in chunks.into_iter().take(20) {
                 formatted_results.push(format!("[{}] {}\n{}\n{}", id, title, url, chunk));
-                if formatted_results.len() >= 15 {
+                if formatted_results.len() >= 60 {
                     break;
                 }
             }
-            if formatted_results.len() >= 15 {
+            if formatted_results.len() >= 60 {
                 break;
             }
         }
 
         if formatted_results.is_empty() {
-            Ok("No results found.".to_string())
+            "No results found.".to_string()
         } else {
-            Ok(formatted_results.join("\n\n"))
+            formatted_results.join("\n\n")
         }
 
     } else {
-        // Fallback to duckduckgo — reuse shared client.
-        let url = reqwest::Url::parse_with_params(
-            "https://html.duckduckgo.com/html/",
-            &[("q", &query)]
-        ).map_err(|e| e.to_string())?;
-        
-        let res = HTTP_CLIENT.get(url)
+        // High-Speed Multi-Tier DuckDuckGo Search (<200ms response with GET fallback)
+        let mut html = match HTTP_CLIENT.post("https://lite.duckduckgo.com/lite/")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Referer", "https://lite.duckduckgo.com/")
+            .form(&[("q", &cleaned_query)])
             .send()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        if !res.status().is_success() {
-            return Err(format!("Search failed with status: {}", res.status()));
-        }
-
-        let html = res.text().await.map_err(|e| e.to_string())?;
-        let parsed_items = parse_duckduckgo_html(&html, limit);
-        
-        let fetch_futures = parsed_items.into_iter().map(|(title, page_url, snippet)| {
-            async move {
-                let display_content = match fetch_page_html_command(page_url.clone()).await {
-                    Ok((page_html, is_raw)) => {
-                        if is_raw {
-                            page_html
-                        } else {
-                            extract_clean_text(&page_html)
-                        }
-                    }
-                    Err(_) => snippet,
-                };
-                (title, page_url, display_content)
-            }
-        });
-
-        let fetched_pages = futures::future::join_all(fetch_futures).await;
-        
-        let mut formatted_results = Vec::new();
-        let mut unique_urls: Vec<String> = Vec::new();
-
-        // Fast path: Take the first 3 chunks of each page up to 15 chunks total 
-        for (title, url, content) in fetched_pages {
-            let chunks = chunk_text(&content, 1000, 200);
-            
-            let id = if let Some(idx) = unique_urls.iter().position(|u| u == &url) {
-                idx + 1
-            } else {
-                unique_urls.push(url.clone());
-                unique_urls.len()
+            .await {
+                Ok(resp) if resp.status().is_success() => resp.text().await.unwrap_or_default(),
+                _ => String::new(),
             };
 
-            for chunk in chunks.into_iter().take(3) {
-                formatted_results.push(format!("[{}] {}\n{}\n{}", id, title, url, chunk));
-                if formatted_results.len() >= 15 {
-                    break;
+        // Fallback to html.duckduckgo.com via GET if POST is rate limited or blocked
+        if html.is_empty() || html.contains("Bot Detection") || html.contains("anomaly") || html.contains("CAPTCHA") {
+            let get_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding::encode(&cleaned_query));
+            if let Ok(resp) = HTTP_CLIENT.get(&get_url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .send()
+                .await 
+            {
+                if resp.status().is_success() {
+                    html = resp.text().await.unwrap_or_default();
                 }
-            }
-            if formatted_results.len() >= 15 {
-                break;
             }
         }
 
-        if formatted_results.is_empty() {
-            Ok("No results found.".to_string())
+        let parsed_items = parse_duckduckgo_lite(&html, limit);
+
+        if parsed_items.is_empty() {
+            "No web search results found for query.".to_string()
         } else {
-            Ok(formatted_results.join("\n\n"))
+            parsed_items.into_iter().enumerate().map(|(idx, (title, page_url, snippet))| {
+                format!("[{}] {}\nURL: {}\n{}", idx + 1, title, page_url, snippet)
+            }).collect::<Vec<_>>().join("\n\n")
         }
-    }
+    };
+
+    SEARCH_CACHE.insert(cache_key, result.clone());
+    Ok(result)
 }
 
 #[tauri::command]
@@ -1001,11 +1165,20 @@ pub async fn resolve_browser_action(app: tauri::AppHandle, action_id: String, re
 
 #[tauri::command]
 pub async fn codebase_search_command(
+    app: tauri::AppHandle,
     query: String,
     limit: Option<usize>,
-    scanner: tauri::State<'_, std::sync::Arc<crate::rag::scanner::CodebaseScanner>>,
 ) -> Result<Value, String> {
     let limit = limit.unwrap_or(5);
+    
+    let scanner = match app.try_state::<std::sync::Arc<crate::rag::scanner::CodebaseScanner>>() {
+        Some(s) => s,
+        None => return Ok(json!({
+            "success": false,
+            "error": "Codebase scanner is initializing...",
+            "results": []
+        })),
+    };
     
     if !scanner.is_indexed() {
         return Ok(json!({
@@ -1037,5 +1210,35 @@ pub async fn codebase_search_command(
                 "results": []
             }))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_duckduckgo_lite() {
+        let sample_html = r#"
+        <table>
+            <tr>
+                <td>
+                  <a rel="nofollow" href="https://example.com/test-url" class='result-link'>Example Title</a>
+                </td>
+            </tr>
+            <tr>
+              <td>&nbsp;&nbsp;&nbsp;</td>
+              <td class='result-snippet'>
+                This is a sample snippet for testing the parser.
+              </td>
+            </tr>
+        </table>
+        "#;
+        
+        let results = parse_duckduckgo_lite(sample_html, 5);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, "Example Title");
+        assert_eq!(results[0].1, "https://example.com/test-url");
+        assert_eq!(results[0].2, "This is a sample snippet for testing the parser.");
     }
 }

@@ -9,12 +9,15 @@ import { SectionHeader, EmptyState } from './RegistryShared';
 import { ModelCard } from './ModelCard';
 import { LocalProviderStatus } from '@src/components/LocalProviderStatus';
 import { HardwareAnalyzerCard } from './HardwareAnalyzerCard';
-import { HuggingFaceDownloader } from './HuggingFaceDownloader';
+import { HuggingFaceExplorer } from './HuggingFaceExplorer';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { useModelStore } from '@src/core/stores/useModelStore';
-import { useNyxStore, DEFAULT_SETTINGS } from '@shared/store/useNyxStore';
+import { useNyxStore, DEFAULT_SETTINGS } from '@src/shared/store/useNyxStore';
+import { useDownloadStore } from '@src/core/stores/useDownloadStore';
+import { useHfDownloads, useDownloadActions } from '../../hf-explorer/hooks/useHfDownloads';
+import { ActiveDownloads } from '../../hf-explorer/components/ActiveDownloads';
 import { toast } from 'sonner';
 interface ModelRegistryViewProps {
   models?: Record<'nyx', string>;
@@ -58,9 +61,13 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   setActiveMode,
   sidebarOpen = true,
 }) => {
+  useHfDownloads();
+  const { downloads } = useDownloadStore();
+  const { handlePause, handleResume, handleCancel } = useDownloadActions();
+
   const { usage } = useTokenUsage();
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'local' | 'cloud'>('local');
+  const [filter, setFilter] = useState<'local' | 'huggingface' | 'cloud'>('local');
   const [expandedModelId, setExpandedModelId] = useState<string | null>(null);
 
   const loadedLocalModel = useModelStore(s => s.loadedLocalModel);
@@ -84,8 +91,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       }
     };
     fetchHardware();
-    const interval = setInterval(fetchHardware, 5000);
-    return () => { active = false; clearInterval(interval); };
+    return () => { active = false; };
   }, []);
 
   const handleLoadModel = async (modelId: string) => {
@@ -195,16 +201,20 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const localModelsQuery = useLocalModels(true);
   const nyxNativeModels = localModelsQuery.data?.models || [];
 
-  // Auto-refresh the model list when a Tauri download completes — no page reload needed.
+  // Auto-refresh the model list when any download completes — no page reload needed.
+  // Listens to both llm-download-complete (server binary) and hf-download-complete (HF models).
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    const unlistens: Array<() => void> = [];
     const isTauri = typeof window !== 'undefined' &&
       ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
     if (!isTauri) return;
     listen('llm-download-complete', () => {
       localModelsQuery.refetch();
-    }).then((fn) => { unlisten = fn; }).catch(() => {});
-    return () => { unlisten?.(); };
+    }).then((fn) => { unlistens.push(fn); }).catch(() => {});
+    listen('hf-download-complete', () => {
+      localModelsQuery.refetch();
+    }).then((fn) => { unlistens.push(fn); }).catch(() => {});
+    return () => { unlistens.forEach((fn) => fn()); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -243,10 +253,10 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   return (
     <motion.div
       key="registry"
-      initial={{ opacity: 0, y: 20, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -20, scale: 0.98 }}
-      transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.05 }}
       className="h-full w-full flex flex-col min-h-0 overflow-hidden"
     >
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
@@ -292,7 +302,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
             </div>
 
             <div className="flex gap-1 bg-background p-1 rounded-md border border-border shrink-0 w-full sm:w-auto overflow-x-auto scrollbar-none">
-              {(['local', 'cloud'] as const).map((f) => (
+              {(['local', 'huggingface', 'cloud'] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -305,109 +315,125 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                     }
                   `}
                 >
-                  {f === 'local' ? 'Local' : 'Cloud'}
+                  {f === 'local' ? 'Local' : f === 'huggingface' ? 'Hugging Face' : 'Cloud'}
                 </button>
               ))}
             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
-          {showLocal && (
-            <div className="flex flex-col gap-6">
-              <HardwareAnalyzerCard />
-              <HuggingFaceDownloader />
-              <section className="space-y-4 p-6 rounded-2xl bg-card border border-border mt-6 shadow-sm">
-                <SectionHeader
-                  icon={<Cpu size={18} weight="duotone" className="text-orange-500" />}
-                  title="NYX Native"
-                  subtitle="Models hosted locally on your machine."
-                />
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                  {localModelsQuery.isLoading ? (
-                    Array.from({ length: 4 }).map((_, i) => <ModelCardSkeleton key={`skel-${i}`} />)
-                  ) : nyxNativeModels.map((m: any, idx: number) => (
-                     <ModelCard 
-                       key={m.id} 
-                       id={m.id}
-                       index={idx} 
-                       name={m.name} 
-                       provider={m.provider} 
-                       description={m.description} 
-                       specs={m.specs} 
-                       features={m.features} 
-                       pros={m.pros} 
-                       cons={m.cons} 
-                       hasKey={true} 
-                       status="online" 
-                       usage={undefined} 
-                       isExpanded={expandedModelId === m.id} 
-                       onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
-                       isLocal={true}
-                       isLoaded={loadedLocalModel === m.id}
-                       loadingState={actionModelId === m.id ? loadingState : 'idle'}
-                       onLoad={() => handleLoadModel(m.id)}
-                       onUnload={() => handleUnloadModel()}
-                       onUninstall={() => handleUninstallModel(m.id)}
-                       modelSizeBytes={m.size_bytes}
-                       systemVramBytes={hardwareSpecs?.gpu_vram}
-                     />
-                  ))}
-                  {!localModelsQuery.isLoading && nyxNativeModels.length === 0 && (
-                     <div className="col-span-full">
-                       <EmptyState message="No local models found" hint="Download models using the Hugging Face Downloader above." />
-                     </div>
-                  )}
-                </div>
-              </section>
-            </div>
-          )}
-
-          {showCloud && (
-            <section className="space-y-6 p-6 rounded-2xl bg-card border border-border shadow-sm">
-              <SectionHeader
-                icon={<Globe size={18} weight="duotone" />}
-                title="Cloud Models"
-                subtitle="Ready to use online models"
-              />
-
-              {groupedCloud.map(([provider, models]) => (
-                <div key={provider} className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted-foreground/80 shrink-0">
-                      {provider}
-                    </span>
-                    <div className="h-px flex-1 bg-gradient-to-r from-border/40 to-transparent" />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                    {models.map((m, idx) => (
-                      <ModelCard
-                        key={m.id}
-                        id={m.id}
-                        index={idx}
-                        name={m.name}
-                        provider={m.provider}
-                        description={m.description}
-                        specs={m.specs as any}
-                        features={m.features}
-                        pros={m.pros}
-                        cons={m.cons}
-                        usage={usage[m.provider]}
-                        hasKey={!!apiKeys[m.provider]}
-                        status={providerStatuses?.[m.provider]}
-                        lifecycleStatus={m.status || 'ga'}
-                        shutdownDate={m.shutdownDate}
-                        isExpanded={expandedModelId === m.id}
-                        onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </section>
-          )}
+        <div className={filter === 'huggingface' ? "flex-1 min-h-0 overflow-hidden flex flex-col h-full" : "hidden"}>
+          <HuggingFaceExplorer />
         </div>
+
+        <div className={filter !== 'huggingface' ? "flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6" : "hidden"}>
+            {showLocal && (
+              <div className="flex flex-col gap-6">
+                <HardwareAnalyzerCard />
+                <ActiveDownloads downloads={downloads} />
+                <section className="space-y-4 p-6 rounded-2xl bg-card border border-border shadow-sm">
+                  <SectionHeader
+                    icon={<Cpu size={18} weight="duotone" className="text-orange-500" />}
+                    title="NYX Native"
+                    subtitle="Models hosted locally on your machine."
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
+                    {localModelsQuery.isLoading ? (
+                      Array.from({ length: 4 }).map((_, i) => <ModelCardSkeleton key={`skel-${i}`} />)
+                    ) : nyxNativeModels.map((m: any, idx: number) => {
+                      const dlEntry = Object.entries(downloads).find(
+                        ([key]) => key === m.id || key.endsWith('/' + m.id) || key.endsWith('/' + m.name) || key === m.name
+                      );
+                      const downloadState = dlEntry ? dlEntry[1] : undefined;
+                      const downloadKey = dlEntry ? dlEntry[0] : undefined;
+
+                      return (
+                       <ModelCard 
+                         key={m.id} 
+                         id={m.id}
+                         index={idx} 
+                         name={m.name} 
+                         provider={m.provider} 
+                         description={m.description} 
+                         specs={m.specs} 
+                         features={m.features} 
+                         pros={m.pros} 
+                         cons={m.cons} 
+                         hasKey={true} 
+                         status="online" 
+                         usage={undefined} 
+                         isExpanded={expandedModelId === m.id} 
+                         onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
+                         isLocal={true}
+                         isLoaded={loadedLocalModel === m.id}
+                         loadingState={actionModelId === m.id ? loadingState : 'idle'}
+                         onLoad={() => handleLoadModel(m.id)}
+                         onUnload={() => handleUnloadModel()}
+                         onUninstall={() => handleUninstallModel(m.id)}
+                         modelSizeBytes={m.size_bytes}
+                         systemVramBytes={hardwareSpecs?.gpu_vram}
+                         downloadState={downloadState}
+                         onPauseDownload={downloadKey ? () => handlePause(downloadKey) : undefined}
+                         onResumeDownload={downloadKey ? () => handleResume(downloadKey) : undefined}
+                         onCancelDownload={downloadKey ? () => handleCancel(downloadKey) : undefined}
+                       />
+                      );
+                    })}
+                    {!localModelsQuery.isLoading && nyxNativeModels.length === 0 && (
+                       <div className="col-span-full">
+                         <EmptyState message="No local models found" hint="Go to the Hugging Face tab to download GGUF models." />
+                       </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {showCloud && (
+              <section className="space-y-6 p-6 rounded-2xl bg-card border border-border shadow-sm">
+                <SectionHeader
+                  icon={<Globe size={18} weight="duotone" />}
+                  title="Cloud Models"
+                  subtitle="Ready to use online models"
+                />
+
+                {groupedCloud.map(([provider, models]) => (
+                  <div key={provider} className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted-foreground/80 shrink-0">
+                        {provider}
+                      </span>
+                      <div className="h-px flex-1 bg-gradient-to-r from-border/40 to-transparent" />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
+                      {models.map((m, idx) => (
+                        <ModelCard
+                          key={m.id}
+                          id={m.id}
+                          index={idx}
+                          name={m.name}
+                          provider={m.provider}
+                          description={m.description}
+                          specs={m.specs as any}
+                          features={m.features}
+                          pros={m.pros}
+                          cons={m.cons}
+                          usage={usage[m.provider]}
+                          hasKey={!!apiKeys[m.provider]}
+                          status={providerStatuses?.[m.provider]}
+                          lifecycleStatus={m.status || 'ga'}
+                          shutdownDate={m.shutdownDate}
+                          isExpanded={expandedModelId === m.id}
+                          onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
+          </div>
       </div>
     </motion.div>
   );

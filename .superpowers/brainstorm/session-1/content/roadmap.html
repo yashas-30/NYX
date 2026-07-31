@@ -1,0 +1,64 @@
+<!-- filename: roadmap.html -->
+<div class="section">
+  <h2>NYX Local Model Manager Modernization</h2>
+  <p class="subtitle">We have analyzed the codebase across 10 independent vectors. To safely upgrade NYX to 2026 standards without breaking stability, we recommend decomposing the roadmap into 5 sequential sub-projects. Select the first sub-project you want us to spec and implement.</p>
+</div>
+
+<div class="options" data-choice-name="selected_subproject" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.5rem;">
+  <div class="option selected" data-choice="sub1" onclick="toggleSelect(this)" style="padding: 1.25rem;">
+    <div class="letter">1</div>
+    <div class="content">
+      <h3 style="margin-top: 0;">(Recommended) Local Model Registry DB & Namespace Storage</h3>
+      <p style="margin: 0.25rem 0 0.5rem 0; color: #a1a1aa; font-size: 0.85rem;">Create a persistent SQLite database registry table for local models (tracking ratings, favorite flags, usage stats, and loading presets) and refactor the storage directory into a clean namespace structure (segregating LLMs, VAEs, encoders) to prevent filename collisions.</p>
+      <span class="label" style="font-size: 8px; color: #10b981; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); padding: 1px 6px; borderRadius: 4px;">Foundation Layer</span>
+    </div>
+  </div>
+
+  <div class="option" data-choice="sub2" onclick="toggleSelect(this)" style="padding: 1.25rem;">
+    <div class="letter">2</div>
+    <div class="content">
+      <h3 style="margin-top: 0;">Resilient Download Queue & Split GGUF Auto-Stitching</h3>
+      <p style="margin: 0.25rem 0 0.5rem 0; color: #a1a1aa; font-size: 0.85rem;">Implement an active download queue manager (capping concurrent tasks to prevent rate-limiting), fix pause/resume byte-gap corruption with sequential writing, and implement automatic sequential fetching and stitching of split GGUF volumes.</p>
+      <span class="label" style="font-size: 8px; color: #0284c7; background: rgba(2, 132, 199, 0.1); border: 1px solid rgba(2, 132, 199, 0.2); padding: 1px 6px; borderRadius: 4px;">Network & I/O</span>
+    </div>
+  </div>
+
+  <div class="option" data-choice="sub3" onclick="toggleSelect(this)" style="padding: 1.25rem;">
+    <div class="letter">3</div>
+    <div class="content">
+      <h3 style="margin-top: 0;">Hugging Face Live Explorer & Gated Repository Auth</h3>
+      <p style="margin: 0.25rem 0 0.5rem 0; color: #a1a1aa; font-size: 0.85rem;">Integrate live query endpoints for the HuggingFace API directly into the explorer, parse remote repository GGUF file trees dynamically, and implement HF access token settings to allow downloading gated models.</p>
+      <span class="label" style="font-size: 8px; color: #f59e0b; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); padding: 1px 6px; borderRadius: 4px;">Frontend UX</span>
+    </div>
+  </div>
+
+  <div class="option" data-choice="sub4" onclick="toggleSelect(this)" style="padding: 1.25rem;">
+    <div class="letter">4</div>
+    <div class="content">
+      <h3 style="margin-top: 0;">Media Diffusion & Multimodal Encoders Integration</h3>
+      <p style="margin: 0.25rem 0 0.5rem 0; color: #a1a1aa; font-size: 0.85rem;">Integrate Leejet's sd-server backend for diffusion tasks, link GGUF vision models automatically with their local mmproj projector counterparts, and expose dynamic image-capability toggles in the Chat UI.</p>
+      <span class="label" style="font-size: 8px; color: #8b5cf6; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.2); padding: 1px 6px; borderRadius: 4px;">Inference Backends</span>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 1.5rem;">
+  <h3>Selected Sub-project Comparison</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>Why Sub-project 1 first?</h4>
+      <ul>
+        <li>Establishes database structures to store model user settings & configs.</li>
+        <li>Provides a clean folder taxonomy before we start downloading massive multi-part models or companions.</li>
+        <li>Prevents file name collisions in the models folder.</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>Impact of delaying Sub-project 1</h4>
+      <ul>
+        <li>Downloader and Explorer additions will continue writing flat files, increasing folder clutter.</li>
+        <li>Custom model settings (NGL, context) will remain volatile and wipe on app restart.</li>
+      </ul>
+    </div>
+  </div>
+</div>
