@@ -6,7 +6,9 @@
  */
 
 import { Dispatch, SetStateAction } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { toast } from '@src/shared/components/ui/sonner';
+
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -547,16 +549,10 @@ export const updateApiKey = async (
   }));
 
   // Persist encrypted entry to Native vault
-  if (typeof window !== 'undefined' && (window as any).nyxIPC) {
-    try {
-      // Use the legacy vault:store-key call for compatibility with main process
-      await (window as any).nyxIPC.invoke('vault:store-key', {
-        provider: resolvedProvider,
-        key: trimmed,
-      });
-    } catch (err: any) {
-      console.warn('[Vault] Native IPC unavailable:', err);
-    }
+  try {
+    await invoke('vault:store-key', { provider: resolvedProvider, key: trimmed });
+  } catch (err: any) {
+    console.warn('[Vault] Native IPC unavailable:', err);
   }
 
   // Audit
@@ -726,11 +722,9 @@ export const deleteApiKey = async (
     }
   }
 
-  if (typeof window !== 'undefined' && (window as any).nyxIPC) {
-    try {
-      await (window as any).nyxIPC.invoke('vault:delete-key', { provider });
-    } catch {}
-  }
+  try {
+    await invoke('vault:delete-key', { provider });
+  } catch {}
 
   registry.deleteEntry(provider);
   setApiKeys((prev) => {

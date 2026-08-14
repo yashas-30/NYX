@@ -81,7 +81,7 @@ export const useModelStore = create<ModelState>((set, get) => {
         modelsData = tauriModels || [];
 
         const completed = modelsData
-          .filter((m: any) => !m.status || m.status === 'completed')
+          .filter((m: any) => (!m.status || m.status === 'completed') && m.model_type !== 'vision' && !m.name?.toLowerCase().includes('mmproj') && !m.id?.toLowerCase().includes('mmproj'))
           .map((m: any) => {
             const rawCtx = m.context_length || m.contextLength || m.max_context_length;
             const contextWindow = formatContextWindow(rawCtx, m.name);

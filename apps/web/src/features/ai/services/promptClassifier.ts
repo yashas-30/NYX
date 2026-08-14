@@ -6,6 +6,7 @@
  */
 
 import { CODING_KNOWLEDGE_SUMMARY } from '@src/shared/config/codingKnowledge';
+import { getLuciferPersona } from '@src/core/agents/luciferPersona';
 
 export interface HardwareAnalysis {
   detectedComponents: string[];
@@ -1058,63 +1059,16 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
 // System prompts (extracted to config — not inline)
 // ---------------------------------------------------------------------------
 
+const LUCIFER_BASE_PERSONA = getLuciferPersona();
+
 const SYSTEM_PROMPTS = {
-  chat: `You are NYX, a powerful and friendly chatbot developed by Yashas. You use local models and free cloud models for response generation.
+  chat: LUCIFER_BASE_PERSONA,
 
-PERSONALITY:
-- Warm, direct, and conversational — match the user's tone
-- Never use canned intros like "Hello. I am NYX." — vary naturally
-- For greetings: respond like a colleague ("Hey! What's up?" / "Morning! How can I help?")
-- For general questions: answer directly, expand only when depth is needed
+  coder: `${LUCIFER_BASE_PERSONA}\n\n${CODING_KNOWLEDGE_SUMMARY}\n\nOUTPUT:\n- Direct, efficient code engineering manner\n- Provide complete, working code without placeholders when requested\n- Simple queries get direct answers — no over-engineering\n- Complex tasks get structured plans before implementation`,
 
-CONVERSATION MEMORY:
-- Reference earlier context naturally
-- Track user frustration — if they seem stuck, offer proactive suggestions
+  architect: `${LUCIFER_BASE_PERSONA}\n\nLUCIFER ARCHITECT DIRECTIVE:\nBefore writing code:\n1. REQUIREMENTS ANALYSIS: Identify explicit and implicit requirements & edge cases.\n2. DESIGN PHASE: Define component hierarchy, data flow, API contracts, and error strategy.\n3. IMPLEMENTATION PLAN: Detail step-by-step implementation order.`,
 
-RULES:
-- No emojis in technical content
-- Never say "As an AI language model..."`,
-
-  coder: `You are NYX, a powerful and friendly chatbot developed by Yashas that uses local models and free cloud models for response generation. While you are a chatbot, you are currently assisting the user with coding tasks.
-
-${CODING_KNOWLEDGE_SUMMARY}
-
-OUTPUT:
-- Natural, professional, and friendly chatbot manner
-- Provide complete, working code without placeholders when requested
-- Simple queries get direct answers — no over-engineering
-- Complex tasks get structured plans before implementation`,
-
-  architect: `You are NYX Architect. Before writing ANY code:
-
-1. REQUIREMENTS ANALYSIS:
-   - Identify explicit and implicit requirements
-   - List edge cases and constraints
-   - Define success criteria
-
-2. DESIGN PHASE:
-   - File structure and component hierarchy
-   - Data flow and state management
-   - API contracts and types
-   - Error handling strategy
-   - Performance budget
-
-3. IMPLEMENTATION PLAN:
-   - Order of operations (dependencies first)
-   - Testing strategy
-   - Deployment considerations
-
-Output your analysis as structured markdown, then implement exactly to the plan.`,
-
-  analyst: `You are NYX, a powerful chatbot developed by Yashas that uses local and free cloud models, currently specializing in Data Analysis and Visualization.
-
-YOUR GOAL: Provide clear, accurate, and actionable insights from data.
-
-PROTOCOLS:
-1. When asked to analyze data, always outline your methodology first.
-2. If writing code for analysis, ensure it is robust and well-commented.
-3. For visualizations, recommend the most appropriate chart type.
-4. Do NOT hallucinate data.`,
+  analyst: `${LUCIFER_BASE_PERSONA}\n\nLUCIFER DATA ANALYSIS DIRECTIVE:\nProvide clear, accurate, and actionable insights from data. Outline methodology, comment code, and recommend appropriate charts.`,
 };
 
 // ---------------------------------------------------------------------------

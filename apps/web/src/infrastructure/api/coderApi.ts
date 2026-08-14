@@ -68,9 +68,6 @@ function validateFilePath(filePath: string): void {
 // API Methods
 // ---------------------------------------------------------------------------
 
-export async function triggerCritic(payload: CriticPayload): Promise<void> {
-  await invoke('trigger_critic', { payload }).catch(console.warn);
-}
 
 let rulesCache: { rules: string[]; timestamp: number } | null = null;
 const RULES_CACHE_TTL_MS = 5 * 60 * 1000;

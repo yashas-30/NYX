@@ -17,7 +17,6 @@ import { ChatHeader } from './ChatHeader';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatPromptInput } from './ChatPromptInput';
 import { ChatSidebar } from './ChatSidebar';
-import { ChatSettings } from './ChatSettings';
 import { getCustomModelIcon } from '@src/shared/utils/modelIcons';
 import { useChatLogic } from '../hooks/useChatLogic';
 import { ArtifactCanvas } from '../../artifacts/components/ArtifactCanvas';
@@ -146,7 +145,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [prompt, setPrompt] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingImages, setPendingImages] = useState<ChatImage[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [branchManagerOpen, setBranchManagerOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -637,8 +635,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         </div>
       )}
       {/* Global sidebar is managed by AppDashboard */}
-
-      <ChatSettings isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
         {/* CHAT HEADER */}

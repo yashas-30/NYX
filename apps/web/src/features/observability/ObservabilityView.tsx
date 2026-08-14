@@ -204,12 +204,17 @@ function TraceRow({ trace }: { trace: LlmTrace }) {
 
 // ─── Main View ────────────────────────────────────────────────────────────────
 
+import { useLuciferObservabilityStore } from '@src/features/agents/lucifer/observabilitySpans';
+
 export default function ObservabilityView() {
   const [summary, setSummary] = useState<ObservabilitySummary | null>(null);
   const [traces, setTraces] = useState<LlmTrace[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
+
+  const { recentTurnIds, getTurnSummary, getSpansForTurn } = useLuciferObservabilityStore();
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
     if (!isTauriEnv) {
@@ -288,6 +293,103 @@ export default function ObservabilityView() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+        {/* Lucifer Live Turn Spans */}
+        <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-950/20 via-black/40 to-black/60 p-5 shadow-lg">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                <Zap size={16} className="text-violet-400" />
+              </div>
+              <div>
+                <h2 className="text-xs font-bold text-white uppercase tracking-wider">Lucifer Agent Live Traces</h2>
+                <p className="text-[11px] text-white/40">Real-time parent-child span execution trees per conversation turn</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono text-violet-300 bg-violet-500/10 px-2 py-0.5 rounded-full border border-violet-500/20">
+              {recentTurnIds.length} turns recorded
+            </span>
+          </div>
+
+          {recentTurnIds.length === 0 ? (
+            <div className="py-8 text-center border border-dashed border-white/10 rounded-xl bg-white/1">
+              <p className="text-xs text-white/40">No turn spans recorded yet in this session.</p>
+              <p className="text-[10px] text-white/20 mt-1">Start chatting with Lucifer to capture live model routing, memory reads, RAG searches, and reflexion checks.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                {recentTurnIds.slice(-8).reverse().map((tId) => {
+                  const s = getTurnSummary(tId);
+                  const isSelected = selectedTurnId === tId;
+                  return (
+                    <button
+                      key={tId}
+                      onClick={() => setSelectedTurnId(isSelected ? null : tId)}
+                      className={`flex-shrink-0 p-3 rounded-xl border text-left transition-all ${
+                        isSelected
+                          ? 'border-violet-500 bg-violet-500/15 shadow-md shadow-violet-500/10'
+                          : 'border-white/10 bg-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-1">
+                        <span className="text-xs font-mono font-bold text-white/90">{tId.slice(0, 14)}</span>
+                        <span className="text-[10px] font-mono text-violet-400">{s ? fmtMs(s.totalDurationMs) : ''}</span>
+                      </div>
+                      <p className="text-[11px] text-white/50 truncate max-w-[160px]">{s?.modelUsed || 'Lucifer Agent'}</p>
+                      <div className="flex items-center gap-2 mt-2 text-[10px] text-white/40">
+                        <span>🔍 {s?.searchCount || 0} searches</span>
+                        <span>🧠 {s?.memoryReads || 0} mem</span>
+                        {s?.reflexionPassed !== null && (
+                          <span className={s?.reflexionPassed ? 'text-emerald-400' : 'text-amber-400'}>
+                            {s?.reflexionPassed ? '✓ passed' : '⚠ review'}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Expanded Span Tree */}
+              {selectedTurnId && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="mt-3 p-4 rounded-xl border border-violet-500/30 bg-black/60 space-y-2 overflow-hidden"
+                >
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
+                    <span className="text-xs font-mono font-bold text-violet-300">Span Execution Tree for {selectedTurnId}</span>
+                    <button onClick={() => setSelectedTurnId(null)} className="text-[10px] text-white/40 hover:text-white/80">Close</button>
+                  </div>
+                  <div className="space-y-1.5 font-mono text-xs">
+                    {getSpansForTurn(selectedTurnId).map((span) => (
+                      <div
+                        key={span.spanId}
+                        className={`flex items-center justify-between p-2 rounded-lg border ${
+                          span.parentSpanId ? 'ml-4 bg-white/2 border-white/5' : 'bg-violet-500/10 border-violet-500/20'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            span.status === 'ok' ? 'bg-emerald-400' : span.status === 'error' ? 'bg-red-400' : 'bg-amber-400'
+                          }`} />
+                          <span className="text-white/90 font-medium truncate">{span.name}</span>
+                          <span className="text-[10px] text-white/30 px-1.5 py-0.2 rounded bg-white/5">{span.kind}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] text-white/50 flex-shrink-0">
+                          {span.model && <span className="text-violet-300">{span.model}</span>}
+                          {span.durationMs != null && <span>{span.durationMs}ms</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* KPI cards */}
         {summary && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

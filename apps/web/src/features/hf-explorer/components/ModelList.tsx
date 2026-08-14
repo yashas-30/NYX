@@ -1,15 +1,13 @@
 // src/features/hf-explorer/components/ModelList.tsx
+// LM Studio-style vertical scrollable model list for the left panel
 import React, { useCallback } from 'react';
-import { Spinner, Fire } from '@phosphor-icons/react';
 import { ModelCard } from './ModelCard';
-import { SkeletonCard } from './SkeletonCard';
-import { EmptyState } from './EmptyState';
 import { ErrorBoundary } from './ErrorBoundary';
-import { formatCount } from '../lib/utils';
 import type { HfModelResult } from '../types';
 
 interface ModelListProps {
   models: HfModelResult[];
+  selectedModel: string | null;
   isLoading: boolean;
   isLoadingMore: boolean;
   hasNextPage: boolean;
@@ -21,99 +19,165 @@ interface ModelListProps {
   onClear: () => void;
 }
 
+// Skeleton row for loading state
+function SkeletonRow() {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '8px 12px',
+      minHeight: 56,
+    }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+        background: '#2a2a2a',
+        animation: 'pulse 1.5s ease-in-out infinite',
+      }} />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{
+          height: 12, width: '55%', borderRadius: 4, background: '#2a2a2a',
+          animation: 'pulse 1.5s ease-in-out infinite',
+        }} />
+        <div style={{
+          height: 10, width: '80%', borderRadius: 4, background: '#222',
+          animation: 'pulse 1.5s ease-in-out infinite 0.2s',
+        }} />
+      </div>
+    </div>
+  );
+}
+
 export function ModelList({
   models,
+  selectedModel,
   isLoading,
   isLoadingMore,
   hasNextPage,
   error,
   activeQuery,
-  activeCategoryLabel,
   onSelect,
   onLoadMore,
   onClear,
 }: ModelListProps) {
-  const handleSelect = useCallback(
-    (id: string) => {
-      onSelect(id);
-    },
-    [onSelect]
-  );
+  const handleSelect = useCallback((id: string) => { onSelect(id); }, [onSelect]);
 
   const showSkeleton = isLoading && models.length === 0;
-  const showEmpty = !isLoading && models.length === 0 && !error;
-  const showError = error && !isLoading;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar">
-      {/* Results Header Bar */}
-      <div className="px-6 py-3.5 border-b border-border/50 bg-background/80 backdrop-blur-md shrink-0 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-2">
-          <span className="text-base font-black text-foreground tracking-tight">Models</span>
-          {models.length > 0 && (
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-              {formatCount(models.length)}
-            </span>
+    <div
+      style={{
+        flex: 1,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        scrollbarWidth: 'thin',
+        scrollbarColor: 'rgba(255,255,255,0.08) transparent',
+      }}
+    >
+      {/* Error state */}
+      {error && !isLoading && (
+        <div style={{
+          margin: '12px 8px',
+          padding: '10px 12px',
+          borderRadius: 8,
+          background: 'rgba(239,68,68,0.08)',
+          border: '1px solid rgba(239,68,68,0.2)',
+          color: '#f87171',
+          fontSize: 11,
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: 2 }}>Failed to load</div>
+          <div style={{ opacity: 0.8 }}>{error}</div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && models.length === 0 && !error && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '40px 20px',
+          textAlign: 'center',
+          gap: 8,
+        }}>
+          <div style={{ fontSize: 28 }}>🔍</div>
+          <div style={{ fontSize: 13, color: '#a1a1aa', fontWeight: 500 }}>
+            {activeQuery ? `No results for "${activeQuery}"` : 'No models found'}
+          </div>
+          {activeQuery && (
+            <button
+              onClick={onClear}
+              style={{
+                marginTop: 4,
+                fontSize: 11,
+                color: '#3b82f6',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              Clear search
+            </button>
           )}
         </div>
-        <div className="flex items-center gap-1.5 bg-muted/40 px-3 py-1 rounded-full border border-border/40 text-xs font-semibold text-foreground/80">
-          <Fire size={12} weight="duotone" className="text-orange-400" />
-          <span>{activeQuery ? `"${activeQuery}"` : activeCategoryLabel}</span>
+      )}
+
+      {/* Skeleton loading */}
+      {showSkeleton && (
+        <>
+          {Array.from({ length: 10 }).map((_, i) => (
+            <SkeletonRow key={i} />
+          ))}
+        </>
+      )}
+
+      {/* Model rows */}
+      {!showSkeleton && models.length > 0 && (
+        <div>
+          {models.map((model) => (
+            <ErrorBoundary key={model.id}>
+              <ModelCard
+                model={model}
+                isSelected={selectedModel === model.id}
+                onSelect={handleSelect}
+              />
+            </ErrorBoundary>
+          ))}
         </div>
-      </div>
+      )}
 
-      {/* Grid View — 2 Models Side-by-Side */}
-      <div className="p-6">
-        {showSkeleton && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
-        )}
+      {/* Load more */}
+      {hasNextPage && models.length > 0 && !isLoadingMore && (
+        <div style={{ padding: '8px 12px' }}>
+          <button
+            onClick={onLoadMore}
+            style={{
+              width: '100%',
+              padding: '7px',
+              borderRadius: 6,
+              background: '#232323',
+              border: '1px solid #2a2a2a',
+              color: '#a1a1aa',
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#2a2a2a'}
+            onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#232323'}
+          >
+            Load more
+          </button>
+        </div>
+      )}
 
-        {showError && (
-          <div className="flex items-start gap-3 p-4 mb-6 bg-red-500/10 border border-red-500/20 rounded-xl max-w-2xl mx-auto text-red-400">
-            <span className="shrink-0 text-base">⚠</span>
-            <div className="text-xs">
-              <p className="font-bold mb-0.5">Failed to load models</p>
-              <p className="opacity-90">{error}</p>
-            </div>
-          </div>
-        )}
-
-        {showEmpty && <EmptyState query={activeQuery} onClear={onClear} />}
-
-        {!showSkeleton && models.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" role="list" aria-label="Model results">
-            {models.map((model) => (
-              <div key={model.id} className="h-full flex flex-col min-w-0">
-                <ErrorBoundary>
-                  <ModelCard model={model} onSelect={handleSelect} />
-                </ErrorBoundary>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {isLoadingMore && (
-          <div className="flex items-center justify-center gap-2 py-6">
-            <Spinner size={16} className="animate-spin text-primary" />
-            <span className="text-xs text-muted-foreground font-semibold">Loading more models…</span>
-          </div>
-        )}
-
-        {hasNextPage && models.length > 0 && !isLoadingMore && (
-          <div className="mt-8 flex justify-center">
-            <button
-              onClick={onLoadMore}
-              className="py-2.5 px-8 rounded-full bg-secondary hover:bg-secondary/80 border border-border text-xs font-bold text-foreground transition-all flex items-center gap-2 shadow-xs hover:shadow-sm"
-            >
-              Load More Models
-            </button>
-          </div>
-        )}
-      </div>
+      {isLoadingMore && (
+        <div style={{ padding: '8px', textAlign: 'center', fontSize: 11, color: '#52525b' }}>
+          Loading…
+        </div>
+      )}
     </div>
   );
 }

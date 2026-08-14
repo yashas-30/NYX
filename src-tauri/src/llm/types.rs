@@ -30,8 +30,30 @@ pub fn sanitize_messages_for_api(messages: &[UnifiedMessage]) -> Vec<Value> {
             let mut tool_calls: Vec<Value> = Vec::new();
             if let Some(arr) = m.content.as_array() {
                 for item in arr {
-                    if item.get("type").and_then(|t| t.as_str()) == Some("tool_call") {
-                        tool_calls.push(item.clone());
+                    let item_type = item.get("type").and_then(|t| t.as_str());
+                    // Accept "tool_call", "function", and "tool_use"
+                    if item_type == Some("tool_call") || item_type == Some("function") || item_type == Some("tool_use") {
+                        if item_type == Some("tool_use") {
+                            let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("call_0");
+                            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("tool");
+                            let default_input = json!({});
+                            let input = item.get("input").unwrap_or(&default_input);
+                            let args_str = if input.is_string() {
+                                input.as_str().unwrap().to_string()
+                            } else {
+                                serde_json::to_string(input).unwrap_or_else(|_| "{}".to_string())
+                            };
+                            tool_calls.push(json!({
+                                "id": id,
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "arguments": args_str
+                                }
+                            }));
+                        } else {
+                            tool_calls.push(item.clone());
+                        }
                     }
                 }
             }
@@ -41,13 +63,29 @@ pub fn sanitize_messages_for_api(messages: &[UnifiedMessage]) -> Vec<Value> {
             }
         }
 
-        if m.role == "tool" && m.content.is_array() {
-            if let Some(item) = m.content.as_array().and_then(|a| a.first()) {
-                let tool_call_id = item.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("");
-                let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                sanitized.push(json!({"role": "tool", "tool_call_id": tool_call_id, "content": content}));
-                continue;
-            }
+        if m.role == "tool" {
+            let (tool_call_id, content, name) = match &m.content {
+                Value::Array(arr) => {
+                    if let Some(item) = arr.first() {
+                        let id = item.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let c = item.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                        let n = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        (id.to_string(), c.to_string(), n.to_string())
+                    } else {
+                        (String::new(), String::new(), String::new())
+                    }
+                }
+                Value::String(s) => (String::new(), s.clone(), String::new()),
+                Value::Object(obj) => {
+                    let id = obj.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let c = obj.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                    let n = obj.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    (id.to_string(), c.to_string(), n.to_string())
+                }
+                _ => (String::new(), m.content.to_string(), String::new()),
+            };
+            sanitized.push(json!({"role": "tool", "tool_call_id": tool_call_id, "name": name, "content": content}));
+            continue;
         }
 
         // Check if message content is empty
@@ -59,7 +97,46 @@ pub fn sanitize_messages_for_api(messages: &[UnifiedMessage]) -> Vec<Value> {
         };
 
         if !is_empty {
-            sanitized.push(json!({"role": m.role, "content": m.content}));
+            // Normalize content array for llama-server / OpenAI compatibility
+            let normalized_content = match &m.content {
+                Value::Array(arr) => {
+                    let has_image = arr.iter().any(|item| {
+                        item.get("type").and_then(|t| t.as_str()) == Some("image_url")
+                    });
+                    if !has_image {
+                        let mut text_parts = Vec::new();
+                        for item in arr {
+                            if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
+                                if !t.trim().is_empty() { text_parts.push(t); }
+                            } else if let Some(c) = item.get("content").and_then(|v| v.as_str()) {
+                                if !c.trim().is_empty() { text_parts.push(c); }
+                            } else if let Some(s) = item.as_str() {
+                                if !s.trim().is_empty() { text_parts.push(s); }
+                            }
+                        }
+                        json!(text_parts.join("\n\n"))
+                    } else {
+                        // Keep only valid OpenAI array blocks: type "text" and "image_url"
+                        let mut valid_blocks = Vec::new();
+                        for item in arr {
+                            let item_type = item.get("type").and_then(|t| t.as_str());
+                            if item_type == Some("image_url") {
+                                valid_blocks.push(item.clone());
+                            } else if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
+                                valid_blocks.push(json!({"type": "text", "text": t}));
+                            }
+                        }
+                        if valid_blocks.is_empty() {
+                            json!("")
+                        } else {
+                            json!(valid_blocks)
+                        }
+                    }
+                }
+                _ => m.content.clone(),
+            };
+
+            sanitized.push(json!({"role": m.role, "content": normalized_content}));
         }
     }
 
@@ -153,6 +230,11 @@ pub struct UnifiedRequest {
     /// OpenAI-compatible tool_choice override ("none", "auto", or specific function).
     #[serde(default)]
     pub tool_choice: Option<Value>,
+    /// When true, Lucifer will automatically pre-fetch live web search results before generating a
+    /// response (if the intent requires it). When false (default), search only fires if the user
+    /// explicitly calls the web_search tool via a tool call in the model output.
+    #[serde(default)]
+    pub web_search_enabled: bool,
 }
 
 /// Full stream event payload sent to the frontend via Tauri IPC channel.

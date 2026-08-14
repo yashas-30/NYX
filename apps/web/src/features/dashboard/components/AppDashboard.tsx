@@ -139,7 +139,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                   <span>Chat</span>
                 </button>
                 <motion.button
-                  whileHover={{ scale: 1.05, backgroundColor: 'var(--muted)' }}
+                  whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={(e) => {
                     e.stopPropagation();

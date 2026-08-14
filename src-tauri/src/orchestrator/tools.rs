@@ -7,10 +7,10 @@ use tokio::fs;
 #[async_trait]
 pub trait Tool: Send + Sync {
     /// The name of the tool as the LLM will see it
-    fn name(&self) -> &'static str;
+    fn name(&self) -> String;
     
     /// The description of the tool
-    fn description(&self) -> &'static str;
+    fn description(&self) -> String;
     
     /// JSON schema for the arguments
     fn parameters_schema(&self) -> Value;
@@ -29,12 +29,12 @@ impl WebSearchTool {
 
 #[async_trait]
 impl Tool for WebSearchTool {
-    fn name(&self) -> &'static str {
-        "web_search"
+    fn name(&self) -> String {
+        "web_search".to_string()
     }
 
-    fn description(&self) -> &'static str {
-        "Search the web for real-time information. Use this when you need facts about current events, documentation, or anything outside your training data."
+    fn description(&self) -> String {
+        "Search the web for real-time information. Use this when you need facts about current events, documentation, or anything outside your training data.".to_string()
     }
 
     fn parameters_schema(&self) -> Value {
@@ -70,12 +70,12 @@ impl ConversationalMemoryTool {
 
 #[async_trait]
 impl Tool for ConversationalMemoryTool {
-    fn name(&self) -> &'static str {
-        "conversational_memory"
+    fn name(&self) -> String {
+        "conversational_memory".to_string()
     }
 
-    fn description(&self) -> &'static str {
-        "Save or retrieve facts about the user from long-term memory. Use this to remember user preferences, names, past events, or anything they tell you to remember."
+    fn description(&self) -> String {
+        "Save or retrieve facts about the user from long-term memory. Use this to remember user preferences, names, past events, or anything they tell you to remember.".to_string()
     }
 
     fn parameters_schema(&self) -> Value {
@@ -161,12 +161,12 @@ impl CreateFileTool {
 
 #[async_trait]
 impl Tool for CreateFileTool {
-    fn name(&self) -> &'static str {
-        "create_file"
+    fn name(&self) -> String {
+        "create_file".to_string()
     }
 
-    fn description(&self) -> &'static str {
-        "Create a file on the user's local file system. Supports markdown (.md), text (.txt), and pseudo-word (.doc)."
+    fn description(&self) -> String {
+        "Create a file on the user's local file system. Supports markdown (.md), text (.txt), and pseudo-word (.doc).".to_string()
     }
 
     fn parameters_schema(&self) -> Value {

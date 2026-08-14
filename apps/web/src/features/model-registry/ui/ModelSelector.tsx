@@ -14,7 +14,7 @@ import { useModelStore } from '@src/core/stores/useModelStore';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
-import { formatContextWindow } from '@shared/hooks/useLocalModels';
+import { formatContextWindow, useLocalServerStatus, isModelLoaded } from '@shared/hooks/useLocalModels';
 
 interface Props {
   currentModelId?: string;
@@ -95,6 +95,9 @@ export const ModelSelector: React.FC<Props> = ({
   const loadLocalLibraryModels = useModelStore((s) => s.loadLocalLibraryModels);
   const [togglingModelId, setTogglingModelId] = React.useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = React.useState<string | null>(null);
+  
+  // Actively sync backend state so the UI always knows if a model is running
+  useLocalServerStatus();
   
   const modelConfigs = useNyxStore((s) => s.modelConfigs);
   const updateModelConfig = useNyxStore((s) => s.updateModelConfig);
@@ -273,11 +276,12 @@ export const ModelSelector: React.FC<Props> = ({
   const mergedModels = useMemo(() => {
     const seenIds = new Set();
 
-    // Filter out static presets if we successfully loaded active models
-    const filteredAllModels = allModels;
+    // For nyx-native, ONLY use localLibraryModels (authoritative from the Rust backend).
+    // Exclude any nyx-native entries from allModels so phantom/stale presets never appear.
+    const cloudOnlyModels = allModels.filter((m) => m.provider !== 'nyx-native');
     const nativeSource = localLibraryModels;
 
-    const allSources = [...nativeSource, ...filteredAllModels];
+    const allSources = [...nativeSource, ...cloudOnlyModels];
     return allSources
       .filter((m) => {
         if (seenIds.has(m.id)) return false;
@@ -348,11 +352,16 @@ export const ModelSelector: React.FC<Props> = ({
     );
   }, [groupedModels, selectedProvider, searchTerm]);
 
-  // Virtualizer setup
+  // Virtualizer setup — cap visible height to 5 rows for ALL providers so the list is
+  // compact, scrollable, and never floods the selector modal.
+  const ROW_ESTIMATE_PX = 52;
+  const MAX_VISIBLE_ROWS = 5;
+  const listMaxHeight = Math.min(filteredModels.length, MAX_VISIBLE_ROWS) * ROW_ESTIMATE_PX;
+
   const rowVirtualizer = useVirtualizer({
     count: filteredModels.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 42,
+    estimateSize: () => ROW_ESTIMATE_PX,
     overscan: 5,
   });
 
@@ -472,7 +481,7 @@ export const ModelSelector: React.FC<Props> = ({
           <div className="flex-1 bg-muted/10 border border-border rounded-md overflow-hidden flex flex-col">
             {/* Context Sub-header */}
             <div className="p-1.5 px-2 border-b border-border flex items-center justify-between bg-muted/20">
-              <span className="text-[10px] font-semibold text-muted-foreground capitalize">
+              <span className="text-[10px] font-semibold text-muted-foreground capitalize shrink-0">
                 {getProviderLabel(selectedProvider)}
               </span>
               <div className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-[7px] font-mono font-black text-foreground">
@@ -481,7 +490,11 @@ export const ModelSelector: React.FC<Props> = ({
             </div>
 
             {/* Scrollable list of models */}
-            <div ref={parentRef} className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+            <div
+              ref={parentRef}
+              className="flex-1 overflow-y-auto p-2 custom-scrollbar"
+              style={listMaxHeight !== undefined ? { maxHeight: listMaxHeight, height: listMaxHeight } : undefined}
+            >
               {filteredModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center space-y-2 py-6">
                   <div className="w-8 h-8 rounded-md bg-muted/30 flex items-center justify-center border border-dashed border-border">
@@ -634,34 +647,40 @@ export const ModelSelector: React.FC<Props> = ({
                                 </button>
                               )}
                               
-                                {model.provider === 'nyx-native' && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) =>
-                                      loadedLocalModel === model.id
-                                        ? handleUnloadModel(e)
-                                        : handleLoadModel(model.id, e)
-                                    }
-                                    disabled={togglingModelId !== null}
-                                    className={`
-                                      px-2 py-0.5 rounded border text-[7px] font-bold tracking-wider uppercase transition-colors
-                                      ${
-                                        loadedLocalModel === model.id
-                                          ? 'bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20'
-                                          : 'bg-primary/10 border-primary/20 text-primary hover:bg-primary/20'
-                                      }
-                                      ${togglingModelId !== null ? 'opacity-50 cursor-not-allowed' : ''}
-                                    `}
-                                  >
-                                    {togglingModelId === model.id
-                                      ? loadingStatus || 'STARTING...'
-                                      : loadedLocalModel === model.id
-                                      ? 'UNLOAD'
-                                      : togglingModelId !== null
-                                      ? 'WAIT'
-                                      : 'LOAD'}
-                                  </button>
-                                )}
+                                {model.provider === 'nyx-native' && (() => {
+                                   const isThisModelLoaded = isModelLoaded(model.id, loadedLocalModel);
+                                   const isAnyModelLoaded = !!loadedLocalModel;
+                                   return (
+                                     <button
+                                       type="button"
+                                       onClick={(e) =>
+                                         isThisModelLoaded
+                                           ? handleUnloadModel(e)
+                                           : handleLoadModel(model.id, e)
+                                       }
+                                       disabled={togglingModelId !== null}
+                                       className={`
+                                         px-2 py-0.5 rounded border text-[7px] font-bold tracking-wider uppercase transition-colors shrink-0
+                                         ${
+                                           isThisModelLoaded
+                                             ? 'bg-red-500/20 border-red-500/40 text-red-400 hover:bg-red-500/30 font-black'
+                                             : isAnyModelLoaded
+                                             ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
+                                             : 'bg-primary/10 border-primary/20 text-primary hover:bg-primary/20'
+                                         }
+                                         ${togglingModelId !== null ? 'opacity-50 cursor-not-allowed' : ''}
+                                       `}
+                                     >
+                                       {togglingModelId === model.id
+                                         ? loadingStatus || 'STARTING...'
+                                         : isThisModelLoaded
+                                         ? 'UNLOAD'
+                                         : isAnyModelLoaded
+                                         ? 'SWITCH'
+                                         : 'LOAD'}
+                                     </button>
+                                   );
+                                 })()}
                               
                                 {isSelected && (
                                   <div

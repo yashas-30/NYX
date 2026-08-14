@@ -26,6 +26,19 @@ export interface LocalServerStatus {
   port: number | null;
 }
 
+export function isModelLoaded(modelId?: string | null, loadedModel?: string | null): boolean {
+  if (!loadedModel || !modelId) return false;
+  if (loadedModel === modelId) return true;
+  const n1 = modelId.toLowerCase().replace(/\\/g, '/');
+  const n2 = loadedModel.toLowerCase().replace(/\\/g, '/');
+  if (n1 === n2) return true;
+  const b1 = n1.split('/').pop() || n1;
+  const b2 = n2.split('/').pop() || n2;
+  if (b1 === b2) return true;
+  const stripExt = (s: string) => s.replace(/\.(gguf|bin|safetensors|pt|pth|onnx|ckpt)$/i, '');
+  return stripExt(b1) === stripExt(b2);
+}
+
 export function formatContextWindow(
   rawVal: number | string | undefined | null,
   nameFallback: string
@@ -214,6 +227,7 @@ const COMPANION_FILE_EXACT = [
 
 function isCompanionSupportFile(name: string): boolean {
   const lower = name.toLowerCase();
+  if (lower.includes('mmproj') || lower.includes('projector')) return true;
   if (COMPANION_FILE_EXACT.includes(lower)) return true;
   if (COMPANION_FILE_PREFIXES.some(p => lower.startsWith(p))) return true;
   // e.g. "flux1-vae.safetensors"

@@ -103,43 +103,8 @@ export const useDashboardState = (onExit?: () => void) => {
       }
     }
 
-    // Load keys from secure safeStorage vault via Native IPC on mount
-    const loadSecureKeys = async () => {
-      if (typeof window !== 'undefined' && (window as any).nyxIPC) {
-        const ipc = (window as any).nyxIPC;
-        // fallow-ignore-next-line code-duplication
-        try {
-          const listRes = await ipc.invoke('vault:list-keys');
-          if (listRes.success && Array.isArray(listRes.data)) {
-            const keys: Record<string, string> = {};
-            for (const provider of listRes.data) {
-              const getRes = await ipc.invoke('vault:get-key', { provider });
-              if (getRes.success && getRes.data) {
-                keys[provider] = getRes.data;
-              }
-            }
-            useNyxStore.getState().setApiKeys(keys);
-          }
-        } catch (err: any) {
-          console.error('[Vault] Failed to retrieve secure keys on mount:', err);
-        }
-      }
-    };
-
-    // Update API key in store and vault
-    const updateApiKey = async (provider: string, key: string) => {
-      useNyxStore.getState().setApiKeys({ [provider]: key });
-      
-      if (typeof window !== 'undefined' && (window as any).nyxIPC) {
-        const ipc = (window as any).nyxIPC;
-        try {
-          await ipc.invoke('vault:store-key', { payload: { provider, key } });
-        } catch (err: any) {
-          console.error('[Vault] Failed to update key:', err);
-        }
-      }
-    };
-    loadSecureKeys();
+    // Load keys from secure safeStorage vault via Tauri invoke on mount
+    useNyxStore.getState().loadSecureKeys();
 
     return () => {
       delete (window as any).nyxSwitchActiveMode;
@@ -180,7 +145,7 @@ export const useDashboardState = (onExit?: () => void) => {
     onExit,
 
     // Coder states — NYX only
-    activeAgent: 'nyx' as const,
+    activeAgent: 'lucifer' as const,
     models: { nyx: models.chat } as Record<'nyx', string>,
     modelsState: models,
     setModels,

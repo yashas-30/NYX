@@ -9,7 +9,7 @@ import { SectionLabel, ParamSlider } from '@shared/components/PromptInputSubcomp
 import { z } from 'zod';
 import { useModelStore } from '@core/stores/useModelStore';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
-import { useLocalServerStatus } from '@shared/hooks/useLocalModels';
+import { useLocalServerStatus, isModelLoaded } from '@shared/hooks/useLocalModels';
 
 interface LocalModelSettingsPanelProps {
   isLocalModel: boolean;
@@ -546,7 +546,7 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                     >
                       {isRestarting
                         ? 'Applying...'
-                        : loadedLocalModel === currentModelId
+                        : isModelLoaded(currentModelId, loadedLocalModel)
                         ? 'Apply & Restart'
                         : 'Apply & Start'}
                     </motion.button>
@@ -706,59 +706,17 @@ export const LocalModelSettingsPanel: React.FC<LocalModelSettingsPanelProps> = (
                           color="text-foreground"
                         />
                         <div className="mt-3">
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-[10px] font-bold text-foreground">Context Size</p>
-                                <p className="text-[9px] text-muted-foreground mt-0.5">Tokens the model attends to.</p>
+                          <div className="p-3.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Dynamic Auto-Scaling Context</p>
                               </div>
-                              <span className="text-[10px] font-mono text-accent-foreground font-semibold bg-accent-foreground/10 px-1.5 py-0.5 rounded">
-                                {availableContextSizes[currentCtxIndex]?.label}
-                              </span>
+                              <p className="text-[9px] text-muted-foreground mt-1">Context window automatically scales up to hardware limits as required by conversation length.</p>
                             </div>
-                            <div className="relative flex items-center h-4 pt-1">
-                              {/* Background track */}
-                              <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 bg-muted rounded-full pointer-events-none z-0" />
-                              
-                              {/* Dots */}
-                              <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 flex justify-between px-[1px] pointer-events-none z-10">
-                                {availableContextSizes.map((_, i) => (
-                                  <div 
-                                    key={i} 
-                                    className={`w-1 h-1 rounded-full ${i <= currentCtxIndex ? 'bg-accent-foreground' : 'bg-muted-foreground/30'}`}
-                                  />
-                                ))}
-                              </div>
-
-                              {/* Interactive Slider */}
-                              <input
-                                type="range"
-                                min={0}
-                                max={availableContextSizes.length - 1}
-                                step={1}
-                                value={currentCtxIndex}
-                                onChange={(e) => updateLocal('contextSize', availableContextSizes[parseInt(e.target.value)].value)}
-                                className="w-full h-1 bg-transparent rounded-full appearance-none cursor-pointer accent-accent-foreground relative z-20"
-                              />
-                            </div>
-                            <div className="flex justify-between text-[8px] text-muted-foreground font-medium px-0.5 mt-2">
-                              {availableContextSizes.map((size, i) => (
-                                <span 
-                                  key={i} 
-                                  className={`transition-colors text-center w-6 text-center whitespace-nowrap ${
-                                    i === currentCtxIndex 
-                                      ? 'text-accent-foreground font-bold scale-110' 
-                                      : 'text-muted-foreground/60'
-                                  }`}
-                                  style={{
-                                    // Align the first and last items to the edges, center the rest
-                                    transform: `translateX(${i === 0 ? '-25%' : i === availableContextSizes.length - 1 ? '25%' : '0'})`
-                                  }}
-                                >
-                                  {size.label.replace(' Auto', 'Auto')}
-                                </span>
-                              ))}
-                            </div>
+                            <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/20 px-2 py-1 rounded-full border border-emerald-500/30 shrink-0">
+                              ⚡ Auto (Variable)
+                            </span>
                           </div>
 
                           <div className="mt-4 pt-4 border-t border-border/50">

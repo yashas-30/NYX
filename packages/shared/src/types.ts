@@ -52,7 +52,10 @@ export const ChatMessageSchema = z.object({
     mimeType: z.string().optional(),
     data: z.string().optional(), // base64
     url: z.string().optional(),
+    aspectRatio: z.string().optional(),
+    engine: z.string().optional(),
   })).optional(),
+
   attachments: z.array(z.object({
     name: z.string(),
     url: z.string().optional(),

@@ -126,14 +126,19 @@ export function useDownloadActions() {
   const queryClient = useQueryClient();
 
   const handleDownload = async (selectedModel: string, filename: string) => {
-    const key = `${selectedModel}/${filename}`;
+    const cleanRepo = selectedModel.trim().replace(/^\/+|\/+$/g, '');
+    const cleanFn = filename.trim().replace(/^\/+/g, '');
+    const key = `${cleanRepo}/${cleanFn}`;
+    const encodedFn = cleanFn.split('/').map(encodeURIComponent).join('/');
+    const url = `https://huggingface.co/${cleanRepo}/resolve/main/${encodedFn}`;
+
     setDownloadState(key, { progress: 0, downloaded: 0, total: 0, status: 'downloading', error: undefined });
     try {
       await invoke('hf_download_model', {
-        url: `https://huggingface.co/${selectedModel}/resolve/main/${filename}`,
+        url,
         modelId: key,
-        filename,
-        repoId: selectedModel,
+        filename: cleanFn,
+        repoId: cleanRepo,
       });
     } catch (err) {
       setDownloadState(key, { status: 'error', error: String(err) });
@@ -155,16 +160,17 @@ export function useDownloadActions() {
       await invoke('hf_resume_download', { modelId: id });
     } catch (err) {
       console.warn('hf_resume_download task not found in memory, falling back to hf_download_model...', err);
-      // Fallback: Re-issue hf_download_model with parsed keys.
-      // Range header logic in Rust will resume from existing .part file on disk.
-      const filename = id.split('/').pop() || id;
-      const repoId = id.includes('/') ? id.substring(0, id.lastIndexOf('/')) : id;
-      const url = `https://huggingface.co/${repoId}/resolve/main/${filename}`;
+      const parts = id.split('/');
+      const filename = parts.pop() || id;
+      const cleanFn = filename.trim().replace(/^\/+/g, '');
+      const repoId = parts.join('/').replace(/^\/+|\/+$/g, '');
+      const encodedFn = cleanFn.split('/').map(encodeURIComponent).join('/');
+      const url = `https://huggingface.co/${repoId}/resolve/main/${encodedFn}`;
       try {
         await invoke('hf_download_model', {
           url,
           modelId: id,
-          filename,
+          filename: cleanFn,
           repoId,
         });
       } catch (dlErr) {

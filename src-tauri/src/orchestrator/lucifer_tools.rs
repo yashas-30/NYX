@@ -18,12 +18,12 @@ impl LuciferSearchTool {
 
 #[async_trait]
 impl Tool for LuciferSearchTool {
-    fn name(&self) -> &'static str {
-        "web_search"
+    fn name(&self) -> String {
+        "web_search".to_string()
     }
 
-    fn description(&self) -> &'static str {
-        "Search the web for real-time information, documentation, news, or current facts."
+    fn description(&self) -> String {
+        "Search the web for real-time information, documentation, news, or current facts.".to_string()
     }
 
     fn parameters_schema(&self) -> Value {
@@ -35,20 +35,21 @@ impl Tool for LuciferSearchTool {
                     "description": "The search query"
                 },
                 "num_results": {
-                    "type": "integer",
+                    "type": ["integer", "null"],
                     "description": "Number of search results to return (default: 5)"
                 },
                 "provider": {
-                    "type": "string",
-                    "enum": ["tavily", "serper", "exa", "duckduckgo"],
+                    "type": ["string", "null"],
+                    "enum": ["tavily", "serper", "exa", "duckduckgo", null],
                     "description": "Optional search provider override"
                 },
                 "api_key": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "Optional API key for paid search provider"
                 }
             },
-            "required": ["query"]
+            "required": ["query"],
+            "additionalProperties": false
         })
     }
 
@@ -65,7 +66,7 @@ impl Tool for LuciferSearchTool {
         let num_results = args.get("num_results")
             .and_then(|v| v.as_u64())
             .map(|n| n as usize)
-            .unwrap_or(5);
+            .unwrap_or(7); // Increased: page-fetch enriches top 3, more candidates improves coverage
 
         let arg_provider = args.get("provider").and_then(|v| v.as_str()).map(|s| s.to_string());
         let arg_api_key = args.get("api_key").and_then(|v| v.as_str()).map(|s| s.to_string());
@@ -107,12 +108,12 @@ impl LuciferMemoryTool {
 
 #[async_trait]
 impl Tool for LuciferMemoryTool {
-    fn name(&self) -> &'static str {
-        "conversational_memory"
+    fn name(&self) -> String {
+        "conversational_memory".to_string()
     }
 
-    fn description(&self) -> &'static str {
-        "Save or retrieve long-term facts, preferences, or knowledge vectors in Lucifer's memory store."
+    fn description(&self) -> String {
+        "Save or retrieve long-term facts, preferences, or knowledge vectors in Lucifer's memory store.".to_string()
     }
 
     fn parameters_schema(&self) -> Value {
@@ -125,19 +126,20 @@ impl Tool for LuciferMemoryTool {
                     "description": "Whether to 'save' a new memory or 'search' existing memories."
                 },
                 "fact": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "The fact/information to save (required for 'save' action)"
                 },
                 "query": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "The search query for memory retrieval (required for 'search' action)"
                 },
                 "category": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "Optional category tag for the memory (e.g., 'preference', 'project', 'fact')"
                 }
             },
-            "required": ["action"]
+            "required": ["action", "fact", "query", "category"],
+            "additionalProperties": false
         })
     }
 
@@ -165,6 +167,17 @@ impl Tool for LuciferMemoryTool {
                 None, // Auto-computes and LE-encodes embedding BLOB cleanly inside db_add_memory
             ).await.map_err(|e| e.to_string())?;
 
+            // Also write to TurboVec (LanceDB) if it's available as app state.
+            // This dual-write keeps both stores in sync — LanceDB handles ANN at scale,
+            // SQLite handles exact cosine at small scale. Both are queried on retrieval.
+            if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+                let tv_wrapper = std::sync::Arc::clone(&tv_store);
+                let fact_str = fact.to_string();
+                tokio::spawn(async move {
+                    tv_wrapper.add_memory(&fact_str).await;
+                });
+            }
+
             Ok(json!({
                 "status": "success",
                 "message": format!("Memory saved successfully under category '{}'.", category),
@@ -181,14 +194,42 @@ impl Tool for LuciferMemoryTool {
                 Err(_) => None,
             };
 
-            let results = crate::commands::db::db_search_memories(
+            let mut formatted_memories: Vec<Value> = Vec::new();
+            let mut seen_facts: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+            if let Ok(results) = crate::commands::db::db_search_memories(
                 pool,
                 Some(query.to_string()),
                 query_vector,
                 Some(5),
-            ).await.map_err(|e| e.to_string())?;
+            ).await {
+                for m in results {
+                    let key = m.fact.trim().to_string();
+                    if !key.is_empty() && seen_facts.insert(key) {
+                        formatted_memories.push(json!({
+                            "fact": m.fact,
+                            "category": m.category,
+                            "relevance_score": (m.similarity * 100.0).round() / 100.0
+                        }));
+                    }
+                }
+            }
 
-            if results.is_empty() {
+            if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+                let tv_results = tv_store.search_memory(query, 5).await;
+                for (_id, text) in tv_results {
+                    let key = text.trim().to_string();
+                    if !key.is_empty() && seen_facts.insert(key.clone()) {
+                        formatted_memories.push(json!({
+                            "fact": text,
+                            "category": "turbovec",
+                            "relevance_score": 0.85
+                        }));
+                    }
+                }
+            }
+
+            if formatted_memories.is_empty() {
                 Ok(json!({
                     "status": "success",
                     "query": query,
@@ -197,18 +238,11 @@ impl Tool for LuciferMemoryTool {
                     "message": format!("No relevant memories found matching query: '{}'", query)
                 }))
             } else {
-                let formatted_memories: Vec<Value> = results.iter().map(|m| {
-                    json!({
-                        "fact": m.fact,
-                        "category": m.category,
-                        "relevance_score": (m.similarity * 100.0).round() / 100.0
-                    })
-                }).collect();
-
+                let count = formatted_memories.len();
                 Ok(json!({
                     "status": "success",
                     "query": query,
-                    "count": results.len(),
+                    "count": count,
                     "memories": formatted_memories
                 }))
             }
@@ -260,12 +294,12 @@ impl LuciferCreateFileTool {
 
 #[async_trait]
 impl Tool for LuciferCreateFileTool {
-    fn name(&self) -> &'static str {
-        "create_file"
+    fn name(&self) -> String {
+        "create_file".to_string()
     }
 
-    fn description(&self) -> &'static str {
-        "Safely create code, text, markdown, or data files within the application workspace."
+    fn description(&self) -> String {
+        "Safely create code, text, markdown, or data files within the application workspace.".to_string()
     }
 
     fn parameters_schema(&self) -> Value {
@@ -281,7 +315,8 @@ impl Tool for LuciferCreateFileTool {
                     "description": "Content to write into the file"
                 }
             },
-            "required": ["filename", "content"]
+            "required": ["filename", "content"],
+            "additionalProperties": false
         })
     }
 
@@ -338,12 +373,12 @@ impl LuciferImageGenTool {
 
 #[async_trait]
 impl Tool for LuciferImageGenTool {
-    fn name(&self) -> &'static str {
-        "generate_image"
+    fn name(&self) -> String {
+        "generate_image".to_string()
     }
 
-    fn description(&self) -> &'static str {
-        "Trigger image synthesis for a detailed visual prompt."
+    fn description(&self) -> String {
+        "Trigger image synthesis for a detailed visual prompt.".to_string()
     }
 
     fn parameters_schema(&self) -> Value {
@@ -355,12 +390,13 @@ impl Tool for LuciferImageGenTool {
                     "description": "Detailed image generation prompt describing the desired visual"
                 },
                 "aspect_ratio": {
-                    "type": "string",
-                    "enum": ["1:1", "16:9", "9:16", "4:3"],
+                    "type": ["string", "null"],
+                    "enum": ["1:1", "16:9", "9:16", "4:3", null],
                     "description": "Aspect ratio of the generated image"
                 }
             },
-            "required": ["prompt"]
+            "required": ["prompt", "aspect_ratio"],
+            "additionalProperties": false
         })
     }
 
@@ -401,12 +437,12 @@ impl LuciferVoiceTool {
 
 #[async_trait]
 impl Tool for LuciferVoiceTool {
-    fn name(&self) -> &'static str {
-        "synthesize_voice"
+    fn name(&self) -> String {
+        "synthesize_voice".to_string()
     }
 
-    fn description(&self) -> &'static str {
-        "Synthesize text into natural spoken audio (Text-to-Voice)."
+    fn description(&self) -> String {
+        "Synthesize text into natural spoken audio (Text-to-Voice).".to_string()
     }
 
     fn parameters_schema(&self) -> Value {
@@ -418,11 +454,12 @@ impl Tool for LuciferVoiceTool {
                     "description": "Text to speak"
                 },
                 "voice": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "Voice identifier or style"
                 }
             },
-            "required": ["text"]
+            "required": ["text", "voice"],
+            "additionalProperties": false
         })
     }
 
@@ -493,12 +530,12 @@ impl LuciferContextAnalyzerTool {
 
 #[async_trait]
 impl Tool for LuciferContextAnalyzerTool {
-    fn name(&self) -> &'static str {
-        "analyze_model_context"
+    fn name(&self) -> String {
+        "analyze_model_context".to_string()
     }
 
-    fn description(&self) -> &'static str {
-        "Inspect local CPU/GPU/RAM hardware state, resolve system specs, and calculate optimal context window size and VRAM offload layers."
+    fn description(&self) -> String {
+        "Inspect local CPU/GPU/RAM hardware state, resolve system specs, and calculate optimal context window size and VRAM offload layers.".to_string()
     }
 
     fn parameters_schema(&self) -> Value {
@@ -506,14 +543,16 @@ impl Tool for LuciferContextAnalyzerTool {
             "type": "object",
             "properties": {
                 "model_size_gb": {
-                    "type": "number",
+                    "type": ["number", "null"],
                     "description": "Estimated model size in GB (default: 4.0)"
                 },
                 "context_size": {
-                    "type": "integer",
+                    "type": ["integer", "null"],
                     "description": "Requested context window size in tokens (e.g. 4096, 8192, 16384). Default: 8192"
                 }
-            }
+            },
+            "required": ["model_size_gb", "context_size"],
+            "additionalProperties": false
         })
     }
 

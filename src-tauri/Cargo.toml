@@ -34,7 +34,6 @@ eventsource-stream = "0.2.3"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "chrono", "json"] }
 tokio-util = { version = "0.7", features = ["io", "codec"] }
 futures-util = "0.3"
-rig = { package = "rig-core", version = "0.40.0" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"

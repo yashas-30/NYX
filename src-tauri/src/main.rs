@@ -131,9 +131,11 @@ pub fn run() {
                 .expect("Failed to initialize SQLite database pool");
             app.manage(pool);
 
+
             // ── Spawn the rest of the UI setup, CodebaseScanner & binary auto-updater asynchronously ─
             let handle = app.handle().clone();
             let rag_db_path = data_dir.join("rag.db");
+            let turbovec_data_dir = data_dir.clone();
             tauri::async_runtime::spawn(async move {
                 let handle_rag = handle.clone();
                 let rag_path = rag_db_path.clone();
@@ -144,6 +146,15 @@ pub fn run() {
                     } else {
                         tracing::error!("Failed to initialize CodebaseScanner");
                     }
+                });
+
+                // Initialize TurbovecStore (LanceDB-backed vector memory) and register as app state.
+                // This wires up the previously declared but unused TurboVec memory backend.
+                let handle_tv = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let store = crate::rag::turbovec_store::TurbovecStore::new(&turbovec_data_dir, "chat").await;
+                    handle_tv.manage(std::sync::Arc::new(store));
+                    tracing::info!("[TurboVec] Chat memory store initialized");
                 });
 
                 // Auto-check and update local binaries on app startup / restart
@@ -181,7 +192,6 @@ pub fn run() {
             mcp_start_server, mcp_send_request, mcp_call_tool, mcp_stop_server, mcp_list_servers,
             llm::cloud_orchestrator::llm_stream_request,
             llm::local_inference::llm_local_stream_request,
-            commands::orchestrator::run_orchestrator_turn,
             commands::lucifer::run_lucifer_turn,
             commands::lucifer::analyze_lucifer_turn,
             commands::system::cleanup_session_state,
@@ -209,13 +219,23 @@ pub fn run() {
             commands::db::db_clear_memories,
             commands::db::db_prune_memories,
             commands::db::db_search_memories,
+            commands::db::db_search_chat_history,
             db_get_local_models,
             db_upsert_local_model,
             db_update_model_preset,
             db_update_model_metadata,
             db_delete_local_model,
             search_web_command,
+            commands::agent::search_images_command,
+            commands::agent::fetch_image_base64,
+            commands::agent::generate_search_queries_with_model,
+            commands::agent::fetch_image_data_url_command,
+            commands::agent::check_prompt_cache_command,
+
+
+            commands::agent::save_prompt_cache_command,
             commands::agent::fetch_page_html_command,
+            commands::agent::fetch_multiple_pages_command,
             commands::agent::run_agent_tool,
             commands::agent::approve_tool,
             commands::agent::reject_tool,
@@ -246,6 +266,7 @@ pub fn run() {
             llm::ocr::run_local_ocr,
             // Cloud model orchestration
             llm::cloud_orchestrator::get_models_quota,
+            llm::cloud_orchestrator::check_provider_reachable,
             commands::system::get_hardware_specs,
             commands::system::get_system_diagnostics,
             research::start_deep_research,
@@ -256,6 +277,8 @@ pub fn run() {
             commands::memory::get_memory_entities,
             commands::memory::delete_entity,
             commands::memory::extract_session_memory,
+            commands::memory::turbovec_add_memory,
+            commands::memory::turbovec_search_memory,
             commands::agent::codebase_search_command,
         ])
         .on_window_event(|window, event| {
@@ -329,5 +352,14 @@ async fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
 
 
 fn main() {
+    // Enforce 16MB minimum stack size for all threads (including Tokio worker threads)
+    unsafe {
+        std::env::set_var("RUST_MIN_STACK", "16777216");
+    }
+
+    // Run Tauri application directly on the OS main thread (required by TAO/Winit Windows EventLoop)
     run();
 }
+
+
+

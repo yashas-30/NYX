@@ -57,6 +57,9 @@ const resolveModelIdString = (modelId: any): string => {
   return String(modelId);
 };
 
+import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useModelStore } from '@src/core/stores/useModelStore';
+
 /**
  * Structured provider detection that checks in priority order.
  */
@@ -69,12 +72,34 @@ export const detectProvider = (modelId: any): Provider => {
   if (!idStr) return 'gemini';
   const lowerId = idStr.toLowerCase();
 
-  // 1. Explicit Local Server Prefixes & Extensions
+  // 1. Check current Zustand store state for explicit local selection
+  try {
+    const nyxLocalId = useNyxStore.getState().localModelId;
+    if (nyxLocalId && nyxLocalId === idStr) {
+      return 'nyx-native' as Provider;
+    }
+  } catch (e) {
+    // Ignore store access outside React/Zustand context if any
+  }
+
+  try {
+    const localLib = useModelStore.getState().localLibraryModels;
+    if (localLib && Array.isArray(localLib)) {
+      if (localLib.some((m: any) => m.id === idStr || m.name === idStr || m.path === idStr)) {
+        return 'nyx-native' as Provider;
+      }
+    }
+  } catch (e) {
+    // Ignore
+  }
+
+  // 2. Explicit Local Server Prefixes, Extensions & Path heuristics
   if (
     lowerId.startsWith('ollama/') ||
     lowerId.startsWith('vllm/') ||
     lowerId.startsWith('lmstudio/') ||
     lowerId.startsWith('local/') ||
+    lowerId.startsWith('nyx-native') ||
     lowerId.endsWith('.gguf') ||
     lowerId.includes('.gguf') ||
     lowerId.endsWith('.safetensors') ||
@@ -83,18 +108,31 @@ export const detectProvider = (modelId: any): Provider => {
     lowerId.endsWith('.pth') ||
     lowerId.endsWith('.onnx') ||
     lowerId.endsWith('.ckpt') ||
-    lowerId.startsWith('custom-')
+    lowerId.startsWith('custom-') ||
+    lowerId.includes('/unorganized/') ||
+    lowerId.includes('\\unorganized\\') ||
+    lowerId.includes('prism-')
   ) {
     return 'nyx-native' as Provider;
   }
 
-  // 2. Explicit Cloud Provider Prefixes
+  // 3. Explicit Cloud Provider Prefixes
   if (lowerId.startsWith('huggingface/')) return 'huggingface' as Provider;
   if (lowerId.startsWith('groq/')) return 'groq' as Provider;
-  if (lowerId.startsWith('anthropic/') || lowerId.includes('claude')) return 'anthropic' as Provider;
-  if (lowerId.startsWith('openrouter/') || lowerId.startsWith('deepseek/')) return 'openrouter' as Provider;
+  if (
+    lowerId.startsWith('openrouter/') ||
+    lowerId.startsWith('deepseek/') ||
+    lowerId.startsWith('anthropic/') ||
+    lowerId.startsWith('openai/') ||
+    lowerId.startsWith('meta-llama/') ||
+    lowerId.startsWith('mistralai/') ||
+    lowerId.startsWith('google/') ||
+    lowerId.includes('/')
+  ) {
+    return 'openrouter' as Provider;
+  }
 
-  // 3. Static catalog lookup
+  // 4. Static catalog lookup
   const availableModel = AVAILABLE_MODELS.find((m) => m.id === idStr);
   if (availableModel) return availableModel.provider;
 
@@ -102,7 +140,7 @@ export const detectProvider = (modelId: any): Provider => {
     return 'nyx-native' as Provider;
   }
 
-  // 4. Default for unknown cloud models (use OpenRouter instead of forcing Gemini)
+  // 5. Default for unknown cloud models (use OpenRouter instead of forcing Gemini)
   return 'openrouter' as Provider;
 };
 
@@ -151,6 +189,20 @@ export const getEffectiveApiKey = (
     }
   }
 
+  if (provider === 'openrouter') {
+    if (
+      typeof import.meta !== 'undefined' &&
+      (import.meta as any).env &&
+      (import.meta as any).env.VITE_OPENROUTER_API_KEY
+    ) {
+      return (import.meta as any).env.VITE_OPENROUTER_API_KEY;
+    }
+    if (typeof process !== 'undefined' && process.env && process.env.OPENROUTER_API_KEY) {
+      return process.env.OPENROUTER_API_KEY;
+    }
+    return 'free';
+  }
+
   return undefined;
 };
 
@@ -165,6 +217,11 @@ export interface ModelCapabilities {
   supportsSystemPrompt: boolean;
   supportsReasoning: boolean;
   contextWindow: number;
+  maxOutputTokens?: number;
+  supportsAudio?: boolean;
+  trainingCutoff?: string;
+  pricing?: { inputPer1MTokens?: number; outputPer1MTokens?: number; currency?: string };
+  latencyClass?: 'ultra-fast' | 'fast' | 'medium' | 'slow';
 }
 
 export const getModelCapabilities = (modelId: any): ModelCapabilities => {
@@ -200,28 +257,142 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
     supportsTools: false,
     supportsSystemPrompt: true,
     supportsReasoning: isReasoning,
-    contextWindow: 8192,
+    contextWindow: 32768,
+    supportsAudio: false,
   };
 
   if (lowerId.includes('gemini-3.6-flash') || lowerId.includes('gemini-3.5-flash-lite')) {
     caps.supportsTools = true;
     caps.contextWindow = 1048576; // 1M
+    caps.supportsAudio = true;
+    caps.latencyClass = 'fast';
   } else if (lowerId.includes('gemini-2.0-flash')) {
     caps.supportsTools = true;
     caps.contextWindow = 1048576;
+    caps.supportsAudio = true;
+    caps.latencyClass = 'fast';
   } else if (lowerId.includes('gemini-3.5-pro')) {
     caps.supportsTools = true;
     caps.contextWindow = 2097152;
+    caps.supportsAudio = true;
+    caps.latencyClass = 'medium';
   } else if (lowerId.includes('gemini-3.1-flash-lite') || lowerId.includes('gemini-3.5-flash')) {
     caps.supportsTools = true;
     caps.contextWindow = 1048576;
+    caps.supportsAudio = true;
+    caps.latencyClass = 'fast';
   } else if (lowerId.includes('gemini')) {
     caps.supportsTools = true;
     caps.contextWindow = 1048576;
+    caps.supportsAudio = true;
+    caps.latencyClass = 'medium';
   }
 
   return caps;
 };
+
+/**
+ * Asynchronously fetch live model capabilities.
+ * For OpenRouter cloud models, queries the OpenRouter /models/{id} API.
+ * For Gemini models, derives from keyword patterns.
+ * For local GGUF models, derives from model filename + known defaults.
+ * Falls back to synchronous getModelCapabilities on any error.
+ */
+export async function getModelCapabilitiesAsync(
+  modelId: any,
+  provider?: string,
+  apiKey?: string
+): Promise<ModelCapabilities> {
+  const idStr = resolveModelIdString(modelId);
+  const resolvedProvider = provider || detectProvider(idStr);
+  const baseCaps = getModelCapabilities(idStr);
+
+  // OpenRouter live fetch
+  if (resolvedProvider === 'openrouter' && apiKey) {
+    try {
+      const resp = await fetch(`https://openrouter.ai/api/v1/models/${encodeURIComponent(idStr)}`, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://nyx.app',
+        },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const ctx = data.context_length ?? data.top_provider?.context_length ?? baseCaps.contextWindow;
+        const maxOut = data.top_provider?.max_completion_tokens ?? Math.min(ctx, 32768);
+        return {
+          ...baseCaps,
+          contextWindow: ctx,
+          maxOutputTokens: maxOut,
+          supportsVision: !!(data.architecture?.modality?.includes('image')),
+          supportsTools: !!(data.supported_parameters?.includes('tools')),
+          supportsAudio: !!(data.architecture?.modality?.includes('audio')),
+          trainingCutoff: data.training_data_cutoff ?? undefined,
+          pricing: data.pricing
+            ? {
+                inputPer1MTokens: data.pricing.prompt != null
+                  ? parseFloat(data.pricing.prompt) * 1_000_000
+                  : undefined,
+                outputPer1MTokens: data.pricing.completion != null
+                  ? parseFloat(data.pricing.completion) * 1_000_000
+                  : undefined,
+                currency: 'USD',
+              }
+            : undefined,
+          latencyClass: ctx > 500_000 ? 'slow' : ctx > 100_000 ? 'medium' : 'fast',
+        };
+      }
+    } catch {
+      // Fall through to sync result
+    }
+  }
+
+  return baseCaps;
+}
+
+/**
+ * Format ModelCapabilities as a markdown table for display in chat.
+ */
+export function formatCapabilityMarkdown(modelId: string, caps: ModelCapabilities): string {
+  const idStr = resolveModelIdString(modelId);
+  const ctxDisplay = caps.contextWindow >= 1_000_000
+    ? `${(caps.contextWindow / 1_000_000).toFixed(1)}M tokens`
+    : caps.contextWindow >= 1_000
+    ? `${Math.round(caps.contextWindow / 1_000)}K tokens`
+    : `${caps.contextWindow} tokens`;
+
+  const outputDisplay = caps.maxOutputTokens
+    ? caps.maxOutputTokens >= 1_000
+      ? `${Math.round(caps.maxOutputTokens / 1_000)}K tokens`
+      : `${caps.maxOutputTokens} tokens`
+    : 'Model default';
+
+  const pricingStr = caps.pricing?.inputPer1MTokens != null
+    ? `$${caps.pricing.inputPer1MTokens.toFixed(2)}/1M in · $${(caps.pricing.outputPer1MTokens ?? 0).toFixed(2)}/1M out`
+    : 'Not available';
+
+  const rows = [
+    ['Model', `\`${idStr}\``],
+    ['Context Window', ctxDisplay],
+    ['Max Output', outputDisplay],
+    ['Vision / Image Input', caps.supportsVision ? '✅ Yes' : '❌ No'],
+    ['Tool / Function Calling', caps.supportsTools ? '✅ Yes' : '❌ No'],
+    ['Extended Reasoning', caps.supportsReasoning ? '✅ Yes' : '❌ No'],
+    ['Audio Generation', caps.supportsAudio ? '✅ Yes' : '❌ No'],
+    ['Streaming', '✅ Yes'],
+    ['Training Cutoff', caps.trainingCutoff ?? 'Unknown'],
+    ['Pricing', pricingStr],
+    ['Latency', caps.latencyClass ?? 'Unknown'],
+  ];
+
+  const table = [
+    '| Capability | Value |',
+    '|------------|-------|',
+    ...rows.map(([k, v]) => `| ${k} | ${v} |`),
+  ].join('\n');
+
+  return `### 🧠 Active Model Capabilities\n\n${table}`;
+}
 
 // ── Health Tracking ──
 
@@ -271,13 +442,12 @@ export const isReasoningModel = (modelId: any): boolean => {
   if (!idStr) return false;
   const lower = idStr.toLowerCase();
 
-  // Strict pattern matching for genuine reasoning models (DeepSeek R1, QwQ, o1, o3, etc.)
-  // Avoids false-positive matches on standard instruct models (e.g. HyperCLOVAX, Llama, Gemma, Gemini)
   return (
-    /\b(?:deepseek-r1|deepseek-reasoner|qwq|sky-t1|o1|o3|o1-mini|o1-preview|o3-mini)\b/i.test(lower) ||
+    /\b(?:deepseek-r1|deepseek-reasoner|qwq|sky-t1|o1|o3|o1-mini|o1-preview|o3-mini|thinking|reasoner|reasoning)\b/i.test(lower) ||
     /[-_/](?:r1|qwq|reasoner|thinking|reasoning)(?:[-_/\.]|$)/i.test(lower) ||
-    lower.includes('deepseek/deepseek-r') ||
-    lower.includes('qwen/qwq')
+    lower.includes('deepseek-r1') ||
+    lower.includes('flash-thinking') ||
+    lower.includes('pro-thinking')
   );
 };
 

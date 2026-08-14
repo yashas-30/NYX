@@ -1,5 +1,5 @@
 use sqlx::SqlitePool;
-use tauri::State;
+use tauri::{State, Manager};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -29,7 +29,7 @@ pub async fn get_episodic_memories(
 ) -> Result<Vec<EpisodicMemory>, String> {
     let limit_val = limit.unwrap_or(50);
     let memories = sqlx::query_as::<_, EpisodicMemory>(
-        "SELECT id, session_id, summary, key_topics, created_at FROM episodic_memories ORDER BY created_at DESC LIMIT ?"
+        "SELECT id, session_id, summary, key_topics, created_at FROM episodic_memories WHERE summary NOT LIKE '%Session Task: hi%' AND summary NOT LIKE '%Session Task: hello%' AND summary NOT LIKE '%Session Task: hey%' ORDER BY created_at DESC LIMIT ?"
     )
     .bind(limit_val)
     .fetch_all(pool.inner())
@@ -38,6 +38,7 @@ pub async fn get_episodic_memories(
 
     Ok(memories)
 }
+
 
 #[tauri::command]
 pub async fn get_memory_entities(
@@ -103,3 +104,44 @@ pub async fn extract_session_memory(
 
     Ok(())
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct TurbovecSearchResult {
+    pub text: String,
+    pub metadata: String,
+}
+
+#[tauri::command]
+pub async fn turbovec_add_memory(
+    app: tauri::AppHandle,
+    text: String,
+    metadata: Option<String>,
+) -> Result<(), String> {
+    if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+        let meta = metadata.unwrap_or_else(|| "web-research".to_string());
+        tv_store.add_document_chunks(&text, &meta).await;
+        Ok(())
+    } else {
+        Err("TurboVec memory store not initialized".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn turbovec_search_memory(
+    app: tauri::AppHandle,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<TurbovecSearchResult>, String> {
+    if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+        let limit_val = limit.unwrap_or(10);
+        let results = tv_store.search_memory(&query, limit_val).await;
+        let mapped = results
+            .into_iter()
+            .map(|(text, metadata)| TurbovecSearchResult { text, metadata })
+            .collect();
+        Ok(mapped)
+    } else {
+        Ok(Vec::new())
+    }
+}
+

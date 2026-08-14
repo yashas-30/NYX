@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{State, Manager};
 use sqlx::SqlitePool;
 use crate::db::models::{ChatConversation, ChatMessage, DbSession, DbMessage, SwarmContextPool, LongTermMemory, ExperienceLedgerEntry, LocalModel, decode_embedding, encode_embedding};
 
@@ -174,6 +174,7 @@ pub async fn db_get_all_chat_sessions(
 
 #[tauri::command]
 pub async fn db_save_chat_session(
+    app: tauri::AppHandle,
     pool: State<'_, SqlitePool>,
     session: ChatSessionPayload,
 ) -> Result<(), String> {
@@ -203,12 +204,6 @@ pub async fn db_save_chat_session(
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
-
-    // We can simply clear all messages and re-insert them, or upsert. 
-    // Since the frontend payload has all messages, upserting or clear/insert is fine.
-    // However, if we do ON CONFLICT, we need unique IDs. Some frontend messages don't have IDs initially?
-    // Wait, the frontend might generate IDs for messages. Let's do a simple delete and reinsert for simplicity,
-    // or upsert if IDs are present. For now, since they all have IDs:
 
     sqlx::query("DELETE FROM chat_messages WHERE conversation_id = ?")
         .bind(&session.id)
@@ -245,6 +240,23 @@ pub async fn db_save_chat_session(
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Also store recent non-trivial messages in TurboVec vector memory
+    if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+        let tv_store_clone = tv_store.inner().clone();
+        let session_title = session.title.clone();
+        let session_id = session.id.clone();
+        let chat_text: String = session.messages.iter()
+            .take(6)
+            .map(|m| format!("{}: {}", m.role.to_uppercase(), m.content))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        tokio::spawn(async move {
+            let meta = format!("chat|{}|{}", session_id, session_title);
+            tv_store_clone.add_document_chunks(&chat_text, &meta).await;
+        });
+    }
 
     // Trigger background multi-tier memory extraction for non-trivial sessions
     if session.messages.len() >= 2 {
@@ -593,23 +605,39 @@ pub async fn db_search_memories(
     .await
     .map_err(|e| e.to_string())?;
 
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
     let mut scored: Vec<MemorySearchResult> = rows
         .into_iter()
         .filter_map(|m| {
             let emb = decode_embedding(&m.embedding);
-            let score = if !emb.is_empty() && emb.len() == vec_to_search.len() {
+            let raw_score = if !emb.is_empty() && emb.len() == vec_to_search.len() {
                 cosine_similarity(&vec_to_search, &emb)
             } else if !query_text.is_empty() && m.fact.to_lowercase().contains(&query_text.to_lowercase()) {
                 0.8
             } else {
                 return None;
             };
+
+            // Apply exponential temporal recency decay: half-life ~70 days
+            let age_days = ((now_secs - m.created_at).max(0) as f32) / 86400.0;
+            let decay = (-0.01 * age_days).exp();
+            let final_score = raw_score * decay;
+
+            // Relevance threshold: filter out low-confidence matches (< 0.40)
+            if final_score < 0.40 {
+                return None;
+            }
+
             Some(MemorySearchResult {
                 id: m.id,
                 fact: m.fact,
                 category: m.category,
                 created_at: m.created_at,
-                similarity: score,
+                similarity: final_score,
             })
         })
         .collect();
@@ -619,11 +647,62 @@ pub async fn db_search_memories(
     Ok(scored)
 }
 
+
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm_a == 0.0 || norm_b == 0.0 { 0.0 } else { dot / (norm_a * norm_b) }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ChatHistorySearchResult {
+    pub message_id: String,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    pub model: String,
+    pub timestamp: i64,
+}
+
+/// Fast Indexed Chat History Search across all past sessions in SQLite.
+/// Returns matching messages and prompts in milliseconds.
+#[tauri::command]
+pub async fn db_search_chat_history(
+    pool: State<'_, SqlitePool>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<ChatHistorySearchResult>, String> {
+    let q_trimmed = query.trim().to_lowercase();
+    if q_trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let max_results = limit.unwrap_or(10) as i64;
+    let pattern = format!("%{}%", q_trimmed);
+
+    let msgs = sqlx::query_as::<_, ChatMessage>(
+        "SELECT * FROM chat_messages WHERE LOWER(content) LIKE ? ORDER BY timestamp DESC LIMIT ?"
+    )
+    .bind(&pattern)
+    .bind(max_results)
+    .fetch_all(&*pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let results = msgs
+        .into_iter()
+        .map(|m| ChatHistorySearchResult {
+            message_id: m.id,
+            conversation_id: m.conversation_id,
+            role: m.role,
+            content: m.content,
+            model: m.model,
+            timestamp: m.timestamp,
+        })
+        .collect();
+
+    Ok(results)
 }
 
 #[tauri::command]

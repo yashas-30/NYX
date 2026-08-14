@@ -4,7 +4,6 @@
 
 pub mod local_orchestrator;
 pub mod cloud_orchestrator;
-pub mod rig_orchestrator;
 pub mod types;
 pub mod local_inference;
 pub mod local;

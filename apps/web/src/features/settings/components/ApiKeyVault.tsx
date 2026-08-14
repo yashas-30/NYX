@@ -177,65 +177,38 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
       return;
     }
 
-    if (!rememberKeys) {
-      // Save keys ephemerally to Zustand in-memory state
+    try {
       for (const provider of Object.keys(keysToSave)) {
         const val = keysToSave[provider];
-        if (val !== undefined && val.trim().length > 0) {
+        if (val !== undefined) {
           await updateApiKey(provider, val);
         }
       }
-      toast.success('API keys applied ephemerally (memory-only)!');
+
+      if (rememberKeys) {
+        toast.success('API keys successfully encrypted & saved to device keychain!');
+      } else {
+        toast.success('API keys applied ephemerally (RAM only)!');
+      }
+
       setKeysInput((prev) => {
         const next = { ...prev };
         for (const k of Object.keys(keysToSave)) delete next[k];
         return next;
       });
-      return;
-    }
-
-    try {
-      let allSuccess = true;
-      for (const provider of Object.keys(keysToSave)) {
-        const val = keysToSave[provider];
-        if (val !== undefined && val.trim().length > 0) {
-          const res: any = await invoke('vault:store-key', { payload: { provider, key: val } });
-          if (res.success) {
-            await updateApiKey(provider, val);
-          } else {
-            allSuccess = false;
-            toast.error(`Failed to save ${provider} key: ${res.error}`);
-          }
-        } else if (val === '') {
-          await invoke('vault:delete-key', { payload: { provider } });
-        }
-      }
-
-      if (allSuccess) {
-        toast.success('API keys successfully saved to secure server vault!');
-        setKeysInput((prev) => {
-          const next = { ...prev };
-          for (const k of Object.keys(keysToSave)) delete next[k];
-          return next;
-        });
-        await fetchVaultStatus();
-      }
+      await fetchVaultStatus();
     } catch (error: any) {
       toast.error(`Error saving keys: ${error.message}`);
     }
   };
 
   const handlePurgeVault = async () => {
-    const shouldDelete = await confirm('Delete all keys from server vault?', { title: 'Confirm Deletion', kind: 'warning' });
+    const shouldDelete = await confirm('Delete all keys from secure device vault?', { title: 'Confirm Deletion', kind: 'warning' });
     if (shouldDelete) {
       try {
-        const allProviders = ['gemini', 'openrouter', 'tavily'];
-        for (const provider of allProviders) {
-          await invoke('vault:delete-key', { payload: { provider } });
-        }
-        toast.success('All API keys removed from server vault');
+        await clearApiKeys();
+        toast.success('All API keys removed from device vault and RAM');
         await fetchVaultStatus();
-        clearApiKeys();
       } catch (error: any) {
         toast.error(`Error: ${error.message}`);
       }

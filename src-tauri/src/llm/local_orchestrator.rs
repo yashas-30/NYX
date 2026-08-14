@@ -906,12 +906,9 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
 
     let mut actual_ctx_size = ctx_size;
     if actual_ctx_size == 0 {
-        // Auto mode: use model's max context, but cap it so we don't OOM by default
-        let max_ctx = meta.and_then(|m| m.context_length).unwrap_or(8192);
-        actual_ctx_size = max_ctx.min(32768); 
-        if hw.is_igpu {
-            actual_ctx_size = actual_ctx_size.min(8192); // iGPUs struggle with large contexts
-        }
+        // Auto mode: use model's max context metadata, defaulting to 32768
+        let max_ctx = meta.and_then(|m| m.context_length).unwrap_or(32768);
+        actual_ctx_size = max_ctx.min(131072); 
     }
 
     // Optimal CPU threads: physical cores, capped at 24 to avoid NUMA thrash.
@@ -933,11 +930,17 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         };
     }
 
-    // iGPU safety factor: shared memory is contended with OS and other apps.
-    // Use 50% safety factor vs 92% for discrete GPUs.
-    // Was 85% — raised to 92% because the 5% VRAM safety buffer in HardwareSnapshot
-    // (min 256 MB) already reserves headroom for desktop composition.
-    let safety_factor = if hw.is_igpu { 0.50_f64 } else { 0.92_f64 };
+    // iGPU & Low-VRAM safety factor:
+    // For GPUs with <= 6GB VRAM, use 0.78 safety factor to leave 22% buffer for CUDA
+    // context, FlashAttention scratch buffers, and OS display composition.
+    // iGPUs use 0.50 due to shared RAM contention. Standard discrete GPUs with > 6GB use 0.92.
+    let safety_factor = if hw.is_igpu {
+        0.50_f64
+    } else if hw.vram_available_mb <= 6144 {
+        0.78_f64
+    } else {
+        0.92_f64
+    };
     let safe_avail_mb = (avail_mb as f64 * safety_factor) as u64;
 
     // Check if model fits entirely in VRAM.
@@ -974,7 +977,24 @@ pub fn compute_ngl_decision(hw: &HardwareSnapshot, meta: Option<&GgufMetadata>, 
         };
     }
 
+    // ── Small Model Fast-Path (2026 Optimization) ─────────────────────────
+    // Small models (<= 4.5 GB) on dedicated GPUs with >= 1.5GB available VRAM MUST be 100% offloaded to GPU!
+    if !hw.is_igpu && hw.has_dedicated_gpu && model_size_gb <= 4.5 && safe_avail_mb >= 1500 {
+        let needed = vram_for_ngl(model_size_gb, meta, total_layers, total_layers, ctx_size);
+        info!("[NglScheduler] Small model ({:.1}GB) fully offloaded to GPU (ngl={}).", model_size_gb, total_layers);
+        return NglDecision {
+            ngl: total_layers,
+            fully_gpu: true,
+            hybrid: false,
+            estimated_vram_mb: needed,
+            message: format!("✅ Full GPU ({}/{} layers) — small model fast path.", total_layers, total_layers),
+            recommended_cpu_threads: cpu_threads,
+            effective_context_size: ctx_size,
+        };
+    }
+
     // ── Context-aware full-GPU attempt ────────────────────────────────────────
+
     // Before doing a hybrid split (which forces CPU computation), try reducing
     // the context size to keep ALL layers on the GPU. This is almost always the
     // right tradeoff: a 64K context with hybrid inference (CPU bottleneck) is
@@ -1124,53 +1144,58 @@ pub fn compute_hybrid_inference_config(
     let (batch_size, ubatch_size, kv_cache_type, mut use_mlock);
     
     match hw.profile {
-        // Tier 3: Entry-Level & Constrained
-        HardwareProfile::Vram4GbSys16Gb | HardwareProfile::Vram6GbSys16Gb | HardwareProfile::Vram8GbSys16Gb => {
-            // Hard cap context to prevent system memory swapping, but ONLY if in Auto mode.
-            if is_auto_ctx && ctx_size > 8192 {
-                info!("[HybridScheduler] Tier 3 profile active: clamping context from {} to 8192.", ctx_size);
-                ctx_size = 8192;
+        // Tier 3: Entry-Level (4GB VRAM - e.g. GTX 1650 / 1050Ti)
+        HardwareProfile::Vram4GbSys16Gb => {
+            if is_auto_ctx && ctx_size > 16384 {
+                info!("[HybridScheduler] Vram4Gb profile active: clamping context from {} to 16384 to prevent RAM paging locks.", ctx_size);
+                ctx_size = 16384;
             }
-            ubatch_size = if hw.profile == HardwareProfile::Vram4GbSys16Gb { 256 } else { 512 };
-            batch_size = ubatch_size;
-            kv_cache_type = "q4_0".to_string(); // aggressive KV compression
-            use_mlock = true; // Essential to pin CPU layers and stop paging on tight 16GB
+            ubatch_size = 512;
+            batch_size = 1024;
+            kv_cache_type = "q4_0".to_string();
+            use_mlock = false;
         }
         
-        // Tier 2: Mid-Range
-        HardwareProfile::Vram8GbSys24Gb | HardwareProfile::Vram12GbSys16Gb | HardwareProfile::Vram12GbSys24Gb | HardwareProfile::Vram12GbSys32Gb => {
+        HardwareProfile::Vram6GbSys16Gb | HardwareProfile::Vram8GbSys16Gb => {
             if is_auto_ctx && ctx_size > 32768 {
-                info!("[HybridScheduler] Tier 2 profile active: clamping context from {} to 32768.", ctx_size);
+                info!("[HybridScheduler] Vram6Gb/8Gb profile active: clamping context from {} to 32768.", ctx_size);
                 ctx_size = 32768;
+            }
+            ubatch_size = 1024;
+            batch_size = 2048;
+            kv_cache_type = "q4_0".to_string();
+            use_mlock = false;
+        }
+        
+        HardwareProfile::Vram8GbSys24Gb | HardwareProfile::Vram12GbSys16Gb | HardwareProfile::Vram12GbSys24Gb | HardwareProfile::Vram12GbSys32Gb => {
+            if is_auto_ctx && ctx_size > 65536 {
+                info!("[HybridScheduler] Tier 2 profile active: clamping context from {} to 65536.", ctx_size);
+                ctx_size = 65536;
             }
             ubatch_size = 2048;
             batch_size = 2048;
-            // Scale KV cache precision dynamically depending on requested context
             kv_cache_type = if ctx_size >= 16384 { "q5_0".to_string() } else { "q8_0".to_string() };
-            // Don't mlock if we have plenty of RAM on 32GB systems, otherwise pin it.
-            use_mlock = hw.ram_total_mb < (32 * 1024);
+            use_mlock = false;
         }
         
-        // Tier 1: High-End
         HardwareProfile::Vram16GbSys32Gb | HardwareProfile::Vram16GbSys64Gb => {
-            // No context clamping needed up to 64k
             ubatch_size = 4096;
             batch_size = 4096;
-            kv_cache_type = "q8_0".to_string(); // lossless
-            use_mlock = false; // OS handles memory caching perfectly with this much headroom
+            kv_cache_type = "q8_0".to_string();
+            use_mlock = false;
         }
         
-        // Fallback AutoDetect (Generic logic)
         HardwareProfile::AutoDetect => {
-            if is_auto_ctx && hw.is_igpu && ctx_size > 8192 {
-                ctx_size = 8192;
+            if is_auto_ctx && hw.is_igpu && ctx_size > 32768 {
+                ctx_size = 32768;
             }
-            ubatch_size = if hw.is_igpu { 256 } else { 1024 };
-            batch_size = ubatch_size;
+            ubatch_size = if hw.is_igpu { 512 } else { 2048 };
+            batch_size = 2048;
             kv_cache_type = "q5_0".to_string();
-            use_mlock = true;
+            use_mlock = false;
         }
     }
+
 
     // Now calculate NGL with the potentially clamped context size
     let ngl_decision = compute_ngl_decision(hw, meta, model_size_gb, ctx_size);
@@ -1184,13 +1209,27 @@ pub fn compute_hybrid_inference_config(
         InferenceMode::CpuOnly
     };
 
-    // 2026 Asymmetric Threading Strategy
-    // Decode (gen) is memory-bound; oversubscribing physical cores causes L3 cache thrashing.
-    // Cap at the estimated memory channel count (1 to 8 for most consumer hardware).
-    let threads_gen = hw.cpu_physical_cores.min(8).max(1);
-    
+    // Threading Strategy for Maximum Sustained Performance
+    //
+    // llama.cpp token generation is memory-bandwidth-bound, not compute-bound.
+    // However, using too FEW threads means the memory controllers are not fully
+    // saturated, which is the actual bottleneck in long generation runs.
+    //
+    // Strategy:
+    // - For FullGpu mode: CPU is idle during decode (GPU handles everything).
+    //   Use only 2 threads to avoid waking unnecessary cores.
+    // - For Hybrid/CpuOnly mode: Use ALL physical cores (capped at 24 for
+    //   NUMA safety). This saturates all memory channels and prevents the
+    //   50%-CPU slowdown users see after ~2 minutes when only 8 cores are used.
+    // - Prefill (batch): Always use ALL logical threads — embarrassingly parallel.
+    let threads_gen = match mode {
+        InferenceMode::FullGpu => hw.cpu_physical_cores.min(4).max(1),
+        InferenceMode::Hybrid => hw.cpu_physical_cores.min(24).max(1),
+        InferenceMode::CpuOnly => hw.cpu_physical_cores.min(24).max(1),
+    };
+
     // Prefill (batch) is compute-bound; maximize logical threads to saturate AVX/AMX.
-    let threads_batch = hw.cpu_logical_threads.max(hw.cpu_physical_cores);
+    let threads_batch = hw.cpu_logical_threads.max(hw.cpu_physical_cores).min(32);
 
     let extra_args: Vec<String> = Vec::new();
 
@@ -1202,8 +1241,9 @@ pub fn compute_hybrid_inference_config(
     let disable_kv_offload = false;
     let use_mmap = true;
     
-    // Safety check for mlock: if CpuOnly and tight on RAM, disable mlock to prevent crash
-    if mode == InferenceMode::CpuOnly && hw.ram_available_mb < ((model_size_gb * 1024.0) as u64 + 4096) {
+    // Safety check for mlock: when GPU offloading is active (Hybrid or FullGpu), disable mlock
+    // to prevent memory double-pinning across System RAM and GPU VRAM.
+    if mode != InferenceMode::CpuOnly || hw.ram_available_mb < ((model_size_gb * 1024.0) as u64 + 4096) {
         use_mlock = false;
     }
 
@@ -1365,6 +1405,23 @@ impl LlamaServerConfig {
                 args.extend(["--tensor-split".into(), ts.clone()]);
             }
         }
+
+        if self.prompt_cache_path.is_some() {
+            args.extend([
+                "--cache-prompt".into(),
+            ]);
+        }
+
+        // 2026 Dynamic Context Management: Enable context shifting so context auto-expands & shifts on demand
+        args.push("--context-shift".into());
+
+        // Continuous batching: server immediately starts processing the next token
+        // without waiting for a full batch to accumulate — eliminates the inter-token
+        // stall that causes GPU/CPU to drop to 50% utilization after ~2 minutes.
+        args.push("--cont-batching".into());
+
+        // Metrics endpoint: expose /metrics so performance can be monitored.
+        args.push("--metrics".into());
 
         // Filter out any invalid extra_args
         for extra in &self.extra_args {
@@ -2504,17 +2561,52 @@ pub async fn download_hf_model(
         pd.get(&model_id).map(|p| p.downloaded).unwrap_or(0)
     };
 
-    // Probe total size
-    let mut req = client.get(&url);
+    // Probe total size with automatic branch fallback (main -> master -> HEAD -> raw)
+    let mut resolved_url = url.clone();
+    let mut req = client.get(&resolved_url);
     if let Some(token) = state.get_token().await {
         req = req.header(AUTHORIZATION, format!("Bearer {}", token));
     }
-    
-    let head_resp = req.send().await.map_err(|e| e.to_string())?;
-    if !head_resp.status().is_success() {
-        return Err(format!("Download failed ({}): {}", head_resp.status(), url));
+
+    let mut head_resp = req.send().await.map_err(|e| e.to_string())?;
+
+    if head_resp.status() == reqwest::StatusCode::NOT_FOUND {
+        let fallbacks = if resolved_url.contains("/resolve/main/") {
+            vec![
+                resolved_url.replace("/resolve/main/", "/resolve/master/"),
+                resolved_url.replace("/resolve/main/", "/resolve/HEAD/"),
+                resolved_url.replace("/resolve/main/", "/raw/main/"),
+                resolved_url.replace("/resolve/main/", "/raw/master/"),
+            ]
+        } else if resolved_url.contains("/resolve/master/") {
+            vec![
+                resolved_url.replace("/resolve/master/", "/resolve/main/"),
+                resolved_url.replace("/resolve/master/", "/resolve/HEAD/"),
+            ]
+        } else {
+            vec![]
+        };
+
+        for fallback in fallbacks {
+            let mut alt_req = client.get(&fallback);
+            if let Some(token) = state.get_token().await {
+                alt_req = alt_req.header(AUTHORIZATION, format!("Bearer {}", token));
+            }
+            if let Ok(alt_resp) = alt_req.send().await {
+                if alt_resp.status().is_success() {
+                    resolved_url = fallback;
+                    head_resp = alt_resp;
+                    break;
+                }
+            }
+        }
     }
 
+    if !head_resp.status().is_success() {
+        return Err(format!("Download failed ({}): {}", head_resp.status(), resolved_url));
+    }
+
+    let url = resolved_url;
     let total_size = head_resp.content_length().unwrap_or(0);
 
     // Calculate actual initial downloaded bytes.
@@ -3173,7 +3265,7 @@ pub async fn analyze_hardware(
         }
     };
     
-    let ctx = context_size.unwrap_or_else(|| gguf_meta.as_ref().and_then(|m| m.context_length).unwrap_or(8192));
+    let ctx = context_size.unwrap_or_else(|| gguf_meta.as_ref().and_then(|m| m.context_length).unwrap_or(32768));
     let total_layers = estimate_total_layers(gguf_meta.as_ref(), model_size_gb);
 
     // Try to use the actual server binary for accurate VRAM (it knows all drivers).
@@ -3212,8 +3304,9 @@ pub async fn analyze_hardware(
             let total_kv_mb = (ctx as f32 / 1024.0) * kv_mb_per_1k;
             let cpu_ratio = layers_on_cpu as f32 / total_layers.max(1) as f32;
             let cpu_kv_mb = total_kv_mb * cpu_ratio;
-            let cpu_model_mb = (model_size_gb * 1024.0) * cpu_ratio;
-            (cpu_model_mb + cpu_kv_mb) as u64 + 512
+            // OS mmap memory mapping maps the GGUF model file into system page cache working set
+            let model_ram_mb = model_size_gb * 1024.0;
+            (model_ram_mb + cpu_kv_mb) as u64 + 256
         },
         fully_gpu: decision.fully_gpu,
         hybrid: decision.hybrid,
@@ -3278,6 +3371,16 @@ pub static ACTIVE_LOCAL_IMAGE_MODEL: std::sync::LazyLock<std::sync::Mutex<Option
 
 pub fn get_active_local_image_model() -> Option<String> {
     ACTIVE_LOCAL_IMAGE_MODEL.lock().unwrap().clone()
+}
+
+pub static ACTIVE_SERVER_CTX_SIZE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+pub static ACTIVE_LOCAL_LLM_MODEL: std::sync::LazyLock<std::sync::Mutex<Option<String>>> = std::sync::LazyLock::new(|| {
+    std::sync::Mutex::new(None)
+});
+
+pub fn get_active_local_llm_model() -> Option<String> {
+    ACTIVE_LOCAL_LLM_MODEL.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -3368,8 +3471,6 @@ pub async fn start_local_server(
 
     let ctx = context_size.unwrap_or(0);
     let is_auto_ctx = ctx == 0;
-    // If ctx is 0 (auto), assume 8192 for VRAM estimation to prevent underestimation
-    let effective_ctx = if ctx == 0 { 8192 } else { ctx };
 
     // --- Non-GGUF Native Model Handler ---
     // All extensions other than .gguf (and folders containing PyTorch/Safetensors/config.json) cannot be loaded by llama-server.exe.
@@ -3450,6 +3551,9 @@ pub async fn start_local_server(
     } else {
         None
     };
+
+    // If ctx is 0 (auto), use detected GGUF context length or default to 32768
+    let effective_ctx = if ctx == 0 { gguf_meta.as_ref().and_then(|m| m.context_length).unwrap_or(32768) } else { ctx };
 
     let is_gguf_image_model = if ext_lower == "gguf" {
         if let Some(ref meta) = gguf_meta {
@@ -3777,7 +3881,7 @@ pub async fn start_local_server(
         context_size: server_ctx,
         ngl: final_ngl,
         cpu_threads: final_threads,
-        threads_batch: cpu_threads.unwrap_or(hybrid_cfg.threads_batch),
+        threads_batch: hybrid_cfg.threads_batch,
         ubatch_size: final_ubatch,
         device_id: if hw.gpu_device_id.is_empty() { None } else { Some(hw.gpu_device_id.clone()) },
         flash_attention: final_flash,
@@ -3803,6 +3907,12 @@ pub async fn start_local_server(
         }));
     })).await?;
 
+    {
+        let mut active_llm = ACTIVE_LOCAL_LLM_MODEL.lock().unwrap();
+        *active_llm = Some(model_id);
+    }
+    ACTIVE_SERVER_CTX_SIZE.store(server_ctx, std::sync::atomic::Ordering::Relaxed);
+
     let _ = app.emit("llm-server-ready", serde_json::json!({ "status": "Ready" }));
     Ok(())
 }
@@ -3811,9 +3921,14 @@ pub async fn start_local_server(
 pub async fn stop_local_server(manager: State<'_, Arc<LlamaManager>>) -> Result<(), String> {
     manager.stop().await;
     SERVER_PORT.store(0, std::sync::atomic::Ordering::Relaxed);
+    ACTIVE_SERVER_CTX_SIZE.store(0, std::sync::atomic::Ordering::Relaxed);
     {
         let mut active_img = ACTIVE_LOCAL_IMAGE_MODEL.lock().unwrap();
         *active_img = None;
+    }
+    {
+        let mut active_llm = ACTIVE_LOCAL_LLM_MODEL.lock().unwrap();
+        *active_llm = None;
     }
     Ok(())
 }
@@ -3868,12 +3983,20 @@ pub async fn check_local_server_status() -> Result<serde_json::Value, String> {
     match resp {
         Ok(res) if res.status().is_success() => {
             let body: serde_json::Value = res.json().await.unwrap_or_default();
-            let model_id = body.get("data")
-                .and_then(|d| d.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|m| m.get("id"))
-                .and_then(|id| id.as_str())
-                .map(|s| s.to_string());
+            let model_id = get_active_local_llm_model().or_else(|| {
+                body.get("data")
+                    .and_then(|d| d.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|m| m.get("id"))
+                    .and_then(|id| id.as_str())
+                    .map(|s| {
+                        std::path::Path::new(s)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(s)
+                            .to_string()
+                    })
+            });
 
             Ok(serde_json::json!({
                 "running": true,

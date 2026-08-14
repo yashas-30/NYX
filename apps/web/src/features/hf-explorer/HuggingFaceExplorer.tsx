@@ -1,4 +1,5 @@
 // src/features/hf-explorer/HuggingFaceExplorer.tsx
+// LM Studio-style split layout: fixed left panel (list) + right panel (detail)
 import React, { useCallback } from 'react';
 import { useDownloadStore } from '../../core/stores/useDownloadStore';
 import { useHardware } from './hooks/useHardware';
@@ -13,6 +14,34 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ALL_CATEGORIES } from './constants/categories';
 import type { SortMode } from './types';
 
+// Empty-state placeholder for the right panel when no model is selected
+function NoModelSelected() {
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      background: '#141414', gap: 12, padding: 32, textAlign: 'center',
+    }}>
+      <div style={{
+        width: 56, height: 56, borderRadius: 14,
+        background: '#1e1e1e', border: '1px solid #2a2a2a',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 26,
+      }}>
+        🤗
+      </div>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#a1a1aa', marginBottom: 4 }}>
+          Select a model
+        </div>
+        <div style={{ fontSize: 12, color: '#52525b' }}>
+          Choose a model from the list to view details and download options
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function HuggingFaceExplorer() {
   // ── Hardware ────────────────────────────────────────────────────
   const { hardware } = useHardware();
@@ -25,9 +54,7 @@ export function HuggingFaceExplorer() {
   const sortMode = useHfExplorerStore((s) => s.sortMode);
   const setSortMode = useHfExplorerStore((s) => s.setSortMode);
   const activeCategory = useHfExplorerStore((s) => s.activeCategory);
-  const setActiveCategory = useHfExplorerStore((s) => s.setActiveCategory);
   const activeLibraryFilter = useHfExplorerStore((s) => s.activeLibraryFilter);
-  const setActiveLibraryFilter = useHfExplorerStore((s) => s.setActiveLibraryFilter);
   const selectedModel = useHfExplorerStore((s) => s.selectedModel);
   const setSelectedModel = useHfExplorerStore((s) => s.setSelectedModel);
   const resetExplorer = useHfExplorerStore((s) => s.resetExplorer);
@@ -43,6 +70,7 @@ export function HuggingFaceExplorer() {
     hasNextPage,
     isFetching,
     isFetchingNextPage,
+    refetch,
     error,
   } = useHfModels(queryForFetch, sortMode, filterForFetch, activeLibraryFilter);
 
@@ -59,117 +87,91 @@ export function HuggingFaceExplorer() {
   useHfDownloads();
   const { downloads } = useDownloadStore();
 
-  // ── Handlers (Persisted Updates) ────────────────────────────────
+  // ── Handlers ────────────────────────────────────────────────────
   const handleSearchQueryChange = useCallback(
     (newQuery: string) => {
       setSearchQuery(newQuery);
       setActiveQuery(newQuery.trim());
-      setSelectedModel(null);
     },
-    [setSearchQuery, setActiveQuery, setSelectedModel]
-  );
-
-  const handleCategoryChange = useCallback(
-    (catId: string) => {
-      setActiveCategory(catId);
-      setSelectedModel(null);
-    },
-    [setActiveCategory, setSelectedModel]
-  );
-
-  const handleLibraryChange = useCallback(
-    (libId: string) => {
-      setActiveLibraryFilter(libId);
-      setSelectedModel(null);
-    },
-    [setActiveLibraryFilter, setSelectedModel]
+    [setSearchQuery, setActiveQuery]
   );
 
   const handleSortChange = useCallback(
-    (sort: SortMode) => {
-      setSortMode(sort);
-      setSelectedModel(null);
-    },
-    [setSortMode, setSelectedModel]
+    (sort: SortMode) => { setSortMode(sort); },
+    [setSortMode]
   );
 
-  const handleClear = useCallback(() => {
-    resetExplorer();
-  }, [resetExplorer]);
+  const handleClear = useCallback(() => { resetExplorer(); }, [resetExplorer]);
 
   const handleSelectModel = useCallback(
-    (modelId: string) => {
-      setSelectedModel(modelId);
-    },
+    (modelId: string) => { setSelectedModel(modelId); },
     [setSelectedModel]
   );
 
-  const handleCloseDetail = useCallback(() => {
-    setSelectedModel(null);
-  }, [setSelectedModel]);
-
   const handleLoadMore = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
+    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const handleRefresh = useCallback(() => { refetch(); }, [refetch]);
 
   const isLoading = isFetching && !data;
   const isLoadingMore = isFetchingNextPage;
-
   const loadError = error
-    ? typeof error === 'string'
-      ? error
-      : (error as Error).message || String(error)
+    ? typeof error === 'string' ? error : (error as Error).message || String(error)
     : null;
 
   const activeCatData = ALL_CATEGORIES.find((c) => c.id === activeCategory) || ALL_CATEGORIES[0];
 
   // ── Render ─────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full w-full bg-background overflow-hidden">
-      {/* Top bar with embedded search, category & sort dropdowns */}
-      <div className="shrink-0 px-4 py-3 border-b border-white/[0.08] bg-black relative z-50">
-        <div className="flex items-center gap-3">
-          {/* Brand Badge */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="w-8 h-8 rounded bg-white/[0.06] border border-white/[0.10] flex items-center justify-center">
-              <span className="text-white font-bold text-[10px] tracking-wider leading-none">HF</span>
-            </div>
-            <div className="hidden sm:block">
-              <div className="text-[11px] font-bold text-white tracking-tight leading-none uppercase">
-                Hugging Face
-              </div>
-              <div className="text-[9px] text-[#a1a1aa] leading-none mt-0.5 font-mono">
-                EXPLORER
-              </div>
-            </div>
-          </div>
-
-          <div className="h-4 w-px bg-white/[0.10] shrink-0 hidden sm:block" />
-
-          {/* SearchBar with Live Category, Library & Sort Selectors */}
+    <div style={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden', background: '#0f0f0f' }}>
+      {/* ── LEFT PANEL: Search + List ───────────────────────────── */}
+      <div style={{
+        width: 380,
+        minWidth: 320,
+        maxWidth: 420,
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        borderRight: '1px solid #1a1a1a',
+        background: '#141414',
+        overflow: 'hidden',
+      }}>
+        {/* Search bar at top */}
+        <div style={{ flexShrink: 0, borderBottom: '1px solid #1a1a1a' }}>
           <SearchBar
             value={searchQuery}
             onChange={handleSearchQueryChange}
-            activeCategory={activeCategory}
-            onCategoryChange={handleCategoryChange}
-            activeLibrary={activeLibraryFilter}
-            onLibraryChange={handleLibraryChange}
             sortMode={sortMode}
             onSortChange={handleSortChange}
             isLoading={isLoading}
+            onRefresh={handleRefresh}
             onClear={handleClear}
             hasActiveQuery={!!activeQuery}
           />
         </div>
+
+        {/* Active downloads */}
+        <ActiveDownloads downloads={downloads} />
+
+        {/* Model list — takes all remaining vertical space */}
+        <ModelList
+          models={models}
+          selectedModel={selectedModel}
+          isLoading={isLoading}
+          isLoadingMore={isLoadingMore}
+          hasNextPage={!!hasNextPage}
+          error={loadError}
+          activeQuery={activeQuery}
+          activeCategoryLabel={activeCatData.label}
+          onSelect={handleSelectModel}
+          onLoadMore={handleLoadMore}
+          onClear={handleClear}
+        />
       </div>
 
-      {/* Active downloads panel */}
-      <ActiveDownloads downloads={downloads} />
-
-      {/* Main Content Area */}
-      <div className="flex flex-1 min-h-0 relative">
+      {/* ── RIGHT PANEL: Model Detail ───────────────────────────── */}
+      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {selectedModel ? (
           <ErrorBoundary>
             <ModelDetail
@@ -179,22 +181,10 @@ export function HuggingFaceExplorer() {
               readme={modelReadme}
               hardware={hardware}
               downloads={downloads}
-              onClose={handleCloseDetail}
             />
           </ErrorBoundary>
         ) : (
-          <ModelList
-            models={models}
-            isLoading={isLoading}
-            isLoadingMore={isLoadingMore}
-            hasNextPage={!!hasNextPage}
-            error={loadError}
-            activeQuery={activeQuery}
-            activeCategoryLabel={activeCatData.label}
-            onSelect={handleSelectModel}
-            onLoadMore={handleLoadMore}
-            onClear={handleClear}
-          />
+          <NoModelSelected />
         )}
       </div>
     </div>

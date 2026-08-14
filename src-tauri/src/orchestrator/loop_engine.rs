@@ -8,10 +8,27 @@ use crate::llm::local_inference::execute_local_stream;
 use crate::orchestrator::tools::Tool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 
 /// Maximum number of LLM → tool → LLM iterations before aborting.
 /// Prevents infinite loops when a local model keeps emitting tool calls.
 const MAX_ORCHESTRATOR_ITERATIONS: usize = 12;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OrchestratorState {
+    Init,
+    Thinking,
+    ExecuteTools,
+    Done,
+    Error(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingToolCall {
+    pub id: String,
+    pub name: String,
+    pub args_raw: String,
+}
 
 pub struct Orchestrator {
     tools: HashMap<String, Arc<dyn Tool>>,
@@ -26,6 +43,10 @@ impl Orchestrator {
 
     pub fn register_tool<T: Tool + 'static>(&mut self, tool: T) {
         self.tools.insert(tool.name().to_string(), Arc::new(tool));
+    }
+
+    pub fn register_tool_arc(&mut self, name: String, tool: Arc<dyn Tool>) {
+        self.tools.insert(name, tool);
     }
 
     pub async fn run_turn(
@@ -60,256 +81,328 @@ impl Orchestrator {
             let _ = cancel_tx.try_send(());
         });
 
-        // Loop handles LLM -> Tool Call -> Tool Result -> LLM -> Done
         // Bounded to MAX_ORCHESTRATOR_ITERATIONS to prevent runaway tool loops.
         let mut iteration = 0usize;
+        let mut state = OrchestratorState::Init;
+        let mut pending_tools: Vec<PendingToolCall> = Vec::new();
+        let mut completion_chars = 0;
+
         loop {
-            iteration += 1;
-            if iteration > MAX_ORCHESTRATOR_ITERATIONS {
-                let msg = format!(
-                    "Orchestrator stopped after {} iterations to prevent an infinite loop.",
-                    MAX_ORCHESTRATOR_ITERATIONS
-                );
-                let _ = tx.send(StreamChunkPayload::error(msg.clone()));
-                return Err(msg);
-            }
-            let provider = request.provider.clone();
-            let model = request.model_id.clone();
-            let prompt_len: usize = request.system_instruction.as_ref().map(|s| s.len()).unwrap_or(0)
-                + request.messages.iter().map(|m| m.content.as_str().map(|s| s.len()).unwrap_or_else(|| m.content.to_string().len())).sum::<usize>();
-            let prompt_tokens = (prompt_len / 4) as i64;
-            let start_time = std::time::Instant::now();
-            let mut completion_chars = 0;
-            let mut final_error: Option<String> = None;
-
-            // Fix #13: execute_cloud_stream takes &UnifiedRequest — no need to clone
-            // the entire request (including the full message history) on every iteration.
-            // request is mutated in place after tool calls; we just borrow it here.
-            let mut inner_rx = if request.provider == "nyx-native" {
-                use futures_util::StreamExt;
-                let stream = execute_local_stream(&app, &request).await.map_err(|e| {
-                    let _ = tx.send(StreamChunkPayload::error(e.clone()));
-                    e
-                })?;
-                let (itx, irx) = tokio::sync::mpsc::channel(256);
-                tauri::async_runtime::spawn(async move {
-                    tokio::pin!(stream);
-                    while let Some(res) = stream.next().await {
-                        if itx.send(res).await.is_err() {
-                            break;
-                        }
-                    }
-                });
-                irx
-            } else {
-                match execute_cloud_stream(&request).await {
-                    Ok(rx) => rx,
-                    Err(e) => {
-                        let _ = tx.send(StreamChunkPayload::error(e.clone()));
-                        return Err(e);
-                    }
+            match state.clone() {
+                OrchestratorState::Init => {
+                    tracing::info!(span = "OrchestratorState::Init", "Initializing orchestrator run");
+                    state = OrchestratorState::Thinking;
                 }
-            };
-
-            struct PendingToolCall {
-                id: String,
-                name: String,
-                args_raw: String,
-            }
-            let mut pending_tools: Vec<PendingToolCall> = Vec::new();
-            let mut requires_another_turn = false;
-
-            loop {
-                let res = tokio::select! {
-                    _ = cancel_rx.recv() => {
-                        let _ = tx.send(StreamChunkPayload::done());
-                        app.unlisten(cancel_id);
-                        return Ok(());
+                OrchestratorState::Thinking => {
+                    tracing::info!(span = "state_thinking", iteration, "Entering Thinking state");
+                    iteration += 1;
+                    if iteration > MAX_ORCHESTRATOR_ITERATIONS {
+                        let msg = format!(
+                            "Orchestrator stopped after {} iterations to prevent an infinite loop.",
+                            MAX_ORCHESTRATOR_ITERATIONS
+                        );
+                        let _ = tx.send(StreamChunkPayload::error(msg.clone()));
+                        return Err(msg);
                     }
-                    msg = inner_rx.recv() => match msg {
-                        Some(r) => r,
-                        None => break,
-                    }
-                };
-                match res {
-                    Ok(payload) => {
-                        if let Some(text) = &payload.content {
-                            completion_chars += text.len();
+                    
+                    let provider = request.provider.clone();
+                    let model = request.model_id.clone();
+                    let prompt_len: usize = request.system_instruction.as_ref().map(|s| s.len()).unwrap_or(0)
+                        + request.messages.iter().map(|m| m.content.as_str().map(|s| s.len()).unwrap_or_else(|| m.content.to_string().len())).sum::<usize>();
+                    let prompt_tokens = (prompt_len / 4) as i64;
+                    let start_time = std::time::Instant::now();
+                    let mut final_error: Option<String> = None;
+
+                    let mut inner_rx = if request.provider == "nyx-native" {
+                        use futures_util::StreamExt;
+                        match execute_local_stream(&app, &request).await {
+                            Ok(stream) => {
+                                let (itx, irx) = tokio::sync::mpsc::channel(256);
+                                tauri::async_runtime::spawn(async move {
+                                    tokio::pin!(stream);
+                                    while let Some(res) = stream.next().await {
+                                        if itx.send(res).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                });
+                                irx
+                            },
+                            Err(e) => {
+                                let _ = tx.send(StreamChunkPayload::error(e.clone()));
+                                state = OrchestratorState::Error(e);
+                                continue;
+                            }
                         }
+                    } else {
+                        match execute_cloud_stream(&request).await {
+                            Ok(rx) => rx,
+                            Err(e) => {
+                                let _ = tx.send(StreamChunkPayload::error(e.clone()));
+                                state = OrchestratorState::Error(e);
+                                continue;
+                            }
+                        }
+                    };
 
-                        // Forward text events to the frontend
-                        if payload.event_type == "text" || payload.event_type == "thinking" {
-                            let _ = tx.send(payload.clone());
-                        } else if payload.event_type == "tool_start" {
-                            let mut new_tool = PendingToolCall {
-                                id: String::new(),
-                                name: String::new(),
-                                args_raw: String::new(),
-                            };
-                            if let Some(name) = &payload.name {
-                                new_tool.name = name.clone();
+                    let mut requires_another_turn = false;
+                    let mut accumulated_text = String::new();
+
+                    loop {
+                        let res = tokio::select! {
+                            _ = cancel_rx.recv() => {
+                                let _ = tx.send(StreamChunkPayload::done());
+                                app.unlisten(cancel_id);
+                                return Ok(());
                             }
-                            if let Some(tool_call) = &payload.tool_call {
-                                if let Some(id) = tool_call.get("id").and_then(|v| v.as_str()) {
-                                    new_tool.id = id.to_string();
+                            msg = inner_rx.recv() => match msg {
+                                Some(r) => r,
+                                None => break,
+                            }
+                        };
+                        match res {
+                            Ok(payload) => {
+                                if let Some(text) = &payload.content {
+                                    completion_chars += text.len();
+                                    accumulated_text.push_str(text);
+                                }
+
+                                if payload.event_type == "text" || payload.event_type == "thinking" {
+                                    let _ = tx.send(payload.clone());
+                                } else if payload.event_type == "tool_start" {
+                                    let mut new_tool = PendingToolCall {
+                                        id: String::new(),
+                                        name: String::new(),
+                                        args_raw: String::new(),
+                                    };
+                                    if let Some(name) = &payload.name {
+                                        new_tool.name = name.clone();
+                                    }
+                                    if let Some(tool_call) = &payload.tool_call {
+                                        if let Some(id) = tool_call.get("id").and_then(|v| v.as_str()) {
+                                            new_tool.id = id.to_string();
+                                        }
+                                    }
+                                    pending_tools.push(new_tool);
+                                    let _ = tx.send(payload.clone());
+                                } else if payload.event_type == "tool_call" {
+                                    if let Some(content) = &payload.content {
+                                        if let Some(last_tool) = pending_tools.last_mut() {
+                                            last_tool.args_raw.push_str(content);
+                                        }
+                                    }
+                                } else if payload.event_type == "tool_call_complete" {
+                                    requires_another_turn = true;
+                                } else if payload.event_type == "done" && !requires_another_turn {
+                                    let _ = tx.send(payload.clone());
+                                    
+                                    let pool = app.state::<sqlx::SqlitePool>();
+                                    crate::db::traces::record_trace(pool.inner().clone(), crate::db::traces::TraceInput {
+                                        session_id: None,
+                                        provider: provider.clone(),
+                                        model: model.clone(),
+                                        prompt_tokens,
+                                        completion_tokens: (completion_chars / 4) as i64,
+                                        latency_ms: start_time.elapsed().as_millis() as i64,
+                                        cached: false,
+                                        error: None,
+                                        agent_node_id: None,
+                                    });
+                                    
+                                    state = OrchestratorState::Done;
+                                    break;
+                                } else if payload.event_type == "error" {
+                                    final_error = payload.error.clone();
+                                    let _ = tx.send(payload.clone());
+                                    
+                                    let pool = app.state::<sqlx::SqlitePool>();
+                                    crate::db::traces::record_trace(pool.inner().clone(), crate::db::traces::TraceInput {
+                                        session_id: None,
+                                        provider: provider.clone(),
+                                        model: model.clone(),
+                                        prompt_tokens,
+                                        completion_tokens: (completion_chars / 4) as i64,
+                                        latency_ms: start_time.elapsed().as_millis() as i64,
+                                        cached: false,
+                                        error: final_error.clone(),
+                                        agent_node_id: None,
+                                    });
+
+                                    state = OrchestratorState::Error(payload.error.unwrap_or_default());
+                                    break;
                                 }
                             }
-                            pending_tools.push(new_tool);
-                            // Notify UI that a tool started
-                            let _ = tx.send(payload.clone());
-                        } else if payload.event_type == "tool_call" {
-                            if let Some(content) = &payload.content {
-                                if let Some(last_tool) = pending_tools.last_mut() {
-                                    last_tool.args_raw.push_str(content);
-                                }
+                            Err(e) => {
+                                final_error = Some(e.clone());
+                                let _ = tx.send(StreamChunkPayload::error(e.clone()));
+                                
+                                let pool = app.state::<sqlx::SqlitePool>();
+                                crate::db::traces::record_trace(pool.inner().clone(), crate::db::traces::TraceInput {
+                                    session_id: None,
+                                    provider: provider.clone(),
+                                    model: model.clone(),
+                                    prompt_tokens,
+                                    completion_tokens: (completion_chars / 4) as i64,
+                                    latency_ms: start_time.elapsed().as_millis() as i64,
+                                    cached: false,
+                                    error: final_error.clone(),
+                                    agent_node_id: None,
+                                });
+
+                                state = OrchestratorState::Error(e);
+                                break;
                             }
-                        } else if payload.event_type == "tool_call_complete" {
+                        }
+                    }
+
+                    // Fallback parser: if no native tool calls were emitted, attempt text tool parsing (for local GGUF models)
+                    if pending_tools.is_empty() {
+                        if let Some((tool_name, args)) = crate::orchestrator::lucifer::parse_tool_call_from_text(&accumulated_text) {
+                            let call_id = format!("call_{}", &tool_name);
+                            pending_tools.push(PendingToolCall {
+                                id: call_id,
+                                name: tool_name,
+                                args_raw: serde_json::to_string(&args).unwrap_or_default(),
+                            });
                             requires_another_turn = true;
-                        } else if payload.event_type == "done" && !requires_another_turn {
-                            let _ = tx.send(payload.clone());
-                            
-                            // Write success trace for this iteration
-                            let pool = app.state::<sqlx::SqlitePool>();
-                            crate::db::traces::record_trace(pool.inner().clone(), crate::db::traces::TraceInput {
-                                session_id: None,
-                                provider,
-                                model,
-                                prompt_tokens,
-                                completion_tokens: (completion_chars / 4) as i64,
-                                latency_ms: start_time.elapsed().as_millis() as i64,
-                                cached: false,
-                                error: None,
-                                agent_node_id: None,
-                            });
-                            
-                            app.unlisten(cancel_id);
-                            return Ok(());
-                        } else if payload.event_type == "error" {
-                            final_error = payload.error.clone();
-                            let _ = tx.send(payload.clone());
-                            
-                            let pool = app.state::<sqlx::SqlitePool>();
-                            crate::db::traces::record_trace(pool.inner().clone(), crate::db::traces::TraceInput {
-                                session_id: None,
-                                provider,
-                                model,
-                                prompt_tokens,
-                                completion_tokens: (completion_chars / 4) as i64,
-                                latency_ms: start_time.elapsed().as_millis() as i64,
-                                cached: false,
-                                error: final_error.clone(),
-                                agent_node_id: None,
-                            });
-
-                            app.unlisten(cancel_id);
-                            return Err(payload.error.unwrap_or_default());
                         }
                     }
-                    Err(e) => {
-                        final_error = Some(e.clone());
-                        let _ = tx.send(StreamChunkPayload::error(e.clone()));
-                        
+
+                    if requires_another_turn && !pending_tools.is_empty() {
+                        // Iteration ended (tool calls pending), write trace for this turn
                         let pool = app.state::<sqlx::SqlitePool>();
                         crate::db::traces::record_trace(pool.inner().clone(), crate::db::traces::TraceInput {
                             session_id: None,
-                            provider,
-                            model,
+                            provider: provider.clone(),
+                            model: model.clone(),
                             prompt_tokens,
                             completion_tokens: (completion_chars / 4) as i64,
                             latency_ms: start_time.elapsed().as_millis() as i64,
                             cached: false,
-                            error: final_error,
+                            error: final_error.clone(),
                             agent_node_id: None,
                         });
-
-                        app.unlisten(cancel_id);
-                        return Err(e);
+                        state = OrchestratorState::ExecuteTools;
                     }
                 }
-            }
+                OrchestratorState::ExecuteTools => {
+                    tracing::info!(span = "state_execute_tools", num_tools = pending_tools.len(), "Entering ExecuteTools state");
+                    let mut assistant_tool_calls = Vec::new();
+                    let mut tool_results = Vec::new();
 
-            if requires_another_turn && !pending_tools.is_empty() {
-                // Iteration ended (tool calls pending), write trace for this turn
-                let pool = app.state::<sqlx::SqlitePool>();
-                crate::db::traces::record_trace(pool.inner().clone(), crate::db::traces::TraceInput {
-                    session_id: None,
-                    provider: provider.clone(),
-                    model: model.clone(),
-                    prompt_tokens,
-                    completion_tokens: (completion_chars / 4) as i64,
-                    latency_ms: start_time.elapsed().as_millis() as i64,
-                    cached: false,
-                    error: final_error,
-                    agent_node_id: None,
-                });
+                    // Take pending_tools to clear it for the next iteration
+                    let tools_to_execute = std::mem::take(&mut pending_tools);
 
-                let mut assistant_tool_calls = Vec::new();
-                let mut tool_results = Vec::new();
+                    for current_tool in tools_to_execute {
+                        let args_json: Value = serde_json::from_str(&current_tool.args_raw).unwrap_or(json!({}));
+                        
+                        if let Err(violation) = crate::orchestrator::safety_guard::SafetyGuard::validate_tool_call(&current_tool.name, &args_json) {
+                            tracing::warn!("[Orchestrator] SafetyGuard blocked tool '{}': {}", current_tool.name, violation);
+                            
+                            let _ = tx.send(StreamChunkPayload {
+                                event_type: "tool_result".to_string(),
+                                content: Some(violation.clone()),
+                                done: Some(false),
+                                error: None,
+                                tool_call: Some(json!({"id": current_tool.id})),
+                                name: Some(current_tool.name.clone()),
+                                result: None,
+                                metadata: None,
+                            });
 
-                for current_tool in pending_tools {
-                    // Parse arguments
-                    let args_json: Value = serde_json::from_str(&current_tool.args_raw).unwrap_or(json!({}));
-                    
-                    // Execute the tool
-                    let app_for_tool = app.clone();
-                    let tool_result_str = if let Some(tool) = self.tools.get(&current_tool.name) {
-                        match tool.execute(&app_for_tool, args_json.clone()).await {
-                            Ok(res) => res.to_string(),
-                            Err(e) => format!("Error executing tool: {}", e),
+                            assistant_tool_calls.push(json!({
+                                "type": "tool_call",
+                                "id": current_tool.id,
+                                "function": {
+                                    "name": current_tool.name,
+                                    "arguments": current_tool.args_raw
+                                }
+                            }));
+
+                            tool_results.push(UnifiedMessage {
+                                role: "tool".to_string(),
+                                content: json!([
+                                    {
+                                        "type": "tool_result",
+                                        "tool_call_id": current_tool.id,
+                                        "name": current_tool.name,
+                                        "content": violation
+                                    }
+                                ]),
+                            });
+                            continue;
                         }
-                    } else {
-                        format!("Tool not found: {}", current_tool.name)
-                    };
-
-                    // Notify UI that tool completed.
-                    let _ = tx.send(StreamChunkPayload {
-                        event_type: "tool_result".to_string(),
-                        content: Some(tool_result_str.clone()),
-                        done: Some(false),
-                        error: None,
-                        tool_call: Some(json!({"id": current_tool.id})),
-                        name: Some(current_tool.name.clone()),
-                        result: None,
-                        metadata: None,
-                    });
-                    tracing::info!("[Orchestrator] Tool '{}' complete (iteration {}/{})",
-                        current_tool.name, iteration, MAX_ORCHESTRATOR_ITERATIONS);
-
-                    assistant_tool_calls.push(json!({
-                        "type": "tool_call",
-                        "id": current_tool.id,
-                        "function": {
-                            "name": current_tool.name,
-                            "arguments": current_tool.args_raw
-                        }
-                    }));
-
-                    tool_results.push(UnifiedMessage {
-                        role: "tool".to_string(),
-                        content: json!([
-                            {
-                                "type": "tool_result",
-                                "tool_call_id": current_tool.id,
-                                "name": current_tool.name,
-                                "content": tool_result_str
+                        
+                        let app_for_tool = app.clone();
+                        let tool_result_str = if let Some(tool) = self.tools.get(&current_tool.name) {
+                            match tool.execute(&app_for_tool, args_json.clone()).await {
+                                Ok(res) => res.to_string(),
+                                Err(e) => format!("Error executing tool: {}", e),
                             }
-                        ]),
+                        } else {
+                            format!("Tool not found: {}", current_tool.name)
+                        };
+
+                        let _ = tx.send(StreamChunkPayload {
+                            event_type: "tool_result".to_string(),
+                            content: Some(tool_result_str.clone()),
+                            done: Some(false),
+                            error: None,
+                            tool_call: Some(json!({"id": current_tool.id})),
+                            name: Some(current_tool.name.clone()),
+                            result: None,
+                            metadata: None,
+                        });
+
+                        // Emit visual thinking box chunk for front-end collapsible thinking UI
+                        let tool_thinking = format!("> 🛠️ **Executed Tool (`{}`)**:\n> Arguments: {}\n\n{}\n\n", current_tool.name, current_tool.args_raw, tool_result_str);
+                        let _ = tx.send(StreamChunkPayload::thinking(tool_thinking));
+
+                        tracing::info!("[Orchestrator] Tool '{}' complete (iteration {}/{})",
+                            current_tool.name, iteration, MAX_ORCHESTRATOR_ITERATIONS);
+
+                        assistant_tool_calls.push(json!({
+                            "type": "tool_call",
+                            "id": current_tool.id,
+                            "function": {
+                                "name": current_tool.name,
+                                "arguments": current_tool.args_raw
+                            }
+                        }));
+
+                        tool_results.push(UnifiedMessage {
+                            role: "tool".to_string(),
+                            content: json!([
+                                {
+                                    "type": "tool_result",
+                                    "tool_call_id": current_tool.id,
+                                    "name": current_tool.name,
+                                    "content": tool_result_str
+                                }
+                            ]),
+                        });
+                    }
+
+                    request.messages.push(UnifiedMessage {
+                        role: "assistant".to_string(),
+                        content: Value::Array(assistant_tool_calls),
                     });
+
+                    request.messages.extend(tool_results);
+                    
+                    state = OrchestratorState::Thinking;
                 }
-
-                // Append assistant's tool calls to history
-                request.messages.push(UnifiedMessage {
-                    role: "assistant".to_string(),
-                    content: Value::Array(assistant_tool_calls),
-                });
-
-                // Append tool results to history
-                request.messages.extend(tool_results);
-            } else {
-                break;
+                OrchestratorState::Done => {
+                    tracing::info!(span = "OrchestratorState::Done", "Orchestrator finished successfully");
+                    app.unlisten(cancel_id);
+                    return Ok(());
+                }
+                OrchestratorState::Error(err) => {
+                    tracing::error!(span = "OrchestratorState::Error", error = %err, "Orchestrator failed");
+                    app.unlisten(cancel_id);
+                    return Err(err);
+                }
             }
         }
-        
-        Ok(())
     }
 }

@@ -88,7 +88,7 @@ export const DEFAULT_SETTINGS: ModelSettings = {
   topK: 40,
   gpuLayers: undefined,
   threads: 0,
-  contextSize: 8192,
+  contextSize: 0,
   batchSize: 0,
   repeatPenalty: 1.1,
   mirostat: 0,
@@ -203,7 +203,35 @@ export const useNyxStore = create<NyxState>()(
           set({ privacyMode: enabled });
         }
       },
-      setRememberKeys: (enabled) => set({ rememberKeys: enabled }),
+      setRememberKeys: async (enabled) => {
+        set({ rememberKeys: enabled });
+        const { apiKeys } = get();
+        const providers = ['gemini', 'openrouter', 'tavily'];
+        
+        if (enabled) {
+          // Persist all current keys into secure device vault
+          for (const provider of Object.keys(apiKeys)) {
+            const val = apiKeys[provider];
+            if (val && val.trim().length > 0) {
+              try {
+                await invoke('vault:store-key', { provider, key: val });
+              } catch (err) {
+                console.error(`[Vault] Failed to persist ${provider} key:`, err);
+              }
+            }
+          }
+        } else {
+          // Wipe keys from secure device vault so they remain in RAM only
+          for (const provider of providers) {
+            try {
+              await invoke('vault:delete-key', { provider });
+            } catch (err) {
+              console.error(`[Vault] Failed to clear ${provider} vault key:`, err);
+            }
+          }
+        }
+      },
+
       clearPrivacyData: () => {
         set({ apiKeys: {}, statuses: {} });
       },
@@ -218,45 +246,40 @@ export const useNyxStore = create<NyxState>()(
 
       updateApiKey: async (provider, key) => {
         const { privacyMode, rememberKeys } = get();
+
+        // Always update in-memory store
+        set((state) => ({
+          apiKeys: { ...state.apiKeys, [provider]: key },
+        }));
+
         if (privacyMode || !rememberKeys) {
-          // In privacy mode or when rememberKeys is disabled, store in memory only
-          set((state) => ({
-            apiKeys: { ...state.apiKeys, [provider]: key },
-          }));
+          // Ephemeral RAM-only mode
+          try {
+            await invoke('vault:delete-key', { provider });
+          } catch {}
           await get().refreshStatuses();
           return;
         }
 
-        const ipc = (window as any).nyxIPC;
-        if (ipc && typeof ipc.invoke === 'function') {
-          try {
-            await ipc.invoke('vault:store-key', { provider, key });
-            set((state) => ({
-              apiKeys: { ...state.apiKeys, [provider]: key },
-            }));
-            await get().refreshStatuses();
-          } catch (err: any) {
-            console.error(`[Vault Store key failed for ${provider}]:`, err);
+        try {
+          if (key && key.trim().length > 0) {
+            await invoke('vault:store-key', { provider, key });
+          } else {
+            await invoke('vault:delete-key', { provider });
           }
-        } else {
-          // Fallback if not in Native main process context
-          set((state) => ({
-            apiKeys: { ...state.apiKeys, [provider]: key },
-          }));
           await get().refreshStatuses();
+        } catch (err: any) {
+          console.error(`[Vault Store key failed for ${provider}]:`, err);
         }
       },
 
       clearApiKeys: async () => {
-        const ipc = (window as any).nyxIPC;
-        const providers = Object.keys(get().apiKeys);
-        if (ipc && typeof ipc.invoke === 'function') {
-          for (const provider of providers) {
-            try {
-              await ipc.invoke('vault:delete-key', { provider });
-            } catch (err: any) {
-              console.error(`[Vault delete key failed for ${provider}]:`, err);
-            }
+        const providers = ['gemini', 'openrouter', 'tavily'];
+        for (const provider of providers) {
+          try {
+            await invoke('vault:delete-key', { provider });
+          } catch (err: any) {
+            console.error(`[Vault delete key failed for ${provider}]:`, err);
           }
         }
         set({ apiKeys: {}, statuses: {} });
@@ -275,20 +298,15 @@ export const useNyxStore = create<NyxState>()(
       },
 
       selectWorkspace: async () => {
-        const ipc = (window as any).nyxIPC;
-        if (ipc && typeof ipc.showOpenDirectory === 'function') {
-          try {
-            const directory = await ipc.showOpenDirectory();
-            if (directory) {
-              // Post to API to set active workspace
-              await invoke('workspace_select', { path: directory });
-              set({ workspacePath: directory });
-            }
-          } catch (err: any) {
-            console.error('[Store] Directory selection failed:', err);
+        try {
+          const res: any = await invoke('dialog_open_directory');
+          const directory = res && res.success ? res.data : null;
+          if (directory) {
+            await invoke('workspace_select', { path: directory });
+            set({ workspacePath: directory });
           }
-        } else {
-          console.warn('[Store] Select workspace called outside secure Native context.');
+        } catch (err: any) {
+          console.error('[Store] Directory selection failed:', err);
         }
       },
 
@@ -304,54 +322,41 @@ export const useNyxStore = create<NyxState>()(
 
       loadSecureKeys: async () => {
         const { rememberKeys } = get();
-        if (!rememberKeys) return; // Do not auto-load saved keys if rememberKeys is disabled
+        if (!rememberKeys) return;
 
-        const ipc = (window as any).nyxIPC;
-        if (ipc && typeof ipc.invoke === 'function') {
-          // fallow-ignore-next-line code-duplication
-          try {
-            const listRes = await ipc.invoke('vault:list-keys');
-            if (listRes.success && Array.isArray(listRes.data)) {
-              const keys: Record<string, string> = {};
-              await Promise.all(listRes.data.map(async (provider: string) => {
-                const getRes = await ipc.invoke('vault:get-key', { provider });
-                if (getRes.success && getRes.data) {
+        try {
+          const listRes: any = await invoke('vault:list-keys');
+          if (listRes && listRes.success && Array.isArray(listRes.data)) {
+            const keys: Record<string, string> = {};
+            await Promise.all(
+              listRes.data.map(async (provider: string) => {
+                const getRes: any = await invoke('vault:get-key', { provider });
+                if (getRes && getRes.success && getRes.data) {
                   keys[provider] = getRes.data;
                 }
-              }));
-              set({ apiKeys: keys });
-              await get().refreshStatuses();
-            }
-          } catch (err: any) {
-            console.error('[Store] Failed to retrieve secure keys on mount:', err);
+              })
+            );
+            set((state) => ({ apiKeys: { ...state.apiKeys, ...keys } }));
+            await get().refreshStatuses();
           }
+        } catch (err: any) {
+          console.error('[Store] Failed to retrieve secure keys on mount:', err);
         }
       },
 
       deleteApiKey: async (provider: string): Promise<boolean> => {
         const { apiKeys } = get();
-        if (!apiKeys[provider]) {
-          return false;
-        }
-        
         const updatedKeys = { ...apiKeys };
         delete updatedKeys[provider];
         set({ apiKeys: updatedKeys });
         
-        // Also delete from the vault if available
-        const ipc = (window as any).nyxIPC;
-        if (ipc && typeof ipc.invoke === 'function') {
-          try {
-            await ipc.invoke('vault:delete-key', { provider });
-          } catch (err: any) {
-            console.error('[Store] Failed to delete vault key:', err);
-            // Revert the local state if vault deletion fails
-            set({ apiKeys: { ...apiKeys, [provider]: apiKeys[provider] } });
-            return false;
-          }
+        try {
+          await invoke('vault:delete-key', { provider });
+          return true;
+        } catch (err: any) {
+          console.error('[Store] Failed to delete vault key:', err);
+          return false;
         }
-        
-        return true;
       },
 
       refreshStatuses: async () => {
@@ -415,6 +420,7 @@ export const useNyxStore = create<NyxState>()(
         models: state.models,
         privacyMode: state.privacyMode,
         rememberKeys: state.rememberKeys,
+        apiKeys: state.rememberKeys && !state.privacyMode ? state.apiKeys : {},
         currentModel: state.currentModel,
         searchProvider: state.searchProvider,
         advancedLocalModelSettings: state.advancedLocalModelSettings,

@@ -670,7 +670,7 @@ export class ToolExecutor {
           const result: string = await invoke('search_web_command', {
             query: q,
             numResults: params.numResults ?? 5,
-            provider: searchProvider,
+            searchProvider: searchProvider,
             apiKey,
           });
           return result;

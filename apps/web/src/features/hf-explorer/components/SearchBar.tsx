@@ -1,21 +1,16 @@
 // src/features/hf-explorer/components/SearchBar.tsx
 import React, { useRef } from 'react';
-import { MagnifyingGlass, XCircle, ArrowsDownUp } from '@phosphor-icons/react';
+import { MagnifyingGlass, XCircle, ArrowClockwise } from '@phosphor-icons/react';
 import { SORT_OPTIONS } from '../constants/sort';
-import { TaskCategorySelector } from './TaskCategorySelector';
-import { LibraryCategorySelector } from './LibraryCategorySelector';
 import type { SortMode } from '../types';
 
 interface SearchBarProps {
   value: string;
   onChange: (value: string) => void;
-  activeCategory: string;
-  onCategoryChange: (id: string) => void;
-  activeLibrary: string;
-  onLibraryChange: (id: string) => void;
   sortMode: SortMode;
   onSortChange: (sort: SortMode) => void;
   isLoading: boolean;
+  onRefresh: () => void;
   onClear: () => void;
   hasActiveQuery: boolean;
 }
@@ -23,74 +18,71 @@ interface SearchBarProps {
 export function SearchBar({
   value,
   onChange,
-  activeCategory,
-  onCategoryChange,
-  activeLibrary,
-  onLibraryChange,
   sortMode,
   onSortChange,
-  isLoading: _isLoading,
+  isLoading,
+  onRefresh,
   onClear,
   hasActiveQuery,
 }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="flex-1 flex flex-wrap items-center gap-2 min-w-0">
-      {/* Search Input Box */}
-      <div className="flex-1 relative min-w-[200px]">
+    <div className="flex flex-col gap-0">
+      {/* Search input row */}
+      <div className="relative">
         <MagnifyingGlass
-          size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none"
+          size={13}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-[#52525b] pointer-events-none z-10"
         />
         <input
           ref={inputRef}
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Search Hugging Face models — e.g. Llama 3, Diffusers, Qwen…"
-          className="w-full bg-background border border-border/80 rounded-xl text-xs py-2 pl-9 pr-8 outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-all placeholder:text-muted-foreground/40 shadow-xs"
+          placeholder="Search Hugging Face and staff picks"
+          className="w-full bg-[#2a2a2a] border-0 text-[12px] py-2.5 pl-8 pr-7 outline-none text-[#e4e4e7] placeholder:text-[#52525b] transition-all"
+          style={{ borderRadius: 0 }}
           aria-label="Search models"
         />
         {(value || hasActiveQuery) && (
           <button
             onClick={onClear}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[#52525b] hover:text-[#a1a1aa] transition-colors"
             aria-label="Clear search"
           >
-            <XCircle size={14} weight="fill" />
+            <XCircle size={13} weight="fill" />
           </button>
         )}
       </div>
 
-      {/* Rich Sectioned Category / Task Selector Popover */}
-      <TaskCategorySelector
-        activeCategory={activeCategory}
-        onCategoryChange={onCategoryChange}
-      />
-
-      {/* Library Format Filter Selector Popover */}
-      <LibraryCategorySelector
-        activeLibrary={activeLibrary}
-        onLibraryChange={onLibraryChange}
-      />
-
-      {/* Sort Option Dropdown Select */}
-      <div className="relative shrink-0 flex items-center">
-        <ArrowsDownUp size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none z-10" />
-        <select
-          value={sortMode}
-          onChange={(e) => onSortChange(e.target.value as SortMode)}
-          className="bg-background border border-border/80 rounded-xl text-xs font-semibold py-2 pl-7 pr-7 outline-none focus:border-primary/60 transition-all appearance-none cursor-pointer text-foreground shadow-xs hover:bg-muted/30"
-          aria-label="Sort models"
+      {/* Staff picks row */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#1c1c1c]">
+        <button
+          onClick={onRefresh}
+          className="flex items-center gap-1.5 text-[11px] text-[#71717a] hover:text-[#a1a1aa] transition-colors"
         >
-          {SORT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value} className="bg-popover text-popover-foreground">
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground pointer-events-none">▼</span>
+          <span>Staff picks</span>
+          <ArrowClockwise
+            size={11}
+            className={`transition-transform ${isLoading ? 'animate-spin' : ''}`}
+          />
+        </button>
+        <div className="relative">
+          <select
+            value={sortMode}
+            onChange={(e) => onSortChange(e.target.value as SortMode)}
+            className="appearance-none bg-[#2a2a2a] border border-[#3f3f3f] rounded text-[11px] font-medium py-0.5 pl-2.5 pr-6 outline-none text-[#d4d4d8] cursor-pointer hover:border-[#52525b] transition-colors"
+            aria-label="Sort models"
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value} className="bg-[#1c1c1c] text-[#d4d4d8]">
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] text-[#52525b] pointer-events-none">▾</span>
+        </div>
       </div>
     </div>
   );

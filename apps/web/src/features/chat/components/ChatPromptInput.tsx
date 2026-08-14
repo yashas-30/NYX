@@ -16,7 +16,6 @@ import { toast } from '@src/shared/components/ui/sonner';
 
 import { PromptTemplateManager } from './PromptTemplateManager';
 import { SectionLabel, ParamSlider, ToolButton } from '@shared/components/PromptInputSubcomponents';
-import { LocalModelSettingsPanel } from '@shared/components/LocalModelSettingsPanel';
 import { initVoiceMode } from '@src/features/voice/vad';
 import { VoiceOverlay } from '@src/features/voice/VoiceOverlay';
 import { SpeechToTextHelper } from '@src/features/voice/speechToText';
@@ -114,7 +113,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   onImagesChange,
   onAttachFiles,
 }) => {
-  const [showSettings, setShowSettings] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const isSubmitting = useRef(false);
   const localSettings = modelSettings;
@@ -370,21 +368,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   }, [isLocalModel, localLibraryModels.length, loadLocalLibraryModels]);
 
   useEffect(() => {
-    if (isLocalModel) {
-      setShowSettings(false);
-    }
-  }, [currentModelId]);
-
-  useEffect(() => {
-    if (!isLocalModel && showSettings) {
-      setShowSettings(false);
-    }
-  }, [isLocalModel]);
-
-  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      setShowSettings(false);
-
       if (e.key === 'Escape' && isLoading) {
         e.preventDefault();
         onStop();
@@ -514,24 +498,10 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
         : 'text-primary';
 
   return (
-    <div className="shrink-0 w-full flex flex-col items-center pb-4 pt-2 bg-background z-30 gap-2 px-0 md:px-24">
+    <div className="shrink-0 w-full flex flex-col items-center pb-3 pt-1.5 bg-background z-30 gap-2 px-3 md:px-4">
       <div
-        className={`relative w-full transition-all duration-500 ease-out px-4 md:px-0`}
+        className="relative w-full max-w-2xl mx-auto transition-all duration-500 ease-out"
       >
-        {/* ── Settings Panel ────────────────────────────────────────── */}
-        <LocalModelSettingsPanel
-          isLocalModel={isLocalModel}
-          showSettings={showSettings}
-          setShowSettings={setShowSettings}
-          currentModelId={currentModelId}
-          onModelSelect={onModelSelect}
-          modelSettings={modelSettings}
-          onModelSettingsChange={onModelSettingsChange}
-          resetLocalSettings={resetLocalSettings}
-          gpuModeLabel={gpuModeLabel}
-          updateLocal={updateLocal}
-        />
-
         {/* ── Chat Prompt Capsule ─────────────────────── */}
         <motion.form
           onSubmit={handleSubmit}
@@ -626,26 +596,6 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                     }}
                   />
                 </div>
-
-                {isLocalModel && (
-                  <motion.button
-                    variants={tagItemVariants}
-                    whileHover={{ y: -1.5, scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="button"
-                    onClick={() => {
-                      setShowSettings((v) => !v);
-                    }}
-                    className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md border transition-all text-left cursor-pointer shrink-0 ${
-                      showSettings
-                        ? 'bg-accent/10 border-accent/40 text-accent'
-                        : 'bg-secondary border-border hover:border-accent/40 hover:text-accent text-foreground'
-                    }`}
-                  >
-                    <SlidersHorizontal size={14} className="w-3.5 h-3.5" />
-                    <span className="text-[9.5px] font-bold tracking-tight">Model Config</span>
-                  </motion.button>
-                )}
 
               {/* Divider */}
               <div className="w-px h-4 bg-border/60 mx-0.5" />

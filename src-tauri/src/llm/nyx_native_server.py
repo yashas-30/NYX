@@ -394,8 +394,6 @@ async def chat_completions(request: Request):
                 }
                 yield f"data: {json.dumps(final_chunk)}\n\n"
                 yield "data: [DONE]\n\n"
-            yield f"data: {json.dumps(final_chunk)}\n\n"
-            yield "data: [DONE]\n\n"
 
         return StreamingResponse(generate_sse(), media_type="text/event-stream")
 

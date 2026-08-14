@@ -525,14 +525,14 @@
 /* ── Professional List Marker Overrides & Prose Formatting ─────────────────────── */
 .prose-nyx {
   color: var(--foreground);
-  font-size: 0.9375rem; /* 15px */
-  line-height: 1.65;
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.55;
   word-wrap: break-word;
 }
 
 .prose-nyx p {
   margin-top: 0;
-  margin-bottom: 1.25em;
+  margin-bottom: 0.75em;
 }
 
 .prose-nyx p:last-child {
@@ -561,26 +561,26 @@
 .prose-nyx h1, .prose-nyx h2, .prose-nyx h3, .prose-nyx h4 {
   color: var(--foreground);
   font-weight: 600;
-  margin-top: 1.5em;
-  margin-bottom: 0.5em;
+  margin-top: 1.25em;
+  margin-bottom: 0.4em;
   line-height: 1.3;
 }
 
-.prose-nyx h1 { font-size: 1.5rem; }
-.prose-nyx h2 { font-size: 1.25rem; }
-.prose-nyx h3 { font-size: 1.125rem; }
-.prose-nyx h4 { font-size: 1rem; }
+.prose-nyx h1 { font-size: 1.25rem; }
+.prose-nyx h2 { font-size: 1.1rem; }
+.prose-nyx h3 { font-size: 0.975rem; }
+.prose-nyx h4 { font-size: 0.875rem; }
 
 /* Lists */
 .prose-nyx ul, .prose-nyx ol {
   margin-top: 0;
-  margin-bottom: 1.25em;
-  padding-left: 1.625em;
+  margin-bottom: 0.75em;
+  padding-left: 1.4em;
 }
 
 .prose-nyx li {
-  margin-top: 0.25em;
-  margin-bottom: 0.25em;
+  margin-top: 0.2em;
+  margin-bottom: 0.2em;
 }
 
 .prose-nyx ul li::marker {

@@ -102,3 +102,55 @@ export const CitationSuperscript: React.FC<{ index: number; citations: Citation[
   if (!citation) return <sup>[{index}]</sup>;
   return <CitationCard citation={citation} />;
 };
+
+export interface SourcesFooterProps {
+  citations: Citation[];
+}
+
+export const SourcesFooter: React.FC<SourcesFooterProps> = ({ citations }) => {
+  if (!citations || citations.length === 0) return null;
+
+  return (
+    <div className="mt-6 pt-4 border-t border-border/60 animate-fade-in">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+          <Globe className="w-3.5 h-3.5 text-indigo-400" />
+          Verified Sources ({citations.length})
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {citations.map((c) => {
+          const domain = c.domain || getDomain(c.url);
+          const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+          return (
+            <a
+              key={c.id || c.index}
+              href={c.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 p-2.5 rounded-xl border border-border/50 bg-card/40 hover:bg-card hover:border-indigo-500/40 transition-all group/source text-left"
+            >
+              <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-muted shrink-0 overflow-hidden border border-border/40">
+                <img
+                  src={faviconUrl}
+                  alt={domain}
+                  className="w-4 h-4 object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-foreground truncate group-hover/source:text-indigo-400 transition-colors">
+                  {c.title || domain}
+                </p>
+                <p className="text-[10px] text-muted-foreground/60 truncate">{domain}</p>
+              </div>
+              <ExternalLink className="w-3 h-3 text-muted-foreground/40 group-hover/source:text-indigo-400 shrink-0" />
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+};

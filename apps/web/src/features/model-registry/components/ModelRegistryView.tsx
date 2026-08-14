@@ -4,7 +4,7 @@ import { MagnifyingGlass, Package, Cpu, Globe } from '@phosphor-icons/react';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { ModelOption } from '@src/types';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
-import { useLocalModels } from '@src/shared/hooks/useLocalModels';
+import { useLocalModels, isModelLoaded } from '@src/shared/hooks/useLocalModels';
 import { SectionHeader, EmptyState } from './RegistryShared';
 import { ModelCard } from './ModelCard';
 import { LocalProviderStatus } from '@src/components/LocalProviderStatus';
@@ -365,7 +365,7 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
                          isExpanded={expandedModelId === m.id} 
                          onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
                          isLocal={true}
-                         isLoaded={loadedLocalModel === m.id}
+                         isLoaded={isModelLoaded(m.id, loadedLocalModel)}
                          loadingState={actionModelId === m.id ? loadingState : 'idle'}
                          onLoad={() => handleLoadModel(m.id)}
                          onUnload={() => handleUnloadModel()}

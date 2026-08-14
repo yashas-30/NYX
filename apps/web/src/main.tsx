@@ -104,25 +104,58 @@ export function getConvertedStyle(elt: Element, pseudoElt?: string | null): CSSS
 
 // ── Global Error Catcher (shows errors in Tauri window instead of blank screen) ──
 window.addEventListener('error', (e) => {
+  const msg = e.message || e.error?.message || '';
+  if (
+    msg.includes('ResizeObserver loop') ||
+    msg.includes('ResizeObserver loop completed with undelivered notifications') ||
+    msg.includes('ResizeObserver loop limit exceeded')
+  ) {
+    // Benign browser notification when layout changes during render/mount — ignore
+    return;
+  }
   console.error('[NYX] Uncaught error:', e.error || e.message);
+  
+  // Don't duplicate crash overlays if one already exists
+  if (document.getElementById('nyx-crash-overlay')) return;
+
   const overlay = document.createElement('div');
+  overlay.id = 'nyx-crash-overlay';
   overlay.style.cssText =
     'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:999999;background:#111;color:#ef4444;padding:2rem;font-family:monospace;overflow:auto;';
   overlay.innerHTML = `
-    <h2 style="color:#ef4444;margin-bottom:1rem">&#9888; NYX startup crash</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="color:#ef4444;margin:0">&#9888; NYX startup crash</h2>
+      <button onclick="document.getElementById('nyx-crash-overlay').remove()" style="background:#222;color:#fff;border:1px solid #444;padding:4px 12px;border-radius:4px;cursor:pointer">Dismiss</button>
+    </div>
     <pre style="white-space:pre-wrap;font-size:12px;opacity:0.9;background:#1a1a1a;padding:1rem;border-radius:4px">${e.message}\n\n${e.error?.stack || ''}</pre>
   `;
   document.body.appendChild(overlay);
 });
 
 window.addEventListener('unhandledrejection', (e) => {
+  const msg = e.reason?.message || String(e.reason || '');
+  if (
+    msg.includes('ResizeObserver loop') ||
+    msg.includes('ResizeObserver loop completed with undelivered notifications') ||
+    msg.includes('ResizeObserver loop limit exceeded')
+  ) {
+    // Benign browser notification — ignore
+    return;
+  }
   console.error('[NYX] Unhandled promise rejection:', e.reason);
+  
+  if (document.getElementById('nyx-crash-overlay')) return;
+
   const overlay = document.createElement('div');
+  overlay.id = 'nyx-crash-overlay';
   overlay.style.cssText =
     'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:999999;background:#111;color:#facc15;padding:2rem;font-family:monospace;overflow:auto;';
   overlay.innerHTML = `
-    <h2 style="color:#facc15;margin-bottom:1rem">&#9888; NYX unhandled rejection</h2>
-    <pre style="white-space:pre-wrap;font-size:12px;opacity:0.9;background:#1a1a1a;padding:1rem;border-radius:4px">${e.reason?.message || e.reason || 'Unknown error'}\n\n${e.reason?.stack || ''}</pre>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h2 style="color:#facc15;margin:0">&#9888; NYX unhandled rejection</h2>
+      <button onclick="document.getElementById('nyx-crash-overlay').remove()" style="background:#222;color:#fff;border:1px solid #444;padding:4px 12px;border-radius:4px;cursor:pointer">Dismiss</button>
+    </div>
+    <pre style="white-space:pre-wrap;font-size:12px;opacity:0.9;background:#1a1a1a;padding:1rem;border-radius:4px">${msg}\n\n${e.reason?.stack || ''}</pre>
   `;
   document.body.appendChild(overlay);
 });

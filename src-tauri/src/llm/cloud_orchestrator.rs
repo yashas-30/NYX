@@ -114,7 +114,6 @@ fn build_openai_compat_request(
     req: &UnifiedRequest,
 ) -> Result<(String, Value, HeaderMap), String> {
     let max_tokens = req.max_tokens.unwrap_or(MAX_TOKENS_DEFAULT);
-    let system_text = req.system_instruction.clone().unwrap_or_default();
     let budget = CONTEXT_BUDGET_CHARS;
     let budgeted = budget_messages(&req.messages, budget);
 
@@ -127,6 +126,16 @@ fn build_openai_compat_request(
                 m.content = json!(text_only);
             }
         }
+    }
+
+    let mut system_text = req.system_instruction.clone().unwrap_or_default();
+
+    if !system_text.contains("VISUAL GENERATION DIRECTIVE") {
+        system_text.push_str("\n\n[VISUAL GENERATION DIRECTIVE]\nYou MUST format your response using vibrant, contextually relevant emojis in section titles, sub-headers, bullet points, callout boxes, statistics, and tables (e.g. 🚀, 💡, 📊, 🎯, ✨, ⚡, 📌, 🔑, 🛠️, 🔍, 📈). Use bold text, Markdown tables, callout blocks (> 💡 **KEY TAKEAWAY**), and embed markdown images ![Description](URL) if image URLs are available. NEVER output plain dry unformatted text paragraphs.");
+    }
+
+    if req.reasoning_enabled == Some(true) && !system_text.contains("<think>") {
+        system_text.push_str("\n\n[REASONING DIRECTIVE]\nYou MUST perform deep, step-by-step reasoning inside <think>...</think> tags before providing your final answer.");
     }
 
     // Build messages array with shared tool-call sanitizer.
@@ -152,13 +161,23 @@ fn build_openai_compat_request(
         }
     }
 
+    let mut target_model_id = req.model_id.clone();
+    if target_model_id == "deepseek/deepseek-reasoner" || target_model_id == "deepseek-reasoner" {
+        target_model_id = "deepseek/deepseek-r1".to_string();
+    }
+
     let mut body = json!({
-        "model": req.model_id,
+        "model": target_model_id,
         "messages": msgs,
         "temperature": req.temperature.unwrap_or(0.7),
         "max_tokens": max_tokens,
         "stream": true,
     });
+
+    if req.reasoning_enabled == Some(true) {
+        body["include_reasoning"] = json!(true);
+        body["reasoning"] = json!({ "effort": "high" });
+    }
 
     if let Some(top_p) = req.top_p {
         body["top_p"] = json!(top_p);
@@ -181,11 +200,15 @@ fn build_openai_compat_request(
 
     let endpoint = match req.provider.as_str() {
         "openrouter" => {
-            headers.insert("Authorization",
-                HeaderValue::from_str(&format!("Bearer {}", req.api_key))
-                    .map_err(|e| e.to_string())?);
-            headers.insert("HTTP-Referer", HeaderValue::from_static("https://nyx.local"));
-            headers.insert("X-Title", HeaderValue::from_static("NYX"));
+            if !req.api_key.trim().is_empty() && req.api_key.trim() != "free" {
+                headers.insert(
+                    "Authorization",
+                    HeaderValue::from_str(&format!("Bearer {}", req.api_key.trim()))
+                        .map_err(|e| e.to_string())?,
+                );
+            }
+            headers.insert("HTTP-Referer", HeaderValue::from_static("https://nyx.ai"));
+            headers.insert("X-Title", HeaderValue::from_static("NYX Desktop"));
 
             // Tools for OpenRouter.
             if let Some(tools) = &req.tools {
@@ -235,12 +258,15 @@ fn sanitize_gemini_turns(messages: Vec<UnifiedMessage>) -> Vec<UnifiedMessage> {
         return messages;
     }
 
-    // Step 2: merge consecutive same-role turns.
+    // Step 2: merge consecutive same-role turns (text only — never merge tool/function array turns).
     let mut out: Vec<UnifiedMessage> = Vec::new();
     for m in messages {
+        // Never merge tool-result or tool-call turns (they have array content with special structure).
+        let is_tool_turn = m.content.is_array();
+
         if let Some(last) = out.last_mut() {
-            if last.role == m.role {
-                // Merge by appending text content.
+            if last.role == m.role && !is_tool_turn && !last.content.is_array() {
+                // Both turns are plain-text — safe to merge.
                 let existing = get_content_string(&last.content);
                 let incoming = get_content_string(&m.content);
                 last.content = json!(format!("{}\n\n{}", existing, incoming));
@@ -250,6 +276,39 @@ fn sanitize_gemini_turns(messages: Vec<UnifiedMessage>) -> Vec<UnifiedMessage> {
         out.push(m);
     }
     out
+}
+
+fn clean_gemini_schema(val: &mut Value) {
+    match val {
+        Value::Object(map) => {
+            // Remove fields unsupported by Google Gemini API in function declarations
+            map.remove("additionalProperties");
+            map.remove("$schema");
+            map.remove("title");
+
+            // Convert OpenAI JSON schema 'type' to Google Gemini uppercase string
+            if let Some(t_val) = map.get_mut("type") {
+                if let Some(arr) = t_val.as_array() {
+                    let first_type = arr.iter()
+                        .find_map(|item| item.as_str().filter(|s| *s != "null"))
+                        .unwrap_or("string");
+                    *t_val = Value::String(first_type.to_uppercase());
+                } else if let Some(s) = t_val.as_str() {
+                    *t_val = Value::String(s.to_uppercase());
+                }
+            }
+
+            for v in map.values_mut() {
+                clean_gemini_schema(v);
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                clean_gemini_schema(item);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn build_gemini_request(
@@ -271,11 +330,15 @@ fn build_gemini_request(
     let mut contents: Vec<Value> = Vec::new();
 
     for m in &budgeted {
-        // Tool call turns (model side).
+        // Tool call turns (model side) — handles both "tool_call" (internal) and "function" (OpenAI native).
         if m.role == "assistant" && m.content.is_array() {
             if let Some(item) = m.content.as_array().and_then(|a| a.first()) {
-                if item.get("type").and_then(|t| t.as_str()) == Some("tool_call") {
-                    if let Some(func) = item.get("function") {
+                let item_type = item.get("type").and_then(|t| t.as_str());
+                if item_type == Some("tool_call") || item_type == Some("function") {
+                    // Extract function details — for "function" type the structure is {id, type, function: {name, arguments}}
+                    // For "tool_call" type the structure is {id, type, function: {name, arguments}} (same)
+                    let func = item.get("function");
+                    if let Some(func) = func {
                         let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("");
                         let args_str = func.get("arguments").and_then(|a| a.as_str()).unwrap_or("{}");
                         let args_json: Value = serde_json::from_str(args_str).unwrap_or(json!({}));
@@ -289,22 +352,44 @@ fn build_gemini_request(
             }
         }
 
-        // Tool result turns.
-        if m.role == "tool" && m.content.is_array() {
-            if let Some(item) = m.content.as_array().and_then(|a| a.first()) {
-                let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                let content_str = item.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                let mut resp_obj: Value = serde_json::from_str(content_str)
-                    .unwrap_or(json!({"result": content_str}));
-                if !resp_obj.is_object() {
-                    resp_obj = json!({"result": resp_obj});
-                }
-                contents.push(json!({
-                    "role": "user",
-                    "parts": [{"functionResponse": {"name": name, "response": resp_obj}}]
-                }));
-                continue;
+        // Tool result turns (functionResponse).
+        if m.role == "tool" {
+            let (raw_name, content_str) = if m.content.is_array() {
+                let item = m.content.as_array().and_then(|a| a.first());
+                let n = item.and_then(|i| i.get("name")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let c = item.and_then(|i| i.get("content")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                (n, c)
+            } else if m.content.is_object() {
+                let n = m.content.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let c = m.content.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                (n, c)
+            } else {
+                ("".to_string(), get_content_string(&m.content))
+            };
+
+            // If name is missing/empty, search backward in preceding `contents` for the last model functionCall
+            let name = if !raw_name.trim().is_empty() {
+                raw_name
+            } else {
+                contents.iter().rev()
+                    .filter_map(|turn| turn.get("parts").and_then(|p| p.as_array()))
+                    .flatten()
+                    .filter_map(|part| part.get("functionCall").and_then(|fc| fc.get("name")).and_then(|n| n.as_str()))
+                    .next()
+                    .unwrap_or("tool_call")
+                    .to_string()
+            };
+
+            let mut resp_obj: Value = serde_json::from_str(&content_str)
+                .unwrap_or(json!({"result": content_str}));
+            if !resp_obj.is_object() {
+                resp_obj = json!({"result": resp_obj});
             }
+            contents.push(json!({
+                "role": "user",
+                "parts": [{"functionResponse": {"name": name, "response": resp_obj}}]
+            }));
+            continue;
         }
 
         let role = if m.role == "assistant" { "model" } else { "user" };
@@ -353,12 +438,24 @@ fn build_gemini_request(
         contents.push(json!({"role": role, "parts": parts}));
     }
 
+    let mut generation_config = json!({
+        "temperature": req.temperature.unwrap_or(0.7),
+        "maxOutputTokens": max_tokens
+    });
+
+    let supports_thinking = !is_gemma
+        && (req.model_id.contains("thinking") || req.model_id.contains("2.5") || req.model_id.contains("reasoning"));
+
+    if req.reasoning_enabled == Some(true) && supports_thinking {
+        if let Some(obj) = generation_config.as_object_mut() {
+            obj.insert("thinkingConfig".to_string(), json!({ "thinkingBudget": 16000 }));
+        }
+    }
+
+
     let mut body = json!({
         "contents": contents,
-        "generationConfig": {
-            "temperature": req.temperature.unwrap_or(0.7),
-            "maxOutputTokens": max_tokens
-        }
+        "generationConfig": generation_config
     });
 
     // System instruction.
@@ -387,10 +484,17 @@ fn build_gemini_request(
     if let Some(tools) = &req.tools {
         if let Some(tool_arr) = tools.as_array() {
             let decls: Vec<Value> = tool_arr.iter()
-                .filter_map(|t| t.get("function").cloned())
+                .filter_map(|t| {
+                    let mut func = t.get("function")?.clone();
+                    clean_gemini_schema(&mut func);
+                    Some(func)
+                })
                 .collect();
             if !decls.is_empty() {
                 body["tools"] = json!([{"functionDeclarations": decls}]);
+                // toolConfig tells Gemini it may call any declared function.
+                // Without this, Gemini often ignores tool definitions entirely.
+                body["toolConfig"] = json!({"functionCallingConfig": {"mode": "AUTO"}});
             }
         }
     }
@@ -438,53 +542,6 @@ fn parse_sse_event(data: &str, provider: &str) -> Vec<StreamEvent> {
     let mut events = Vec::new();
 
     match provider {
-        "nyx-native" | "openrouter" => {
-            let choices = v.get("choices").and_then(|c| c.as_array());
-            if let Some(choice) = choices.and_then(|c| c.first()) {
-                if let Some(delta) = choice.get("delta").and_then(|d| d.as_object()) {
-                    // Text content.
-                    if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
-                        if !text.is_empty() { events.push(StreamEvent::Text(text.to_string())); }
-                    }
-                    // Reasoning tokens (DeepSeek R1, Qwen QwQ, etc.).
-                    let reasoning = delta.get("reasoning")
-                        .or_else(|| delta.get("reasoning_content"))
-                        .and_then(|r| r.as_str());
-                    if let Some(r) = reasoning {
-                        if !r.is_empty() { events.push(StreamEvent::Reasoning(r.to_string())); }
-                    }
-                    // Tool calls.
-                    if let Some(tool_calls) = delta.get("tool_calls").and_then(|tc| tc.as_array()) {
-                        for tc in tool_calls {
-                            if let Some(func) = tc.get("function").and_then(|f| f.as_object()) {
-                                if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
-                                    let id = tc.get("id").and_then(|i| i.as_str()).unwrap_or("");
-                                    events.push(StreamEvent::ToolStart {
-                                        id: id.to_string(),
-                                        name: name.to_string(),
-                                    });
-                                }
-                                if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
-                                    events.push(StreamEvent::ToolArgs(args.to_string()));
-                                }
-                            }
-                        }
-                    }
-                }
-                // finish_reason handling.
-                if let Some(reason) = choice.get("finish_reason").and_then(|f| f.as_str()) {
-                    match reason {
-                        "tool_calls" => events.push(StreamEvent::ToolComplete),
-                        "length" => events.push(StreamEvent::FinishError(
-                            "Generation stopped: maximum token limit reached.".into())),
-                        "content_filter" => events.push(StreamEvent::FinishError(
-                            "Generation blocked by provider safety filters.".into())),
-                        _ => {}
-                    }
-                }
-            }
-        }
-
         "gemini" => {
             if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
                 if let Some(candidate) = candidates.first() {
@@ -572,19 +629,68 @@ pub async fn execute_cloud_stream(
         }
     };
 
-    // Fix #10: Reuse the shared pooled client instead of constructing a new one per call.
-    let response = CLOUD_HTTP_CLIENT.post(&url)
-        .headers(headers)
+    let mut response = CLOUD_HTTP_CLIENT.post(&url)
+        .headers(headers.clone())
         .json(&body)
         .send()
         .await
         .map_err(|e| e.to_string())?;
 
+    if !response.status().is_success() && provider_type == "gemini" && response.status().as_u16() == 404 {
+        let fallbacks = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+        let base = req.endpoint_override.clone()
+            .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta/models/".to_string());
+        for fallback_model in fallbacks {
+            if fallback_model == req.model_id {
+                continue;
+            }
+            let fallback_url = format!("{}{}:streamGenerateContent?alt=sse", base, fallback_model);
+            if let Ok(resp) = CLOUD_HTTP_CLIENT.post(&fallback_url)
+                .headers(headers.clone())
+                .json(&body)
+                .send()
+                .await
+            {
+                if resp.status().is_success() {
+                    response = resp;
+                    break;
+                }
+            }
+        }
+    }
+
     if !response.status().is_success() {
         let status = response.status();
         let body_text = response.text().await.unwrap_or_default();
-        return Err(format!("Request failed ({}): {}", status, body_text));
+
+        if (status.as_u16() == 400 || body_text.contains("Thinking budget is not supported"))
+            && body.get("generationConfig").and_then(|g| g.get("thinkingConfig")).is_some()
+        {
+            let mut retry_body = body.clone();
+            if let Some(gen) = retry_body.get_mut("generationConfig").and_then(|g| g.as_object_mut()) {
+                gen.remove("thinkingConfig");
+            }
+            if let Ok(retry_resp) = CLOUD_HTTP_CLIENT.post(&url)
+                .headers(headers.clone())
+                .json(&retry_body)
+                .send()
+                .await
+            {
+                if retry_resp.status().is_success() {
+                    response = retry_resp;
+                } else {
+                    let r_status = retry_resp.status();
+                    let r_text = retry_resp.text().await.unwrap_or_default();
+                    return Err(format!("Request failed ({}): {}", r_status, r_text));
+                }
+            } else {
+                return Err(format!("Request failed ({}): {}", status, body_text));
+            }
+        } else {
+            return Err(format!("Request failed ({}): {}", status, body_text));
+        }
     }
+
 
     let (tx, rx) = tokio::sync::mpsc::channel(256);
 
@@ -737,8 +843,6 @@ pub async fn llm_stream_request(
 
     let mut rx = if req.provider == "nyx-native" {
         return Err("llm_stream_request cannot be used for local models. Use llm_local_stream_request instead.".into());
-    } else if req.execution_mode.is_some() && req.execution_mode.as_deref() != Some("default") {
-        crate::llm::rig_orchestrator::execute_rig_stream(&app, &req).await?
     } else {
         execute_cloud_stream(&req).await?
     };
@@ -910,12 +1014,121 @@ pub async fn get_models_quota(
         });
     }
 
-    // Unknown provider: accept as-is with a warning.
+    // For OpenAI: call /v1/models endpoint.
+    if provider == "openai" {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(8))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client.get("https://api.openai.com/v1/models")
+            .header("Authorization", format!("Bearer {}", key))
+            .send().await;
+        let valid = resp.map(|r| r.status().is_success()).unwrap_or(false);
+        return Ok(QuotaResponse {
+            status: if valid { "ok".into() } else { "invalid".into() },
+            valid,
+            provider,
+            message: if valid {
+                "OpenAI API key is valid.".into()
+            } else {
+                "OpenAI API key appears invalid. Check platform.openai.com.".into()
+            },
+        });
+    }
+
+    // For Anthropic: call /v1/models endpoint.
+    if provider == "anthropic" {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(8))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client.get("https://api.anthropic.com/v1/models")
+            .header("x-api-key", &key)
+            .header("anthropic-version", "2023-06-01")
+            .send().await;
+        let valid = resp.map(|r| r.status().is_success() || r.status().as_u16() == 200).unwrap_or(false);
+        return Ok(QuotaResponse {
+            status: if valid { "ok".into() } else { "invalid".into() },
+            valid,
+            provider,
+            message: if valid {
+                "Anthropic API key is valid.".into()
+            } else {
+                "Anthropic API key appears invalid. Check console.anthropic.com.".into()
+            },
+        });
+    }
+
+    // For DeepSeek: call /v1/models endpoint.
+    if provider == "deepseek" {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(8))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client.get("https://api.deepseek.com/v1/models")
+            .header("Authorization", format!("Bearer {}", key))
+            .send().await;
+        let valid = resp.map(|r| r.status().is_success()).unwrap_or(false);
+        return Ok(QuotaResponse {
+            status: if valid { "ok".into() } else { "invalid".into() },
+            valid,
+            provider,
+            message: if valid {
+                "DeepSeek API key is valid.".into()
+            } else {
+                "DeepSeek API key appears invalid. Check platform.deepseek.com.".into()
+            },
+        });
+    }
+
+    // For Groq: call /v1/models endpoint.
+    if provider == "groq" {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(8))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let resp = client.get("https://api.groq.com/openai/v1/models")
+            .header("Authorization", format!("Bearer {}", key))
+            .send().await;
+        let valid = resp.map(|r| r.status().is_success()).unwrap_or(false);
+        return Ok(QuotaResponse {
+            status: if valid { "ok".into() } else { "invalid".into() },
+            valid,
+            provider,
+            message: if valid {
+                "Groq API key is valid.".into()
+            } else {
+                "Groq API key appears invalid. Check console.groq.com.".into()
+            },
+        });
+    }
+
+    // Default provider validation
+    let has_key = !key.trim().is_empty();
     Ok(QuotaResponse {
-        status: "ok".to_string(),
-        valid: true,
+        status: if has_key { "ok".to_string() } else { "invalid".to_string() },
+        valid: has_key,
         provider,
-        message: "Unknown provider; key format not verified.".to_string(),
+        message: if has_key { "API key provided.".to_string() } else { "API key missing.".to_string() },
+    })
+}
+
+#[derive(Serialize)]
+pub struct ReachableResponse {
+    pub reachable: bool,
+    pub message: String,
+}
+
+/// Check whether a provider endpoint is reachable and (if key provided) authorized.
+#[tauri::command]
+pub async fn check_provider_reachable(
+    provider: String,
+    api_key: Option<String>,
+) -> Result<ReachableResponse, String> {
+    let quota = get_models_quota(provider, api_key).await?;
+    Ok(ReachableResponse {
+        reachable: quota.valid,
+        message: quota.message,
     })
 }
 
@@ -925,15 +1138,23 @@ fn validate_key_format(provider: &str, key: &str) -> Option<String> {
     }
     match provider {
         "openrouter" => {
-            // OpenRouter keys start with "sk-or-" and are long.
             if !key.starts_with("sk-or-") || key.len() < 20 {
                 return Some("OpenRouter keys should start with 'sk-or-'.".to_string());
             }
         }
         "gemini" | "gemma" => {
-            // Google AI Studio keys start with "AIza" and are exactly 39 chars.
             if !key.starts_with("AIza") || key.len() < 30 {
                 return Some("Google API keys should start with 'AIza'.".to_string());
+            }
+        }
+        "openai" => {
+            if !key.starts_with("sk-") || key.len() < 20 {
+                return Some("OpenAI keys should start with 'sk-'.".to_string());
+            }
+        }
+        "anthropic" => {
+            if !key.starts_with("sk-ant-") || key.len() < 20 {
+                return Some("Anthropic keys should start with 'sk-ant-'.".to_string());
             }
         }
         _ => {}

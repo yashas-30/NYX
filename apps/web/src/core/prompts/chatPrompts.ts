@@ -1,5 +1,4 @@
-import { NYX_PERSONA } from '../agents/nyxPersona';
-import { LUCIFER_PERSONA } from '../agents/luciferPersona';
+import { getLuciferPersona } from '../agents/luciferPersona';
 import type { ChatMessage } from '@src/infrastructure/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -71,19 +70,49 @@ export function buildChatPrompts(
   context: ChatContext,
   rawPrompt: string,
   _history: ChatMessage[],
-  webSearchResults?: string
+  webSearchResults?: string,
+  provider?: string
 ): ChatPromptBuildResult {
   const now = new Date();
   const contextBreakdown: Record<string, number> = {};
 
-  const systemPrompt = buildChatSystemPromptInternal(modelId, context, now);
+  const systemPrompt = buildChatSystemPromptInternal(modelId, context, now, provider);
   contextBreakdown.system = estimateTokens(systemPrompt);
 
   // Build user-facing prompt — web search context prepended if available.
   // DO NOT include history here; it's already in backendMessages in useChatLogic.
   let userPrompt = rawPrompt;
   if (webSearchResults) {
-    userPrompt = `[RESEARCH]\n${webSearchResults}\n[/RESEARCH]\n\n${rawPrompt}`;
+    const now = new Date();
+    const isoDateStr = now.toISOString().slice(0, 10);
+    const isDeep = webSearchResults.includes('DEEP RESEARCH CONSOLIDATED CONTEXT');
+    const isResearchQuery = /^(?:research|compare|list|explain|find me the best|what are the best|show me all)\b|\bresearch\b|\blist every\b|\bbest laptop\b/i.test(rawPrompt.trim());
+    const headerTag = isDeep ? 'LONG CONTEXT DEEP RESEARCH & RAG MEMORY DATA' : 'LIVE WEB SEARCH & RAG MEMORY RESULTS';
+    
+    if (isDeep || isResearchQuery) {
+      userPrompt =
+        `[${headerTag}] (Retrieved: ${isoDateStr})\n` +
+        `${webSearchResults}\n` +
+        `[/${headerTag}]\n\n` +
+        `Question: ${rawPrompt}\n\n` +
+        `INSTRUCTIONS FOR STRUCTURED RESEARCH REPORT WITH INLINE IMAGES & VISUAL DIAGRAMS:\n` +
+        `1. EXECUTIVE SUMMARY: Direct high-level answer and top recommendations.\n\n` +
+        `2. VISUAL DATA & GRAPHICAL REPRESENTATION:\n` +
+        `   - Include a clean Markdown Comparison Table comparing specs, battery life, performance, and price.\n` +
+        `   - Include a Mermaid chart (e.g. \`\`\`mermaid\ngraph TD\n... \`\`\` or \`\`\`mermaid\npie title Battery Life\n... \`\`\`) visualizing performance or market rankings.\n\n` +
+        `3. INLINE TOPIC & PRODUCT BREAKDOWNS:\n` +
+        `   - Create a dedicated heading for EACH recommended topic/product (e.g. ### 1. Apple MacBook Air M3).\n` +
+        `   - IMMEDIATELY BELOW each heading, embed its exact matching image from [VERIFIED INLINE PRODUCT IMAGES & SPECIFIC TOPIC MEDIA] using Markdown image syntax: ![Product Name](URL).\n` +
+        `   - Include key specs, battery life, pros/cons, and exact prices (escaped as \\$1,500).\n\n` +
+        `4. DO NOT place images at the end of the response — embed each image inline right under its corresponding topic heading. Do not output <think> tags.`;
+    } else {
+      userPrompt =
+        `[${headerTag}] (Retrieved: ${isoDateStr})\n` +
+        `${webSearchResults}\n` +
+        `[/${headerTag}]\n\n` +
+        `Question: ${rawPrompt}\n` +
+        `Instructions: Answer directly and accurately using the search data above. Embed any verified image URLs provided in [VERIFIED INLINE PRODUCT IMAGES & SPECIFIC TOPIC MEDIA] inline below headings. Do not output <think> tags.`;
+    }
   }
   contextBreakdown.user = estimateTokens(userPrompt);
 
@@ -91,7 +120,7 @@ export function buildChatPrompts(
     systemPrompt,
     userPrompt,
     metadata: {
-      version: '2.1.0',
+      version: '3.0.0',
       estimatedTokens: Object.values(contextBreakdown).reduce((a, b) => a + b, 0),
       contextBreakdown,
       safetyLevel: detectSafetyLevel(rawPrompt),
@@ -100,118 +129,25 @@ export function buildChatPrompts(
 }
 
 // ── System Prompt Builder ─────────────────────────────────────────────────────
-//
-// Design principle (2026):
-//   • Flat prose only — no XML tag wrappers.  XML tags were ~200 tokens of
-//     structural noise.  Frontier models parse prose structure natively.
-//     GGUF models tokenise XML tags as raw text anyway.
-//   • Target: ≤180 tokens for local, ≤250 tokens for cloud.
-//
 function buildChatSystemPromptInternal(
   _modelId: string,
   context: ChatContext,
-  now: Date
+  now: Date,
+  provider?: string
 ): string {
-  const {
-    userName,
-    userPreferences,
-    conversationTone,
-    detectedLanguage,
-    availableTools,
-    lightningDirectives,
-    reasoningEnabled,
-    localModel,
-    customSystemPrompt,
-  } = context;
+  const isLocal = context.localModel || provider === 'nyx-native';
+  const isoDateStr = now.toISOString().slice(0, 10);
 
-  const parts: string[] = [];
-
-  // ── Core Identity ─────────────────────────────────────────────────────────
-  if (context.isLuciferMode) {
-    parts.push(LUCIFER_PERSONA);
-    if (customSystemPrompt && customSystemPrompt.trim().length > 0 && !customSystemPrompt.includes('Lucifer')) {
-      parts.push(customSystemPrompt.trim());
-    }
-  } else if (customSystemPrompt && customSystemPrompt.trim().length > 0) {
-    parts.push(customSystemPrompt.trim());
-  } else {
-    parts.push(NYX_PERSONA);
+  if (isLocal) {
+    // Ultra-lightweight system prompt for local GGUF models (< 20 tokens, zero delay)
+    return `You are Lucifer, an AI assistant. Today is ${isoDateStr}. Answer directly, accurately, and concisely. Do not output <think> tags.`;
   }
 
-  // ── Date ──────────────────────────────────────────────────────────────────
-  parts.push(
-    `Today is ${now.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })}.`
+  // Ultra-clean system prompt for cloud models (< 40 tokens)
+  return (
+    `You are Lucifer, an AI assistant. Today is ${isoDateStr}.\n` +
+    `Answer directly, accurately, and concisely. Embed verified image URLs if provided. Do not invent fake URLs.`
   );
-
-  // ── User personalization (only when known) ────────────────────────────────
-  const name = userPreferences?.preferredName || userName;
-  if (name) {
-    const detail = userPreferences?.detailPreference
-      ? ` Prefer ${userPreferences.detailPreference} responses.`
-      : '';
-    parts.push(`The user's name is ${name}.${detail}`);
-  }
-
-  // ── Tone (only for non-default values) ───────────────────────────────────
-  if (conversationTone === 'professional') {
-    parts.push('Adopt a professional, direct tone. Avoid slang and emoji.');
-  } else if (conversationTone === 'technical') {
-    parts.push('Be technically precise. Use correct terminology. Show code in fenced blocks.');
-  }
-  // casual = default NYX persona tone — no extra instruction
-
-  // ── Core response rules ───────────────────────────────────────────────────
-  parts.push(
-    `STRICT DIRECTNESS MANDATE:\n` +
-    `- Answer directly without conversational preamble, greetings, or prompt restatements.\n` +
-    `- Respond in ${detectedLanguage}.\n` +
-    `- Use markdown formatting naturally. Never explain tool execution or search steps.`
-  );
-
-  // ── Reasoning control (only when explicitly configured) ──────────────────
-  if (reasoningEnabled === false) {
-    parts.push('Do not output <think> reasoning tags. Reply directly.');
-  } else if (reasoningEnabled === true) {
-    parts.push('Use <think>…</think> to reason before your final answer.');
-  }
-
-  // ── Web search grounding ──────────────────────────────────────────────────
-  if (context.hasWebSearch) {
-    parts.push(
-      'CRITICAL REAL-TIME ACCESS NOTICE: Real-time live web search results are attached in the user prompt under [LIVE WEB SEARCH RESULTS]. You HAVE live web search access for this request. Read and use the facts inside [LIVE WEB SEARCH RESULTS] to directly answer the user\'s question accurately. Do NOT state that you lack real-time information.'
-    );
-  } else {
-    parts.push(
-      'When live web search results appear in the user prompt, use the facts provided to answer the user\'s question directly.'
-    );
-  }
-
-  // ── Tool definitions (cloud only, when tools are registered) ─────────────
-  if (!localModel && availableTools && availableTools.length > 0) {
-    const toolList = availableTools
-      .map((t) => `- ${t.name}: ${t.description}`)
-      .join('\n');
-    parts.push(
-      `Available tools:\n${toolList}\n\n` +
-        'Call tools by responding with:\n' +
-        '<tool_call>\n{"name": "tool_name", "parameters": {...}}\n</tool_call>'
-    );
-  }
-
-  // ── Lightning directives (highest priority — always last) ─────────────────
-  if (lightningDirectives && lightningDirectives.length > 0) {
-    parts.push(
-      'Critical instructions (override all above):\n' +
-        lightningDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n')
-    );
-  }
-
-  return parts.join('\n\n');
 }
 
 // ── Safety Level Detection ────────────────────────────────────────────────────

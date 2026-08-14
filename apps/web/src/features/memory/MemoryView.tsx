@@ -7,6 +7,8 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from '@src/shared/components/ui/sonner';
 
+import { useProceduralMemoryStore } from '@src/features/agents/lucifer/hierarchicalMemory';
+
 interface LongTermMemory {
   id: string;
   fact: string;
@@ -47,11 +49,14 @@ function formatDateTime(ts?: number): string {
 }
 
 export default function MemoryView() {
-  const [activeTab, setActiveTab] = useState<'facts' | 'episodes' | 'entities'>('facts');
+  const [activeTab, setActiveTab] = useState<'facts' | 'episodes' | 'entities' | 'procedural'>('facts');
   
   const [memories, setMemories] = useState<LongTermMemory[]>([]);
   const [episodes, setEpisodes] = useState<EpisodicMemory[]>([]);
   const [entities, setEntities] = useState<MemoryEntity[]>([]);
+  const [isExtracting, setIsExtracting] = useState(false);
+
+  const proceduralEntries = useProceduralMemoryStore((s) => s.entries);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<LongTermMemory[] | null>(null);
@@ -145,6 +150,21 @@ export default function MemoryView() {
     }
   };
 
+  const handleExtractSessionMemory = async () => {
+    setIsExtracting(true);
+    try {
+      // Get current conversation id or fallback
+      const activeConvId = localStorage.getItem('nyx_active_conversation_id') || 'default';
+      await invoke('extract_session_memory', { sessionId: activeConvId });
+      toast.success('Episodic session memory extracted!');
+      fetchMemories();
+    } catch (err: any) {
+      toast.error(`Extraction: ${err?.message || String(err)}`);
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
   const activeMemories = searchResults || memories;
 
   return (
@@ -156,16 +176,26 @@ export default function MemoryView() {
             <span>Multi-Tier Memory Engine</span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            NYX extracts facts, summarizes sessions (episodes), and graphs entities automatically.
+            NYX extracts facts, summarizes sessions (episodes), and graphs entities automatically across 3 memory tiers.
           </p>
         </div>
-        <button
-          onClick={() => setIsAdding(!isAdding)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/95 transition-all shadow-sm w-fit cursor-pointer"
-        >
-          <Plus size={16} />
-          <span>Add Fact</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExtractSessionMemory}
+            disabled={isExtracting}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-muted text-foreground font-semibold hover:bg-muted/80 border border-border transition-all text-xs cursor-pointer"
+          >
+            <RefreshCw size={14} className={isExtracting ? 'animate-spin' : ''} />
+            <span>Extract Episode</span>
+          </button>
+          <button
+            onClick={() => setIsAdding(!isAdding)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/95 transition-all shadow-sm text-xs cursor-pointer"
+          >
+            <Plus size={16} />
+            <span>Add Fact</span>
+          </button>
+        </div>
       </div>
 
       <AnimatePresence>
@@ -250,6 +280,12 @@ export default function MemoryView() {
             className={`px-4 py-2 text-sm font-semibold rounded-t-lg flex items-center gap-2 ${activeTab === 'entities' ? 'bg-card border border-border border-b-0 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           >
               <Users size={16} /> Entity Graph
+          </button>
+          <button 
+            onClick={() => setActiveTab('procedural')} 
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg flex items-center gap-2 ${activeTab === 'procedural' ? 'bg-card border border-border border-b-0 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+              <Layers size={16} /> Procedural Strategies
           </button>
       </div>
 
@@ -391,6 +427,44 @@ export default function MemoryView() {
                               ))}
                           </tbody>
                       </table>
+                  </div>
+              )}
+          </div>
+      )}
+
+      {activeTab === 'procedural' && (
+          <div className="space-y-4">
+              {proceduralEntries.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center min-h-[200px] border border-dashed border-border/80 rounded-2xl bg-card/10">
+                      <Layers size={32} className="text-muted-foreground/40 mb-3" />
+                      <h3 className="text-sm font-semibold text-foreground/90">No procedural strategies learned yet</h3>
+                      <p className="text-xs text-muted-foreground mt-1">Lucifer learns optimal model, search, and tool pairings after completing complex tasks.</p>
+                  </div>
+              ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {proceduralEntries.map(p => {
+                          const total = p.successCount + p.failCount;
+                          const rate = total > 0 ? Math.round((p.successCount / total) * 100) : 100;
+                          return (
+                              <div key={p.id} className="p-4 bg-card border border-border rounded-xl shadow-sm space-y-2">
+                                  <div className="flex items-center justify-between">
+                                      <span className="text-xs font-bold text-primary truncate max-w-[200px]">{p.pattern}</span>
+                                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold">
+                                          {rate}% Success
+                                      </span>
+                                  </div>
+                                  <p className="text-xs text-foreground/80 font-mono bg-muted/30 p-2 rounded-lg border border-border/40">{p.strategy}</p>
+                                  <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1">
+                                      <div className="flex gap-1.5">
+                                          {p.tags.map((t, i) => (
+                                              <span key={i} className="bg-muted px-1.5 py-0.5 rounded text-[9px]">{t}</span>
+                                          ))}
+                                      </div>
+                                      <span>Used {formatDate(p.lastUsedMs)}</span>
+                                  </div>
+                              </div>
+                          );
+                      })}
                   </div>
               )}
           </div>

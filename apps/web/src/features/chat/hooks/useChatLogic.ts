@@ -5,7 +5,6 @@
  */
 
 import { useState, useRef, useEffect, useCallback, useReducer, useMemo } from 'react';
-import { NYX_PERSONA } from '@src/core/agents/nyxPersona';
 import { ModelDefinition, ChatMessage, ToolCall, StreamEvent } from '@src/infrastructure/types';
 import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { AIService, cancelRequest, cancelAllRequests } from '@src/features/ai/services/ai.service';
@@ -98,7 +97,7 @@ interface ConversationMetrics {
 }
 
 interface ChatLogicReturn {
-  activeAgent: 'nyx';
+  activeAgent: 'lucifer';
   isLoading: boolean;
   history: ChatMessage[];
   metrics: ConversationMetrics;
@@ -689,7 +688,7 @@ export const useChatLogic = ({
   }, []);
 
   return {
-    activeAgent: 'nyx',
+    activeAgent: 'lucifer',
     isLoading,
     history,
     metrics,

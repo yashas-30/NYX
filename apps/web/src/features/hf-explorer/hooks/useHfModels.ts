@@ -51,13 +51,39 @@ export function useHfModelReadme(modelId: string | null) {
       if (!modelId) return '';
       try {
         const readme = await invoke<string>('hf_get_model_readme', { modelId });
-        return (readme ?? '')
+        const clean = (readme ?? '')
           .replace(/^---[\s\S]*?---\n?/m, '')
           .replace(/<!--[\s\S]*?-->/g, '')
           .trim();
+        if (clean && !clean.includes('HTTP 404') && !clean.includes('Failed to fetch')) {
+          return clean;
+        }
       } catch {
-        return '_Could not load model card._';
+        // Fallback fetch via fetch API if Tauri invoke returns 404
       }
+
+      // Try fallback direct HTTP fetches for master/main/lowercase paths
+      const paths = [
+        `https://huggingface.co/${modelId}/raw/main/README.md`,
+        `https://huggingface.co/${modelId}/raw/main/readme.md`,
+        `https://huggingface.co/${modelId}/raw/master/README.md`,
+      ];
+      for (const url of paths) {
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            const text = await res.text();
+            const clean = text
+              .replace(/^---[\s\S]*?---\n?/m, '')
+              .replace(/<!--[\s\S]*?-->/g, '')
+              .trim();
+            if (clean) return clean;
+          }
+        } catch {
+          // ignore & try next
+        }
+      }
+      return '';
     },
     enabled: !!modelId,
     staleTime: 5 * 60 * 1000,

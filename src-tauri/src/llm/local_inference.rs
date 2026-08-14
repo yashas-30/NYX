@@ -31,9 +31,9 @@ static INFERENCE_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::ne
 // ── HTTP Client ─────────────────────────────────────────────────────────────
 static LOCAL_HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
     Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(10))
+        .connect_timeout(std::time::Duration::from_secs(30))
         .tcp_nodelay(true)
-        .tcp_keepalive(std::time::Duration::from_secs(120))
+        .tcp_keepalive(std::time::Duration::from_secs(600))
         .pool_max_idle_per_host(32)
         .no_proxy()
         .build()
@@ -216,20 +216,27 @@ fn strip_historical_images(mut budgeted: Vec<UnifiedMessage>) -> Vec<UnifiedMess
     budgeted
 }
 
-/// Flatten text-only arrays to simple strings for llama-server compatibility.
+/// Flatten non-image arrays to simple strings for llama-server compatibility.
 fn flatten_arrays(mut budgeted: Vec<UnifiedMessage>) -> Vec<UnifiedMessage> {
     for m in budgeted.iter_mut() {
         if let Some(arr) = m.content.as_array() {
-            // Only flatten if all items are text
-            let all_text = arr.iter().all(|item| {
-                item.get("type").and_then(|t| t.as_str()) == Some("text")
+            let has_image = arr.iter().any(|item| {
+                item.get("type").and_then(|t| t.as_str()) == Some("image_url")
             });
-            if all_text {
-                let text_only = arr.iter()
-                    .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                m.content = json!(text_only);
+            if !has_image {
+                let mut text_parts = Vec::new();
+                for item in arr {
+                    if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
+                        if !t.trim().is_empty() { text_parts.push(t); }
+                    } else if let Some(c) = item.get("content").and_then(|v| v.as_str()) {
+                        if !c.trim().is_empty() { text_parts.push(c); }
+                    } else if let Some(v) = item.get("value").and_then(|v| v.as_str()) {
+                        if !v.trim().is_empty() { text_parts.push(v); }
+                    } else if let Some(s) = item.as_str() {
+                        if !s.trim().is_empty() { text_parts.push(s); }
+                    }
+                }
+                m.content = json!(text_parts.join("\n\n"));
             }
         }
     }
@@ -260,14 +267,28 @@ pub enum RequestBuildError {
 #[instrument(skip(req))]
 pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, RequestBuildError> {
     let max_tokens = req.max_tokens.filter(|&v| v > 0);
-    let system_text = req.system_instruction.clone().unwrap_or_default();
+    let mut system_text = req.system_instruction.clone().unwrap_or_default();
 
-    // Context window: use request value, device tier default, or safe fallback (32768, floor 8192)
-    let context_window: usize = req.context_window
-        .filter(|&v| v > 0)
-        .map(|v| v as usize)
-        .unwrap_or(32768)
-        .max(8192);
+    if !system_text.contains("VISUAL GENERATION DIRECTIVE") {
+        system_text.push_str("\n\n[VISUAL & FORMATTING DIRECTIVE]\nFormat responses using clean Markdown with headers, tables, and bullet points. Whenever prompt mentions images, visual representation, or research, you MUST embed real Markdown images: ![Description](url) using extracted web images, Unsplash photos, and Iconify vector SVGs (![Icon](https://api.iconify.design/logos/python.svg)). Never wrap image tags in backticks. For mindmaps, ensure exactly ONE top-level root node is used. For roadmaps, use horizontal flowcharts (```mermaid\nflowchart LR...\n```). For research, provide exhaustive detailed reports.");
+    }
+
+    if req.reasoning_enabled == Some(true) && !system_text.contains("<think>") {
+        system_text.push_str("\n\n[REASONING DIRECTIVE]\nYou MUST perform deep, step-by-step reasoning inside <think>...</think> tags before providing your final answer.");
+    }
+
+    let active_server_ctx = crate::llm::local_orchestrator::ACTIVE_SERVER_CTX_SIZE.load(std::sync::atomic::Ordering::Relaxed);
+
+    // Context window: use active server ctx if available, request value, or safe fallback
+    let context_window: usize = if active_server_ctx > 0 {
+        active_server_ctx as usize
+    } else {
+        req.context_window
+            .filter(|&v| v > 0)
+            .map(|v| v as usize)
+            .unwrap_or(65536)
+            .max(16384)
+    };
 
     if context_window < 512 {
         return Err(RequestBuildError::ContextTooSmall { 
@@ -282,11 +303,11 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         || req.model_id.to_lowercase().contains("-r1")
         || req.model_id.to_lowercase().contains("qw");
     
-    let requested_max = max_tokens.unwrap_or(4096) as usize;
+    let requested_max = max_tokens.unwrap_or(8192) as usize;
     let response_reserve = if is_reasoning_model {
-        (context_window / 3).clamp(2048, requested_max.max(4096))
+        (context_window / 3).clamp(4096, requested_max.max(16384))
     } else {
-        (context_window / 4).clamp(1024, requested_max)
+        (context_window / 3).clamp(2048, requested_max.max(8192))
     };
 
     // Budget calculation with safety margin
@@ -334,8 +355,27 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         "cache_prompt": true,
     });
 
+
+
+    let default_stop = vec![
+        "<|eot_id|>".to_string(),
+        "<|eom_id|>".to_string(),
+        "<|im_end|>".to_string(),
+        "\nUser:".to_string(),
+        "\nUser ".to_string(),
+        "\nHuman:".to_string(),
+        "\nAssistant:".to_string(),
+    ];
     if let Some(ref stop_seqs) = req.stop {
-        body["stop"] = json!(stop_seqs);
+        let mut combined = stop_seqs.clone();
+        for s in default_stop {
+            if !combined.contains(&s) {
+                combined.push(s);
+            }
+        }
+        body["stop"] = json!(combined);
+    } else {
+        body["stop"] = json!(default_stop);
     }
 
     if let Some(ref tool_choice) = req.tool_choice {
@@ -354,10 +394,9 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
 
     if let Some(top_p) = req.top_p { body["top_p"] = json!(top_p); }
     if let Some(top_k) = req.top_k { body["top_k"] = json!(top_k); }
-    let rep_penalty = req.repeat_penalty.unwrap_or(1.0);
-    if rep_penalty != 1.0 {
-        body["repeat_penalty"] = json!(rep_penalty);
-    }
+    let rep_penalty = req.repeat_penalty.unwrap_or(1.05);
+    body["repeat_penalty"] = json!(rep_penalty);
+    body["repeat_last_n"] = json!(256);
     if let Some(presence_penalty) = req.presence_penalty { body["presence_penalty"] = json!(presence_penalty); }
     if let Some(frequency_penalty) = req.frequency_penalty { body["frequency_penalty"] = json!(frequency_penalty); }
     
@@ -366,15 +405,25 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         body["response_format"] = response_format.clone();
     }
     
-    // Tool support
-    if let Some(tools) = &req.tools {
-        if tools.as_array().map(|a| !a.is_empty()).unwrap_or(false) {
-            body["tools"] = tools.clone();
-            if body.get("tool_choice").is_none() {
-                body["tool_choice"] = json!("auto");
-            }
+    // If prompt already contains live search results, remove tools so local GGUF models output direct answers
+    let prompt_has_search_results = req.messages.iter().any(|m| {
+        let s = match &m.content {
+            serde_json::Value::String(str_val) => str_val.as_str(),
+            _ => "",
+        };
+        s.contains("LIVE WEB SEARCH") || s.contains("WEB SEARCH RESULTS")
+    });
+
+    if prompt_has_search_results {
+        if let Some(obj) = body.as_object_mut() {
+            obj.remove("tools");
+            obj.remove("tool_choice");
         }
     }
+
+    // Disable thinking overhead on local GGUF models for instant response generation
+    body["reasoning_effort"] = json!("none");
+    body["enable_thinking"] = json!(false);
 
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", HeaderValue::from_static("application/json"));
@@ -408,15 +457,7 @@ pub enum LocalStreamEvent {
 
 // ── SSE Parser (2026: Robust, cancel-safe, reasoning-aware) ─────────────────
 
-fn parse_local_sse_event(data: &str, active_tool_call_id: &mut Option<String>) -> Vec<LocalStreamEvent> {
-    let parsed: Value = match serde_json::from_str(data) {
-        Ok(v) => v,
-        Err(e) => {
-            warn!("[SSE] JSON parse error: {} | data: {}", e, &data[..data.len().min(200)]);
-            return vec![];
-        }
-    };
-
+fn parse_local_sse_event_value(parsed: &Value, active_tool_call_id: &mut Option<String>) -> Vec<LocalStreamEvent> {
     let mut events = Vec::new();
 
     // Error handling
@@ -447,32 +488,23 @@ fn parse_local_sse_event(data: &str, active_tool_call_id: &mut Option<String>) -
     if let Some(choices) = parsed.get("choices").and_then(|c| c.as_array()) {
         if let Some(choice) = choices.first() {
             if let Some(delta) = choice.get("delta") {
-                // Regular content
+                // Reasoning content (DeepSeek-R1, QwQ, Mythos, etc.)
+                let explicit_reasoning = delta.get("reasoning_content")
+                    .or_else(|| delta.get("thinking"))
+                    .or_else(|| delta.get("reasoning"))
+                    .or_else(|| delta.get("thought"))
+                    .and_then(|r| r.as_str());
+
+                if let Some(reasoning) = explicit_reasoning {
+                    if !reasoning.is_empty() {
+                        events.push(LocalStreamEvent::Reasoning(reasoning.to_string()));
+                    }
+                }
+
+                // Regular content — emitted to process_text_tokens for stateful <think> tag parsing
                 if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
                     if !content.is_empty() {
                         events.push(LocalStreamEvent::Text(content.to_string()));
-                    }
-                }
-                
-                // 2026: Reasoning content (DeepSeek-R1, QwQ, Mythos, etc.)
-                if let Some(reasoning) = delta.get("reasoning_content").and_then(|r| r.as_str()) {
-                    if !reasoning.is_empty() {
-                        events.push(LocalStreamEvent::Reasoning(reasoning.to_string()));
-                    }
-                }
-                if let Some(reasoning) = delta.get("thinking").and_then(|r| r.as_str()) {
-                    if !reasoning.is_empty() {
-                        events.push(LocalStreamEvent::Reasoning(reasoning.to_string()));
-                    }
-                }
-                if let Some(reasoning) = delta.get("reasoning").and_then(|r| r.as_str()) {
-                    if !reasoning.is_empty() {
-                        events.push(LocalStreamEvent::Reasoning(reasoning.to_string()));
-                    }
-                }
-                if let Some(thought) = delta.get("thought").and_then(|t| t.as_str()) {
-                    if !thought.is_empty() {
-                        events.push(LocalStreamEvent::Reasoning(thought.to_string()));
                     }
                 }
 
@@ -691,7 +723,7 @@ pub async fn execute_local_stream(
     let response = LOCAL_HTTP_CLIENT.post(&config.endpoint)
         .headers(config.headers)
         .json(&config.body)
-        .timeout(std::time::Duration::from_secs(600))
+        .timeout(std::time::Duration::from_secs(3600))
         .send()
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
@@ -745,27 +777,29 @@ pub async fn execute_local_stream(
                         break;
                     }
 
-                    for ev in parse_local_sse_event(&data, &mut active_tool_call_id) {
-                        match ev {
-                            LocalStreamEvent::Text(t) => {
-                                for payload in process_text_tokens(&t, &mut in_think_block, &mut total_text_chars, max_output_chars) {
-                                    let is_done = payload.done.unwrap_or(false);
-                                    yield payload;
-                                    if is_done { return; }
+                    if let Ok(v) = serde_json::from_str::<Value>(&data) {
+                        for ev in parse_local_sse_event_value(&v, &mut active_tool_call_id) {
+                            match ev {
+                                LocalStreamEvent::Text(t) => {
+                                    for payload in process_text_tokens(&t, &mut in_think_block, &mut total_text_chars, max_output_chars) {
+                                        let is_done = payload.done.unwrap_or(false);
+                                        yield payload;
+                                        if is_done { return; }
+                                    }
                                 }
+                                LocalStreamEvent::Reasoning(r) => yield StreamChunkPayload::thinking(r),
+                                LocalStreamEvent::ToolStart { id, name } => yield StreamChunkPayload::tool_start(id, name),
+                                LocalStreamEvent::ToolArgs(a) => yield StreamChunkPayload::tool_args(a),
+                                LocalStreamEvent::ToolComplete => yield StreamChunkPayload::tool_complete(),
+                                LocalStreamEvent::Usage { prompt_tokens, completion_tokens, total_tokens } => {
+                                    yield StreamChunkPayload::usage(prompt_tokens, completion_tokens, total_tokens)
+                                }
+                                LocalStreamEvent::FinishError(msg) => {
+                                    Err(msg)?;
+                                    unreachable!();
+                                }
+                                LocalStreamEvent::Nothing => continue,
                             }
-                            LocalStreamEvent::Reasoning(r) => yield StreamChunkPayload::thinking(r),
-                            LocalStreamEvent::ToolStart { id, name } => yield StreamChunkPayload::tool_start(id, name),
-                            LocalStreamEvent::ToolArgs(a) => yield StreamChunkPayload::tool_args(a),
-                            LocalStreamEvent::ToolComplete => yield StreamChunkPayload::tool_complete(),
-                            LocalStreamEvent::Usage { prompt_tokens, completion_tokens, total_tokens } => {
-                                yield StreamChunkPayload::usage(prompt_tokens, completion_tokens, total_tokens)
-                            }
-                            LocalStreamEvent::FinishError(msg) => {
-                                Err(msg)?;
-                                unreachable!();
-                            }
-                            LocalStreamEvent::Nothing => continue,
                         }
                     }
                 }
@@ -787,10 +821,9 @@ pub async fn execute_local_stream(
             // Eager parse: if buffer looks like complete JSON, process it
             let trimmed = buffer.trim();
             if trimmed.starts_with('{') && trimmed.ends_with('}') {
-                if serde_json::from_str::<Value>(trimmed).is_ok() {
-                    let data = trimmed.to_string();
+                if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
                     buffer.clear();
-                    for ev in parse_local_sse_event(&data, &mut active_tool_call_id) {
+                    for ev in parse_local_sse_event_value(&v, &mut active_tool_call_id) {
                         match ev {
                             LocalStreamEvent::Text(t) => {
                                 for payload in process_text_tokens(&t, &mut in_think_block, &mut total_text_chars, max_output_chars) {
@@ -821,32 +854,34 @@ pub async fn execute_local_stream(
         if !buffer.is_empty() {
             let data = buffer.trim().to_string();
             if data != "[DONE]" {
-                for ev in parse_local_sse_event(&data, &mut active_tool_call_id) {
-                    match ev {
-                        LocalStreamEvent::Text(t) => {
-                            for payload in process_text_tokens(&t, &mut in_think_block, &mut total_text_chars, max_output_chars) {
-                                let is_done = payload.done.unwrap_or(false);
-                                yield payload;
-                                if is_done { return; }
+                if let Ok(v) = serde_json::from_str::<Value>(&data) {
+                    for ev in parse_local_sse_event_value(&v, &mut active_tool_call_id) {
+                        match ev {
+                            LocalStreamEvent::Text(t) => {
+                                for payload in process_text_tokens(&t, &mut in_think_block, &mut total_text_chars, max_output_chars) {
+                                    let is_done = payload.done.unwrap_or(false);
+                                    yield payload;
+                                    if is_done { return; }
+                                }
                             }
+                            LocalStreamEvent::Reasoning(r) => yield StreamChunkPayload::thinking(r),
+                            LocalStreamEvent::ToolStart { id, name } => yield StreamChunkPayload::tool_start(id, name),
+                            LocalStreamEvent::ToolArgs(a) => yield StreamChunkPayload::tool_args(a),
+                            LocalStreamEvent::ToolComplete => yield StreamChunkPayload::tool_complete(),
+                            LocalStreamEvent::Usage { prompt_tokens, completion_tokens, total_tokens } => {
+                                yield StreamChunkPayload::usage(prompt_tokens, completion_tokens, total_tokens)
+                            }
+                            LocalStreamEvent::FinishError(msg) => {
+                                Err(msg)?;
+                                unreachable!();
+                            }
+                            LocalStreamEvent::Nothing => continue,
                         }
-                        LocalStreamEvent::Reasoning(r) => yield StreamChunkPayload::thinking(r),
-                        LocalStreamEvent::ToolStart { id, name } => yield StreamChunkPayload::tool_start(id, name),
-                        LocalStreamEvent::ToolArgs(a) => yield StreamChunkPayload::tool_args(a),
-                        LocalStreamEvent::ToolComplete => yield StreamChunkPayload::tool_complete(),
-                        LocalStreamEvent::Usage { prompt_tokens, completion_tokens, total_tokens } => {
-                            yield StreamChunkPayload::usage(prompt_tokens, completion_tokens, total_tokens)
-                        }
-                        LocalStreamEvent::FinishError(msg) => {
-                            Err(msg)?;
-                            unreachable!();
-                        }
-                        LocalStreamEvent::Nothing => continue,
                     }
                 }
             }
-            yield StreamChunkPayload::done();
         }
+        yield StreamChunkPayload::done();
     };
 
     Ok(Box::pin(stream))
@@ -1020,6 +1055,7 @@ mod tests {
             reasoning_enabled: None,
             capabilities: None,
             tool_choice: None,
+            web_search_enabled: false,
         };
 
         

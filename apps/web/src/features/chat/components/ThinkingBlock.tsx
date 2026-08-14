@@ -546,55 +546,74 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
   if (!content?.trim() && !isStarting) return null;
   if (isComplete && !hasActualReasoning) return null;
 
-  const spring = { duration: 0.2, ease: 'easeOut' as const };
+  const spring = { duration: 0.25, ease: 'easeOut' as const };
   return (
     <motion.div
       initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
-      className="my-2 mb-4 overflow-hidden"
+      className="my-3 mb-5 overflow-hidden rounded-xl border border-border/30 bg-violet-500/[0.03] dark:bg-[oklch(0.20_0.03_260/0.25)] backdrop-blur-md shadow-sm"
     >
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes text-shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        .shimmer-text {
+          background: linear-gradient(
+            90deg, 
+            rgba(167, 139, 250, 0.75) 0%, 
+            rgba(255, 255, 255, 0.95) 50%, 
+            rgba(167, 139, 250, 0.75) 100%
+          );
+          background-size: 200% 100%;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: text-shimmer 2.5s infinite linear;
+        }
+      `}} />
+
       <motion.button
         onClick={() => {
           // Allow toggle during streaming (live view) or when there's reasoning to show
           if (!isComplete || hasActualReasoning) setIsExpanded(v => !v);
         }}
-        whileHover={(!isComplete || hasActualReasoning) ? { opacity: 0.8 } : {}}
+        whileHover={(!isComplete || hasActualReasoning) ? { backgroundColor: 'rgba(255,255,255,0.02)' } : {}}
         whileTap={(!isComplete || hasActualReasoning) ? { scale: 0.995 } : {}}
         transition={spring}
-        className={`flex items-center gap-2 outline-none ${(!isComplete || hasActualReasoning) ? 'cursor-pointer group' : 'cursor-default'}`}
+        className={`w-full flex items-center justify-between px-4 py-3 outline-none text-left select-none ${(!isComplete || hasActualReasoning) ? 'cursor-pointer group' : 'cursor-default'}`}
       >
-        <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted/40 group-hover:bg-muted/60 transition-colors">
-          {!isComplete ? (
-            <motion.div
-              animate={{ opacity: [1, 0.3, 1], scale: [1, 0.85, 1] }}
-              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ background: PHASE_CONFIG[currentPhase].color }}
-            />
-          ) : hasActualReasoning ? (
-            <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={spring}>
-              <CaretDown weight="bold" className="w-3 h-3 text-muted-foreground" />
-            </motion.div>
-          ) : (
-            <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />
-          )}
-        </div>
-        
-        <div className="flex flex-col text-left">
-          <span className="text-[13px] font-sans font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-violet-500/10 dark:bg-violet-500/20 border border-violet-500/15">
+            {!isComplete ? (
+              <motion.div
+                animate={{ opacity: [1, 0.3, 1], scale: [1, 0.85, 1] }}
+                transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                className="w-2 h-2 rounded-full"
+                style={{ background: PHASE_CONFIG[currentPhase].color }}
+              />
+            ) : hasActualReasoning ? (
+              <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={spring}>
+                <CaretDown weight="bold" className="w-3.5 h-3.5 text-violet-400 dark:text-violet-300" />
+              </motion.div>
+            ) : (
+              <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />
+            )}
+          </div>
+          
+          <span className={`text-[13px] font-sans font-semibold tracking-tight ${!isComplete ? 'shimmer-text' : 'text-slate-300'}`}>
             {!isComplete ? currentStatusText : 'Thinking Process'}
           </span>
         </div>
 
         {(elapsedMs > 0 || isComplete || thinkingTimeMs) && (
-          <div className="flex items-center gap-2 ml-1">
-            <span className="text-[11px] font-sans text-muted-foreground/60">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-muted/30 border border-border/30 text-muted-foreground/80">
               {(() => {
                 const ms = thinkingTimeMs || elapsedMs || (isComplete ? 0 : (Date.now() - internalStartedAt));
                 const totalSecs = ms / 1000;
                 if (isComplete && totalSecs < 0.1) {
-                  return null; // hide if reset to 0 and complete
+                  return '0.1s';
                 }
                 if (totalSecs >= 60) {
                   const m = Math.floor(totalSecs / 60);
@@ -603,11 +622,12 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
                 }
                 return `${totalSecs.toFixed(1)}s`;
               })()}
-              {responseContent && ` • ${Math.round(responseContent.length / 4)} tokens response`}
+              {responseContent && ` • ${Math.round(responseContent.length / 4)} tokens`}
             </span>
           </div>
         )}
       </motion.button>
+
       <AnimatePresence initial={false}>
         {isExpanded && (
           <motion.div
@@ -615,43 +635,51 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ content, responseC
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={spring}
-            className="overflow-hidden"
+            className="overflow-hidden border-t border-border/20"
           >
-            {agentProgress && agentProgress.total > 0 && (
-              <AgentProgressBar
-                step={agentProgress.step}
-                total={agentProgress.total}
-                currentAgent={agentProgress.currentAgent}
-                elapsed={agentProgress.elapsed}
-              />
-            )}
-            <div ref={scrollRef} onScroll={handleScroll} className="ml-2 p-3 mt-2 space-y-1 max-h-[400px] overflow-y-auto overscroll-contain rounded-md bg-muted/20 border border-border/40 text-sm">
-              {/* Show animated placeholder while waiting for the first thinking token */}
-              {isStarting && !content && (
-                <div className="flex items-center gap-2 py-2 px-1">
-                  <motion.div
-                    className="w-1.5 h-1.5 rounded-full bg-violet-400/60"
-                    animate={{ opacity: [0.3, 1, 0.3] }}
-                    transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-                  />
-                  <span className="text-[12px] font-mono text-muted-foreground/50">Waiting for reasoning tokens...</span>
-                </div>
+            <div className="p-4 space-y-3">
+              {agentProgress && agentProgress.total > 0 && (
+                <AgentProgressBar
+                  step={agentProgress.step}
+                  total={agentProgress.total}
+                  currentAgent={agentProgress.currentAgent}
+                  elapsed={agentProgress.elapsed}
+                />
               )}
-              {segments.map((seg, i) => {
-                switch (seg.type) {
-                  case 'section':    return <SectionHeader key={i} icon={seg.icon} label={seg.label} />;
-                  case 'plan':       return <PlanPill key={i} agents={seg.agents} />;
-                  case 'agent_start':return <AgentBadge key={i} agent={seg.agent} status="running" />;
-                  case 'agent_end':  return <AgentBadge key={i} agent={seg.agent} status="done" />;
-                  case 'task_start': return <TaskStartRow key={i} index={seg.index} agent={seg.agent} task={seg.task} />;
-                  case 'dynamic_spawn': return <DynamicSpawnRow key={i} agent={seg.agent} task={seg.task} />;
-                  case 'batch_complete': return <BatchCompleteRow key={i} />;
-                  case 'tool_call':  return <ToolCallRow key={i} agent={seg.agent} tool={seg.tool} args={seg.args} />;
-                  case 'tool_result':return <ToolResultRow key={i} preview={seg.preview} />;
-                  case 'text':       return <PlainText key={i} content={seg.content} />;
-                  default:           return null;
-                }
-              })}
+              
+              <div className="relative pl-5">
+                {/* Glowing vertical gradient line for reasoning stream */}
+                <div className="absolute left-[3px] top-1.5 bottom-1.5 w-[2px] rounded-full bg-gradient-to-b from-[#818cf8] to-[#c084fc] shadow-[0_0_8px_rgba(129,140,248,0.4)]" />
+
+                <div ref={scrollRef} onScroll={handleScroll} className="space-y-2 max-h-[380px] overflow-y-auto overscroll-contain pr-1 scrollbar-thin scrollbar-thumb-border">
+                  {/* Show animated placeholder while waiting for the first thinking token */}
+                  {isStarting && !content && (
+                    <div className="flex items-center gap-2 py-1 px-1">
+                      <motion.div
+                        className="w-1.5 h-1.5 rounded-full bg-violet-400"
+                        animate={{ opacity: [0.3, 1, 0.3], scale: [0.9, 1.1, 0.9] }}
+                        transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                      />
+                      <span className="text-[12px] font-mono text-muted-foreground/60">Waiting for reasoning tokens...</span>
+                    </div>
+                  )}
+                  {segments.map((seg, i) => {
+                    switch (seg.type) {
+                      case 'section':    return <SectionHeader key={i} icon={seg.icon} label={seg.label} />;
+                      case 'plan':       return <PlanPill key={i} agents={seg.agents} />;
+                      case 'agent_start':return <AgentBadge key={i} agent={seg.agent} status="running" />;
+                      case 'agent_end':  return <AgentBadge key={i} agent={seg.agent} status="done" />;
+                      case 'task_start': return <TaskStartRow key={i} index={seg.index} agent={seg.agent} task={seg.task} />;
+                      case 'dynamic_spawn': return <DynamicSpawnRow key={i} agent={seg.agent} task={seg.task} />;
+                      case 'batch_complete': return <BatchCompleteRow key={i} />;
+                      case 'tool_call':  return <ToolCallRow key={i} agent={seg.agent} tool={seg.tool} args={seg.args} />;
+                      case 'tool_result':return <ToolResultRow key={i} preview={seg.preview} />;
+                      case 'text':       return <PlainText key={i} content={seg.content} />;
+                      default:           return null;
+                    }
+                  })}
+                </div>
+              </div>
             </div>
           </motion.div>
         )}

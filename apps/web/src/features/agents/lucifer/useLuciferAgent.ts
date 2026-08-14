@@ -18,8 +18,16 @@ export interface StreamPayload {
   content?: string;
   done?: boolean;
   error?: string;
-  tool_call?: any;
+  /** Structured tool call — preferred over magic-string scanning */
+  tool_call?: {
+    name: string;
+    args?: Record<string, any>;
+  };
+  /** Tool name shorthand for backward-compat with Rust events */
   name?: string;
+  tool_name?: string;
+  tool_args?: Record<string, any>;
+  result?: any;
 }
 
 export function useLuciferAgent() {
@@ -32,27 +40,53 @@ export function useLuciferAgent() {
       onError: (err: string) => void
     ) => {
       let accumulatedText = '';
-      const promptText = request.messages[request.messages.length - 1]?.content || '';
+
+      // FIX: Pass the FULL messages array (not just last message text) so the
+      // ConversationContextAnalyzer has complete history for decontextualization,
+      // topic threading, entity resolution, and previous-response detection.
       const analysis = await luciferAgentService.analyzeTurn(
-        typeof promptText === 'string' ? promptText : JSON.stringify(promptText),
-        request.provider
+        request.messages,
+        request.provider,
+        request.api_key // used for OpenRouter capability fetching
       );
 
       setAnalysis(analysis);
       addLog({
         type: 'info',
         title: `Lucifer Turn Initialized (${analysis.intent})`,
-        details: `Model: ${request.model_id} | Provider: ${request.provider}`,
+        details: `Model: ${request.model_id} | Provider: ${request.provider} | Tools: [${analysis.requires_tools.join(', ') || 'none'}] | Confidence: ${(analysis.confidence * 100).toFixed(0)}%`,
       });
 
+      // If this is a capability query, fetch and inject the capability card
+      // into the store before enriching the system prompt.
+      if (analysis.intent === 'model_capabilities') {
+        try {
+          await luciferAgentService.getModelCapabilityCard(
+            request.model_id,
+            request.provider,
+            request.api_key
+          );
+        } catch (err) {
+          console.warn('[useLuciferAgent] Capability card fetch failed:', err);
+        }
+      }
+
+      // BUG FIX: Pass model_id and provider so persona reflects the live model selection.
+      // Also passes capability card (from store) and previous response snippet when available.
       const enrichedRequest = {
         ...request,
-        system_instruction: luciferAgentService.enrichSystemPrompt(request.system_instruction, analysis),
+        system_instruction: luciferAgentService.enrichSystemPrompt(
+          request.system_instruction,
+          analysis,
+          request.model_id,
+          request.provider
+        ),
       };
 
       try {
         const onEvent = new Channel<StreamPayload>();
         onEvent.onmessage = (payload) => {
+          // ── Error handling ────────────────────────────────────────────────
           if (payload.type === 'error' || payload.error) {
             const err = payload.error || 'Lucifer turn error';
             addLog({ type: 'error', title: 'Execution Error', details: err });
@@ -60,38 +94,43 @@ export function useLuciferAgent() {
             return;
           }
 
-          if (payload.content) {
+          // ── Text streaming ────────────────────────────────────────────────
+          if (payload.content && (payload.type === 'text' || payload.type === 'content')) {
             accumulatedText += payload.content;
             onProgress(payload.content, accumulatedText);
-
-            // Detect image or voice triggers in response stream
-            if (payload.content.includes('pending_synthesis') || accumulatedText.includes('generate_image')) {
-              try {
-                const match = accumulatedText.match(/"prompt":\s*"([^"]+)"/);
-                if (match?.[1]) {
-                  setImagePrompt(match[1]);
-                  addLog({ type: 'image_req', title: 'Image Generation Dispatched', details: match[1] });
-                }
-              } catch {}
-            }
-
-            if (payload.content.includes('pending_audio') || accumulatedText.includes('synthesize_voice')) {
-              try {
-                const match = accumulatedText.match(/"text":\s*"([^"]+)"/);
-                if (match?.[1]) {
-                  setVoiceText(match[1]);
-                  addLog({ type: 'voice_req', title: 'Voice Synthesis Dispatched', details: match[1] });
-                }
-              } catch {}
-            }
           }
 
+          // ── Structured tool_call events (2026 standard) ───────────────────
           if (payload.type === 'tool_start' || payload.type === 'tool_call') {
-            const toolName = payload.name || 'native_tool';
+            const toolName =
+              payload.tool_call?.name ||
+              payload.name ||
+              payload.tool_name ||
+              'native_tool';
+
+            const toolArgs = payload.tool_call?.args || payload.tool_args || {};
+
             setActiveTool(toolName);
             addLog({ type: 'tool_call', title: `Executing Tool: ${toolName}` });
+
+            if (toolName === 'generate_image' && toolArgs.prompt) {
+              setImagePrompt(toolArgs.prompt);
+              addLog({ type: 'image_req', title: 'Image Generation Dispatched', details: toolArgs.prompt });
+            }
+
+            if (toolName === 'synthesize_voice' && toolArgs.text) {
+              setVoiceText(toolArgs.text);
+              addLog({ type: 'voice_req', title: 'Voice Synthesis Dispatched', details: toolArgs.text });
+            }
           }
 
+          // ── Tool result ───────────────────────────────────────────────────
+          if (payload.type === 'tool_result') {
+            const toolName = payload.tool_name || payload.name || 'native_tool';
+            addLog({ type: 'tool_result', title: `Tool Result: ${toolName}` });
+          }
+
+          // ── Turn completion ───────────────────────────────────────────────
           if (payload.done || payload.type === 'done') {
             setActiveTool(null);
             addLog({ type: 'info', title: 'Lucifer Turn Completed' });
