@@ -144,6 +144,22 @@
     position: relative;
   }
 
+  /* Suppress and hide any stray mermaid error nodes that leak into document body */
+  body > [id^="dmermaid"],
+  body > .mermaid-error,
+  body > svg[id^="mermaid-"],
+  body > div[id^="dmermaid"] {
+    display: none !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
+    z-index: -9999 !important;
+  }
+
   body::after {
     content: '';
     position: absolute;
@@ -604,15 +620,33 @@
   word-break: break-word;
 }
 
-/* Blockquotes */
+/* Blockquotes — Styled like luxury editorial epigraphs and book pull-quotes */
 .prose-nyx blockquote {
   margin-top: 1.25em;
   margin-bottom: 1.25em;
-  padding: 0.75em 1em;
-  background: color-mix(in srgb, var(--muted) 45%, transparent);
-  border-radius: var(--radius-sm);
-  color: color-mix(in srgb, currentColor 80%, transparent);
-  font-style: normal;
+  padding: 0.85em 1.25em;
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--primary) 50%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
+  font-style: italic;
+  letter-spacing: 0.01em;
+}
+
+.prose-nyx blockquote p {
+  margin-bottom: 0.35em;
+}
+
+.prose-nyx blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Book Chapter Dividers */
+.prose-nyx hr {
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  margin: 2em 0;
+  opacity: 0.6;
 }
 
 /* ── Custom Glassmorphism & Neon Spells ────────────────────── */

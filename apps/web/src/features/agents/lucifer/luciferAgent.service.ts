@@ -1,9 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
-import { LuciferTurnAnalysis, ModelCapabilityCard } from './useLuciferStore';
+import { useLuciferStore, LuciferTurnAnalysis, ModelCapabilityCard } from './useLuciferStore';
 import { getLuciferPersona, LUCIFER_PERSONA } from '@src/core/agents/luciferPersona';
+
 import { AVAILABLE_MODELS } from '@shared/config/models';
 
-// ── Regex Definitions ────────────────────────────────────────────────────────
+// ── Fallback Regex Definitions (client-side only) ────────────────────────────
+// These are evaluated ONLY when the Tauri backend is unavailable (e.g. browser
+// testing or Storybook). In production, intent analysis is performed by
+// `analyze_lucifer_turn` in the Rust orchestrator, which is the canonical source.
 // Each regex is evaluated ONLY against the CURRENT user message, never history.
 
 /**
@@ -20,10 +24,10 @@ const VOICE_PREFIX_RE =
   /^(?:say\s+this:|say:|speak:|read\s+aloud:|synthesize\s+(?:voice|audio|speech):|generate\s+audio\s+for:|text-to-speech:|tts:)\s*|\b(?:say\s+out\s+loud|read\s+(?:this|that|it)\s+(?:aloud|out\s+loud)|synthesize\s+(?:voice|audio|speech)\s+for|convert\s+to\s+speech|speak\s+this\s+text)\b/i;
 
 /**
- * Explicit image generation intent.
+ * Explicit image generation intent — strictly triggers only on explicit commands.
  */
 const IMAGE_PREFIX_RE =
-  /^(?:\/image|\/img|image:|draw:|generate\s+image:|picture:)\s*|\b(?:generate|create|draw|paint|render|make|show\s+me|give\s+me|visualize)\s+(?:an?\s+)?(?:image|picture|photo|illustration|artwork|drawing|painting|banner|poster|logo|avatar)\b|\b(?:draw|paint|render|show|give)\s+me\b|\b(?:generate|create|make|show)\s+(?:a\s+)?picture\s+of\b|\bvisualize\s+/i;
+  /^(?:\/image|\/img|image:|draw:|paint:|generate\s+image:|picture:)\s*|\b(?:generate|create|draw|paint|render)\s+(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|illustration|artwork|drawing|painting|wallpaper|avatar|portrait)\s+(?:of|showing|about|depicting)/i;
 
 
 /**
@@ -276,10 +280,10 @@ class ConversationContextAnalyzer {
     result.resolved_entities = entityMap;
 
     // ── 4. Decontextualized query construction ────────────────────────────────
-    const hasPronouns = /\b(?:it|he|she|they|that|this|him|her|them|his|its|their|there)\b/i.test(lastUserText);
-    const isExplicitContinuation = result.refers_to_previous_response || /^(?:what\s+about|and\s+|tell\s+me\s+more)/i.test(lastUserText);
+    const isExplicitShortContinuation = (result.refers_to_previous_response || /^(?:what\s+about|and\s+|tell\s+me\s+more|why\??|how\s+about|elaborate)\b/i.test(lastUserText)) && lastUserText.trim().length <= 40;
+    const containsPronounRef = /\b(?:it|that|this|them|these|those)\b/i.test(lastUserText) && lastUserText.trim().length <= 40;
 
-    if ((hasPronouns || isExplicitContinuation) && messages.length >= 2) {
+    if ((isExplicitShortContinuation || containsPronounRef) && messages.length >= 2) {
       // Find the previous user message (N-2 or earlier) to get context
       const prevUserMessages = messages
         .slice(0, -1)
@@ -291,6 +295,7 @@ class ConversationContextAnalyzer {
       if (prevUserText.length > 0 && prevUserText.length < 200) {
         const cleanPrevQuery = prevUserText
           .replace(/^(?:\/search|\/web|search:|google:|lookup:|web:)\s*/i, '')
+          .replace(/<[^>]+>/g, '') // Strip XML tags if present
           .trim();
 
         // Resolve pronouns in current message using entity map
@@ -303,11 +308,13 @@ class ConversationContextAnalyzer {
         if (cleanPrevQuery.length > 0 && resolvedText !== lastUserText) {
           // Pronoun was resolved — use resolved text
           result.decontextualized_query = resolvedText;
-        } else if (cleanPrevQuery.length > 0 && isExplicitContinuation) {
-          // Append previous topic only for explicit continuation requests
-          result.decontextualized_query = `${cleanPrevQuery} ${lastUserText}`;
+        } else if (cleanPrevQuery.length > 0 && isExplicitShortContinuation) {
+          // Append previous topic only for explicit short continuation requests
+          result.decontextualized_query = `${cleanPrevQuery} - ${lastUserText}`;
         }
       }
+    } else {
+      result.decontextualized_query = lastUserText;
     }
 
     // ── 5. Search follow-up depth ─────────────────────────────────────────────
@@ -666,7 +673,9 @@ export class LuciferAgentService {
       console.warn('[LuciferAgentService] Fallback to client-side intent analysis:', e);
     }
 
-    // STEP 3 — Scored multi-intent classification (current message only)
+    // STEP 4 (FALLBACK) — Scored multi-intent classification runs only when the
+    // Tauri IPC is unavailable (browser env, unit tests). In production this is
+    // unreachable because the invoke() above already returned.
     const signals = scoreIntents(lastUserText);
     const primarySignal = signals[0];
 
@@ -789,9 +798,7 @@ export class LuciferAgentService {
       (typeof window !== 'undefined'
         ? (() => {
             try {
-              // Synchronous read from Zustand store
-              const { useLuciferStore: s } = require('./useLuciferStore');
-              return s.getState().modelCapabilityCard;
+              return useLuciferStore.getState().modelCapabilityCard;
             } catch {
               return null;
             }
@@ -806,6 +813,7 @@ export class LuciferAgentService {
       previousResponseSnippet:
         analysis?.refers_to_previous_response ? analysis.previous_response_snippet : undefined,
     });
+
 
     // Build active tool context block so the model knows which tools are
     // active this turn and should be used — fixes the "tools not firing" issue.

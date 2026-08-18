@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import 'katex/dist/katex.min.css';
 import { CodeBlock } from '../../../components/chat/CodeBlock';
 import { getDomainFaviconUrl, getEmojiForTopic } from '../../../core/services/mediaEngine';
@@ -31,6 +32,10 @@ import { isReasoningModel } from '@src/infrastructure/utils/provider';
 import { ArtifactPanel } from './ArtifactPanel';
 import { Citation, CitationCard, SourcesFooter } from './CitationCard';
 import { SearchResultsPanel } from './SearchResultsPanel';
+import { ImageArtifactCard } from './ImageArtifactCard';
+import { VideoArtifactCard } from './VideoArtifactCard';
+import { AudioArtifactCard } from './AudioArtifactCard';
+import { ImageLightbox } from './ImageLightbox';
 import { tts } from '@src/features/voice/tts';
 import { useVirtualMessages } from '../hooks/useVirtualMessages';
 import type { StreamingArtifact } from './MessageBubble/ArtifactRenderer';
@@ -85,6 +90,7 @@ interface MessageBubbleProps {
   approveTool?: (index: number, approvalId: string) => void;
   rejectTool?: (index: number, approvalId: string) => void;
   onPinToggle?: (index: number) => void;
+  onOpenLightbox?: (url: string, prompt: string, engine?: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -541,91 +547,132 @@ StreamingCursor.displayName = 'StreamingCursor';
 // ---------------------------------------------------------------------------
 import { useSmoothTypewriter } from '../hooks/useSmoothTypewriter';
 
-/** Renders an external HTTPS image inline with Rust proxy fetching:
- *  1. Proactively fetches image bytes via Rust fetch_image_data_url_command (60s timeout for FLUX generation)
- *  2. Converts image to base64 data URL so it renders instantly and stays in the response without broken links
- *  3. Displays a sleek loading skeleton during FLUX generation and a Retry button on failure */
-const InlineFigure: React.FC<{ src: string; alt: string }> = memo(({ src, alt }) => {
-  const [displaySrc, setDisplaySrc] = useState<string | null>(null);
-  const [imgState, setImgState] = useState<'loading' | 'loaded' | 'error'>('loading');
+/**
+ * Intelligently binds verified topic photos directly under the specific
+ * sub-topics, headings, and paragraphs they represent, rather than dumping them at the end.
+ */
+export function distributeMediaIntoMarkdown(
+  rawContent: string,
+  images?: Array<{ url?: string; name?: string; engine?: string; data?: string; mimeType?: string; aspectRatio?: string }>,
+  _videos?: Array<{ url?: string; previewUrl?: string; title?: string; duration?: number; source?: string; author?: string; authorUrl?: string }>,
+  _audios?: Array<{ url?: string; title?: string; artist?: string; duration?: number; source?: string; tags?: string; previewUrl?: string }>
+): string {
+  if (!rawContent) return '';
+  if (!images || images.length === 0) {
+    return rawContent;
+  }
 
-  const fetchImage = useCallback(async () => {
-    setImgState('loading');
+  // Identify media that is already explicitly placed in markdown
+  const embeddedUrls = new Set<string>();
+  const imgRegex = /!\[.*?\]\((https?:\/\/[^\s\)]+)\)/g;
+  let match;
+  while ((match = imgRegex.exec(rawContent)) !== null) {
+    embeddedUrls.add(match[1]);
+  }
 
-    if (src.startsWith('data:') || src.startsWith('file:') || src.startsWith('blob:')) {
-      setDisplaySrc(src);
-      setImgState('loaded');
-      return;
+  const unplacedImages = (images || []).filter((img): img is { url: string; name?: string; engine?: string; data?: string; mimeType?: string; aspectRatio?: string } => !!img?.url && !embeddedUrls.has(img.url));
+
+  if (unplacedImages.length === 0) {
+    return rawContent;
+  }
+
+  // ── Keyword overlap scorer — matches image titles to section headings ─────────
+  const scoreImgToHeader = (imgTitle: string, headerText: string): number => {
+    const hWords = headerText.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+    const iWords = imgTitle.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+    if (!hWords.length || !iWords.length) return 0;
+    let score = 0;
+    for (const hw of hWords) {
+      if (iWords.some(iw => iw.includes(hw) || hw.includes(iw))) score++;
     }
+    return score / Math.max(hWords.length, 1);
+  };
 
-    try {
-      const b64DataUrl = await invoke<string>('fetch_image_data_url_command', { url: src });
-      if (b64DataUrl && b64DataUrl.startsWith('data:')) {
-        setDisplaySrc(b64DataUrl);
-        setImgState('loaded');
-      } else {
-        // Direct src fallback
-        setDisplaySrc(src);
+  // Split by markdown headings (e.g. ## Subtopic or ### Subtopic)
+  const headerRegex = /^(#{1,4}\s+.+)$/gm;
+  const parts = rawContent.split(headerRegex);
+
+  if (parts.length > 1) {
+    // Collect heading indices
+    const headingIndices: number[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (/^#{1,4}\s+/.test(parts[i].trim())) headingIndices.push(i);
+    }
+    const sectionCount = headingIndices.length;
+    // 1 image per section, capped at available images
+    const maxImgs = Math.min(unplacedImages.length, Math.max(1, sectionCount));
+
+    // Greedy best-match assignment: heading index → image index
+    const imageAssignment: Record<number, number> = {};
+    const usedImgIdx = new Set<number>();
+
+    // Pass 1: assign by relevance score
+    for (const hi of headingIndices) {
+      if (usedImgIdx.size >= maxImgs) break;
+      const headerText = parts[hi].trim().toLowerCase();
+      let bestScore = 0;
+      let bestJ = -1;
+      for (let j = 0; j < unplacedImages.length; j++) {
+        if (usedImgIdx.has(j)) continue;
+        const s = scoreImgToHeader(unplacedImages[j].name || '', headerText);
+        if (s > bestScore) { bestScore = s; bestJ = j; }
       }
-    } catch (err) {
-      console.warn('[InlineFigure] Rust image fetch failed, trying direct src fallback:', err);
-      setDisplaySrc(src);
+      if (bestJ !== -1 && bestScore > 0) {
+        imageAssignment[hi] = bestJ;
+        usedImgIdx.add(bestJ);
+      }
     }
-  }, [src]);
+    // Pass 2: fill remaining slots sequentially
+    for (const hi of headingIndices) {
+      if (usedImgIdx.size >= maxImgs) break;
+      if (hi in imageAssignment) continue;
+      for (let j = 0; j < unplacedImages.length; j++) {
+        if (!usedImgIdx.has(j)) {
+          imageAssignment[hi] = j;
+          usedImgIdx.add(j);
+          break;
+        }
+      }
+    }
 
-  useEffect(() => {
-    fetchImage();
-  }, [fetchImage]);
+    const result: string[] = [];
 
-  return (
-    <figure className="my-5 w-full max-w-xl rounded-2xl overflow-hidden border border-white/[0.08] bg-white/[0.04] shadow-lg">
-      {imgState === 'loading' && (
-        <div className="w-full h-52 bg-gradient-to-br from-slate-900/80 to-slate-800/80 animate-pulse flex flex-col items-center justify-center gap-3 p-6 text-center">
-          <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-          <span className="text-xs font-medium text-foreground/80">Generating visual illustration…</span>
-          {alt && <span className="text-[11px] text-muted-foreground/60 max-w-sm truncate">{alt}</span>}
-        </div>
-      )}
-      {imgState === 'error' && (
-        <div className="w-full py-3.5 px-4 bg-muted/20 flex items-center justify-between gap-3 text-muted-foreground/60 text-xs rounded-2xl">
-          <div className="flex items-center gap-2 truncate">
-            <ImageIcon size={16} className="shrink-0 text-muted-foreground/40" />
-            <span className="truncate max-w-xs">{alt || 'Visual illustration'}</span>
-          </div>
-          <button
-            onClick={fetchImage}
-            className="px-3 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-medium transition-colors shrink-0"
-          >
-            Retry visual
-          </button>
-        </div>
-      )}
-      {displaySrc && (
-        <img
-          src={displaySrc}
-          alt={alt}
-          className={`w-full object-cover transition-opacity duration-500 ${imgState === 'loaded' ? 'opacity-100' : 'sr-only'}`}
-          style={{ maxHeight: '450px' }}
-          onLoad={() => setImgState('loaded')}
-          onError={() => setImgState('error')}
-        />
-      )}
-      {alt && imgState === 'loaded' && (
-        <figcaption className="px-4 py-2.5 text-[11px] text-muted-foreground/70 font-medium border-t border-white/[0.08] bg-white/[0.02] truncate">
-          {alt}
-        </figcaption>
-      )}
-    </figure>
-  );
-});
-InlineFigure.displayName = 'InlineFigure';
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      result.push(part);
+
+      if (/^#{1,4}\s+/.test(part.trim())) {
+        // Image: place assigned image for this heading
+        if (i in imageAssignment) {
+          const img = unplacedImages[imageAssignment[i]];
+          if (img) result.push(`\n\n![${img.name || 'Visual Reference'}](${img.url})\n\n`);
+        }
+      }
+    }
+
+    return result.join('');
+  }
+
+  // ── No headings: attach 1 image after first paragraph ─
+  const firstBreak = rawContent.indexOf('\n\n');
+  if (firstBreak !== -1) {
+    const before = rawContent.slice(0, firstBreak);
+    const after = rawContent.slice(firstBreak);
+    const mediaTags: string[] = [];
+    if (unplacedImages.length > 0) mediaTags.push(`\n\n![${unplacedImages[0].name || 'Visual Reference'}](${unplacedImages[0].url})\n\n`);
+    return before + mediaTags.join('') + after;
+  }
+
+  return rawContent;
+}
 
 
 const MemoizedMarkdownBlock: React.FC<{
   content: string;
   isStreaming?: boolean;
   citations?: Citation[];
-}> = memo(({ content, isStreaming, citations }) => {
+  onOpenLightbox?: (url: string, prompt: string, engine?: string) => void;
+}> = memo(({ content, isStreaming, citations, onOpenLightbox }) => {
   const smoothContent = useSmoothTypewriter(content, isStreaming || false);
   const deferredContent = React.useDeferredValue(smoothContent);
 
@@ -635,21 +682,50 @@ const MemoizedMarkdownBlock: React.FC<{
   useEffect(() => { citationsRef.current = citations; }, [citations]);
 
   let processedContent = deferredContent;
-  if (citations && citations.length > 0) {
-    processedContent = smoothContent.replace(/\[(?:Source\s*)?(\d+)\]/gi, (match, id) => {
-      const cite = citations.find((c) => c.id === id || String(c.index) === id);
-      if (cite && cite.url) {
-        return `[${cite.title || 'Source ' + id}](${cite.url})`;
-      }
-      return match;
-    });
-  } else {
-    // Strip raw unlinked [Source N] text if no citation mapping exists
-    processedContent = smoothContent.replace(/\s*\[(?:Source\s*)?\d+\](?!\()/gi, '');
-  }
+  // Replace single and multi-source citations (e.g. [Source 6, Source 8], [Source 6, 8], [Source 1])
+  // with interactive website avatar badges linked directly to verified URLs
+  processedContent = processedContent.replace(/\[(?:Source\s*)?(\d+(?:\s*,\s*(?:Source\s*)?\d+)*)\]/gi, (_match, group) => {
+    if (!citations || citations.length === 0) return '';
+    const ids = group.match(/\d+/g) || [];
+    const links = ids
+      .map((id: string) => {
+        const cite = citations.find((c) => c.id === id || String(c.index) === id);
+        if (cite && cite.url) {
+          let domain = '';
+          try {
+            domain = new URL(cite.url).hostname.replace(/^www\./, '');
+          } catch {
+            domain = cite.title || `Source ${id}`;
+          }
+          return `[${domain}](${cite.url})`;
+        }
+        return '';
+      })
+      .filter(Boolean);
+    return links.length > 0 ? ` ${links.join(' ')} ` : '';
+  });
+
+  // Strip any leftover unlinked [Source ...] or [Source N, M] raw text so ugly raw text is never shown
+  processedContent = processedContent.replace(/\s*\[(?:Source\s*)?\d+(?:\s*,\s*(?:Source\s*)?\d+)*\](?!\()/gi, '');
 
   // Escape unescaped currency dollar signs (e.g. $1,500 or $1500) so KaTeX does not treat prices as math delimiters
   processedContent = processedContent.replace(/\$(\d+(?:,\d{3})*(?:\.\d+)?)/g, '\\$$1');
+
+  // Auto-wrap sequences of arrow nodes (e.g. A --> B["..."]\nB --> C["..."]) outside of code blocks
+  if (!processedContent.includes('```mermaid')) {
+    processedContent = processedContent.replace(
+      /(?:^|\n)((?:[A-Za-z0-9_]+(?:\s*\[[^\]]+\]|\s*\([^\)]+\))?\s*(?:-->|==>|--\s*>\s*)\s*[A-Za-z0-9_]+(?:\s*\[[^\]]+\]|\s*\([^\)]+\))?(?:\n|$)){2,})/g,
+      (_full, group) => {
+        return `\n\n\`\`\`mermaid\nflowchart TD\n${group.trim()}\n\`\`\`\n\n`;
+      }
+    );
+  }
+
+  // Ensure headings have newlines so they are parsed cleanly
+  processedContent = processedContent.replace(/([^\n])\s*(#{1,6}\s+[^\n]+)/g, '$1\n\n$2\n\n');
+
+  // Fix markdown table rows that were accidentally bracketed e.g. [## Heading ... | col1 | col2 | ... ]
+  processedContent = processedContent.replace(/\[\s*(#{1,6}\s+[^\]]+)\]/g, '$1');
 
   // Helper to detect if header children already contain an image or ImageAttachment to avoid double icons
   const hasImageChild = (node: any): boolean => {
@@ -861,20 +937,53 @@ const MemoizedMarkdownBlock: React.FC<{
       td: ({ children }: any) => (
         <td className="px-4 py-2.5 text-foreground/90 border-b border-border/40 hover:bg-muted/20 transition-colors">{children}</td>
       ),
-      // Inline section illustration — proper React component so useState is valid.
+      // Inline section illustration — rich interactive ImageArtifactCard (compact book-plate size)
       img: ({ src, alt }: any) => {
         if (!src) return null;
         const isExternal = typeof src === 'string' && src.startsWith('https://');
         if (!isExternal) return <ImageAttachment src={src} alt={alt || ''} />;
-        return <InlineFigure src={src} alt={alt || ''} />;
-      }
+        return (
+          <ImageArtifactCard
+            imageUrl={src}
+            prompt={alt || 'Visual Reference'}
+            engine="Verified Media"
+          />
+        );
+      },
+      // Inline HD video illustration — rich interactive VideoArtifactCard
+      video: ({ src, title, poster }: any) => {
+        if (!src) return null;
+        return (
+          <div className="my-3.5 max-w-2xl">
+            <VideoArtifactCard
+              videoUrl={src}
+              previewUrl={poster || ''}
+              title={title || 'HD Video Reference'}
+              aspectRatio="16:9"
+            />
+          </div>
+        );
+      },
+      // Inline atmospheric soundtrack — luxury editorial AudioArtifactCard
+      audio: ({ src, title, artist }: any) => {
+        if (!src) return null;
+        return (
+          <div className="my-3.5 max-w-xl">
+            <AudioArtifactCard
+              audioUrl={src}
+              title={title || 'Atmospheric Chapter Soundtrack'}
+              artist={artist || 'Audio Soundtrack'}
+            />
+          </div>
+        );
+      },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [] // intentionally empty — citations are read via citationsRef
+    [onOpenLightbox]
   );
 
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} rehypePlugins={[rehypeKatex]} components={components}>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={components}>
       {processedContent}
     </ReactMarkdown>
   );
@@ -882,7 +991,6 @@ const MemoizedMarkdownBlock: React.FC<{
 (prevProps, nextProps) => {
   if (prevProps.content !== nextProps.content) return false;
   if (prevProps.isStreaming !== nextProps.isStreaming) return false;
-  // Only re-render if citations count changes
   if ((prevProps.citations?.length || 0) !== (nextProps.citations?.length || 0)) return false;
   return true;
 });
@@ -893,16 +1001,26 @@ export const MarkdownContent: React.FC<{
   blocks?: string[];
   isStreaming?: boolean;
   citations?: Citation[];
-}> = memo(({ content, blocks, isStreaming, citations }) => {
+  images?: Array<{ url?: string; name?: string; engine?: string; data?: string; mimeType?: string; aspectRatio?: string }>;
+  videos?: Array<{ url?: string; previewUrl?: string; title?: string; duration?: number; source?: string; author?: string; authorUrl?: string }>;
+  audios?: Array<{ url?: string; title?: string; artist?: string; duration?: number; source?: string; tags?: string; previewUrl?: string }>;
+  onOpenLightbox?: (url: string, prompt: string, engine?: string) => void;
+}> = memo(({ content, blocks, isStreaming, citations, images, videos, audios, onOpenLightbox }) => {
   // Hide raw XML artifact tags from being rendered in text bubble
   const cleanText = (text: string) => {
     return text.replace(/<nyx_artifact[\s\S]*?(?:<\/nyx_artifact>|$)/g, '');
   };
 
   const cleanedContent = cleanText(content);
+  // Distribute verified images, videos, and music contextually into their respective subtopics / chapters
+  const mediaEnhancedContent = useMemo(
+    () => distributeMediaIntoMarkdown(cleanedContent, images, videos, audios),
+    [cleanedContent, images, videos, audios]
+  );
+
   const blocksToRender = blocks?.length 
     ? blocks.map(b => cleanText(b)) 
-    : [cleanedContent];
+    : [mediaEnhancedContent];
   
   return (
     <div className="prose-nyx w-full">
@@ -914,6 +1032,7 @@ export const MarkdownContent: React.FC<{
             content={block}
             isStreaming={isStreaming && isLastBlock}
             citations={citations}
+            onOpenLightbox={onOpenLightbox}
           />
         );
       })}
@@ -926,6 +1045,8 @@ export const MarkdownContent: React.FC<{
   if (prevProps.isStreaming !== nextProps.isStreaming) return false;
   if (prevProps.blocks?.length !== nextProps.blocks?.length) return false;
   if ((prevProps.citations?.length || 0) !== (nextProps.citations?.length || 0)) return false;
+  if ((prevProps.images?.length || 0) !== (nextProps.images?.length || 0)) return false;
+  if ((prevProps.videos?.length || 0) !== (nextProps.videos?.length || 0)) return false;
   return true;
 });
 MarkdownContent.displayName = 'MarkdownContent';
@@ -1346,6 +1467,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
     approveTool,
     rejectTool,
     onPinToggle,
+    onOpenLightbox,
   }) => {
     const isUser = msg.role === 'user';
     const isSetupMessage = !isUser && typeof msg.content === 'string' && (
@@ -1659,7 +1781,7 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                       </div>
                     )}
 
-                    {/* Main content */}
+                    {/* Main content with inline contextual media */}
                     {parsedContent && msg.status !== 'error' && !isSetupMessage && (
                       <>
                         <MarkdownContent
@@ -1667,85 +1789,12 @@ const MessageBubble = React.memo<MessageBubbleProps>(
                           blocks={(msg as any).blocks}
                           isStreaming={isStreaming && isLast}
                           citations={msg.citations}
+                          images={msg.images}
+                          videos={(msg as any).videos}
+                          audios={(msg as any).audios}
+                          onOpenLightbox={onOpenLightbox}
                         />
                       </>
-                    )}
-
-                    {/* Artifacts */}
-                    {(() => {
-                      const completeArtifacts = msg.artifacts || [];
-                      const allArtifacts = [...completeArtifacts, ...streamingArtifacts];
-                      if (allArtifacts.length === 0) return null;
-                      
-                      return (
-                        <div className="space-y-1 mt-2">
-                          {allArtifacts.map((artifact, i) => {
-                            const isArtifactStreaming = artifact.id === 'streaming-artifact';
-
-                            if (isArtifactStreaming) {
-                              return (
-                                <div key={`streaming-${i}`} className="rounded-md border border-border bg-surface overflow-hidden flex flex-col my-4 shadow-sm w-full p-4 cursor-default">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                                      <NyxLoader size={16} className="text-primary/70 animate-pulse" />
-                                    </div>
-                                    <div className="flex flex-col gap-1.5 flex-1">
-                                      <div className="h-4 bg-muted/60 animate-pulse rounded w-1/3" />
-                                      <div className="h-3 bg-muted/60 animate-pulse rounded w-1/4" />
-                                    </div>
-                                    <div className="text-xs text-primary/70 font-semibold animate-pulse uppercase tracking-wider">
-                                      Generating Artifact...
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            return (
-                              <div 
-                                key={artifact.id || i}
-                                onClick={() => onArtifactClick?.(artifact)}
-                                className="cursor-pointer group flex items-center justify-between p-3.5 my-3 rounded-xl border border-border/60 bg-surface hover:bg-muted/30 hover:border-primary/40 hover:shadow-sm transition-all"
-                              >
-                                <div className="flex items-center gap-3 overflow-hidden">
-                                  <div className="flex items-center justify-center w-9 h-9 rounded-md bg-primary/10 text-primary">
-                                    {artifact.type === 'html' || artifact.type === 'react' || artifact.type === 'code' ? (
-                                      <Terminal className="w-4.5 h-4.5" />
-                                    ) : (
-                                      <FileText className="w-4.5 h-4.5" />
-                                    )}
-                                  </div>
-                                  <div className="flex flex-col min-w-0">
-                                    <span className="text-sm font-semibold text-foreground truncate">
-                                      {artifact.title || 'Generated Artifact'}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                                      {artifact.type === 'code' ? artifact.language || 'code' : artifact.type}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="text-xs font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity pr-2">
-                                  Click to open
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Citations — rich source tiles panel */}
-                    {msg.citations && msg.citations.length > 0 && (
-                      <SearchResultsPanel
-                        citations={msg.citations.map((cite, i) => ({
-                          id: cite.id ?? String(i),
-                          index: cite.index ?? (i + 1),
-                          title: cite.title || cite.source || '',
-                          url: cite.url || '',
-                          snippet: cite.snippet || cite.quote || '',
-                          domain: cite.domain,
-                        }))}
-                      />
                     )}
 
                     {/* Tool Approval UI Gate */}
@@ -1979,6 +2028,27 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const webSearchEnabled = useAppStore(state => state.webSearchEnabled);
 
+  // Lightbox viewer state for inspect / zoom / pan
+  const [lightbox, setLightbox] = useState<{
+    isOpen: boolean;
+    imageUrl: string;
+    prompt: string;
+    engine?: string;
+  }>({
+    isOpen: false,
+    imageUrl: '',
+    prompt: '',
+    engine: undefined,
+  });
+
+  const handleOpenLightbox = useCallback((imageUrl: string, prompt: string, engine?: string) => {
+    setLightbox({ isOpen: true, imageUrl, prompt, engine });
+  }, []);
+
+  const handleCloseLightbox = useCallback(() => {
+    setLightbox(prev => ({ ...prev, isOpen: false }));
+  }, []);
+
   // Build the display list: history + active stream message (if any)
   const allMessages = useMemo(
     () => (activeStreamMessage ? [...history, activeStreamMessage] : history),
@@ -2099,6 +2169,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                         approveTool={approveTool}
                         rejectTool={rejectTool}
                         onPinToggle={onPinToggle}
+                        onOpenLightbox={handleOpenLightbox}
                       />
                     </div>
                   </div>
@@ -2134,6 +2205,14 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
           </div>
         </div>
       )}
+      {/* Image Inspect Lightbox Modal */}
+      <ImageLightbox
+        isOpen={lightbox.isOpen}
+        imageUrl={lightbox.imageUrl}
+        prompt={lightbox.prompt}
+        engine={lightbox.engine}
+        onClose={handleCloseLightbox}
+      />
     </div>
   );
 };

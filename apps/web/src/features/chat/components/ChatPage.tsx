@@ -402,20 +402,21 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       }
     });
 
-    // Handle Documents (RAG Ingestion)
+    // Handle Documents (RAG Ingestion into TurboVec)
     documents.forEach(async (file) => {
       if (file.size > 10 * 1024 * 1024) {
         toast.error(`Document ${file.name} is too large (max 10MB)`);
         return;
       }
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res: any = await invoke('upload_document', { file: formData.get('file') });
-        if (!res.ok) throw new Error(res.statusText);
+        const text = await file.text();
+        await invoke('turbovec_add_memory', {
+          text: `Document [${file.name}]:\n${text}`,
+          metadata: JSON.stringify({ filename: file.name, size: file.size, type: file.type }),
+        });
         toast.success(`Document "${file.name}" ingested into RAG memory!`);
       } catch (err: any) {
-        toast.error(`Failed to ingest ${file.name}: ${err.message}`);
+        toast.error(`Failed to ingest ${file.name}: ${err.message || String(err)}`);
       }
     });
 
@@ -652,8 +653,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 // Use native Tauri IPC — the dead Node /api/v1/sessions endpoint
                 // no longer exists. db_update_chat_session writes directly to SQLite.
                 await invoke('db_update_chat_session_meta', {
-                  sessionId: chatSessions.activeSid,
+                  id: chatSessions.activeSid,
                   title: title.trim(),
+                  folder_id: null,
+                  tags: null,
                 });
               } catch {
                 // Non-fatal: title update failure doesn't break chat

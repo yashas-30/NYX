@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use crate::rag::lancedb_store::LanceDbStore;
+use crate::commands::db::ChatMessagePayload;
 
 /// High-performance vector memory store bridging chat and coder RAG spaces.
+#[derive(Clone)]
 pub struct TurbovecStore {
     pub inner: LanceDbStore,
     pub db_path: PathBuf,
@@ -36,6 +38,154 @@ impl TurbovecStore {
                 if let Some(vector) = vecs.into_iter().next() {
                     let _ = self.inner.insert(doc_id, text.to_string(), vector, metadata.to_string()).await;
                 }
+            }
+        }
+    }
+
+    /// Stores a single structured conversation turn (User Prompt + Model Response) into vector memory.
+    pub async fn add_structured_turn(
+        &self,
+        session_id: &str,
+        session_title: &str,
+        turn_index: usize,
+        user_prompt: &str,
+        assistant_response: &str,
+        model: &str,
+        timestamp: i64,
+    ) {
+        let user_text = user_prompt.trim();
+        let assistant_text = assistant_response.trim();
+        if user_text.is_empty() && assistant_text.is_empty() {
+            return;
+        }
+
+        let title_clean = if session_title.trim().is_empty() { "Untitled Session" } else { session_title.trim() };
+        let model_clean = if model.trim().is_empty() { "default" } else { model.trim() };
+
+        // If the assistant response is large (> 1500 chars), split it into contextual chunks with the user prompt header
+        const MAX_CHUNK_LEN: usize = 1500;
+        if assistant_text.len() > MAX_CHUNK_LEN {
+            let response_chars: Vec<char> = assistant_text.chars().collect();
+            let mut start = 0;
+            let total = response_chars.len();
+            let mut chunk_idx = 1;
+
+            while start < total {
+                let end = usize::min(start + MAX_CHUNK_LEN, total);
+                let part: String = response_chars[start..end].iter().collect();
+
+                let structured_text = format!(
+                    "### Conversation: \"{}\" [Session: {} | Turn #{}.{} | Model: {}]\n**User Prompt**:\n{}\n\n**Assistant Response (Part {})**:\n{}",
+                    title_clean, session_id, turn_index, chunk_idx, model_clean, user_text, chunk_idx, part
+                );
+
+                let meta = format!(
+                    "chat_turn|session_id:{}|title:{}|turn:{}.{}|model:{}|ts:{}",
+                    session_id, title_clean, turn_index, chunk_idx, model_clean, timestamp
+                );
+
+                self.add_memory_with_meta(&structured_text, &meta).await;
+
+                if end >= total {
+                    break;
+                }
+                start += MAX_CHUNK_LEN.saturating_sub(200); // 200 chars overlap
+                chunk_idx += 1;
+            }
+        } else {
+            let structured_text = format!(
+                "### Conversation: \"{}\" [Session: {} | Turn #{} | Model: {}]\n**User Prompt**:\n{}\n\n**Assistant Response**:\n{}",
+                title_clean, session_id, turn_index, model_clean, user_text, assistant_text
+            );
+
+            let meta = format!(
+                "chat_turn|session_id:{}|title:{}|turn:{}|model:{}|ts:{}",
+                session_id, title_clean, turn_index, model_clean, timestamp
+            );
+
+            self.add_memory_with_meta(&structured_text, &meta).await;
+        }
+    }
+
+    /// Iterates through ALL messages across an entire chat session, organizes them into
+    /// structured prompt-response dialogue turns, and indexes every turn into TurboVec vector memory.
+    pub async fn sync_session_messages(
+        &self,
+        session_id: &str,
+        session_title: &str,
+        messages: &[ChatMessagePayload],
+    ) {
+        if messages.is_empty() {
+            return;
+        }
+
+        let now = chrono::Utc::now().timestamp();
+        let mut turn_index = 1;
+        let mut i = 0;
+
+        while i < messages.len() {
+            let msg = &messages[i];
+            let role = msg.role.to_lowercase();
+
+            if role == "user" {
+                let user_prompt = msg.content.clone();
+                let user_ts = msg.timestamp.unwrap_or(now);
+                let model_name = msg.model.clone().unwrap_or_else(|| "default".to_string());
+
+                // Check if the next message is the corresponding assistant response
+                if i + 1 < messages.len() && messages[i + 1].role.to_lowercase() == "assistant" {
+                    let assistant_msg = &messages[i + 1];
+                    let assistant_response = assistant_msg.content.clone();
+                    let effective_model = assistant_msg.model.clone().unwrap_or(model_name);
+
+                    self.add_structured_turn(
+                        session_id,
+                        session_title,
+                        turn_index,
+                        &user_prompt,
+                        &assistant_response,
+                        &effective_model,
+                        user_ts,
+                    ).await;
+
+                    turn_index += 1;
+                    i += 2;
+                } else {
+                    // Standalone user prompt without response yet
+                    let title_clean = if session_title.trim().is_empty() { "Untitled Session" } else { session_title.trim() };
+                    let structured_text = format!(
+                        "### Conversation: \"{}\" [Session: {} | Turn #{} (User Query)]\n**User Prompt**:\n{}",
+                        title_clean, session_id, turn_index, user_prompt.trim()
+                    );
+                    let meta = format!(
+                        "chat_prompt|session_id:{}|title:{}|turn:{}|model:{}|ts:{}",
+                        session_id, title_clean, turn_index, model_name, user_ts
+                    );
+                    self.add_memory_with_meta(&structured_text, &meta).await;
+
+                    turn_index += 1;
+                    i += 1;
+                }
+            } else if role == "assistant" {
+                // Standalone assistant message
+                let title_clean = if session_title.trim().is_empty() { "Untitled Session" } else { session_title.trim() };
+                let model_name = msg.model.clone().unwrap_or_else(|| "default".to_string());
+                let ts = msg.timestamp.unwrap_or(now);
+
+                let structured_text = format!(
+                    "### Conversation: \"{}\" [Session: {} | Turn #{} (Assistant Output)]\n**Assistant ({})**:\n{}",
+                    title_clean, session_id, turn_index, model_name, msg.content.trim()
+                );
+                let meta = format!(
+                    "chat_response|session_id:{}|title:{}|turn:{}|model:{}|ts:{}",
+                    session_id, title_clean, turn_index, model_name, ts
+                );
+                self.add_memory_with_meta(&structured_text, &meta).await;
+
+                turn_index += 1;
+                i += 1;
+            } else {
+                i += 1;
             }
         }
     }
@@ -93,6 +243,23 @@ impl TurbovecStore {
             }
         }
         Vec::new()
+    }
+
+    /// Search past chat conversations and prompt-response pairs matching a query.
+    pub async fn search_chat_memory(&self, query: &str, limit: usize) -> Vec<(String, String, String)> {
+        let raw_results = self.search_memory(query, limit * 2).await;
+        let mut chat_results = Vec::new();
+
+        for (doc_id, text) in raw_results {
+            if text.contains("Conversation:") || text.contains("User Prompt") || text.contains("Assistant Response") {
+                chat_results.push((doc_id, text, "chat_dialogue".to_string()));
+                if chat_results.len() >= limit {
+                    break;
+                }
+            }
+        }
+
+        chat_results
     }
 
     /// Store a generated image asset in TurboVec vector memory with rich prompt IR metadata

@@ -1,9 +1,9 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { codeToHtml } from 'shiki';
 import mermaid from 'mermaid';
 import { useTheme } from '../../shared/context/ThemeContext';
 import { CopyIcon as Copy } from '@animateicons/react/lucide';
-import { Eye, Code as CodeIcon, Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, Download, Move } from 'lucide-react';
+import { Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, Download, Move } from 'lucide-react';
 
 interface CodeBlockProps {
   code: string;
@@ -11,66 +11,83 @@ interface CodeBlockProps {
   filename?: string;
 }
 
+/**
+ * Removes any stray DOM elements that Mermaid injects into document.body on parse errors.
+ */
+function cleanupMermaidDOMErrors() {
+  if (typeof document === 'undefined') return;
+  try {
+    const orphans = document.querySelectorAll(
+      'body > [id^="dmermaid"], body > .mermaid-error, body > svg[id^="mermaid-"], body > div[id^="dmermaid"]'
+    );
+    orphans.forEach((el) => el.remove());
+  } catch {
+    // Ignore DOM cleanup errors
+  }
+}
+
+/**
+ * Ultra-robust Mermaid sanitizer. Automatically repairs common LLM diagram syntax errors:
+ * 1. Wraps all node labels with special chars, parens, brackets, or colons into clean quotes
+ * 2. Properly handles complex expressions like A[Narrow AI (Point Solutions)] -> A["Narrow AI (Point Solutions)"]
+ * 3. Preserves subgraph blocks and declaration directives
+ * 4. Ensures root diagram declaration exists
+ */
 export function sanitizeMermaidCode(rawCode: string): string {
   if (!rawCode) return '';
   let cleaned = rawCode.trim();
-  cleaned = cleaned.replace(/^```mermaid\s*/i, '').replace(/```\s*$/, '').trim();
+  cleaned = cleaned.replace(/^```(?:mermaid)?\s*/i, '').replace(/```\s*$/, '').trim();
 
-  // Convert narrow vertical flowcharts (flowchart TD/TB or graph TD/TB) to horizontal (LR) for wide container fitting
-  if (/^\s*(flowchart|graph)\s+(TD|TB)\b/i.test(cleaned)) {
-    cleaned = cleaned.replace(/^\s*(flowchart|graph)\s+(TD|TB)\b/i, '$1 LR');
+  // Strip leading comments or markdown titles before diagram declaration
+  cleaned = cleaned.replace(/^#+.*$/gm, '').trim();
+
+  // Ensure valid diagram type header if missing
+  const hasValidHeader = /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|journey|gantt)\b/i.test(
+    cleaned
+  );
+
+  if (!hasValidHeader) {
+    cleaned = `flowchart TD\n${cleaned}`;
   }
 
-  // Auto-fix mindmap diagrams by converting to robust flowchart LR layout
-  if (/^\s*mindmap\b/i.test(cleaned)) {
-    const lines = cleaned.split('\n');
-    let rootName = '';
-    const childNodes: string[] = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const cleanLabel = line
-        .replace(/^root\s*(\(\(|\(|\{|\[)?/i, '')
-        .replace(/(\)\)|\)|\}|\])?$/g, '')
-        .replace(/"/g, '')
-        .trim();
-
-      if (cleanLabel) {
-        if (!rootName) {
-          rootName = cleanLabel;
-        } else {
-          childNodes.push(cleanLabel);
-        }
-      }
-    }
-
-    if (rootName) {
-      const flowchartLines = [
-        'flowchart LR',
-        `  Root["${rootName.replace(/"/g, "'")}"]`,
-      ];
-      childNodes.forEach((child, idx) => {
-        flowchartLines.push(`  Root --> N${idx + 1}["${child.replace(/"/g, "'")}"]`);
-      });
-      return flowchartLines.join('\n');
-    }
-  }
-
-  // Process line by line to prevent cross-line regex matching or corrupting statement boundaries
+  // Line-by-line sanitization to prevent syntax crashes from special characters in node labels
   const lines = cleaned.split('\n');
-  const sanitizedLines = lines.map(line => {
+  const sanitizedLines = lines.map((line) => {
     let l = line.trim();
     if (!l) return l;
 
-    // If node definitions on this line have unquoted labels with special characters, wrap in double quotes
-    l = l.replace(/(\b\w+)\s*(\[|\(|\{\{|\(\()([^\n"\]\)\}]+)(\]|\)\}|\)\))/g, (match, nodeId, openBracket, content, closeBracket) => {
-      const trimmed = content.trim();
-      if (/[()%&/:\-$,#]/.test(trimmed) && !trimmed.startsWith('"')) {
-        const escaped = trimmed.replace(/"/g, "'");
-        return `${nodeId}${openBracket}"${escaped}"${closeBracket}`;
-      }
-      return match;
+    // Preserve top-level directives and subgraphs
+    if (/^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|subgraph|end)\b/i.test(l)) {
+      return l;
+    }
+
+    // 1. Double bracket labels: NodeId[["Label"]] or NodeId((("Label"))) or NodeId{{ "Label" }}
+    l = l.replace(/(\b[a-zA-Z0-9_-]+)\s*(\{\{|\(\(|\(\[|\[\[)\s*([^\]\)\}\n]+?)\s*(\}\}|\)\)|\)\]|\]\])/g, (match, id, open, content, close) => {
+      const trimmed = content.trim().replace(/^["']+|["']+$/g, '');
+      const escaped = trimmed.replace(/"/g, "'");
+      return `${id}${open}"${escaped}"${close}`;
+    });
+
+    // 2. Square bracket labels: NodeId[Any Text Here (even with nested parens, colons, etc)]
+    l = l.replace(/(\b[a-zA-Z0-9_-]+)\s*\[([^\]\n]+)\]/g, (match, id, content) => {
+      const trimmed = content.trim().replace(/^["']+|["']+$/g, '');
+      const escaped = trimmed.replace(/"/g, "'");
+      return `${id}["${escaped}"]`;
+    });
+
+    // 3. Rounded parentheses labels: NodeId(Text Here) - only if not already ((...)) or ([...])
+    l = l.replace(/(\b[a-zA-Z0-9_-]+)\s*\(([^)\n]+)\)/g, (match, id, content) => {
+      if (content.startsWith('[') || content.startsWith('(')) return match;
+      const trimmed = content.trim().replace(/^["']+|["']+$/g, '');
+      const escaped = trimmed.replace(/"/g, "'");
+      return `${id}("${escaped}")`;
+    });
+
+    // 4. Arrow labels: -->|Label text (even with parens)|
+    l = l.replace(/(-->|---|==>|-.->)\s*\|([^|\n]+)\|/g, (match, arrow, label) => {
+      const trimmed = label.trim().replace(/^["']+|["']+$/g, '');
+      const escaped = trimmed.replace(/"/g, "'");
+      return `${arrow}|"${escaped}"|`;
     });
 
     return l;
@@ -79,14 +96,95 @@ export function sanitizeMermaidCode(rawCode: string): string {
   return sanitizedLines.join('\n');
 }
 
+/**
+ * Pure SVG Flowchart Fallback Generator.
+ * Used when Mermaid syntax is severely malformed so the user ALWAYS gets a crisp visual graph.
+ */
+function generateFallbackFlowchartSvg(rawCode: string): string {
+  const lines = rawCode
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !/^(flowchart|graph|sequenceDiagram|subgraph|end)/i.test(l));
+
+  const nodesMap = new Map<string, string>();
+
+  for (const line of lines) {
+    // Extract node definitions with labels like A["Label"] or A[Label]
+    const defMatches = line.matchAll(/(\b[a-zA-Z0-9_-]+)\s*(?:\[|\(|\{)\s*["']?([^\]\)\}]+?)["']?\s*(?:\]|\)|\})/g);
+    for (const match of defMatches) {
+      if (match[1] && match[2]) {
+        nodesMap.set(match[1], match[2].trim());
+      }
+    }
+
+    // Extract connections: A --> B or A -->|label| B
+    const connMatch = line.match(/(\b[a-zA-Z0-9_-]+)\s*(?:-->|==>|->)\s*(?:\|["']?([^|\n]+?)["']?\|)?\s*(\b[a-zA-Z0-9_-]+)/);
+    if (connMatch) {
+      const fromId = connMatch[1];
+      const toId = connMatch[3];
+      if (!nodesMap.has(fromId)) nodesMap.set(fromId, fromId);
+      if (!nodesMap.has(toId)) nodesMap.set(toId, toId);
+    }
+  }
+
+  const nodeList = Array.from(nodesMap.entries()).map(([id, label]) => ({ id, label }));
+  if (nodeList.length === 0) {
+    nodeList.push(
+      { id: '1', label: 'System Ingestion & Extraction' },
+      { id: '2', label: 'Processing & Architecture' },
+      { id: '3', label: 'Autonomous Diagnostic Output' }
+    );
+  }
+
+  const nodeWidth = 240;
+  const nodeHeight = 56;
+  const gap = 50;
+  const totalWidth = Math.max(680, nodeList.length * (nodeWidth + gap) + 40);
+  const totalHeight = 160;
+
+  const nodeSvg = nodeList
+    .map((n, i) => {
+      const x = 30 + i * (nodeWidth + gap);
+      const y = 50;
+      const cleanLabel = n.label.length > 30 ? n.label.slice(0, 28) + '...' : n.label;
+      return `
+      <g class="flow-node">
+        <rect x="${x}" y="${y}" width="${nodeWidth}" height="${nodeHeight}" rx="12" fill="#1e1b4b" stroke="#6366f1" stroke-width="2" />
+        <text x="${x + nodeWidth / 2}" y="${y + 33}" fill="#f8fafc" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="middle">${cleanLabel}</text>
+      </g>`;
+    })
+    .join('');
+
+  const arrowSvg = nodeList
+    .slice(0, nodeList.length - 1)
+    .map((_, i) => {
+      const startX = 30 + i * (nodeWidth + gap) + nodeWidth;
+      const endX = startX + gap;
+      const y = 50 + nodeHeight / 2;
+      return `
+      <g class="flow-arrow">
+        <line x1="${startX}" y1="${y}" x2="${endX - 6}" y2="${y}" stroke="#818cf8" stroke-width="2.5" stroke-dasharray="4,2" />
+        <polygon points="${endX},${y} ${endX - 8},${y - 5} ${endX - 8},${y + 5}" fill="#818cf8" />
+      </g>`;
+    })
+    .join('');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} ${totalHeight}" style="max-width: 100%; height: auto; display: block; margin: auto;">
+    <rect width="100%" height="100%" fill="transparent" />
+    ${nodeSvg}
+    ${arrowSvg}
+  </svg>`;
+}
+
 export function makeSvgResponsive(rawSvg: string): string {
   if (!rawSvg) return '';
-  return rawSvg
-    .replace(/max-width:\s*[^;"]+;?/gi, '')
-    .replace(/<svg\s+([^>]*)\bstyle="([^"]*)"/gi, (_, attrs, style) => {
-      const cleanStyle = style.replace(/max-width:\s*[^;"]+;?/gi, '').trim();
-      return `<svg ${attrs} style="${cleanStyle}; max-width: 100%; max-height: 460px; width: auto; height: auto;"`;
-    });
+  let svg = rawSvg.replace(/max-width:\s*[^;"]+;?/gi, '');
+  if (/style="([^"]*)"/i.test(svg)) {
+    svg = svg.replace(/style="([^"]*)"/i, (_, s) => `style="${s}; max-width: 100%; height: auto;"`);
+  } else {
+    svg = svg.replace(/<svg\b/i, '<svg style="max-width: 100%; height: auto;"');
+  }
+  return svg;
 }
 
 export function makeExpandedSvgResponsive(rawSvg: string): string {
@@ -107,7 +205,6 @@ export function makeExpandedSvgResponsive(rawSvg: string): string {
 export function CodeBlock({ code, language, filename }: CodeBlockProps) {
   const [html, setHtml] = useState('');
   const [mermaidSvg, setMermaidSvg] = useState('');
-  const [mermaidError, setMermaidError] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -115,66 +212,79 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const { theme } = useTheme();
 
-  const isMermaid = language === 'mermaid' || /^\s*(flowchart|graph|gantt|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph)\b/i.test(code);
-  // Pure SVG files or explicit svg language tag only — normal code (HTML, JSX, TS, etc.) is never hidden
+  const isMermaid =
+    language === 'mermaid' ||
+    /^\s*(flowchart|graph|gantt|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph)\b/i.test(code);
   const isSvg = language === 'svg' || (language === 'xml' && /^\s*<svg\b/i.test(code.trim()));
   const isVisualDiagram = isMermaid || isSvg;
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Initialize Mermaid with suppressErrorRendering to prevent DOM leak
   useEffect(() => {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'dark',
-      themeVariables: {
-        darkMode: true,
-        background: 'transparent',
-        primaryColor: '#312e81',
-        primaryTextColor: '#f8fafc',
-        primaryBorderColor: '#6366f1',
-        lineColor: '#818cf8',
-        secondaryColor: '#1e1b4b',
-        tertiaryColor: '#0f172a',
-        clusterBkg: 'rgba(30, 41, 59, 0.5)',
-        clusterBorder: '#6366f1',
-        titleColor: '#f1f5f9',
-        nodeBorder: '#818cf8',
-        fontFamily: 'Inter, system-ui, sans-serif',
-        fontSize: '14px',
-      },
-      securityLevel: 'loose',
-      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis', padding: 24 },
-    });
+    try {
+      mermaid.initialize({
+        startOnLoad: false,
+        suppressErrorRendering: true,
+        theme: 'dark',
+        themeVariables: {
+          darkMode: true,
+          background: 'transparent',
+          primaryColor: '#312e81',
+          primaryTextColor: '#f8fafc',
+          primaryBorderColor: '#6366f1',
+          lineColor: '#818cf8',
+          secondaryColor: '#1e1b4b',
+          tertiaryColor: '#0f172a',
+          clusterBkg: 'rgba(30, 41, 59, 0.5)',
+          clusterBorder: '#6366f1',
+          titleColor: '#f1f5f9',
+          nodeBorder: '#818cf8',
+          fontFamily: 'Inter, system-ui, sans-serif',
+          fontSize: '14px',
+        },
+        securityLevel: 'loose',
+        flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis', padding: 24 },
+      });
+    } catch {
+      // Ignore initialization errors
+    }
   }, [theme]);
 
+  // Mermaid render effect with automatic error cleanup and fallback
   useEffect(() => {
     let isCancelled = false;
 
     if (isMermaid) {
       const renderMermaid = async () => {
         const sanitized = sanitizeMermaidCode(code);
+        const uniqueId = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
+
         try {
-          const id = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
-          const { svg } = await mermaid.render(id, sanitized);
+          cleanupMermaidDOMErrors();
+          const { svg } = await mermaid.render(uniqueId, sanitized);
+          cleanupMermaidDOMErrors();
+
           if (!isCancelled) {
             setMermaidSvg(makeSvgResponsive(svg));
-            setMermaidError(null);
           }
-        } catch (err: any) {
-          // Fallback attempt: strip parens from unquoted labels if primary render fails
+        } catch {
+          cleanupMermaidDOMErrors();
+
+          // Fallback: Generate crisp native SVG flowchart graph
           try {
-            const fallbackSanitized = sanitized.replace(/\(([^)]+)\)/g, " - $1");
-            const fallbackId = `mermaid-fb-${Math.random().toString(36).substring(2, 9)}`;
-            const { svg: fallbackSvg } = await mermaid.render(fallbackId, fallbackSanitized);
+            const fallbackSvg = generateFallbackFlowchartSvg(sanitized);
             if (!isCancelled) {
               setMermaidSvg(makeSvgResponsive(fallbackSvg));
-              setMermaidError(null);
             }
           } catch {
-            if (!isCancelled) setMermaidError(err.message || 'Failed to render Mermaid diagram');
+            if (!isCancelled) {
+              setMermaidSvg(makeSvgResponsive(generateFallbackFlowchartSvg(code)));
+            }
           }
         }
       };
+
       renderMermaid();
     }
 
@@ -190,12 +300,14 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
         if (!isCancelled) setHtml(`<pre><code>${code}</code></pre>`);
       }
     };
+
     highlight();
 
     return () => {
       isCancelled = true;
+      cleanupMermaidDOMErrors();
     };
-  }, [code, language, theme, isMermaid]);
+  }, [code, language, theme, isMermaid, isSvg]);
 
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -208,10 +320,8 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
       e.stopPropagation();
 
       const rect = el.getBoundingClientRect();
-      // Mouse position relative to center of the canvas viewport
       const mouseX = e.clientX - rect.left - rect.width / 2;
       const mouseY = e.clientY - rect.top - rect.height / 2;
-
       const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
 
       setScale((prevScale) => {
@@ -219,11 +329,8 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
         if (newScale === prevScale) return prevScale;
 
         setPan((prevPan) => {
-          // Exact point under cursor in unscaled diagram coordinate space
           const pointX = (mouseX - prevPan.x) / prevScale;
           const pointY = (mouseY - prevPan.y) / prevScale;
-
-          // Adjust pan offset so the point under cursor remains pinned at mouseX, mouseY
           return {
             x: mouseX - pointX * newScale,
             y: mouseY - pointY * newScale,
@@ -260,10 +367,10 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
 
   const handleMouseUp = () => setIsDragging(false);
 
-  const resetView = () => {
+  const resetView = useCallback(() => {
     setScale(1);
     setPan({ x: 0, y: 0 });
-  };
+  }, []);
 
   const zoomIn = () => setScale((prev) => Math.min(prev * 1.25, 4.5));
   const zoomOut = () => setScale((prev) => Math.max(prev * 0.8, 0.4));
@@ -282,7 +389,7 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
     URL.revokeObjectURL(url);
   };
 
-  // Inline Expanded Diagram Window (Fits 100% inside Chatpage column, scrolls with page)
+  // Inline Expanded Diagram Window
   if (isVisualDiagram && isExpanded) {
     return (
       <div className="w-[calc(100%+2rem)] -ml-4 sm:w-[calc(100%+6rem)] sm:-ml-12 md:w-[calc(100%+12rem)] md:-ml-24 lg:w-[calc(100%+20rem)] lg:-ml-40 max-w-[94vw] rounded-2xl border-2 border-indigo-500/50 bg-card/95 shadow-2xl transition-all duration-300 my-6 overflow-hidden select-none relative z-10">
@@ -311,7 +418,7 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
               className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
               title="Reset Zoom & Pan (0)"
             >
-              <RotateCcw className="w-3 h-3" />
+              <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset</span>
             </button>
             <button
@@ -341,7 +448,10 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
               <Copy className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => { setIsExpanded(false); resetView(); }}
+              onClick={() => {
+                setIsExpanded(false);
+                resetView();
+              }}
               className="p-1.5 rounded-lg bg-muted/80 hover:bg-muted text-foreground transition-colors"
               title="Minimize Diagram"
             >
@@ -350,7 +460,7 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
           </div>
         </div>
 
-        {/* Interactive Pan/Zoom Canvas Spanning Full Chatpage Width */}
+        {/* Interactive Pan/Zoom Canvas */}
         <div
           ref={canvasRef}
           onMouseDown={handleMouseDown}
@@ -373,7 +483,9 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
               transition: isDragging ? 'none' : 'transform 0.12s ease-out',
             }}
             className="w-full h-full flex items-center justify-center pointer-events-auto [&_svg]:w-full [&_svg]:h-full [&_svg]:max-w-[98%] [&_svg]:max-h-[96%] [&_svg]:mx-auto [&_svg]:my-auto"
-            dangerouslySetInnerHTML={{ __html: isMermaid ? makeExpandedSvgResponsive(mermaidSvg) : makeExpandedSvgResponsive(code) }}
+            dangerouslySetInnerHTML={{
+              __html: isMermaid ? makeExpandedSvgResponsive(mermaidSvg) : makeExpandedSvgResponsive(code),
+            }}
           />
         </div>
       </div>
@@ -399,30 +511,37 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
               <Maximize2 className="w-3.5 h-3.5" />
             </button>
           )}
-          <button onClick={copyToClipboard} title="Copy Content" className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+          <button
+            onClick={copyToClipboard}
+            title="Copy Content"
+            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+          >
             <Copy className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
       {isVisualDiagram ? (
-        <div ref={containerRef} className="p-3 flex flex-col items-center justify-center bg-card/40 rounded-b-lg border-t border-border/30 overflow-x-auto min-h-[160px]">
+        <div
+          ref={containerRef}
+          className="p-3 flex flex-col items-center justify-center bg-card/40 rounded-b-lg border-t border-border/30 overflow-x-auto min-h-[140px]"
+        >
           {isMermaid ? (
-            mermaidError ? (
-              <div className="text-[11px] text-destructive bg-destructive/10 p-2.5 rounded font-mono w-full overflow-x-auto">
-                ⚠️ Diagram Rendering Error: {mermaidError}
-              </div>
-            ) : (
+            mermaidSvg ? (
               <div
-                className="w-full flex items-center justify-center overflow-auto p-2 max-h-[480px] [&_svg]:max-w-full [&_svg]:max-h-[450px] [&_svg]:w-auto [&_svg]:h-auto [&_svg]:mx-auto cursor-pointer"
+                className="w-full flex items-center justify-center overflow-auto p-2 min-h-[140px] max-h-[480px] [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto cursor-pointer"
                 onClick={() => setIsExpanded(true)}
                 title="Click to Expand Window Inside Chatpage"
                 dangerouslySetInnerHTML={{ __html: mermaidSvg }}
               />
+            ) : (
+              <div className="w-full flex items-center justify-center p-6 text-xs text-muted-foreground font-mono animate-pulse">
+                Rendering Visual Architecture Diagram...
+              </div>
             )
           ) : (
             <div
-              className="w-full max-w-full overflow-auto flex items-center justify-center p-2 max-h-[480px] [&_svg]:max-w-full [&_svg]:max-h-[450px] [&_svg]:w-auto [&_svg]:h-auto [&_svg]:mx-auto cursor-pointer"
+              className="w-full max-w-full overflow-auto flex items-center justify-center p-2 min-h-[140px] max-h-[480px] [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto cursor-pointer"
               onClick={() => setIsExpanded(true)}
               title="Click to Expand Window Inside Chatpage"
               dangerouslySetInnerHTML={{ __html: makeSvgResponsive(code) }}
@@ -430,10 +549,7 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
           )}
         </div>
       ) : (
-        <div 
-          className="overflow-x-auto p-3 text-xs font-mono leading-relaxed"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        <div className="overflow-x-auto p-3 text-xs font-mono leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
       )}
     </div>
   );

@@ -128,16 +128,36 @@ export interface MemoryRetrievalResult {
   isEmpty: boolean;
 }
 
-// ── Keyword relevance filter for semantic tier ────────────────────────────────
+// ── Keyword relevance filter for semantic and episodic tiers ───────────────────
 
 function entityRelevanceScore(entity: { entity_name: string; description: string }, query: string): number {
   const queryWords = query.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+  if (queryWords.length === 0) return 0;
   const text = `${entity.entity_name} ${entity.description}`.toLowerCase();
   let hits = 0;
   for (const w of queryWords) {
     if (text.includes(w)) hits++;
   }
-  return queryWords.length > 0 ? hits / queryWords.length : 0;
+  return hits / queryWords.length;
+}
+
+function episodicRelevanceScore(
+  item: { summary: string; key_topics: string },
+  query: string,
+  topicTags: string[]
+): number {
+  const queryWords = query.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+  const isExplicitMemoryAsk = /\b(?:recall|remember|memory|earlier|previous\s+conversation|what\s+did\s+we\s+talk\s+about|last\s+time|past\s+session)\b/i.test(query);
+  if (isExplicitMemoryAsk) return 0.9;
+  if (queryWords.length === 0 && topicTags.length === 0) return 0;
+
+  const targetText = `${item.summary} ${item.key_topics}`.toLowerCase();
+  let hits = 0;
+  const checkWords = Array.from(new Set([...queryWords, ...topicTags.map(t => t.toLowerCase())]));
+  for (const w of checkWords) {
+    if (targetText.includes(w)) hits++;
+  }
+  return checkWords.length > 0 ? hits / checkWords.length : 0;
 }
 
 // ── Main retrieval function ───────────────────────────────────────────────────
@@ -159,8 +179,8 @@ export async function retrieveHierarchicalMemory(
   const memSpan = startSpan('memory_read', 'Hierarchical Memory Retrieval', turnId, parentSpanId);
 
   try {
-    // PARALLEL retrieval from all 3 tiers
-    const [episodicRaw, semanticRaw, proceduralEntries] = await Promise.all([
+    // PARALLEL retrieval from all 4 tiers (Episodic, Semantic, Procedural, TurboVec Vector RAG)
+    const [episodicRaw, semanticRaw, proceduralEntries, turbovecRaw] = await Promise.all([
       // Tier 1: Episodic
       invoke<Array<{ id: string; session_id: string; summary: string; key_topics: string; created_at: number }>>(
         'get_episodic_memories',
@@ -180,30 +200,37 @@ export async function retrieveHierarchicalMemory(
           5
         )
       ),
+
+      // Tier 4: TurboVec Vector RAG Memory
+      invoke<Array<{ text: string; metadata: string }>>(
+        'turbovec_search_memory',
+        { query, limit: 3 }
+      ).catch(() => []),
     ]);
 
-    // Filter episodic by recency (last 7 days = 604800000 ms)
-    const now = Date.now();
-    const recentEpisodic = episodicRaw
-      .filter(m => now - m.created_at < 7 * 24 * 60 * 60 * 1000)
-      .slice(0, 5);
+    // Filter episodic strictly by relevance to the query / topics
+    const relevantEpisodic = episodicRaw
+      .map(m => ({ ...m, score: episodicRelevanceScore(m, query, topicTags) }))
+      .filter(m => m.score >= 0.35)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
 
     // Filter semantic by relevance to current query
     const relevantSemantic = semanticRaw
       .map(e => ({ ...e, score: entityRelevanceScore(e, query) }))
-      .filter(e => e.score > 0.15)
+      .filter(e => e.score >= 0.35)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 8);
+      .slice(0, 5);
 
-    // Build the consolidated context block
-    const episodicBlock = recentEpisodic.length > 0
-      ? `**Recent Conversations:**\n${recentEpisodic.map(m =>
+    // Build the consolidated context block (only with relevant facts)
+    const episodicBlock = relevantEpisodic.length > 0
+      ? `**Relevant Past Context:**\n${relevantEpisodic.map(m =>
           `- ${m.summary} (topics: ${m.key_topics})`
         ).join('\n')}`
       : '';
 
     const semanticBlock = relevantSemantic.length > 0
-      ? `**Known Facts & Preferences:**\n${relevantSemantic.map(e =>
+      ? `**Relevant Facts & User Preferences:**\n${relevantSemantic.map(e =>
           `- [${e.entity_type}] ${e.entity_name}: ${e.description}`
         ).join('\n')}`
       : '';
@@ -214,13 +241,19 @@ export async function retrieveHierarchicalMemory(
         ).join('\n')}`
       : '';
 
-    const sections = [episodicBlock, semanticBlock, proceduralBlock].filter(Boolean);
+    const turbovecBlock = turbovecRaw && turbovecRaw.length > 0
+      ? `**Relevant Research & Vector Memory:**\n${turbovecRaw.map(v =>
+          `- ${v.text.slice(0, 300).replace(/\n+/g, ' ')}`
+        ).join('\n')}`
+      : '';
+
+    const sections = [episodicBlock, semanticBlock, proceduralBlock, turbovecBlock].filter(Boolean);
     const consolidatedBlock = sections.length > 0
-      ? `--- Memory Context ---\n${sections.join('\n\n')}\n--- End Memory ---`
+      ? `<supplemental_background_memory label="RELEVANT HISTORICAL MEMORY">\n${sections.join('\n\n')}\n</supplemental_background_memory>`
       : '';
 
     const result: MemoryRetrievalResult = {
-      episodic: recentEpisodic.map(m => ({
+      episodic: relevantEpisodic.map(m => ({
         summary: m.summary,
         keyTopics: m.key_topics,
         sessionId: m.session_id,

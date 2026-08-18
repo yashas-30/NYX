@@ -26,9 +26,10 @@ export function compactHistory(
   messages: ChatMessage[],
   maxTokens: number
 ): ChatMessage[] {
+  const targetTokens = Math.max(maxTokens, 128);
   let currentTokens = estimateContextTokens(messages);
   
-  if (currentTokens <= maxTokens) {
+  if (currentTokens <= targetTokens) {
     return messages;
   }
 
@@ -37,14 +38,23 @@ export function compactHistory(
   
   let dropCount = 0;
   
-  while (currentTokens > maxTokens && dropCount < otherMsgs.length - 1) {
+  while (currentTokens > targetTokens && dropCount < otherMsgs.length - 1) {
     const msgToDrop = otherMsgs[dropCount];
     const msgTokens = estimateTextTokens(msgToDrop.content || '') + ((msgToDrop.images?.length || 0) * 512);
     currentTokens -= msgTokens;
     dropCount++;
   }
 
-  const compacted = otherMsgs.slice(dropCount);
+  let compacted = otherMsgs.slice(dropCount);
+  
+  // If remaining messages still exceed target tokens, truncate the earliest remaining turn
+  if (currentTokens > targetTokens && compacted.length > 0) {
+    const latest = compacted[compacted.length - 1];
+    const charLimit = Math.max(targetTokens * 4, 300);
+    if ((latest.content || '').length > charLimit) {
+      compacted = [{ ...latest, content: latest.content.slice(0, charLimit) + '\n\n[...context compacted to fit active window...]' }];
+    }
+  }
   
   if (systemMsg) {
     return [systemMsg, ...compacted];

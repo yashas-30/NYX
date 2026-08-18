@@ -1,3 +1,19 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// commands/agent.rs
+//
+// This file is intentionally kept as a single module. It is organized into
+// six logical sections:
+//
+//   §1  HTTP Infrastructure (lines ~14–47)  — shared HTTP client + caches
+//   §2  Tool Execution (lines ~174–758)     — execute_tool() match dispatch
+//   §3  HTML Extraction (lines ~760–1041)   — scraper helpers, extract_clean_text
+//   §4  Search Intelligence (lines ~1043–1675) — query classification, BM25, RRF
+//   §5  Image Search (lines ~1676–2147)    — entity image fetch, image search cmd
+//   §6  Tauri Commands (lines ~2149–2870)  — #[tauri::command] handlers
+//
+// Future modularization target: §3 + §4 → src/tools/web_intel.rs
+// ═══════════════════════════════════════════════════════════════════════════════
+
 use serde_json::{json, Value};
 use tokio::fs;
 use tokio::process::Command;
@@ -7,7 +23,8 @@ use base64::Engine;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-// Fix #6: Shared HTTP client with connection pool reuse.
+// ─── §1 HTTP Infrastructure ─────────────────────────────────────────────────
+// Shared HTTP client with connection pool reuse.
 // Previously every web fetch and page load created its own Client, discarding
 // the connection pool each time. A single LazyLock client reuses HTTP/2
 // connections and amortises TLS handshakes across concurrent requests.
@@ -42,8 +59,21 @@ pub struct CachedSearchResult {
 
 pub static SEARCH_CACHE: LazyLock<dashmap::DashMap<String, CachedSearchResult>> = LazyLock::new(dashmap::DashMap::new);
 pub static PAGE_CACHE: LazyLock<dashmap::DashMap<String, CachedSearchResult>> = LazyLock::new(dashmap::DashMap::new);
-/// Microsecond-level (<0.01ms) in-memory cache for prompt responses & deep research results.
 pub static PROMPT_RESPONSE_CACHE: LazyLock<dashmap::DashMap<String, CachedSearchResult>> = LazyLock::new(dashmap::DashMap::new);
+pub fn insert_bounded_cache(
+    map: &dashmap::DashMap<String, CachedSearchResult>,
+    key: String,
+    val: CachedSearchResult,
+    max_len: usize,
+) {
+    if map.len() >= max_len {
+        // Evict oldest or any entry to keep memory minimal (<50MB)
+        if let Some(first_key) = map.iter().next().map(|entry| entry.key().clone()) {
+            map.remove(&first_key);
+        }
+    }
+    map.insert(key, val);
+}
 
 #[tauri::command]
 pub async fn check_prompt_cache_command(prompt: String) -> Result<Option<String>, String> {
@@ -63,12 +93,21 @@ pub async fn check_prompt_cache_command(prompt: String) -> Result<Option<String>
 pub async fn save_prompt_cache_command(prompt: String, response: String) -> Result<(), String> {
     let key = prompt.trim().to_lowercase();
     if !key.is_empty() && !response.trim().is_empty() {
-        PROMPT_RESPONSE_CACHE.insert(key, CachedSearchResult {
+        insert_bounded_cache(&PROMPT_RESPONSE_CACHE, key, CachedSearchResult {
             content: response,
             timestamp: std::time::Instant::now(),
-        });
+        }, 50);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_prompt_cache_command() -> Result<usize, String> {
+    let count = PROMPT_RESPONSE_CACHE.len() + SEARCH_CACHE.len() + PAGE_CACHE.len();
+    PROMPT_RESPONSE_CACHE.clear();
+    SEARCH_CACHE.clear();
+    PAGE_CACHE.clear();
+    Ok(count)
 }
 
 /// Fetches the actual page content from a URL, extracts meaningful body text
@@ -99,8 +138,8 @@ pub async fn fetch_page_content(url: &str, max_chars: usize) -> Option<String> {
     }
 
     let resp = match tokio::time::timeout(
-        // 3.5s fast timeout per page — parallel async fetching retrieves all site bodies concurrently in 3.5s total.
-        Duration::from_millis(3500),
+        // 1.5s snappy timeout per page — parallel async fetching retrieves missing site bodies without stalling the UI.
+        Duration::from_millis(1500),
         HTTP_CLIENT
             .get(url)
             .header("Accept", "text/html,application/xhtml+xml")
@@ -130,11 +169,11 @@ pub async fn fetch_page_content(url: &str, max_chars: usize) -> Option<String> {
         return None;
     }
 
-    // Cache the clean parsed markdown page content
-    PAGE_CACHE.insert(url.to_string(), CachedSearchResult {
+    // Cache the clean parsed markdown page content (bounded to 50 entries)
+    insert_bounded_cache(&PAGE_CACHE, url.to_string(), CachedSearchResult {
         content: markdown.clone(),
         timestamp: std::time::Instant::now(),
-    });
+    }, 50);
 
     let limit = if max_chars == 0 { 500_000 } else { max_chars };
     let result: String = markdown.chars().take(limit).collect();
@@ -170,6 +209,10 @@ pub fn extract_opengraph_image(html: &str) -> Option<String> {
 
 
 
+// ─── §2 Tool Execution Dispatch ─────────────────────────────────────────────
+// Central tool dispatcher called by the Lucifer orchestrator (orchestrator/lucifer.rs).
+// Each match arm is a tool implementation. Browser tools delegate to run_browser_script.
+// Unknown tools are forwarded to the frontend plugin system via `execute_plugin_tool`.
 
 pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -> String {
     let args: Value = match serde_json::from_str(args_json) {
@@ -711,11 +754,35 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
                 Err(e) => format!("Failed to create spreadsheet: {}", e),
             }
         }
-        "generate_image" | "edit_image" | "analyze_image" => {
-            // These tools are not yet implemented with a real image generation/analysis backend.
-            // They have been removed from the tool registry to prevent the LLM from calling them
-            // and receiving misleading stub responses. This branch handles any residual calls.
-            format!("Tool '{}' is not currently implemented. No image generation or analysis backend is configured.", name)
+        "generate_image" => {
+            let prompt = args["prompt"].as_str().unwrap_or("");
+            let aspect_ratio = args["aspect_ratio"].as_str().unwrap_or("1:1");
+            let (w, h) = match aspect_ratio {
+                "16:9" => (1280, 720),
+                "9:16" => (720, 1280),
+                "4:3" => (1024, 768),
+                _ => (1024, 1024),
+            };
+            match crate::llm::diffusers::generate_local_image(app.clone(), prompt.to_string(), None, Some(w), Some(h)).await {
+                Ok(res) => format!("Image successfully generated via {} at '{}'", res.engine.unwrap_or_else(|| "Local Diffusers".to_string()), res.image_path),
+                Err(e) => format!("Image generation failed: {}", e),
+            }
+        }
+        "search_media" => {
+            let query = args["query"].as_str().unwrap_or("");
+            let limit = args["limit"].as_u64().unwrap_or(4) as usize;
+            let images = search_images_command(query.to_string(), Some(limit)).await.unwrap_or_default();
+            format!("Web image results for '{}':\n{}", query, images)
+        }
+        "synthesize_voice" => {
+            let tool = crate::orchestrator::lucifer_tools::LuciferVoiceTool::new();
+            match crate::orchestrator::tools::Tool::execute(&tool, app, args).await {
+                Ok(val) => format!("Voice synthesis complete: {}", val),
+                Err(e) => format!("Voice synthesis failed: {}", e),
+            }
+        }
+        "edit_image" | "analyze_image" => {
+            format!("Tool '{}' is not currently implemented. Use generate_image for local image creation.", name)
         }
         _ => {
             let call_id = uuid::Uuid::new_v4().to_string();
@@ -756,6 +823,11 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         }
     }
 }
+
+// ─── §3 HTML Extraction Utilities ───────────────────────────────────────────
+// HTML-to-markdown scraping helpers used by fetch_page_content and web_scrape.
+// extract_clean_text() is the primary entry point; walk_and_clean_node()
+// does the recursive DOM traversal.
 
 async fn crawl4ai_fetch_page(url: &str) -> Option<String> {
     let script_path = std::path::Path::new("scripts").join("crawl4ai_extractor.py");
@@ -1038,6 +1110,11 @@ struct QueryIntent {
     skip_search: bool,
 }
 
+// ─── §4 Search Query Intelligence ───────────────────────────────────────────
+// Query classification, BM25 ranking, RRF merging, DuckDuckGo parsing.
+// classify_query() routes queries to weather/news/science/etc. buckets.
+// search_web_command() (§6) is the main entry point that calls these helpers.
+
 /// Classify the query so we can route it to the right data sources.
 /// Returns a QueryIntent with specialized routing flags based on query patterns.
 fn classify_query(q: &str) -> QueryIntent {
@@ -1238,11 +1315,12 @@ fn decontextualize_query(raw_query: &str) -> String {
 
 /// Generate 2–3 query variants for multi-query parallel expansion.
 /// All variants target different facets of the same information need.
-fn expand_query(q: &str, intent: &QueryIntent) -> Vec<String> {
+#[allow(dead_code)]
+fn expand_query(q: &str, _intent: &QueryIntent) -> Vec<String> {
     let mut variants = vec![q.to_string()];
 
     static SHORT_WHITELIST: LazyLock<std::collections::HashSet<&'static str>> = LazyLock::new(|| {
-        ["us", "uk", "eu", "ai", "ml", "db", "io", "os", "ip", "pr", "ca", "va", "un", "qa", "who", "ceo", "potus"].into_iter().collect()
+        ["us", "uk", "eu", "ai", "ml", "db", "io", "os", "ip", "pr", "ca", "va", "un", "qa", "who", "ceo", "gpu", "cpu"].into_iter().collect()
     });
 
     // Keyword-only variant: remove filler words while preserving key terms
@@ -1261,27 +1339,7 @@ fn expand_query(q: &str, intent: &QueryIntent) -> Vec<String> {
 
     // SAFEGUARD: Only use keyword variant if it preserves at least 2 words and doesn't discard > 60% of query
     if kw_word_count >= 2 && kw_word_count * 2 >= orig_word_count && keywords != q {
-        variants.push(keywords.clone());
-    }
-
-    // Entity Expansion for interrogatives ("who is the president of the us?")
-    let lower = q.to_lowercase();
-    if lower.contains("president of the us") || lower.contains("president of us") {
-        variants.push("current president of the United States".to_string());
-    } else if lower.contains("president of") {
-        let entity = lower.replace("who is the", "").replace("who is", "").replace("current", "");
-        variants.push(format!("current {}", entity.trim()));
-    } else if lower.starts_with("who is") || lower.starts_with("what is") || lower.starts_with("where is") {
-        let clean_q = lower.trim_start_matches("who is").trim_start_matches("what is").trim_start_matches("where is").trim();
-        if !clean_q.is_empty() {
-            variants.push(format!("{} overview facts", clean_q));
-        }
-    }
-
-    // Temporal variant: add year/recency modifier for temporal queries
-    if intent.temporal {
-        let temporal_q = format!("{} 2025 2026", q.trim_end_matches('?'));
-        variants.push(temporal_q);
+        variants.push(keywords);
     }
 
     variants
@@ -1384,19 +1442,19 @@ fn parse_duckduckgo_lite(html: &str, num_results: usize) -> Vec<(String, String,
         regex::Regex::new(r#"(?is)<tr[^>]*>([\s\S]*?)</tr>\s*<tr[^>]*>([\s\S]*?)</tr>"#).unwrap()
     });
     static LINK_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r#"(?is)<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>"#).unwrap()
+        regex::Regex::new(r#"(?is)<a[^>]*href=['"]([^'"]*)['"][^>]*>([\s\S]*?)</a>"#).unwrap()
     });
     static SNIP_TD_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r#"(?is)<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)</td>"#).unwrap()
+        regex::Regex::new(r#"(?is)<td[^>]*class=['"][^'"]*result-snippet[^'"]*['"][^>]*>([\s\S]*?)</td>"#).unwrap()
     });
     // Detect DDG Lite sponsored rows — these carry ad content, not organic results.
     // DDG marks them with result--ad, result-sponsored, badge--ad, or data-sponsored.
     static DDG_AD_ROW_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
         regex::Regex::new(
             r#"(?ix)
-            class="[^"]*(?:result--ad|result-sponsored|badge--ad|sponsored-url)[^"]*"
-            | data-sponsored="true"
-            | aria-label="[^"]*(?:sponsored|advertisement)[^"]*"
+            class=['"][^'"]*(?:result--ad|result-sponsored|badge--ad|sponsored-url)[^'"]*['"]
+            | data-sponsored=['"]?true['"]?
+            | aria-label=['"][^'"]*(?:sponsored|advertisement)[^'"]*['"]
             "#
         ).unwrap()
     });
@@ -1418,7 +1476,10 @@ fn parse_duckduckgo_lite(html: &str, num_results: usize) -> Vec<(String, String,
         if let Some(link_cap) = LINK_RE.captures(row1) {
             let raw_url = link_cap.get(1).map_or("", |m| m.as_str());
             let raw_title = link_cap.get(2).map_or("", |m| m.as_str());
-            let title = decode_html_entities(TAG_RE.replace_all(raw_title, "").trim());
+            let title = decode_html_entities(TAG_RE.replace_all(raw_title, "").trim())
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
 
             if title.is_empty() || title.len() < 3 || title.contains("DuckDuckGo") || title.eq_ignore_ascii_case("images") {
                 continue;
@@ -1438,13 +1499,18 @@ fn parse_duckduckgo_lite(html: &str, num_results: usize) -> Vec<(String, String,
                 continue;
             }
 
-            let snippet = if let Some(snip_cap) = SNIP_TD_RE.captures(row2) {
+            let snippet_raw = if let Some(snip_cap) = SNIP_TD_RE.captures(row2) {
                 let snip_raw = snip_cap.get(1).map_or("", |m| m.as_str());
                 decode_html_entities(TAG_RE.replace_all(snip_raw, "").trim())
             } else {
                 let clean_r2 = decode_html_entities(TAG_RE.replace_all(row2, "").trim());
                 if !clean_r2.is_empty() { clean_r2 } else { title.clone() }
             };
+
+            let snippet = snippet_raw
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
 
             seen_urls.insert(real_url.clone());
             results.push((title, real_url, snippet));
@@ -1493,63 +1559,91 @@ fn parse_duckduckgo_lite(html: &str, num_results: usize) -> Vec<(String, String,
 async fn fetch_duckduckgo_results(query: &str, limit: usize) -> Vec<(String, String, String)> {
     static TAG_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r#"<[^>]*>"#).unwrap());
 
-    let mut raw_results: Vec<(String, String, String)> = Vec::new();
-
-    // METHOD 1: POST to https://html.duckduckgo.com/html/ with Form Data
-    if raw_results.is_empty() {
-        if let Ok(resp) = HTTP_CLIENT.post("https://html.duckduckgo.com/html/")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .header("Accept-Language", "en-US,en;q=0.9")
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("Origin", "https://html.duckduckgo.com")
-            .header("Referer", "https://html.duckduckgo.com/")
-            .form(&[("q", query), ("b", ""), ("kl", "us-en")])
-            .send().await
-        {
+    // ── 1. Wikipedia Search API (Instant, highly reliable encyclopedia & governance data) ──
+    let q_wiki = query.to_string();
+    let wiki_fut = async move {
+        let wiki_url = format!(
+            "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={}&format=json&utf8=1",
+            urlencoding::encode(&q_wiki)
+        );
+        if let Ok(Ok(resp)) = tokio::time::timeout(Duration::from_millis(1800), HTTP_CLIENT.get(&wiki_url).send()).await {
             if resp.status().is_success() {
-                if let Ok(html) = resp.text().await {
-                    let parsed = parse_duckduckgo_lite(&html, limit);
-                    if !parsed.is_empty() {
-                        raw_results = parsed;
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(search) = json["query"]["search"].as_array() {
+                        let mut list = Vec::new();
+                        for item in search.iter().take(limit) {
+                            let title = item["title"].as_str().unwrap_or("").to_string();
+                            let snippet_raw = item["snippet"].as_str().unwrap_or("");
+                            let snippet = decode_html_entities(TAG_RE.replace_all(snippet_raw, "").trim());
+                            if !title.is_empty() {
+                                let page_url = format!("https://en.wikipedia.org/wiki/{}", urlencoding::encode(&title));
+                                list.push((title, page_url, snippet));
+                            }
+                        }
+                        return list;
                     }
                 }
             }
         }
-    }
+        Vec::new()
+    };
 
-    // METHOD 1.5: GET to https://lite.duckduckgo.com/lite/
-    if raw_results.is_empty() {
-        let lite_url = format!("https://lite.duckduckgo.com/lite/?q={}&kl=us-en", urlencoding::encode(query));
-        if let Ok(resp) = HTTP_CLIENT.get(&lite_url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .header("Accept-Language", "en-US,en;q=0.9")
-            .header("Referer", "https://lite.duckduckgo.com/")
-            .send().await
-        {
+    // ── 2. DuckDuckGo HTML / Lite Search ──
+    let q_ddg = query.to_string();
+    let ddg_fut = async move {
+        // Try DDG POST
+        if let Ok(Ok(resp)) = tokio::time::timeout(
+            Duration::from_millis(1800),
+            HTTP_CLIENT.post("https://html.duckduckgo.com/html/")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .form(&[("q", q_ddg.as_str()), ("b", ""), ("kl", "us-en")])
+                .send()
+        ).await {
             if resp.status().is_success() {
                 if let Ok(html) = resp.text().await {
                     let parsed = parse_duckduckgo_lite(&html, limit);
                     if !parsed.is_empty() {
-                        raw_results = parsed;
+                        return parsed;
                     }
                 }
             }
         }
-    }
 
-    // METHOD 2: Bing HTML Search
-    if raw_results.is_empty() {
-        let bing_url = format!("https://www.bing.com/search?q={}", urlencoding::encode(query));
-        if let Ok(resp) = HTTP_CLIENT.get(&bing_url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-            .header("Accept-Language", "en-US,en;q=0.9")
-            .send().await
-        {
+        // Try DDG Lite GET
+        let lite_url = format!("https://lite.duckduckgo.com/lite/?q={}&kl=us-en", urlencoding::encode(&q_ddg));
+        if let Ok(Ok(resp)) = tokio::time::timeout(
+            Duration::from_millis(1500),
+            HTTP_CLIENT.get(&lite_url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                .send()
+        ).await {
             if resp.status().is_success() {
                 if let Ok(html) = resp.text().await {
-                    // Matches organic result blocks (b_algo). We deliberately do NOT match b_ad.
+                    let parsed = parse_duckduckgo_lite(&html, limit);
+                    if !parsed.is_empty() {
+                        return parsed;
+                    }
+                }
+            }
+        }
+        Vec::new()
+    };
+
+    // ── 3. Bing Organic Search ──
+    let q_bing = query.to_string();
+    let bing_fut = async move {
+        let bing_url = format!("https://www.bing.com/search?q={}", urlencoding::encode(&q_bing));
+        if let Ok(Ok(resp)) = tokio::time::timeout(
+            Duration::from_millis(1800),
+            HTTP_CLIENT.get(&bing_url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .send()
+        ).await {
+            if resp.status().is_success() {
+                if let Ok(html) = resp.text().await {
                     static BING_BLOCK_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
                         regex::Regex::new(r#"(?is)<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>([\s\S]*?)</li>"#).unwrap()
                     });
@@ -1559,18 +1653,8 @@ async fn fetch_duckduckgo_results(query: &str, limit: usize) -> Vec<(String, Str
                     static BING_SNIP_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
                         regex::Regex::new(r#"(?is)<p[^>]*>(.*?)</p>"#).unwrap()
                     });
-                    // Comprehensive Bing sponsored ad detector: checks outer tag and inner HTML
-                    // for b_ad, b_adSlug, b_adLabel, b_adTop, b_adBottom, b_attribution, sb_add,
-                    // ad redirect paths (/aclick, /adclick), and inline Ad/Sponsored badge markup.
                     static BING_AD_INDICATOR_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-                        regex::Regex::new(
-                            r#"(?ix)
-                            class="[^"]*(?:b_ad|b_adSlug|b_adLabel|b_adTop|b_adBottom|b_attribution|sb_add)[^"]*"
-                            | id="[^"]*(?:b_ad|b_adSlug|b_adLabel)[^"]*"
-                            | (?:href|src)="[^"]*(?:/aclick|/adclick|bing\.com/aclick)[^"]*"
-                            | >\s*(?:Ad|Sponsored|Promoted)\s*<
-                            "#
-                        ).unwrap()
+                        regex::Regex::new(r#"(?ix)class="[^"]*(?:b_ad|b_adSlug|b_adLabel|b_adTop|b_adBottom|b_attribution|sb_add)[^"]*"|>(?:Ad|Sponsored|Promoted)<"#).unwrap()
                     });
 
                     let mut results = Vec::new();
@@ -1579,7 +1663,6 @@ async fn fetch_duckduckgo_results(query: &str, limit: usize) -> Vec<(String, Str
                     for block_cap in BING_BLOCK_RE.captures_iter(&html) {
                         let block = block_cap.get(1).map_or("", |m| m.as_str());
                         let full_match = block_cap.get(0).map_or("", |m| m.as_str());
-                        // Skip Bing sponsored / ad blocks entirely (checks both outer match and inner HTML)
                         if BING_AD_INDICATOR_RE.is_match(full_match) || BING_AD_INDICATOR_RE.is_match(block) {
                             continue;
                         }
@@ -1594,85 +1677,80 @@ async fn fetch_duckduckgo_results(query: &str, limit: usize) -> Vec<(String, Str
                                 title.clone()
                             };
 
-                            if url.starts_with("http") && !url.contains("bing.com") && !url.contains("microsoft.com") && !url.contains("wikipedia.org") && !seen.contains(&url) && !title.is_empty() {
+                            if url.starts_with("http") && !url.contains("bing.com") && !url.contains("microsoft.com") && !seen.contains(&url) && !title.is_empty() {
                                 seen.insert(url.clone());
                                 results.push((title, url, snippet));
                                 if results.len() >= limit { break; }
                             }
                         }
                     }
-
-                    if !results.is_empty() {
-                        raw_results = results;
-                    }
+                    return results;
                 }
             }
         }
-    }
+        Vec::new()
+    };
 
-    // METHOD 3: GDELT Real-time News API fallback
-    if raw_results.is_empty() {
-        let gdelt_url = format!("https://api.gdeltproject.org/api/v2/doc/doc?query={}&mode=artlist&maxrecords={}&format=json", urlencoding::encode(query), limit);
-        if let Ok(resp) = HTTP_CLIENT.get(&gdelt_url).send().await {
+    // ── 4. Google News RSS Search ──
+    let q_news = query.to_string();
+    let news_fut = async move {
+        let news_url = format!("https://news.google.com/rss/search?q={}&hl=en-US&gl=US&ceid=US:en", urlencoding::encode(&q_news));
+        if let Ok(Ok(resp)) = tokio::time::timeout(
+            Duration::from_millis(1800),
+            HTTP_CLIENT.get(&news_url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .send()
+        ).await {
             if resp.status().is_success() {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    if let Some(articles) = json["articles"].as_array() {
-                        let mut results = Vec::new();
-                        for art in articles {
-                            let title = art["title"].as_str().unwrap_or("").to_string();
-                            let url = art["url"].as_str().unwrap_or("").to_string();
-                            let domain = art["domain"].as_str().unwrap_or("").to_string();
-                            if !title.is_empty() && !url.is_empty() && !url.contains("wikipedia.org") {
-                                results.push((title, url, format!("Source: {}", domain)));
-                            }
-                        }
-                        if !results.is_empty() {
-                            raw_results = results;
+                if let Ok(xml) = resp.text().await {
+                    static ITEM_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r#"(?s)<item>(.*?)</item>"#).unwrap());
+                    static NTITLE_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r#"(?s)<title>(.*?)</title>"#).unwrap());
+                    static NLINK_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r#"(?s)<link>(.*?)</link>"#).unwrap());
+                    static NDATE_RE: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r#"(?s)<pubDate>(.*?)</pubDate>"#).unwrap());
+
+                    let mut list = Vec::new();
+                    for item_cap in ITEM_RE.captures_iter(&xml).take(limit) {
+                        let item_xml = item_cap.get(1).map(|m| m.as_str()).unwrap_or("");
+                        let title = NTITLE_RE.captures(item_xml).and_then(|c| c.get(1)).map(|m| decode_html_entities(m.as_str().trim())).unwrap_or_default();
+                        let link = NLINK_RE.captures(item_xml).and_then(|c| c.get(1)).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+                        let date = NDATE_RE.captures(item_xml).and_then(|c| c.get(1)).map(|m| m.as_str().trim()).unwrap_or("");
+                        if !title.is_empty() && !link.is_empty() {
+                            list.push((title.clone(), link, format!("Live News ({}): {}", date, title)));
                         }
                     }
+                    return list;
                 }
+            }
+        }
+        Vec::new()
+    };
+
+    // Execute all 4 engines concurrently in parallel!
+    let (wiki_res, ddg_res, bing_res, news_res) = tokio::join!(wiki_fut, ddg_fut, bing_fut, news_fut);
+
+    // Merge and deduplicate results
+    let mut combined = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for item in ddg_res.into_iter().chain(bing_res.into_iter()).chain(wiki_res.into_iter()).chain(news_res.into_iter()) {
+        if !seen.contains(&item.1) && !item.0.is_empty() {
+            seen.insert(item.1.clone());
+            combined.push(item);
+            if combined.len() >= limit * 2 {
+                break;
             }
         }
     }
 
-    // METHOD 4: Wikipedia REST API Factual Summary Fallback
-    if raw_results.is_empty() {
-        let wiki_url = format!(
-            "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={}&format=json&utf8=1",
-            urlencoding::encode(query)
-        );
-        if let Ok(resp) = HTTP_CLIENT.get(&wiki_url).send().await {
-            if resp.status().is_success() {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    if let Some(search) = json["query"]["search"].as_array() {
-                        let mut results = Vec::new();
-                        for item in search.iter().take(limit) {
-                            let title = item["title"].as_str().unwrap_or("").to_string();
-                            let pageid = item["pageid"].as_i64().unwrap_or(0);
-                            let snippet_raw = item["snippet"].as_str().unwrap_or("");
-                            let snippet = decode_html_entities(TAG_RE.replace_all(snippet_raw, "").trim());
-                            if !title.is_empty() && pageid > 0 {
-                                let page_url = format!("https://en.wikipedia.org/wiki/{}", urlencoding::encode(&title));
-                                results.push((title, page_url, snippet));
-                            }
-                        }
-                        if !results.is_empty() {
-                            raw_results = results;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if raw_results.is_empty() {
-        return Vec::new();
-    }
-
-    raw_results.truncate(limit);
-    raw_results
+    combined.truncate(limit);
+    combined
 }
 
+// ─── §5 Image Search ────────────────────────────────────────────────────────
+// Entity image fetching (Wikipedia + Wikimedia), image URL proxy,
+// and the search_images_command Tauri handler.
+
+#[allow(dead_code)]
 async fn query_entity_image_api(term: &str) -> Option<(String, String)> {
     let ov_url = format!(
         "https://api.openverse.org/v1/images/?q={}&page_size=1",
@@ -1704,6 +1782,7 @@ async fn query_entity_image_api(term: &str) -> Option<(String, String)> {
 
 /// Dynamically resolves the primary portrait / entity image for any arbitrary query
 /// using Openverse REST API without Wikipedia calls.
+#[allow(dead_code)]
 pub async fn fetch_entity_image(query: &str) -> Option<(String, String)> {
     let cleaned = decontextualize_query(query);
     if cleaned.trim().is_empty() {
@@ -1809,14 +1888,15 @@ pub async fn fetch_image_data_url_command(url: String) -> Result<String, String>
 
 #[tauri::command]
 pub async fn generate_search_queries_with_model(
-
+    app: tauri::AppHandle,
     prompt: String,
     provider: Option<String>,
     model_id: Option<String>,
     api_key: Option<String>,
 ) -> Vec<String> {
-    let prov = provider.unwrap_or_else(|| "google".to_string());
-    let model = model_id.unwrap_or_else(|| "gemini-2.5-flash".to_string());
+    let prov = provider.unwrap_or_else(|| "nyx-native".to_string());
+    let is_local = prov == "nyx-native" || prov.contains("local") || prov.contains("lucifer");
+    let model = model_id.unwrap_or_else(|| if is_local { "qwen2.5-1.5b-instruct".to_string() } else { "gemini-2.5-flash".to_string() });
     let key = api_key.unwrap_or_default();
 
     let planner_prompt = format!(
@@ -1853,9 +1933,10 @@ pub async fn generate_search_queries_with_model(
         capabilities: None,
         tool_choice: None,
         web_search_enabled: false,
+        agent_mode: None,
     };
 
-    if let Ok(mut rx) = crate::llm::cloud_orchestrator::execute_cloud_stream(&req).await {
+    if let Ok(mut rx) = crate::llm::execute_any_stream(&app, &req).await {
         let mut full_text = String::new();
         while let Some(msg) = rx.recv().await {
             if let Ok(payload) = msg {
@@ -1867,22 +1948,215 @@ pub async fn generate_search_queries_with_model(
             }
         }
 
-        let cleaned = full_text
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim();
+        let trimmed = full_text.trim();
+        let array_str = if let (Some(s), Some(e)) = (trimmed.find('['), trimmed.rfind(']')) {
+            if s < e { &trimmed[s..=e] } else { trimmed }
+        } else {
+            trimmed
+                .trim_start_matches("```json")
+                .trim_start_matches("```")
+                .trim_end_matches("```")
+                .trim()
+        };
 
-        if let Ok(queries) = serde_json::from_str::<Vec<String>>(cleaned) {
+        if let Ok(queries) = serde_json::from_str::<Vec<String>>(array_str) {
             let valid: Vec<String> = queries.into_iter().filter(|q| !q.trim().is_empty()).collect();
+            if !valid.is_empty() {
+                return valid;
+            }
         }
     }
 
     vec![decontextualize_query(&prompt)]
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SectionalTopicPlan {
+    pub section_title: String,
+    pub photo_query: String,
+    pub video_query: Option<String>,
+    pub source_preference: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ModelQueryPlan {
+    pub intent: Option<String>,
+    pub requires_search: Option<bool>,
+    pub web_search_query: String,
+    pub deep_research_queries: Vec<String>,
+    pub photo_search_query: String,
+    pub video_search_query: String,
+    pub audio_music_query: Option<String>,
+    pub sectional_topics: Option<Vec<SectionalTopicPlan>>,
+    pub primary_subject: String,
+    pub domain_category: String,
+    pub source_preference: Option<String>,
+    pub response_style: Option<String>,
+    pub target_depth: Option<String>,
+}
+
+#[tauri::command]
+pub async fn generate_intelligent_query_plan_command(
+    app: tauri::AppHandle,
+    prompt: String,
+    provider: Option<String>,
+    model_id: Option<String>,
+    api_key: Option<String>,
+) -> ModelQueryPlan {
+    let prov = provider.unwrap_or_else(|| "nyx-native".to_string());
+    let is_local = prov == "nyx-native" || prov.contains("local") || prov.contains("lucifer");
+    let model = model_id.unwrap_or_else(|| if is_local { "qwen2.5-1.5b-instruct".to_string() } else { "gemini-2.5-flash".to_string() });
+    let key = api_key.unwrap_or_default();
+
+    let planner_prompt = format!(
+        r#"You are the Lucifer Master Search & Multi-Modal Query Decomposer.
+Analyze this user prompt: "{}"
+
+Decompose this inquiry into specialized execution instructions and high-accuracy web search vectors:
+1. "intent": One of "fictional_lore", "factual_overview", "historical_biography", "code_engineering", "deep_research", "conversational".
+2. "requires_search": true if prompt requires real-time facts, current news, recent data, or external references; false for pure reasoning, common knowledge, or greeting.
+3. "web_search_query": Clean, high-precision search query for web search engines. Strip conversational prefixes and focus on key terms.
+4. "deep_research_queries": Array of 3 to 4 ORTHOGONAL search queries covering foundational origins, key story/technical arcs, benchmarks, or implementations.
+5. "photo_search_query": Exact named entity or specific subject query for DuckDuckGo & Bing Web Image search.
+   CRITICAL RULES FOR PHOTO SEARCH QUERY:
+   - Must be the concrete entity itself without conversational noise (e.g. "Doctor Doom", "Porsche 911 GT3 RS", "Nvidia RTX 4090", "James Webb Space Telescope").
+   - NEVER include words like "complete story", "overview", "explained", "full history", "landscape", "wallpaper", "pictures", "images", "photos".
+   - If user asks for "complete story of dr doom", photo_search_query MUST be "Doctor Doom" or "Doctor Doom Marvel Comics".
+6. "video_search_query": Dynamic motion, action, or cinematic timelapse query for video footage.
+7. "audio_music_query": Atmospheric soundtrack, ambient soundscape, or musical mood query for background audio.
+8. "sectional_topics": Array of 3 to 5 distinct subtopics for response headings with sharp subtopic image queries (each with "section_title" and "photo_query" for DuckDuckGo & Bing web images focusing on that specific sub-aspect).
+9. "primary_subject": The exact named entity or core subject.
+10. "domain_category": One of "technology", "science", "automotive", "space", "nature", "business", "history", "entertainment", "general".
+11. "target_depth": "exhaustive" for multi-part breakdowns, research, lore, or architectural guides; "concise" for simple factual questions.
+
+Output ONLY a valid JSON object matching this exact schema:
+{{
+  "intent": "...",
+  "requires_search": true,
+  "web_search_query": "...",
+  "deep_research_queries": ["...", "...", "..."],
+  "photo_search_query": "...",
+  "video_search_query": "...",
+  "audio_music_query": "...",
+  "sectional_topics": [
+    {{ "section_title": "...", "photo_query": "..." }}
+  ],
+  "primary_subject": "...",
+  "domain_category": "...",
+  "target_depth": "exhaustive"
+}}"#,
+        prompt
+    );
+
+    let req = crate::llm::cloud_orchestrator::UnifiedRequest {
+        provider: prov,
+        endpoint_override: None,
+        model_id: model,
+        messages: vec![crate::llm::cloud_orchestrator::UnifiedMessage { role: "user".to_string(), content: serde_json::json!(planner_prompt) }],
+        system_instruction: Some("You are the Lucifer Master Search Specialist. Output ONLY valid JSON matching the requested schema.".to_string()),
+        api_key: key,
+        temperature: Some(0.1),
+        max_tokens: Some(1024),
+        event_name: None,
+        tools: None,
+        response_format: None,
+        stop: None,
+        repeat_penalty: None,
+        presence_penalty: None,
+        frequency_penalty: None,
+        top_k: None,
+        top_p: None,
+        execution_mode: Some("chat".to_string()),
+        reasoning_enabled: None,
+        context_window: None,
+        capabilities: None,
+        tool_choice: None,
+        web_search_enabled: false,
+        agent_mode: None,
+    };
+
+    if let Ok(mut rx) = crate::llm::execute_any_stream(&app, &req).await {
+        let mut full_text = String::new();
+        while let Some(msg) = rx.recv().await {
+            if let Ok(payload) = msg {
+                if payload.event_type == "text" {
+                    if let Some(c) = payload.content {
+                        full_text.push_str(&c);
+                    }
+                }
+            }
+        }
+
+        let trimmed = full_text.trim();
+        let obj_str = if let (Some(s), Some(e)) = (trimmed.find('{'), trimmed.rfind('}')) {
+            if s < e { &trimmed[s..=e] } else { trimmed }
+        } else {
+            trimmed
+                .trim_start_matches("```json")
+                .trim_start_matches("```")
+                .trim_end_matches("```")
+                .trim()
+        };
+
+        if let Ok(plan) = serde_json::from_str::<ModelQueryPlan>(obj_str) {
+            if !plan.web_search_query.trim().is_empty() {
+                return plan;
+            }
+        }
+    }
+
+    // Dynamic fallback from prompt clauses without hardcoded strings
+    let raw_clean = prompt
+        .replace(['?', '!', '"', '`', '#', '*', ';', ':'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let primary = if raw_clean.len() > 100 {
+        raw_clean.chars().take(100).collect::<String>()
+    } else {
+        raw_clean.clone()
+    };
+
+    // Extract sub-clauses if prompt contains commas, 'and', 'vs', or questions
+    let sub_parts: Vec<String> = prompt
+        .split(|c| c == ',' || c == ';' || c == '?' || c == '.' || c == '\n')
+        .map(|s| s.trim())
+        .filter(|s| s.len() > 4)
+        .map(|s| s.to_string())
+        .collect();
+
+    let sub_queries = if sub_parts.len() >= 2 {
+        sub_parts.into_iter().take(4).collect()
+    } else {
+        vec![primary.clone()]
+    };
+
+    let sectional_topics = sub_queries.iter().map(|q| SectionalTopicPlan {
+        section_title: q.clone(),
+        photo_query: q.clone(),
+        video_query: None,
+        source_preference: Some("all".to_string()),
+    }).collect();
+
+    ModelQueryPlan {
+        intent: Some("factual_overview".to_string()),
+        requires_search: Some(true),
+        web_search_query: primary.clone(),
+        deep_research_queries: sub_queries,
+        photo_search_query: primary.clone(),
+        video_search_query: primary.clone(),
+        audio_music_query: Some(primary.clone()),
+        sectional_topics: Some(sectional_topics),
+        primary_subject: primary,
+        domain_category: "general".to_string(),
+        source_preference: Some("all".to_string()),
+        response_style: Some("textbook".to_string()),
+        target_depth: Some("exhaustive".to_string()),
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExtractedImagePayload {
     pub url: String,
     pub title: String,
@@ -1890,195 +2164,73 @@ pub struct ExtractedImagePayload {
 }
 
 pub fn extract_image_search_term(raw_query: &str) -> String {
-    let lower = raw_query.to_lowercase();
-    let words: Vec<&str> = lower
-        .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
-        .filter(|w| !matches!(*w, "research" | "about" | "which" | "is" | "best" | "for" | "long" | "and" | "can" | "work" | "in" | "heavy" | "workloads" | "loads" | "including" | "want" | "you" | "to" | "every" | "under" | "the" | "a" | "an" | "what" | "how" | "tell" | "me" | "give" | "show" | "find" | "or" | "with" | "on" | "at" | "by" | "from" | "this" | "that" | "good" | "top" | "great"))
-        .collect();
-
-    if words.is_empty() {
-        return raw_query.to_string();
+    let trimmed = raw_query.trim();
+    if trimmed.is_empty() {
+        return String::new();
     }
 
-    words.into_iter().take(2).collect::<Vec<_>>().join(" ")
+    // Clean whitespace and quotation characters without overriding the LLM's semantic query
+    let sanitized = trimmed
+        .replace(['"', '\'', '`', '#', '*', '<', '>', '{', '}', '\n', '\r', '\t'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if sanitized.len() > 120 {
+        sanitized.chars().take(120).collect()
+    } else if !sanitized.is_empty() {
+        sanitized
+    } else {
+        trimmed.to_string()
+    }
 }
 
-#[tauri::command]
-pub async fn search_images_command(
-    query: String,
-    limit: Option<usize>,
-) -> Result<String, String> {
-    let limit = limit.unwrap_or(6);
-    let cleaned = extract_image_search_term(&query);
-    let encoded = urlencoding::encode(&cleaned).to_string();
-    let mut results: Vec<ExtractedImagePayload> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    // Pexels API key: stored in PEXELS_API_KEY env var, never hardcoded in source.
-    let pexels_key = std::env::var("PEXELS_API_KEY").unwrap_or_default();
-    let pexels_url = format!("https://api.pexels.com/v1/search?query={}&per_page=6", encoded);
-    if !pexels_key.is_empty() {
-    if let Ok(resp) = HTTP_CLIENT.get(&pexels_url)
-        .header("Authorization", &pexels_key)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .send().await
-    {
-        if let Ok(json) = resp.json::<serde_json::Value>().await {
-            if let Some(photos) = json.get("photos").and_then(|p| p.as_array()) {
-                for photo in photos {
-                    if let Some(src) = photo.get("src") {
-                        if let Some(img_url) = src.get("large").or_else(|| src.get("medium")).and_then(|u| u.as_str()) {
-                            let alt = photo.get("alt").and_then(|a| a.as_str()).unwrap_or(&cleaned);
-                            if !seen.contains(img_url) {
-                                seen.insert(img_url.to_string());
-                                results.push(ExtractedImagePayload {
-                                    url: img_url.to_string(),
-                                    title: alt.to_string(),
-                                    source: "pexels".to_string(),
-                                });
-                                if results.len() >= limit {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    } // end pexels_key guard
-
-    // 2. Pixabay API Engine (Secondary High-Quality Object Photography)
-    if results.len() < limit {
-        // Pixabay API key: stored in PIXABAY_API_KEY env var, never hardcoded in source.
-        let pixabay_key = std::env::var("PIXABAY_API_KEY").unwrap_or_default();
-        if !pixabay_key.is_empty() {
-        let pixabay_url = format!(
-            "https://pixabay.com/api/?key={}&q={}&image_type=photo&per_page=6",
-            pixabay_key, encoded
-        );
-        if let Ok(resp) = HTTP_CLIENT.get(&pixabay_url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .send().await
-        {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                if let Some(hits) = json.get("hits").and_then(|h| h.as_array()) {
-                    for hit in hits {
-                        if let (Some(img_url), Some(tags)) = (
-                            hit.get("webformatURL").and_then(|u| u.as_str()),
-                            hit.get("tags").and_then(|t| t.as_str()),
-                        ) {
-                            if !seen.contains(img_url) {
-                                seen.insert(img_url.to_string());
-                                results.push(ExtractedImagePayload {
-                                    url: img_url.to_string(),
-                                    title: format!("{} ({})", cleaned, tags),
-                                    source: "pixabay".to_string(),
-                                });
-                                if results.len() >= limit {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        } // end pixabay_key guard
+pub async fn execute_bing_image_search(query: &str, limit: usize) -> Vec<ExtractedImagePayload> {
+    let mut results = Vec::new();
+    let clean_q = extract_image_search_term(query);
+    if clean_q.is_empty() {
+        return results;
     }
 
-    // 3. Openverse REST API Engine (700M+ Open License & Public Domain Images)
-    if results.len() < limit {
-        let ov_url = format!("https://api.openverse.org/v1/images/?q={}&page_size=6", encoded);
-        if let Ok(resp) = HTTP_CLIENT.get(&ov_url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .send().await
-        {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                if let Some(items) = json.get("results").and_then(|r| r.as_array()) {
-                    for item in items {
-                        if let (Some(img_url), Some(title)) = (
-                            item.get("url").and_then(|i| i.as_str()),
-                            item.get("title").and_then(|t| t.as_str()),
-                        ) {
-                            let lower = img_url.to_lowercase();
-                            if !lower.contains(".svg") && !seen.contains(img_url) {
-                                seen.insert(img_url.to_string());
-                                results.push(ExtractedImagePayload {
-                                    url: img_url.to_string(),
-                                    title: title.to_string(),
-                                    source: "openverse".to_string(),
-                                });
-                                if results.len() >= limit {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let url = format!(
+        "https://www.bing.com/images/async?q={}&first=1&count={}&scenario=ImageBasicHover&datsrc=N_A&layout=RowBased&mmasync=1",
+        urlencoding::encode(&clean_q),
+        (limit * 2).clamp(4, 24)
+    );
 
-    // 4. DuckDuckGo Image Search API Engine (Web-wide diagrams and product photos)
-    if results.len() < limit {
-        let ddg_img_url = format!("https://duckduckgo.com/i.js?q={}&o=json", encoded);
-        if let Ok(resp) = HTTP_CLIENT.get(&ddg_img_url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .header("Accept", "application/json")
-            .send().await
-        {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                if let Some(items) = json.get("results").and_then(|r| r.as_array()) {
-                    for item in items {
-                        if let (Some(img_url), Some(title)) = (
-                            item.get("image").and_then(|i| i.as_str()),
-                            item.get("title").and_then(|t| t.as_str()),
-                        ) {
-                            if img_url.starts_with("http") && !seen.contains(img_url) {
-                                seen.insert(img_url.to_string());
-                                results.push(ExtractedImagePayload {
-                                    url: img_url.to_string(),
-                                    title: title.to_string(),
-                                    source: "duckduckgo".to_string(),
-                                });
-                                if results.len() >= limit {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // 5. Wikimedia Commons API Engine (Historical photos, scientific diagrams, artwork)
-    if results.len() < limit {
-        let wiki_url = format!(
-            "https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={}&gsrlimit=6&prop=imageinfo&iiprop=url&format=json",
-            encoded
-        );
-        if let Ok(resp) = HTTP_CLIENT.get(&wiki_url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .send().await
-        {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                if let Some(pages) = json.get("query").and_then(|q| q.get("pages")).and_then(|p| p.as_object()) {
-                    for (_id, page) in pages {
-                        if let (Some(title), Some(imageinfo)) = (
-                            page.get("title").and_then(|t| t.as_str()),
-                            page.get("imageinfo").and_then(|i| i.as_array()),
-                        ) {
-                            if let Some(info) = imageinfo.first() {
-                                if let Some(img_url) = info.get("url").and_then(|u| u.as_str()) {
-                                    let clean_title = title.replace("File:", "").replace(".jpg", "").replace(".png", "");
-                                    if img_url.starts_with("http") && !seen.contains(img_url) {
-                                        seen.insert(img_url.to_string());
+    if let Ok(Ok(resp)) = tokio::time::timeout(
+        Duration::from_millis(5000),
+        HTTP_CLIENT.get(&url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .send()
+    ).await {
+        if let Ok(html) = resp.text().await {
+            let mut seen = std::collections::HashSet::new();
+            for part in html.split("m=\"") {
+                if let Some(end_idx) = part.find('"') {
+                    let json_str = &part[..end_idx];
+                    let decoded = json_str.replace("&quot;", "\"").replace("&amp;", "&");
+                    if decoded.starts_with('{') {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&decoded) {
+                            if let Some(murl) = v.get("murl").and_then(|u| u.as_str()) {
+                                if murl.starts_with("http") && !seen.contains(murl) {
+                                    let lower = murl.to_lowercase();
+                                    if !lower.contains("doubleclick") && !lower.contains("googleads") && !lower.contains("adservice") {
+                                        seen.insert(murl.to_string());
+                                        let title = v.get("t")
+                                            .or_else(|| v.get("desc"))
+                                            .and_then(|t| t.as_str())
+                                            .unwrap_or(&clean_q);
+                                        let clean_title = title
+                                            .replace("<b>", "")
+                                            .replace("</b>", "")
+                                            .trim()
+                                            .to_string();
                                         results.push(ExtractedImagePayload {
-                                            url: img_url.to_string(),
-                                            title: clean_title,
-                                            source: "wikimedia".to_string(),
+                                            url: murl.to_string(),
+                                            title: if clean_title.is_empty() { clean_q.clone() } else { clean_title },
+                                            source: "Web (Bing Images)".to_string(),
                                         });
                                         if results.len() >= limit {
                                             break;
@@ -2088,6 +2240,142 @@ pub async fn search_images_command(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    results
+}
+
+pub async fn execute_duckduckgo_image_search(query: &str, limit: usize) -> Vec<ExtractedImagePayload> {
+    let mut results = Vec::new();
+    let clean_q = extract_image_search_term(query);
+    if clean_q.is_empty() {
+        return results;
+    }
+
+    // Step 1: Get vqd token from DDG search page
+    let token_url = format!(
+        "https://duckduckgo.com/?q={}&t=h_&iar=images&iax=images&ia=images",
+        urlencoding::encode(&clean_q)
+    );
+
+    let vqd_opt: Option<String> = async {
+        let resp = tokio::time::timeout(
+            Duration::from_millis(5000),
+            HTTP_CLIENT.get(&token_url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .send()
+        ).await.ok()?.ok()?;
+
+        let html = resp.text().await.ok()?;
+        if let Some(pos) = html.find("vqd=\"") {
+            let rest = &html[pos + 5..];
+            if let Some(end) = rest.find('"') {
+                return Some(rest[..end].to_string());
+            }
+        }
+        if let Some(pos) = html.find("vqd=") {
+            let rest = &html[pos + 4..];
+            let token: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '_').collect();
+            if !token.is_empty() {
+                return Some(token);
+            }
+        }
+        None
+    }.await;
+
+    let vqd = match vqd_opt {
+        Some(v) => v,
+        None => return results,
+    };
+
+    // Step 2: Query i.js JSON endpoint
+    let i_url = format!(
+        "https://duckduckgo.com/i.js?l=us-en&o=json&q={}&vqd={}&f=,,,;&p=1",
+        urlencoding::encode(&clean_q),
+        vqd
+    );
+
+    if let Ok(Ok(resp)) = tokio::time::timeout(
+        Duration::from_millis(5000),
+        HTTP_CLIENT.get(&i_url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            .header("Referer", format!("https://duckduckgo.com/?q={}", urlencoding::encode(&clean_q)))
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Accept", "application/json, text/javascript, */*; q=0.01")
+            .send()
+    ).await {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(items) = json.get("results").and_then(|r| r.as_array()) {
+                let mut seen = std::collections::HashSet::new();
+                for item in items {
+                    if let Some(img_url) = item.get("image").and_then(|u| u.as_str()) {
+                        if img_url.starts_with("http") && !seen.contains(img_url) {
+                            seen.insert(img_url.to_string());
+                            let title = item.get("title").and_then(|t| t.as_str()).unwrap_or(&clean_q);
+                            let clean_title = title
+                                .replace("<b>", "")
+                                .replace("</b>", "")
+                                .trim()
+                                .to_string();
+                            results.push(ExtractedImagePayload {
+                                url: img_url.to_string(),
+                                title: if clean_title.is_empty() { clean_q.clone() } else { clean_title },
+                                source: "DuckDuckGo Images".to_string(),
+                            });
+                            if results.len() >= limit {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    results
+}
+
+#[tauri::command]
+pub async fn search_images_command(
+    query: String,
+    limit: Option<usize>,
+) -> Result<String, String> {
+    let limit = limit.unwrap_or(6);
+    let cleaned = extract_image_search_term(&query);
+    let mut results: Vec<ExtractedImagePayload> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Query both DuckDuckGo Images and Bing Images concurrently in parallel
+    let (ddg_images, bing_images) = tokio::join!(
+        execute_duckduckgo_image_search(&cleaned, limit),
+        execute_bing_image_search(&cleaned, limit)
+    );
+
+    // Interleave and deduplicate results from both web image engines
+    let max_len = ddg_images.len().max(bing_images.len());
+    for i in 0..max_len {
+        if i < ddg_images.len() {
+            let item = &ddg_images[i];
+            if !seen.contains(&item.url) {
+                seen.insert(item.url.clone());
+                results.push(item.clone());
+                if results.len() >= limit {
+                    break;
+                }
+            }
+        }
+        if i < bing_images.len() {
+            let item = &bing_images[i];
+            if !seen.contains(&item.url) {
+                seen.insert(item.url.clone());
+                results.push(item.clone());
+                if results.len() >= limit {
+                    break;
                 }
             }
         }
@@ -2144,6 +2432,10 @@ pub async fn fetch_image_base64(url: String) -> Result<FetchedImagePayload, Stri
 
     Ok(FetchedImagePayload { base64: encoded, mime_type })
 }
+
+// ─── §6 Tauri Command Handlers ──────────────────────────────────────────────
+// Public #[tauri::command] functions registered in main.rs.
+// These are the IPC entry points called from the frontend via invoke().
 
 #[tauri::command]
 pub async fn search_web_command(
@@ -2223,7 +2515,7 @@ pub async fn search_web_command(
 
     if search_provider == "tavily" && !tavily_failed && !tavily_result.is_empty() {
         let result = tavily_result;
-        SEARCH_CACHE.insert(cache_key, CachedSearchResult { content: result.clone(), timestamp: std::time::Instant::now() });
+        insert_bounded_cache(&SEARCH_CACHE, cache_key, CachedSearchResult { content: result.clone(), timestamp: std::time::Instant::now() }, 50);
         return Ok(result);
     }
 
@@ -2479,46 +2771,19 @@ pub async fn search_web_command(
         }
     };
 
-    // â”€â”€â”€ TIER 3: Multi-query parallel DuckDuckGo HTML search with RRF â”€â”€â”€â”€â”€â”€â”€â”€
-    let query_variants = expand_query(&cleaned_query, &intent);
-
-    // Build fetch futures for all query variants — fire all in parallel using robust multi-engine retriever
+    // Fast parallel search across DDG Lite and DDG Instant Knowledge Answer
     let ddg_html_fut = {
-        let variants: Vec<String> = query_variants.into_iter().take(2).collect();
+        let q = cleaned_query.clone();
         async move {
-            let futs: Vec<_> = variants.into_iter().map(|v| {
-                let lim = limit + 2;
-                async move { fetch_duckduckgo_results(&v, lim).await }
-            }).collect();
-            let res_list = futures_util::future::join_all(futs).await;
-            res_list.into_iter().filter(|r| !r.is_empty()).collect::<Vec<_>>()
+            fetch_duckduckgo_results(&q, limit + 2).await
         }
     };
 
-    let wiki_fut = async move { Vec::<(String, String, String)>::new() };
-    let entity_img_fut = {
-        let q = cleaned_query.clone();
-        async move { fetch_entity_image(&q).await }
-    };
+    let (ddg_results, instant_answer) = tokio::join!(ddg_html_fut, ddg_instant_fut);
 
-    // Run DDG HTML search, DDG instant API, Wikipedia, and Entity Image fetch in parallel
-    let (ddg_ranked_lists, instant_answer, wiki_results, _entity_image) = tokio::join!(ddg_html_fut, ddg_instant_fut, wiki_fut, entity_img_fut);
+    let mut parsed_items = ddg_results;
 
-
-    let mut all_lists = ddg_ranked_lists;
-    if !wiki_results.is_empty() {
-        all_lists.push(wiki_results);
-    }
-
-    let mut parsed_items = if all_lists.len() > 1 {
-        rrf_merge_sorted_with_query(all_lists, 60, limit + 2, &cleaned_query)
-    } else if all_lists.len() == 1 {
-        all_lists.into_iter().next().unwrap_or_default().into_iter().take(limit + 2).collect()
-    } else {
-        Vec::new()
-    };
-
-    // Prepend DDG Instant Answer (knowledge panel) if we got one
+    // Prepend DDG Instant Answer (knowledge panel) if available
     if let Some((heading, abs_url, abs_text)) = instant_answer {
         if !heading.is_empty() && !abs_text.is_empty() {
             let url_not_dup = !parsed_items.iter().any(|(_, u, _)| u == &abs_url);
@@ -2533,7 +2798,7 @@ pub async fn search_web_command(
             "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={}&format=json&utf8=1",
             urlencoding::encode(&cleaned_query)
         );
-        if let Ok(resp) = HTTP_CLIENT.get(&wiki_url).send().await {
+        if let Ok(Ok(resp)) = tokio::time::timeout(Duration::from_millis(800), HTTP_CLIENT.get(&wiki_url).send()).await {
             if let Ok(json) = resp.json::<serde_json::Value>().await {
                 if let Some(arr) = json["query"]["search"].as_array() {
                     static TAG_RE2: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"<[^>]*>").unwrap());
@@ -2549,7 +2814,6 @@ pub async fn search_web_command(
     }
 
     // ── Ad/Sponsored URL blocklist ───────────────────────────────────────────
-    // Known ad-network redirect / tracking domains that carry zero real content.
     const AD_DOMAINS: &[&str] = &[
         "doubleclick.net", "googlesyndication.com", "adnxs.com",
         "adsrvr.org", "rubiconproject.com", "pubmatic.com",
@@ -2558,8 +2822,6 @@ pub async fn search_web_command(
         "adservice.google", "ad.doubleclick", "adfarm.mediaplex.com",
     ];
 
-    // Strip "Sponsored · ", "Ad · ", "Promoted · " labels from snippet text.
-    // Search engines sometimes embed these labels directly in the snippet string.
     static SPONSORED_PREFIX_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
         regex::Regex::new(r"(?i)^(?:sponsored|ad|promoted|advertisement)\s*[·•\-\u2013:]+\s*").unwrap()
     });
@@ -2575,9 +2837,8 @@ pub async fn search_web_command(
             format!("WEB SEARCH RESULTS (retrieved: {}):\n\n", date_str)
         };
 
-        // Filter out ad-domains and deduplicate by domain to ensure multi-website diversity
         let mut seen_domains = std::collections::HashSet::new();
-        let mut filtered_candidates = Vec::new();
+        let mut sources_text_vec = Vec::new();
 
         for (title, page_url, snippet) in parsed_items {
             if AD_DOMAINS.iter().any(|d| page_url.contains(d)) {
@@ -2595,51 +2856,24 @@ pub async fn search_web_command(
                 let clean_snip = SPONSORED_PREFIX_RE
                     .replace(&snippet, "")
                     .chars()
-                    .take(1200)
+                    .take(1500)
                     .collect::<String>();
-                filtered_candidates.push((title, page_url, clean_snip));
+                if clean_snip.trim().len() > 20 {
+                    sources_text_vec.push(format!(
+                        "[Source {}] {}\nURL: {}\nContent: {}",
+                        sources_text_vec.len() + 1,
+                        title,
+                        page_url,
+                        clean_snip.trim()
+                    ));
+                }
             }
-            if filtered_candidates.len() >= limit {
+            if sources_text_vec.len() >= limit {
                 break;
             }
         }
 
-        // Concurrently fetch full page body content for top distinct website URLs
-        let max_deep_fetch = 5.min(filtered_candidates.len());
-        let fetch_futs: Vec<_> = filtered_candidates
-            .iter()
-            .take(max_deep_fetch)
-            .map(|(_, page_url, _)| {
-                let url = page_url.clone();
-                async move { fetch_page_content(&url, 1500).await }
-            })
-            .collect();
-
-        let fetched_pages = futures_util::future::join_all(fetch_futs).await;
-
-        let mut sources_text_vec = Vec::new();
-        for (idx, (title, page_url, snippet)) in filtered_candidates.into_iter().enumerate() {
-            let deep_content = if idx < fetched_pages.len() {
-                fetched_pages[idx].clone()
-            } else {
-                None
-            };
-            let content_str = match deep_content {
-                Some(ref text) if text.trim().len() > 200 => text.trim().to_string(),
-                _ => snippet,
-            };
-
-            sources_text_vec.push(format!(
-                "[Source {}] {}\nURL: {}\nContent: {}",
-                idx + 1,
-                title,
-                page_url,
-                content_str
-            ));
-        }
-
         let sources_text = sources_text_vec.join("\n\n");
-
         format!("{}{}", temporal_marker, sources_text)
     };
 

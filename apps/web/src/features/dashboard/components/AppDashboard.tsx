@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * @file src/components/AppDashboard.tsx
  * @description Claude Desktop-style dashboard with a warm-slate sidebar, Chat page,
@@ -187,7 +186,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         sessions={folderSessions}
                         activeSid={activeSid}
                         onDeleteFolder={() => deleteFolder(folder.id)}
-                        onSelectSession={(id) => {
+                        onSelectSession={(id: string) => {
                           switchSession(id);
                           if (activeMode !== 'chat')
                             setActiveMode('chat');
@@ -214,7 +213,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         }}
                         onDelete={() => deleteSession(session.id)}
                         folders={folders}
-                        onMoveToFolder={(folderId) => updateSessionMeta(session.id, { folderId })}
+                        onMoveToFolder={(folderId: string) => updateSessionMeta(session.id, { folderId })}
                       />
                     ))}
 
@@ -282,33 +281,31 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         {/* ── Main Content Canvas ────────────────────────────────────────── */}
         <div className="flex-1 min-w-0 h-full relative overflow-hidden bg-background">
-          <AnimatePresence mode="wait">
-            <AppRouter
-              activeMode={activeMode}
-              setActiveMode={setActiveMode}
-              apiKeys={apiKeys}
-              trackUsage={trackUsage}
-              statuses={statuses}
-              chatSessions={activeSessions}
-              sidebarOpen={sidebarOpen}
-              onToggleSidebar={() => setSidebarOpen((p) => !p)}
-              models={models}
-              setModel={setModel}
-              updateApiKey={updateApiKey}
-              clearApiKeys={clearApiKeys}
-              modelsState={modelsState}
-              setModelsState={setModels}
-              allModels={allModels}
-            />
-          </AnimatePresence>
+          <AppRouter
+            activeMode={activeMode as any}
+            setActiveMode={setActiveMode as any}
+            apiKeys={apiKeys}
+            trackUsage={trackUsage}
+            statuses={statuses}
+            chatSessions={activeSessions as any}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen((p) => !p)}
+            models={models}
+            setModel={setModel}
+            updateApiKey={updateApiKey}
+            clearApiKeys={clearApiKeys}
+            modelsState={modelsState}
+            setModelsState={setModels}
+            allModels={allModels}
+          />
         </div>
 
         {/* Command Palette */}
         <CommandPalette
-          activeMode={activeMode}
-          setActiveMode={setActiveMode}
-          createSession={createSession}
-          clearHistory={() => {}} // CommandPalette might need refactoring to clear history without accessing state directly
+          activeMode={activeMode as any}
+          setActiveMode={setActiveMode as any}
+          createSession={createSession as any}
+          clearHistory={() => {}}
           models={models}
           setModel={setModel}
           allModels={allModels}

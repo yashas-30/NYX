@@ -34,22 +34,25 @@ export async function initVoiceMode(
 }
 
 export async function transcribeAudio(audio: Float32Array): Promise<string> {
-  // Convert Float32Array PCM (16kHz mono) to WAV
-  const wavBlob = pcmToWav(audio, 16000);
-  const file = new File([wavBlob], "audio.wav", { type: "audio/wav" });
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response: any = await invoke('voice_stt', { payload: formData });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Transcription failed: ${response.statusText} - ${errText}`);
+  try {
+    const wavBlob = pcmToWav(audio, 16000);
+    const arrayBuffer = await wavBlob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    
+    const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+    if (isTauri) {
+      try {
+        const text = await invoke<string>('voice_stt', { audioBytes: Array.from(bytes) });
+        if (text) return text;
+      } catch {
+        // Fall through if native STT is not configured
+      }
+    }
+    return "";
+  } catch (err: any) {
+    console.warn('Audio transcription error:', err);
+    return "";
   }
-
-  const result = await response.json();
-  return result.text || "";
 }
 
 function pcmToWav(pcm: Float32Array, sampleRate: number): Blob {

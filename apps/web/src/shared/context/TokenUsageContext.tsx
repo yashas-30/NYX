@@ -9,12 +9,19 @@ export interface TokenUsage {
   totalUSD?: number;
 }
 
+export interface ProviderFeedback {
+  thumbsUp: number;
+  thumbsDown: number;
+}
+
 interface TokenUsageContextType {
   usage: Record<string, TokenUsage>; // key is provider
+  feedback: Record<string, ProviderFeedback>;
   updateUsage: (provider: string, tokens: number) => void;
   resetUsage: (provider: string) => void;
   setQuota: (provider: string, total: number) => void;
   refreshProviderQuota: (provider: string, apiKey?: string) => Promise<void>;
+  recordFeedback: (provider: string, type: 'up' | 'down') => void;
 }
 
 const DEFAULT_QUOTAS: Record<string, number> = {
@@ -42,9 +49,37 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return initial;
   });
 
+  const [feedback, setFeedback] = useState<Record<string, ProviderFeedback>>(() => {
+    const saved = localStorage.getItem('llm_ref_provider_feedback');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e: any) {
+        console.error('Failed to parse provider feedback', e);
+      }
+    }
+    return {};
+  });
+
   useEffect(() => {
     localStorage.setItem('llm_ref_token_usage', JSON.stringify(usage));
   }, [usage]);
+
+  useEffect(() => {
+    localStorage.setItem('llm_ref_provider_feedback', JSON.stringify(feedback));
+  }, [feedback]);
+
+  const recordFeedback = useCallback((provider: string, type: 'up' | 'down') => {
+    setFeedback((prev) => {
+      const current = prev[provider] || { thumbsUp: 0, thumbsDown: 0 };
+      const updated = {
+        ...current,
+        thumbsUp: type === 'up' ? current.thumbsUp + 1 : current.thumbsUp,
+        thumbsDown: type === 'down' ? current.thumbsDown + 1 : current.thumbsDown,
+      };
+      return { ...prev, [provider]: updated };
+    });
+  }, []);
 
   const updateUsage = useCallback((provider: string, tokens: number) => {
     // Defer update to avoid "Cannot update a component while rendering" warning
@@ -102,8 +137,8 @@ export const TokenUsageProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const value = React.useMemo(
-    () => ({ usage, updateUsage, resetUsage, setQuota, refreshProviderQuota }),
-    [usage, updateUsage, resetUsage, setQuota, refreshProviderQuota]
+    () => ({ usage, feedback, updateUsage, resetUsage, setQuota, refreshProviderQuota, recordFeedback }),
+    [usage, feedback, updateUsage, resetUsage, setQuota, refreshProviderQuota, recordFeedback]
   );
 
   return (

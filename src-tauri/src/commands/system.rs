@@ -126,6 +126,18 @@ pub struct CommandResult {
 pub async fn execute_command(command: String, cwd: String) -> Result<CommandResult, String> {
     use tokio::process::Command;
 
+    // Safety guard against catastrophic disk-wipe / bricking payloads
+    let lower_cmd = command.to_lowercase().replace(' ', "");
+    if lower_cmd.contains("rmdir/s/qc:\\")
+        || lower_cmd.contains("del/f/s/qc:\\")
+        || lower_cmd.contains("formatc:")
+        || lower_cmd.contains("rm-rf/")
+        || lower_cmd.contains("mkfs.")
+        || lower_cmd.contains("ddif=/dev/zero")
+    {
+        return Err("Security Violation: Catastrophic system command blocked by NYX SafetyGuard".to_string());
+    }
+
     #[cfg(target_os = "windows")]
     let mut cmd = Command::new("cmd");
     #[cfg(target_os = "windows")]

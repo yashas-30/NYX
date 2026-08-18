@@ -54,8 +54,8 @@ export const ModelStatusBadge: React.FC<ModelStatusBadgeProps> = ({
       title={title}
       className={`
         inline-flex items-center shrink-0
-        text-[5.5px] font-black uppercase tracking-wider
-        px-1 py-0.5 rounded-[3px] border
+        text-[9px] font-black uppercase tracking-wider
+        px-1.5 py-0.5 rounded-[4px] border
         ${cfg.className}
       `}
     >

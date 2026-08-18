@@ -145,3 +145,36 @@ pub async fn turbovec_search_memory(
     }
 }
 
+#[tauri::command]
+pub async fn turbovec_search_chat_history(
+    app: tauri::AppHandle,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<TurbovecSearchResult>, String> {
+    if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+        let limit_val = limit.unwrap_or(10);
+        let results = tv_store.search_chat_memory(&query, limit_val).await;
+        let mapped = results
+            .into_iter()
+            .map(|(_id, text, metadata)| TurbovecSearchResult { text, metadata })
+            .collect();
+        Ok(mapped)
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+#[tauri::command]
+pub async fn turbovec_sync_chat_session(
+    app: tauri::AppHandle,
+    session: crate::commands::db::ChatSessionPayload,
+) -> Result<(), String> {
+    if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+        tv_store.sync_session_messages(&session.id, &session.title, &session.messages).await;
+        Ok(())
+    } else {
+        Err("TurboVec memory store not initialized".to_string())
+    }
+}
+
+

@@ -11,33 +11,105 @@ use crate::llm::local_inference::execute_local_stream;
 use crate::orchestrator::tools::Tool;
 use crate::orchestrator::lucifer_tools::{
     LuciferSearchTool, LuciferMemoryTool, LuciferCreateFileTool,
-    LuciferImageGenTool, LuciferVoiceTool, LuciferContextAnalyzerTool
+    LuciferImageGenTool, LuciferMediaSearchTool, LuciferVoiceTool, LuciferContextAnalyzerTool,
+    LuciferModelManagementTool
 };
 
-pub const LUCIFER_PERSONA: &str = r#"You are Lucifer, an autonomous AI companion and intelligent orchestrator running on the NYX platform.
-You operate as an autonomous, hyper-intelligent orchestrator connected to local GGUF models, cloud LLMs, agentic vector RAG memory (TurboVec), live web search, image generation, and text-to-voice engines.
+pub const LUCIFER_PERSONA: &str = r#"You are Lucifer — the primary executive AI intelligence of the NYX platform, powered by Qwen 2.5 running fully on GPU.
+You are a senior technical authority, direct thinker, and adaptive problem solver. You plan, call tools, and synthesize responses autonomously with standard professional precision.
 
-IMPORTANT IDENTITY DIRECTIVE:
-- NYX is the name of the software application / desktop platform, NOT the user's name.
-- NEVER address or call the user "NYX".
-- Greet the user naturally (e.g. "Hello!", "Hi there!") without assuming their name is NYX.
+IDENTITY:
+- NYX is the software platform name, NOT the user's name. Never call the user "NYX".
+- You are Lucifer. Address yourself as Lucifer when asked who you are.
+- You are high-signal, objective, and action-oriented. Eliminate conversational fluff and robotic filler.
 
-Guidelines:
-1. Always analyze user intent accurately (Search, RAG Memory, Image Gen, Voice, Code/File Creation, Model Hardware Analysis).
-2. Communicate naturally, fluidly, and directly. Answer immediately — never narrate or announce what you are about to do.
-3. When tool calls are required, output valid function calls.
-4. When research or memory facts are retrieved, integrate them seamlessly using Markdown citations like [Source Title](URL) when source URLs are available.
-5. Provide clear, accurate, and direct answers using Markdown formatting.
-6. PERSON/ENTITY/GENERATED IMAGES: Whenever an image URL is provided in search results, [ENTITY IMAGE ATTACHMENT], or [GENERATED VISUAL ASSET ATTACHMENT], ALWAYS embed the image in your markdown response using: ![Title](URL) at the top of your response and warmly describe the visual asset.
-7. CONVERSATIONAL CONTINUITY: Maintain complete context of conversation history. If the user provides a short response ("yes", "no", "do it", "that one", "correct", "sure", etc.) acknowledging your question or suggestion from the previous turn, IMMEDIATELY fulfill the pending task or answer. NEVER reset the conversation or output generic greetings when continuing an active conversation.
+UNIVERSAL PROFESSIONAL RESPONSE GUIDELINES:
+1. Core Delivery: The very first sentence must deliver the direct answer or primary solution. Never open with conversational filler ("Certainly!", "Great question!", "Sure!", "Here is a breakdown...").
+2. Adaptive Depth & Structure:
+   - Simple / Concise Questions: Provide a sharp, direct, high-signal response in 1–2 clear paragraphs without artificial section headers or bullet bloat.
+   - In-Depth / Technical / Architectural / Research Inquiries: Organize into logical Markdown sections (## Section Name) named directly after the concepts discussed.
+   - Visuals & Diagrams: For system architectures, data flows, workflows, and algorithms, provide valid Mermaid flowcharts wrapped in ```mermaid ... ``` code fences with quoted node labels: A["Node Label"] --> B["Next Step"].
+   - Tables & Code: Use clean Markdown tables for comparisons and benchmarks. Provide idiomatic, production-ready code blocks with language identifiers.
+   - Creative / Lore Inquiries: Deliver rich, concrete narrative exploration with character depth without artificial textbook boilerplate.
+3. Factual Grounding & Citations:
+   - Base factual answers on verified web search and memory tool results provided in context.
+   - Place citation tags [Source N] ONLY at the very end of paragraphs or sections.
+4. Media Integration:
+   - When verified media is present in context, place it cleanly on dedicated standalone lines: ![Title](URL) for images, <video src="URL" title="Title"></video> for videos.
+   - Never fabricate or guess media URLs. Use only verified URLs from context.
 
-CRITICAL OUTPUT RULES — NEVER BREAK THESE:
-- NEVER repeat or echo the user's message at the start of your response.
-- NEVER start with "User:", "Human:", "Assistant:", "Lucifer:", or any role prefix.
-- NEVER output meta-commentary, self-narration, or internal notes ("I need to...", "Let me...", "Based on...", "Following the instructions...", "Adhering to...").
-- NEVER output raw search result formatting ([Source N], URL:, Snippet:, User question:).
-- Your FIRST output token must be the actual answer content — never a preamble.
-- NEVER output JSON, tool call syntax, or structured data unless the user explicitly requested it."#;
+YOUR TOOL CAPABILITIES:
+You have access to the following tools. Use them intelligently based on what the user actually needs:
+
+1. web_search — Search the live web for real-time, current, or factual information
+   Use when: news, prices, current events, facts that may have changed, anything time-sensitive
+   Do NOT use for: general knowledge, math, coding help, opinions, things you already know
+
+2. recall_memory — Search your long-term vector memory for information from past conversations
+   Use when: user references something they told you before, asks "do you remember", needs personalized context
+
+3. generate_image — Generate an image from a text description using local GPU diffusion
+   Use when: user asks to create/draw/generate/visualize an image, picture, artwork, photo, illustration
+
+4. synthesize_voice — Convert text to speech audio
+   Use when: user explicitly asks you to "say", "speak", "read aloud", or "convert to speech"
+
+5. create_file — Create a file on the user's system with specified content
+   Use when: user asks to "create", "write", "save", "make" a file, document, script, or code file
+
+6. search_media — Find images, videos, or audio assets from media libraries
+   Use when: user asks to find/show/get media, photos, videos, clips, music (not to generate, but to find)
+
+7. analyze_hardware — Check GPU, CPU, RAM specs and local model compatibility
+   Use when: user asks about hardware, system specs, which models can run on their machine
+
+8. manage_models — List, load, or switch between local AI models
+   Use when: user asks about available models, wants to switch models, asks about model status
+
+HOW TO CALL TOOLS:
+When you need a tool, output ONLY the tool call XML and nothing else:
+<tool_call>{"name": "web_search", "args": {"query": "your search query"}}</tool_call>
+<tool_call>{"name": "generate_image", "args": {"prompt": "a cyberpunk city at night"}}</tool_call>
+<tool_call>{"name": "recall_memory", "args": {"query": "user preferences"}}</tool_call>
+
+DECISION LOGIC — read the user's message carefully:
+- Greeting or simple question → answer directly, NO tools
+- Request for current/live info → web_search
+- Request to create visual content → generate_image  
+- Request for audio → synthesize_voice
+- Reference to past conversation → recall_memory
+- Request to save/write a file → create_file
+- Asking to find existing media → search_media
+- General knowledge/coding/math/explanation → answer directly, NO tools
+
+CRITICAL OUTPUT RULES:
+- NEVER repeat or echo the user's message
+- NEVER start with "User:", "Human:", "Assistant:", "Lucifer:", or any role prefix
+- NEVER output meta-commentary ("I need to...", "Let me...", "Based on...", "I will...")
+- Your FIRST token must be the actual answer — no preamble ever
+- When you have tool results injected above, answer from them directly — do NOT call tools again
+- After tool results are provided, synthesize a clean natural language response"#;
+
+/// Plain-text tool schema injected into local model system prompts when agent mode is active.
+/// This replaces the OpenAI function-calling API tool injection (which llama.cpp's local server
+/// may not honour reliably) with a model-native instruction format that Qwen 2.5 understands.
+pub const LUCIFER_LOCAL_TOOL_SCHEMA: &str = r#"
+[AVAILABLE TOOLS — You may call these when needed]
+• web_search(query) — Live web search. Use for current news, prices, real-time facts.
+• recall_memory(query) — Search past conversation memory. Use when user references prior context.
+• generate_image(prompt) — GPU image generation. Use when user asks to create/draw/visualize.
+• synthesize_voice(text) — Text-to-speech. Use when user asks to read aloud or speak text.
+• create_file(filename, content) — Save a file. Use when user asks to write/save/create a file.
+• search_media(query, type) — Find media assets (image/video/audio).
+• analyze_hardware() — System hardware check.
+• manage_models(action) — List/switch local AI models.
+
+[TOOL CALL FORMAT — use EXACTLY this format, nothing else on the line]
+<tool_call>{"name": "TOOL_NAME", "args": {ARGUMENTS_JSON}}</tool_call>
+
+[TOOL DECISION RULE]
+Only call tools when genuinely required. For greetings, general knowledge, coding, math, or explanations — answer directly without any tool call."#;
+
 
 
 struct UnlistenGuard {
@@ -107,8 +179,10 @@ impl LuciferOrchestrator {
         orchestrator.register_tool(LuciferMemoryTool::new());
         orchestrator.register_tool(LuciferCreateFileTool::new());
         orchestrator.register_tool(LuciferImageGenTool::new());
+        orchestrator.register_tool(LuciferMediaSearchTool::new());
         orchestrator.register_tool(LuciferVoiceTool::new());
         orchestrator.register_tool(LuciferContextAnalyzerTool::new());
+        orchestrator.register_tool(LuciferModelManagementTool::new());
 
         orchestrator
     }
@@ -165,11 +239,51 @@ impl LuciferOrchestrator {
         None
     }
 
+    /// Extracts clean user query by stripping formatting/directive XML tags
+    pub fn extract_clean_user_query(raw: &str) -> String {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return String::new();
+        }
+        // 1. Extract content within <user_input>...</user_input> if present
+        if let Some(start) = trimmed.find("<user_input>") {
+            if let Some(end) = trimmed[start..].find("</user_input>") {
+                let inner = &trimmed[start + "<user_input>".len()..start + end];
+                return inner.trim().to_string();
+            }
+        }
+        // 2. Strip XML blocks: <turn_format_directive>...</turn_format_directive>, <execution_rules>...</execution_rules>, etc.
+        let mut clean = trimmed.to_string();
+        let tags = [
+            ("turn_format_directive", "</turn_format_directive>"),
+            ("execution_rules", "</execution_rules>"),
+            ("web_search_context", "</web_search_context>"),
+            ("deep_research_context", "</deep_research_context>"),
+            ("verified_media_library", "</verified_media_library>"),
+            ("title_separated_media_groups", "</title_separated_media_groups>"),
+            ("memory_context", "</memory_context>"),
+            ("supplemental_background_memory", "</supplemental_background_memory>"),
+            ("date_context", "</date_context>"),
+            ("previous_response_context", "</previous_response_context>"),
+        ];
+        for (open_tag, close_tag) in tags {
+            while let Some(start) = clean.find(&format!("<{}", open_tag)) {
+                if let Some(end_offset) = clean[start..].find(close_tag) {
+                    let end = start + end_offset + close_tag.len();
+                    clean.replace_range(start..end, "");
+                } else {
+                    break;
+                }
+            }
+        }
+        clean.trim().to_string()
+    }
+
     pub fn analyze_turn(messages: &[UnifiedMessage], provider: &str) -> LuciferAnalysis {
         let is_local_model = provider == "nyx-native" || provider.contains("local");
 
         // Extract CURRENT user message (last message) for tool intent evaluation
-        let last_user_text = messages.last().map(|msg| match &msg.content {
+        let last_user_raw = messages.last().map(|msg| match &msg.content {
             Value::String(s) => s.clone(),
             Value::Array(arr) => arr.iter()
                 .filter_map(|v| v.get("text").and_then(|t| t.as_str()))
@@ -177,10 +291,13 @@ impl LuciferOrchestrator {
             _ => String::new(),
         }).unwrap_or_default();
 
+        let clean_user_text = Self::extract_clean_user_query(&last_user_raw);
+        let eval_text = if !clean_user_text.is_empty() { &clean_user_text } else { &last_user_raw };
+
         // --- GREETING SHORT-CIRCUIT ---
         // If the current message is a pure greeting, ALL tool flags are false.
         // Historical keywords ("voice", "audio", "draw") in past turns MUST NOT pollute this turn.
-        if Self::is_greeting_text(&last_user_text) {
+        if Self::is_greeting_text(eval_text) {
             return LuciferAnalysis {
                 intent: "conversational".to_string(),
                 requires_search: false,
@@ -190,12 +307,12 @@ impl LuciferOrchestrator {
                 is_local_model,
                 confidence: 1.0,
                 refers_to_previous_response: Some(false),
-                decontextualized_query: Some(last_user_text),
+                decontextualized_query: Some(eval_text.to_string()),
             };
         }
 
-        // Evaluate tool intent strictly on current message
-        let current = last_user_text.to_lowercase();
+        // Evaluate tool intent strictly on clean current message
+        let current = eval_text.to_lowercase();
         let requires_voice = VOICE_INTENT_REGEX.is_match(&current);
         let requires_image_gen = IMAGE_INTENT_REGEX.is_match(&current);
         let requires_memory = MEMORY_INTENT_REGEX.is_match(&current);
@@ -229,7 +346,7 @@ impl LuciferOrchestrator {
 
         // Context analysis and decontextualization
         let mut refers_to_previous_response = false;
-        let decontextualized_query = last_user_text.clone();
+        let decontextualized_query = eval_text.to_string();
 
         // Search backward from len - 2 to find the actual previous user message (skipping assistant/tool turns)
         let prev_user_text = if messages.len() >= 2 {
@@ -249,7 +366,7 @@ impl LuciferOrchestrator {
         };
 
         if let Some(_prev_text) = prev_user_text {
-            let current_lower = last_user_text.to_lowercase();
+            let current_lower = eval_text.to_lowercase();
             let refers_to_prev_pattern = [
                 "why did you say that", "explain the previous", "expand on that",
                 "what was the second", "what was the first", "can you explain why",
@@ -317,7 +434,7 @@ impl LuciferOrchestrator {
         let voice_str = if caps.voice { "Supported" } else { "NOT SUPPORTED (Text Generation Only)" };
         let tool_str = if caps.tool_calling { "Native Tool Calling Supported" } else { "Text-JSON Tool Fallback Enabled" };
 
-        let capability_context = format!(
+        let _capability_context = format!(
             "CURRENT ENGINE CONTEXT:\n- Active Model: {}\n- Provider: {}\n- Vision Capabilities: {}\n- Audio Capabilities: {}\n- Voice Capabilities: {}\n- Tool Calling Mode: {}\n- Modality Class: {}\n\nCRITICAL MODEL BOUNDARY DIRECTIVE:\n1. You are running on the model specified above. You MUST be 100% truthful about your current model capabilities.\n2. If the active model is Text-Only ({}), explicitly inform the user that your current model cannot see or process images if asked to analyze images.\n3. Do not pretend to have vision or native multimodal capabilities if your active model does not support them.",
             request.model_id,
             request.provider,
@@ -329,9 +446,15 @@ impl LuciferOrchestrator {
             if is_text_only { "Text-Only Model" } else { "Multimodal Model" }
         );
 
+        let is_agent_active = request.agent_mode.unwrap_or(true);
+
         let base_sys = request.system_instruction.clone().unwrap_or_default();
         let sys_prompt = if base_sys.is_empty() {
-            LUCIFER_PERSONA.to_string()
+            if is_agent_active {
+                LUCIFER_PERSONA.to_string()
+            } else {
+                "You are a helpful, direct, and concise AI assistant.".to_string()
+            }
         } else {
             base_sys
         };
@@ -345,19 +468,16 @@ impl LuciferOrchestrator {
             _ => String::new(),
         }).unwrap_or_default();
 
+        let clean_user_text = Self::extract_clean_user_query(&last_user_text);
+        let eval_user_text = if !clean_user_text.is_empty() { &clean_user_text } else { &last_user_text };
+
         let mut search_already_performed = false;
 
-        // Automatic Fast Vector RAG Memory Retrieval (TurboVec / SQLite Memory)
-        if !last_user_text.is_empty() {
-
+        // Automatic Fast Vector RAG Memory Retrieval (TurboVec / SQLite Memory) - ONLY in agent mode
+        if is_agent_active && !eval_user_text.is_empty() {
 
             // --- VOICE SYNTHESIS: Explicit prefix + content ONLY ---
-            // extract_voice_text() returns Some ONLY when the CURRENT message starts with
-            // an explicit TTS command ("say this:", "speak:", "read aloud:", etc.)
-            // This prevents history-contaminated requires_voice from triggering on "hi".
-            if let Some(text_to_speak) = Self::extract_voice_text(&last_user_text) {
-                // Capability gate: local GGUF models use OS TTS (Windows SAPI) — allowed.
-                // Cloud models: voice tool uses same OS TTS path — allowed.
+            if let Some(text_to_speak) = Self::extract_voice_text(eval_user_text) {
                 if let Some(tool) = self.tools.get("synthesize_voice") {
                     let _ = tx.send(StreamChunkPayload::tool_start("tts_1".to_string(), "synthesize_voice".to_string()));
                     match tool.execute(&app, json!({ "text": text_to_speak })).await {
@@ -376,18 +496,8 @@ impl LuciferOrchestrator {
                 }
             }
 
-            // --- CAPABILITY EXPLANATION ---
-            // If user asked about audio/voice capabilities but didn't provide an explicit TTS command,
-            // route to LLM — it will explain model limitations using the CURRENT ENGINE CONTEXT.
-            // (No early return here — falls through to LLM generation below.)
-
             // --- AGENTIC ORCHESTRATION PIPELINE ---
-            // LuciferAgent acts as the autonomous executive agent:
-            // Stage 1: Intent Analysis & Task Planning
-            // Stage 2: Memory RAG & Live Tool Pre-Fetch
-            // Stage 3: Multi-Turn Execution & Self-Correction
-            // Stage 4: High-Agency Answer Synthesis
-            let is_casual = Self::is_greeting_text(&last_user_text) || analysis.intent == "conversational";
+            let is_casual = Self::is_greeting_text(eval_user_text) || analysis.intent == "conversational";
 
             // Emit Agentic Execution Plan metadata payload to UI for complex non-casual tasks
             if !is_casual {
@@ -410,17 +520,16 @@ impl LuciferOrchestrator {
             }
 
             // Automatic Fast Vector RAG Memory Retrieval (TurboVec / SQLite Memory)
-            // ONLY execute when the prompt is NOT a greeting/conversational message AND has substantive length (>15 chars)
-            if !is_casual && last_user_text.trim().len() > 15 {
+            if !is_casual && eval_user_text.trim().len() > 15 && analysis.requires_memory {
                 let pool = app.state::<sqlx::SqlitePool>();
                 let query_vector = match crate::rag::embeddings::Embedder::new() {
-                    Ok(embedder) => embedder.embed(vec![last_user_text.clone()]).await.ok().and_then(|mut v| v.pop()),
+                    Ok(embedder) => embedder.embed(vec![eval_user_text.to_string()]).await.ok().and_then(|mut v| v.pop()),
                     Err(_) => None,
                 };
                 let mut collected_facts: Vec<String> = Vec::new();
 
-                // 1. Fetch from SQLite memory store
-                if let Ok(memories) = crate::commands::db::db_search_memories(pool, Some(last_user_text.clone()), query_vector, Some(3)).await {
+                // 1. Fetch from SQLite memory store (factual statements)
+                if let Ok(memories) = crate::commands::db::db_search_memories(pool, Some(eval_user_text.to_string()), query_vector, Some(3)).await {
                     for m in memories {
                         let fact = m.fact.trim().to_string();
                         if !fact.is_empty() && !collected_facts.contains(&fact) {
@@ -430,11 +539,14 @@ impl LuciferOrchestrator {
                 }
 
                 // 2. Fetch from TurboVec (LanceDB) store if available
+                // Only pull raw chat dialogue chunks from TurboVec when user is actually asking about memory/past conversations
                 if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
-                    let tv_results = tv_store.search_memory(&last_user_text, 3).await;
+                    let tv_results = tv_store.search_memory(eval_user_text, 3).await;
                     for (_id, text) in tv_results {
                         let fact = text.trim().to_string();
-                        if !fact.is_empty() && !collected_facts.contains(&fact) {
+                        // Prevent old raw chat dumps ("USER: ... ASSISTANT: ...") from polluting fresh queries unless user explicitly asked about past sessions
+                        let is_raw_chat_dump = fact.starts_with("USER:") || fact.starts_with("ASSISTANT:");
+                        if !fact.is_empty() && !collected_facts.contains(&fact) && (!is_raw_chat_dump || analysis.requires_memory) {
                             collected_facts.push(fact);
                         }
                     }
@@ -446,20 +558,30 @@ impl LuciferOrchestrator {
                         .collect::<Vec<_>>()
                         .join("\n");
                     let sys = request.system_instruction.take().unwrap_or_default();
-                    request.system_instruction = Some(format!("{}\n\n[RELEVANT MEMORIES / FACTS FROM VECTOR STORE]\n{}", sys, memory_block));
+                    request.system_instruction = Some(format!("{}\n\n[RELEVANT MEMORIES / FACTS FROM VECTOR STORE]\n{}\n[END VECTOR MEMORIES]\n", sys, memory_block));
                 }
             }
 
             // Automatic Fast Web Search Pre-Fetch
             // ONLY fires when: (a) web search is explicitly enabled by the user via the toggle,
             // (b) the current turn is not casual, (c) intent analysis detected a search requirement,
-            // (d) search results are not already embedded in the message.
+            // (d) search results are not already embedded in the message or system prompt.
+            let has_search_in_context = last_user_text.contains("[LIVE WEB SEARCH RESULTS") 
+                || last_user_text.contains("[SEARCH RESULTS]")
+                || last_user_text.contains("<web_search_context")
+                || last_user_text.contains("<deep_research_context")
+                || request.system_instruction.as_deref().unwrap_or("").contains("<web_search_context")
+                || request.system_instruction.as_deref().unwrap_or("").contains("[LIVE WEB SEARCH RESULTS");
+
+            if has_search_in_context {
+                search_already_performed = true;
+            }
+
             let user_explicitly_enabled_search = request.web_search_enabled;
             if !is_casual 
                 && user_explicitly_enabled_search
                 && analysis.requires_search
-                && !last_user_text.contains("[LIVE WEB SEARCH RESULTS") 
-                && !last_user_text.contains("[SEARCH RESULTS]") 
+                && !has_search_in_context
             {
                 let state = app.state::<crate::AppState>();
                 let search_provider = state.search_provider.read().await.clone();
@@ -531,56 +653,86 @@ impl LuciferOrchestrator {
             request.system_instruction = Some(format!("{}{}", request.system_instruction.as_deref().unwrap_or_default(), code_directive));
         }
 
-        // --- DYNAMIC TOOL SCHEMA INJECTION ---
-        // ONLY inject tools if the turn is NOT a pure greeting / casual conversational message AND requires action.
+        // --- INTELLIGENT TOOL SCHEMA INJECTION ---
+        // Strategy differs by model type:
+        // • Local (nyx-native / Qwen 2.5): Inject LUCIFER_LOCAL_TOOL_SCHEMA as plain text in the
+        //   system prompt. The model reads it and decides which tools to call by outputting
+        //   <tool_call>{...}</tool_call> XML. No grammar/constrained decoding overhead.
+        // • Cloud models: Use OpenAI function-calling API (tools + tool_choice) for structured output.
         let is_pure_greeting = Self::is_greeting_text(&last_user_text);
-        let is_greeting_or_casual = is_pure_greeting || (analysis.intent == "conversational" && !analysis.requires_search && !analysis.requires_memory && !analysis.requires_image_gen && !analysis.requires_voice);
+        let is_local_model = request.provider == "nyx-native";
 
-        if is_greeting_or_casual {
-            // Greetings: no tools, short warm response
+        // Determine if the turn is purely conversational (no tools expected)
+        let is_greeting_or_casual = is_pure_greeting
+            || (analysis.intent == "conversational"
+                && !analysis.requires_search
+                && !analysis.requires_memory
+                && !analysis.requires_image_gen
+                && !analysis.requires_voice);
+
+        if is_local_model {
+            // For local Qwen 2.5 model: inject tools as plain-text schema in system prompt.
+            // This is the key fix — the previous code set tools = None for local models,
+            // which meant the model had zero knowledge of its tool capabilities.
             request.tools = None;
             request.tool_choice = None;
+
             let sys_curr = request.system_instruction.take().unwrap_or_default();
-            let greeting_directive = "\n\n[DIRECTIVE: CASUAL CONVERSATION & GREETING]\nThe user sent a casual greeting or conversational remark. Respond warmly, naturally, and directly in 1-2 short sentences as Lucifer. NEVER output lists, definitions, or multi-paragraph responses for greetings.";
-            request.system_instruction = Some(format!("{}{}", sys_curr, greeting_directive));
-        } else {
-            // Non-casual turns: always inject the full tool schema set so the model can call any tool
-            // EXCEPT web_search when it was already pre-fetched (prevents double-search loop).
-            let mut tool_schemas = Vec::new();
 
-            for (tool_name, tool) in &self.tools {
-                // Skip web_search tool schema injection when pre-fetch already retrieved results;
-                // the model already has the data and adding the tool schema would cause it to call
-                // web_search again instead of synthesizing the response immediately.
-                if search_already_performed && tool_name == "web_search" {
-                    continue;
-                }
-                tool_schemas.push(json!({
-                    "type": "function",
-                    "function": {
-                        "name": tool.name(),
-                        "description": tool.description(),
-                        "parameters": tool.parameters_schema()
-                    }
-                }));
-            }
-
-            if !tool_schemas.is_empty() {
-                request.tools = Some(json!(tool_schemas));
-                request.tool_choice = Some(json!("auto"));
+            if is_pure_greeting {
+                // Pure greeting: brief casual directive, no tool schema needed
+                let greeting_directive = "\n\n[DIRECTIVE: CASUAL CONVERSATION & GREETING]\nRespond warmly, naturally, and directly in 1-2 short sentences as Lucifer. NEVER output lists or multi-paragraph responses for greetings.";
+                request.system_instruction = Some(format!("{}{}", sys_curr, greeting_directive));
+            } else if search_already_performed {
+                // Search already done upstream: inject synthesis directive
+                // Still include compact tool schema so model knows it has tools if needed
+                let synth_directive = "\n\n[DIRECTIVE: ANSWER FROM SEARCH RESULTS]\nSearch results are embedded above. Do NOT call web_search again. Answer the user's question directly, integrating citations naturally.";
+                request.system_instruction = Some(format!("{}{}{}", sys_curr, LUCIFER_LOCAL_TOOL_SCHEMA, synth_directive));
             } else {
+                // Standard agentic turn: inject full tool schema so Qwen can self-route
+                request.system_instruction = Some(format!("{}{}", sys_curr, LUCIFER_LOCAL_TOOL_SCHEMA));
+            }
+        } else {
+            // Cloud model: use OpenAI function-calling API
+            if is_greeting_or_casual || search_already_performed {
                 request.tools = None;
                 request.tool_choice = None;
-            }
-
-            // After search pre-fetch: add a synthesis directive so local GGUF models
-            // understand they should answer directly from the provided data.
-            if search_already_performed {
                 let sys_curr = request.system_instruction.take().unwrap_or_default();
-                let synth_directive = "\n\n[DIRECTIVE: ANSWER FROM SEARCH RESULTS]\nSearch results have already been retrieved and are embedded above. Do NOT call web_search again. Answer the user's question directly right now, integrating citations naturally.";
-                request.system_instruction = Some(format!("{}{}", sys_curr, synth_directive));
+                if is_greeting_or_casual {
+                    let greeting_directive = "\n\n[DIRECTIVE: CASUAL CONVERSATION & GREETING]\nThe user sent a casual greeting or conversational remark. Respond warmly, naturally, and directly in 1-2 short sentences as Lucifer. NEVER output lists, definitions, or multi-paragraph responses for greetings.";
+                    request.system_instruction = Some(format!("{}{}", sys_curr, greeting_directive));
+                }
+                if search_already_performed {
+                    let sys_curr2 = request.system_instruction.take().unwrap_or_default();
+                    let synth_directive = "\n\n[DIRECTIVE: ANSWER FROM SEARCH RESULTS]\nSearch results have already been retrieved and are embedded above. Do NOT call web_search again. Answer the user's question directly right now, integrating citations naturally.";
+                    request.system_instruction = Some(format!("{}{}", sys_curr2, synth_directive));
+                }
+            } else {
+                // Non-casual cloud turn: inject full OpenAI tool schemas
+                let mut tool_schemas = Vec::new();
+                for (tool_name, tool) in &self.tools {
+                    if search_already_performed && tool_name == "web_search" {
+                        continue;
+                    }
+                    tool_schemas.push(json!({
+                        "type": "function",
+                        "function": {
+                            "name": tool.name(),
+                            "description": tool.description(),
+                            "parameters": tool.parameters_schema()
+                        }
+                    }));
+                }
+                if !tool_schemas.is_empty() {
+                    request.tools = Some(json!(tool_schemas));
+                    request.tool_choice = Some(json!("auto"));
+                } else {
+                    request.tools = None;
+                    request.tool_choice = None;
+                }
             }
         }
+
 
 
         let cancel_name = format!("cancel_{}", request.event_name.clone().unwrap_or_default());
@@ -633,6 +785,7 @@ impl LuciferOrchestrator {
             let mut detected_tool_call: Option<(String, Value)> = None;
             let mut stream_buffer = String::new();
             let mut initial_prefix_checked = false;
+            let mut is_tool_call_stream = false;
             let user_prompt_clean = last_user_text.trim();
 
             loop {
@@ -678,11 +831,6 @@ impl LuciferOrchestrator {
 
                                 if !initial_prefix_checked {
                                     stream_buffer.push_str(text);
-                                    // Wait for a paragraph break (double newline) before checking the buffer.
-                                    // This is crucial: models like Gemma 3 output their reasoning as plain
-                                    // text BEFORE the actual answer, separated by a blank line (\n\n).
-                                    // Flushing at the first newline would still send "1" (the next thinking
-                                    // line) to the UI. We wait for \n\n or 512 chars as a safety cap.
                                     let has_paragraph_break = stream_buffer.contains("\n\n");
                                     let has_newline = stream_buffer.contains('\n');
                                     if !has_paragraph_break && !has_newline && stream_buffer.len() < 32 {
@@ -690,6 +838,22 @@ impl LuciferOrchestrator {
                                     }
 
                                     let mut clean_buf = stream_buffer.trim_start().to_string();
+
+                                    // Check if the stream starts with a tool call syntax (<tool_call>, <function, ```json { "tool", etc.)
+                                    let trimmed_lower = clean_buf.trim().to_lowercase();
+                                    if trimmed_lower.starts_with("<tool_call")
+                                        || trimmed_lower.starts_with("<function")
+                                        || trimmed_lower.starts_with("<tool")
+                                        || trimmed_lower.starts_with("{\"tool\"")
+                                        || trimmed_lower.starts_with("{\"name\"")
+                                        || trimmed_lower.starts_with("{\"action\"")
+                                        || trimmed_lower.starts_with("{\"call\"")
+                                        || (trimmed_lower.starts_with("```") && (trimmed_lower.contains("\"tool\"") || trimmed_lower.contains("\"name\"") || trimmed_lower.contains("\"function\"")))
+                                    {
+                                        is_tool_call_stream = true;
+                                        initial_prefix_checked = true;
+                                        continue;
+                                    }
 
                                     // Strip role prefix echoes: "User: ...", "Human: ...", "Assistant: ..."
                                     let role_prefixes = ["User:", "User :", "Human:", "Human :", "Assistant:", "Lucifer:"];
@@ -711,9 +875,7 @@ impl LuciferOrchestrator {
                                         }
                                     }
 
-                                    // Strip ALL meta-reflection lines from the top of the buffer.
-                                    // This handles multi-line preambles like:
-                                    //   "a thinking process to construct the detailed response:\n1\n\n"
+                                    // Strip ALL meta-reflection lines from the top of the buffer
                                     clean_buf = strip_meta_reflection_prefix(&clean_buf);
 
                                     // If the cleaned buffer is just a lone number or single punctuation,
@@ -726,9 +888,13 @@ impl LuciferOrchestrator {
                                     }
 
                                     initial_prefix_checked = true;
-                                    if !clean_buf.is_empty() {
+                                    if !clean_buf.is_empty() && !is_tool_call_stream {
                                         let _ = tx.send(StreamChunkPayload::text(clean_buf));
                                     }
+                                    continue;
+                                }
+
+                                if is_tool_call_stream {
                                     continue;
                                 }
 
@@ -748,7 +914,9 @@ impl LuciferOrchestrator {
                                     continue;
                                 }
                             }
-                            let _ = tx.send(payload);
+                            if !is_tool_call_stream {
+                                let _ = tx.send(payload);
+                            }
                         }
 
                     }
@@ -760,7 +928,7 @@ impl LuciferOrchestrator {
             }
 
             // Ensure any un-flushed stream buffer is transmitted before post-processing
-            if !initial_prefix_checked && !stream_buffer.is_empty() {
+            if !initial_prefix_checked && !stream_buffer.is_empty() && !is_tool_call_stream {
                 let mut clean_buf = stream_buffer.trim_start().to_string();
                 let role_prefixes = ["User:", "User :", "Human:", "Human :", "Assistant:", "Lucifer:"];
                 for prefix in &role_prefixes {
@@ -779,6 +947,7 @@ impl LuciferOrchestrator {
                     let _ = tx.send(StreamChunkPayload::text(clean_buf));
                 }
             }
+
 
             // Fallback text parser if native tool call was not emitted
             let clean_accumulated = strip_meta_reflection_prefix(&accumulated_text);
@@ -1324,8 +1493,21 @@ fn extract_tool_and_args(val: &Value) -> Option<(String, Value)> {
         }
     }
 
-    let tool_name = found_name?;
+    let raw_tool_name = found_name?;
     let name_key_used = found_name_key.unwrap();
+
+    // Map common aliases to canonical tool names registered in Lucifer
+    let tool_name = match raw_tool_name.to_lowercase().as_str() {
+        "recall_memory" | "memory" | "remember" | "memory_rag" => "conversational_memory".to_string(),
+        "search" | "google" | "web" | "search_web" => "web_search".to_string(),
+        "image" | "draw" | "generate_image" | "image_generation" => "generate_image".to_string(),
+        "voice" | "tts" | "speak" | "say" => "synthesize_voice".to_string(),
+        "file" | "write_file" | "save_file" => "create_file".to_string(),
+        "media" | "media_search" => "search_media".to_string(),
+        "hardware" | "analyze_hardware" | "system_specs" => "analyze_context".to_string(),
+        "models" | "model_management" | "switch_model" => "manage_models".to_string(),
+        _ => raw_tool_name,
+    };
 
     let mut found_args = None;
     for key in arg_keys {
@@ -1362,8 +1544,28 @@ fn repair_parameter_names(tool_name: &str, mut args: Value) -> Value {
         match tool_name {
             "web_search" => {
                 if !obj.contains_key("query") {
-                    if let Some(val) = obj.remove("q").or_else(|| obj.remove("search")).or_else(|| obj.remove("text")) {
+                    if let Some(val) = obj.remove("q").or_else(|| obj.remove("search")).or_else(|| obj.remove("text")).or_else(|| obj.remove("input")) {
                         obj.insert("query".to_string(), val);
+                    }
+                }
+            }
+            "conversational_memory" => {
+                // Infer action if missing
+                if !obj.contains_key("action") {
+                    if obj.contains_key("fact") || obj.contains_key("remember") || obj.contains_key("text") {
+                        obj.insert("action".to_string(), json!("save"));
+                    } else {
+                        obj.insert("action".to_string(), json!("search"));
+                    }
+                }
+                if !obj.contains_key("query") && obj.get("action").and_then(|a| a.as_str()) == Some("search") {
+                    if let Some(val) = obj.remove("q").or_else(|| obj.remove("search")).or_else(|| obj.remove("text")).or_else(|| obj.remove("input")).or_else(|| obj.remove("fact")) {
+                        obj.insert("query".to_string(), val);
+                    }
+                }
+                if !obj.contains_key("fact") && obj.get("action").and_then(|a| a.as_str()) == Some("save") {
+                    if let Some(val) = obj.remove("text").or_else(|| obj.remove("content")).or_else(|| obj.remove("memory")).or_else(|| obj.remove("input")).or_else(|| obj.remove("query")) {
+                        obj.insert("fact".to_string(), val);
                     }
                 }
             }
@@ -1381,15 +1583,22 @@ fn repair_parameter_names(tool_name: &str, mut args: Value) -> Value {
             }
             "synthesize_voice" => {
                 if !obj.contains_key("text") {
-                    if let Some(val) = obj.remove("speech").or_else(|| obj.remove("prompt")).or_else(|| obj.remove("input")) {
+                    if let Some(val) = obj.remove("speech").or_else(|| obj.remove("prompt")).or_else(|| obj.remove("input")).or_else(|| obj.remove("content")) {
                         obj.insert("text".to_string(), val);
                     }
                 }
             }
             "generate_image" => {
                 if !obj.contains_key("prompt") {
-                    if let Some(val) = obj.remove("text").or_else(|| obj.remove("description")).or_else(|| obj.remove("image_prompt")) {
+                    if let Some(val) = obj.remove("text").or_else(|| obj.remove("description")).or_else(|| obj.remove("image_prompt")).or_else(|| obj.remove("input")) {
                         obj.insert("prompt".to_string(), val);
+                    }
+                }
+            }
+            "search_media" => {
+                if !obj.contains_key("query") {
+                    if let Some(val) = obj.remove("q").or_else(|| obj.remove("search")).or_else(|| obj.remove("text")).or_else(|| obj.remove("input")) {
+                        obj.insert("query".to_string(), val);
                     }
                 }
             }
@@ -1404,6 +1613,8 @@ fn repair_single_string_arg(tool_name: &str, raw_str: &str) -> Value {
         "create_file" => json!({"filename": "output.md", "content": raw_str}),
         "synthesize_voice" => json!({"text": raw_str}),
         "generate_image" => json!({"prompt": raw_str}),
+        "conversational_memory" => json!({"action": "search", "query": raw_str}),
         _ => json!({"query": raw_str}),
     }
 }
+

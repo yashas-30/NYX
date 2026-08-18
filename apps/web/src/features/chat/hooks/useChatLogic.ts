@@ -422,6 +422,7 @@ export const useChatLogic = ({
     currentProvider,
     gatewayUrl,
     webSearchEnabled,
+    models,
   });
 
   const isLoading = isSupervising;

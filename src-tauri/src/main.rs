@@ -99,12 +99,12 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(AppState::default())
         .manage({
-            // Register Arc<McpManager> separately so MCP commands can access it
-            // via State<'_, Arc<McpManager>> without going through AppState.
-            // The instance is the same Arc as AppState.mcp_manager (same allocation).
-            std::sync::Arc::new(commands::mcp::McpManager::default())
+            let mcp_manager = std::sync::Arc::new(commands::mcp::McpManager::default());
+            AppState {
+                mcp_manager,
+                ..AppState::default()
+            }
         })
         .manage(commands::pty::PtyState::default())
         .manage(commands::fs::WatcherState::default())
@@ -130,6 +130,9 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(db::pool::init_db_pool(db_path))
                 .expect("Failed to initialize SQLite database pool");
             app.manage(pool);
+
+            // Restore persistent API keys into environment variables from safeStorage/Keyring + encrypted vault
+            commands::vault::restore_all_vault_keys_to_env();
 
 
             // ── Spawn the rest of the UI setup, CodebaseScanner & binary auto-updater asynchronously ─
@@ -176,15 +179,43 @@ pub fn run() {
                     crate::rag::embeddings::warm_up();
                 });
                 
+                // Auto-start Qwen 2.5 1.5B on GPU in background if model is present on disk
+                let handle_qwen = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let resolved = crate::llm::local_orchestrator::resolve_model_path(
+                        &handle_qwen,
+                        "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+                    ).await;
+                    
+                    if resolved.is_some() {
+                        tracing::info!("[Startup] Qwen 2.5 1.5B detected on disk. Auto-loading model to GPU VRAM with 100% offload...");
+                        let manager = handle_qwen.state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>();
+                        let _ = crate::llm::local_orchestrator::start_local_server(
+                            handle_qwen.clone(),
+                            manager,
+                            "qwen2.5-1.5b-instruct-q4_k_m.gguf".to_string(),
+                            Some(8192),
+                            Some(99), // 100% GPU offload
+                            None,
+                            Some(true), // flash attention
+                            None,
+                            None,
+                            Some(512),
+                            None,
+                            None,
+                            None,
+                            None,
+                        ).await;
+                    }
+                });
+
                 setup_app(&handle).await;
             });
-
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             dialog_open_directory,
-            vault_store_key, vault_get_key, vault_delete_key, vault_status, vault_list_keys,
             window_minimize, window_maximize, window_close, window_show, window_hide,
             system_gpu_info, system_info, system_get_userdata, execute_command,
             app_get_version, app_open_external,
@@ -229,11 +260,11 @@ pub fn run() {
             commands::agent::search_images_command,
             commands::agent::fetch_image_base64,
             commands::agent::generate_search_queries_with_model,
+            commands::agent::generate_intelligent_query_plan_command,
             commands::agent::fetch_image_data_url_command,
             commands::agent::check_prompt_cache_command,
-
-
             commands::agent::save_prompt_cache_command,
+            commands::agent::clear_prompt_cache_command,
             commands::agent::fetch_page_html_command,
             commands::agent::fetch_multiple_pages_command,
             commands::agent::run_agent_tool,
@@ -241,9 +272,19 @@ pub fn run() {
             commands::agent::reject_tool,
             commands::agent::resolve_plugin_tool,
             commands::agent::resolve_browser_action,
+            // Vault Secure Storage Commands
+            commands::vault::vault_store_key,
+            commands::vault::vault_get_key,
+            commands::vault::vault_delete_key,
+            commands::vault::vault_status,
+            commands::vault::vault_list_keys,
+            commands::vault::vault_validate,
+            commands::vault::vault_encrypt,
+            commands::vault::vault_decrypt,
             // Local model orchestration
             llm::local_orchestrator::analyze_hardware,
             llm::local_orchestrator::download_local_model,
+            llm::local_orchestrator::open_external_installer_cli,
             llm::local_orchestrator::list_local_models,
             llm::local_orchestrator::start_local_server,
             llm::local_orchestrator::estimate_hardware_usage,
@@ -279,6 +320,8 @@ pub fn run() {
             commands::memory::extract_session_memory,
             commands::memory::turbovec_add_memory,
             commands::memory::turbovec_search_memory,
+            commands::memory::turbovec_search_chat_history,
+            commands::memory::turbovec_sync_chat_session,
             commands::agent::codebase_search_command,
         ])
         .on_window_event(|window, event| {
@@ -343,7 +386,7 @@ async fn create_main_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
         .minimizable(true)
         .decorations(true)
         .shadow(true)
-        .transparent(true)
+        .transparent(false)
         .visible(false)
         .build()
         .expect("Failed to create window")

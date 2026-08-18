@@ -85,7 +85,7 @@ pub async fn db_get_swarm_context(
 
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct ChatMessagePayload {
     pub id: Option<String>,
     pub role: String,
@@ -99,7 +99,7 @@ pub struct ChatMessagePayload {
     pub reasoning: Option<String>,
 }
 
-#[derive(Debug, Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct ChatSessionPayload {
     pub id: String,
     pub title: String,
@@ -241,20 +241,15 @@ pub async fn db_save_chat_session(
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    // Also store recent non-trivial messages in TurboVec vector memory
+    // Store all structured prompt-response dialogue turns across the entire conversation in TurboVec vector memory
     if let Some(tv_store) = app.try_state::<std::sync::Arc<crate::rag::turbovec_store::TurbovecStore>>() {
         let tv_store_clone = tv_store.inner().clone();
         let session_title = session.title.clone();
         let session_id = session.id.clone();
-        let chat_text: String = session.messages.iter()
-            .take(6)
-            .map(|m| format!("{}: {}", m.role.to_uppercase(), m.content))
-            .collect::<Vec<_>>()
-            .join("\n\n");
+        let messages_clone = session.messages.clone();
 
         tokio::spawn(async move {
-            let meta = format!("chat|{}|{}", session_id, session_title);
-            tv_store_clone.add_document_chunks(&chat_text, &meta).await;
+            tv_store_clone.sync_session_messages(&session_id, &session_title, &messages_clone).await;
         });
     }
 
@@ -303,16 +298,27 @@ pub async fn db_delete_chat_session(
 pub async fn db_update_chat_session_meta(
     pool: State<'_, SqlitePool>,
     id: String,
+    title: Option<String>,
     folder_id: Option<String>,
     tags: Option<String>,
 ) -> Result<(), String> {
-    sqlx::query("UPDATE chat_conversations SET folder_id = ?, tags = ? WHERE id = ?")
-        .bind(folder_id)
-        .bind(tags)
-        .bind(id)
-        .execute(&*pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    if let Some(ref t) = title {
+        sqlx::query("UPDATE chat_conversations SET title = ? WHERE id = ?")
+            .bind(t)
+            .bind(&id)
+            .execute(&*pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if folder_id.is_some() || tags.is_some() {
+        sqlx::query("UPDATE chat_conversations SET folder_id = ?, tags = ? WHERE id = ?")
+            .bind(folder_id)
+            .bind(tags)
+            .bind(&id)
+            .execute(&*pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

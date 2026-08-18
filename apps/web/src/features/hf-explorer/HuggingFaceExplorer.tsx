@@ -17,25 +17,16 @@ import type { SortMode } from './types';
 // Empty-state placeholder for the right panel when no model is selected
 function NoModelSelected() {
   return (
-    <div style={{
-      flex: 1, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      background: '#141414', gap: 12, padding: 32, textAlign: 'center',
-    }}>
-      <div style={{
-        width: 56, height: 56, borderRadius: 14,
-        background: '#1e1e1e', border: '1px solid #2a2a2a',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 26,
-      }}>
+    <div className="flex-1 flex flex-col items-center justify-center bg-background/50 gap-3 p-8 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-muted/60 border border-border/70 flex items-center justify-center text-2xl shadow-sm">
         🤗
       </div>
       <div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#a1a1aa', marginBottom: 4 }}>
+        <div className="text-[14px] font-semibold text-foreground mb-1">
           Select a model
         </div>
-        <div style={{ fontSize: 12, color: '#52525b' }}>
-          Choose a model from the list to view details and download options
+        <div className="text-[12px] text-muted-foreground/80">
+          Choose a model from the list to view details, quantized weights, and download options
         </div>
       </div>
     </div>

@@ -52,8 +52,6 @@ export const useSettingsStore = create<SettingsState>((set) => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Force context size to 4096 on startup regardless of what was saved
-        parsed.contextSize = 4096;
         return { ...DEFAULT_CHAT_SETTINGS, ...parsed };
       } catch {}
     }

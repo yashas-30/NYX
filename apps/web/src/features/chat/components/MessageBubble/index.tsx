@@ -384,8 +384,8 @@ export const MessageBubble = memo<MessageBubbleProps>(
                             prompt={img.name || (typeof msg.content === 'string' ? msg.content : 'Generated Visual Asset')}
                             aspectRatio={(img as any).aspectRatio || '16:9'}
                             engine={(img as any).engine || 'NYX Diffuser Engine'}
-                            onOpenLightbox={(url, prompt, engine) => {
-                              setLightboxState({ isOpen: true, url, prompt, engine: engine || 'NYX Engine' });
+                            onOpenLightbox={(url?: string, prompt?: string, engine?: string) => {
+                              setLightboxState({ isOpen: true, url: url || '', prompt: prompt || '', engine: engine || 'NYX Engine' });
                             }}
                           />
                         ))}
@@ -491,18 +491,22 @@ MessageBubble.displayName = 'MessageBubble';
  * this delegates to the re-exported version via dynamic import.
  */
 const SourcesTogglePlaceholder: React.FC<{ citations: any[] }> = ({ citations }) => {
-  // Dynamically import to break the circular dep — this is the ONLY place we do this.
-  const { SourcesToggle } = require('../ChatMessageList');
+  if (!citations || citations.length === 0) return null;
   return (
-    <SourcesToggle
-      citations={citations.map((cite, i) => ({
-        id: cite.id ?? String(i),
-        index: i + 1,
-        title: cite.title || cite.source || '',
-        url: cite.url || '',
-        snippet: cite.snippet || cite.quote || '',
-      }))}
-    />
+    <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-border/40">
+      {citations.slice(0, 8).map((cite, i) => (
+        <a
+          key={cite.id ?? i}
+          href={cite.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/50 transition-colors"
+        >
+          <span className="text-primary font-bold">[{i + 1}]</span>
+          <span className="truncate max-w-[140px]">{cite.title || cite.source || cite.url}</span>
+        </a>
+      ))}
+    </div>
   );
 };
 

@@ -235,6 +235,10 @@ pub struct UnifiedRequest {
     /// explicitly calls the web_search tool via a tool call in the model output.
     #[serde(default)]
     pub web_search_enabled: bool,
+    /// When true (default), full Lucifer agent orchestration is active.
+    /// When false, prompts go directly to the model without agentic routing or persona overhead.
+    #[serde(default)]
+    pub agent_mode: Option<bool>,
 }
 
 /// Full stream event payload sent to the frontend via Tauri IPC channel.

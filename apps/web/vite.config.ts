@@ -70,11 +70,9 @@ export default defineConfig(({ mode }) => {
         'clsx',
         'tailwind-merge',
         'react-markdown',
-        'react-syntax-highlighter',
         'remark-gfm',
         '@tanstack/react-virtual',
         'async-mutex',
-        '@opentelemetry/api',
       ],
     },
 

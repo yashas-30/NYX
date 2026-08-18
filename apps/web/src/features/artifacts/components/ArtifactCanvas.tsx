@@ -10,6 +10,79 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { toast } from '@src/shared/components/ui/sonner';
 import { ChatMessage } from '@src/infrastructure/types';
 
+// ---------------------------------------------------------------------------
+// MermaidRenderer — dynamically imports mermaid and renders SVG in-component
+// ---------------------------------------------------------------------------
+const MermaidRenderer: React.FC<{ content: string }> = ({ content }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [svg, setSvg] = React.useState<string>('');
+  const [error, setError] = React.useState<string>('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const render = async () => {
+      try {
+        const mermaid = (await import('mermaid')).default;
+        mermaid.initialize({
+          startOnLoad: false,
+          suppressErrorRendering: true,
+          theme: 'dark',
+          darkMode: true,
+          background: 'transparent',
+          themeVariables: {
+            primaryColor: '#6366f1',
+            primaryTextColor: '#e2e8f0',
+            primaryBorderColor: '#4f46e5',
+            lineColor: '#6366f1',
+            sectionBkgColor: '#1e293b',
+            altSectionBkgColor: '#0f172a',
+            gridColor: '#334155',
+            secondaryColor: '#1e293b',
+            tertiaryColor: '#0f172a',
+          },
+        } as any);
+        const id = `mermaid-canvas-${Date.now()}`;
+        const { svg: rendered } = await mermaid.render(id, content);
+        if (!cancelled) setSvg(rendered);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || 'Diagram error');
+      } finally {
+        if (typeof document !== 'undefined') {
+          const orphans = document.querySelectorAll('body > [id^="dmermaid"], body > .mermaid-error, body > svg[id^="mermaid-"]');
+          orphans.forEach(el => el.remove());
+        }
+      }
+    };
+    render();
+    return () => {
+      cancelled = true;
+    };
+  }, [content]);
+
+  if (error)
+    return (
+      <div className="p-4 text-red-400 text-xs font-mono">
+        <p className="font-bold mb-1">Diagram parse error:</p>
+        <p>{error}</p>
+      </div>
+    );
+
+  if (!svg)
+    return (
+      <div className="flex items-center justify-center h-full text-white/20 text-sm">
+        Rendering diagram...
+      </div>
+    );
+
+  return (
+    <div
+      ref={ref}
+      className="flex items-center justify-center p-4 min-h-full"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+};
+
 export interface ArtifactCanvasProps {
   id?: string;
   content: string;
@@ -209,22 +282,55 @@ User instructions to modify this selection: ${editInstruction}`;
 
   if (!isOpen) return null;
 
-  const getLanguageFromExt = (lang: string) => {
-    const map: Record<string, string> = {
-      ts: 'typescript',
-      tsx: 'typescript',
-      js: 'javascript',
-      jsx: 'javascript',
-      py: 'python',
-      html: 'html',
-      css: 'css',
-      json: 'json',
-      svg: 'xml',
-    };
-    return map[lang.toLowerCase()] || lang;
-  };
+  const isMermaid =
+    ['mermaid'].includes(displayedArtifact.language?.toLowerCase() || '') ||
+    /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph)\b/i.test(displayedArtifact.content);
+  const isReact =
+    ['jsx', 'tsx', 'react'].includes(displayedArtifact.language?.toLowerCase() || '') ||
+    ((displayedArtifact.language?.toLowerCase() === 'typescript' || displayedArtifact.language?.toLowerCase() === 'javascript' || displayedArtifact.language?.toLowerCase() === 'ts' || displayedArtifact.language?.toLowerCase() === 'js') &&
+      (displayedArtifact.content.includes('import React') || displayedArtifact.content.includes('from "lucide-react"') || displayedArtifact.content.includes('from \'recharts\'') || displayedArtifact.content.includes('from "recharts"')));
+  const isPython =
+    displayedArtifact.language?.toLowerCase() === 'python' || displayedArtifact.language?.toLowerCase() === 'py';
+  const isPreviewable =
+    isMermaid ||
+    isReact ||
+    isPython ||
+    ['html', 'htm', 'svg', 'javascript', 'js', 'xml', 'chart'].includes(displayedArtifact.language?.toLowerCase() || '');
 
-  const isPreviewable = ['html', 'react', 'javascript', 'js', 'jsx', 'tsx', 'typescript', 'ts', 'svg', 'python', 'py'].includes(displayedArtifact.language?.toLowerCase() || '');
+  const iframeSrcDoc = useMemo(() => {
+    if (!isPreviewable || isMermaid || isReact || isPython) return '';
+    const tailwindScript = '<script src="https://cdn.tailwindcss.com"></script>';
+    const chartJsScript = '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
+    const d3Script = '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>';
+
+    let htmlContent = displayedArtifact.content;
+    if (displayedArtifact.language?.toLowerCase() === 'svg') {
+      htmlContent = `<div class="flex items-center justify-center min-h-screen p-4">${displayedArtifact.content}</div>`;
+    }
+
+    if (!htmlContent.includes('<head>')) {
+      return `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            ${tailwindScript}
+            ${chartJsScript}
+            ${d3Script}
+            <style>
+              body { font-family: "SF Pro Display", "Geist Sans", -apple-system, BlinkMacSystemFont, sans-serif; color: #faf9f5; background: #121214; }
+            </style>
+          </head>
+          <body class="p-6">
+            ${htmlContent}
+          </body>
+        </html>
+      `;
+    }
+
+    return htmlContent.replace('</head>', `${tailwindScript}\n${chartJsScript}\n${d3Script}\n</head>`);
+  }, [displayedArtifact.content, displayedArtifact.language, isPreviewable, isMermaid, isReact, isPython]);
 
   return (
     <AnimatePresence>
@@ -349,27 +455,42 @@ User instructions to modify this selection: ${editInstruction}`;
         {/* Content Viewer / Preview Area */}
         <div className="flex-1 overflow-hidden bg-background relative flex flex-col">
           {activeTab === 'preview' && isPreviewable ? (
-            <div className="w-full h-full bg-white relative overflow-hidden flex flex-col">
-              {['react', 'jsx', 'tsx', 'typescript', 'ts', 'javascript', 'js'].includes((displayedArtifact.language || '').toLowerCase()) ? (
+            <div className="w-full h-full bg-zinc-950 relative overflow-hidden flex flex-col">
+              {isMermaid ? (
+                <div className="h-full overflow-auto bg-card flex items-center justify-center p-4">
+                  <MermaidRenderer content={displayedArtifact.content} />
+                </div>
+              ) : isReact ? (
                 <Sandpack
-                  template="react"
+                  template="react-ts"
                   theme="dark"
                   files={{
-                    '/App.js': displayedArtifact.content,
+                    '/App.tsx': displayedArtifact.content,
                   }}
                   options={{
                     showNavigator: false,
                     showTabs: false,
                     externalResources: ['https://cdn.tailwindcss.com'],
                   }}
+                  customSetup={{
+                    dependencies: {
+                      'lucide-react': '^0.263.1',
+                      'recharts': '^2.7.2',
+                      'chart.js': '^4.4.0',
+                      'react-chartjs-2': '^5.2.0',
+                      'framer-motion': '^10.12.16',
+                      'clsx': '^1.2.1',
+                      'tailwind-merge': '^1.13.2',
+                    },
+                  }}
                 />
-              ) : ['python', 'py'].includes((displayedArtifact.language || '').toLowerCase()) ? (
+              ) : isPython ? (
                 <PythonSandbox code={displayedArtifact.content} />
               ) : (
                 <iframe
                   title="Artifact HTML Preview"
-                  srcDoc={displayedArtifact.content}
-                  className="w-full h-full border-none"
+                  srcDoc={iframeSrcDoc}
+                  className="w-full h-full border-none bg-zinc-950"
                   sandbox="allow-scripts allow-modals allow-popups"
                 />
               )}

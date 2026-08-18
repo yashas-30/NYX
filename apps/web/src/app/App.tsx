@@ -26,6 +26,7 @@ function AppContent() {
 
   useEffect(() => {
     DebugLogger.init();
+    useNyxStore.getState().loadSecureKeys();
     let unlistenDownload: (() => void) | null = null;
     let unlistenDownloadComplete: (() => void) | null = null;
 

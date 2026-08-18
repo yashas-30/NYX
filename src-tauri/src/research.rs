@@ -3,13 +3,12 @@ use tauri::ipc::Channel;
 use tauri::Manager;
 
 use serde::{Deserialize, Serialize};
-use crate::llm::{execute_cloud_stream, UnifiedRequest, UnifiedMessage};
+use crate::llm::{execute_any_stream, UnifiedRequest, UnifiedMessage};
 use futures_util::future::join_all;
 use std::time::Duration;
 use std::collections::HashSet;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use tokio::sync::Mutex;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResearchQuery {
@@ -47,22 +46,25 @@ pub struct SourceEntry {
 // ── Planner: decomposes the query into targeted sub-queries ──────────────────
 
 async fn run_planner(
+    app: &tauri::AppHandle,
     query: &str,
     provider: String,
     model_id: String,
     api_key: String,
 ) -> Result<PlannerResponse, String> {
     let planner_prompt = format!(
-        "Topic to research: {}\n\n\
-        Generate 5-7 targeted search queries covering these angles:\n\
-        1. Core definition and overview\n\
-        2. Recent developments and news (2024/2025)\n\
-        3. Technical details and implementation\n\
-        4. Expert opinions, analysis, critiques\n\
-        5. Statistical data and benchmarks\n\
-        6. Real-world applications and use cases\n\
-        7. Comparison with alternatives\n\n\
-        Output ONLY valid JSON: {{\"sub_queries\": [{{\"query\": \"specific search query\", \"intent\": \"why this angle matters\"}}]}}",
+        r#"Topic to research: {}
+
+Generate 5-7 targeted search queries covering these angles:
+1. Core definition and overview
+2. Recent developments and news (2024/2025/2026)
+3. Technical details and implementation
+4. Expert opinions, analysis, critiques
+5. Statistical data and benchmarks
+6. Real-world applications and use cases
+7. Comparison with alternatives
+
+Output ONLY valid JSON: {{"sub_queries": [{{"query": "specific search query", "intent": "why this angle matters"}}]}}"#,
         query
     );
 
@@ -95,9 +97,11 @@ async fn run_planner(
         capabilities: None,
         tool_choice: None,
         web_search_enabled: false,
+        agent_mode: None,
     };
 
-    let mut rx = execute_cloud_stream(&req).await?;
+    let mut rx = execute_any_stream(app, &req).await?;
+
     let mut full_text = String::new();
     while let Some(msg) = rx.recv().await {
         match msg {
@@ -112,22 +116,47 @@ async fn run_planner(
         }
     }
 
-    // Strip markdown fences if present
-    let cleaned = full_text
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
+    let cleaned = extract_json_payload(&full_text);
 
-    let response: PlannerResponse = serde_json::from_str(cleaned)
-        .map_err(|e| format!("Planner parse error: {}. Raw: {}", e, cleaned))?;
+    let response: PlannerResponse = match serde_json::from_str::<PlannerResponse>(cleaned) {
+        Ok(r) if !r.sub_queries.is_empty() => r,
+        _ => {
+            if let Ok(sqs) = serde_json::from_str::<Vec<SubQuery>>(cleaned) {
+                PlannerResponse { sub_queries: sqs }
+            } else if let Ok(strings) = serde_json::from_str::<Vec<String>>(cleaned) {
+                PlannerResponse {
+                    sub_queries: strings.into_iter().map(|q| SubQuery { intent: "research angle".to_string(), query: q }).collect()
+                }
+            } else {
+                let angles = vec![
+                    format!("{} overview architecture", query),
+                    format!("{} technical specifications benchmarks", query),
+                    format!("{} latest developments news 2025 2026", query),
+                    format!("{} comparisons trade-offs", query),
+                ];
+                PlannerResponse {
+                    sub_queries: angles.into_iter().map(|q| SubQuery { intent: "fallback angle".to_string(), query: q }).collect()
+                }
+            }
+        }
+    };
     Ok(response)
 }
 
-// ── Gap Finder: LLM identifies missing information after first hop ────────────
+fn extract_json_payload(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    if let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) {
+        if start < end {
+            return &trimmed[start..=end];
+        }
+    }
+    trimmed
+}
+
+// ── Gap Finder: LLM identifies missing aspects ───────────────────────────────
 
 async fn run_gap_finder(
+    app: &tauri::AppHandle,
     original_prompt: &str,
     gathered_context_summary: &str,
     provider: String,
@@ -135,10 +164,14 @@ async fn run_gap_finder(
     api_key: String,
 ) -> Result<GapFinderResponse, String> {
     let gap_prompt = format!(
-        "Research Topic: {}\n\nContext gathered so far (summary):\n{}\n\n\
-         Identify 3-5 important aspects still missing or insufficiently covered. \
-         Generate specific follow-up search queries to fill those gaps. \
-         Output ONLY valid JSON: {{\"gaps\": [\"description\"], \"follow_up_queries\": [\"specific query\"]}}",
+        r#"Research Topic: {}
+
+Context gathered so far (summary):
+{}
+
+Identify 3-5 important aspects still missing or insufficiently covered.
+Generate specific follow-up search queries to fill those gaps.
+Output ONLY valid JSON: {{"gaps": ["description"], "follow_up_queries": ["specific query"]}}"#,
         original_prompt,
         gathered_context_summary.chars().take(8000).collect::<String>()
     );
@@ -172,9 +205,10 @@ async fn run_gap_finder(
         capabilities: None,
         tool_choice: None,
         web_search_enabled: false,
+        agent_mode: None,
     };
 
-    let mut rx = execute_cloud_stream(&req).await?;
+    let mut rx = execute_any_stream(app, &req).await?;
     let mut full_text = String::new();
     while let Some(msg) = rx.recv().await {
         match msg {
@@ -189,24 +223,38 @@ async fn run_gap_finder(
         }
     }
 
-    let cleaned = full_text
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
+    let cleaned = extract_json_payload(&full_text);
 
-    let response: GapFinderResponse = serde_json::from_str(cleaned)
-        .map_err(|e| format!("Gap finder parse error: {}. Raw: {}", e, cleaned))?;
+    let response: GapFinderResponse = match serde_json::from_str::<GapFinderResponse>(cleaned) {
+        Ok(r) => r,
+        _ => {
+            if let Ok(queries) = serde_json::from_str::<Vec<String>>(cleaned) {
+                GapFinderResponse {
+                    gaps: vec!["Identified missing coverage angle".to_string()],
+                    follow_up_queries: queries,
+                }
+            } else {
+                GapFinderResponse {
+                    gaps: vec![],
+                    follow_up_queries: vec![],
+                }
+            }
+        }
+    };
     Ok(response)
 }
 
-// ── URL extraction from search results ───────────────────────────────────────
+#[derive(Debug, Clone)]
+struct DiscoveredSearchResult {
+    pub url: String,
+    pub title: String,
+    pub snippet: String,
+}
 
-/// Fetches search results and extracts up to `max_urls` unique valid URLs across distinct websites.
-async fn get_search_urls(query: &str, max_urls: usize) -> Vec<String> {
-    let mut urls = Vec::new();
-    let num_results = (max_urls * 2).max(12);
+/// Fetches search results and extracts up to `max_urls` unique valid URLs across distinct websites with metadata.
+async fn get_search_results_meta(query: &str, max_urls: usize) -> Vec<DiscoveredSearchResult> {
+    let mut items = Vec::new();
+    let num_results = (max_urls * 2).max(15);
     if let Ok(raw_res) = crate::commands::agent::search_web_command(
         query.to_string(),
         Some(num_results),
@@ -215,46 +263,50 @@ async fn get_search_urls(query: &str, max_urls: usize) -> Vec<String> {
     )
     .await
     {
-        static URL_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
-            regex::Regex::new(r"https?://[^\s\)\>\]]+").unwrap()
-        });
-
-        for line in raw_res.lines() {
-            if urls.len() >= max_urls {
+        let blocks = raw_res.split("\n\n");
+        for block in blocks {
+            if items.len() >= max_urls {
                 break;
             }
-            for cap in URL_REGEX.find_iter(line) {
-                let url = cap.as_str().trim_end_matches('.').trim_end_matches(',').to_string();
-                if url.is_empty()
-                    || url.contains("duckduckgo.com")
-                    || url.contains("google.com/search")
-                    || url.ends_with(".pdf")
-                    || url.ends_with(".jpg")
-                    || url.ends_with(".png")
-                    || url.ends_with(".mp4")
-                    || url.ends_with(".zip")
-                {
-                    continue;
-                }
+            let lines: Vec<&str> = block.lines().collect();
+            if lines.is_empty() {
+                continue;
+            }
+            let title_line = lines[0].trim();
+            let title = title_line
+                .trim_start_matches(|c: char| c == '[' || c.is_ascii_digit() || c == ']' || c == ' ')
+                .trim()
+                .to_string();
 
-                if !urls.contains(&url) {
-                    urls.push(url);
-                    if urls.len() >= max_urls {
-                        break;
-                    }
-                }
+            let url = lines
+                .iter()
+                .find(|l| l.starts_with("URL:"))
+                .map(|l| l.trim_start_matches("URL:").trim().to_string())
+                .unwrap_or_default();
+
+            let snippet = lines
+                .iter()
+                .filter(|l| l.starts_with("Content:"))
+                .map(|l| l.trim_start_matches("Content:").trim())
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            if !url.is_empty() && url.starts_with("http") && !items.iter().any(|i: &DiscoveredSearchResult| i.url == url) {
+                items.push(DiscoveredSearchResult {
+                    url,
+                    title: if title.is_empty() { "Web Source".to_string() } else { title },
+                    snippet: if snippet.is_empty() { title_line.to_string() } else { snippet },
+                });
             }
         }
     }
-    urls
+    items
 }
 
-
-// ── Full page fetching with robust timeout ────────────────────────────────────
+// ── Full page fetching with robust timeout ───────────────────────────────────
 
 /// Fetches a full page for research purposes.
-/// - 12-second timeout (vs 3s for normal chat — research needs more time)
-/// - No arbitrary character truncation here; callers cap content themselves
+/// - 8-second timeout for research deep extraction
 /// - Returns (url, markdown_content) — empty string on any failure
 async fn fetch_page_for_research(url: &str) -> (String, String) {
     let lower = url.to_lowercase();
@@ -281,7 +333,7 @@ async fn fetch_page_for_research(url: &str) -> (String, String) {
     }
 
     let result = tokio::time::timeout(
-        Duration::from_secs(12),
+        Duration::from_secs(8),
         crate::commands::agent::HTTP_CLIENT
             .get(url)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -297,7 +349,6 @@ async fn fetch_page_for_research(url: &str) -> (String, String) {
 
     match result {
         Ok(Ok(res)) if res.status().is_success() => {
-            // Skip extremely large pages (> 15 MB)
             if let Some(len) = res.content_length() {
                 if len > 15_000_000 {
                     return (url.to_string(), String::new());
@@ -309,7 +360,6 @@ async fn fetch_page_for_research(url: &str) -> (String, String) {
                     if markdown.trim().len() < 200 {
                         return (url.to_string(), String::new());
                     }
-                    // Cache the result
                     crate::commands::agent::PAGE_CACHE.insert(
                         url.to_string(),
                         crate::commands::agent::CachedSearchResult {
@@ -329,6 +379,7 @@ async fn fetch_page_for_research(url: &str) -> (String, String) {
 // ── Publisher: synthesizes the final research report ─────────────────────────
 
 async fn run_publisher(
+    app: &tauri::AppHandle,
     prompt: &str,
     context: Vec<String>,
     provider: String,
@@ -338,21 +389,21 @@ async fn run_publisher(
 ) -> Result<String, String> {
     let context_text = context.join("\n\n---\n\n");
     let system_instruction = format!(
-        "You are a world-class principal research scientist and technical writer. Using ONLY the \
-         provided source context below (scraped web pages + vector memory), write an EXHAUSTIVE, \
-         DEEP, LONG-FORM RESEARCH PAPER answering the user's research topic.\n\n\
-         CRITICAL INSTRUCTIONS FOR THINKING & RICH REPORT FORMATTING:\n\
-         1. THINKING PROCESS: First, perform step-by-step reasoning evaluating EVERY source, \
-            comparing conflicting claims, analyzing methodologies, and planning section structure.\n\
-         2. EXHAUSTIVE LENGTH: Target 3,000+ words for the report. Do NOT write brief summaries, \
-            short bullet lists, or high-level overviews. Provide deep, granular analysis.\n\
-         3. EXECUTIVE SUMMARY: Include an executive summary callout block at the very top: > 💡 **EXECUTIVE SUMMARY**.\n\
-         4. COMPARATIVE TABLES: Build comprehensive Markdown comparison tables, statistics tables, pros & cons, and technical specs.\n\
-         5. MERMAID DIAGRAMS: Use Graphical Mermaid Diagrams (```mermaid\nflowchart TD ... \n```) when illustrating multi-step processes, timelines, or architectures. Do not output raw ASCII text box art. Always use clean Markdown formatting.\n\
-         6. KEY TAKEAWAYS: Include highlighted callout cards (🎯 **KEY TAKEAWAYS**) in key chapters.\n\
-         7. CHAPTER STRUCTURE: Organize into 6-10 distinct chapters with clear H2 (##) and H3 (###) headings and visual dividers (---).\n\
-         8. CITATIONS & SOURCES: Cite every claim inline using [Source N](URL) and include a clean 'References & Sources' section at the end.\n\n\
-         Source Context ({} sources):\n\n{}",
+        r#"You are a world-class principal research scientist and technical writer. Using ONLY the provided source context below (scraped web pages + vector memory), write an EXHAUSTIVE, DEEP, LONG-FORM RESEARCH PAPER answering the user's research topic.
+
+CRITICAL INSTRUCTIONS FOR THINKING & RICH REPORT FORMATTING:
+1. THINKING PROCESS: First, perform step-by-step reasoning evaluating EVERY source, comparing conflicting claims, analyzing methodologies, and planning section structure.
+2. EXHAUSTIVE LENGTH: Target 3,000+ words for the report. Do NOT write brief summaries, short bullet lists, or high-level overviews. Provide deep, granular analysis.
+3. EXECUTIVE SUMMARY: Include an executive summary callout block at the very top: > **EXECUTIVE SUMMARY**.
+4. COMPARATIVE TABLES: Build comprehensive Markdown comparison tables, statistics tables, pros & cons, and technical specs.
+5. MERMAID DIAGRAMS: Use Graphical Mermaid Diagrams (```mermaid\nflowchart TD ... \n```) when illustrating multi-step processes, timelines, or architectures. Do not output raw ASCII text box art. Always use clean Markdown formatting.
+6. KEY TAKEAWAYS: Include highlighted callout cards (**KEY TAKEAWAYS**) in key chapters.
+7. CHAPTER STRUCTURE: Organize into 6-10 distinct chapters with clear H2 (##) and H3 (###) headings and visual dividers (---).
+8. CITATIONS & SOURCES: Cite every claim inline using [Source N](URL) and include a clean 'References & Sources' section at the end.
+
+Source Context ({} sources):
+
+{}"#,
         context.len(),
         context_text
     );
@@ -381,9 +432,10 @@ async fn run_publisher(
         capabilities: None,
         tool_choice: None,
         web_search_enabled: false,
+        agent_mode: None,
     };
 
-    let mut rx = execute_cloud_stream(&req).await?;
+    let mut rx = execute_any_stream(app, &req).await?;
     let mut final_report = String::new();
     while let Some(msg) = rx.recv().await {
         match msg {
@@ -412,7 +464,7 @@ async fn run_publisher(
     Ok(final_report)
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────
 
 /// Max characters per page. 50K chars ≈ 10,000 words — full long-form article coverage.
 const MAX_CHARS_PER_PAGE: usize = 50_000;
@@ -423,7 +475,7 @@ const MAX_URLS_PER_QUERY: usize = 6;
 /// Max concurrent page fetches within a batch.
 const MAX_CONCURRENT_FETCHES: usize = 6;
 
-// ── Main Deep Research Command ────────────────────────────────────────────────
+// ── Main Deep Research Command ───────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn start_deep_research(
@@ -433,25 +485,29 @@ pub async fn start_deep_research(
 ) -> Result<serde_json::Value, String> {
     let _ = on_progress.send(json!({
         "type": "progress",
-        "message": format!("🔬 Starting deep research: \"{}\"", query.prompt)
+        "message": format!(r#"Starting deep research: "{}""#, query.prompt)
     }));
 
-    let provider = query.provider.unwrap_or_else(|| "openrouter".to_string());
-    let model_id = query.model_id.unwrap_or_else(|| "google/gemini-3.6-flash".to_string());
+    let provider = query.provider.unwrap_or_else(|| "nyx-native".to_string());
+    let is_local = provider == "nyx-native" || provider.contains("local") || provider.contains("lucifer");
+    let model_id = query.model_id.unwrap_or_else(|| {
+        if is_local { "qwen2.5-1.5b-instruct".to_string() } else { "google/gemini-2.5-flash".to_string() }
+    });
     let api_key = query.api_key.unwrap_or_default();
 
-    if api_key.is_empty() && provider != "nyx-native" {
+    if api_key.is_empty() && !is_local {
         return Err("API key is required for cloud providers".to_string());
     }
 
-    // ── STEP 1: Plan — LLM decomposes topic into 5-7 sub-queries ────────────
+    // ── STEP 1: Plan — LLM decomposes topic into 5-7 sub-queries ─────────────
 
     let _ = on_progress.send(json!({
         "type": "progress",
-        "message": "🧠 Planning research strategy..."
+        "message": "Planning research strategy..."
     }));
 
     let planner_res = run_planner(
+        &app,
         &query.prompt,
         provider.clone(),
         model_id.clone(),
@@ -462,12 +518,12 @@ pub async fn start_deep_research(
     let _ = on_progress.send(json!({
         "type": "progress",
         "message": format!(
-            "📋 Generated {} research angles. Launching parallel search agents...",
+            "Generated {} research angles. Launching parallel search agents...",
             planner_res.sub_queries.len()
         )
     }));
 
-    // ── STEP 2: Search & Scrape — parallel across all sub-queries ────────────
+    // ── STEP 2: Search & Scrape — parallel across all sub-queries ─────────────
 
     let visited_urls: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let mut search_tasks = vec![];
@@ -480,16 +536,16 @@ pub async fn start_deep_research(
         search_tasks.push(tokio::spawn(async move {
             let _ = prog.send(json!({
                 "type": "progress",
-                "message": format!("🔍 Searching: \"{}\"", query_text)
+                "message": format!(r#"Searching: "{}""#, query_text)
             }));
 
-            let urls = get_search_urls(&query_text, MAX_URLS_PER_QUERY).await;
-            let mut unique_urls = vec![];
+            let search_results = get_search_results_meta(&query_text, MAX_URLS_PER_QUERY).await;
+            let mut unique_results: Vec<DiscoveredSearchResult> = vec![];
             {
                 let mut set = visited.lock().await;
-                for u in urls {
-                    if set.insert(u.clone()) {
-                        unique_urls.push(u);
+                for item in search_results {
+                    if set.insert(item.url.clone()) {
+                        unique_results.push(item);
                     }
                 }
             }
@@ -498,42 +554,37 @@ pub async fn start_deep_research(
             let mut page_sources: Vec<SourceEntry> = vec![];
 
             // Fetch pages in batches of MAX_CONCURRENT_FETCHES
-            for batch in unique_urls.chunks(MAX_CONCURRENT_FETCHES) {
+            for batch in unique_results.chunks(MAX_CONCURRENT_FETCHES) {
                 let batch_tasks: Vec<_> = batch
                     .iter()
-                    .map(|url| {
+                    .map(|item| {
                         let pg = prog.clone();
-                        let u = url.clone();
+                        let item_clone = item.clone();
                         tokio::spawn(async move {
                             let _ = pg.send(json!({
                                 "type": "progress",
-                                "message": format!("📄 Reading: {}", u)
+                                "message": format!("Reading: {}", item_clone.url)
                             }));
-                            fetch_page_for_research(&u).await
+                            let (_url, md) = fetch_page_for_research(&item_clone.url).await;
+                            (item_clone, md)
                         })
                     })
                     .collect();
 
                 let batch_results = join_all(batch_tasks).await;
                 for result in batch_results.into_iter().flatten() {
-                    let (url, markdown) = result;
-                    if markdown.len() < 200 {
-                        continue; // Skip empty or minimal pages
-                    }
+                    let (item, markdown) = result;
+                    let title = if !item.title.is_empty() { item.title.clone() } else { item.url.clone() };
+                    let snippet = if !item.snippet.is_empty() { item.snippet.clone() } else { title.clone() };
 
-                    let title = markdown
-                        .lines()
-                        .find(|l| !l.trim().is_empty())
-                        .unwrap_or(&url)
-                        .trim_start_matches('#')
-                        .trim()
-                        .to_string();
+                    let bounded_md = if markdown.trim().len() >= 200 {
+                        markdown.chars().take(MAX_CHARS_PER_PAGE).collect::<String>()
+                    } else {
+                        format!("Title: {}\nSnippet: {}", title, snippet)
+                    };
 
-                    let snippet: String = markdown.chars().take(300).collect();
-                    // Cap per-page content to prevent context explosion
-                    let bounded_md: String = markdown.chars().take(MAX_CHARS_PER_PAGE).collect();
-                    page_texts.push(format!("Source: {}\n\n{}", url, bounded_md));
-                    page_sources.push(SourceEntry { url, title, snippet });
+                    page_texts.push(format!("Source: {}\n\n{}", item.url, bounded_md));
+                    page_sources.push(SourceEntry { url: item.url, title, snippet });
                 }
             }
 
@@ -553,15 +604,14 @@ pub async fn start_deep_research(
     let _ = on_progress.send(json!({
         "type": "progress",
         "message": format!(
-            "✅ First research pass: {} sources read. Analyzing for gaps...",
+            "First research pass: {} sources read. Analyzing for gaps...",
             all_context.len()
         )
     }));
 
     // ── STEP 3: Reflect — LLM identifies gaps, executes follow-up searches ────
 
-    if all_context.len() >= 2 && !api_key.is_empty() {
-        // Build a compact summary for the gap finder (first 500 chars per source)
+    if all_context.len() >= 2 && (!api_key.is_empty() || is_local) {
         let context_summary = all_context
             .iter()
             .enumerate()
@@ -574,10 +624,11 @@ pub async fn start_deep_research(
 
         let _ = on_progress.send(json!({
             "type": "progress",
-            "message": "🤔 Reflection Agent identifying research gaps..."
+            "message": "Reflection Agent identifying research gaps..."
         }));
 
         match run_gap_finder(
+            &app,
             &query.prompt,
             &context_summary,
             provider.clone(),
@@ -590,7 +641,7 @@ pub async fn start_deep_research(
                 let _ = on_progress.send(json!({
                     "type": "progress",
                     "message": format!(
-                        "🔄 Found {} gaps. Executing {} follow-up searches...",
+                        "Found {} gaps. Executing {} follow-up searches...",
                         gaps.gaps.len(),
                         gaps.follow_up_queries.len()
                     )
@@ -606,16 +657,16 @@ pub async fn start_deep_research(
                     hop2_tasks.push(tokio::spawn(async move {
                         let _ = pg.send(json!({
                             "type": "progress",
-                            "message": format!("🔍 Follow-up: \"{}\"", fq)
+                            "message": format!(r#"Follow-up: "{}""#, fq)
                         }));
 
-                        let urls = get_search_urls(&fq, MAX_URLS_PER_QUERY).await;
-                        let mut unique_urls = vec![];
+                        let search_results = get_search_results_meta(&fq, MAX_URLS_PER_QUERY).await;
+                        let mut unique_results: Vec<DiscoveredSearchResult> = vec![];
                         {
                             let mut set = visited.lock().await;
-                            for u in urls {
-                                if set.insert(u.clone()) {
-                                    unique_urls.push(u);
+                            for item in search_results {
+                                if set.insert(item.url.clone()) {
+                                    unique_results.push(item);
                                 }
                             }
                         }
@@ -623,41 +674,37 @@ pub async fn start_deep_research(
                         let mut hop2_texts: Vec<String> = vec![];
                         let mut hop2_sources: Vec<SourceEntry> = vec![];
 
-                        for batch in unique_urls.chunks(MAX_CONCURRENT_FETCHES) {
+                        for batch in unique_results.chunks(MAX_CONCURRENT_FETCHES) {
                             let batch_tasks: Vec<_> = batch
                                 .iter()
-                                .map(|url| {
+                                .map(|item| {
                                     let p = pg.clone();
-                                    let u = url.clone();
+                                    let item_clone = item.clone();
                                     tokio::spawn(async move {
                                         let _ = p.send(json!({
                                             "type": "progress",
-                                            "message": format!("📄 Reading: {}", u)
+                                            "message": format!("Reading: {}", item_clone.url)
                                         }));
-                                        fetch_page_for_research(&u).await
+                                        let (_url, md) = fetch_page_for_research(&item_clone.url).await;
+                                        (item_clone, md)
                                     })
                                 })
                                 .collect();
 
                             let batch_results = join_all(batch_tasks).await;
                             for result in batch_results.into_iter().flatten() {
-                                let (url, markdown) = result;
-                                if markdown.len() < 200 {
-                                    continue;
-                                }
-                                let title = markdown
-                                    .lines()
-                                    .find(|l| !l.trim().is_empty())
-                                    .unwrap_or(&url)
-                                    .trim_start_matches('#')
-                                    .trim()
-                                    .to_string();
-                                let snippet: String = markdown.chars().take(300).collect();
-                                let bounded_md: String =
-                                    markdown.chars().take(MAX_CHARS_PER_PAGE).collect();
-                                hop2_texts
-                                    .push(format!("Source: {}\n\n{}", url, bounded_md));
-                                hop2_sources.push(SourceEntry { url, title, snippet });
+                                let (item, markdown) = result;
+                                let title = if !item.title.is_empty() { item.title.clone() } else { item.url.clone() };
+                                let snippet = if !item.snippet.is_empty() { item.snippet.clone() } else { title.clone() };
+
+                                let bounded_md = if markdown.trim().len() >= 200 {
+                                    markdown.chars().take(MAX_CHARS_PER_PAGE).collect::<String>()
+                                } else {
+                                    format!("Title: {}\nSnippet: {}", title, snippet)
+                                };
+
+                                hop2_texts.push(format!("Source: {}\n\n{}", item.url, bounded_md));
+                                hop2_sources.push(SourceEntry { url: item.url, title, snippet });
                             }
                         }
 
@@ -674,7 +721,7 @@ pub async fn start_deep_research(
                 let _ = on_progress.send(json!({
                     "type": "progress",
                     "message": format!(
-                        "✅ Gap-fill complete. Total sources: {}",
+                        "Gap-fill complete. Total sources: {}",
                         all_context.len()
                     )
                 }));
@@ -682,13 +729,13 @@ pub async fn start_deep_research(
             Ok(_) => {
                 let _ = on_progress.send(json!({
                     "type": "progress",
-                    "message": "✅ Research coverage looks comprehensive — no major gaps found."
+                    "message": "Research coverage looks comprehensive — no major gaps found."
                 }));
             }
             Err(e) => {
                 let _ = on_progress.send(json!({
                     "type": "progress",
-                    "message": format!("⚠️ Gap analysis skipped ({}). Proceeding.", e)
+                    "message": format!("Gap analysis skipped ({}). Proceeding.", e)
                 }));
             }
         }
@@ -706,13 +753,12 @@ pub async fn start_deep_research(
             }
         }
     }
-    if let Some(pool) = app.try_state::<sqlx::SqlitePool>() {
-        if let Ok(memories) = crate::commands::db::db_search_memories(pool.clone(), Some(query.prompt.clone()), None, Some(5)).await {
-            for m in memories {
-                let fact = m.fact.trim().to_string();
-                if !fact.is_empty() && !memory_facts.contains(&fact) {
-                    memory_facts.push(format!("[SQLite Episodic Memory]: {}", fact));
-                }
+    let pool = app.state::<sqlx::SqlitePool>();
+    if let Ok(memories) = crate::commands::db::db_search_memories(pool, Some(query.prompt.clone()), None, Some(5)).await {
+        for m in memories {
+            let fact = m.fact.trim().to_string();
+            if !fact.is_empty() && !memory_facts.contains(&fact) {
+                memory_facts.push(format!("[SQLite Episodic Memory]: {}", fact));
             }
         }
     }
@@ -722,7 +768,7 @@ pub async fn start_deep_research(
         all_context.insert(0, memory_block);
     }
 
-    // ── STEP 5: Synthesize ────────────────────────────────────────────────────
+    // ── STEP 5: Synthesize Final Report ──────────────────────────────────────
 
     if all_context.is_empty() {
         return Err(
@@ -735,12 +781,13 @@ pub async fn start_deep_research(
     let _ = on_progress.send(json!({
         "type": "progress",
         "message": format!(
-            "📝 Writing comprehensive report from {} sources...",
+            "Writing comprehensive report from {} sources...",
             all_context.len()
         )
     }));
 
     let final_report = run_publisher(
+        &app,
         &query.prompt,
         all_context,
         provider,
@@ -752,7 +799,7 @@ pub async fn start_deep_research(
 
     let _ = on_progress.send(json!({
         "type": "progress",
-        "message": "🎉 Deep Research complete!"
+        "message": "Deep Research complete!"
     }));
 
     Ok(json!({

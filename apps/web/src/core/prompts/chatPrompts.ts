@@ -1,3 +1,17 @@
+/**
+ * chatPrompts.ts
+ *
+ * Builds the system prompt and user prompt for each conversation turn.
+ *
+ * 2026 Context Engineering principles applied:
+ * 1. Static content first (identity, rules) — enables prompt caching
+ * 2. Dynamic content last (user data, search results, date) — separated by XML tags
+ * 3. User input is always wrapped in semantic tags to prevent prompt injection
+ * 4. Style directives are concrete, not abstract — explicit structure contracts
+ * 5. Instructions in user prompt reinforce system prompt at turn level
+ * 6. No instruction bloat — every line must change model behavior to stay
+ */
+
 import { getLuciferPersona } from '../agents/luciferPersona';
 import type { ChatMessage } from '@src/infrastructure/types';
 
@@ -16,8 +30,7 @@ export interface ChatContext {
   maxResponseTokens?: number;
   historySummary?: string;
   reasoningEnabled?: boolean;
-  /** True when the request goes to a local GGUF model via llama-server.
-   *  Skips citation rules — they waste tokens and aren't useful on local models. */
+  /** True when the request goes to a local GGUF model via llama-server. */
   localModel?: boolean;
   customSystemPrompt?: string;
   hasWebSearch?: boolean;
@@ -56,14 +69,29 @@ function estimateTokens(text?: string): number {
   return Math.ceil(text.length / 4);
 }
 
-// ── Main Builder ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Universal Professional Turn Directive
 //
-// IMPORTANT: This returns:
-//   - systemPrompt: injected as system_instruction to the backend
-//   - userPrompt:   the raw user text (possibly with [RESEARCH] prepended)
-//
-// The chat HISTORY is already passed separately as the `messages` array in
-// useChatLogic.ts — do NOT concatenate history here or it will be doubled.
+// Injected into the USER PROMPT to reinforce structure and behavioral rules
+// close to the user query for maximum instruction compliance across models.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const UNIVERSAL_TURN_DIRECTIVE = `<turn_format_directive>
+PROFESSIONAL EXECUTION CONTRACT:
+1. Core Delivery: Deliver the direct answer or primary solution in the opening sentence. No conversational preambles ("Certainly!", "Great question!", "Sure!").
+2. Adaptive Depth:
+   - For simple or concise questions: Provide a sharp, direct, high-signal answer in 1–2 clear paragraphs without artificial section headers or bullet-point bloat.
+   - For in-depth, technical, architectural, or research inquiries: Organize into logical Markdown sections (## Section Name) named directly after the concepts discussed.
+3. Visuals & Data:
+   - Provide valid Mermaid flowcharts (\`\`\`mermaid\nflowchart TD\n...\n\`\`\` with quoted node labels) for workflows, architectures, pipelines, and state diagrams.
+   - Format comparisons, benchmarks, and structured specs in clean Markdown tables.
+   - Provide minimal, idiomatic, runnable code blocks with language identifiers.
+PROHIBITED: Robotic AI intros, repeating the user prompt, meta-commentary about the prompt or context, fabricated URLs, and artificial boilerplate headings ("Direct Answer / Key Takeaway", "Overview", "Comparison") when irrelevant.
+</turn_format_directive>`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Builder
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function buildChatPrompts(
   modelId: string,
@@ -71,56 +99,32 @@ export function buildChatPrompts(
   rawPrompt: string,
   _history: ChatMessage[],
   webSearchResults?: string,
-  provider?: string
+  provider?: string,
+  mediaContext?: string,
+  memoryContext?: string
 ): ChatPromptBuildResult {
   const now = new Date();
   const contextBreakdown: Record<string, number> = {};
+  const isoDateStr = now.toISOString().slice(0, 10);
 
-  const systemPrompt = buildChatSystemPromptInternal(modelId, context, now, provider);
+  // Build system prompt — static content goes first for prompt cache efficiency
+  const systemPrompt = buildSystemPrompt(
+    modelId,
+    context,
+    isoDateStr,
+    provider
+  );
   contextBreakdown.system = estimateTokens(systemPrompt);
 
-  // Build user-facing prompt — web search context prepended if available.
-  // DO NOT include history here; it's already in backendMessages in useChatLogic.
-  let userPrompt = rawPrompt;
-  if (webSearchResults) {
-    const now = new Date();
-    const isoDateStr = now.toISOString().slice(0, 10);
-    const isDeep = webSearchResults.includes('DEEP RESEARCH CONSOLIDATED CONTEXT');
-    const isResearchQuery = /^(?:research|compare|list|explain|find me the best|what are the best|show me all)\b|\bresearch\b|\blist every\b|\bbest laptop\b/i.test(rawPrompt.trim());
-    const headerTag = isDeep ? 'LONG CONTEXT DEEP RESEARCH & RAG MEMORY DATA' : 'LIVE WEB SEARCH & RAG MEMORY RESULTS';
-    
-    if (isDeep || isResearchQuery) {
-      userPrompt =
-        `[${headerTag}] (Retrieved: ${isoDateStr})\n` +
-        `${webSearchResults}\n` +
-        `[/${headerTag}]\n\n` +
-        `Question: ${rawPrompt}\n\n` +
-        `INSTRUCTIONS FOR STRUCTURED RESEARCH REPORT WITH INLINE IMAGES & VISUAL DIAGRAMS:\n` +
-        `1. EXECUTIVE SUMMARY: Direct high-level answer and top recommendations.\n\n` +
-        `2. VISUAL DATA & GRAPHICAL REPRESENTATION:\n` +
-        `   - Include a clean Markdown Comparison Table comparing specs, battery life, performance, and price.\n` +
-        `   - Include a Mermaid chart (e.g. \`\`\`mermaid\ngraph TD\n... \`\`\` or \`\`\`mermaid\npie title Battery Life\n... \`\`\`) visualizing performance or market rankings.\n\n` +
-        `3. INLINE TOPIC & PRODUCT BREAKDOWNS:\n` +
-        `   - Create a dedicated heading for EACH recommended topic/product (e.g. ### 1. Apple MacBook Air M3).\n` +
-        `   - IMMEDIATELY BELOW each heading, embed its exact matching image from [VERIFIED INLINE PRODUCT IMAGES & SPECIFIC TOPIC MEDIA] using Markdown image syntax: ![Product Name](URL).\n` +
-        `   - Include key specs, battery life, pros/cons, and exact prices (escaped as \\$1,500).\n\n` +
-        `4. DO NOT place images at the end of the response — embed each image inline right under its corresponding topic heading. Do not output <think> tags.`;
-    } else {
-      userPrompt =
-        `[${headerTag}] (Retrieved: ${isoDateStr})\n` +
-        `${webSearchResults}\n` +
-        `[/${headerTag}]\n\n` +
-        `Question: ${rawPrompt}\n` +
-        `Instructions: Answer directly and accurately using the search data above. Embed any verified image URLs provided in [VERIFIED INLINE PRODUCT IMAGES & SPECIFIC TOPIC MEDIA] inline below headings. Do not output <think> tags.`;
-    }
-  }
+  // Build user prompt — dynamic content, wrapped in semantic tags
+  const userPrompt = buildUserPrompt(rawPrompt, isoDateStr, webSearchResults, mediaContext, memoryContext);
   contextBreakdown.user = estimateTokens(userPrompt);
 
   return {
     systemPrompt,
     userPrompt,
     metadata: {
-      version: '3.0.0',
+      version: '5.0.0',
       estimatedTokens: Object.values(contextBreakdown).reduce((a, b) => a + b, 0),
       contextBreakdown,
       safetyLevel: detectSafetyLevel(rawPrompt),
@@ -128,34 +132,144 @@ export function buildChatPrompts(
   };
 }
 
-// ── System Prompt Builder ─────────────────────────────────────────────────────
-function buildChatSystemPromptInternal(
+// ─────────────────────────────────────────────────────────────────────────────
+// System Prompt Builder
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildSystemPrompt(
   _modelId: string,
   context: ChatContext,
-  now: Date,
+  isoDateStr: string,
   provider?: string
 ): string {
-  const isLocal = context.localModel || provider === 'nyx-native';
-  const isoDateStr = now.toISOString().slice(0, 10);
-
-  if (isLocal) {
-    // Ultra-lightweight system prompt for local GGUF models (< 20 tokens, zero delay)
-    return `You are Lucifer, an AI assistant. Today is ${isoDateStr}. Answer directly, accurately, and concisely. Do not output <think> tags.`;
+  // Custom system prompt: user-defined, full override — add only date
+  if (context.customSystemPrompt?.trim()) {
+    return `${context.customSystemPrompt.trim()}\n\n<date_context>Today is ${isoDateStr}. Do not output <think> tags.</date_context>`;
   }
 
-  // Ultra-clean system prompt for cloud models (< 40 tokens)
-  return (
-    `You are Lucifer, an AI assistant. Today is ${isoDateStr}.\n` +
-    `Answer directly, accurately, and concisely. Embed verified image URLs if provided. Do not invent fake URLs.`
-  );
+  const isLocal = context.localModel || provider === 'nyx-native';
+
+  const persona = getLuciferPersona({
+    isLocalModel: isLocal,
+    provider,
+  });
+
+  return `${persona}\n\n<date_context>Today is ${isoDateStr}.</date_context>`;
 }
 
-// ── Safety Level Detection ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// User Prompt Builder
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildUserPrompt(
+  rawPrompt: string,
+  isoDateStr: string,
+  webSearchResults?: string,
+  mediaContext?: string,
+  memoryContext?: string
+): string {
+  const trimmed = rawPrompt.trim();
+
+  // Fast-path for greetings & casual conversational turns — never force textbook structures
+  const isGreeting =
+    (trimmed.length <= 40 &&
+      /^(hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening|day)|yo|sup|ping|test|howdy|what's\s+up|whats\s+up|hiya)(?:[\s!.,?]+(?:lucifer|nyx|there|bot|assistant))?[\s!.,?]*$/i.test(
+        trimmed
+      )) ||
+    (trimmed.length <= 80 &&
+      /^(who\s+are\s+you|what\s+can\s+you\s+do|tell\s+me\s+about\s+yourself|introduce\s+yourself|what\s+is\s+your\s+name|who\s+made\s+you|who\s+created\s+you|who\s+are\s+you\s+and\s+what\s+can\s+you\s+do)(?:[\s!.,?]+(?:lucifer|nyx))?[\s!.,?]*$/i.test(
+        trimmed
+      ));
+
+  if (isGreeting && !webSearchResults && !mediaContext && !memoryContext) {
+    return trimmed;
+  }
+
+  const blocks: string[] = [];
+
+  // 1. Supplemental Background Memory Context Block
+  if (memoryContext?.trim()) {
+    blocks.push(memoryContext.trim());
+  }
+
+  // 2. Deep Research / Web Search Context Block
+  if (webSearchResults?.trim()) {
+    const isDeepResearch =
+      webSearchResults.includes('DEEP RESEARCH CONSOLIDATED CONTEXT') ||
+      webSearchResults.includes('Autonomous Deep Research Report') ||
+      webSearchResults.includes('AGENTIC RESEARCH SYNTHESIS');
+    const contextTag = isDeepResearch ? 'deep_research_context' : 'web_search_context';
+    const contextLabel = isDeepResearch
+      ? 'DEEP RESEARCH & RAG CONSOLIDATED DATA'
+      : 'LIVE WEB SEARCH & RAG RESULTS';
+
+    blocks.push(
+      `<${contextTag} retrieved="${isoDateStr}" label="${contextLabel}">\n${webSearchResults.trim()}\n</${contextTag}>`
+    );
+  }
+
+  // 3. Verified Media Library Context Block (separated from user input)
+  if (mediaContext?.trim()) {
+    blocks.push(mediaContext.trim());
+  }
+
+  // 4. User Input — Clean User Query
+  blocks.push(`<user_input>\n${trimmed}\n</user_input>`);
+
+  // 5. Turn Directive (only for informational, technical, creative, or search-augmented turns)
+  if (webSearchResults || mediaContext || trimmed.length > 25) {
+    blocks.push(UNIVERSAL_TURN_DIRECTIVE);
+  }
+
+  // 6. Execution Rules (Full Context Depth, Citations, Media Matching)
+  const isDeepQuery = /\b(?:research|deep|detailed|explain|comprehensive|analysis|architecture|clinical|system)\b/i.test(rawPrompt);
+  const depthRule = isDeepQuery
+    ? `FULL CONTEXT & DEPTH: Provide an exhaustive, deeply detailed, full-context explanation. Cover every technical mechanism, architectural workflow, clinical application, algorithm, and quantitative benchmark without summarizing or omitting critical details.`
+    : `DEPTH: Provide a complete, direct, high-density response matching the depth of the inquiry.`;
+
+  const executionRules: string[] = [
+    `<execution_rules>`,
+    depthRule,
+  ];
+
+  if (webSearchResults?.trim()) {
+    executionRules.push(
+      `CITATIONS: Place all citation tags [Source N] ONLY at the very END of paragraphs or sections.
+Never insert citations in the middle of sentences, inside table headers, or scattered inside table data cells.
+Format multiple citations as separate tags: [Source 1] [Source 2]. Cite only sources you actually received.`
+    );
+  }
+
+  if (mediaContext?.trim()) {
+    executionRules.push(
+      `MEDIA: If verified media appears in context (<verified_media_library>):
+- NEVER embed media URLs into the middle of sentences.
+- Place verified images on a clean, dedicated standalone line: ![Title](URL)
+- If videos appear in context, embed using: <video src="URL" title="Title" poster="PREVIEW_URL"></video>
+- Never fabricate or guess image, video, or audio URLs. Use only verified URLs from context.`
+    );
+  }
+
+  executionRules.push(`</execution_rules>`);
+
+  if (webSearchResults || mediaContext || isDeepQuery) {
+    blocks.push(executionRules.join('\n\n'));
+  }
+
+  return blocks.join('\n\n');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Safety Level Detection
+//
+// Used for logging and optional downstream routing decisions.
+// Does NOT modify the prompt — this is metadata only.
+// ─────────────────────────────────────────────────────────────────────────────
 
 function detectSafetyLevel(prompt: string): 'standard' | 'enhanced' | 'strict' {
   const lower = prompt.toLowerCase();
 
-  // Legitimate security work — keep at standard
+  // Known-safe security contexts (audit/defense framing) → standard
   const safeContexts = [
     /how\s+(to|do\s+i)\s+(fix|patch|secure|harden|protect)/i,
     /(audit|review|assessment)\s+of\s+(my|our|the)\s+(security|auth|system)/i,
@@ -163,6 +277,7 @@ function detectSafetyLevel(prompt: string): 'standard' | 'enhanced' | 'strict' {
   ];
   if (safeContexts.some((p) => p.test(lower))) return 'standard';
 
+  // Potentially harmful patterns
   const sensitivePatterns = [
     /(hack|exploit|vulnerability|bypass)\s+(security|auth|login|firewall)/i,
     /(create|make|build)\s+(virus|malware|trojan|ransomware|keylogger)/i,

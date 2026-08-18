@@ -389,6 +389,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   const localModelId = useNyxStore((s) => s.localModelId);
   const setCloudModelId = useNyxStore((s) => s.setCloudModelId);
   const setLocalModelId = useNyxStore((s) => s.setLocalModelId);
+  const luciferAgentEnabled = useNyxStore((s) => s.luciferAgentEnabled);
+  const setLuciferAgentEnabled = useNyxStore((s) => s.setLuciferAgentEnabled);
   
   const localLibraryModels = useModelStore((s) => s.localLibraryModels);
 
@@ -460,7 +462,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             </motion.button>
           )}
 
-          <div className="flex relative min-w-0 shrink gap-2">
+          <div className="flex items-center relative min-w-0 shrink gap-1.5 sm:gap-2">
             {/* Unified Model Selector */}
             <div className="relative">
               <motion.button
@@ -471,10 +473,12 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   setShowCloudSelector((v) => !v);
                 }}
                 disabled={isLoading}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors select-none w-full ${showCloudSelector
+                title="Select AI Generation Model"
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors select-none w-full ${
+                  showCloudSelector
                     ? 'bg-muted/80 text-foreground'
-                    : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40'
-                  } ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40 cursor-pointer'
+                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <div className="shrink-0">
                   {currentModel ? getCustomModelIcon(currentModel) : <Bot className="w-4 h-4" />}
@@ -483,7 +487,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   {currentModel?.name || 'Select Model'}
                 </span>
                 <ChevronDown
-                  className={`w-4 h-4 opacity-50 shrink-0 transition-transform ${showCloudSelector ? 'rotate-180' : ''}`}
+                  className={`w-4 h-4 opacity-50 shrink-0 transition-transform ${
+                    showCloudSelector ? 'rotate-180' : ''
+                  }`}
                 />
               </motion.button>
 
@@ -497,7 +503,10 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     onProviderChange={setSelectedProvider}
                     onSearchChange={setModelSearch}
                     onSelect={(id) => {
-                      const isLocal = id && (localLibraryModels?.some(m => m.id === id) || allModels?.find(m => m.id === id)?.provider === 'nyx-native');
+                      const isLocal =
+                        id &&
+                        (localLibraryModels?.some((m) => m.id === id) ||
+                          allModels?.find((m) => m.id === id)?.provider === 'nyx-native');
                       if (isLocal) {
                         setLocalModelId(id);
                         setCloudModelId(null);
@@ -523,6 +532,50 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   />
                 )}
               </AnimatePresence>
+            </div>
+
+            {/* Lucifer Agent Toggle Switch (Right side of Model Selector) */}
+            <div className="flex items-center pl-1 border-l border-border/40">
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                type="button"
+                onClick={() => {
+                  const next = !luciferAgentEnabled;
+                  setLuciferAgentEnabled(next);
+                  toast.info(next ? 'Lucifer Agent Active' : 'Direct Model Mode Active', {
+                    description: next
+                      ? 'Autonomous GPU agent with TurboVec RAG, tools, and model control.'
+                      : 'Direct prompt-to-model inference without agentic orchestration.',
+                  });
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-all select-none cursor-pointer ${
+                  luciferAgentEnabled
+                    ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.12)]'
+                    : 'bg-muted/30 text-muted-foreground hover:text-foreground border border-transparent'
+                }`}
+                title={
+                  luciferAgentEnabled
+                    ? 'Lucifer Agent is ON. Click to disable and select raw models directly.'
+                    : 'Lucifer Agent is OFF. Click to enable autonomous agent mode.'
+                }
+              >
+                <Zap
+                  size={13}
+                  className={
+                    luciferAgentEnabled
+                      ? 'text-purple-400 fill-purple-400/30'
+                      : 'text-muted-foreground'
+                  }
+                />
+                <span>Lucifer</span>
+                <span
+                  className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                    luciferAgentEnabled
+                      ? 'bg-purple-400 shadow-[0_0_6px_#c084fc]'
+                      : 'bg-muted-foreground/40'
+                  }`}
+                />
+              </motion.button>
             </div>
           </div>
 

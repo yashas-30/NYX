@@ -24,7 +24,7 @@ export const useProviderStatus = (
     // Skip polling when tab is hidden (performance optimization)
     if (!isVisibleRef.current) return;
 
-    const providers: string[] = ['gemini'];
+    const providers: string[] = ['gemini', 'openrouter', 'groq', 'deepseek', 'anthropic', 'openai'];
     const newStatuses: Record<string, Status> = {};
 
     await Promise.all(

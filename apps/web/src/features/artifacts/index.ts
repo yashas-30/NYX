@@ -1,4 +1,2 @@
-export const ArtifactRenderer = {
-  name: 'Interactive Artifacts',
-  description: 'Code previews, Mermaid diagram rendering, live HTML iframes'
-};
+export { ArtifactCanvas } from './components/ArtifactCanvas';
+export type { ArtifactCanvasProps } from './components/ArtifactCanvas';

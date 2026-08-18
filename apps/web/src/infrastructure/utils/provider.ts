@@ -111,7 +111,8 @@ export const detectProvider = (modelId: any): Provider => {
     lowerId.startsWith('custom-') ||
     lowerId.includes('/unorganized/') ||
     lowerId.includes('\\unorganized\\') ||
-    lowerId.includes('prism-')
+    lowerId.includes('prism-') ||
+    lowerId.includes('lucifer')
   ) {
     return 'nyx-native' as Provider;
   }

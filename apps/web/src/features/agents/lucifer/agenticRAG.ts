@@ -16,6 +16,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { startSpan, endSpan, LuciferSpan } from './observabilitySpans';
+import { planDeepResearchQueries, planQueryWithModel } from '../../../core/services/intelligentQueryEngine';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -140,39 +141,32 @@ export function extractCoreKeywords(query: string): string {
 // ── Query decomposition ───────────────────────────────────────────────────────
 
 /**
- * Universal Query Decomposer.
- * Decomposes ANY prompt into 10 distinct, highly-targeted research sub-queries.
- * Domain-agnostic matrix that scales to science, engineering, business, finance, medicine, history, and tech.
+ * Universal Query Decomposer powered by Qwen 2.5 1.5B on GPU.
+ * Uses Intelligent Query Formulation Engine to decompose prompt into orthogonal, targeted research sub-queries.
  */
-function decomposeQuery(query: string, isDeepResearchMode: boolean = false): string[] {
+async function decomposeQuery(query: string, isDeepResearchMode: boolean = false): Promise<string[]> {
   const q = sanitizeSearchQuery(query);
-  const coreTopic = extractCoreKeywords(q);
-
   if (!q || q.trim().length === 0) return [];
 
-  // Extract explicit multi-sentence questions if present
-  const questionMatches = q.match(/[^.?!]+[?]/g);
-  if (questionMatches && questionMatches.length > 1) {
-    const extracted = questionMatches.map(m => m.replace(/[?.,!]/g, '').trim()).filter(m => m.length > 5);
-    if (extracted.length > 0) return Array.from(new Set([q, ...extracted])).slice(0, 5);
+  try {
+    const plan = await planQueryWithModel(q, {
+      provider: 'nyx-native',
+      modelId: 'qwen2.5-1.5b-instruct',
+      timeoutMs: 6000,
+    });
+    if (plan && plan.deepResearchQueries && plan.deepResearchQueries.length > 0) {
+      return Array.from(new Set([q, ...plan.deepResearchQueries]));
+    }
+  } catch (err) {
+    console.warn('[agenticRAG] Model decomposition fallback:', err);
   }
 
-  // Extract key non-stopwords from prompt
-  const stopWords = new Set(['the', 'is', 'at', 'which', 'on', 'a', 'an', 'and', 'or', 'in', 'to', 'for', 'of', 'with', 'about', 'tell', 'me', 'show', 'give', 'search', 'research', 'deep']);
-  const cleanTokens = q
-    .replace(/[^\w\s]/gi, ' ')
-    .split(/\s+/)
-    .filter(w => w.length > 2 && !stopWords.has(w.toLowerCase()));
-
-  if (cleanTokens.length <= 3) {
-    return [q, coreTopic].filter(Boolean);
+  const planned = planDeepResearchQueries(q, isDeepResearchMode ? 6 : 4);
+  if (planned.length > 0) {
+    return Array.from(new Set([q, ...planned]));
   }
 
-  const q1 = coreTopic;
-  const q2 = cleanTokens.slice(0, Math.ceil(cleanTokens.length / 2)).join(' ');
-  const q3 = cleanTokens.slice(Math.floor(cleanTokens.length / 2)).join(' ');
-  const subQueries = Array.from(new Set([q, q1, q2, q3].filter(Boolean)));
-  return subQueries.slice(0, isDeepResearchMode ? 6 : 4);
+  return [q];
 }
 
 
@@ -353,8 +347,8 @@ export async function agenticSearch(
   const ragSpan = startSpan('agentic_rag', 'Agentic RAG', turnId, parentSpanId);
 
   try {
-    // STEP 1: Decompose query into focused sub-queries
-    const subQueries = decomposeQuery(originalQuery, options.fetchPageContent ?? true).slice(0, maxSubQueries);
+    // STEP 1: Decompose query into focused sub-queries using Qwen 2.5 1.5B
+    const subQueries = (await decomposeQuery(originalQuery, false)).slice(0, maxSubQueries);
 
     // STEP 2: Fire all sub-queries in PARALLEL
     const searchSpans: LuciferSpan[] = [];
@@ -397,19 +391,39 @@ export async function agenticSearch(
     if (includeMemory) {
       const memSpan = startSpan('memory_read', 'Memory Query', turnId, ragSpan.spanId);
       try {
+        const cleanOriginalQuery = originalQuery.replace(/<[^>]+>/g, '').trim();
+        const queryWords = cleanOriginalQuery.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+        const isExplicitMemoryAsk = /\b(?:recall|remember|memory|earlier|previous\s+conversation|what\s+did\s+we\s+talk\s+about|last\s+time)\b/i.test(cleanOriginalQuery);
+
         const [longTerm, episodic, turbovec] = await Promise.all([
           invoke<Array<{ id: string; fact: string; category?: string }>>('db_get_memories').catch(() => []),
           invoke<Array<{ summary: string; key_topics: string }>>('get_episodic_memories', { limit: 10 }).catch(() => []),
-          invoke<Array<{ text: string; metadata: string }>>('turbovec_search_memory', { query: originalQuery, limit: 6 }).catch(() => []),
+          invoke<Array<{ text: string; metadata: string }>>('turbovec_search_memory', { query: cleanOriginalQuery, limit: 4 }).catch(() => []),
         ]);
 
-        const ltMem = longTerm.map(m => `[User Long-Term Memory (${m.category || 'Fact'})] ${m.fact}`);
+        const ltMem = longTerm
+          .filter(m => isExplicitMemoryAsk || (queryWords.length > 0 && queryWords.some(w => m.fact.toLowerCase().includes(w))))
+          .slice(0, 3)
+          .map(m => `[User Long-Term Memory (${m.category || 'Fact'})] ${m.fact}`);
 
-        const tvMem = turbovec.map(tv => `[TurboVec Vector RAG Memory] (${tv.metadata}): ${tv.text}`);
+        const tvMem = turbovec
+          .filter(tv => {
+            const isRawChat = tv.text.startsWith('USER:') || tv.text.startsWith('ASSISTANT:');
+            if (isRawChat && !isExplicitMemoryAsk) return false;
+            return tv.text.trim().length > 0;
+          })
+          .slice(0, 3)
+          .map(tv => `[TurboVec Vector Memory] (${tv.metadata}): ${tv.text}`);
 
         const epMem = episodic
-          .filter(m => m.summary && !/Session Task:\s*(?:hi|hello|hey|ping|test)\b/i.test(m.summary))
-          .map(m => `[Episodic Session Memory] ${m.summary} (topics: ${m.key_topics})`);
+          .filter(m => {
+            if (!m.summary || /Session Task:\s*(?:hi|hello|hey|ping|test)\b/i.test(m.summary)) return false;
+            if (isExplicitMemoryAsk) return true;
+            const target = `${m.summary} ${m.key_topics}`.toLowerCase();
+            return queryWords.length > 0 && queryWords.some(w => target.includes(w));
+          })
+          .slice(0, 2)
+          .map(m => `[Episodic Memory] ${m.summary} (topics: ${m.key_topics})`);
 
         memoryResults = [...ltMem, ...tvMem, ...epMem].filter(Boolean);
         endSpan(memSpan, 'ok', { resultCount: memoryResults.length });
@@ -472,13 +486,9 @@ export async function agenticSearch(
       };
     });
 
-    // STEP 7b: Optionally fetch full page bodies for the top URLs to enrich context.
-    // This is the single biggest quality improvement — instead of 1-sentence snippets,
-    // the LLM gets thousands of chars of real article content.
+    // STEP 7b: Optionally fetch full page bodies for the top URLs with strict 4s timeout
     if (fetchPageContent && structuredResults.length > 0) {
-      // Fetch up to 20 full page bodies — significantly more than the old limit of 8.
-      // Full page content (50K chars ≈ 10K words) transforms shallow snippets into real research.
-      const maxPages = Math.min(structuredResults.length, 20);
+      const maxPages = Math.min(structuredResults.length, 5);
       const pageSpan = startSpan('page_fetch', `Fetching ${maxPages} full page bodies`, turnId, ragSpan.spanId);
       try {
         const urlsToFetch = structuredResults
@@ -488,15 +498,19 @@ export async function agenticSearch(
 
         if (urlsToFetch.length > 0) {
           onProgress?.(`📄 Reading ${urlsToFetch.length} web pages in full...`);
-          const batchRes = await invoke<Array<[string, string | null]>>('fetch_multiple_pages_command', {
-            urls: urlsToFetch,
-            maxCharsPerPage,
-          });
+          const fetchTimeout = new Promise<Array<[string, string | null]>>((res) => setTimeout(() => res([]), 4000));
+          const batchRes = await Promise.race([
+            invoke<Array<[string, string | null]>>('fetch_multiple_pages_command', {
+              urls: urlsToFetch,
+              maxCharsPerPage: Math.min(maxCharsPerPage, 15000),
+            }),
+            fetchTimeout,
+          ]);
 
           // Build a URL→content map from the batch result
           const pageContentMap = new Map<string, string>();
           for (const [url, content] of batchRes) {
-            if (content && content.trim().length > 300) {
+            if (content && content.trim().length > 200) {
               pageContentMap.set(url, content.trim());
             }
           }
@@ -605,9 +619,9 @@ export async function executeDeepResearch(
 
     onProgress?.(`✅ First hop complete: ${ragResult.results.length} results from ${ragResult.subQueries.length} distinct sub-queries`);
 
-    // Build initial scraped map from agenticSearch's fetched page content
+    // Build initial scraped map from agenticSearch's fetched page content and rich snippets
     let scrapedMap: Array<[string, string]> = ragResult.results
-      .filter(r => r.url && r.snippet && r.snippet.length > 300)
+      .filter(r => r.url && r.snippet && r.snippet.length > 40)
       .map(r => [r.url, r.snippet] as [string, string]);
 
     // ── HOP 2: Reflection + gap-fill searches (5 additional distinct angles) ──
@@ -617,14 +631,14 @@ export async function executeDeepResearch(
     if (depth === 'deep') {
       reflectionHops = 2;
 
-      // Dynamic model-driven reflection queries generated by the active LLM
+      // Dynamic model-driven reflection queries generated by native Qwen 2.5 1.5B
       const coreTopic = extractCoreKeywords(originalQuery);
 
       const hop2Queries = await invoke<string[]>('generate_search_queries_with_model', {
         prompt: `Research topic: "${coreTopic}". Generate 3 to 4 specific follow-up search queries to research missing information and different aspects of this topic.`,
-        provider: options.provider || 'google',
-        modelId: undefined,
-        apiKey: options.tavilyApiKey,
+        provider: 'nyx-native',
+        modelId: 'qwen2.5-1.5b-instruct',
+        apiKey: undefined,
       }).catch(() => [coreTopic]);
 
       const validGapQueries = hop2Queries.length > 0 ? hop2Queries : [coreTopic];
@@ -671,7 +685,7 @@ export async function executeDeepResearch(
         try {
           const batch2 = await invoke<Array<[string, string | null]>>('fetch_multiple_pages_command', {
             urls: urlsToFetchHop2,
-            maxCharsPerPage: 500000,
+            maxCharsPerPage: 50000,
           });
           let hop2Added = 0;
           for (const [u, text] of batch2) {
@@ -693,8 +707,8 @@ export async function executeDeepResearch(
     const allScrapedUrls = scrapedMap.map(([u]) => u);
     const deepContextBlocks = scrapedMap.map(([url, markdownText], idx) => {
       const matchingTitle = ragResult.results.find(r => r.url === url)?.title ?? `Source ${idx + 1}`;
-      // Include up to 500K chars per source (full website article content)
-      const content = markdownText.slice(0, 500000);
+      // Include up to 50K chars per source
+      const content = markdownText.slice(0, 50000);
       return `### [Source ${idx + 1}] ${matchingTitle}\nURL: ${url}\n\n${content}`;
     });
 

@@ -15,7 +15,6 @@ pub mod db;
 pub mod lucifer;
 
 pub use dialog::*;
-pub use vault::*;
 pub use window::*;
 pub use system::*;
 pub use app::*;

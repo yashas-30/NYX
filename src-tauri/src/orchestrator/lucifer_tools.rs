@@ -426,6 +426,68 @@ impl Tool for LuciferImageGenTool {
     }
 }
 
+/// Lucifer Topic Web Image Search Tool (DuckDuckGo & Bing Images)
+pub struct LuciferMediaSearchTool;
+
+impl LuciferMediaSearchTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl Tool for LuciferMediaSearchTool {
+    fn name(&self) -> String {
+        "search_media".to_string()
+    }
+
+    fn description(&self) -> String {
+        "Search high-quality topic photographs and web images from DuckDuckGo and Bing for visual grounding and response illustration.".to_string()
+    }
+
+    fn parameters_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Topic or keyword for image retrieval (e.g. 'James Webb Space Telescope', 'Porsche 911 GT3 RS')"
+                },
+                "limit": {
+                    "type": ["integer", "null"],
+                    "description": "Maximum number of images to return (default: 4, max: 10)"
+                }
+            },
+            "required": ["query"],
+            "additionalProperties": false
+        })
+    }
+
+    async fn execute(&self, _app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
+        let query = args.get("query")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing 'query' parameter")?;
+
+        let limit = args.get("limit")
+            .and_then(|v| v.as_u64())
+            .map(|n| (n as usize).clamp(1, 10))
+            .unwrap_or(4);
+
+        let images_json = crate::commands::agent::search_images_command(
+            query.to_string(),
+            Some(limit),
+        ).await?;
+
+        let parsed_images: Value = serde_json::from_str(&images_json).unwrap_or(json!([]));
+
+        Ok(json!({
+            "query": query,
+            "images_count": parsed_images.as_array().map(|a| a.len()).unwrap_or(0),
+            "photos": parsed_images
+        }))
+    }
+}
+
 /// Lucifer Voice Synthesis (TTS) Tool Trigger
 pub struct LuciferVoiceTool;
 
@@ -652,3 +714,114 @@ impl Tool for LuciferContextAnalyzerTool {
         }))
     }
 }
+
+/// Lucifer Model Fleet Management Tool
+/// Gives the Lucifer supervisor agent programmatic capability to inspect installed models,
+/// load models onto GPU, unload active models to free VRAM, and check system hardware stats.
+pub struct LuciferModelManagementTool;
+
+impl LuciferModelManagementTool {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl Tool for LuciferModelManagementTool {
+    fn name(&self) -> String {
+        "model_management".to_string()
+    }
+
+    fn description(&self) -> String {
+        "Manage the local model fleet and hardware: list installed models, load a local model onto GPU, unload active models to free VRAM, and check system hardware stats.".to_string()
+    }
+
+    fn parameters_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list_models", "load_model", "unload_model", "hardware_info"],
+                    "description": "The action to perform: list_models, load_model, unload_model, or hardware_info"
+                },
+                "model_id": {
+                    "type": ["string", "null"],
+                    "description": "Model filename/identifier (e.g. 'qwen2.5-1.5b-instruct-q4_k_m.gguf') for load_model"
+                },
+                "gpu_layers": {
+                    "type": ["integer", "null"],
+                    "description": "Number of GPU layers to offload (default: 99 for full GPU offload)"
+                }
+            },
+            "required": ["action"]
+        })
+    }
+
+    async fn execute(&self, app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
+        let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list_models");
+
+        match action {
+            "list_models" => {
+                let models = crate::llm::local_orchestrator::list_local_models(app.clone()).await?;
+                Ok(json!({
+                    "status": "success",
+                    "installed_local_models": models,
+                    "default_agent_brain": "qwen2.5-1.5b-instruct-q4_k_m.gguf (Rig-Core 100% GPU)"
+                }))
+            },
+            "load_model" => {
+                let model_id = args.get("model_id").and_then(|v| v.as_str())
+                    .ok_or_else(|| "Missing 'model_id' parameter for load_model action".to_string())?;
+                let gpu_layers = args.get("gpu_layers").and_then(|v| v.as_u64()).map(|v| v as u32).or(Some(99));
+                
+                let manager = app.state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>();
+                let res = crate::llm::local_orchestrator::start_local_server(
+                    app.clone(),
+                    manager,
+                    model_id.to_string(),
+                    Some(8192),
+                    gpu_layers,
+                    None,
+                    Some(true),
+                    None,
+                    None,
+                    Some(512),
+                    None,
+                    None,
+                    None,
+                    None,
+                ).await?;
+
+                Ok(json!({
+                    "status": "success",
+                    "message": format!("Model '{}' loaded onto GPU", model_id),
+                    "details": res
+                }))
+            },
+            "unload_model" => {
+                let manager = app.state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>();
+                let _ = crate::llm::local_orchestrator::stop_local_server(manager).await?;
+                Ok(json!({
+                    "status": "success",
+                    "message": "Local model unloaded. VRAM freed."
+                }))
+            },
+            "hardware_info" => {
+                let hw = crate::llm::local_orchestrator::HardwareSnapshot::collect().await;
+                Ok(json!({
+                    "status": "success",
+                    "cpu": hw.cpu_name,
+                    "ram_available_mb": hw.ram_available_mb,
+                    "ram_total_mb": hw.ram_total_mb,
+                    "gpu": hw.gpu_name,
+                    "vram_available_mb": hw.vram_available_mb,
+                    "vram_total_mb": hw.vram_total_mb,
+                    "gpu_backend": format!("{:?}", hw.gpu_backend)
+                }))
+            },
+            other => Err(format!("Unknown action '{}'. Expected: list_models, load_model, unload_model, hardware_info", other))
+        }
+    }
+}
+

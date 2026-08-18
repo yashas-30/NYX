@@ -2356,7 +2356,32 @@ impl Downloader {
         let on_server = on_progress.clone();
         let server_path = self.ensure_server(data_dir, backend, on_server).await?;
 
-        Ok((PathBuf::new(), server_path))
+        let model_path = models_dir.join("qwen2.5-1.5b-instruct-q4_k_m.gguf");
+        if !model_path.exists() {
+            let model_url = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+            let on_model = on_progress.clone();
+            on_model(0.0, "Downloading Qwen 2.5 1.5B Instruct model (100% GPU offload)...");
+            self.download_file(model_url, &model_path, move |p| {
+                on_model(p, &format!("Downloading Qwen 2.5 1.5B... {:.1}%", p));
+            }).await?;
+
+            let meta_path = models_dir.join("qwen2.5-1.5b-instruct-q4_k_m.gguf.meta.json");
+            let meta_json = serde_json::json!({
+                "id": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+                "name": "Qwen 2.5 1.5B Instruct",
+                "repo_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+                "pipeline_tag": "text-generation",
+                "quantization": "Q4_K_M",
+                "size_bytes": 1034000000,
+                "context_length": 8192,
+                "gpu_offload_layers": 99,
+                "rig_core_enabled": true
+            });
+            let _ = tokio::fs::write(&meta_path, meta_json.to_string()).await;
+            on_progress(100.0, "Qwen 2.5 1.5B ready on GPU.");
+        }
+
+        Ok((model_path, server_path))
     }
 
     async fn extract_with_retry(zip_str: &str, bin_str: &str) -> bool {
@@ -3187,24 +3212,36 @@ pub async fn resolve_model_path(
     app: &AppHandle,
     model_id: &str,
 ) -> Option<PathBuf> {
-    let app_dir = app.path().app_data_dir().ok()?;
-    let models_dir = app_dir.join("models");
-
-    // 1. Direct join (handles relative paths like "llm/unorganized/model.gguf")
-    let p = models_dir.join(model_id);
-    if p.exists() {
-        return Some(p);
+    let mut candidate_models_dirs = Vec::new();
+    if let Ok(app_dir) = app.path().app_data_dir() {
+        candidate_models_dirs.push(app_dir.join("models"));
+    }
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let p1 = PathBuf::from(&appdata).join("nyx").join("models");
+        if !candidate_models_dirs.contains(&p1) {
+            candidate_models_dirs.push(p1);
+        }
+        let p2 = PathBuf::from(&appdata).join("com.nyx.desktop").join("models");
+        if !candidate_models_dirs.contains(&p2) {
+            candidate_models_dirs.push(p2);
+        }
     }
 
-    // 2. Try namespaces
-    for ns in &["llm", "diffusion", "vae", "text_encoders", "projectors"] {
-        let p = models_dir.join(ns).join(model_id);
+    for models_dir in &candidate_models_dirs {
+        let p = models_dir.join(model_id);
         if p.exists() {
             return Some(p);
         }
-        let p = models_dir.join(ns).join("unorganized").join(model_id);
-        if p.exists() {
-            return Some(p);
+
+        for ns in &["llm", "diffusion", "vae", "text_encoders", "projectors"] {
+            let p = models_dir.join(ns).join(model_id);
+            if p.exists() {
+                return Some(p);
+            }
+            let p = models_dir.join(ns).join("unorganized").join(model_id);
+            if p.exists() {
+                return Some(p);
+            }
         }
     }
 
@@ -3223,9 +3260,11 @@ pub async fn resolve_model_path(
             if p.exists() {
                 return Some(p);
             }
-            let p_rel = models_dir.join(&model.file_path);
-            if p_rel.exists() {
-                return Some(p_rel);
+            for models_dir in &candidate_models_dirs {
+                let p_rel = models_dir.join(&model.file_path);
+                if p_rel.exists() {
+                    return Some(p_rel);
+                }
             }
         }
     }
@@ -3326,6 +3365,25 @@ pub async fn estimate_hardware_usage(
     _gpu_layers: Option<u32>,
 ) -> Result<HardwareAnalysisResult, String> {
     analyze_hardware(app, model_id, context_size).await
+}
+
+#[tauri::command]
+pub async fn open_external_installer_cli(app: AppHandle) -> Result<(), String> {
+    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let script_path = app_dir.join("install-dependencies.bat");
+
+    let script_content = include_str!("../../scripts/install-dependencies.bat");
+    let _ = tokio::fs::write(&script_path, script_content).await;
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let _ = Command::new("cmd.exe")
+            .args(&["/c", "start", "NYX Local Intelligence Installer", script_path.to_str().unwrap_or("install-dependencies.bat")])
+            .spawn();
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

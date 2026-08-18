@@ -177,11 +177,14 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
     }
   };
 
+  const sessionSyncTimeouts = new Map<string, NodeJS.Timeout>();
+
   const debouncedSyncToDb = (session: ChatSession) => {
-    const currentTimeout = get().syncTimeout;
-    if (currentTimeout) clearTimeout(currentTimeout);
+    const existing = sessionSyncTimeouts.get(session.id);
+    if (existing) clearTimeout(existing);
 
     const newTimeout = setTimeout(() => {
+      sessionSyncTimeouts.delete(session.id);
       if (isTauri()) {
         invoke('db_save_chat_session', { session: toRustPayload(session) }).catch((err) =>
           console.warn('[useChatStore] Failed to sync session to SQLite:', err)
@@ -189,7 +192,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => {
       }
     }, 1000);
 
-    set({ syncTimeout: newTimeout });
+    sessionSyncTimeouts.set(session.id, newTimeout);
   };
 
   return {

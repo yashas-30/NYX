@@ -33,7 +33,13 @@ pub fn create_tray(app: &tauri::AppHandle, _window: &WebviewWindow) -> anyhow::R
                         let _ = app.emit_to("main", "navigate", "/chat");
                     }
                 }
-                "update" => {}
+                "update" => {
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        tracing::info!("Checking for binary updates via tray menu...");
+                        let _ = crate::llm::local_orchestrator::check_and_update_binaries(handle).await;
+                    });
+                }
                 "quit" => { app.exit(0); }
                 _ => {}
             }

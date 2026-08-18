@@ -1,456 +1,463 @@
 /**
- * MediaEngine Service
- * Dynamic fetching of real topic photos (Pexels/Pixabay via Rust proxy, Openverse) and vector
- * icons (Iconify API) with TTL-based memory caching to eliminate broken media and rate-limit leaks.
+ * mediaEngine.ts
  *
- * ⚠️  SECURITY NOTE: Pexels and Pixabay API keys MUST only be accessed via the Rust
- * `search_images_command`. The frontend NEVER calls those APIs directly; doing so would
- * expose keys in the JS bundle and violate the CORS policy of those providers.
+ * Unified Media Retrieval & Synthesis Engine for NYX:
+ * 1. Real Web Photos: DuckDuckGo Images + Bing Web Images (via Rust native backend & browser fallback)
+ * 2. AI Generative Visual Assets: Rust local Diffusers engine + Pollinations FLUX cloud fallback
+ * 3. Vector Logos & Favicons: Iconify Logos API + Google Favicons Service
  */
 
 import { invoke } from '@tauri-apps/api/core';
 
+// ── Interfaces ────────────────────────────────────────────────────────────────
+
+export interface ExtractedImage {
+  url: string;
+  title: string;
+  source?: string;
+  thumbnailUrl?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface ExtractedVideo {
+  url: string;
+  previewUrl: string;
+  title: string;
+  duration: number;
+  width: number;
+  height: number;
+  source: string;
+  author: string;
+  authorUrl: string;
+}
+
+export interface ExtractedAudio {
+  url: string;
+  title: string;
+  artist: string;
+  duration?: number;
+  source: string;
+  tags?: string;
+  previewUrl?: string;
+}
+
 export interface TopicMediaResult {
   imageUrl?: string;
+  images?: ExtractedImage[];
+  videos?: ExtractedVideo[];
+  audios?: ExtractedAudio[];
   iconUrl?: string;
   domainFavicon?: string;
   source: string;
 }
 
-// ── TTL-aware media cache ──────────────────────────────────────────────────────
-// Replaces the previous unbounded Map which could grow forever and OOM on long sessions.
-const IMG_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// ── TTL Cache Layer ───────────────────────────────────────────────────────────
 
-interface CacheEntry {
-  value: TopicMediaResult;
+const MEDIA_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+interface CacheEntry<T> {
+  value: T;
   ts: number;
 }
 
-const _mediaCacheStore = new Map<string, CacheEntry>();
+const _mediaCacheStore = new Map<string, CacheEntry<TopicMediaResult>>();
+const _genCacheStore = new Map<string, CacheEntry<{ imageUrl: string; source: string }>>();
 
-function getCachedMedia(key: string): TopicMediaResult | null {
-  const entry = _mediaCacheStore.get(key);
+function getCached<T>(store: Map<string, CacheEntry<T>>, key: string): T | null {
+  const entry = store.get(key);
   if (!entry) return null;
-  if (Date.now() - entry.ts > IMG_CACHE_TTL_MS) {
-    _mediaCacheStore.delete(key);
+  if (Date.now() - entry.ts > MEDIA_CACHE_TTL_MS) {
+    store.delete(key);
     return null;
   }
   return entry.value;
 }
 
-function setCachedMedia(key: string, value: TopicMediaResult): void {
-  _mediaCacheStore.set(key, { value, ts: Date.now() });
-}
-
-// ── Generation-asset cache (also TTL-aware, shares the same TTL) ─────────────
-interface GenCacheEntry {
-  value: { imageUrl: string; source: string };
-  ts: number;
-}
-const _genCacheStore = new Map<string, GenCacheEntry>();
-
-function getCachedGen(key: string): { imageUrl: string; source: string } | null {
-  const entry = _genCacheStore.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > IMG_CACHE_TTL_MS) {
-    _genCacheStore.delete(key);
-    return null;
+function setCached<T>(store: Map<string, CacheEntry<T>>, key: string, value: T): void {
+  if (store.size > 300) {
+    const oldestKey = store.keys().next().value;
+    if (oldestKey) store.delete(oldestKey);
   }
-  return entry.value;
+  store.set(key, { value, ts: Date.now() });
 }
 
-function setCachedGen(key: string, value: { imageUrl: string; source: string }): void {
-  _genCacheStore.set(key, { value, ts: Date.now() });
-}
+// ── Fetch Helper with Timeout ─────────────────────────────────────────────────
 
-// ── Fetch with timeout helper ─────────────────────────────────────────────────
 function fetchWithTimeout(url: string, opts: RequestInit = {}, ms = 5000): Promise<Response> {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);
   return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
 }
 
+// ── Known Tech Keywords for Iconify ───────────────────────────────────────────
+
 const KNOWN_TECH_KEYWORDS = new Set([
-  // Languages
   'python', 'javascript', 'typescript', 'react', 'vue', 'angular', 'svelte',
   'rust', 'golang', 'go', 'java', 'c++', 'cpp', 'c#', 'csharp', 'php', 'ruby',
   'swift', 'kotlin', 'scala', 'haskell', 'elixir', 'erlang', 'clojure', 'dart',
-  'perl', 'lua', 'r', 'matlab', 'julia', 'fortran', 'cobol', 'assembly', 'zig',
-  // Frameworks & runtimes
+  'perl', 'lua', 'r', 'matlab', 'julia', 'fortran', 'zig', 'assembly',
   'docker', 'kubernetes', 'k8s', 'aws', 'azure', 'gcp', 'github', 'git', 'linux',
   'node', 'nodejs', 'express', 'nextjs', 'nuxt', 'remix', 'sveltekit', 'astro',
   'tailwind', 'bootstrap', 'postgres', 'postgresql', 'mysql', 'sqlite', 'mariadb',
   'mongodb', 'redis', 'cassandra', 'elasticsearch', 'graphql', 'rest', 'grpc',
-  'html', 'css', 'sass', 'less', 'webpack', 'vite', 'rollup', 'esbuild', 'bun',
-  // DevOps & cloud
-  'terraform', 'ansible', 'jenkins', 'gitlab', 'vercel', 'netlify', 'heroku',
-  'cloudflare', 'nginx', 'apache', 'prometheus', 'grafana', 'datadog', 'sentry',
-  // AI / ML
+  'html', 'css', 'sass', 'webpack', 'vite', 'rollup', 'esbuild', 'bun',
+  'terraform', 'ansible', 'jenkins', 'gitlab', 'vercel', 'netlify', 'cloudflare',
+  'nginx', 'apache', 'prometheus', 'grafana', 'datadog', 'sentry',
   'pytorch', 'tensorflow', 'huggingface', 'openai', 'anthropic', 'gemini',
   'langchain', 'llamaindex', 'ollama', 'stable-diffusion', 'midjourney',
-  // Mobile
   'flutter', 'expo', 'react-native', 'android', 'ios', 'xcode', 'swiftui',
-  // Data
   'pandas', 'numpy', 'spark', 'kafka', 'airflow', 'dbt', 'snowflake', 'bigquery',
 ]);
 
-/**
- * Topic → emoji curated map (130+ entries) for general knowledge headings.
- * Used when no Iconify SVG logo exists for the topic.
- */
+// ── Curated Topic Emojis ──────────────────────────────────────────────────────
+
 const TOPIC_EMOJI_MAP: Array<[RegExp, string]> = [
-  // Technology & Computing
-  [/\b(artificial intelligence|ai|machine learning|ml|deep learning|neural network)\b/i, '🤖'],
-  [/\b(robot|robotics|automation|autonomous)\b/i, '🦾'],
-  [/\b(quantum|qubit)\b/i, '⚛️'],
+  [/\b(artificial intelligence|ai|machine learning|ml|deep learning|neural network|llm)\b/i, '🤖'],
+  [/\b(robot|robotics|automation|autonomous|drone)\b/i, '🦾'],
+  [/\b(quantum|qubit|supercomputer)\b/i, '⚛️'],
   [/\b(blockchain|crypto|bitcoin|ethereum|web3|nft|defi)\b/i, '🔗'],
-  [/\b(cybersecurity|security|hacking|vulnerability|encryption|privacy)\b/i, '🔐'],
-  [/\b(cloud|server|infrastructure|devops|deployment)\b/i, '☁️'],
-  [/\b(database|data|analytics|big data|warehouse)\b/i, '🗄️'],
-  [/\b(api|endpoint|microservice|backend)\b/i, '🔌'],
-  [/\b(mobile|app|smartphone|android|ios)\b/i, '📱'],
-  [/\b(web|website|frontend|ui|ux|design)\b/i, '🌐'],
-  [/\b(game|gaming|vr|ar|metaverse|graphics|gpu)\b/i, '🎮'],
-  [/\b(chip|semiconductor|cpu|processor|hardware)\b/i, '💾'],
-  [/\b(network|internet|protocol|bandwidth|latency)\b/i, '📡'],
-  // Science
-  [/\b(space|astronomy|galaxy|star|planet|cosmos|nasa|spacex)\b/i, '🚀'],
-  [/\b(physics|quantum mechanics|relativity|particle)\b/i, '⚡'],
-  [/\b(chemistry|molecule|compound|element|reaction)\b/i, '🧪'],
-  [/\b(biology|cell|dna|gene|genome|evolution|organism)\b/i, '🧬'],
-  [/\b(medicine|medical|health|disease|drug|treatment|vaccine|pharma)\b/i, '💊'],
-  [/\b(brain|neuroscience|psychology|mental|cognitive)\b/i, '🧠'],
-  [/\b(climate|environment|ecology|green|renewable|solar|wind energy)\b/i, '🌱'],
-  [/\b(ocean|marine|sea|underwater|aquatic)\b/i, '🌊'],
-  [/\b(geology|earthquake|volcano|plate tectonics|fossil)\b/i, '🏔️'],
+  [/\b(cybersecurity|security|hacking|vulnerability|encryption|privacy|firewall)\b/i, '🔐'],
+  [/\b(cloud|server|infrastructure|devops|deployment|datacenter)\b/i, '☁️'],
+  [/\b(database|data|analytics|big data|warehouse|sql)\b/i, '🗄️'],
+  [/\b(api|endpoint|microservice|backend|rest|grpc)\b/i, '🔌'],
+  [/\b(mobile|app|smartphone|android|ios|swiftui)\b/i, '📱'],
+  [/\b(web|website|frontend|ui|ux|design|css)\b/i, '🌐'],
+  [/\b(game|gaming|vr|ar|metaverse|graphics|gpu|nvidia)\b/i, '🎮'],
+  [/\b(chip|semiconductor|cpu|processor|hardware|silicon)\b/i, '💾'],
+  [/\b(space|astronomy|galaxy|star|planet|cosmos|nasa|spacex|telescope|black hole)\b/i, '🚀'],
+  [/\b(physics|quantum mechanics|relativity|particle|atom)\b/i, '⚡'],
+  [/\b(chemistry|molecule|compound|element|reaction|lab)\b/i, '🧪'],
+  [/\b(biology|cell|dna|gene|genome|evolution|organism|crispr)\b/i, '🧬'],
+  [/\b(medicine|medical|health|disease|drug|treatment|vaccine|pharma|doctor)\b/i, '💊'],
+  [/\b(brain|neuroscience|psychology|mental|cognitive|mind)\b/i, '🧠'],
+  [/\b(climate|environment|ecology|green|renewable|solar|wind energy|earth)\b/i, '🌱'],
+  [/\b(ocean|marine|sea|underwater|aquatic|coral|fish)\b/i, '🌊'],
+  [/\b(geology|earthquake|volcano|plate tectonics|fossil|mountain)\b/i, '🏔️'],
   [/\b(mathematics|math|calculus|algebra|geometry|statistics)\b/i, '📐'],
-  // Finance & Economics
   [/\b(finance|financial|investment|stock|market|trading|hedge fund)\b/i, '📈'],
   [/\b(economy|economics|gdp|inflation|recession|monetary)\b/i, '💹'],
   [/\b(bank|banking|credit|loan|mortgage|interest rate)\b/i, '🏦'],
-  [/\b(startup|venture|vc|funding|unicorn|entrepreneur)\b/i, '💡'],
-  [/\b(tax|revenue|budget|fiscal|government spending)\b/i, '🏛️'],
-  // Business & Management
-  [/\b(strategy|management|leadership|executive|ceo|corporate)\b/i, '🎯'],
-  [/\b(marketing|branding|advertising|campaign|seo)\b/i, '📣'],
-  [/\b(product|launch|roadmap|feature|sprint|agile|scrum)\b/i, '🗺️'],
-  [/\b(supply chain|logistics|manufacturing|production|factory)\b/i, '🏭'],
-  [/\b(human resources|hr|talent|recruiting|hiring|employee)\b/i, '👥'],
-  // History & Society
-  [/\b(history|historical|ancient|civilization|empire|war|revolution)\b/i, '🏛️'],
-  [/\b(politics|political|democracy|government|election|policy)\b/i, '🗳️'],
-  [/\b(law|legal|court|justice|constitution|rights)\b/i, '⚖️'],
-  [/\b(philosophy|ethics|morality|consciousness|epistemology)\b/i, '💭'],
-  [/\b(religion|spiritual|faith|belief|theology)\b/i, '🕊️'],
-  [/\b(culture|art|music|film|literature|creative)\b/i, '🎨'],
-  [/\b(education|school|university|learning|academic|research)\b/i, '🎓'],
-  // People & Society
-  [/\b(population|demographic|migration|immigration|refugee)\b/i, '🌍'],
-  [/\b(gender|diversity|inclusion|equality|discrimination)\b/i, '🌈'],
-  [/\b(poverty|inequality|welfare|social|community)\b/i, '🤝'],
-  // Nature & Geography
-  [/\b(animal|wildlife|species|conservation|biodiversity)\b/i, '🦁'],
-  [/\b(plant|forest|tree|agriculture|farming|crop)\b/i, '🌿'],
-  [/\b(weather|meteorology|storm|hurricane|tornado)\b/i, '🌩️'],
-  [/\b(city|urban|architecture|infrastructure|transport)\b/i, '🏙️'],
-  [/\b(travel|tourism|geography|country|continent)\b/i, '✈️'],
-  // Food & Lifestyle
-  [/\b(food|nutrition|diet|recipe|cuisine|cooking)\b/i, '🍽️'],
-  [/\b(sport|sports|fitness|exercise|athlete|olympic)\b/i, '🏆'],
-  [/\b(fashion|clothing|style|luxury|brand)\b/i, '👗'],
-  [/\b(home|real estate|housing|property|mortgage)\b/i, '🏠'],
-  // Energy
-  [/\b(energy|electricity|power|nuclear|fossil fuel|oil|gas)\b/i, '⚡'],
-  [/\b(battery|ev|electric vehicle|charging)\b/i, '🔋'],
-  // Default
-  [/\b(overview|introduction|summary|conclusion|background)\b/i, '📋'],
-  [/\b(future|trend|prediction|forecast|outlook)\b/i, '🔮'],
-  [/\b(problem|challenge|solution|approach|method)\b/i, '🔧'],
-  [/\b(benefit|advantage|feature|capability|strength)\b/i, '✨'],
-  [/\b(risk|danger|threat|vulnerability|concern)\b/i, '⚠️'],
-  [/\b(comparison|versus|vs|difference|alternative)\b/i, '⚖️'],
-  [/\b(timeline|history|milestone|evolution|development)\b/i, '📅'],
-  [/\b(example|case study|case|instance|scenario)\b/i, '💼'],
+  [/\b(history|historical|ancient|civilization|empire|war|revolution|rome|egypt)\b/i, '🏛️'],
+  [/\b(car|automotive|engine|supercar|porsche|ferrari|tesla|racing|f1)\b/i, '🏎️'],
+  [/\b(food|nutrition|diet|recipe|cuisine|cooking|restaurant)\b/i, '🍽️'],
+  [/\b(music|soundtrack|song|audio|album|symphony|piano|guitar)\b/i, '🎵'],
 ];
 
-/**
- * Returns the most relevant Unicode emoji for a heading or topic string.
- * Returns empty string if no match found (caller should omit the icon).
- */
 export function getEmojiForTopic(text: string): string {
-  if (!text || text.trim().length === 0) return '';
+  if (!text?.trim()) return '';
   for (const [pattern, emoji] of TOPIC_EMOJI_MAP) {
     if (pattern.test(text)) return emoji;
   }
   return '';
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Vector Icons & Favicons
+// ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Fetch a high-quality SVG vector icon URL from the Iconify API for a keyword.
- * Strictly restricted to verified software & programming technology keywords.
- * Prefers the `logos:` icon set for accurate tech brand icons.
- */
 export async function fetchIconifyUrl(keyword: string): Promise<string | null> {
-  if (!keyword || keyword.trim().length === 0) return null;
-  const cleanKeyword = keyword.trim().toLowerCase();
-
-  // ONLY query Iconify for known software/programming technologies
-  if (!KNOWN_TECH_KEYWORDS.has(cleanKeyword)) {
-    return null;
-  }
+  if (!keyword?.trim()) return null;
+  const clean = keyword.trim().toLowerCase();
+  if (!KNOWN_TECH_KEYWORDS.has(clean)) return null;
 
   try {
-    // Fetch up to 5 candidates so we can prefer the `logos:` set
     const res = await fetchWithTimeout(
-      `https://api.iconify.design/search?query=${encodeURIComponent(cleanKeyword)}&limit=5`,
+      `https://api.iconify.design/search?query=${encodeURIComponent(clean)}&limit=5`,
       {},
-      5000
+      4000
     );
     if (!res.ok) return null;
     const data = await res.json();
-    if (data && Array.isArray(data.icons) && data.icons.length > 0) {
-      // Prefer `logos:` prefix for accurate brand icons; fall back to first result
-      const bestIcon =
-        data.icons.find((n: string) => n.startsWith('logos:')) ?? data.icons[0];
+    if (data?.icons && Array.isArray(data.icons) && data.icons.length > 0) {
+      const bestIcon = data.icons.find((n: string) => n.startsWith('logos:')) ?? data.icons[0];
       if (bestIcon.includes(':')) {
         const [prefix, name] = bestIcon.split(':');
         return `https://api.iconify.design/${prefix}/${name}.svg`;
       }
     }
-  } catch (err) {
-    console.warn(`[MediaEngine] Iconify lookup failed for "${keyword}":`, err);
+  } catch {
+    // Non-critical icon fetch failure
   }
   return null;
 }
 
-/**
- * Fetch a real image photo URL from Openverse REST API (700M+ CC & Public Domain Repository).
- * Uses a 5-second timeout to avoid stalling the pipeline.
- */
-export async function fetchOpenverseImage(topic: string): Promise<string | null> {
-  if (!topic || topic.trim().length === 0) return null;
-  const cleanTopic = topic.trim();
-
-  try {
-    const url = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(cleanTopic)}&page_size=1`;
-    const res = await fetchWithTimeout(url, {}, 5000);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data?.results && Array.isArray(data.results) && data.results.length > 0) {
-      const imgUrl = data.results[0]?.url;
-      if (imgUrl && typeof imgUrl === 'string' && imgUrl.startsWith('http')) {
-        return imgUrl;
-      }
-    }
-  } catch (err) {
-    console.warn(`[MediaEngine] Openverse image lookup failed for "${topic}":`, err);
-  }
-  return null;
-}
-
-/**
- * Construct Google Favicon API URL for a domain or technology.
- */
 export function getDomainFaviconUrl(domainOrTech: string): string {
   let domain = domainOrTech.toLowerCase().trim();
-  if (domain.includes('apple')) domain = 'apple.com';
-  else if (domain.includes('google')) domain = 'google.com';
-  else if (domain.includes('microsoft')) domain = 'microsoft.com';
-  else if (domain.includes('amazon')) domain = 'amazon.com';
-  else if (domain.includes('python')) domain = 'python.org';
-  else if (domain.includes('react')) domain = 'react.dev';
-  else if (domain.includes('rust')) domain = 'rust-lang.org';
-  else if (domain.includes('github')) domain = 'github.com';
-  else if (domain.includes('openai') || domain.includes('chatgpt')) domain = 'openai.com';
-  else if (domain.includes('nvidia')) domain = 'nvidia.com';
-  else if (domain.includes('tesla')) domain = 'tesla.com';
-  else if (!domain.includes('.')) domain = `${domain}.com`;
+  const domainMap: Record<string, string> = {
+    apple: 'apple.com',
+    google: 'google.com',
+    microsoft: 'microsoft.com',
+    amazon: 'amazon.com',
+    python: 'python.org',
+    react: 'react.dev',
+    rust: 'rust-lang.org',
+    github: 'github.com',
+    openai: 'openai.com',
+    chatgpt: 'openai.com',
+    nvidia: 'nvidia.com',
+    tesla: 'tesla.com',
+    anthropic: 'anthropic.com',
+    meta: 'meta.com',
+    wikipedia: 'wikipedia.org',
+  };
 
+  for (const [key, val] of Object.entries(domainMap)) {
+    if (domain.includes(key)) {
+      domain = val;
+      break;
+    }
+  }
+
+  if (!domain.includes('.')) domain = `${domain}.com`;
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
 }
 
-/**
- * Fetch a real topic image photo URL from Openverse or Pixabay API.
- */
-export async function fetchRealTopicPhoto(topic: string): Promise<string | null> {
-  if (!topic || topic.trim().length === 0) return null;
-  const cleanTopic = topic.trim();
+// ─────────────────────────────────────────────────────────────────────────────
+// Real Web Image Search Engines: DuckDuckGo Images + Bing Images
+// ─────────────────────────────────────────────────────────────────────────────
 
-  try {
-    const photos = await searchTopicImages(cleanTopic, 1);
-    if (photos.length > 0 && photos[0]?.url) {
-      return photos[0].url;
-    }
-  } catch (err) {
-    console.warn(`[MediaEngine] Image search failed for "${topic}":`, err);
-  }
-  return null;
-}
+export async function fetchBingWebImages(query: string, limit = 6): Promise<ExtractedImage[]> {
+  if (!query?.trim()) return [];
+  const cleanQ = query.trim().replace(/['"“”#]/g, '');
 
-/**
- * Extract clean, focused search keywords from a conversational prompt sentence.
- */
-export function extractCoreTopicKeywords(rawQuery: string): string {
-  if (!rawQuery) return '';
-  let cleaned = rawQuery.trim();
-
-  // Strip common prompt wrapper prefixes
-  cleaned = cleaned.replace(/^(?:can\s+you\s+(?:please\s+)?)?(?:give\s+me\s+(?:an?\s+)?|deep\s+research\s+(?:on|about)|research\s+(?:on|about)|tell\s+me\s+about|explain|find\s+out\s+(?:about)?|search\s+(?:the\s+web\s+)?for|show\s+me\s+(?:an?\s+)?|images?\s+of|photos?\s+of|pictures?\s+of|visual\s+representation\s+of|what\s+is\s+(?:the\s+)?|who\s+is\s+(?:the\s+)?|all\s+about)\s+/i, '');
-  cleaned = cleaned.replace(/\s+(?:with\s+all\s+facts|with\s+family\s+tree|family\s+tree|diagram|explained\s+in\s+detail|in\s+detail|detailed\s-research|for\s+me|please|with\s+images|with\s+photos)$/i, '');
-  cleaned = cleaned.replace(/[?.!]+/g, '').trim();
-
-  const stopWords = new Set([
-    'research', 'about', 'which', 'is', 'best', 'for', 'long', 'and', 'can', 'work', 'in',
-    'heavy', 'workloads', 'loads', 'including', 'want', 'you', 'to', 'every', 'under',
-    'the', 'a', 'an', 'what', 'how', 'tell', 'me', 'give', 'show', 'find', 'or', 'with',
-    'on', 'at', 'by', 'from', 'this', 'that', 'good', 'top', 'great', 'battery', 'life'
-  ]);
-
-  const words = cleaned.toLowerCase().split(/\s+/).map(w => w.replace(/[^\w]/g, '')).filter(w => w.length > 2 && !stopWords.has(w));
-  if (words.length > 0) {
-    return words.slice(0, 2).join(' ');
-  }
-
-  return cleaned.length > 0 ? cleaned : rawQuery.trim();
-}
-
-export interface ExtractedImage {
-  url: string;
-  title: string;
-}
-
-/**
- * Dynamically search and return multiple real high-resolution, accurate web photos for any keyword query.
- *
- * SECURITY: All requests with API keys (Pexels, Pixabay) are proxied through the Rust backend
- * via `search_images_command`. The frontend never calls those providers directly.
- * Only Openverse (no auth required) is called from the browser as a fallback.
- */
-export async function searchTopicImages(query: string, limit = 6): Promise<ExtractedImage[]> {
-  const topic = extractCoreTopicKeywords(query);
-  if (!topic) return [];
-
-  const results: ExtractedImage[] = [];
-  const seen = new Set<string>();
-
-  // 1. Rust Unified Image Search Engine (Pixabay + Pexels + Openverse — keys stay in Rust)
-  try {
-    const rustResJson = await invoke<string>('search_images_command', { query: topic, limit });
-    if (rustResJson) {
-      const items = JSON.parse(rustResJson);
-      if (Array.isArray(items)) {
-        for (const item of items) {
-          if (item?.url && typeof item.url === 'string' && !seen.has(item.url)) {
-            seen.add(item.url);
-            results.push({
-              url: item.url,
-              title: (item.title || topic).trim(),
-            });
-            if (results.length >= limit) return results;
-          }
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    try {
+      const rustJson = await invoke<string>('search_images_command', {
+        query: cleanQ,
+        limit,
+      });
+      if (rustJson) {
+        const items = JSON.parse(rustJson);
+        if (Array.isArray(items)) {
+          return items
+            .filter((it: any) => it?.url && typeof it.url === 'string' && it.url.startsWith('http'))
+            .map((it: any) => ({
+              url: it.url,
+              title: it.title || cleanQ,
+              source: it.source || 'Web (Bing Images)',
+              thumbnailUrl: it.url,
+            }));
         }
       }
-    }
-  } catch {
-    // Fall back to Openverse (public, no API key)
+    } catch {}
   }
 
-  // 2. Openverse fallback — public API, no key required, 5s timeout
-  if (results.length < limit) {
-    const encoded = encodeURIComponent(topic);
-    try {
-      const res = await fetchWithTimeout(
-        `https://api.openverse.org/v1/images/?q=${encoded}&page_size=${limit}`,
-        {},
-        5000
-      );
-      if (res.ok) {
-        const d = await res.json();
-        if (d?.results && Array.isArray(d.results)) {
-          for (const item of d.results) {
-            const imgUrl = item?.url;
-            const title = item?.title || topic;
-            const lower = typeof imgUrl === 'string' ? imgUrl.toLowerCase() : '';
-            if (imgUrl && !lower.includes('.svg') && !seen.has(imgUrl)) {
-              seen.add(imgUrl);
-              results.push({ url: imgUrl, title });
-              if (results.length >= limit) break;
+  return [];
+}
+
+export async function fetchDuckDuckGoImages(query: string, limit = 6): Promise<ExtractedImage[]> {
+  if (!query?.trim()) return [];
+  const cleanQ = query.trim().replace(/['"“”#]/g, '');
+  const results: ExtractedImage[] = [];
+  const seenUrls = new Set<string>();
+
+  // 1. Primary: Native Rust backend search_images_command (executes DDG + Bing without CORS or header limits)
+  try {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      const rustJson = await invoke<string>('search_images_command', {
+        query: cleanQ,
+        limit,
+      });
+      if (rustJson) {
+        const items = JSON.parse(rustJson);
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            if (item?.url && typeof item.url === 'string' && item.url.startsWith('http') && !seenUrls.has(item.url)) {
+              seenUrls.add(item.url);
+              results.push({
+                url: item.url,
+                title: (item.title || cleanQ).trim(),
+                source: item.source || 'DuckDuckGo Images',
+                thumbnailUrl: item.url,
+              });
+              if (results.length >= limit) return results;
             }
           }
         }
       }
-    } catch {
-      // Openverse timeout/error — return what we have
+      if (results.length > 0) return results;
     }
+  } catch (err) {
+    console.warn('[MediaEngine] Rust search_images_command failed:', err);
+  }
+
+  // 2. Direct browser fallback for DuckDuckGo
+  if (results.length < limit) {
+    try {
+      const tokenUrl = `https://duckduckgo.com/?q=${encodeURIComponent(cleanQ)}&t=h_&iar=images&iax=images&ia=images`;
+      const tokenRes = await fetchWithTimeout(tokenUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      }, 4000);
+      if (tokenRes.ok) {
+        const html = await tokenRes.text();
+        const vqdMatch = html.match(/vqd=([0-9-_]+)/) || html.match(/vqd="([^"]+)"/);
+        if (vqdMatch && vqdMatch[1]) {
+          const vqd = vqdMatch[1];
+          const iUrl = `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(cleanQ)}&vqd=${vqd}&f=,,,;&p=1`;
+          const iRes = await fetchWithTimeout(iUrl, {
+            headers: {
+              'X-Requested-With': 'XMLHttpRequest',
+              Accept: 'application/json, text/javascript, */*; q=0.01',
+            },
+          }, 4000);
+          if (iRes.ok) {
+            const data = await iRes.json();
+            for (const r of data.results || []) {
+              if (r.image && typeof r.image === 'string' && r.image.startsWith('http') && !seenUrls.has(r.image)) {
+                seenUrls.add(r.image);
+                results.push({
+                  url: r.image,
+                  title: r.title || cleanQ,
+                  source: 'DuckDuckGo Images',
+                  thumbnailUrl: r.thumbnail || r.image,
+                  width: r.width,
+                  height: r.height,
+                });
+                if (results.length >= limit) return results;
+              }
+            }
+          }
+        }
+      }
+    } catch {}
   }
 
   return results;
 }
 
 /**
- * Fetch an image from a URL via the Rust backend and return it as base64.
- * Required for local models that cannot receive direct image URLs.
- * Falls back to a browser fetch (may fail on CORS-restricted CDNs).
+ * Searches real-world images from DuckDuckGo Images and Bing Images:
+ * Real photos, comic artwork, vehicles, products, gadgets, historical events, and real web photos.
+ * DuckDuckGo and Bing images are searched concurrently in the native Rust backend and deduplicated.
  */
-export async function fetchImageAsBase64(
-  imageUrl: string
-): Promise<{ data: string; mimeType: string } | null> {
-  // Primary: Rust backend (avoids CORS, validates content-type)
+export async function searchTopicImages(
+  query: string,
+  limit = 6
+): Promise<ExtractedImage[]> {
+  const topic = query?.trim();
+  if (!topic) return [];
+
+  const cleanQ = topic.replace(/['"“”#]/g, '');
+  const results: ExtractedImage[] = [];
+  const seenUrls = new Set<string>();
+
+  // 1. Primary: Native Rust backend (executes DDG + Bing in parallel without CORS limitations)
   try {
-    const result = await invoke<{ base64: string; mime_type: string }>('fetch_image_base64', {
-      url: imageUrl,
-    });
-    if (result?.base64) {
-      return { data: result.base64, mimeType: result.mime_type };
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      const rustJson = await invoke<string>('search_images_command', {
+        query: cleanQ,
+        limit,
+      });
+      if (rustJson) {
+        const items = JSON.parse(rustJson);
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            if (item?.url && typeof item.url === 'string' && item.url.startsWith('http') && !seenUrls.has(item.url)) {
+              seenUrls.add(item.url);
+              results.push({
+                url: item.url,
+                title: (item.title || cleanQ).trim(),
+                source: item.source || 'Web Image',
+                thumbnailUrl: item.url,
+              });
+              if (results.length >= limit) return results;
+            }
+          }
+        }
+      }
+      if (results.length > 0) return results;
     }
-  } catch {
-    // Fall through to browser fetch
+  } catch (err) {
+    console.warn('[MediaEngine] Rust search_images_command failed:', err);
   }
 
-  // Fallback: browser fetch (will fail on CORS-heavy CDNs)
-  try {
-    const ctrl = new AbortController();
-    const id = setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(imageUrl, { signal: ctrl.signal });
-    clearTimeout(id);
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    if (!blob.type.startsWith('image/')) return null;
-    const buffer = await blob.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-    return { data: base64, mimeType: blob.type };
-  } catch {
-    return null;
+  // 2. Direct browser fallback
+  const ddgFallback = await fetchDuckDuckGoImages(cleanQ, limit).catch(() => []);
+  for (const img of ddgFallback) {
+    if (!seenUrls.has(img.url)) {
+      seenUrls.add(img.url);
+      results.push(img);
+      if (results.length >= limit) break;
+    }
   }
+
+  return results;
 }
 
-/**
- * Comprehensive Media Engine lookup method.
- */
-export async function getTopicMedia(query: string): Promise<TopicMediaResult> {
-  const cacheKey = query.trim().toLowerCase();
-  const cached = getCachedMedia(cacheKey);
+// ─────────────────────────────────────────────────────────────────────────────
+// Video & Audio stubs (disabled in favor of real web images)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function searchTopicVideos(
+  _query: string,
+  _limit = 0,
+  _qwenQuery?: string,
+  _sourcePreference?: string
+): Promise<ExtractedVideo[]> {
+  return [];
+}
+
+export async function searchTopicAudio(
+  _query: string,
+  _limit = 0,
+  _qwenQuery?: string
+): Promise<ExtractedAudio[]> {
+  return [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Unified Media Retrieval Gateway
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TopicMediaOptions {
+  includeVideos?: boolean;
+  includeAudio?: boolean;
+  includeImages?: boolean;
+  limit?: number;
+}
+
+export async function getTopicMedia(
+  query: string,
+  optionsOrLimit: number | TopicMediaOptions = 4
+): Promise<TopicMediaResult> {
+  const options: TopicMediaOptions = typeof optionsOrLimit === 'number'
+    ? { limit: optionsOrLimit, includeImages: true, includeVideos: false, includeAudio: false }
+    : { limit: 4, includeImages: true, includeVideos: false, includeAudio: false, ...optionsOrLimit };
+
+  const cacheKey = `${query.trim().toLowerCase()}:i=${options.includeImages !== false}`;
+  const cached = getCached(_mediaCacheStore, cacheKey);
   if (cached) return cached;
 
   const domainFavicon = getDomainFaviconUrl(query);
-  
-  // Parallel asynchronous lookup for vector icon and real photo
-  const [iconUrl, imageUrl] = await Promise.all([
+  const limit = options.limit || 4;
+
+  const imagePromise = options.includeImages !== false
+    ? searchTopicImages(query, limit).catch(() => [] as ExtractedImage[])
+    : Promise.resolve([] as ExtractedImage[]);
+
+  const [iconUrl, topicPhotos] = await Promise.all([
     fetchIconifyUrl(query),
-    fetchRealTopicPhoto(query),
+    imagePromise,
   ]);
+
+  const primaryPhoto = topicPhotos[0]?.url || undefined;
 
   const result: TopicMediaResult = {
     domainFavicon,
     iconUrl: iconUrl || undefined,
-    imageUrl: imageUrl || undefined,
-    source: 'MediaEngine',
+    imageUrl: primaryPhoto,
+    images: topicPhotos.length > 0 ? topicPhotos : undefined,
+    source: 'MediaEngine (DuckDuckGo & Bing Web Images)',
   };
 
-  setCachedMedia(cacheKey, result);
+  setCached(_mediaCacheStore, cacheKey, result);
   return result;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Generative Visual Asset Synthesis
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface GeneratedImagePayload {
   success: boolean;
@@ -461,18 +468,15 @@ export interface GeneratedImagePayload {
   thumbHash?: string;
 }
 
-/**
- * Dispatch image generation call to Rust backend / Pollinations API with aspect ratio & prompt IR enhancement.
- */
 export async function generateVisualAsset(
   prompt: string,
   aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' = '16:9',
-  engineOverride?: string
+  _engineOverride?: string
 ): Promise<GeneratedImagePayload> {
   const cleanPrompt = prompt.trim();
   const cacheKey = `gen:${cleanPrompt}:${aspectRatio}`;
-  
-  const cachedGen = getCachedGen(cacheKey);
+
+  const cachedGen = getCached(_genCacheStore, cacheKey);
   if (cachedGen?.imageUrl) {
     return {
       success: true,
@@ -484,11 +488,9 @@ export async function generateVisualAsset(
   }
 
   try {
-    // Attempt Tauri invoke if running in Tauri desktop environment
     if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-      const res = await tauriInvoke<any>('generate_image', { prompt: cleanPrompt, aspectRatio });
-      if (res && res.image_path) {
+      const res = await invoke<any>('generate_image', { prompt: cleanPrompt, aspectRatio });
+      if (res?.image_path) {
         const payload: GeneratedImagePayload = {
           success: true,
           imageUrl: res.image_path,
@@ -496,15 +498,15 @@ export async function generateVisualAsset(
           aspectRatio,
           engine: res.engine || 'Local Engine',
         };
-        setCachedGen(cacheKey, { imageUrl: res.image_path, source: res.engine || 'Local Engine' });
+        setCached(_genCacheStore, cacheKey, { imageUrl: res.image_path, source: res.engine || 'Local Engine' });
         return payload;
       }
     }
   } catch (err) {
-    console.warn('[MediaEngine] Tauri generate_image failed, using cloud fallback:', err);
+    console.warn('[MediaEngine] Local generate_image fallback to FLUX:', err);
   }
 
-  // Cloud fallback: Pollinations AI with aspect ratio dimension map
+  // Cloud fallback: Pollinations FLUX with aspect ratio dimension mapping
   const dimensions: Record<string, { w: number; h: number }> = {
     '16:9': { w: 1344, h: 768 },
     '9:16': { w: 768, h: 1344 },
@@ -524,6 +526,40 @@ export async function generateVisualAsset(
     engine: 'Pollinations FLUX Cloud',
   };
 
-  setCachedGen(cacheKey, { imageUrl: cloudUrl, source: 'Pollinations FLUX Cloud' });
+  setCached(_genCacheStore, cacheKey, { imageUrl: cloudUrl, source: 'Pollinations FLUX Cloud' });
   return payload;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Base64 Fetch Helper (for local GGUF vision models)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchImageAsBase64(
+  imageUrl: string
+): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    const result = await invoke<{ base64: string; mime_type: string }>('fetch_image_base64', {
+      url: imageUrl,
+    });
+    if (result?.base64) {
+      return { data: result.base64, mimeType: result.mime_type };
+    }
+  } catch {
+    // Fall through
+  }
+
+  try {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), 6000);
+    const res = await fetch(imageUrl, { signal: ctrl.signal });
+    clearTimeout(id);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    if (!blob.type.startsWith('image/')) return null;
+    const buffer = await blob.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    return { data: base64, mimeType: blob.type };
+  } catch {
+    return null;
+  }
 }

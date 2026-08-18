@@ -21,7 +21,8 @@ import { routeModel, registerCapabilityCard, estimateCallCost, isSensitiveQuery 
 import { retrieveHierarchicalMemory, learnFromSuccess } from '@src/features/agents/lucifer/hierarchicalMemory';
 import { newTurnId, useLuciferObservabilityStore, startSpan, endSpan } from '@src/features/agents/lucifer/observabilitySpans';
 import { runReflexion, shouldRunReflexion } from '@src/features/agents/lucifer/reflexion';
-import { getTopicMedia, generateVisualAsset, fetchImageAsBase64 } from '../../../core/services/mediaEngine';
+import { searchTopicImages, searchTopicVideos, searchTopicAudio, ExtractedVideo, ExtractedAudio } from '../../../core/services/mediaEngine';
+import { planQueryWithModel, shouldFetchVideos, shouldFetchAudio, shouldFetchImages } from '../../../core/services/intelligentQueryEngine';
 
 
 
@@ -36,95 +37,36 @@ function resolveSupportsVision(modelId: string, modelState: any): boolean {
   return hasVision;
 }
 
-/**
- * Cleans raw headings or query strings into pure subject descriptions by removing:
- * - Leading numbers / bullets ("1.", "Step 2:", "###", "5. ")
- * - Dates / version tags ("(2020–2022)", "v1.4")
- * - Meta words ("overview", "illustration", "diagram", "real world application", "subtopic")
- */
-function cleanSubjectString(raw: string): string {
-  if (!raw) return '';
-  const cleaned = raw
-    .replace(/^(?:#+|\d+[\.\)]|\bstep\s*\d+:?|\bsection\s*\d+:?|\bpart\s*\d+:?)\s*/gi, '')
-    .replace(/\(\d{4}(?:[–-]\d{4}|\s*to\s*\d{4})?\)/g, '')
-    .replace(/\b(?:overview|illustration|diagram|real\s*world\s*application|subtopic|section|chapter|era)\b/gi, '')
-    .replace(/[*_`~[\]]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned || raw.trim();
+
+
+export function isExplicitImageGenerationRequest(prompt: string): boolean {
+  const p = prompt.trim().toLowerCase();
+  return (
+    p.startsWith('/image') ||
+    p.startsWith('/img') ||
+    p.startsWith('image:') ||
+    p.startsWith('draw:') ||
+    p.startsWith('paint:') ||
+    p.startsWith('generate image:') ||
+    /^(?:generate|create|draw|paint|render|make)\s+(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|illustration|artwork|drawing|painting|wallpaper|avatar|portrait)\s+(?:of|showing|about|depicting)/i.test(p) ||
+    /\b(?:please\s+)?(?:generate|create|draw|paint)\s+(?:an?\s+)?image\b/i.test(p)
+  );
 }
 
 /**
- * Transforms a section heading or topic into a stunning FLUX image prompt tailored by domain.
+ * Zero-copy lightweight URL normalizer for media URLs.
+ * Avoids storing gigabyte-sized base64 strings in Zustand/React memory.
  */
-function buildIllustrationPrompt(rawSubject: string): string {
-  const subject = cleanSubjectString(rawSubject);
-  const lower = subject.toLowerCase();
-
-  const isConsumerTech = /\b(iphone|ipad|macbook|apple|samsung|galaxy|android|smartphone|laptop|headset|vision pro|pixel|gadget|hardware|device)\b/.test(lower);
-  const isTechConcept = /\b(quantum|computing|algorithm|neural|ai|machine learning|code|software|processor|chip|network|protocol|data|database|cloud|server|blockchain|crypto|robot|automation|cybersecurity|physics|chemistry|biology|dna|molecule|atom|electron|particle)\b/.test(lower);
-  const isHistory = /\b(history|historical|ancient|war|revolution|empire|medieval|renaissance|civilization|myth|legend|archaeology|historical)\b/.test(lower);
-  const isNature = /\b(climate|ocean|space|galaxy|planet|animal|wildlife|forest|ecosystem|biodiversity|geology|astronomy|star|nebula|cosmos)\b/.test(lower);
-  const isBusiness = /\b(finance|economy|market|startup|management|strategy|supply chain|manufacturing|logistics|stock|trading)\b/.test(lower);
-
-  if (isConsumerTech) {
-    return `Sleek studio product photography of ${subject}, dark background, studio softbox lighting, 8k resolution, crisp detail, photorealistic, cinematic shot`;
-  }
-  if (isTechConcept) {
-    return `Futuristic 3D render illustration of ${subject}, glowing neon cyan and purple data accents, clean dark background, detailed digital visualization, 8k resolution, octane render`;
-  }
-  if (isHistory) {
-    return `Epic cinematic historical painting of ${subject}, dramatic atmospheric lighting, rich textures, detailed artwork, 8k resolution, masterpiece`;
-  }
-  if (isNature) {
-    return `Breathtaking National Geographic style photograph of ${subject}, vibrant rich color palette, ultra-high detail, 8k resolution, studio lighting`;
-  }
-  if (isBusiness) {
-    return `Modern 3D isometric infographic visual representation of ${subject}, sleek dark mode aesthetic, elegant lighting, professional data artwork, 8k resolution`;
-  }
-
-  return `High-end 3D visual illustration of ${subject}, sleek modern aesthetic, studio lighting, clean dark background, 8k resolution, photorealistic detail`;
+export async function ensureOfflineImage(url: string): Promise<string> {
+  return url || '';
 }
 
 /**
- * Build Pollinations AI image URLs for a query and its predicted subtopics.
- * Synchronous — constructs deterministic FLUX prompts, no HTTP request needed.
- * The browser fetches each image on demand when the markdown renderer hits the URL.
+ * Lightweight message normalizer that preserves clean CDN image and video URLs
+ * without allocating massive Base64 strings on the V8 heap.
  */
-function buildVisionImageUrls(query: string): Array<{ url: string; label: string }> {
-  const clean = cleanSubjectString(query);
-  if (!clean) return [];
-
-  const lq = clean.toLowerCase();
-  const subtopicLabels: string[] = [];
-
-  // Generate 3 meaningful subtopics with domain-specific visual focus
-  if (/\b(iphone|smartphone|apple)\b/.test(lq)) {
-    subtopicLabels.push(`${clean} iconic product design`, `${clean} display and camera hardware`, `${clean} wireless ecosystem and accessories`);
-  } else if (/\b(quantum|physics|particle|relativity)\b/.test(lq)) {
-    subtopicLabels.push(`${clean} quantum mechanics state`, `${clean} particle wave superposition`, `${clean} hardware and qubits`);
-  } else if (/\b(ai|artificial intelligence|machine learning|neural|deep learning)\b/.test(lq)) {
-    subtopicLabels.push(`${clean} neural network architecture`, `${clean} model data processing`, `${clean} AI chip hardware`);
-  } else if (/\b(space|astronomy|galaxy|planet|cosmos|nasa)\b/.test(lq)) {
-    subtopicLabels.push(`${clean} celestial body view`, `${clean} planetary system details`, `${clean} telescope deep space capture`);
-  } else if (/\b(biology|dna|gene|cell|evolution|organism)\b/.test(lq)) {
-    subtopicLabels.push(`${clean} molecular DNA structure`, `${clean} microscopic cell details`, `${clean} biological ecosystem`);
-  } else if (/\b(history|war|ancient|civilization|empire)\b/.test(lq)) {
-    subtopicLabels.push(`${clean} historical event scene`, `${clean} ancient artifacts and architecture`, `${clean} key historical moment`);
-  } else if (/\b(economy|finance|market|stock|business)\b/.test(lq)) {
-    subtopicLabels.push(`${clean} market trend analysis`, `${clean} strategic business framework`, `${clean} global financial ecosystem`);
-  } else {
-    subtopicLabels.push(`${clean} core concept breakdown`, `${clean} key architectural components`, `${clean} practical application`);
-  }
-
-  const topics = [clean, ...subtopicLabels.slice(0, 3)];
-
-  return topics.map((label) => {
-    const prompt = buildIllustrationPrompt(label);
-    const seed = label.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 1000000;
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=450&nologo=true&seed=${seed}&model=flux`;
-    return { url, label };
-  });
+export async function inlineOfflineImagesInMessage(msg: ChatMessage): Promise<ChatMessage> {
+  return msg;
 }
 
 export interface ChatImage {
@@ -141,32 +83,45 @@ export interface RealLibraryImage {
   source: string;
 }
 
-/**
- * Searches real image libraries (Openverse, Wikimedia Commons, Pexels, Pixabay, DuckDuckGo) via Rust proxy.
- * Returns real photos, historical pictures, scientific diagrams, and stock assets.
- */
-async function fetchRealLibraryImages(query: string, limit: number = 10): Promise<RealLibraryImage[]> {
-  const cleaned = cleanSubjectString(query);
-  if (!cleaned || cleaned.length < 2) return [];
+// Session-level seen image cache to avoid repeating/reusing identical photos across chat turns
+const _sessionSeenImageUrls = new Set<string>();
 
+/**
+ * Searches real web images (DuckDuckGo & Bing Web Images) via mediaEngine.
+ * Uses Qwen 2.5 1.5B's Intelligent Query Plan to extract high-accuracy visual search queries.
+ * Filters out previously seen images in this session so fresh relevant images are always presented.
+ */
+async function fetchRealLibraryImages(
+  query: string,
+  limit: number = 4
+): Promise<RealLibraryImage[]> {
   try {
-    const rawJson = await invoke<string>('search_images_command', { query: cleaned, limit });
-    if (!rawJson) return [];
-    const parsed = JSON.parse(rawJson);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .filter((item: any) => item && typeof item.url === 'string' && item.url.startsWith('http'))
-        .map((item: any) => ({
-          url: item.url,
-          title: item.title || cleaned,
-          source: item.source || 'image-library',
-        }));
+    const rawImages = await searchTopicImages(query, limit * 2);
+    if (!rawImages || rawImages.length === 0) return [];
+
+    const validImages: RealLibraryImage[] = rawImages
+      .filter((img) => img && typeof img.url === 'string' && img.url.startsWith('http'))
+      .map((img) => ({
+        url: img.url,
+        title: img.title || query,
+        source: img.source || 'Web Image',
+      }));
+
+    // Filter out previously seen images first
+    const unseen = validImages.filter((img) => !_sessionSeenImageUrls.has(img.url));
+    const chosen = (unseen.length >= 1 ? unseen : validImages).slice(0, limit);
+
+    for (const img of chosen) {
+      _sessionSeenImageUrls.add(img.url);
     }
+
+    return chosen;
   } catch (err) {
-    console.warn('[useChatPipeline] Real library image search error:', err);
+    console.warn('[useChatPipeline] Web image search error:', err);
+    return [];
   }
-  return [];
 }
+
 
 export interface ChatPipelineOptions {
   historyRef: React.MutableRefObject<ChatMessage[]>;
@@ -181,6 +136,7 @@ export interface ChatPipelineOptions {
   currentProvider?: string;
   gatewayUrl?: string;
   webSearchEnabled?: boolean;
+  models?: Record<'nyx', string>;
 }
 
 export function useChatPipeline({
@@ -196,6 +152,7 @@ export function useChatPipeline({
   currentProvider,
   gatewayUrl,
   webSearchEnabled = false,
+  models,
 }: ChatPipelineOptions) {
   const [isSupervising, setIsSupervising] = useState(false);
   const abortCtrlRef = useRef<AbortController | null>(null);
@@ -254,38 +211,24 @@ export function useChatPipeline({
     const contextTokens = estimateContextTokens(historyRef.current);
     const projectedTotal = contextTokens + estimatedInput + 4096;
 
-    const modelToUse = options?.modelOverride || ((cloudModelId || localModelId) as string);
+    const userSelectedModel = 
+      options?.modelOverride || 
+      nyxState.currentModel?.id || 
+      useAppStore.getState().selectedModel?.id || 
+      cloudModelId || 
+      localModelId || 
+      models?.nyx || 
+      'lucifer-native';
 
-    // 1. Intercept No Model Selected
-    if (!modelToUse) {
-      if (!options?.skipUserMessage) {
-        const userMsg: ChatMessage = {
-          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
-          role: 'user',
-          content: prompt,
-          timestamp: Date.now(),
-        };
-        dispatch({ type: 'APPEND', message: userMsg });
-        historyRef.current = [...historyRef.current, userMsg];
-      }
-      const assistantMsg: ChatMessage = {
-        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
-        role: 'assistant',
-        content: '🤖 **No Model Selected**: Please select a model in the model selector to start chatting.\n\n**How to choose:**\n- Select a **Cloud Model** (Gemini, OpenRouter) and enter your API key in Settings.\n- Or select a **Local Model** (GGUF) to run fully on-device without an API key.',
-        timestamp: Date.now(),
-        status: 'success',
-      };
-      dispatch({ type: 'APPEND', message: assistantMsg });
-      historyRef.current = [...historyRef.current, assistantMsg];
-      persistHistory(historyRef.current);
-      return true;
-    }
+    let modelToUse = userSelectedModel;
+    let resolvedProviderEarly = currentProvider || 
+      (nyxState.currentModel?.provider as any) || 
+      (useAppStore.getState().selectedModel?.provider as any) || 
+      detectProvider(modelToUse);
+    let isLocalModel = resolvedProviderEarly === 'nyx-native';
+    let isCloud = ['gemini', 'openrouter', 'openai', 'anthropic', 'deepseek', 'groq', 'mistral'].includes(resolvedProviderEarly);
 
-    const resolvedProviderEarly = currentProvider || detectProvider(modelToUse);
-    const isLocalModel = resolvedProviderEarly === 'nyx-native';
-    const isCloud = ['gemini', 'openrouter'].includes(resolvedProviderEarly);
-
-    // 2. Intercept Missing API Keys for Paid Cloud Models (Bypass for OpenRouter Free models)
+    // Intercept Missing API Keys for Paid Cloud Models -> Graceful fallback to Native GPU Lucifer Agent (Qwen 2.5 1.5B)
     const isOpenRouterFreeModel = resolvedProviderEarly === 'openrouter' && (
       modelToUse.endsWith(':free') || 
       modelToUse === 'openrouter/auto' || 
@@ -295,40 +238,31 @@ export function useChatPipeline({
     if (isCloud && !isOpenRouterFreeModel) {
       const apiKey = getEffectiveApiKey(resolvedProviderEarly, apiKeys);
       if (!apiKey || apiKey.trim() === '' || apiKey === 'free') {
-        if (!options?.skipUserMessage) {
-          const userMsg: ChatMessage = {
-            id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
-            role: 'user',
-            content: prompt,
-            timestamp: Date.now(),
-          };
-          dispatch({ type: 'APPEND', message: userMsg });
-          historyRef.current = [...historyRef.current, userMsg];
-        }
-        const providerDisplayName =
-          resolvedProviderEarly === 'gemini' ? 'Gemini'
-          : resolvedProviderEarly === 'openrouter' ? 'OpenRouter'
-          : resolvedProviderEarly.charAt(0).toUpperCase() + resolvedProviderEarly.slice(1);
-
-        const assistantMsg: ChatMessage = {
-          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
-          role: 'assistant',
-          content: `🔑 **${providerDisplayName} API Key Missing**: ${providerDisplayName} API key has not been given. Give the API key in the settings to start chatting or use local models.`,
-          timestamp: Date.now(),
-          status: 'success',
-          model: modelToUse,
-        };
-        dispatch({ type: 'APPEND', message: assistantMsg });
-        historyRef.current = [...historyRef.current, assistantMsg];
-        persistHistory(historyRef.current);
-        return true;
+        // Do NOT silently swap to Qwen — respect the user's model selector choice.
+        // Show a clear actionable error and abort so the user knows exactly what to do.
+        const providerName = resolvedProviderEarly.charAt(0).toUpperCase() + resolvedProviderEarly.slice(1);
+        toast.error(
+          `No API key found for ${providerName}. Go to Settings → API Keys and add your ${providerName} key to use ${modelToUse}.`,
+          { duration: 6000 }
+        );
+        return false;
       }
     }
 
 
+
     // 3. Intercept Unloaded Local Models & Auto-load downloaded models
-    if (isLocalModel && !isModelLoaded(modelToUse, modelState.loadedLocalModel)) {
-      const isDownloaded = modelState.localLibraryModels?.some((m: any) => m.id === modelToUse);
+    // lucifer-native is a virtual alias for Qwen 2.5 1.5B — its physical GGUF filename
+    // will never match the virtual ID. The Rust backend handles auto-boot internally in
+    // execute_local_stream, so we skip the gate and pass through directly to run_lucifer_turn.
+    const isLuciferNativeAlias = modelToUse === 'lucifer-native' || modelToUse === 'qwen2.5-1.5b-instruct-native';
+    if (isLocalModel && !isLuciferNativeAlias && !isModelLoaded(modelToUse, modelState.loadedLocalModel)) {
+      // Check if the model file exists in the local library (by filename match, not virtual alias)
+      const isDownloaded = modelState.localLibraryModels?.some((m: any) =>
+        m.id === modelToUse ||
+        (m.id || '').toLowerCase().replace(/\\/g, '/').split('/').pop() ===
+        (modelToUse || '').toLowerCase().replace(/\\/g, '/').split('/').pop()
+      );
       
       if (!options?.skipUserMessage) {
         const userMsg: ChatMessage = {
@@ -455,8 +389,9 @@ export function useChatPipeline({
 
     let llmHistory = historyRef.current;
     if (projectedTotal > effectiveMaxCtx) {
-      toast.warning('Context window limit reached. Please increase the context length in model settings to generate the full response.');
-      llmHistory = await compactHistoryAsync(historyRef.current, effectiveMaxCtx - estimatedInput - 4096, AIService, modelSettings);
+      const outputReserve = Math.min(Math.floor(effectiveMaxCtx * 0.25), 1024);
+      const targetHistoryBudget = Math.max(effectiveMaxCtx - estimatedInput - outputReserve, 256);
+      llmHistory = await compactHistoryAsync(historyRef.current, targetHistoryBudget, AIService, modelSettings);
     }
 
     if (tokensUsed + estimatedInput > tokenBudget) {
@@ -481,16 +416,12 @@ export function useChatPipeline({
 
 
       // ── Handle image generation (explicit /image command, natural intent, OR active image model) ──
-      const lowerPrompt = prompt.toLowerCase().trim();
-      const isExplicitImageCmd = lowerPrompt.startsWith('/image ');
-      const isNaturalImageIntent =
-        /^(create|generate|draw|make|design|render|paint)\s+(an?|a|the|some)?\s*(image|logo|picture|photo|illustration|artwork|banner|drawing|graphic|poster|avatar)\b/i.test(lowerPrompt) ||
-        /\b(generate|create|draw|make)\s+an?\s+nyx\s+logo\b/i.test(lowerPrompt);
+      // ── Handle image generation (ONLY when user explicitly requests image generation or active image model loaded) ──
+      const isExplicitImageCmd = isExplicitImageGenerationRequest(prompt);
 
-      // If the currently loaded local model is an image generation model, treat ANY prompt as image request.
+      // If the currently loaded local model is an image generation model, treat prompt as image request.
       // Uses the pre-computed isActiveModelImageGen flag set by useModelStore.setLoadedLocalModel.
       const isImageModelActive = modelState.isActiveModelImageGen ||
-        // Belt-and-suspenders: keyword check on the raw loaded model ID
         (!!modelState.loadedLocalModel && [
           'text_encoder', 'text-encoder', 'vae', 'transformer',
           'flux', 'diffusion', 'stable', 'sdxl', 'sd3', 'sd1', 'sd2',
@@ -498,7 +429,11 @@ export function useChatPipeline({
         ].some(kw => modelState.loadedLocalModel!.toLowerCase().includes(kw)));
 
       if (isExplicitImageCmd || isImageModelActive) {
-        const imagePrompt = isExplicitImageCmd ? prompt.substring(7).trim() : prompt.trim();
+        const imagePrompt = prompt
+          .replace(/^(?:\/image|\/img|image:|draw:|paint:|generate\s+image:)\s*/i, '')
+          .replace(/^(?:generate|create|draw|paint|render|make)\s+(?:me\s+)?(?:an?\s+)?(?:image|picture|photo|illustration|artwork|drawing|painting|wallpaper|avatar|portrait)\s+(?:of|showing|about|depicting)\s*/i, '')
+          .trim() || prompt.trim();
+
         toast.info(`Generating image asset for "${imagePrompt}"…`);
 
         if (!skipUserMessage) {
@@ -536,8 +471,9 @@ export function useChatPipeline({
               timestamp: Date.now(),
               status: 'success',
             };
-            dispatch({ type: 'APPEND', message: assistMsg });
-            historyRef.current = [...historyRef.current, assistMsg];
+            const offlineAssistMsg = await inlineOfflineImagesInMessage(assistMsg);
+            dispatch({ type: 'APPEND', message: offlineAssistMsg });
+            historyRef.current = [...historyRef.current, offlineAssistMsg];
             persistHistory(historyRef.current);
             toast.success('Image generated successfully!');
           } else {
@@ -616,9 +552,9 @@ export function useChatPipeline({
 
       const isReasoning = isReasoningModel(modelToUse);
       const resolvedProviderEarly2 = resolvedProviderEarly;
-      // Lucifer is always active — there is no NYX/bare-stream fallback path.
-      // Both local (nyx-native) and cloud models route through run_lucifer_turn.
-      const isLuciferActive = true;
+      // When luciferAgentEnabled is true, full autonomous agent orchestration is active.
+      // When false, direct prompt-to-model streaming is used without agentic routing.
+      const isLuciferActive = nyxState.luciferAgentEnabled;
 
       let searchQuery = prompt;
       const isGreeting =
@@ -677,9 +613,10 @@ export function useChatPipeline({
         }
       }
 
-      // Inject hierarchical memory context into the prompt if not empty
+      // Extract hierarchical memory context block if available and relevant
+      let memoryContextBlock: string | undefined = undefined;
       if (memoryResult.status === 'fulfilled' && memoryResult.value && !memoryResult.value.isEmpty) {
-        finalPrompt = `${memoryResult.value.consolidatedBlock}\n\nUser: ${finalPrompt}`;
+        memoryContextBlock = memoryResult.value.consolidatedBlock;
       }
 
       // ── Model Router: advisory routing (log + capability card registration) ──
@@ -727,489 +664,340 @@ export function useChatPipeline({
         }
       }
 
-      // Focused search intent pattern — explicit web commands, research queries, real-time/factual data topics.
+      // ── Fast heuristic query plan — instant, zero latency ────────────────
+      // Used immediately as the fallback while the LLM plan is computed in bg.
       const searchIntentPattern = /^(?:\/search|\/web|\/deep|search:|google:|lookup:|web:|research:)\s*|\b(?:search\s+(?:the\s+)?web|search\s+online|google\s+for|look\s*up\s+online|browse\s+the\s+web|research\s+about|research\s+on|find\s+info|information\s+on)\b|\b(?:latest|current|today's|breaking|live|real-time|price|prices|cost|expenses|living\s+expenses|salary|fee|fees|stock|stocks|crypto|weather|score|scores|winner|results|version|release|fixtures|standings|university|college|student|living\s+in)\b|\b(?:what\s+is|what\s+are|how\s+much|who\s+is|where\s+is|tell\s+me\s+about|give\s+me\s+information|research)\b/i;
-      const cleanSearchQuery = sanitizeSearchQuery(searchQuery);
+      const rawSanitized = sanitizeSearchQuery(searchQuery);
+      let queryPlan: Awaited<ReturnType<typeof planQueryWithModel>> = {
+        intent: 'factual_overview',
+        requiresSearch: searchIntentPattern.test(searchQuery),
+        webSearchQuery: rawSanitized,
+        deepResearchQueries: [],
+        photoSearchQuery: rawSanitized,
+        sectionalTopics: [],
+        primarySubject: rawSanitized,
+        domainCategory: 'general',
+        targetDepth: 'concise',
+      };
+
+      // Derive search routing immediately from heuristic (before model plan resolves)
+      const cleanSearchQuery = queryPlan.webSearchQuery || rawSanitized;
 
       const isDeepResearch =
-        prompt.startsWith('/deep') ||
-        /^(?:deep research\b|\/deep|deep:)/i.test(prompt.trim()) ||
-        /\b(?:deep research|exhaustive research|deep dive|full analysis)\b/i.test(prompt);
+        isLuciferActive &&
+        !isGreeting &&
+        (prompt.startsWith('/deep') ||
+          /^(?:deep research:\s*|\/deep\b)/i.test(prompt.trim()) ||
+          /\b(?:exhaustive research|conduct deep research)\b/i.test(prompt));
 
       const isResearch =
+        isLuciferActive &&
+        !isGreeting &&
         !isDeepResearch &&
         (prompt.startsWith('/research') ||
-          /\b(?:research|compare|list every|best laptops|top laptops|reviews|laptops under|best laptop)\b/i.test(prompt));
+          /\b(?:research|compare|reviews|overview|deep dive|study|analysis)\b/i.test(prompt));
 
+      // Standard web search: ONLY if not a greeting/chit-chat AND (explicit command OR live search enabled OR agent requires factual search)
       const isStandardWebSearch =
+        !isGreeting &&
         !isDeepResearch &&
         !isResearch &&
-        (liveWebSearchEnabled || searchIntentPattern.test(searchQuery) || luciferAnalysis?.requires_search === true);
+        (prompt.startsWith('/search') ||
+          prompt.startsWith('/web') ||
+          liveWebSearchEnabled ||
+          (isLuciferActive && (searchIntentPattern.test(searchQuery) || luciferAnalysis?.requires_search === true)));
 
-      const shouldSearch = isDeepResearch || isResearch || isStandardWebSearch;
+      const shouldSearch = !isGreeting && (isDeepResearch || isResearch || isStandardWebSearch);
+      const wantsImages = !isGreeting && shouldFetchImages(prompt, {
+        isWebSearch: isStandardWebSearch || liveWebSearchEnabled,
+        isDeepResearch,
+        isLucifer: isLuciferActive,
+      });
+      const shouldFetchMedia = !isGreeting && wantsImages;
 
-      if (shouldSearch) {
+      // Fire model plan in background ONLY when:
+      //   1. Search/media is actually needed (not a greeting or pure-chat)
+      //   2. A cloud model is selected (nyx-native shares the GPU with run_lucifer_turn
+      //      and causes 2-4 min contention — skip it entirely for local models)
+      const isCloudModelForPlan = resolvedProviderEarly !== 'nyx-native' &&
+        resolvedProviderEarly !== 'lucifer-native' &&
+        !resolvedProviderEarly.includes('local') &&
+        !resolvedProviderEarly.includes('ollama') &&
+        !resolvedProviderEarly.includes('lmstudio');
+
+      const queryPlanPromise = (shouldSearch || shouldFetchMedia) && isCloudModelForPlan
+        ? planQueryWithModel(searchQuery || prompt, {
+            provider: resolvedProviderEarly,
+            modelId: modelToUse,
+            apiKey: getEffectiveApiKey(resolvedProviderEarly, apiKeys),
+            timeoutMs: 1200,
+          }).then((plan) => { queryPlan = plan; }).catch(() => {/* keep heuristic plan */})
+        : Promise.resolve();
+
+      let totalResultsCount = 0;
+      let subQueriesCount = 1;
+      let collectedCitations: Array<{ id: string; index: number; title: string; url: string; snippet: string; domain?: string }> = [];
+      let mediaContextBlock: string | undefined;
+
+      // ── CONCURRENT PRE-FLIGHT: Web Search & Media Retrieval Execute Simultaneously ──
+      const searchPromise = (async () => {
+        if (!shouldSearch) return;
         const tavilyKey = searchProvider === 'tavily' ? getEffectiveApiKey('tavily', apiKeys) : undefined;
-        let totalResultsCount = 0;
-        let subQueriesCount = 1;
-        // Collected citations from all search modes — populated below and merged into finalMsg
-        let collectedCitations: Array<{ id: string; index: number; title: string; url: string; snippet: string; domain?: string }> = [];
-
         try {
           // Fast-path: Microsecond in-memory prompt response cache lookup (<0.01ms)
           const cachedPromptResult = await invoke<string | null>('check_prompt_cache_command', { prompt: cleanSearchQuery }).catch(() => null);
           if (cachedPromptResult) {
             searchResult = cachedPromptResult;
             toast.success('⚡ Microsecond search cache hit (<0.01ms)');
-          } else {
-            if (activeStreamRef.current) {
-              const reasoningText = isDeepResearch
-                ? '> 🧬 Autonomous Deep Research Engine Active... Running multi-hop gap-fill matrix & scraping 25+ web sources...\n'
-                : isResearch
-                ? '> 🔬 Multi-Source Synthesis Research Active... Querying 20+ web sources & extracting article bodies...\n'
-                : '> 🌐 Web Search Active... Querying live search index...\n';
-              const updated = {
-                ...activeStreamRef.current,
-                reasoning: reasoningText
-              };
-              activeStreamRef.current = updated;
-              setActiveStreamMessage(updated);
+            return;
+          }
+
+          if (activeStreamRef.current) {
+            const reasoningText = isDeepResearch
+              ? '> 🧬 Autonomous Deep Research Engine Active... Running multi-hop gap-fill matrix & scraping 25+ web sources...\n'
+              : isResearch
+              ? '> 🔬 Multi-Source Synthesis Research Active... Querying 20+ web sources & extracting article bodies...\n'
+              : '> 🌐 Web Search Active... Querying live search index...\n';
+            const updated = {
+              ...activeStreamRef.current,
+              reasoning: reasoningText,
+            };
+            activeStreamRef.current = updated;
+            setActiveStreamMessage(updated);
+          }
+
+          if (isDeepResearch) {
+            const appendResearchProgress = (msg: string) => {
+              if (activeStreamRef.current) {
+                const updated = {
+                  ...activeStreamRef.current,
+                  reasoning: (activeStreamRef.current.reasoning || '') + msg + '\n',
+                };
+                activeStreamRef.current = updated;
+                setActiveStreamMessage(updated);
+              }
+            };
+
+            const deepResult = await executeDeepResearch(cleanSearchQuery, {
+              provider: searchProvider as any,
+              tavilyApiKey: tavilyKey,
+              maxPages: 20,
+              depth: 'deep',
+              turnId,
+              onProgress: appendResearchProgress,
+            });
+
+            if (abortCtrlRef.current?.signal.aborted) {
+              throw new DOMException('Aborted', 'AbortError');
             }
 
-            if (isDeepResearch) {
-              // ── DEEP RESEARCH MODE: Multi-Hop Graph + 25+ Pages Scraped + 5-Angle Gap Matrix ──
-              const appendResearchProgress = (msg: string) => {
-                if (activeStreamRef.current) {
-                  const updated = {
-                    ...activeStreamRef.current,
-                    reasoning: (activeStreamRef.current.reasoning || '') + `> ${msg}\n`
-                  };
-                  activeStreamRef.current = updated;
-                  setActiveStreamMessage(updated);
+            if (deepResult.scrapedUrls.length > 0 || deepResult.totalResults > 0) {
+              searchResult = deepResult.deepResearchReportContext;
+              totalResultsCount = deepResult.scrapedUrls.length || deepResult.totalResults;
+              subQueriesCount = deepResult.subQueries.length;
+              const seen = new Set<string>();
+              (deepResult.results || []).forEach((r: any) => {
+                if (r.url && !seen.has(r.url)) {
+                  seen.add(r.url);
+                  try {
+                    collectedCitations.push({
+                      id: String(collectedCitations.length + 1),
+                      index: collectedCitations.length + 1,
+                      title: r.title || r.url,
+                      url: r.url,
+                      snippet: r.snippet?.slice(0, 200) || '',
+                      domain: new URL(r.url).hostname.replace('www.', ''),
+                    });
+                  } catch { /* skip */ }
                 }
-              };
-
-              const deepResult = await executeDeepResearch(cleanSearchQuery, {
-                provider: searchProvider as any,
-                tavilyApiKey: tavilyKey,
-                maxPages: 25,
-                depth: 'deep',
-                turnId,
-                onProgress: appendResearchProgress,
               });
-
-              if (abortCtrlRef.current?.signal.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-              }
-
-              if (deepResult.scrapedUrls.length > 0 || deepResult.totalResults > 0) {
-                searchResult = deepResult.deepResearchReportContext;
-                totalResultsCount = deepResult.scrapedUrls.length || deepResult.totalResults;
-                subQueriesCount = deepResult.subQueries.length;
-                toast.success(`Deep Research Complete: ${totalResultsCount} web sources scraped (${deepResult.reflectionHops} hops)`);
-              } else {
-                toast.warning('No deep research results found.');
-              }
-            } else if (isResearch) {
-              // ── RESEARCH MODE: Multi-Query Sub-Decomposition + Scraped Article Bodies (20+ Sources) ──
-              const ragResult = await agenticSearch(cleanSearchQuery, {
-                provider: searchProvider as any,
-                tavilyApiKey: tavilyKey,
-                maxSubQueries: 5,
-                resultsPerQuery: 8,
-                includeMemory: true,
-                fetchPageContent: true,
-                maxCharsPerPage: 30000,
-                turnId,
-              });
-
-              if (abortCtrlRef.current?.signal.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-              }
-
-              if (ragResult.totalResults > 0) {
-                searchResult = ragResult.consolidatedContext;
-                totalResultsCount = ragResult.totalResults;
-                subQueriesCount = ragResult.subQueries.length;
-                // Build citations from AgenticRAG results (deduplicated by URL)
-                const seen = new Set<string>();
-                ragResult.results.forEach((r, i) => {
-                  if (r.url && !seen.has(r.url)) {
-                    seen.add(r.url);
-                    try {
-                      collectedCitations.push({
-                        id: String(collectedCitations.length + 1),
-                        index: collectedCitations.length + 1,
-                        title: r.title || r.url,
-                        url: r.url,
-                        snippet: r.snippet?.slice(0, 200) || '',
-                        domain: new URL(r.url).hostname.replace('www.', ''),
-                      });
-                    } catch { /* skip invalid URLs */ }
-                  }
-                });
-
-                // Extract specific product entities from research results and fetch targeted images for each entity
-                try {
-                  const extractedProducts: string[] = [];
-                  const productRegex = /\b(?:MacBook\s+(?:Air|Pro)(?:\s+M\d+)?|ASUS\s+ZenBook[^\n,]*|Dell\s+XPS[^\n,]*|Lenovo\s+ThinkPad[^\n,]*|Samsung\s+Galaxy\s+Book[^\n,]*|HP\s+Spectre[^\n,]*|Microsoft\s+Surface[^\n,]*|Acer\s+Swift[^\n,]*)\b/gi;
-                  
-                  ragResult.results.forEach((r) => {
-                    const text = (r.title + ' ' + r.snippet).slice(0, 1000);
-                    let m;
-                    while ((m = productRegex.exec(text)) !== null) {
-                      const cleanName = m[0].trim();
-                      if (cleanName.length > 5 && !extractedProducts.some(p => p.toLowerCase().includes(cleanName.toLowerCase()))) {
-                        extractedProducts.push(cleanName);
-                      }
-                    }
-                  });
-
-                  const imageQueries = extractedProducts.length >= 2 
-                    ? extractedProducts.slice(0, 5) 
-                    : [cleanSearchQuery, `${cleanSearchQuery} product`, `${cleanSearchQuery} laptop`].slice(0, 4);
-
-                  const imagePromises = imageQueries.map((q) =>
-                    invoke<string>('search_images_command', { query: q, limit: 1 })
-                      .then((jsonStr) => {
-                        const parsed = JSON.parse(jsonStr || '[]');
-                        return Array.isArray(parsed) && parsed.length > 0 ? { entity: q, img: parsed[0] } : null;
-                      })
-                      .catch(() => null)
-                  );
-
-                  const fetchedEntities = (await Promise.all(imagePromises)).filter(Boolean) as Array<{ entity: string; img: any }>;
-
-                  // Attach entity images directly to the assistant message gallery
-                  // rather than injecting prompt directives.
-                  if (fetchedEntities.length > 0) {
-                    const entityImages = fetchedEntities
-                      .filter((e) => e.img?.url)
-                      .map((e) => ({
-                        url: e.img.url as string,
-                        name: (e.img.title || e.entity) as string,
-                        aspectRatio: '16:9' as const,
-                        engine: 'Entity Search' as string,
-                      }));
-                    assistantMsg.images = [...(assistantMsg.images || []), ...entityImages];
-                  }
-                } catch (err) {
-                  console.warn('[useChatPipeline] Entity image fetch failed:', err);
-                }
-
-                toast.success(`Research Synthesis Complete: ${totalResultsCount} web sources across ${subQueriesCount} queries`);
-              } else {
-                toast.warning('No research results found.');
-              }
+              toast.success(`Deep Research Complete: ${totalResultsCount} web sources scraped (${deepResult.reflectionHops} hops)`);
             } else {
-              // ── WEB SEARCH MODE: Ultra-Fast Direct Millisecond Web Search ──
-              const searchPromise = invoke<string>('search_web_command', {
-                query: cleanSearchQuery,
-                numResults: 6,
-                searchProvider: searchProvider === 'tavily' ? 'tavily' : 'duckduckgo',
-                apiKey: tavilyKey,
-              }).catch(() => '');
-              const searchTimeout = new Promise<string>((res) => setTimeout(() => res(''), 2500));
-              const combinedRawSearch = await Promise.race([searchPromise, searchTimeout]);
+              toast.warning('No deep research results found.');
+            }
+          } else if (isResearch) {
+            const ragResult = await agenticSearch(cleanSearchQuery, {
+              provider: searchProvider as any,
+              tavilyApiKey: tavilyKey,
+              maxSubQueries: 4,
+              resultsPerQuery: 6,
+              includeMemory: true,
+              fetchPageContent: true,
+              maxCharsPerPage: 30000,
+              turnId,
+            });
 
-              if (combinedRawSearch && combinedRawSearch.trim().length > 0) {
-                searchResult = combinedRawSearch;
-                totalResultsCount = 6;
-                subQueriesCount = 1;
+            if (abortCtrlRef.current?.signal.aborted) {
+              throw new DOMException('Aborted', 'AbortError');
+            }
 
-                // Extract URL + title citations from raw search result text
-                const urlPattern = /(?:^|\n)URL:\s*(https?:\/\/[^\s\n]+)/gm;
-                const titlePattern = /(?:^|\n)Title:\s*([^\n]+)/gm;
-                const snippetPattern = /(?:^|\n)(?:Snippet|Summary|Description):\s*([^\n]+)/gm;
-                const urls: string[] = [];
-                const titles: string[] = [];
-                const snippets: string[] = [];
-                let m: RegExpExecArray | null;
-                while ((m = urlPattern.exec(combinedRawSearch)) !== null) urls.push(m[1].trim());
-                while ((m = titlePattern.exec(combinedRawSearch)) !== null) titles.push(m[1].trim());
-                while ((m = snippetPattern.exec(combinedRawSearch)) !== null) snippets.push(m[1].trim());
-                const seen = new Set<string>();
-                urls.forEach((url, i) => {
-                  if (!seen.has(url)) {
-                    seen.add(url);
-                    try {
-                      collectedCitations.push({
-                        id: String(collectedCitations.length + 1),
-                        index: collectedCitations.length + 1,
-                        title: titles[i] || url,
-                        url,
-                        snippet: snippets[i]?.slice(0, 200) || '',
-                        domain: new URL(url).hostname.replace('www.', ''),
-                      });
-                    } catch { /* skip invalid URLs */ }
+            if (ragResult.totalResults > 0) {
+              searchResult = ragResult.consolidatedContext;
+              totalResultsCount = ragResult.totalResults;
+              subQueriesCount = ragResult.subQueries.length;
+              const seen = new Set<string>();
+              ragResult.results.forEach((r: any) => {
+                if (r.url && !seen.has(r.url)) {
+                  seen.add(r.url);
+                  try {
+                    collectedCitations.push({
+                      id: String(collectedCitations.length + 1),
+                      index: collectedCitations.length + 1,
+                      title: r.title || r.url,
+                      url: r.url,
+                      snippet: r.snippet?.slice(0, 200) || '',
+                      domain: new URL(r.url).hostname.replace('www.', ''),
+                    });
+                  } catch { /* skip invalid URLs */ }
+                }
+              });
+
+              if (searchResult) {
+                invoke('turbovec_add_memory', {
+                  text: `Deep Research [${cleanSearchQuery}]:\n\n${searchResult}`,
+                  metadata: JSON.stringify({ query: cleanSearchQuery, timestamp: Date.now(), domain: 'deep-research' })
+                }).catch(() => {});
+              }
+              toast.success(`Research Synthesis Complete: ${totalResultsCount} web sources across ${subQueriesCount} queries`);
+            } else {
+              toast.warning('No research results found.');
+            }
+          } else {
+            // Ultra-Fast Direct Web Search with Robust Fallbacks
+            const rawSearchPromise = invoke<string>('search_web_command', {
+              query: cleanSearchQuery,
+              numResults: 6,
+              searchProvider: searchProvider === 'tavily' ? 'tavily' : 'duckduckgo',
+              apiKey: tavilyKey,
+            }).catch(() => '');
+            const searchTimeout = new Promise<string>((res) => setTimeout(() => res(''), 4500));
+            let combinedRawSearch = await Promise.race([rawSearchPromise, searchTimeout]);
+
+            // Fallback: If backend search returned empty, directly query Wikipedia REST API
+            if (!combinedRawSearch || combinedRawSearch.trim().length === 0) {
+              try {
+                const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanSearchQuery)}&format=json&origin=*`;
+                const wikiResp = await fetch(wikiUrl);
+                if (wikiResp.ok) {
+                  const data = await wikiResp.json();
+                  const searchItems = data?.query?.search || [];
+                  if (searchItems.length > 0) {
+                    const parsedWiki = searchItems.slice(0, 5).map((item: any, idx: number) => {
+                      const cleanSnippet = (item.snippet || '').replace(/<[^>]*>/g, '').trim();
+                      const pageUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title)}`;
+                      return `[Source ${idx + 1}] ${item.title}\nURL: ${pageUrl}\nContent: ${cleanSnippet}`;
+                    }).join('\n\n');
+                    combinedRawSearch = `⚡ REAL-TIME SEARCH RESULTS — Wikipedia Reference:\n\n${parsedWiki}`;
                   }
-                });
+                }
+              } catch (wikiErr) {
+                console.warn('[search fallback] Direct wiki search failed:', wikiErr);
               }
             }
 
+            if (combinedRawSearch && combinedRawSearch.trim().length > 0) {
+              searchResult = combinedRawSearch;
+              totalResultsCount = 6;
+              subQueriesCount = 1;
 
-            // Fetch topic media for optional vision context injection into LLM
-            const mediaAssets = await getTopicMedia(cleanSearchQuery).catch(() => null);
-            const resolvedImageUrl = mediaAssets?.imageUrl;
+              // Robust multi-format source block parser: [Source N] Title\nURL: ...\nContent: ...
+              const sourceRegex = /\[Source\s+\d+\]\s*([^\n]+)\s*\nURL:\s*(https?:\/\/[^\s\n]+)\s*\nContent:\s*([^\n]+(?:\n(?!\[Source|\n)[^\n]+)*)/gi;
+              let match: RegExpExecArray | null;
+              const seen = new Set<string>();
 
-            if (resolvedImageUrl) {
-              // Vision inputs — top image sent as actual LLM vision content for cloud models.
-              const supportsVisionForSearch = resolveSupportsVision(modelToUse, modelState);
-              if (supportsVisionForSearch && !isLocalModel && llmHistory.length > 0) {
-                let lastUserIdx = -1;
-                for (let i = llmHistory.length - 1; i >= 0; i--) {
-                  if (llmHistory[i].role === 'user') { lastUserIdx = i; break; }
-                }
-                if (lastUserIdx >= 0) {
-                  const existing = llmHistory[lastUserIdx];
-                  llmHistory[lastUserIdx] = {
-                    ...existing,
-                    images: [
-                      ...(existing.images || []),
-                      { name: cleanSearchQuery, url: resolvedImageUrl, mimeType: 'image/jpeg', data: '' },
-                    ],
-                  };
+              while ((match = sourceRegex.exec(combinedRawSearch)) !== null) {
+                const title = match[1].trim();
+                const url = match[2].trim();
+                const snippet = match[3].trim();
+                if (!seen.has(url)) {
+                  seen.add(url);
+                  try {
+                    collectedCitations.push({
+                      id: String(collectedCitations.length + 1),
+                      index: collectedCitations.length + 1,
+                      title: title || url,
+                      url,
+                      snippet: snippet.slice(0, 200),
+                      domain: new URL(url).hostname.replace('www.', ''),
+                    });
+                  } catch { /* skip invalid URLs */ }
                 }
               }
             }
+          }
 
-            if (activeStreamRef.current && collectedCitations.length > 0) {
-              const updated = {
-                ...activeStreamRef.current,
-                citations: collectedCitations,
-              };
-              activeStreamRef.current = updated;
-              setActiveStreamMessage(updated);
-            }
-
-
-
-            if (searchResult) {
-              invoke('save_prompt_cache_command', { prompt: cleanSearchQuery, response: searchResult }).catch(() => {});
-            }
+          if (searchResult) {
+            invoke('save_prompt_cache_command', { prompt: cleanSearchQuery, response: searchResult }).catch(() => {});
+            invoke('turbovec_add_memory', {
+              text: `Web Search Query: ${cleanSearchQuery}\n\n${searchResult}`,
+              metadata: JSON.stringify({ query: cleanSearchQuery, timestamp: Date.now(), domain: 'web-search' })
+            }).catch(() => {});
           }
 
           if (activeStreamRef.current) {
             const searchReasoningSnippet = searchResult
-              ? `> 🌐 **Live Web Search (${searchProvider === 'tavily' ? 'Tavily' : 'DuckDuckGo'})**: Retrieved ${totalResultsCount} results across ${subQueriesCount} query path(s):\n${searchResult.split('\n').map(l => '> ' + l).slice(0, 15).join('\n')}\n\n`
+              ? `> 🌐 **Live Web Search (${searchProvider === 'tavily' ? 'Tavily' : 'DuckDuckGo'})**: Retrieved ${totalResultsCount} results across ${subQueriesCount} query path(s):\n${searchResult.split('\n').map((l) => '> ' + l).slice(0, 15).join('\n')}\n\n`
               : '> 🌐 **Live Web Search**: No results found.\n\n';
 
             const updated = {
               ...activeStreamRef.current,
-              reasoning: (activeStreamRef.current.reasoning || '') + searchReasoningSnippet
+              reasoning: (activeStreamRef.current.reasoning || '') + searchReasoningSnippet,
             };
             activeStreamRef.current = updated;
             setActiveStreamMessage(updated);
           }
         } catch (e: any) {
-          if (e.name === 'AbortError' || e.message === 'Aborted') {
-            throw e;
-          }
+          if (e.name === 'AbortError' || e.message === 'Aborted') throw e;
           const msg = e?.message || String(e);
-          console.warn('[web search] AgenticRAG failed:', msg);
+          console.warn('[web search] Failed:', msg);
           toast.error(`Web search failed: ${msg}`);
         }
-      }
+      })();
 
-      // ── IMAGE GENERATION DISPATCH: Handle /image commands or Lucifer intent ──
-      const isImageCmdTrigger = /^(?:\/image|\/img|image:|draw:|generate\s+image:)\s*/i.test(prompt);
-      const shouldGenerateImage = isImageCmdTrigger || (luciferAnalysis?.requires_image_gen && !isGreeting);
-
-      if (shouldGenerateImage) {
+      const mediaPromise = (async () => {
+        if (!shouldFetchMedia) return;
         try {
-          const rawImagePrompt = prompt.replace(/^(?:\/image|\/img|image:|draw:|generate\s+image:)\s*/i, '').trim() || cleanSearchQuery || prompt;
-          
-          let aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' = '16:9';
-          if (/\b(?:portrait|avatar|square|1:1)\b/i.test(rawImagePrompt)) aspectRatio = '1:1';
-          else if (/\b(?:mobile|story|phone|9:16)\b/i.test(rawImagePrompt)) aspectRatio = '9:16';
-          else if (/\b(?:diagram|infographic|4:3)\b/i.test(rawImagePrompt)) aspectRatio = '4:3';
+          // Wait for model plan to arrive (it may have resolved by now since search ran in parallel)
+          await Promise.race([queryPlanPromise, new Promise((res) => setTimeout(res, 200))]);
 
-          toast.info(`🎨 Generating visual asset (${aspectRatio})...`);
-          const imgResult = await generateVisualAsset(rawImagePrompt, aspectRatio);
-          if (imgResult && imgResult.success) {
-            const newImageObj = {
-              url: imgResult.imageUrl,
-              name: rawImagePrompt,
-              aspectRatio: imgResult.aspectRatio,
-              engine: imgResult.engine,
-            };
-            assistantMsg.images = [...(assistantMsg.images || []), newImageObj];
+          const photoTargetQuery = queryPlan.photoSearchQuery || queryPlan.primarySubject || cleanSearchQuery;
 
-            // Inject visual asset context into systemPromptAddon so the LLM model receives the generated image URL and embeds it in text
-            const generatedAssetContext =
-              `\n\n[GENERATED VISUAL ASSET ATTACHMENT]\n` +
-              `Prompt: "${rawImagePrompt}"\n` +
-              `Image URL: ${imgResult.imageUrl}\n` +
-              `Engine: ${imgResult.engine}\n` +
-              `Aspect Ratio: ${imgResult.aspectRatio}\n` +
-              `INSTRUCTION: Acknowledge the generated image asset warmly and embed it directly at the top of your response text using: !["${rawImagePrompt}"](${imgResult.imageUrl})\n` +
-              `[/GENERATED VISUAL ASSET ATTACHMENT]\n\n`;
+          // Image count policy:
+          //   Normal search  → 1 image total, no sectional topics
+          //   Research       → 2 images, no sectional topics
+          //   Deep research  → up to 3 images + sectional topics
+          const mainImageLimit = isDeepResearch ? 2 : 1;
+          const mainImagePromise = fetchRealLibraryImages(photoTargetQuery, mainImageLimit)
+            .then((imgs) => ({ topicTitle: photoTargetQuery, query: photoTargetQuery, images: imgs }));
 
-            searchResult = (searchResult || '') + generatedAssetContext;
+          const sectionalImagePromises = isDeepResearch
+            ? (queryPlan.sectionalTopics || []).slice(0, 3).map(async (st) => {
+                const imgs = await fetchRealLibraryImages(st.photoQuery, 1);
+                return { topicTitle: st.title, query: st.photoQuery, images: imgs };
+              })
+            : [];
 
+          const topicMediaResults = await Promise.all([mainImagePromise, ...sectionalImagePromises]);
+          const realImages = topicMediaResults.flatMap((tm) => tm.images);
 
-            if (activeStreamRef.current) {
-              const updated = {
-                ...activeStreamRef.current,
-                images: assistantMsg.images,
-              };
-              activeStreamRef.current = updated;
-              setActiveStreamMessage(updated);
-            }
-            toast.success(`Visual asset rendered via ${imgResult.engine}`);
-          }
-        } catch (imgErr) {
-          console.warn('[ChatPipeline] Image generation failed:', imgErr);
-        }
-      }
-
-
-
-      if (abortCtrlRef.current?.signal.aborted) {
-        throw new DOMException('Aborted', 'AbortError');
-      }
-
-      if (prompt.startsWith('/deep')) {
-        const queryText = prompt.replace('/deep', '').trim();
-        
-        // Use activeStreamMessage for consistent streaming UX (same as chat)
-        assistantMsg.reasoning = '🔬 Initializing Deep Research...\n';
-        setActiveStreamMessage(assistantMsg);
-        activeStreamRef.current = assistantMsg;
-        
-        let currentContent = '';
-        let reasoningContent = '🔬 Initializing Deep Research...\n';
-        
-        onProgress.onmessage = (message) => {
-          if (!mountedRef.current) return;
-          if (!activeStreamRef.current) return;
-          // Drop stale events from a cancelled/previous stream.
-          if (generationIdRef.current !== currentGenerationId) return;
-
-          if (message.type === 'progress') {
-              reasoningContent += `> ${message.message}\n`;
-          } else if (message.type === 'result_chunk') {
-              currentContent += message.content;
-          } else if (message.type === 'error') {
-              toast.error(message.message);
-          }
-          
-          const updatedMsg = {
-              ...activeStreamRef.current,
-              content: currentContent || activeStreamRef.current.content,
-              reasoning: reasoningContent,
-          };
-          activeStreamRef.current = updatedMsg;
-          setActiveStreamMessage(updatedMsg);
-        };
-        
-        try {
-          setIsSupervising(true);
-          const deepSignal = abortCtrlRef.current?.signal;
-          let deepAbortCleanup: (() => void) | undefined;
-          const deepAbortPromise = new Promise<never>((_, reject) => {
-            if (deepSignal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
-            const handler = () => reject(new DOMException('Aborted', 'AbortError'));
-            deepSignal?.addEventListener('abort', handler);
-            deepAbortCleanup = () => deepSignal?.removeEventListener('abort', handler);
-          });
-          let deepResult: { source: string; data: string; sources: Array<{ url: string; title: string; snippet: string }> };
-          try {
-            deepResult = await Promise.race([
-              invoke<{ source: string; data: string; sources: Array<{ url: string; title: string; snippet: string }> }>('start_deep_research', { 
-                  query: { 
-                      prompt: queryText, 
-                      depth_limit: 3, 
-                      provider: detectProvider(modelToUse), 
-                      model_id: modelToUse, 
-                      api_key: getEffectiveApiKey(detectProvider(modelToUse), apiKeys) || '' 
-                  }, 
-                  onProgress
-              }),
-              deepAbortPromise,
-            ]);
-          } finally {
-            deepAbortCleanup?.();
-          }
-          
-          // Commit from activeStreamRef into history (same pattern as chat)
-          if (activeStreamRef.current) {
-            const citations = (deepResult.sources || []).map((src, i) => ({
-              id: String(i + 1),
-              index: i + 1,
-              title: src.title,
-              url: src.url,
-              snippet: src.snippet,
-            }));
-            
-            const finalMsg: ChatMessage = {
-              ...activeStreamRef.current,
-              content: currentContent || activeStreamRef.current.content,
-              status: 'success',
-              citations,
-            };
-            
-            dispatch({ type: 'APPEND', message: finalMsg });
-            historyRef.current = [...historyRef.current, finalMsg];
-            activeStreamRef.current = null;
-            setActiveStreamMessage(null);
-            persistHistory(historyRef.current);
-          }
-        } catch (e: any) {
-          toast.error(e.toString());
-          if (activeStreamRef.current) {
-            const finalMsg = {
-              ...activeStreamRef.current,
-              status: 'error' as const,
-              content: (currentContent || activeStreamRef.current.content) + `\n\n**Deep Research Error**: ${e}`,
-            };
-            dispatch({ type: 'APPEND', message: finalMsg });
-            historyRef.current = [...historyRef.current, finalMsg];
-            activeStreamRef.current = null;
-            setActiveStreamMessage(null);
-            persistHistory(historyRef.current);
-          }
-        } finally {
-          setIsSupervising(false);
-          onProgress.onmessage = (): void => {};
-        }
-        return false;
-      }
-
-      const eventName = `dag_update_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)}`;
-      
-      const chatContext: ChatContext = {
-        conversationTone: 'casual',
-        detectedLanguage: 'English',
-        previousMessages: historyRef.current.length,
-        reasoningEnabled: isReasoning,
-        localModel: resolvedProviderEarly2 === 'nyx-native',
-        customSystemPrompt: modelSystemPrompts?.[modelToUse] || undefined,
-        hasWebSearch: !!searchResult,
-        isLuciferMode: isLuciferActive,
-      };
-      
-
-
-      // ── REAL IMAGE LIBRARY DATA: Fetch real photos/diagrams from Pexels, Pixabay, Openverse, Wikimedia ──────
-      if (!isGreeting && !shouldGenerateImage && cleanSearchQuery.length > 2) {
-        try {
-          const realImages = await fetchRealLibraryImages(cleanSearchQuery, 10);
           if (realImages.length > 0) {
-            // 1. Attach top 3 real images as vision inputs to vision models
+            // Attach top images as vision inputs to vision models
             const supportsVisionNow = resolveSupportsVision(modelToUse, modelState);
-            if (supportsVisionNow && !isLocalModel) {
+            if (supportsVisionNow && !isLocalModel && realImages.length > 0) {
               let lastUserIdx = -1;
               for (let i = llmHistory.length - 1; i >= 0; i--) {
-                if (llmHistory[i].role === 'user') { lastUserIdx = i; break; }
+                if (llmHistory[i].role === 'user') {
+                  lastUserIdx = i;
+                  break;
+                }
               }
-              if (lastUserIdx >= 0) {
+              if (lastUserIdx !== -1) {
                 const existing = llmHistory[lastUserIdx];
                 llmHistory[lastUserIdx] = {
                   ...existing,
                   images: [
                     ...(existing.images || []),
-                    ...realImages.slice(0, 3).map(({ url, title }) => ({
+                    ...realImages.slice(0, mainImageLimit).map(({ url, title }) => ({
                       name: title,
                       url,
                       mimeType: 'image/jpeg' as const,
@@ -1220,33 +1008,85 @@ export function useChatPipeline({
               }
             }
 
-            // 2. Add real image library dataset context for the LLM to select from
-            const imageLibraryBlock = `
+            if (activeStreamRef.current) {
+              const currentImages = activeStreamRef.current.images || [];
+              const formattedImages = realImages.map((img) => ({
+                name: img.title,
+                url: img.url,
+                engine: img.source || 'DuckDuckGo / Bing Images',
+              }));
+              const seenImgs = new Set(currentImages.map((i: any) => i.url));
+              const dedupedImages = formattedImages.filter((i) => !seenImgs.has(i.url));
 
-[VERIFIED REAL IMAGE LIBRARY DATASET FOR THIS TOPIC]
-The following REAL stock photos, historical pictures, scientific diagrams, and topic media were retrieved from verified image libraries (Openverse, Wikimedia Commons, Pexels, Pixabay, DuckDuckGo):
+              const updatedMsg = {
+                ...activeStreamRef.current,
+                images: [...currentImages, ...dedupedImages],
+              };
+              activeStreamRef.current = updatedMsg;
+              setActiveStreamMessage(updatedMsg);
+            }
 
-${realImages.map((img, i) => `[Image ${i + 1}]
-Title: "${img.title}"
-Source: ${img.source}
-URL: ${img.url}`).join('\n\n')}
+            const isoNow = new Date().toISOString().slice(0, 10);
+            const activeTopicGroups = topicMediaResults.filter((tm) => tm.images.length > 0);
+            const titleSeparatedImagesXml = activeTopicGroups.length > 0
+              ? `<title_separated_media_groups total_groups="${activeTopicGroups.length}">\n` +
+                activeTopicGroups.map((tm, gIdx) =>
+                  `  <topic_group index="${gIdx + 1}" section_title="${tm.topicTitle.replace(/[<>]/g, '')}" targeted_query="${tm.query}">\n` +
+                  tm.images.map((img, iIdx) =>
+                    `    <image index="${iIdx + 1}">\n      <title>${(img.title || tm.topicTitle).replace(/[<>]/g, '')}</title>\n      <url>${img.url}</url>\n      <source>${(img.source || 'DuckDuckGo / Bing Images').toUpperCase()}</source>\n    </image>`
+                  ).join('\n') +
+                  `\n  </topic_group>`
+                ).join('\n\n') +
+                `\n</title_separated_media_groups>`
+              : '<title_separated_media_groups count="0" />';
 
-MANDATORY INSTRUCTIONS FOR REAL IMAGE SELECTION & PLACEMENT:
-1. Review the real images listed above. Select the most accurate real image representation for EACH major topic/subtopic section in your response.
-2. Embed the selected real image IMMEDIATELY under its corresponding section heading using standard markdown image syntax:
-   ![Descriptive Title](EXACT_URL)
-3. Do NOT invent fake URLs or write placeholder text. ONLY use the verified real image URLs listed above.
-4. Integrate each selected real image naturally into your explanation under each section heading.`;
-
-            finalPrompt = finalPrompt + imageLibraryBlock;
+            mediaContextBlock = `\n<verified_media_library source="DuckDuckGo / Bing Web Images" retrieved="${isoNow}">\n${titleSeparatedImagesXml}\n</verified_media_library>`;
           }
         } catch (err) {
-          console.warn('[useChatPipeline] Error attaching real image library data:', err);
+          console.warn('[useChatPipeline] Media retrieval failed (non-fatal):', err);
+        }
+      })();
+
+      // Execute search and media retrieval concurrently in parallel!
+      await Promise.all([searchPromise, mediaPromise]);
+
+      const eventName = `dag_update_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)}`;
+
+      const chatContext: ChatContext = {
+        conversationTone: 'casual',
+        detectedLanguage: 'English',
+        previousMessages: historyRef.current.length,
+        reasoningEnabled: isReasoning,
+        localModel: resolvedProviderEarly2 === 'nyx-native',
+        customSystemPrompt: modelSystemPrompts?.[modelToUse] || undefined,
+        hasWebSearch: !!searchResult,
+        isLuciferMode: isLuciferActive,
+      };
+
+      // Auto Context Controller: Prune search context if it exceeds model context headroom
+      let effectiveSearchResult = searchResult;
+      // Qwen 2.5 1.5B supports up to 32K context — do not cap at 4096
+      const effectiveMaxCtx = resolvedProviderEarly2 === 'nyx-native'
+        ? (modelSettings?.contextSize && modelSettings.contextSize > 0 ? modelSettings.contextSize : 32768)
+        : 32768;
+      if (effectiveSearchResult && effectiveMaxCtx <= 8192) {
+        const maxSearchChars = Math.max(Math.floor(effectiveMaxCtx * 1.5), 2000);
+        if (effectiveSearchResult.length > maxSearchChars) {
+          effectiveSearchResult = effectiveSearchResult.slice(0, maxSearchChars) + '\n\n[...additional search results pruned to fit context window...]';
         }
       }
 
-      // Pass searchResult separately so buildChatPrompts formats it into the [LIVE WEB SEARCH RESULTS] block
-      const promptResult = buildChatPrompts(modelToUse, chatContext, finalPrompt, llmHistory, searchResult, resolvedProviderEarly2);
+      // Pass searchResult, mediaContext, and memoryContext separately so buildChatPrompts creates clean semantic XML blocks
+      const promptResult = buildChatPrompts(
+        modelToUse,
+        chatContext,
+        finalPrompt,
+        llmHistory,
+        effectiveSearchResult,
+        resolvedProviderEarly2,
+        mediaContextBlock,
+        memoryContextBlock
+      );
 
       let currentContent = initialWarning;
       let currentReasoning = '';
@@ -1539,8 +1379,10 @@ MANDATORY INSTRUCTIONS FOR REAL IMAGE SELECTION & PLACEMENT:
               finalSystemInstruction,
               analysis,
               modelToUse,
-              resolvedProvider
+              resolvedProvider,
+              null
             );
+
           } catch (err) {
             console.warn('[useChatPipeline] Lucifer intent analysis fallback:', err);
           }
@@ -1569,25 +1411,19 @@ MANDATORY INSTRUCTIONS FOR REAL IMAGE SELECTION & PLACEMENT:
            }
         }
         
-        // Dynamic Max Tokens & High-Capacity Context Window for Local & Research Models
-        let dynamicMaxTokens = maxContextTokens - finalTotalInputTokens - 500;
-        if (dynamicMaxTokens < 1024) {
-           dynamicMaxTokens = 1024;
-        }
-        
+        // Auto Context Controller: Dynamic Max Tokens & Context Window Sizing
+        const effectiveContextWindow = isLocalModel
+          ? (modelSettings?.contextSize && modelSettings.contextSize > 0 ? modelSettings.contextSize : 4096)
+          : (maxContextTokens > 0 ? maxContextTokens : 32768);
+
         const isFactualOrSearch = !!searchResult || liveWebSearchEnabled || /^(?:who|what|when|where|which|how|why|research|find|tell|explain|list|show|compare|get|cost|price|living)\b/i.test(prompt.trim());
         // Enable reasoning for reasoning models, research queries, and web search turns
         const shouldEnableReasoning = isReasoningModel(modelToUse) || isDeepResearch || isFactualOrSearch || isReasoning;
 
-        // For research turns and local models, allocate high generation headroom (8,192–16,384 tokens)
-        const researchMaxTokens = isDeepResearch ? 16384 : (isFactualOrSearch ? 8192 : 4096);
-        const finalMaxTokens = Math.max(dynamicMaxTokens, researchMaxTokens);
-
-        // High-Capacity Context Window: Default to 65,536 (floor 32,768) so local GGUF models have massive context headroom
-        const effectiveContextWindow = Math.max(
-          maxContextTokens > 0 ? maxContextTokens : 65536,
-          isLocalModel ? 65536 : 32768
-        );
+        // Allocate generation headroom that fits comfortably within the effective context window
+        const desiredOutputTokens = isDeepResearch ? 16384 : (isFactualOrSearch ? 8192 : 4096);
+        const maxPossibleOutput = Math.max(Math.floor(effectiveContextWindow * 0.35), 256);
+        const finalMaxTokens = Math.min(desiredOutputTokens, maxPossibleOutput);
 
         // ── Autonomous Lucifer Sampling Parameters ─────────────────────────
         // Lucifer dynamically selects temperature, top_p, and repeat_penalty
@@ -1640,6 +1476,7 @@ MANDATORY INSTRUCTIONS FOR REAL IMAGE SELECTION & PLACEMENT:
           reasoning_enabled: shouldEnableReasoning,
           context_window: effectiveContextWindow,
           active_tools: luciferAnalysis?.requires_tools ?? [],
+          agent_mode: isLuciferActive,
         };
 
         // All models — both cloud and local (nyx-native) — route through
@@ -1707,18 +1544,20 @@ MANDATORY INSTRUCTIONS FOR REAL IMAGE SELECTION & PLACEMENT:
               status: isAborted ? 'stopped' : 'success',
           };
           
-          dispatch({ type: 'APPEND', message: finalMsg });
-          historyRef.current = [...historyRef.current, finalMsg];
+          const offlineFinalMsg = await inlineOfflineImagesInMessage(finalMsg);
+          dispatch({ type: 'APPEND', message: offlineFinalMsg });
+          historyRef.current = [...historyRef.current, offlineFinalMsg];
           activeStreamRef.current = null;
           setActiveStreamMessage(null);
       } else {
           const finalHistory = [...historyRef.current];
           const lastIdx = finalHistory.length - 1;
           if (lastIdx >= 0 && finalHistory[lastIdx]?.role === 'assistant') {
-              finalHistory[lastIdx] = {
+              const updatedLast = await inlineOfflineImagesInMessage({
                   ...finalHistory[lastIdx],
                   status: isAborted ? 'stopped' : 'success',
-              } satisfies typeof finalHistory[number];
+              } satisfies typeof finalHistory[number]);
+              finalHistory[lastIdx] = updatedLast;
           }
           dispatch({ type: 'SET', messages: finalHistory });
           historyRef.current = finalHistory;
@@ -1771,7 +1610,7 @@ MANDATORY INSTRUCTIONS FOR REAL IMAGE SELECTION & PLACEMENT:
             details: `Dispatching ${Math.min(finalResponseContent.length, 1000)} chars for TTS`,
           });
           // Store first 1000 chars for voice synthesis (prevents mega-TTS on long responses)
-          (useLuciferStore.getState() as any).setVoiceText?.(finalResponseContent.slice(0, 1000));
+          useLuciferStore.getState().setVoiceText(finalResponseContent.slice(0, 1000));
         }
       }
 

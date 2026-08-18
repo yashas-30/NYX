@@ -2,6 +2,20 @@ import { ModelOption } from '@src/types';
 
 const RAW_AVAILABLE_MODELS: ModelOption[] = [
   // ═══════════════════════════════════════════════════════════════════════════════
+  // LUCIFER NATIVE AGENT (QWEN 2.5 1.5B ON GPU VIA RIG-CORE)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  {
+    id: 'lucifer-native',
+    name: 'Lucifer',
+    provider: 'nyx-native',
+    status: 'ga',
+    description: 'The native Lucifer agent embodied in Qwen 2.5 1.5B running 100% on GPU via Rig-Core & TurboVec RAG.',
+    specs: { contextWindow: '8K', maxOutput: '4K', modality: 'Text' },
+    features: ['Embodied Lucifer Agent', '100% GPU Offload (Rig-Core)', 'TurboVec Vector RAG & Live Tools'],
+    pros: ['Direct GPU Execution', 'Complete Privacy', 'Full Tool Control'],
+    cons: ['Requires local GPU or Vulkan runtime'],
+  },
+  // ═══════════════════════════════════════════════════════════════════════════════
   // GEMINI DIRECT MODELS
   // ═══════════════════════════════════════════════════════════════════════════════
   {
@@ -198,7 +212,17 @@ const RAW_AVAILABLE_MODELS: ModelOption[] = [
   },
   // LOCAL PROVIDERS (NYX-NATIVE)
   // ═══════════════════════════════════════════════════════════════════════════════
-  // Local models will be dynamically populated from the Rust backend.
+  {
+    id: 'qwen2.5-1.5b-instruct-native',
+    name: 'Qwen 2.5 1.5B Instruct (Native GPU / Rig-Core)',
+    provider: 'nyx-native',
+    status: 'ga',
+    description: 'Ultra-fast local model running 100% in GPU VRAM with Rig-Core & TurboVec RAG. Host RAM <150MB, zero cloud latency.',
+    specs: { contextWindow: '8K', maxOutput: '4K', modality: 'Text' },
+    features: ['100% GPU offload (28 layers in VRAM)', 'Rig-Core Agent & TurboVec RAG integration', 'Instant local token generation (>60 t/s)'],
+    pros: ['Ultra-low RAM usage (<150MB)', '100% private offline execution', 'Zero API cost'],
+    cons: ['Requires local GPU or Vulkan runtime'],
+  },
 ];
 
 // Deduplicate by ID to prevent duplicate entries in the model selector

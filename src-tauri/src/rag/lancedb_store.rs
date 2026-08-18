@@ -10,6 +10,7 @@ use lancedb::query::{QueryBase, ExecutableQuery};
 use std::collections::HashMap;
 use tracing::info;
 
+#[derive(Clone)]
 pub struct LanceDbStore {
     db: Arc<Mutex<Option<Connection>>>,
     table: Arc<RwLock<Option<Table>>>,

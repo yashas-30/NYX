@@ -29,6 +29,8 @@ const MermaidRenderer: React.FC<{ content: string }> = ({ content }) => {
       try {
         const mermaid = (await import('mermaid')).default;
         mermaid.initialize({
+          startOnLoad: false,
+          suppressErrorRendering: true,
           theme: 'dark',
           darkMode: true,
           background: 'transparent',
@@ -44,11 +46,16 @@ const MermaidRenderer: React.FC<{ content: string }> = ({ content }) => {
             tertiaryColor: '#0f172a',
           },
         } as any);
-        const id = `mermaid-${Date.now()}`;
+        const id = `mermaid-art-${Date.now()}`;
         const { svg: rendered } = await mermaid.render(id, content);
         if (!cancelled) setSvg(rendered);
       } catch (e: any) {
         if (!cancelled) setError(e.message || 'Diagram error');
+      } finally {
+        if (typeof document !== 'undefined') {
+          const orphans = document.querySelectorAll('body > [id^="dmermaid"], body > .mermaid-error, body > svg[id^="mermaid-"]');
+          orphans.forEach(el => el.remove());
+        }
       }
     };
     render();
@@ -124,10 +131,10 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
 
   const iframeSrcDoc = useMemo(() => {
     if (!isRenderable || isMermaid) return '';
-    // Inject Tailwind for Claude-like generative UI
     const tailwindScript = '<script src="https://cdn.tailwindcss.com"></script>';
+    const chartJsScript = '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
+    const d3Script = '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>';
 
-    // (Removed legacy Babel path for React)
     let htmlContent = artifact.content;
     if (artifact.language?.toLowerCase() === 'svg') {
       htmlContent = `<div class="flex items-center justify-center min-h-screen">${artifact.content}</div>`;
@@ -141,9 +148,11 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             ${tailwindScript}
-            <style>              body { font-family: "SF Pro Display", "Geist Sans", -apple-system, BlinkMacSystemFont, sans-serif; color: #faf9f5; background: #181715; }
+            ${chartJsScript}
+            ${d3Script}
+            <style>
+              body { font-family: "SF Pro Display", "Geist Sans", -apple-system, BlinkMacSystemFont, sans-serif; color: #faf9f5; background: #181715; }
             </style>
-            ${tailwindScript}
           </head>
           <body class="p-6">
             ${htmlContent}
@@ -152,8 +161,7 @@ export const ArtifactPanel: React.FC<ArtifactPanelProps> = ({ artifact, onClose 
       `;
     }
 
-    // If it already has a head, just inject Tailwind before the closing head tag
-    return htmlContent.replace('</head>', `${tailwindScript}</head>`);
+    return htmlContent.replace('</head>', `${tailwindScript}\n${chartJsScript}\n${d3Script}\n</head>`);
   }, [artifact.content, artifact.language, isRenderable, isReact, isMermaid]);
 
   return (

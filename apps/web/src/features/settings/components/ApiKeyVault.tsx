@@ -21,6 +21,12 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
   { id: 'gemini', name: 'Google Gemini', hasModels: true, modelCount: 0 },
   { id: 'openrouter', name: 'OpenRouter', hasModels: true, modelCount: 0 },
   { id: 'tavily', name: 'Tavily Search API', hasModels: false, modelCount: 0 },
+  { id: 'openai', name: 'OpenAI', hasModels: true, modelCount: 0 },
+  { id: 'anthropic', name: 'Anthropic Claude', hasModels: true, modelCount: 0 },
+  { id: 'deepseek', name: 'DeepSeek', hasModels: true, modelCount: 0 },
+  { id: 'groq', name: 'Groq Cloud', hasModels: true, modelCount: 0 },
+  { id: 'mistral', name: 'Mistral AI', hasModels: true, modelCount: 0 },
+  { id: 'huggingface', name: 'HuggingFace Hub', hasModels: false, modelCount: 0 },
 ];
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
@@ -52,7 +58,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
   fetchVaultStatus,
   clearApiKeys,
 }) => {
-  const { usage, resetUsage } = useTokenUsage();
+  const { usage, feedback, resetUsage } = useTokenUsage();
   const rememberKeys = useNyxStore((state) => state.rememberKeys);
   const setRememberKeys = useNyxStore((state) => state.setRememberKeys);
   const updateApiKey = useNyxStore((state) => state.updateApiKey);
@@ -76,21 +82,26 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     return DEFAULT_GATEWAY_URLS[provider] || '';
   };
 
-  const validateGeminiKey = async (key: string): Promise<{ valid: boolean; error?: string }> => {
+  const validateProviderKey = async (provider: string, key: string): Promise<{ valid: boolean; error?: string }> => {
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        return { valid: false, error: data.error?.message || `Server returned status ${res.status}` };
+      if (provider === 'gemini') {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          return { valid: false, error: data.error?.message || `Server returned status ${res.status}` };
+        }
+        return { valid: true };
       }
+
       return { valid: true };
     } catch (err: any) {
       return { valid: false, error: err.message || 'Network error' };
     }
   };
+
   const triggerValidation = (provider: string, key: string) => {
     if (!key) {
       setValidationStatus(prev => ({ ...prev, [provider]: 'idle' }));
@@ -107,17 +118,13 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     setValidationStatus(prev => ({ ...prev, [provider]: 'loading' }));
 
     validationTimeoutRef.current[provider] = setTimeout(async () => {
-      let isValid = true;
-      if (provider === 'gemini') {
-        const result = await validateGeminiKey(key);
-        isValid = result.valid;
-      }
+      const result = await validateProviderKey(provider, key);
       
-      setValidationStatus(prev => ({ ...prev, [provider]: isValid ? 'valid' : 'invalid' }));
+      setValidationStatus(prev => ({ ...prev, [provider]: result.valid ? 'valid' : 'invalid' }));
 
       revertTimeoutRef.current[provider] = setTimeout(() => {
         setValidationStatus(prev => ({ ...prev, [provider]: 'idle' }));
-      }, 2000);
+      }, 2500);
     }, 800);
   };
 
@@ -128,7 +135,7 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
     let validationError = '';
     if (geminiKey && geminiKey.trim().length > 0) {
       toast.info('Validating Gemini API Key...');
-      const result = await validateGeminiKey(geminiKey);
+      const result = await validateProviderKey('gemini', geminiKey);
       isGeminiValid = result.valid;
       validationError = result.error || '';
 
@@ -271,6 +278,13 @@ export const ApiKeyVault: React.FC<ApiKeyVaultProps> = ({
                       {hasKey && (
                         <span className="text-[9px] font-bold uppercase tracking-widest text-accent bg-accent/10 px-1.5 py-0.5 rounded-md border border-accent/20">
                           {vaultStatus[p.id] ? 'Vault Locked' : 'In Memory'}
+                        </span>
+                      )}
+                      {feedback?.[p.id] && (feedback[p.id].thumbsUp > 0 || feedback[p.id].thumbsDown > 0) && (
+                        <span className="text-[9px] font-mono font-medium text-muted-foreground/90 bg-secondary/80 px-2 py-0.5 rounded-md border border-border flex items-center gap-1.5" title="User Feedback Rating">
+                          <span className="text-emerald-400 font-semibold">👍 {feedback[p.id].thumbsUp}</span>
+                          <span className="text-white/20">|</span>
+                          <span className="text-red-400 font-semibold">👎 {feedback[p.id].thumbsDown}</span>
                         </span>
                       )}
                     </div>

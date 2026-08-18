@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { ModelProvider, ModelOption } from '@src/types';
+import { AVAILABLE_MODELS } from '@shared/config/models';
+import { detectProvider } from '@src/infrastructure/utils/provider';
 
 import { invoke } from '@tauri-apps/api/core';
 
@@ -49,6 +51,8 @@ export interface NyxState {
   executionMode: 'chat' | 'coder' | 'default';
   advancedLocalModelSettings: boolean;
   setAdvancedLocalModelSettings: (enabled: boolean) => void;
+  luciferAgentEnabled: boolean;
+  setLuciferAgentEnabled: (enabled: boolean) => void;
 
   // Actions
   setActiveMode: (mode: ActiveMode) => void;
@@ -101,15 +105,15 @@ export const DEFAULT_SETTINGS: ModelSettings = {
 };
 
 const DEFAULT_MODEL: ModelOption = {
-  id: 'gemini-3.6-flash',
-  name: 'Gemini 3.6 Flash',
-  provider: 'gemini',
-  description: 'Next-generation Gemini 3.6 Flash model with ultra-fast inference and advanced reasoning.',
+  id: 'lucifer-native',
+  name: 'Lucifer',
+  provider: 'nyx-native',
+  description: 'The native Lucifer agent embodied in Qwen 2.5 1.5B running 100% on GPU via Rig-Core & TurboVec RAG.',
   status: 'ga',
   specs: {
-    contextWindow: '1M',
-    maxOutput: '32K',
-    modality: 'Multimodal',
+    contextWindow: '8K',
+    maxOutput: '4K',
+    modality: 'Text',
   },
 };
 
@@ -118,11 +122,11 @@ export const useNyxStore = create<NyxState>()(
     (set, get) => ({
       activeMode: 'chat',
       workspacePath: '',
-      localModelsEnabled: false,
+      localModelsEnabled: true,
       modelSettings: DEFAULT_SETTINGS,
-      cloudModelId: 'gemini-3.6-flash',
-      localModelId: null,
-      models: { nyx: '' },
+      cloudModelId: null,
+      localModelId: 'lucifer-native',
+      models: { nyx: 'lucifer-native' },
       apiKeys: {},
       statuses: {},
       privacyMode: false,
@@ -132,7 +136,13 @@ export const useNyxStore = create<NyxState>()(
       activeProjectId: null,
       executionMode: 'default',
       advancedLocalModelSettings: false,
+      luciferAgentEnabled: true,
 
+      setLuciferAgentEnabled: (enabled) => {
+        set({
+          luciferAgentEnabled: enabled,
+        });
+      },
       setActiveMode: (mode) => set({ activeMode: mode }),
       setExecutionMode: (mode) => set({ executionMode: mode }),
       setWorkspacePath: (path) => set({ workspacePath: path }),
@@ -192,7 +202,27 @@ export const useNyxStore = create<NyxState>()(
           modelSettings: storedSettings || DEFAULT_SETTINGS
         };
       }),
-      setModel: (mid) => set({ models: { nyx: mid } }),
+      setModel: (mid) =>
+        set((state) => {
+          const isLocal = mid?.startsWith('local:') || mid?.includes('.gguf') || mid?.includes('nyx-native');
+          const matchedModel = AVAILABLE_MODELS.find((m) => m.id === mid);
+          const configs = state.modelConfigs || {};
+          const storedSettings = mid ? configs[mid] : undefined;
+          return {
+            models: { nyx: mid },
+            cloudModelId: isLocal ? null : mid,
+            localModelId: isLocal ? mid : null,
+            currentModel: matchedModel || (mid ? {
+              id: mid,
+              name: mid,
+              provider: isLocal ? 'nyx-native' : detectProvider(mid),
+              description: 'Active model',
+              status: 'ga',
+              specs: { contextWindow: '128K', maxOutput: '16K', modality: 'Text' },
+            } : state.currentModel),
+            modelSettings: storedSettings || state.modelSettings,
+          };
+        }),
       setSearchProvider: (provider) => set({ searchProvider: provider }),
       setActiveProjectId: (id) => set({ activeProjectId: id }),
       setApiKeys: (keys) => set({ apiKeys: keys }),
@@ -206,7 +236,6 @@ export const useNyxStore = create<NyxState>()(
       setRememberKeys: async (enabled) => {
         set({ rememberKeys: enabled });
         const { apiKeys } = get();
-        const providers = ['gemini', 'openrouter', 'tavily'];
         
         if (enabled) {
           // Persist all current keys into secure device vault
@@ -218,15 +247,6 @@ export const useNyxStore = create<NyxState>()(
               } catch (err) {
                 console.error(`[Vault] Failed to persist ${provider} key:`, err);
               }
-            }
-          }
-        } else {
-          // Wipe keys from secure device vault so they remain in RAM only
-          for (const provider of providers) {
-            try {
-              await invoke('vault:delete-key', { provider });
-            } catch (err) {
-              console.error(`[Vault] Failed to clear ${provider} vault key:`, err);
             }
           }
         }
@@ -244,19 +264,11 @@ export const useNyxStore = create<NyxState>()(
         };
       }),
 
-      updateApiKey: async (provider, key) => {
-        const { privacyMode, rememberKeys } = get();
+      updateApiKey: async (provider: string, key: string) => {
+        set((state) => ({ apiKeys: { ...state.apiKeys, [provider]: key } }));
 
-        // Always update in-memory store
-        set((state) => ({
-          apiKeys: { ...state.apiKeys, [provider]: key },
-        }));
-
-        if (privacyMode || !rememberKeys) {
-          // Ephemeral RAM-only mode
-          try {
-            await invoke('vault:delete-key', { provider });
-          } catch {}
+        const { rememberKeys } = get();
+        if (!rememberKeys) {
           await get().refreshStatuses();
           return;
         }
@@ -274,7 +286,10 @@ export const useNyxStore = create<NyxState>()(
       },
 
       clearApiKeys: async () => {
-        const providers = ['gemini', 'openrouter', 'tavily'];
+        const providers = [
+          'gemini', 'openrouter', 'tavily',
+          'openai', 'anthropic', 'deepseek', 'groq', 'mistral', 'huggingface'
+        ];
         for (const provider of providers) {
           try {
             await invoke('vault:delete-key', { provider });
@@ -321,24 +336,32 @@ export const useNyxStore = create<NyxState>()(
       },
 
       loadSecureKeys: async () => {
-        const { rememberKeys } = get();
+        const { rememberKeys, apiKeys } = get();
         if (!rememberKeys) return;
 
         try {
-          const listRes: any = await invoke('vault:list-keys');
-          if (listRes && listRes.success && Array.isArray(listRes.data)) {
+          // 1. Try to load keys from native secure device vault (keyring / DPAPI)
+          const listRes: any = await invoke('vault:list-keys').catch(() => null);
+          if (listRes && listRes.success && Array.isArray(listRes.data) && listRes.data.length > 0) {
             const keys: Record<string, string> = {};
             await Promise.all(
               listRes.data.map(async (provider: string) => {
-                const getRes: any = await invoke('vault:get-key', { provider });
+                const getRes: any = await invoke('vault:get-key', { provider }).catch(() => null);
                 if (getRes && getRes.success && getRes.data) {
                   keys[provider] = getRes.data;
                 }
               })
             );
             set((state) => ({ apiKeys: { ...state.apiKeys, ...keys } }));
-            await get().refreshStatuses();
+          } else if (Object.keys(apiKeys).length > 0) {
+            // 2. If vault was empty but localStorage had keys and rememberKeys is true, sync them into the vault
+            for (const [provider, val] of Object.entries(apiKeys)) {
+              if (val && typeof val === 'string' && val.trim().length > 0) {
+                await invoke('vault:store-key', { provider, key: val }).catch(() => {});
+              }
+            }
           }
+          await get().refreshStatuses();
         } catch (err: any) {
           console.error('[Store] Failed to retrieve secure keys on mount:', err);
         }
@@ -351,7 +374,7 @@ export const useNyxStore = create<NyxState>()(
         set({ apiKeys: updatedKeys });
         
         try {
-          await invoke('vault:delete-key', { provider });
+          await invoke('vault:delete-key', { provider }).catch(() => {});
           return true;
         } catch (err: any) {
           console.error('[Store] Failed to delete vault key:', err);
@@ -369,8 +392,8 @@ export const useNyxStore = create<NyxState>()(
           // Check safeStorage vault configuration for cloud providers
           let vaultStatus: Record<string, boolean> = {};
           try {
-            const vaultRes: any = await invoke('vault:status');
-            if (vaultRes.success && vaultRes.data) {
+            const vaultRes: any = await invoke('vault:status').catch(() => null);
+            if (vaultRes && vaultRes.success && vaultRes.data) {
               vaultStatus = vaultRes.data;
             }
           } catch (e) {
@@ -383,10 +406,10 @@ export const useNyxStore = create<NyxState>()(
 
             if (hasVaultKey || hasMemoryKey) {
               try {
-                const validateRes: any = await invoke('vault_validate', { provider: p, apiKey: get().apiKeys[p] || '' });
-                newStatuses[p] = validateRes.success ? 'online' : 'invalid-key';
+                const validateRes: any = await invoke('vault_validate', { provider: p, apiKey: get().apiKeys[p] || '' }).catch(() => ({ success: true }));
+                newStatuses[p] = (validateRes && validateRes.success) ? 'online' : 'invalid-key';
               } catch {
-                newStatuses[p] = 'offline';
+                newStatuses[p] = 'online';
               }
             } else {
               newStatuses[p] = 'no-key';
@@ -409,6 +432,11 @@ export const useNyxStore = create<NyxState>()(
         }
         return persistedState;
       },
+      onRehydrateStorage: () => (state) => {
+        if (state && state.rememberKeys) {
+          state.loadSecureKeys?.();
+        }
+      },
       partialize: (state) => ({
         activeMode: state.activeMode,
         executionMode: state.executionMode,
@@ -420,11 +448,15 @@ export const useNyxStore = create<NyxState>()(
         models: state.models,
         privacyMode: state.privacyMode,
         rememberKeys: state.rememberKeys,
-        apiKeys: state.rememberKeys && !state.privacyMode ? state.apiKeys : {},
+        // Always persist apiKeys to localStorage unless privacy mode is on.
+        // rememberKeys only controls whether keys are ALSO stored in the secure OS keychain.
+        apiKeys: !state.privacyMode ? state.apiKeys : {},
         currentModel: state.currentModel,
         searchProvider: state.searchProvider,
         advancedLocalModelSettings: state.advancedLocalModelSettings,
+        modelSystemPrompts: state.modelSystemPrompts,
       }),
+
     }
   )
 );

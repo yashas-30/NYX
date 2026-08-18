@@ -12,6 +12,8 @@
  * - Rich metadata: model, tokens, cost, latency, status, fallback info
  */
 
+import { create } from 'zustand';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type SpanStatus = 'pending' | 'ok' | 'error' | 'fallback' | 'skipped';
@@ -121,13 +123,11 @@ export function endSpan(
     status,
   };
 
-  // Emit to store (lazy import to avoid circular deps)
+  // Emit to store
   try {
-    // Direct Zustand access without React hooks (safe in non-render context)
-    const { useLuciferObservabilityStore } = require('./useLuciferObservabilityStore');
     useLuciferObservabilityStore.getState().addSpan(completed);
   } catch {
-    // Store not available (SSR / test) — no-op
+    // Store not initialized yet (e.g. during module evaluation / testing) — safe no-op
   }
 
   return completed;
@@ -156,8 +156,6 @@ export async function withSpan<T>(
 }
 
 // ── Observability store (separate from useLuciferStore to avoid bloat) ────────
-
-import { create } from 'zustand';
 
 const MAX_SPANS = 500;
 const MAX_TURNS = 50;

@@ -21,16 +21,11 @@ interface CacheCleanProps {
 export const CacheClean: React.FC<CacheCleanProps> = ({ cacheStats, fetchCacheStats }) => {
   const handleClearCache = async () => {
     try {
-      const res: any = { ok: true }; await invoke('db_clear_cache');
-      if (res.ok) {
-        const data = await res.json();
-        await fetchCacheStats();
-        toast.success(`Successfully cleared ${data.clearedCount || 0} cached items!`);
-      } else {
-        toast.error('Failed to clear cache.');
-      }
+      const clearedCount = await invoke<number>('clear_prompt_cache_command');
+      await fetchCacheStats();
+      toast.success(`Successfully cleared ${clearedCount ?? 0} cached items!`);
     } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
+      toast.error(`Error: ${error?.message || error}`);
     }
   };
 

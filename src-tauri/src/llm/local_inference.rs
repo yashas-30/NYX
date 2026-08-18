@@ -16,7 +16,7 @@ use crate::llm::types::{sanitize_messages_for_api, StreamChunkPayload, UnifiedRe
 use crate::llm::local_orchestrator::SERVER_PORT;
 use reqwest::{Client, header::{HeaderMap, HeaderValue}};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Listener};
+use tauri::{AppHandle, Listener, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::io::StreamReader;
 use futures_util::{Stream, TryStreamExt, StreamExt};
@@ -150,20 +150,83 @@ fn get_content_string(val: &Value) -> String {
     }
 }
 
+/// Surgically truncate text to fit strictly within a token budget while preserving semantic structure.
+fn truncate_text_to_token_budget(text: &str, target_tokens: usize, model_id: &str) -> String {
+    let current_tokens = count_tokens(text, model_id);
+    if current_tokens <= target_tokens {
+        return text.to_string();
+    }
+    if target_tokens < 10 {
+        return String::new();
+    }
+
+    // If text contains semantic XML blocks (e.g. <user_input>, <web_search_context>, <deep_research_context>),
+    // preserve the <user_input> and core execution rules, while pruning the large search/media context.
+    if let (Some(u_start), Some(u_end)) = (text.find("<user_input>"), text.find("</user_input>")) {
+        let user_query_block = &text[u_start..u_end + 13];
+        let user_query_tokens = count_tokens(user_query_block, model_id);
+        if user_query_tokens < target_tokens {
+            let remaining_budget = target_tokens.saturating_sub(user_query_tokens);
+            let prefix = &text[..u_start];
+            let suffix = &text[u_end + 13..];
+            let half = remaining_budget / 2;
+            let pruned_prefix = if half > 10 {
+                truncate_text_to_token_budget(prefix, half, model_id)
+            } else {
+                String::new()
+            };
+            let pruned_suffix = if remaining_budget.saturating_sub(half) > 10 {
+                truncate_text_to_token_budget(suffix, remaining_budget.saturating_sub(half), model_id)
+            } else {
+                String::new()
+            };
+            return format!("{}\n{}\n{}", pruned_prefix, user_query_block, pruned_suffix).trim().to_string();
+        }
+    }
+
+    // General text truncation: approximate character budget (~3.5 chars per token)
+    let char_budget = (target_tokens as f32 * 3.5) as usize;
+    if text.len() <= char_budget {
+        return text.to_string();
+    }
+
+    let head_chars = (char_budget * 6) / 10;
+    let tail_chars = char_budget.saturating_sub(head_chars);
+    let head = &text[..head_chars.min(text.len())];
+    let tail = if tail_chars > 0 && text.len() > head_chars + tail_chars {
+        &text[text.len() - tail_chars..]
+    } else {
+        ""
+    };
+
+    format!("{}\n\n[...context pruned by Auto Context Controller to fit model context window...]\n\n{}", head, tail)
+}
+
 // ── Message Budgeting (2026: Tier-aware context management) ─────────────────
 
 /// Budget messages to fit within context window while preserving critical content.
-/// Strategy: Keep all system messages, then most recent user/assistant pairs.
+/// Strategy: Keep all system messages (pruned if necessary), then most recent user/assistant pairs.
 fn budget_messages(messages: &[UnifiedMessage], budget_tokens: usize, model_id: &str) -> Vec<UnifiedMessage> {
     let mut total_tokens = 0usize;
     let mut budgeted = Vec::new();
     
-    // Phase 1: Always include system messages (they're critical)
+    // Phase 1: System messages (limit system instructions to at most 40% of budget)
+    let max_system_budget = (budget_tokens * 4) / 10;
     for msg in messages {
         if msg.role == "system" {
             let content_str = get_content_string(&msg.content);
-            total_tokens += count_tokens(&content_str, model_id);
-            budgeted.push(msg.clone());
+            let msg_tokens = count_tokens(&content_str, model_id);
+            if msg_tokens > max_system_budget && max_system_budget > 50 {
+                let pruned = truncate_text_to_token_budget(&content_str, max_system_budget, model_id);
+                total_tokens += count_tokens(&pruned, model_id);
+                budgeted.push(UnifiedMessage {
+                    role: "system".to_string(),
+                    content: json!(pruned),
+                });
+            } else {
+                total_tokens += msg_tokens;
+                budgeted.push(msg.clone());
+            }
         }
     }
 
@@ -176,10 +239,13 @@ fn budget_messages(messages: &[UnifiedMessage], budget_tokens: usize, model_id: 
         let msg_tokens = count_tokens(&content_str, model_id);
         
         if total_tokens + msg_tokens > budget_tokens {
-            // Try to keep at least the most recent user message
-            if msg.role == "user" && temp.iter().all(|m: &UnifiedMessage| m.role != "user") {
-                // Force include even if it exceeds budget slightly
-                temp.push(msg.clone());
+            let remaining_budget = budget_tokens.saturating_sub(total_tokens);
+            // If this is the most recent message (temp is empty), truncate it to fit remaining budget!
+            if temp.is_empty() && remaining_budget >= 50 {
+                let pruned = truncate_text_to_token_budget(&content_str, remaining_budget, model_id);
+                let mut pruned_msg = msg.clone();
+                pruned_msg.content = json!(pruned);
+                temp.push(pruned_msg);
             }
             break;
         }
@@ -270,7 +336,7 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
     let mut system_text = req.system_instruction.clone().unwrap_or_default();
 
     if !system_text.contains("VISUAL GENERATION DIRECTIVE") {
-        system_text.push_str("\n\n[VISUAL & FORMATTING DIRECTIVE]\nFormat responses using clean Markdown with headers, tables, and bullet points. Whenever prompt mentions images, visual representation, or research, you MUST embed real Markdown images: ![Description](url) using extracted web images, Unsplash photos, and Iconify vector SVGs (![Icon](https://api.iconify.design/logos/python.svg)). Never wrap image tags in backticks. For mindmaps, ensure exactly ONE top-level root node is used. For roadmaps, use horizontal flowcharts (```mermaid\nflowchart LR...\n```). For research, provide exhaustive detailed reports.");
+        system_text.push_str("\n\n[VISUAL & FORMATTING DIRECTIVE]\nFormat responses using clean Markdown with headers, tables, and bullet points. Whenever prompt mentions images, visual representation, or research, you MUST embed real Markdown images: ![Description](url) using extracted verified DuckDuckGo & Bing web photos and Iconify vector SVGs (![Icon](https://api.iconify.design/logos/python.svg)). Never wrap image tags in backticks. For mindmaps, ensure exactly ONE top-level root node is used. For roadmaps, use horizontal flowcharts (```mermaid\nflowchart LR...\n```). For research, provide exhaustive detailed reports.");
     }
 
     if req.reasoning_enabled == Some(true) && !system_text.contains("<think>") {
@@ -282,12 +348,10 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
     // Context window: use active server ctx if available, request value, or safe fallback
     let context_window: usize = if active_server_ctx > 0 {
         active_server_ctx as usize
+    } else if let Some(req_ctx) = req.context_window.filter(|&v| v > 0) {
+        req_ctx as usize
     } else {
-        req.context_window
-            .filter(|&v| v > 0)
-            .map(|v| v as usize)
-            .unwrap_or(65536)
-            .max(16384)
+        4096
     };
 
     if context_window < 512 {
@@ -303,26 +367,23 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         || req.model_id.to_lowercase().contains("-r1")
         || req.model_id.to_lowercase().contains("qw");
     
-    let requested_max = max_tokens.unwrap_or(8192) as usize;
-    let response_reserve = if is_reasoning_model {
-        (context_window / 3).clamp(4096, requested_max.max(16384))
-    } else {
-        (context_window / 3).clamp(2048, requested_max.max(8192))
-    };
+    let requested_max = max_tokens.unwrap_or(2048) as usize;
+    let max_output_allowed = (context_window / 3).max(256).min(requested_max);
+    let response_reserve = max_output_allowed;
 
     // Budget calculation with safety margin
-    let safety_margin = if is_reasoning_model { 1024 } else { 512 };
+    let safety_margin = if context_window <= 4096 { 128 } else if is_reasoning_model { 512 } else { 256 };
     let budget = context_window
         .saturating_sub(response_reserve)
         .saturating_sub(safety_margin)
-        .max(4096);
+        .max(256);
 
-    // Validate system prompt size - allow system prompts up to usable context window minus safety margin
+    // Validate and truncate system prompt size gracefully
     if !system_text.is_empty() {
         let system_tokens = count_tokens(&system_text, &req.model_id);
-        let max_system_allowed = context_window.saturating_sub(safety_margin + 512);
-        if system_tokens > max_system_allowed {
-            return Err(RequestBuildError::SystemTooLong { tokens: system_tokens });
+        let max_system_allowed = (budget * 4) / 10;
+        if system_tokens > max_system_allowed && max_system_allowed > 50 {
+            system_text = truncate_text_to_token_budget(&system_text, max_system_allowed, &req.model_id);
         }
     }
 
@@ -347,13 +408,21 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         .map(|m| count_tokens(&get_content_string(&m.content), &req.model_id))
         .sum();
 
+    // Resolve virtual model aliases to the actual GGUF filename for llama-server compatibility.
+    // llama-server requires the real model name; virtual aliases like 'lucifer-native' are unknown to it.
+    let effective_model_id = match req.model_id.as_str() {
+        "lucifer-native" | "qwen2.5-1.5b-instruct-native" => "qwen2.5-1.5b-instruct-q4_k_m.gguf".to_string(),
+        other => other.to_string(),
+    };
+
     let mut body = json!({
-        "model": req.model_id,
+        "model": effective_model_id,
         "messages": sanitized,
         "temperature": req.temperature.unwrap_or(0.7),
         "stream": true,
         "cache_prompt": true,
     });
+
 
 
 
@@ -705,7 +774,58 @@ pub async fn execute_local_stream(
             return Ok(Box::pin(stream));
         }
 
-        return Err("No local model loaded. Please load a model before sending messages.".to_string());
+        // Auto-boot the native Qwen 2.5 1.5B agent on GPU if port is 0
+        let target_model = if req.model_id.contains(".gguf") {
+            req.model_id.clone()
+        } else {
+            "qwen2.5-1.5b-instruct-q4_k_m.gguf".to_string()
+        };
+        
+        let resolved = crate::llm::local_orchestrator::resolve_model_path(app, &target_model).await;
+        if resolved.is_some() {
+            let active_port = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
+            if active_port == 0 {
+                info!("[Inference] Auto-starting native Lucifer GPU engine with model: {}", target_model);
+                if let Some(manager) = app.try_state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>() {
+                    let _ = crate::llm::local_orchestrator::start_local_server(
+                        app.clone(),
+                        manager,
+                        target_model,
+                        Some(8192),
+                        Some(99), // 100% GPU offload
+                        None,
+                        Some(true),
+                        None,
+                        None,
+                        Some(512),
+                        None,
+                        None,
+                        None,
+                        None,
+                    ).await;
+                }
+
+                // Poll for up to 90 seconds (180 × 500ms) for the server to become ready.
+                // start_local_server is async but the internal llama-server process takes time to
+                // bind its port and report ready. Without this wait the port is still 0 immediately
+                // after the call returns, causing a spurious "model not downloaded" error.
+                let mut waited = 0u32;
+                while waited < 180 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    let p = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
+                    if p != 0 {
+                        info!("[Inference] Native Lucifer server ready on port {} after {}ms", p, waited * 500);
+                        break;
+                    }
+                    waited += 1;
+                }
+            }
+        }
+
+        let current_port = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
+        if current_port == 0 {
+            return Err("Native Qwen 2.5 1.5B model is not yet downloaded. Please run install-qwen-model.bat or download it in Settings to start chatting offline.".to_string());
+        }
     }
 
     // Acquire rate limit permit
@@ -728,12 +848,59 @@ pub async fn execute_local_stream(
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
-    if !response.status().is_success() {
+    let response = if !response.status().is_success() {
         let status = response.status();
         let body_text = response.text().await.unwrap_or_default();
         error!("[Inference] HTTP error {}: {}", status, &body_text[..body_text.len().min(500)]);
-        return Err(format!("Local request failed ({}): {}", status, body_text));
-    }
+
+        if body_text.contains("exceed_context_size_error") || body_text.contains("exceeds the available context size") {
+            warn!("[AutoContextController] Context limit exceeded on local server. Auto-recovering...");
+
+            let detected_ctx = if let Ok(err_json) = serde_json::from_str::<Value>(&body_text) {
+                err_json.get("error")
+                    .and_then(|e| e.get("n_ctx"))
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32)
+            } else {
+                None
+            }.unwrap_or(4096);
+
+            crate::llm::local_orchestrator::ACTIVE_SERVER_CTX_SIZE.store(detected_ctx, std::sync::atomic::Ordering::Relaxed);
+
+            let mut retry_req = req.clone();
+            retry_req.context_window = Some(detected_ctx);
+            let reduced_max = (detected_ctx / 4).clamp(256, 1024);
+            retry_req.max_tokens = Some(reduced_max);
+
+            let retry_config = build_local_request(&retry_req)
+                .map_err(|e| format!("Auto-context rebuild failed: {}", e))?;
+
+            info!(
+                "[AutoContextController] Retrying with compacted payload (n_ctx={}, estimated_input={})",
+                detected_ctx, retry_config.estimated_input_tokens
+            );
+
+            let retry_response = LOCAL_HTTP_CLIENT.post(&retry_config.endpoint)
+                .headers(retry_config.headers)
+                .json(&retry_config.body)
+                .timeout(std::time::Duration::from_secs(3600))
+                .send()
+                .await
+                .map_err(|e| format!("Auto-context retry connection failed: {}", e))?;
+
+            if !retry_response.status().is_success() {
+                let retry_status = retry_response.status();
+                let retry_body = retry_response.text().await.unwrap_or_default();
+                return Err(format!("Local request failed ({}): {}", retry_status, retry_body));
+            }
+
+            retry_response
+        } else {
+            return Err(format!("Local request failed ({}): {}", status, body_text));
+        }
+    } else {
+        response
+    };
 
     let stream = try_stream! {
         let byte_stream = response.bytes_stream().map_err(|e| {
@@ -1056,6 +1223,7 @@ mod tests {
             capabilities: None,
             tool_choice: None,
             web_search_enabled: false,
+            agent_mode: None,
         };
 
         

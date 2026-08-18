@@ -15,6 +15,7 @@ interface ChatSidebarProps {
   sessions: ChatSession[];
   onSelectSession: (id: string) => void;
   onNewSession: () => void;
+  onDeleteSession?: (id: string) => void;
 }
 
 export const ChatSidebar: React.FC<ChatSidebarProps> = ({
@@ -23,6 +24,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   sessions,
   onSelectSession,
   onNewSession,
+  onDeleteSession,
 }) => {
   const { t } = useTranslation();
 
@@ -68,16 +70,18 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             <span className="text-[11px] text-muted-foreground ml-[22px] mt-0.5">
               {session.date}
             </span>
-            <button
-              aria-label={`Delete session ${session.title}`}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 opacity-0 group-hover:opacity-100 hover:text-destructive text-muted-foreground transition-all"
-              onClick={(e) => {
-                e.stopPropagation();
-                // handle delete
-              }}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {onDeleteSession && (
+              <button
+                aria-label={`Delete session ${session.title}`}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 opacity-0 group-hover:opacity-100 hover:text-destructive text-muted-foreground transition-all"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteSession(session.id);
+                }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         ))}
       </div>

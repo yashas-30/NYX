@@ -56,6 +56,26 @@ export const ChatMessageSchema = z.object({
     engine: z.string().optional(),
   })).optional(),
 
+  videos: z.array(z.object({
+    url: z.string(),
+    previewUrl: z.string().optional(),
+    title: z.string().optional(),
+    duration: z.number().optional(),
+    source: z.string().optional(),
+    author: z.string().optional(),
+    authorUrl: z.string().optional(),
+  })).optional(),
+
+  audios: z.array(z.object({
+    url: z.string(),
+    title: z.string().optional(),
+    artist: z.string().optional(),
+    duration: z.number().optional(),
+    source: z.string().optional(),
+    tags: z.string().optional(),
+    previewUrl: z.string().optional(),
+  })).optional(),
+
   attachments: z.array(z.object({
     name: z.string(),
     url: z.string().optional(),

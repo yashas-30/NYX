@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ModelOption, AISettings, Provider } from '@nyx/shared/types';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 
 interface AppState {
   apiKeys: Record<Provider, string>;
@@ -35,25 +36,56 @@ export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
       apiKeys: {} as Record<Provider, string>,
-      setApiKey: (provider, key) =>
+      setApiKey: (provider, key) => {
         set((state) => ({
           apiKeys: { ...state.apiKeys, [provider]: key },
-        })),
-      clearApiKey: (provider) =>
+        }));
+        try {
+          useNyxStore.getState().updateApiKey(provider, key);
+        } catch {
+          // Safe no-op during initialization
+        }
+      },
+      clearApiKey: (provider) => {
         set((state) => {
           const next = { ...state.apiKeys };
           delete next[provider];
           return { apiKeys: next };
-        }),
+        });
+        try {
+          useNyxStore.getState().updateApiKey(provider, '');
+        } catch {
+          // Safe no-op
+        }
+      },
 
       selectedModel: null,
-      setSelectedModel: (model) => set({ selectedModel: model }),
+      setSelectedModel: (model) => {
+        set({ selectedModel: model });
+        if (model) {
+          try {
+            useNyxStore.getState().setCurrentModel(model);
+          } catch {
+            // Safe no-op
+          }
+        }
+      },
 
       settings: defaultSettings,
-      updateSettings: (newSettings) =>
+      updateSettings: (newSettings) => {
         set((state) => ({
           settings: { ...state.settings, ...newSettings },
-        })),
+        }));
+        try {
+          useNyxStore.getState().updateModelSettings({
+            temperature: newSettings.temperature,
+            maxTokens: newSettings.maxTokens,
+            topP: newSettings.topP,
+          });
+        } catch {
+          // Safe no-op
+        }
+      },
 
       sidebarOpen: true,
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -81,4 +113,4 @@ export const useAppStore = create<AppState>()(
       }),
     }
   )
-);
+);

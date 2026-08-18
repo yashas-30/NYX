@@ -49,6 +49,7 @@ pub use local_orchestrator::{
     analyze_hardware,
     estimate_hardware_usage,
     download_local_model,
+    open_external_installer_cli,
     start_local_server,
     stop_local_server,
     check_local_server_status,
@@ -72,3 +73,41 @@ pub use local_inference::{
     execute_local_stream,
     llm_local_stream_request,
 };
+
+use tauri::AppHandle;
+use futures_util::StreamExt;
+use tokio::sync::mpsc;
+
+/// Executes an LLM stream on either local inference (nyx-native / GGUF) or cloud orchestrator,
+/// returning a unified mpsc unbounded channel receiver.
+pub async fn execute_any_stream(
+    app: &AppHandle,
+    req: &UnifiedRequest,
+) -> Result<mpsc::UnboundedReceiver<Result<StreamChunkPayload, String>>, String> {
+    let is_local = req.provider == "nyx-native" || req.provider.contains("local") || req.model_id.contains(".gguf");
+    if is_local {
+        let stream = execute_local_stream(app, req).await?;
+        let (tx, rx) = mpsc::unbounded_channel();
+        tauri::async_runtime::spawn(async move {
+            tokio::pin!(stream);
+            while let Some(res) = stream.next().await {
+                if tx.send(res).is_err() {
+                    break;
+                }
+            }
+        });
+        Ok(rx)
+    } else {
+        let mut cloud_rx = execute_cloud_stream(req).await?;
+        let (tx, rx) = mpsc::unbounded_channel();
+        tauri::async_runtime::spawn(async move {
+            while let Some(res) = cloud_rx.recv().await {
+                if tx.send(res).is_err() {
+                    break;
+                }
+            }
+        });
+        Ok(rx)
+    }
+}
+
