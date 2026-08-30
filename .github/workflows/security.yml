@@ -7,6 +7,15 @@ on:
   schedule:
     - cron: '0 0 * * 0' # Run weekly on Sunday
 
+env:
+  NODE_OPTIONS: '--max-old-space-size=4096'
+  CI: 'true'
+  HUSKY: '0'
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   security:
     runs-on: ubuntu-latest

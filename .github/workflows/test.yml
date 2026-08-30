@@ -1,5 +1,15 @@
 name: Test
 on: [push, pull_request]
+
+env:
+  NODE_OPTIONS: '--max-old-space-size=4096'
+  CI: 'true'
+  HUSKY: '0'
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
     runs-on: ubuntu-latest
