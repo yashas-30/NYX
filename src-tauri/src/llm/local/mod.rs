@@ -1,11 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NYX — Local Submodule Root
+// NYX — Local LLM Module Root
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub mod downloader;
-pub mod manager;
+pub mod hardware;
+pub mod scheduler;
+pub mod server;
+pub mod binary_manager;
+pub mod hf_downloader;
+pub mod commands;
 
-pub use downloader::{Downloader, HfModelResult, HfModelFile, LLAMACPP_PINNED_VERSION};
-pub use manager::{LlamaManager, CommandExtWindows, SERVER_PORT, SERVER_HOST};
-
-
+// Re-export all submodules so `crate::llm::local::*` or `crate::llm::local_orchestrator::*`
+// can access all structs, types, constants, and tauri commands seamlessly.
+pub use hardware::*;
+pub use scheduler::*;
+pub use server::*;
+pub use binary_manager::*;
+pub use hf_downloader::*;
+pub use commands::*;

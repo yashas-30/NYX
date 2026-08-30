@@ -25,13 +25,13 @@ export function LocalProviderStatus() {
       // direct fetch() calls to 127.0.0.1 on some OS configurations.
       const { invoke } = await import('@tauri-apps/api/core');
       const data: any = await invoke('check_local_server_status').catch(() => null);
-      if (data) {
+      if (data && data.running) {
         setStatus({
           tauri: {
             connected: true,
-            models: data.data || [{ name: 'local-model' }],
-            port: '8080',
-          }
+            models: [{ name: data.model_id || 'local-model' }],
+            port: String(data.port || '8080'),
+          },
         });
         setLastUpdated(new Date());
       } else {
@@ -59,41 +59,41 @@ export function LocalProviderStatus() {
     );
   }
 
-  const providers: Array<{ key: keyof LocalStatus; label: string; data: ProviderStatus | undefined }> = [
-    { key: 'tauri', label: 'Tauri Native', data: status.tauri },
-  ];
+  const providers: Array<{
+    key: keyof LocalStatus;
+    label: string;
+    data: ProviderStatus | undefined;
+  }> = [{ key: 'tauri', label: 'Tauri Native', data: status.tauri }];
 
   return (
     <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-card border border-border text-xs">
-      {providers.map(({ key, label, data }) => data ? (
-        <div
-          key={key}
-          className="flex items-center gap-1.5"
-          title={`${label}: ${
-            data.connected
-              ? `${data.models.length} model(s) on :${data.port}`
-              : `Not running on :${data.port}`
-          }`}
-        >
-          <motion.div
-            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-              data.connected ? 'bg-emerald-400' : 'bg-muted'
-            }`}
-            animate={
+      {providers.map(({ key, label, data }) =>
+        data ? (
+          <div
+            key={key}
+            className="flex items-center gap-1.5"
+            title={`${label}: ${
               data.connected
-                ? { scale: [1, 1.4, 1], opacity: [1, 0.6, 1] }
-                : {}
-            }
-            transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          <span className={data.connected ? 'text-foreground/80' : 'text-muted-foreground/60'}>
-            {label}
-            {data.connected && (
-              <span className="ml-1 text-emerald-400/70 font-mono">{data.models.length}</span>
-            )}
-          </span>
-        </div>
-      ) : null)}
+                ? `${data.models.length} model(s) on :${data.port}`
+                : `Not running on :${data.port}`
+            }`}
+          >
+            <motion.div
+              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                data.connected ? 'bg-emerald-400' : 'bg-muted'
+              }`}
+              animate={data.connected ? { scale: [1, 1.4, 1], opacity: [1, 0.6, 1] } : {}}
+              transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <span className={data.connected ? 'text-foreground/80' : 'text-muted-foreground/60'}>
+              {label}
+              {data.connected && (
+                <span className="ml-1 text-emerald-400/70 font-mono">{data.models.length}</span>
+              )}
+            </span>
+          </div>
+        ) : null
+      )}
       <button
         onClick={fetchStatus}
         disabled={loading}

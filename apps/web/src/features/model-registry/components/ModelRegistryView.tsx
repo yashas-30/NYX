@@ -70,11 +70,13 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   const [filter, setFilter] = useState<'local' | 'huggingface' | 'cloud'>('local');
   const [expandedModelId, setExpandedModelId] = useState<string | null>(null);
 
-  const loadedLocalModel = useModelStore(s => s.loadedLocalModel);
-  const setLoadedLocalModel = useModelStore(s => s.setLoadedLocalModel);
-  const updateModelSettings = useNyxStore(s => s.updateModelSettings);
+  const loadedLocalModel = useModelStore((s) => s.loadedLocalModel);
+  const setLoadedLocalModel = useModelStore((s) => s.setLoadedLocalModel);
+  const updateModelSettings = useNyxStore((s) => s.updateModelSettings);
 
-  const [loadingState, setLoadingState] = useState<'idle'|'loading'|'unloading'|'uninstalling'>('idle');
+  const [loadingState, setLoadingState] = useState<
+    'idle' | 'loading' | 'unloading' | 'uninstalling'
+  >('idle');
   const [actionModelId, setActionModelId] = useState<string | null>(null);
   const [hardwareSpecs, setHardwareSpecs] = useState<any>(null);
 
@@ -91,14 +93,16 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
       }
     };
     fetchHardware();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleLoadModel = async (modelId: string) => {
     try {
       setActionModelId(modelId);
       setLoadingState('loading');
-      
+
       let deferredResolve!: () => void;
       let deferredReject!: (err: Error) => void;
       const readyPromise = new Promise<void>((res, rej) => {
@@ -124,7 +128,12 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
           cleanup();
           deferredReject(new Error(event.payload.error));
         }),
-        listen<{ ngl: number, fully_gpu: boolean, suggest_cloud_fallback: boolean, message: string }>('vram-decision', (event) => {
+        listen<{
+          ngl: number;
+          fully_gpu: boolean;
+          suggest_cloud_fallback: boolean;
+          message: string;
+        }>('vram-decision', (event) => {
           if (event.payload.suggest_cloud_fallback) {
             toast.warning(event.payload.message, { duration: 10000, id: 'vram-decision' });
           } else {
@@ -141,10 +150,29 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
       const state = useNyxStore.getState();
       const targetConfig = state.modelConfigs?.[modelId] || DEFAULT_SETTINGS;
-      const { contextSize, gpuLayers, threads: cpuThreads, flashAttention, kvCacheType, useMlock, batchSize, draftModelId, disableKvOffload } = targetConfig;
+      const {
+        contextSize,
+        gpuLayers,
+        threads: cpuThreads,
+        flashAttention,
+        kvCacheType,
+        useMlock,
+        batchSize,
+        draftModelId,
+        disableKvOffload,
+      } = targetConfig;
 
-      invoke('start_local_server', { 
-        modelId, contextSize, gpuLayers, cpuThreads, flashAttention, kvCacheType, useMlock, batchSize, draftModelId, disableKvOffload
+      invoke('start_local_server', {
+        modelId,
+        contextSize,
+        gpuLayers,
+        cpuThreads,
+        flashAttention,
+        kvCacheType,
+        useMlock,
+        batchSize,
+        draftModelId,
+        disableKvOffload,
       }).catch((err) => {
         cleanup();
         deferredReject(new Error(String(err)));
@@ -181,7 +209,6 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
 
       setActionModelId(modelId);
 
-
       if (loadedLocalModel === modelId) {
         await handleUnloadModel();
       }
@@ -205,17 +232,27 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
   // Listens to both llm-download-complete (server binary) and hf-download-complete (HF models).
   useEffect(() => {
     const unlistens: Array<() => void> = [];
-    const isTauri = typeof window !== 'undefined' &&
-      ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+    const isTauri =
+      typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
     if (!isTauri) return;
     listen('llm-download-complete', () => {
       localModelsQuery.refetch();
-    }).then((fn) => { unlistens.push(fn); }).catch(() => {});
+    })
+      .then((fn) => {
+        unlistens.push(fn);
+      })
+      .catch(() => {});
     listen('hf-download-complete', () => {
       localModelsQuery.refetch();
-    }).then((fn) => { unlistens.push(fn); }).catch(() => {});
-    return () => { unlistens.forEach((fn) => fn()); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    })
+      .then((fn) => {
+        unlistens.push(fn);
+      })
+      .catch(() => {});
+    return () => {
+      unlistens.forEach((fn) => fn());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const query = search.toLowerCase();
@@ -322,118 +359,149 @@ const ModelRegistryViewComponent: React.FC<ModelRegistryViewProps> = ({
           </div>
         </header>
 
-        <div className={filter === 'huggingface' ? "flex-1 min-h-0 overflow-hidden flex flex-col h-full" : "hidden"}>
+        <div
+          className={
+            filter === 'huggingface'
+              ? 'flex-1 min-h-0 overflow-hidden flex flex-col h-full'
+              : 'hidden'
+          }
+        >
           <HuggingFaceExplorer />
         </div>
 
-        <div className={filter !== 'huggingface' ? "flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6" : "hidden"}>
-            {showLocal && (
-              <div className="flex flex-col gap-6">
-                <HardwareAnalyzerCard />
-                <ActiveDownloads downloads={downloads} />
-                <section className="space-y-4 p-6 rounded-2xl bg-card border border-border shadow-sm">
-                  <SectionHeader
-                    icon={<Cpu size={18} weight="duotone" className="text-orange-500" />}
-                    title="NYX Native"
-                    subtitle="Models hosted locally on your machine."
-                  />
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                    {localModelsQuery.isLoading ? (
-                      Array.from({ length: 4 }).map((_, i) => <ModelCardSkeleton key={`skel-${i}`} />)
-                    ) : nyxNativeModels.map((m: any, idx: number) => {
-                      const dlEntry = Object.entries(downloads).find(
-                        ([key]) => key === m.id || key.endsWith('/' + m.id) || key.endsWith('/' + m.name) || key === m.name
-                      );
-                      const downloadState = dlEntry ? dlEntry[1] : undefined;
-                      const downloadKey = dlEntry ? dlEntry[0] : undefined;
-
-                      return (
-                       <ModelCard 
-                         key={m.id} 
-                         id={m.id}
-                         index={idx} 
-                         name={m.name} 
-                         provider={m.provider} 
-                         description={m.description} 
-                         specs={m.specs} 
-                         features={m.features} 
-                         pros={m.pros} 
-                         cons={m.cons} 
-                         hasKey={true} 
-                         status="online" 
-                         usage={undefined} 
-                         isExpanded={expandedModelId === m.id} 
-                         onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
-                         isLocal={true}
-                         isLoaded={isModelLoaded(m.id, loadedLocalModel)}
-                         loadingState={actionModelId === m.id ? loadingState : 'idle'}
-                         onLoad={() => handleLoadModel(m.id)}
-                         onUnload={() => handleUnloadModel()}
-                         onUninstall={() => handleUninstallModel(m.id)}
-                         modelSizeBytes={m.size_bytes}
-                         systemVramBytes={hardwareSpecs?.gpu_vram}
-                         downloadState={downloadState}
-                         onPauseDownload={downloadKey ? () => handlePause(downloadKey) : undefined}
-                         onResumeDownload={downloadKey ? () => handleResume(downloadKey) : undefined}
-                         onCancelDownload={downloadKey ? () => handleCancel(downloadKey) : undefined}
-                       />
-                      );
-                    })}
-                    {!localModelsQuery.isLoading && nyxNativeModels.length === 0 && (
-                       <div className="col-span-full">
-                         <EmptyState message="No local models found" hint="Go to the Hugging Face tab to download GGUF models." />
-                       </div>
-                    )}
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {showCloud && (
-              <section className="space-y-6 p-6 rounded-2xl bg-card border border-border shadow-sm">
+        <div
+          className={
+            filter !== 'huggingface'
+              ? 'flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6'
+              : 'hidden'
+          }
+        >
+          {showLocal && (
+            <div className="flex flex-col gap-6">
+              <HardwareAnalyzerCard />
+              <ActiveDownloads downloads={downloads} />
+              <section className="space-y-4 p-6 rounded-2xl bg-card border border-border shadow-sm">
                 <SectionHeader
-                  icon={<Globe size={18} weight="duotone" />}
-                  title="Cloud Models"
-                  subtitle="Ready to use online models"
+                  icon={<Cpu size={18} weight="duotone" className="text-orange-500" />}
+                  title="NYX Native"
+                  subtitle="Models hosted locally on your machine."
                 />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
+                  {localModelsQuery.isLoading
+                    ? Array.from({ length: 4 }).map((_, i) => (
+                        <ModelCardSkeleton key={`skel-${i}`} />
+                      ))
+                    : nyxNativeModels.map((m: any, idx: number) => {
+                        const dlEntry = Object.entries(downloads).find(
+                          ([key]) =>
+                            key === m.id ||
+                            key.endsWith('/' + m.id) ||
+                            key.endsWith('/' + m.name) ||
+                            key === m.name
+                        );
+                        const downloadState = dlEntry ? dlEntry[1] : undefined;
+                        const downloadKey = dlEntry ? dlEntry[0] : undefined;
 
-                {groupedCloud.map(([provider, models]) => (
-                  <div key={provider} className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted-foreground/80 shrink-0">
-                        {provider}
-                      </span>
-                      <div className="h-px flex-1 bg-gradient-to-r from-border/40 to-transparent" />
+                        return (
+                          <ModelCard
+                            key={m.id}
+                            id={m.id}
+                            index={idx}
+                            name={m.name}
+                            provider={m.provider}
+                            description={m.description}
+                            specs={m.specs}
+                            features={m.features}
+                            pros={m.pros}
+                            cons={m.cons}
+                            hasKey={true}
+                            status="online"
+                            usage={undefined}
+                            isExpanded={expandedModelId === m.id}
+                            onToggleExpand={() =>
+                              setExpandedModelId(expandedModelId === m.id ? null : m.id)
+                            }
+                            isLocal={true}
+                            isLoaded={isModelLoaded(m.id, loadedLocalModel)}
+                            loadingState={actionModelId === m.id ? loadingState : 'idle'}
+                            onLoad={() => handleLoadModel(m.id)}
+                            onUnload={() => handleUnloadModel()}
+                            onUninstall={() => handleUninstallModel(m.id)}
+                            modelSizeBytes={m.size_bytes}
+                            systemVramBytes={hardwareSpecs?.gpu_vram}
+                            downloadState={downloadState}
+                            onPauseDownload={
+                              downloadKey ? () => handlePause(downloadKey) : undefined
+                            }
+                            onResumeDownload={
+                              downloadKey ? () => handleResume(downloadKey) : undefined
+                            }
+                            onCancelDownload={
+                              downloadKey ? () => handleCancel(downloadKey) : undefined
+                            }
+                          />
+                        );
+                      })}
+                  {!localModelsQuery.isLoading && nyxNativeModels.length === 0 && (
+                    <div className="col-span-full">
+                      <EmptyState
+                        message="No local models found"
+                        hint="Go to the Hugging Face tab to download GGUF models."
+                      />
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
-                      {models.map((m, idx) => (
-                        <ModelCard
-                          key={m.id}
-                          id={m.id}
-                          index={idx}
-                          name={m.name}
-                          provider={m.provider}
-                          description={m.description}
-                          specs={m.specs as any}
-                          features={m.features}
-                          pros={m.pros}
-                          cons={m.cons}
-                          usage={usage[m.provider]}
-                          hasKey={!!apiKeys[m.provider]}
-                          status={providerStatuses?.[m.provider]}
-                          lifecycleStatus={m.status || 'ga'}
-                          shutdownDate={m.shutdownDate}
-                          isExpanded={expandedModelId === m.id}
-                          onToggleExpand={() => setExpandedModelId(expandedModelId === m.id ? null : m.id)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                  )}
+                </div>
               </section>
-            )}
-          </div>
+            </div>
+          )}
+
+          {showCloud && (
+            <section className="space-y-6 p-6 rounded-2xl bg-card border border-border shadow-sm">
+              <SectionHeader
+                icon={<Globe size={18} weight="duotone" />}
+                title="Cloud Models"
+                subtitle="Ready to use online models"
+              />
+
+              {groupedCloud.map(([provider, models]: [string, ModelOption[]]) => (
+                <div key={provider} className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] font-black uppercase tracking-[0.3em] text-muted-foreground/80 shrink-0">
+                      {provider}
+                    </span>
+                    <div className="h-px flex-1 bg-gradient-to-r from-border/40 to-transparent" />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 items-start">
+                    {models.map((m, idx) => (
+                      <ModelCard
+                        key={m.id}
+                        id={m.id}
+                        index={idx}
+                        name={m.name}
+                        provider={m.provider}
+                        description={m.description}
+                        specs={m.specs as any}
+                        features={m.features}
+                        pros={m.pros}
+                        cons={m.cons}
+                        usage={usage[m.provider]}
+                        hasKey={!!apiKeys[m.provider]}
+                        status={providerStatuses?.[m.provider]}
+                        lifecycleStatus={m.status || 'ga'}
+                        shutdownDate={m.shutdownDate}
+                        isExpanded={expandedModelId === m.id}
+                        onToggleExpand={() =>
+                          setExpandedModelId(expandedModelId === m.id ? null : m.id)
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+        </div>
       </div>
     </motion.div>
   );

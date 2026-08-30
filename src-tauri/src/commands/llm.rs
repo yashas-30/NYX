@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // All implementation has moved to:
-//   llm/cloud_orchestrator.rs  — cloud streaming engine
+//   llm/providers/             — cloud streaming providers hub
 //   llm/local_orchestrator.rs  — local model management
 //
 // Re-export everything so that existing call sites (research.rs, main.rs,
@@ -17,7 +17,7 @@ pub use crate::llm::types::{
 };
 
 // Cloud types & commands
-pub use crate::llm::cloud_orchestrator::{
+pub use crate::llm::providers::{
     QuotaResponse,
     execute_cloud_stream as execute_llm_stream,
     llm_stream_request,

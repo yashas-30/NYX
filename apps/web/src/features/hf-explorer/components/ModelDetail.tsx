@@ -2,15 +2,35 @@
 // LM Studio-style right detail panel with clean Download Options, details, and full README support
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
-  ArrowSquareOut, Download, Star, Clock, Key, CheckCircle,
-  DownloadSimple, HardDrives, CaretDown, CaretUp,
-  Globe, Sparkle, FileText,
+  ArrowSquareOut,
+  Download,
+  Star,
+  Clock,
+  Key,
+  CheckCircle,
+  DownloadSimple,
+  HardDrives,
+  CaretDown,
+  CaretUp,
+  Globe,
+  Sparkle,
+  FileText,
 } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
-import { parseModelId, formatCount, formatDate, formatSize, parseQuantLabel } from '../lib/utils';
+import {
+  parseModelId,
+  formatCount,
+  formatDate,
+  formatSize,
+  parseQuantDetails,
+  analyzeHardwareMatch,
+  pickBestFile,
+} from '../lib/utils';
+import { getCapabilityTags, getArchitectureName, extractParameterCount } from '../lib/capabilities';
 import { useDownloadActions } from '../hooks/useHfDownloads';
+import { useHfExplorerStore } from '../stores/useHfExplorerStore';
 import { HfAuthorAvatar } from './HfAuthorAvatar';
 import type { HfModelResult, HfModelFile, HardwareSpecs } from '../types';
 
@@ -20,63 +40,42 @@ interface ModelDetailProps {
   files: HfModelFile[];
   readme: string;
   hardware: HardwareSpecs | null;
-  downloads: Record<string, { progress: number; downloaded: number; total: number; status: string; error?: string; eta?: number; speed?: number }>;
+  downloads: Record<
+    string,
+    {
+      progress: number;
+      downloaded: number;
+      total: number;
+      status: string;
+      error?: string;
+      eta?: number;
+      speed?: number;
+    }
+  >;
 }
 
-const COMPANION_SUPPORT_FILES = [
-  'ae.safetensors', 'clip_l.safetensors', 'clip_l.f16.safetensors',
-  'clip_g.safetensors', 't5xxl_fp8_e4m3fn.safetensors',
-  't5xxl_fp16.safetensors', 't5xxl.safetensors', 'vae.safetensors',
-];
-
-/* ─── Hardware analysis ──────────────────────────────────────────────────── */
-type HardwareBadge = 'gpu' | 'recommended' | 'cpu' | 'warning' | null;
-
-function analyzeHardwareMatch(fileSize: number, filename: string, hw: HardwareSpecs | null): { badge: HardwareBadge; label: string } {
-  if (!hw || fileSize <= 0) return { badge: null, label: '' };
-  const totalRamGb = hw.total_ram / 1024 ** 3;
-  const freeRamGb = (hw.free_ram || hw.total_ram * 0.7) / 1024 ** 3;
-  const vramGb = hw.gpu_vram / 1024 ** 3;
-  const sizeGb = fileSize / 1024 ** 3;
-  const fn = filename.toLowerCase();
-  if (vramGb >= 2 && sizeGb > 0 && sizeGb <= vramGb - 0.5) return { badge: 'gpu', label: 'Fits VRAM' };
-  if (sizeGb <= Math.max(freeRamGb, totalRamGb * 0.75)) {
-    if (fn.includes('q4_k_m') || fn.includes('q5_k_m') || fn.includes('iq4_xs'))
-      return { badge: 'recommended', label: 'Recommended' };
-    return { badge: 'cpu', label: 'Fits RAM' };
-  }
-  if (sizeGb <= totalRamGb) return { badge: 'warning', label: 'Low RAM' };
-  return { badge: 'warning', label: 'Too Large' };
-}
-
-function pickBestFile(files: HfModelFile[], hw: HardwareSpecs | null): string | null {
-  if (!files.length) return null;
-  if (!hw) return files[0]?.filename ?? null;
-  const scored = files.map(f => {
-    const { badge } = analyzeHardwareMatch(f.size, f.filename, hw);
-    const score = badge === 'gpu' ? 4 : badge === 'recommended' ? 3 : badge === 'cpu' ? 2 : badge === 'warning' ? 1 : 0;
-    return { file: f, score };
-  });
-  const quantRank = (fn: string) => {
-    const l = fn.toLowerCase();
-    if (l.includes('q4_k_m')) return 1; if (l.includes('q5_k_m')) return 2;
-    if (l.includes('q4_k_s')) return 3; if (l.includes('q8_0')) return 4;
-    if (l.includes('q3_k_m')) return 5; if (l.includes('iq4_xs')) return 6;
-    if (l.includes('q6_k')) return 7; return 10;
-  };
-  scored.sort((a, b) => b.score !== a.score ? b.score - a.score : quantRank(a.file.filename) - quantRank(b.file.filename));
-  return scored[0]?.file.filename ?? null;
+export interface GgufQuantOption {
+  quantKey: string;
+  primaryFilename: string;
+  allFilenames: string[];
+  totalSize: number;
+  isMultiPart: boolean;
+  partCount: number;
 }
 
 /* ─── Clean Custom Quantization Selector Box matching LM Studio ──────────── */
 function CleanQuantSelector({
-  files, selectedFile, bestFile, hw, onSelect,
+  options,
+  selectedKey,
+  bestKey,
+  hw,
+  onSelect,
 }: {
-  files: HfModelFile[];
-  selectedFile: string | null;
-  bestFile: string | null;
+  options: GgufQuantOption[];
+  selectedKey: string | null;
+  bestKey: string | null;
   hw: HardwareSpecs | null;
-  onSelect: (filename: string) => void;
+  onSelect: (key: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -91,14 +90,13 @@ function CleanQuantSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selected = files.find(f => f.filename === selectedFile) ?? files[0];
-  if (!selected || files.length === 0) return null;
+  const selected = options.find((o) => o.quantKey === selectedKey) ?? options[0];
+  if (!selected || options.length === 0) return null;
 
-  const localName = selected.filename.split('/').pop() ?? selected.filename;
-  const { quant } = parseQuantLabel(localName);
-  const formatTag = localName.endsWith('.gguf') ? 'GGUF' : localName.endsWith('.safetensors') ? 'SF' : localName.endsWith('.onnx') ? 'ONNX' : 'FILE';
-  const isBest = selected.filename === bestFile;
-  const { badge: selectedBadge } = analyzeHardwareMatch(selected.size, selected.filename, hw);
+  const localName = selected.primaryFilename.split('/').pop() ?? selected.primaryFilename;
+  const quantInfo = parseQuantDetails(localName);
+  const isRecommended = selected.quantKey === bestKey && bestKey !== null;
+  const hwMatch = analyzeHardwareMatch(selected.totalSize, selected.primaryFilename, hw);
 
   return (
     <div ref={dropdownRef} style={{ position: 'relative', width: '100%' }}>
@@ -110,97 +108,165 @@ function CleanQuantSelector({
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          padding: '10px 14px',
-          background: '#222224',
-          border: isOpen ? '1px solid #3b82f6' : '1px solid #333336',
+          padding: '12px 14px',
+          background: '#1c1c1f',
+          border: isOpen ? '1px solid #3b82f6' : '1px solid #2e2e32',
           borderRadius: 8,
           cursor: 'pointer',
           textAlign: 'left',
-          transition: 'all 0.15s',
+          transition: 'all 0.15s ease',
           outline: 'none',
         }}
-        onMouseEnter={e => {
+        onMouseEnter={(e) => {
           if (!isOpen) (e.currentTarget as HTMLButtonElement).style.borderColor = '#444448';
         }}
-        onMouseLeave={e => {
-          if (!isOpen) (e.currentTarget as HTMLButtonElement).style.borderColor = '#333336';
+        onMouseLeave={(e) => {
+          if (!isOpen) (e.currentTarget as HTMLButtonElement).style.borderColor = '#2e2e32';
         }}
       >
-        <span style={{
-          padding: '2px 7px',
-          borderRadius: 4,
-          background: '#18181b',
-          border: '1px solid #27272a',
-          fontSize: 10,
-          fontWeight: 700,
-          color: '#94a3b8',
-          fontFamily: 'monospace',
-          flexShrink: 0,
-        }}>
-          {formatTag}
+        <span
+          style={{
+            padding: '2px 7px',
+            borderRadius: 4,
+            background: '#121214',
+            border: '1px solid #27272a',
+            fontSize: 10,
+            fontWeight: 700,
+            color: '#94a3b8',
+            fontFamily: 'monospace',
+            flexShrink: 0,
+          }}
+        >
+          GGUF
         </span>
 
-        <span style={{
-          fontSize: 12,
-          fontWeight: 600,
-          color: '#f1f5f9',
-          fontFamily: 'monospace',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          flex: 1,
-        }}>
-          {localName.replace(/\.gguf$|\.safetensors$|\.onnx$/, '')}
-        </span>
+        {/* Quant label and bit depth */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: '#f8fafc',
+              fontFamily: 'monospace',
+            }}
+          >
+            {quantInfo.quant}
+          </span>
+          <span
+            style={{
+              fontSize: 11,
+              color: '#94a3b8',
+              fontFamily: 'monospace',
+            }}
+          >
+            ({quantInfo.bits})
+          </span>
+        </div>
 
-        {quant && (
-          <span style={{
+        {/* Quality label & Multi-part info */}
+        <span
+          style={{
             fontSize: 11,
+            color: '#64748b',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            flex: 1,
+          }}
+        >
+          {quantInfo.qualityLabel} {selected.isMultiPart && `• ${selected.partCount} parts`}
+        </span>
+
+        {/* Total Aggregated File Size */}
+        <span
+          style={{
+            fontSize: 12,
             fontWeight: 600,
             color: '#cbd5e1',
             fontFamily: 'monospace',
             flexShrink: 0,
-          }}>
-            {quant}
-          </span>
-        )}
-
-        <span style={{
-          fontSize: 11,
-          color: '#94a3b8',
-          fontFamily: 'monospace',
-          flexShrink: 0,
-        }}>
-          {formatSize(selected.size)}
+          }}
+        >
+          {formatSize(selected.totalSize)}
         </span>
 
-        {isBest ? (
-          <span style={{
-            fontSize: 10,
-            fontWeight: 600,
-            padding: '2px 8px',
-            borderRadius: 4,
-            background: 'rgba(34, 197, 94, 0.12)',
-            border: '1px solid rgba(34, 197, 94, 0.25)',
-            color: '#4ade80',
-            flexShrink: 0,
-          }}>
-            Recommended
+        {/* Hardware Status Pill */}
+        {isRecommended ? (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: 'rgba(34, 197, 94, 0.15)',
+              border: '1px solid rgba(34, 197, 94, 0.35)',
+              color: '#4ade80',
+              flexShrink: 0,
+            }}
+          >
+            ★ Recommended
           </span>
-        ) : selectedBadge === 'gpu' ? (
-          <span style={{
-            fontSize: 10,
-            fontWeight: 600,
-            padding: '2px 8px',
-            borderRadius: 4,
-            background: 'rgba(168, 85, 247, 0.12)',
-            border: '1px solid rgba(168, 85, 247, 0.25)',
-            color: '#c084fc',
-            flexShrink: 0,
-          }}>
-            Fits VRAM
+        ) : hwMatch.tier === 'full_gpu' ? (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: 'rgba(16, 185, 129, 0.15)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              color: '#34d399',
+              flexShrink: 0,
+            }}
+          >
+            ⚡ Fits VRAM
           </span>
-        ) : null}
+        ) : hwMatch.tier === 'partial_gpu' ? (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: 'rgba(59, 130, 246, 0.15)',
+              border: '1px solid rgba(59, 130, 246, 0.35)',
+              color: '#60a5fa',
+              flexShrink: 0,
+            }}
+          >
+            ⚡ Hybrid GPU
+          </span>
+        ) : hwMatch.tier === 'cpu_only' ? (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: 'rgba(148, 163, 184, 0.1)',
+              border: '1px solid rgba(148, 163, 184, 0.2)',
+              color: '#94a3b8',
+              flexShrink: 0,
+            }}
+          >
+            CPU / RAM
+          </span>
+        ) : (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              color: '#f87171',
+              flexShrink: 0,
+            }}
+          >
+            ⚠️ Out of Memory
+          </span>
+        )}
 
         <span style={{ color: '#64748b', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
           {isOpen ? <CaretUp size={12} weight="bold" /> : <CaretDown size={12} weight="bold" />}
@@ -209,93 +275,194 @@ function CleanQuantSelector({
 
       {/* Popover overlay dropdown */}
       {isOpen && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(100% + 4px)',
-          left: 0,
-          right: 0,
-          background: '#1c1c1e',
-          border: '1px solid #333336',
-          borderRadius: 8,
-          boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-          zIndex: 50,
-          maxHeight: 280,
-          overflowY: 'auto',
-          padding: 4,
-        }}>
-          {files.map(f => {
-            const fn = f.filename.split('/').pop() ?? f.filename;
-            const { quant: q } = parseQuantLabel(fn);
-            const isSel = f.filename === selected.filename;
-            const isBestF = f.filename === bestFile;
-            const { badge: b } = analyzeHardwareMatch(f.size, f.filename, hw);
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            right: 0,
+            background: '#171719',
+            border: '1px solid #2e2e32',
+            borderRadius: 8,
+            boxShadow: '0 12px 36px rgba(0,0,0,0.65)',
+            zIndex: 50,
+            maxHeight: 320,
+            overflowY: 'auto',
+            padding: 6,
+          }}
+        >
+          <div
+            style={{
+              padding: '4px 8px 8px',
+              fontSize: 10,
+              fontWeight: 700,
+              color: '#71717a',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              borderBottom: '1px solid #222225',
+              marginBottom: 4,
+            }}
+          >
+            Available GGUF Quantizations
+          </div>
+
+          {options.map((opt) => {
+            const fn = opt.primaryFilename.split('/').pop() ?? opt.primaryFilename;
+            const qDetails = parseQuantDetails(fn);
+            const isSel = opt.quantKey === selected.quantKey;
+            const isBestOpt = opt.quantKey === bestKey && bestKey !== null;
+            const match = analyzeHardwareMatch(opt.totalSize, opt.primaryFilename, hw);
 
             return (
               <div
-                key={f.filename}
+                key={opt.quantKey}
                 onClick={() => {
-                  onSelect(f.filename);
+                  onSelect(opt.quantKey);
                   setIsOpen(false);
                 }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
-                  padding: '8px 10px',
+                  padding: '9px 10px',
                   borderRadius: 6,
-                  background: isSel ? '#2563eb22' : 'transparent',
+                  background: isSel ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
+                  border: isSel ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent',
                   cursor: 'pointer',
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  transition: 'background 0.1s',
+                  transition: 'background 0.1s ease',
+                  marginBottom: 2,
                 }}
-                onMouseEnter={e => {
-                  if (!isSel) (e.currentTarget as HTMLDivElement).style.background = '#28282b';
+                onMouseEnter={(e) => {
+                  if (!isSel) (e.currentTarget as HTMLDivElement).style.background = '#222226';
                 }}
-                onMouseLeave={e => {
+                onMouseLeave={(e) => {
                   if (!isSel) (e.currentTarget as HTMLDivElement).style.background = 'transparent';
                 }}
               >
-                <span style={{ width: 14, color: '#3b82f6', fontWeight: 'bold' }}>
+                <span style={{ width: 14, color: '#3b82f6', fontWeight: 'bold', fontSize: 12 }}>
                   {isSel ? '✓' : ''}
                 </span>
 
-                <span style={{
-                  color: isSel ? '#ffffff' : '#e2e8f0',
-                  fontWeight: isSel ? 700 : 500,
-                  flex: 1,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>
-                  {fn}
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 120 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span
+                      style={{
+                        color: isSel ? '#ffffff' : '#f1f5f9',
+                        fontWeight: 700,
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      }}
+                    >
+                      {qDetails.quant}
+                    </span>
+                    <span style={{ color: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}>
+                      ({qDetails.bits})
+                    </span>
+                  </div>
+                  <span style={{ color: '#64748b', fontSize: 10 }}>
+                    {qDetails.qualityLabel} {opt.isMultiPart && `(${opt.partCount} parts)`}
+                  </span>
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                  <span
+                    style={{
+                      color: '#94a3b8',
+                      fontSize: 10,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {match.explanation}
+                  </span>
+                </div>
+
+                <span
+                  style={{
+                    color: '#cbd5e1',
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    flexShrink: 0,
+                  }}
+                >
+                  {formatSize(opt.totalSize)}
                 </span>
 
-                {q && <span style={{ color: '#94a3b8' }}>{q}</span>}
-                <span style={{ color: '#64748b' }}>{formatSize(f.size)}</span>
-
-                {isBestF ? (
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
-                    background: 'rgba(34,197,94,0.15)', color: '#4ade80',
-                  }}>
-                    Recommended
+                {isBestOpt ? (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: 4,
+                      background: 'rgba(34, 197, 94, 0.2)',
+                      color: '#4ade80',
+                      border: '1px solid rgba(34, 197, 94, 0.35)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ★ Recommended
                   </span>
-                ) : b === 'gpu' ? (
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
-                    background: 'rgba(168,85,247,0.15)', color: '#c084fc',
-                  }}>
-                    Fits VRAM
+                ) : match.tier === 'full_gpu' ? (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: 4,
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#34d399',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ⚡ Full GPU
                   </span>
-                ) : b === 'cpu' ? (
-                  <span style={{
-                    fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
-                    background: '#27272a', color: '#94a3b8',
-                  }}>
-                    Fits RAM
+                ) : match.tier === 'partial_gpu' ? (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 600,
+                      padding: '2px 7px',
+                      borderRadius: 4,
+                      background: 'rgba(59, 130, 246, 0.15)',
+                      color: '#60a5fa',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ⚡ Hybrid
                   </span>
-                ) : null}
+                ) : match.tier === 'cpu_only' ? (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 500,
+                      padding: '2px 7px',
+                      borderRadius: 4,
+                      background: '#222225',
+                      color: '#94a3b8',
+                      flexShrink: 0,
+                    }}
+                  >
+                    CPU
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: 4,
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      color: '#f87171',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ⚠️ Too Large
+                  </span>
+                )}
               </div>
             );
           })}
@@ -305,61 +472,102 @@ function CleanQuantSelector({
   );
 }
 
-/* ─── GPU Offload Pill Badge ────────────────────────────────────────────── */
-function GpuOffloadBadge({ hw, file }: { hw: HardwareSpecs | null; file: HfModelFile | null }) {
-  if (!hw || !file) return null;
-  const vramGb = hw.gpu_vram / 1024 ** 3;
-  const sizeGb = file.size / 1024 ** 3;
-  if (vramGb < 2) return null;
-  const canPartial = vramGb > 0 && sizeGb > vramGb;
-  const canFull = sizeGb <= vramGb - 0.5;
-  if (!canFull && !canPartial) return null;
+/* ─── Hardware Match Explanation Pill ───────────────────────────────────── */
+function HardwareStatusBanner({
+  hw,
+  match,
+}: {
+  hw: HardwareSpecs | null;
+  match: ReturnType<typeof analyzeHardwareMatch>;
+}) {
+  if (!hw) return null;
 
   return (
-    <div style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 6,
-      padding: '5px 10px',
-      borderRadius: 6,
-      background: 'rgba(37, 99, 235, 0.15)',
-      border: '1px solid rgba(59, 130, 246, 0.3)',
-      color: '#60a5fa',
-      fontSize: 11,
-      fontWeight: 600,
-      width: 'fit-content',
-    }}>
-      <Globe size={13} weight="bold" />
-      {canFull ? 'Full GPU Offload Possible' : 'Partial GPU Offload Possible'}
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '8px 12px',
+        borderRadius: 6,
+        background:
+          match.tier === 'full_gpu'
+            ? 'rgba(16, 185, 129, 0.1)'
+            : match.tier === 'partial_gpu'
+              ? 'rgba(59, 130, 246, 0.1)'
+              : match.tier === 'cpu_only'
+                ? 'rgba(255, 255, 255, 0.05)'
+                : 'rgba(239, 68, 68, 0.12)',
+        border: `1px solid ${
+          match.tier === 'full_gpu'
+            ? 'rgba(16, 185, 129, 0.25)'
+            : match.tier === 'partial_gpu'
+              ? 'rgba(59, 130, 246, 0.25)'
+              : match.tier === 'cpu_only'
+                ? 'rgba(255, 255, 255, 0.1)'
+                : 'rgba(239, 68, 68, 0.3)'
+        }`,
+        fontSize: 11,
+        color:
+          match.tier === 'full_gpu'
+            ? '#34d399'
+            : match.tier === 'partial_gpu'
+              ? '#60a5fa'
+              : match.tier === 'cpu_only'
+                ? '#cbd5e1'
+                : '#fca5a5',
+      }}
+    >
+      <Globe size={14} weight="bold" />
+      <span>{match.explanation}</span>
     </div>
   );
 }
 
 /* ─── Download Button matching LM Studio ────────────────────────────────── */
 function DownloadButton({
-  modelId, filename, size, downloads, onDownload, onCancel,
+  modelId,
+  filenames,
+  totalSize,
+  match,
+  downloads,
+  onDownload,
+  onCancel,
 }: {
-  modelId: string; filename: string | null; size: number;
+  modelId: string;
+  filenames: string[];
+  totalSize: number;
+  match: ReturnType<typeof analyzeHardwareMatch>;
   downloads: ModelDetailProps['downloads'];
-  onDownload: (fn: string) => void;
+  onDownload: (fns: string[]) => void;
   onCancel: (key: string) => void;
 }) {
-  if (!filename) return null;
-  const key = `${modelId}/${filename}`;
-  const dl = downloads[key];
+  if (!filenames.length) return null;
+  const primaryKey = `${modelId}/${filenames[0]}`;
+  const dl = downloads[primaryKey];
   const isDownloading = dl?.status === 'downloading';
   const isPaused = dl?.status === 'paused';
   const isCompleted = dl?.status === 'completed';
   const hasError = dl?.status === 'error';
+  const isTooLarge = match.tier === 'too_large';
 
   if (isCompleted) {
     return (
-      <button style={{
-        display: 'inline-flex', alignItems: 'center', gap: 8,
-        padding: '10px 22px', borderRadius: 8,
-        background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)',
-        color: '#4ade80', fontSize: 13, fontWeight: 700, cursor: 'default',
-      }}>
+      <button
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '10px 22px',
+          borderRadius: 8,
+          background: 'rgba(34, 197, 94, 0.12)',
+          border: '1px solid rgba(34, 197, 94, 0.3)',
+          color: '#4ade80',
+          fontSize: 13,
+          fontWeight: 700,
+          cursor: 'default',
+        }}
+      >
         <CheckCircle size={16} weight="bold" />
         Downloaded
       </button>
@@ -374,21 +582,29 @@ function DownloadButton({
             {isPaused ? 'Paused' : 'Downloading'} {dl.progress.toFixed(0)}%
           </span>
           <button
-            onClick={() => onCancel(key)}
+            onClick={() => onCancel(primaryKey)}
             style={{
-              fontSize: 11, color: '#f87171', background: 'none',
-              border: 'none', cursor: 'pointer', textDecoration: 'underline',
+              fontSize: 11,
+              color: '#f87171',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              textDecoration: 'underline',
             }}
           >
             Cancel
           </button>
         </div>
         <div style={{ height: 5, background: '#27272a', borderRadius: 3, overflow: 'hidden' }}>
-          <div style={{
-            height: '100%', width: `${dl.progress}%`,
-            background: isPaused ? '#fbbf24' : '#2563eb',
-            transition: 'width 0.3s', borderRadius: 3,
-          }} />
+          <div
+            style={{
+              height: '100%',
+              width: `${dl.progress}%`,
+              background: isPaused ? '#fbbf24' : '#2563eb',
+              transition: 'width 0.3s',
+              borderRadius: 3,
+            }}
+          />
         </div>
       </div>
     );
@@ -396,165 +612,300 @@ function DownloadButton({
 
   return (
     <button
-      onClick={() => onDownload(filename)}
+      onClick={() => onDownload(filenames)}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         gap: 8,
         padding: '10px 24px',
         borderRadius: 8,
-        background: hasError ? 'rgba(239,68,68,0.15)' : '#2563eb',
+        background: hasError ? 'rgba(239,68,68,0.15)' : isTooLarge ? '#dc2626' : '#2563eb',
         border: hasError ? '1px solid rgba(239,68,68,0.3)' : 'none',
-        color: hasError ? '#f87171' : '#ffffff',
+        color: '#ffffff',
         fontSize: 13,
         fontWeight: 700,
         cursor: 'pointer',
-        boxShadow: hasError ? 'none' : '0 2px 10px rgba(37,99,235,0.3)',
-        transition: 'all 0.15s',
+        boxShadow: hasError
+          ? 'none'
+          : isTooLarge
+            ? '0 2px 10px rgba(220,38,38,0.3)'
+            : '0 2px 10px rgba(37,99,235,0.3)',
+        transition: 'all 0.15s ease',
       }}
-      onMouseEnter={e => {
-        if (!hasError) (e.currentTarget as HTMLButtonElement).style.background = '#1d4ed8';
+      onMouseEnter={(e) => {
+        if (!hasError)
+          (e.currentTarget as HTMLButtonElement).style.background = isTooLarge
+            ? '#b91c1c'
+            : '#1d4ed8';
       }}
-      onMouseLeave={e => {
-        if (!hasError) (e.currentTarget as HTMLButtonElement).style.background = '#2563eb';
+      onMouseLeave={(e) => {
+        if (!hasError)
+          (e.currentTarget as HTMLButtonElement).style.background = isTooLarge
+            ? '#dc2626'
+            : '#2563eb';
       }}
     >
       <DownloadSimple size={16} weight="bold" />
-      {hasError ? 'Retry Download' : `Download ${formatSize(size)}`}
+      {hasError
+        ? 'Retry Download'
+        : isTooLarge
+          ? `Download Anyway (${formatSize(totalSize)})`
+          : `Download ${formatSize(totalSize)}`}
     </button>
   );
 }
 
 /* ─── Main ModelDetail Component ────────────────────────────────────────── */
 export function ModelDetail({
-  modelId, modelInfo, files, readme, hardware, downloads,
+  modelId,
+  modelInfo,
+  files,
+  readme,
+  hardware,
+  downloads,
 }: ModelDetailProps) {
   const { handleDownload, handleCancel } = useDownloadActions();
+  const setSearchQuery = useHfExplorerStore((s) => s.setSearchQuery);
+  const setActiveQuery = useHfExplorerStore((s) => s.setActiveQuery);
   const { creator, name } = parseModelId(modelId);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const isGated = Boolean(modelInfo?.gated) && modelInfo?.gated !== 'false';
 
-  /* ── 1. Strictly Filter Downloadable Model Files ─────────────────────── */
-  const downloadableFiles = useMemo(() => files.filter(f => {
-    const fn = f.filename.toLowerCase();
-    const localFn = fn.split('/').pop() ?? '';
+  /* ── 1. Strictly Filter & Group GGUF Model Files ─────────────────────── */
+  const { ggufOptions, mmprojFile } = useMemo(() => {
+    const ggufFiles: HfModelFile[] = [];
+    let mmproj: HfModelFile | undefined;
 
-    if (fn.endsWith('.md') || fn.endsWith('.txt') || fn.endsWith('.gitattributes')) return false;
-    if (fn.endsWith('.png') || fn.endsWith('.jpg') || fn.endsWith('.jpeg') || fn.endsWith('.gif') || fn.endsWith('.webp')) return false;
-    if (fn.endsWith('.json') || fn.endsWith('.yaml') || fn.endsWith('.yml')) return false;
-    if (fn.endsWith('.py') || fn.endsWith('.sh') || fn.endsWith('.html')) return false;
-
-    if (fn.includes('mmproj')) return false;
-    if (COMPANION_SUPPORT_FILES.some(cf => localFn === cf)) return false;
-
-    return fn.endsWith('.gguf') || fn.endsWith('.onnx') || fn.endsWith('.safetensors') || fn.endsWith('.bin');
-  }), [files]);
-
-  const primaryFiles = useMemo(() => {
-    const seen = new Set<string>();
-    const result: HfModelFile[] = [];
-    for (const f of downloadableFiles) {
+    for (const f of files) {
       const fn = f.filename.toLowerCase();
-      const multiPartMatch = fn.match(/[-.](\d{5})-of-(\d{5})/);
-      if (multiPartMatch) {
-        const partNum = parseInt(multiPartMatch[1], 10);
-        const groupKey = fn.replace(/[-.](\d{5})-of-(\d{5})/, '-MULTI');
-        if (partNum === 1) { result.push(f); seen.add(groupKey); }
-        continue;
+      if (!fn.endsWith('.gguf')) continue;
+
+      if (fn.includes('mmproj')) {
+        if (!mmproj) mmproj = f;
+      } else {
+        ggufFiles.push(f);
       }
-      result.push(f);
     }
-    return result.sort((a, b) => {
-      const { badge: ba } = analyzeHardwareMatch(a.size, a.filename, hardware);
-      const { badge: bb } = analyzeHardwareMatch(b.size, b.filename, hardware);
-      const scoreMap: Record<string, number> = { gpu: 4, recommended: 3, cpu: 2, warning: 1 };
-      const sa = scoreMap[ba ?? ''] ?? 0;
-      const sb = scoreMap[bb ?? ''] ?? 0;
-      if (sb !== sa) return sb - sa;
-      return a.size - b.size;
-    });
-  }, [downloadableFiles, hardware]);
 
-  const bestFile = useMemo(() => pickBestFile(primaryFiles, hardware), [primaryFiles, hardware]);
-  const activeFile = selectedFile ?? bestFile ?? primaryFiles[0]?.filename ?? null;
-  const activeFileObj = primaryFiles.find(f => f.filename === activeFile) ?? null;
+    const groupMap = new Map<string, { primaryFilename: string; allFiles: HfModelFile[] }>();
 
-  const mmprojFile = useMemo(() => files.find(f => f.filename.toLowerCase().includes('mmproj')), [files]);
+    for (const f of ggufFiles) {
+      const fn = f.filename;
+      const multiMatch = fn.match(/(.+?)[-.](\d{5})-of-(\d{5})\.gguf$/i);
+      if (multiMatch) {
+        const baseKey = multiMatch[1].toLowerCase();
+        const existing = groupMap.get(baseKey);
+        if (existing) {
+          existing.allFiles.push(f);
+        } else {
+          groupMap.set(baseKey, { primaryFilename: f.filename, allFiles: [f] });
+        }
+      } else {
+        const key = f.filename.toLowerCase();
+        groupMap.set(key, { primaryFilename: f.filename, allFiles: [f] });
+      }
+    }
+
+    const options: GgufQuantOption[] = [];
+    for (const group of groupMap.values()) {
+      group.allFiles.sort((a, b) => a.filename.localeCompare(b.filename));
+      const totalSize = group.allFiles.reduce((sum, item) => sum + item.size, 0);
+      const primaryFilename = group.allFiles[0]?.filename ?? group.primaryFilename;
+      const isMultiPart = group.allFiles.length > 1;
+
+      options.push({
+        quantKey: primaryFilename,
+        primaryFilename,
+        allFilenames: group.allFiles.map((x) => x.filename),
+        totalSize,
+        isMultiPart,
+        partCount: group.allFiles.length,
+      });
+    }
+
+    options.sort((a, b) => a.totalSize - b.totalSize);
+
+    return { ggufOptions: options, mmprojFile: mmproj };
+  }, [files]);
+
+  // Accurate recommendation based on real device RAM & GPU VRAM
+  const bestKey = useMemo(() => {
+    const fileList = ggufOptions.map((o) => ({ filename: o.primaryFilename, size: o.totalSize }));
+    return pickBestFile(fileList, hardware);
+  }, [ggufOptions, hardware]);
+
+  const activeOption = useMemo(() => {
+    return (
+      ggufOptions.find((o) => o.quantKey === selectedKey) ??
+      ggufOptions.find((o) => o.quantKey === bestKey) ??
+      ggufOptions[0] ??
+      null
+    );
+  }, [ggufOptions, selectedKey, bestKey]);
+
+  const activeMatch = useMemo(() => {
+    return analyzeHardwareMatch(
+      activeOption?.totalSize ?? 0,
+      activeOption?.primaryFilename ?? '',
+      hardware
+    );
+  }, [activeOption, hardware]);
 
   /* ── 2. Automatic Queuing Handler ── */
-  const handleStartDownload = useCallback((filename: string) => {
-    handleDownload(modelId, filename);
-
-    if (mmprojFile) {
-      handleDownload(modelId, mmprojFile.filename);
-    }
-
-    const multiPartMatch = filename.toLowerCase().match(/[-.](\d{5})-of-(\d{5})/);
-    if (multiPartMatch) {
-      const totalParts = parseInt(multiPartMatch[2], 10);
-      for (let p = 2; p <= totalParts; p++) {
-        const partStr = String(p).padStart(5, '0');
-        const nextPartFile = files.find(f => f.filename.toLowerCase().includes(`-${partStr}-of-`));
-        if (nextPartFile) {
-          handleDownload(modelId, nextPartFile.filename);
-        }
+  const handleStartDownload = useCallback(
+    (filenames: string[]) => {
+      for (const fn of filenames) {
+        handleDownload(modelId, fn);
       }
-    }
-  }, [modelId, mmprojFile, files, handleDownload]);
+      if (mmprojFile) {
+        handleDownload(modelId, mmprojFile.filename);
+      }
+    },
+    [modelId, mmprojFile, handleDownload]
+  );
 
-  const detectedFormat = useMemo(() => {
-    if (downloadableFiles.some(f => f.filename.toLowerCase().endsWith('.gguf'))) return 'GGUF';
-    if (downloadableFiles.some(f => f.filename.toLowerCase().endsWith('.safetensors'))) return 'Safetensors';
-    return 'GGUF';
-  }, [downloadableFiles]);
+  // Dynamic parameters, architecture, and capabilities
+  const paramCount = useMemo(() => {
+    return extractParameterCount(modelId, modelInfo?.tags, modelInfo?.numParameters);
+  }, [modelId, modelInfo?.tags, modelInfo?.numParameters]);
 
-  const paramMatch = name.match(/(\d+(?:\.\d+)?[Bb])/);
-  const paramCount = paramMatch ? paramMatch[0].toUpperCase() : (modelInfo?.numParameters ? `${(modelInfo.numParameters / 1e9).toFixed(1)}B` : '27B');
-  const archName = (modelInfo?.tags ?? []).find(t => ['llama', 'mistral', 'qwen', 'gemma', 'phi', 'falcon', 'bloom', 'deepseek'].some(a => t.toLowerCase().includes(a))) || 'qwen35';
+  const archName = useMemo(() => {
+    return getArchitectureName(modelId, modelInfo?.tags);
+  }, [modelId, modelInfo?.tags]);
+
+  const capabilities = useMemo(() => {
+    return getCapabilityTags(
+      modelId,
+      modelInfo?.tags,
+      modelInfo?.pipeline_tag,
+      Boolean(mmprojFile)
+    );
+  }, [modelId, modelInfo?.tags, modelInfo?.pipeline_tag, mmprojFile]);
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', height: '100%',
-      background: '#141415', overflowY: 'auto', overflowX: 'hidden',
-      color: '#e2e8f0',
-      scrollbarWidth: 'thin', scrollbarColor: '#27272a transparent',
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        background: '#111113',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        color: '#e2e8f0',
+        scrollbarWidth: 'thin',
+        scrollbarColor: '#27272a transparent',
+      }}
+    >
       {/* ── HEADER ────────────────────────────────────────────────── */}
-      <div style={{ padding: '24px 28px 20px', borderBottom: '1px solid #222225' }}>
+      <div style={{ padding: '24px 28px 20px', borderBottom: '1px solid #1e1e22' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 18, marginBottom: 16 }}>
-          <HfAuthorAvatar creator={creator} avatarUrl={modelInfo?.authorData?.avatarUrl} size={72} />
+          <HfAuthorAvatar
+            creator={creator}
+            avatarUrl={modelInfo?.authorData?.avatarUrl}
+            size={64}
+          />
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{
-              fontSize: 28, fontWeight: 700, color: '#f8fafc',
-              margin: 0, marginBottom: 4, lineHeight: 1.1,
-            }}>
+            <h1
+              style={{
+                fontSize: 26,
+                fontWeight: 700,
+                color: '#f8fafc',
+                margin: 0,
+                marginBottom: 4,
+                lineHeight: 1.1,
+              }}
+            >
               {name}
             </h1>
-            <div style={{ fontSize: 13, color: '#94a3b8', fontFamily: 'monospace' }}>
-              {modelId}
-            </div>
+            <div style={{ fontSize: 13, color: '#94a3b8', fontFamily: 'monospace' }}>{modelId}</div>
           </div>
         </div>
 
-        {/* Stats Row (Downloads, Likes, Date) — Staff Pick removed per request */}
+        {/* Stats Row (Downloads, Likes, Date) */}
         {modelInfo && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#cbd5e1' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              flexWrap: 'wrap',
+              marginBottom: 14,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 12,
+                color: '#cbd5e1',
+              }}
+            >
               <Download size={13} style={{ color: '#94a3b8' }} />
-              <span style={{ fontWeight: 600, color: '#f8fafc' }}>{formatCount(modelInfo.downloads)}</span>
+              <span style={{ fontWeight: 600, color: '#f8fafc' }}>
+                {formatCount(modelInfo.downloads)}
+              </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#cbd5e1' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 12,
+                color: '#cbd5e1',
+              }}
+            >
               <Star size={13} weight="fill" style={{ color: '#94a3b8' }} />
-              <span style={{ fontWeight: 600, color: '#f8fafc' }}>{formatCount(modelInfo.likes)}</span>
+              <span style={{ fontWeight: 600, color: '#f8fafc' }}>
+                {formatCount(modelInfo.likes)}
+              </span>
             </div>
             {modelInfo.last_modified && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#64748b' }}>
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  color: '#64748b',
+                }}
+              >
                 <Clock size={11} />
                 Updated {formatDate(modelInfo.last_modified)}
               </span>
             )}
+          </div>
+        )}
+
+        {/* Capability Pills in Header */}
+        {capabilities.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              flexWrap: 'wrap',
+              marginBottom: 14,
+            }}
+          >
+            {capabilities.map((cap) => (
+              <span
+                key={cap.label}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  color: '#f1f5f9',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                }}
+              >
+                {cap.label}
+              </span>
+            ))}
           </div>
         )}
 
@@ -564,78 +915,180 @@ export function ModelDetail({
           target="_blank"
           rel="noopener noreferrer"
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 14px', borderRadius: 6,
-            background: 'transparent', border: '1px solid #333336',
-            color: '#cbd5e1', fontSize: 12, fontWeight: 500,
-            textDecoration: 'none', transition: 'border-color 0.15s',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 14px',
+            borderRadius: 6,
+            background: 'transparent',
+            border: '1px solid #2e2e32',
+            color: '#cbd5e1',
+            fontSize: 12,
+            fontWeight: 500,
+            textDecoration: 'none',
+            transition: 'border-color 0.15s',
           }}
-          onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.borderColor = '#475569'}
-          onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.borderColor = '#333336'}
+          onMouseEnter={(e) =>
+            ((e.currentTarget as HTMLAnchorElement).style.borderColor = '#475569')
+          }
+          onMouseLeave={(e) =>
+            ((e.currentTarget as HTMLAnchorElement).style.borderColor = '#2e2e32')
+          }
         >
-          Open on Web <ArrowSquareOut size={12} />
+          Open on Hugging Face <ArrowSquareOut size={12} />
         </a>
       </div>
 
       {/* ── DOWNLOAD OPTIONS SECTION ────────────────────────────────── */}
-      <div style={{ padding: '24px 28px', borderBottom: '1px solid #222225' }}>
-        {/* Header row — "Download to: This device" removed per request */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+      <div style={{ padding: '24px 28px', borderBottom: '1px solid #1e1e22' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 14,
+          }}
+        >
           <span style={{ fontSize: 16, fontWeight: 700, color: '#f8fafc' }}>Download Options</span>
+
+          {/* User Hardware Specs Pill */}
+          {hardware && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 11,
+                color: '#94a3b8',
+                background: '#1c1c1f',
+                padding: '4px 10px',
+                borderRadius: 6,
+                border: '1px solid #2e2e32',
+              }}
+            >
+              <HardDrives size={13} />
+              <span>
+                {((hardware.total_ram || 0) / 1024 ** 3).toFixed(0)} GB RAM
+                {hardware.gpu_vram > 0 &&
+                  ` • ${hardware.gpu_name ? hardware.gpu_name.replace('NVIDIA GeForce ', '').replace(' Laptop GPU', '') : 'GPU'} (${((hardware.gpu_vram || 0) / 1024 ** 3).toFixed(0)} GB VRAM)`}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Gated warning if gated */}
         {isGated && (
-          <div style={{
-            display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 8, marginBottom: 14,
-            background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.25)',
-            fontSize: 12, color: '#facc15',
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              padding: '10px 12px',
+              borderRadius: 8,
+              marginBottom: 14,
+              background: 'rgba(234, 179, 8, 0.1)',
+              border: '1px solid rgba(234, 179, 8, 0.25)',
+              fontSize: 12,
+              color: '#facc15',
+            }}
+          >
             <Key size={14} weight="fill" style={{ flexShrink: 0, marginTop: 1 }} />
-            <div>Gated model — accept license on HF and set your API token in Settings.</div>
+            <div>
+              Gated model — accept license on Hugging Face and ensure your API token is set in
+              Settings.
+            </div>
           </div>
         )}
 
-        {primaryFiles.length === 0 ? (
-          <div style={{
-            padding: '24px', textAlign: 'center', color: '#64748b', fontSize: 12,
-            border: '1px dashed #333336', borderRadius: 8,
-          }}>
-            No downloadable model files found for this repo.
+        {ggufOptions.length === 0 ? (
+          <div
+            style={{
+              padding: '24px 20px',
+              textAlign: 'center',
+              background: '#161618',
+              border: '1px dashed #2e2e32',
+              borderRadius: 8,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>
+              No GGUF Quantizations in this Base Repository
+            </div>
+            <div style={{ fontSize: 11, color: '#94a3b8', maxWidth: 460, lineHeight: 1.5 }}>
+              This repository contains raw/unquantized weights (Safetensors / PyTorch) and cannot be
+              executed directly by the local llama.cpp engine. Local execution requires GGUF
+              quantized models.
+            </div>
+            <button
+              onClick={() => {
+                const cleanSearch = `${name} GGUF`;
+                setSearchQuery(cleanSearch);
+                setActiveQuery(cleanSearch);
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                borderRadius: 6,
+                background: '#2563eb',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                marginTop: 4,
+              }}
+            >
+              Search GGUF Versions for {name}
+            </button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* Clean custom quantization selector */}
+            {/* Clean LM Studio style quantization selector */}
             <CleanQuantSelector
-              files={primaryFiles}
-              selectedFile={activeFile}
-              bestFile={bestFile}
+              options={ggufOptions}
+              selectedKey={activeOption?.quantKey ?? null}
+              bestKey={bestKey}
               hw={hardware}
-              onSelect={setSelectedFile}
+              onSelect={setSelectedKey}
             />
 
-            {/* GPU Offload indicator pill */}
-            <GpuOffloadBadge hw={hardware} file={activeFileObj} />
+            {/* Hardware Status Banner */}
+            <HardwareStatusBanner hw={hardware} match={activeMatch} />
 
             {/* Vision model mmproj auto-download indicator */}
             {mmprojFile && (
-              <div style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '6px 12px', borderRadius: 6,
-                background: 'rgba(168, 85, 247, 0.12)', border: '1px solid rgba(168, 85, 247, 0.25)',
-                color: '#c084fc', fontSize: 11, fontWeight: 600, width: 'fit-content',
-              }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  background: 'rgba(168, 85, 247, 0.12)',
+                  border: '1px solid rgba(168, 85, 247, 0.25)',
+                  color: '#c084fc',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  width: 'fit-content',
+                }}
+              >
                 <Sparkle size={13} weight="bold" />
-                Vision Projector ({mmprojFile.filename}) will automatically download alongside this model
+                Vision Projector ({mmprojFile.filename}) will automatically download alongside this
+                model
               </div>
             )}
 
-            {/* Download button row — right aligned */}
+            {/* Download button row */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
               <DownloadButton
                 modelId={modelId}
-                filename={activeFile}
-                size={activeFileObj?.size ?? 0}
+                filenames={activeOption?.allFilenames ?? []}
+                totalSize={activeOption?.totalSize ?? 0}
+                match={activeMatch}
                 downloads={downloads}
                 onDownload={handleStartDownload}
                 onCancel={handleCancel}
@@ -646,42 +1099,74 @@ export function ModelDetail({
       </div>
 
       {/* ── DETAILS SECTION ─────────────────────────────────────────── */}
-      <div style={{ padding: '24px 28px', borderBottom: '1px solid #222225' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#f8fafc', marginBottom: 14 }}>Details</div>
+      <div style={{ padding: '24px 28px', borderBottom: '1px solid #1e1e22' }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#f8fafc', marginBottom: 14 }}>
+          Details
+        </div>
 
         <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6, marginBottom: 16 }}>
-          {name} is a {paramCount} model, taking about {formatSize(activeFileObj?.size ?? 4 * 1024 ** 3)}. Capable of reasoning, coding, vision, and tool use.
+          {name} {paramCount ? `is a ${paramCount} parameter model` : 'model on Hugging Face'}
+          {activeOption ? `, requiring ~${formatSize(activeOption.totalSize)} storage` : ''}.
+          {capabilities.length > 0
+            ? ` Optimized for ${capabilities.map((c) => c.label.toLowerCase()).join(', ')}.`
+            : ' Built for local inference.'}
         </p>
 
-        {/* Metadata Chips (Capabilities pills removed per request) */}
+        {/* Metadata Chips */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: '#64748b' }}>Parameters</span>
-            <span style={{
-              padding: '2px 10px', borderRadius: 999, background: '#1e1e20',
-              border: '1px solid #333336', fontSize: 12, fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace',
-            }}>
-              {paramCount}
-            </span>
-          </div>
+          {paramCount && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: '#64748b' }}>Parameters</span>
+              <span
+                style={{
+                  padding: '2px 10px',
+                  borderRadius: 999,
+                  background: '#1c1c1f',
+                  border: '1px solid #2e2e32',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: '#e2e8f0',
+                  fontFamily: 'monospace',
+                }}
+              >
+                {paramCount}
+              </span>
+            </div>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, color: '#64748b' }}>Architecture</span>
-            <span style={{
-              padding: '2px 10px', borderRadius: 999, background: '#1e1e20',
-              border: '1px solid #333336', fontSize: 12, fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace',
-            }}>
+            <span
+              style={{
+                padding: '2px 10px',
+                borderRadius: 999,
+                background: '#1c1c1f',
+                border: '1px solid #2e2e32',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#e2e8f0',
+                fontFamily: 'monospace',
+              }}
+            >
               {archName}
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: '#64748b' }}>Formats</span>
-            <span style={{
-              padding: '2px 10px', borderRadius: 999, background: '#1e1e20',
-              border: '1px solid #333336', fontSize: 12, fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace',
-            }}>
-              {detectedFormat} MLX
+            <span style={{ fontSize: 12, color: '#64748b' }}>Format</span>
+            <span
+              style={{
+                padding: '2px 10px',
+                borderRadius: 999,
+                background: '#1c1c1f',
+                border: '1px solid #2e2e32',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#e2e8f0',
+                fontFamily: 'monospace',
+              }}
+            >
+              GGUF
             </span>
           </div>
         </div>
@@ -689,7 +1174,9 @@ export function ModelDetail({
 
       {/* ── README SECTION ──────────────────────────────────────────── */}
       <div style={{ padding: '24px 28px' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#f8fafc', marginBottom: 16 }}>README</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#f8fafc', marginBottom: 16 }}>
+          README
+        </div>
         {readme ? (
           <div
             className="
@@ -717,7 +1204,14 @@ export function ModelDetail({
               rehypePlugins={[rehypeSanitize]}
               components={{
                 img: ({ node: _n, ...p }) => (
-                  <img {...p} loading="lazy" decoding="async" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                  <img
+                    {...p}
+                    loading="lazy"
+                    decoding="async"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
                 ),
                 a: ({ node: _n, ...p }) => <a {...p} target="_blank" rel="noopener noreferrer" />,
               }}
@@ -726,11 +1220,20 @@ export function ModelDetail({
             </ReactMarkdown>
           </div>
         ) : (
-          <div style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            padding: '32px 20px', textAlign: 'center', gap: 10,
-            background: '#19191c', border: '1px border #27272a', borderRadius: 8,
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '32px 20px',
+              textAlign: 'center',
+              gap: 10,
+              background: '#19191c',
+              border: '1px solid #27272a',
+              borderRadius: 8,
+            }}
+          >
             <FileText size={28} style={{ color: '#64748b' }} />
             <div style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>
               Model documentation card
@@ -740,8 +1243,12 @@ export function ModelDetail({
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                fontSize: 12, color: '#60a5fa', textDecoration: 'none',
-                display: 'inline-flex', alignItems: 'center', gap: 4,
+                fontSize: 12,
+                color: '#60a5fa',
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
               }}
             >
               View full repository on HuggingFace <ArrowSquareOut size={12} />

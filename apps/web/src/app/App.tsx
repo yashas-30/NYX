@@ -33,28 +33,36 @@ function AppContent() {
     // Initialize Local LLM Environment
     const initLocalLLM = async () => {
       try {
-        if (typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)) {
+        if (
+          typeof window !== 'undefined' &&
+          ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)
+        ) {
           const { invoke } = await import('@tauri-apps/api/core');
           const { listen } = await import('@tauri-apps/api/event');
-          
-          let toastId: string | number | undefined;
-          
-          unlistenDownload = (await listen<{ progress: number; status: string }>('llm-download-progress', (event) => {
-             const { progress, status } = event.payload;
-             if (!toastId && progress < 100) {
-               toastId = toast.loading(`Initializing Local Intelligence: ${status}`, { duration: Infinity });
-             } else if (toastId && progress < 100) {
-               toast.loading(`${status} (${Math.round(progress)}%)`, { id: toastId });
-             }
-          }));
 
-          unlistenDownloadComplete = (await listen('llm-download-complete', () => {
-             if (toastId) toast.success('Local model downloaded successfully!', { id: toastId });
-             toastId = undefined;
-          }));
+          let toastId: string | number | undefined;
+
+          unlistenDownload = await listen<{ progress: number; status: string }>(
+            'llm-download-progress',
+            (event) => {
+              const { progress, status } = event.payload;
+              if (!toastId && progress < 100) {
+                toastId = toast.loading(`Initializing Local Intelligence: ${status}`, {
+                  duration: Infinity,
+                });
+              } else if (toastId && progress < 100) {
+                toast.loading(`${status} (${Math.round(progress)}%)`, { id: toastId });
+              }
+            }
+          );
+
+          unlistenDownloadComplete = await listen('llm-download-complete', () => {
+            if (toastId) toast.success('Local model downloaded successfully!', { id: toastId });
+            toastId = undefined;
+          });
 
           // Ensure assets exist (downloads if missing) - run in background
-          invoke('download_local_model').catch(err => {
+          invoke('download_local_model').catch((err) => {
             if (String(err).includes('already being downloaded')) {
               console.log('[App] Local LLM init skipped: download already in progress');
             } else {
@@ -67,32 +75,24 @@ function AppContent() {
       }
     };
     initLocalLLM();
-    
-    // Sync search settings to backend
+
+    // Sync search settings to backend (DuckDuckGo Multi-Engine)
     const syncSearchSettings = async () => {
       try {
-        const { searchProvider, apiKeys } = useNyxStore.getState();
-        const apiKey = apiKeys['tavily'] || '';
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('set_search_settings', {
-          provider: searchProvider,
-          apiKey: apiKey,
+          provider: 'duckduckgo',
+          apiKey: '',
         });
       } catch (e) {
         console.error('Failed to sync search settings:', e);
       }
     };
-    
+
     syncSearchSettings();
-    const unsub = useNyxStore.subscribe((state, prevState) => {
-      if (state.searchProvider !== prevState.searchProvider || state.apiKeys['tavily'] !== prevState.apiKeys['tavily']) {
-        syncSearchSettings();
-      }
-    });
 
     if (!privacyMode) {
       return () => {
-        unsub();
         unlistenDownload?.();
         unlistenDownloadComplete?.();
       };
@@ -127,7 +127,6 @@ function AppContent() {
     resetTimer();
 
     return () => {
-      unsub();
       unlistenDownload?.();
       unlistenDownloadComplete?.();
       if (timeoutId) clearTimeout(timeoutId);
@@ -136,8 +135,6 @@ function AppContent() {
       });
     };
   }, [privacyMode, clearPrivacyData]);
-
-
 
   return (
     <div className="h-screen w-full overflow-hidden bg-background text-foreground selection:bg-primary/30 font-sans">

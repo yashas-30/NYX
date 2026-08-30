@@ -38,8 +38,8 @@ pub async fn execute_computer_action(action: String, params: String) -> Result<S
         },
         "mouse_move" => {
             let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
-            let x = parsed_params["x"].as_i64().unwrap_or(0) as i32;
-            let y = parsed_params["y"].as_i64().unwrap_or(0) as i32;
+            let x = parsed_params["x"].as_i64().unwrap_or(0).clamp(0, 16384) as i32;
+            let y = parsed_params["y"].as_i64().unwrap_or(0).clamp(0, 16384) as i32;
             enigo.move_mouse(x, y, Coordinate::Abs).map_err(|e| e.to_string())?;
             Ok(format!("Moved mouse to {}, {}", x, y))
         },
@@ -50,8 +50,8 @@ pub async fn execute_computer_action(action: String, params: String) -> Result<S
         },
         "left_click_drag" => {
             let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
-            let x = parsed_params["x"].as_i64().unwrap_or(0) as i32;
-            let y = parsed_params["y"].as_i64().unwrap_or(0) as i32;
+            let x = parsed_params["x"].as_i64().unwrap_or(0).clamp(0, 16384) as i32;
+            let y = parsed_params["y"].as_i64().unwrap_or(0).clamp(0, 16384) as i32;
             enigo.button(Button::Left, Direction::Press).map_err(|e| e.to_string())?;
             enigo.move_mouse(x, y, Coordinate::Abs).map_err(|e| e.to_string())?;
             enigo.button(Button::Left, Direction::Release).map_err(|e| e.to_string())?;
@@ -77,6 +77,9 @@ pub async fn execute_computer_action(action: String, params: String) -> Result<S
         "type" => {
             let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
             let text = parsed_params["text"].as_str().unwrap_or("");
+            if text.len() > 4096 {
+                return Err("Typed text exceeds maximum allowed length of 4096 characters".to_string());
+            }
             enigo.text(text).map_err(|e| e.to_string())?;
             Ok(format!("Typed text: {}", text))
         },
@@ -91,6 +94,9 @@ pub async fn execute_computer_action(action: String, params: String) -> Result<S
                 "Escape" | "escape" => enigo.key(enigo::Key::Escape, Direction::Click).map_err(|e| e.to_string())?,
                 "Backspace" | "backspace" => enigo.key(enigo::Key::Backspace, Direction::Click).map_err(|e| e.to_string())?,
                 _ => {
+                    if text.len() > 100 {
+                        return Err("Key identifier exceeds maximum allowed length".to_string());
+                    }
                     // Fallback to text for unmapped keys or single characters
                     enigo.text(text).map_err(|e| e.to_string())?;
                 }

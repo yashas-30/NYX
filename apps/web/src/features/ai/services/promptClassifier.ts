@@ -6,7 +6,6 @@
  */
 
 import { CODING_KNOWLEDGE_SUMMARY } from '@src/shared/config/codingKnowledge';
-import { getLuciferPersona } from '@src/core/agents/luciferPersona';
 
 export interface HardwareAnalysis {
   detectedComponents: string[];
@@ -79,12 +78,7 @@ export interface AgentRoute {
   maxTokens: number;
 }
 
-type ToolCapability =
-  | 'web_search'
-  | 'terminal'
-  | 'file_write'
-  | 'file_read'
-  | 'image_analysis';
+type ToolCapability = 'web_search' | 'terminal' | 'file_write' | 'file_read' | 'image_analysis';
 
 // ---------------------------------------------------------------------------
 // Semantic intent embeddings (simplified — replace with actual embeddings in prod)
@@ -819,7 +813,11 @@ export function analyzePrompt(
 
   if (complexity === 'enterprise' || bestIntent === 'architecture_design') {
     suggestedModel = 'powerful';
-  } else if (complexity === 'complex' || (requiresContext && complexity === 'moderate') || requiresExecution) {
+  } else if (
+    complexity === 'complex' ||
+    (requiresContext && complexity === 'moderate') ||
+    requiresExecution
+  ) {
     suggestedModel = 'balanced';
   } else if (!hardware.detectedComponents.some((c: string) => c.toLowerCase().includes('gpu'))) {
     // Fallback to fast cloud model if local GPU is unavailable and task is simple
@@ -833,9 +831,10 @@ export function analyzePrompt(
   }
 
   let suggestedExecutionReasoning = 'Standard conversational request. Using single selected model.';
-  
+
   if (complexity === 'enterprise' || complexity === 'complex') {
-    suggestedExecutionReasoning = 'Highly complex task. Routing to ensemble synthesis to combine capabilities of multiple models.';
+    suggestedExecutionReasoning =
+      'Highly complex task. Routing to ensemble synthesis to combine capabilities of multiple models.';
   }
 
   return {
@@ -1027,11 +1026,7 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
 
   // Temperature tuning based on intent
   const temperature =
-    analysis.intent === 'code_debug'
-      ? 0.1
-      : analysis.intent === 'architecture_design'
-        ? 0.6
-        : 0.3;
+    analysis.intent === 'code_debug' ? 0.1 : analysis.intent === 'architecture_design' ? 0.6 : 0.3;
 
   // Max tokens based on complexity
   const maxTokens =
@@ -1059,16 +1054,11 @@ export function routeToAgent(analysis: PromptAnalysis, state?: ConversationState
 // System prompts (extracted to config — not inline)
 // ---------------------------------------------------------------------------
 
-const LUCIFER_BASE_PERSONA = getLuciferPersona();
-
 const SYSTEM_PROMPTS = {
-  chat: LUCIFER_BASE_PERSONA,
-
-  coder: `${LUCIFER_BASE_PERSONA}\n\n${CODING_KNOWLEDGE_SUMMARY}\n\nOUTPUT:\n- Direct, efficient code engineering manner\n- Provide complete, working code without placeholders when requested\n- Simple queries get direct answers — no over-engineering\n- Complex tasks get structured plans before implementation`,
-
-  architect: `${LUCIFER_BASE_PERSONA}\n\nLUCIFER ARCHITECT DIRECTIVE:\nBefore writing code:\n1. REQUIREMENTS ANALYSIS: Identify explicit and implicit requirements & edge cases.\n2. DESIGN PHASE: Define component hierarchy, data flow, API contracts, and error strategy.\n3. IMPLEMENTATION PLAN: Detail step-by-step implementation order.`,
-
-  analyst: `${LUCIFER_BASE_PERSONA}\n\nLUCIFER DATA ANALYSIS DIRECTIVE:\nProvide clear, accurate, and actionable insights from data. Outline methodology, comment code, and recommend appropriate charts.`,
+  chat: '',
+  coder: `${CODING_KNOWLEDGE_SUMMARY}\n\nOUTPUT:\n- Direct, efficient code engineering manner\n- Provide complete, working code without placeholders when requested\n- Simple queries get direct answers — no over-engineering\n- Complex tasks get structured plans before implementation`,
+  architect: `Before writing code:\n1. REQUIREMENTS ANALYSIS: Identify explicit and implicit requirements & edge cases.\n2. DESIGN PHASE: Define component hierarchy, data flow, API contracts, and error strategy.\n3. IMPLEMENTATION PLAN: Detail step-by-step implementation order.`,
+  analyst: `Provide clear, accurate, and actionable insights from data. Outline methodology, comment code, and recommend appropriate charts.`,
 };
 
 // ---------------------------------------------------------------------------

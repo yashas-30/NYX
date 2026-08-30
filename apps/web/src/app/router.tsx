@@ -10,8 +10,6 @@ import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 import ChatView from '@src/views/ChatView';
 import ModelRegistryView from '@src/views/ModelRegistryView';
 import SettingsView from '@src/views/SettingsView';
-import MemoryView from '@src/features/memory/MemoryView';
-import ObservabilityView from '@src/features/observability/ObservabilityView';
 
 export interface ModelSettings {
   temperature?: number;
@@ -52,7 +50,15 @@ interface AppRouterProps {
   onOpenLightning?: () => void;
 }
 
-function KeepAlive({ active, name, children }: { active: boolean; name: string; children: React.ReactNode }) {
+function KeepAlive({
+  active,
+  name,
+  children,
+}: {
+  active: boolean;
+  name: string;
+  children: React.ReactNode;
+}) {
   const [hasMounted, setHasMounted] = useState(active);
 
   if (active && !hasMounted) {
@@ -62,10 +68,10 @@ function KeepAlive({ active, name, children }: { active: boolean; name: string; 
   if (!hasMounted && !active) return null;
 
   return (
-    <div className={active ? 'h-full w-full flex flex-col flex-1 overflow-hidden relative' : 'hidden'}>
-      <ErrorBoundary name={name}>
-        {children}
-      </ErrorBoundary>
+    <div
+      className={active ? 'h-full w-full flex flex-col flex-1 overflow-hidden relative' : 'hidden'}
+    >
+      <ErrorBoundary name={name}>{children}</ErrorBoundary>
     </div>
   );
 }
@@ -130,19 +136,11 @@ export function AppRouter({
         />
       </KeepAlive>
 
-      <KeepAlive active={activeMode === 'memory'} name="MemoryView">
-        <MemoryView />
-      </KeepAlive>
-
-      <KeepAlive active={activeMode === 'observability'} name="ObservabilityView">
-        <ObservabilityView />
-      </KeepAlive>
-
       <Routes>
         <Route
           path="*"
           element={
-            !['chat', 'registry', 'settings', 'memory', 'observability'].includes(activeMode) ? (
+            !['chat', 'registry', 'settings'].includes(activeMode) ? (
               <Navigate to="/" replace />
             ) : null
           }

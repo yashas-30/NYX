@@ -27,7 +27,21 @@ export interface ModelSettings {
   tensorSplit?: string;
 }
 
-export type ActiveMode = 'chat' | 'registry' | 'settings' | 'compare' | 'workspace' | 'plugins' | 'projects' | 'swarm' | 'git' | 'documents' | 'images' | 'mcp' | 'tasks' | 'ide';
+export type ActiveMode =
+  | 'chat'
+  | 'registry'
+  | 'settings'
+  | 'compare'
+  | 'workspace'
+  | 'plugins'
+  | 'projects'
+  | 'swarm'
+  | 'git'
+  | 'documents'
+  | 'images'
+  | 'mcp'
+  | 'tasks'
+  | 'ide';
 
 export interface NyxState {
   activeMode: ActiveMode;
@@ -51,8 +65,6 @@ export interface NyxState {
   executionMode: 'chat' | 'coder' | 'default';
   advancedLocalModelSettings: boolean;
   setAdvancedLocalModelSettings: (enabled: boolean) => void;
-  luciferAgentEnabled: boolean;
-  setLuciferAgentEnabled: (enabled: boolean) => void;
 
   // Actions
   setActiveMode: (mode: ActiveMode) => void;
@@ -104,18 +116,7 @@ export const DEFAULT_SETTINGS: ModelSettings = {
   disableKvOffload: false,
 };
 
-const DEFAULT_MODEL: ModelOption = {
-  id: 'lucifer-native',
-  name: 'Lucifer',
-  provider: 'nyx-native',
-  description: 'The native Lucifer agent embodied in Qwen 2.5 1.5B running 100% on GPU via Rig-Core & TurboVec RAG.',
-  status: 'ga',
-  specs: {
-    contextWindow: '8K',
-    maxOutput: '4K',
-    modality: 'Text',
-  },
-};
+const DEFAULT_MODEL: ModelOption = AVAILABLE_MODELS[0];
 
 export const useNyxStore = create<NyxState>()(
   persist(
@@ -124,87 +125,115 @@ export const useNyxStore = create<NyxState>()(
       workspacePath: '',
       localModelsEnabled: true,
       modelSettings: DEFAULT_SETTINGS,
-      cloudModelId: null,
-      localModelId: 'lucifer-native',
-      models: { nyx: 'lucifer-native' },
+      cloudModelId: DEFAULT_MODEL.provider !== 'nyx-native' ? DEFAULT_MODEL.id : null,
+      localModelId: DEFAULT_MODEL.provider === 'nyx-native' ? DEFAULT_MODEL.id : null,
+      models: { nyx: DEFAULT_MODEL.id },
       apiKeys: {},
       statuses: {},
       privacyMode: false,
-      rememberKeys: false,
+      rememberKeys: true,
       currentModel: DEFAULT_MODEL,
       searchProvider: 'duckduckgo',
       activeProjectId: null,
       executionMode: 'default',
       advancedLocalModelSettings: false,
-      luciferAgentEnabled: true,
 
-      setLuciferAgentEnabled: (enabled) => {
-        set({
-          luciferAgentEnabled: enabled,
-        });
-      },
       setActiveMode: (mode) => set({ activeMode: mode }),
       setExecutionMode: (mode) => set({ executionMode: mode }),
       setWorkspacePath: (path) => set({ workspacePath: path }),
       setLocalModelsEnabled: (enabled) => set({ localModelsEnabled: enabled }),
       setAdvancedLocalModelSettings: (enabled) => set({ advancedLocalModelSettings: enabled }),
       updateModelSettings: (settings) =>
-          set((state) => {
-            const newSettings = { ...state.modelSettings, ...settings };
-            const configs = state.modelConfigs || {};
-            // Determine the active model ID correctly instead of relying on currentModel (which might be stale)
-            const activeId = state.localModelId || state.cloudModelId || state.models.nyx;
-            return {
-              modelSettings: newSettings,
-              modelConfigs: { ...configs, [activeId]: newSettings }
-            };
-          }),
+        set((state) => {
+          const newSettings = { ...state.modelSettings, ...settings };
+          const configs = state.modelConfigs || {};
+          // Determine the active model ID correctly instead of relying on currentModel (which might be stale)
+          const activeId = state.localModelId || state.cloudModelId || state.models.nyx;
+          return {
+            modelSettings: newSettings,
+            modelConfigs: { ...configs, [activeId]: newSettings },
+          };
+        }),
       updateModelConfig: (id, settings) =>
-          set((state) => {
-            const configs = state.modelConfigs || {};
-            const currentConfig = configs[id] || state.modelSettings;
-            const newConfig = { ...currentConfig, ...settings };
-            
-            // If the updated model is currently active, also update modelSettings
-            const activeId = state.localModelId || state.cloudModelId || state.models.nyx;
-            if (activeId === id) {
-              return {
-                modelSettings: newConfig,
-                modelConfigs: { ...configs, [id]: newConfig }
-              };
-            }
-            
+        set((state) => {
+          const configs = state.modelConfigs || {};
+          const currentConfig = configs[id] || state.modelSettings;
+          const newConfig = { ...currentConfig, ...settings };
+
+          // If the updated model is currently active, also update modelSettings
+          const activeId = state.localModelId || state.cloudModelId || state.models.nyx;
+          if (activeId === id) {
             return {
-              modelConfigs: { ...configs, [id]: newConfig }
+              modelSettings: newConfig,
+              modelConfigs: { ...configs, [id]: newConfig },
             };
-          }),
-      updateModelSystemPrompt: (id, prompt) => set((state) => {
-        const prompts = state.modelSystemPrompts || {};
-        return {
-          modelSystemPrompts: { ...prompts, [id]: prompt }
-        };
-      }),
-      setCloudModelId: (id) => set((state) => {
-        const configs = state.modelConfigs || {};
-        const storedSettings = id ? configs[id] : undefined;
-        return { 
-          cloudModelId: id, 
-          localModelId: null,
-          modelSettings: storedSettings || DEFAULT_SETTINGS
-        };
-      }),
-      setLocalModelId: (id) => set((state) => {
-        const configs = state.modelConfigs || {};
-        const storedSettings = id ? configs[id] : undefined;
-        return { 
-          localModelId: id, 
-          cloudModelId: null,
-          modelSettings: storedSettings || DEFAULT_SETTINGS
-        };
-      }),
+          }
+
+          return {
+            modelConfigs: { ...configs, [id]: newConfig },
+          };
+        }),
+      updateModelSystemPrompt: (id, prompt) =>
+        set((state) => {
+          const prompts = state.modelSystemPrompts || {};
+          return {
+            modelSystemPrompts: { ...prompts, [id]: prompt },
+          };
+        }),
+      setCloudModelId: (id) =>
+        set((state) => {
+          const configs = state.modelConfigs || {};
+          const storedSettings = id ? configs[id] : undefined;
+          const matchedModel = id ? AVAILABLE_MODELS.find((m) => m.id === id) : null;
+          const currentModel =
+            matchedModel ||
+            (id
+              ? {
+                  id,
+                  name: id,
+                  provider: detectProvider(id),
+                  description: 'Active model',
+                  status: 'ga' as const,
+                  specs: { contextWindow: '128K', maxOutput: '16K', modality: 'Text' as const },
+                }
+              : state.currentModel);
+          return {
+            cloudModelId: id,
+            localModelId: null,
+            currentModel,
+            models: id ? { nyx: id } : state.models,
+            modelSettings: storedSettings || DEFAULT_SETTINGS,
+          };
+        }),
+      setLocalModelId: (id) =>
+        set((state) => {
+          const configs = state.modelConfigs || {};
+          const storedSettings = id ? configs[id] : undefined;
+          const matchedModel = id ? AVAILABLE_MODELS.find((m) => m.id === id) : null;
+          const currentModel =
+            matchedModel ||
+            (id
+              ? {
+                  id,
+                  name: id,
+                  provider: 'nyx-native' as const,
+                  description: 'Active model',
+                  status: 'ga' as const,
+                  specs: { contextWindow: '32K', maxOutput: '4K', modality: 'Text' as const },
+                }
+              : state.currentModel);
+          return {
+            localModelId: id,
+            cloudModelId: null,
+            currentModel,
+            models: id ? { nyx: id } : state.models,
+            modelSettings: storedSettings || DEFAULT_SETTINGS,
+          };
+        }),
       setModel: (mid) =>
         set((state) => {
-          const isLocal = mid?.startsWith('local:') || mid?.includes('.gguf') || mid?.includes('nyx-native');
+          const isLocal =
+            mid?.startsWith('local:') || mid?.includes('.gguf') || mid?.includes('nyx-native');
           const matchedModel = AVAILABLE_MODELS.find((m) => m.id === mid);
           const configs = state.modelConfigs || {};
           const storedSettings = mid ? configs[mid] : undefined;
@@ -212,14 +241,18 @@ export const useNyxStore = create<NyxState>()(
             models: { nyx: mid },
             cloudModelId: isLocal ? null : mid,
             localModelId: isLocal ? mid : null,
-            currentModel: matchedModel || (mid ? {
-              id: mid,
-              name: mid,
-              provider: isLocal ? 'nyx-native' : detectProvider(mid),
-              description: 'Active model',
-              status: 'ga',
-              specs: { contextWindow: '128K', maxOutput: '16K', modality: 'Text' },
-            } : state.currentModel),
+            currentModel:
+              matchedModel ||
+              (mid
+                ? {
+                    id: mid,
+                    name: mid,
+                    provider: isLocal ? 'nyx-native' : detectProvider(mid),
+                    description: 'Active model',
+                    status: 'ga',
+                    specs: { contextWindow: '128K', maxOutput: '16K', modality: 'Text' },
+                  }
+                : state.currentModel),
             modelSettings: storedSettings || state.modelSettings,
           };
         }),
@@ -236,7 +269,7 @@ export const useNyxStore = create<NyxState>()(
       setRememberKeys: async (enabled) => {
         set({ rememberKeys: enabled });
         const { apiKeys } = get();
-        
+
         if (enabled) {
           // Persist all current keys into secure device vault
           for (const provider of Object.keys(apiKeys)) {
@@ -255,23 +288,25 @@ export const useNyxStore = create<NyxState>()(
       clearPrivacyData: () => {
         set({ apiKeys: {}, statuses: {} });
       },
-      setCurrentModel: (model) => set((state) => {
-        const configs = state.modelConfigs || {};
-        const storedSettings = configs[model.id];
-        return { 
-          currentModel: model,
-          modelSettings: storedSettings || DEFAULT_SETTINGS
-        };
-      }),
+      setCurrentModel: (model) =>
+        set((state) => {
+          const configs = state.modelConfigs || {};
+          const storedSettings = configs[model.id];
+          const isLocal =
+            model.provider === 'nyx-native' ||
+            model.id.startsWith('local:') ||
+            model.id.includes('.gguf');
+          return {
+            currentModel: model,
+            cloudModelId: isLocal ? null : model.id,
+            localModelId: isLocal ? model.id : null,
+            models: { nyx: model.id },
+            modelSettings: storedSettings || DEFAULT_SETTINGS,
+          };
+        }),
 
       updateApiKey: async (provider: string, key: string) => {
         set((state) => ({ apiKeys: { ...state.apiKeys, [provider]: key } }));
-
-        const { rememberKeys } = get();
-        if (!rememberKeys) {
-          await get().refreshStatuses();
-          return;
-        }
 
         try {
           if (key && key.trim().length > 0) {
@@ -286,10 +321,7 @@ export const useNyxStore = create<NyxState>()(
       },
 
       clearApiKeys: async () => {
-        const providers = [
-          'gemini', 'openrouter', 'tavily',
-          'openai', 'anthropic', 'deepseek', 'groq', 'mistral', 'huggingface'
-        ];
+        const providers = ['gemini', 'openrouter', 'nvidia-nim', 'groq', 'mistral', 'huggingface'];
         for (const provider of providers) {
           try {
             await invoke('vault:delete-key', { provider });
@@ -336,13 +368,15 @@ export const useNyxStore = create<NyxState>()(
       },
 
       loadSecureKeys: async () => {
-        const { rememberKeys, apiKeys } = get();
-        if (!rememberKeys) return;
-
         try {
-          // 1. Try to load keys from native secure device vault (keyring / DPAPI)
+          // 1. Load keys from native secure device vault (keyring / DPAPI / local persistent vault)
           const listRes: any = await invoke('vault:list-keys').catch(() => null);
-          if (listRes && listRes.success && Array.isArray(listRes.data) && listRes.data.length > 0) {
+          if (
+            listRes &&
+            listRes.success &&
+            Array.isArray(listRes.data) &&
+            listRes.data.length > 0
+          ) {
             const keys: Record<string, string> = {};
             await Promise.all(
               listRes.data.map(async (provider: string) => {
@@ -353,13 +387,6 @@ export const useNyxStore = create<NyxState>()(
               })
             );
             set((state) => ({ apiKeys: { ...state.apiKeys, ...keys } }));
-          } else if (Object.keys(apiKeys).length > 0) {
-            // 2. If vault was empty but localStorage had keys and rememberKeys is true, sync them into the vault
-            for (const [provider, val] of Object.entries(apiKeys)) {
-              if (val && typeof val === 'string' && val.trim().length > 0) {
-                await invoke('vault:store-key', { provider, key: val }).catch(() => {});
-              }
-            }
           }
           await get().refreshStatuses();
         } catch (err: any) {
@@ -372,7 +399,7 @@ export const useNyxStore = create<NyxState>()(
         const updatedKeys = { ...apiKeys };
         delete updatedKeys[provider];
         set({ apiKeys: updatedKeys });
-        
+
         try {
           await invoke('vault:delete-key', { provider }).catch(() => {});
           return true;
@@ -383,12 +410,17 @@ export const useNyxStore = create<NyxState>()(
       },
 
       refreshStatuses: async () => {
-        const cloudProviders: ModelProvider[] = ['gemini'];
+        // All providers that have API key slots and need status checking
+        const cloudProviders: ModelProvider[] = [
+          'gemini',
+          'openrouter',
+          'groq',
+          'mistral',
+          'nvidia-nim',
+        ];
         const newStatuses: Record<string, 'online' | 'offline' | 'no-key' | 'invalid-key'> = {};
 
         try {
-          // Local models status is handled by useProviderStatus hooks elsewhere
-
           // Check safeStorage vault configuration for cloud providers
           let vaultStatus: Record<string, boolean> = {};
           try {
@@ -400,21 +432,26 @@ export const useNyxStore = create<NyxState>()(
             console.warn('Failed to fetch vault status via IPC', e);
           }
 
-          await Promise.all(cloudProviders.map(async (p) => {
-            const hasVaultKey = vaultStatus[p];
-            const hasMemoryKey = !!get().apiKeys[p];
+          await Promise.all(
+            cloudProviders.map(async (p) => {
+              const hasVaultKey = vaultStatus[p];
+              const hasMemoryKey = !!get().apiKeys[p];
 
-            if (hasVaultKey || hasMemoryKey) {
-              try {
-                const validateRes: any = await invoke('vault_validate', { provider: p, apiKey: get().apiKeys[p] || '' }).catch(() => ({ success: true }));
-                newStatuses[p] = (validateRes && validateRes.success) ? 'online' : 'invalid-key';
-              } catch {
-                newStatuses[p] = 'online';
+              if (hasVaultKey || hasMemoryKey) {
+                try {
+                  const validateRes: any = await invoke('vault_validate', {
+                    provider: p,
+                    apiKey: get().apiKeys[p] || '',
+                  }).catch(() => ({ success: true }));
+                  newStatuses[p] = validateRes && validateRes.success ? 'online' : 'invalid-key';
+                } catch {
+                  newStatuses[p] = 'online';
+                }
+              } else {
+                newStatuses[p] = 'no-key';
               }
-            } else {
-              newStatuses[p] = 'no-key';
-            }
-          }));
+            })
+          );
           set({ statuses: newStatuses });
         } catch (e: any) {
           console.warn('[Store] Status checks failed:', e);
@@ -433,7 +470,7 @@ export const useNyxStore = create<NyxState>()(
         return persistedState;
       },
       onRehydrateStorage: () => (state) => {
-        if (state && state.rememberKeys) {
+        if (state) {
           state.loadSecureKeys?.();
         }
       },
@@ -448,15 +485,12 @@ export const useNyxStore = create<NyxState>()(
         models: state.models,
         privacyMode: state.privacyMode,
         rememberKeys: state.rememberKeys,
-        // Always persist apiKeys to localStorage unless privacy mode is on.
-        // rememberKeys only controls whether keys are ALSO stored in the secure OS keychain.
-        apiKeys: !state.privacyMode ? state.apiKeys : {},
+        apiKeys: {}, // Security Fix: Never store API keys in plaintext localStorage
         currentModel: state.currentModel,
         searchProvider: state.searchProvider,
         advancedLocalModelSettings: state.advancedLocalModelSettings,
         modelSystemPrompts: state.modelSystemPrompts,
       }),
-
     }
   )
 );

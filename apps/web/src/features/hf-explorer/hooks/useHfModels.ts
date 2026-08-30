@@ -10,7 +10,12 @@ interface SearchResponse {
 
 const MODELS_QUERY_KEY = 'hf-models';
 
-export function useHfModels(query: string, sort: SortMode, filter?: string, libraryFilter?: string) {
+export function useHfModels(
+  query: string,
+  sort: SortMode,
+  filter?: string,
+  libraryFilter?: string
+) {
   return useInfiniteQuery<SearchResponse, Error>({
     queryKey: [MODELS_QUERY_KEY, query, sort, filter, libraryFilter],
     queryFn: async ({ pageParam }) => {
@@ -27,7 +32,7 @@ export function useHfModels(query: string, sort: SortMode, filter?: string, libr
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     initialPageParam: null as string | null,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000,   // 10 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 }
 
@@ -44,6 +49,15 @@ export function useHfModelFiles(modelId: string | null) {
   });
 }
 
+// Strip YAML front matter only when the file starts with ---
+// Using /s (dotAll) so . matches \n; no /m flag so ^ anchors at string start only.
+function stripFrontMatter(text: string): string {
+  return text
+    .replace(/^---[\s\S]*?---\r?\n?/s, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .trim();
+}
+
 export function useHfModelReadme(modelId: string | null) {
   return useQuery<string, Error>({
     queryKey: ['hf-model-readme', modelId],
@@ -51,10 +65,7 @@ export function useHfModelReadme(modelId: string | null) {
       if (!modelId) return '';
       try {
         const readme = await invoke<string>('hf_get_model_readme', { modelId });
-        const clean = (readme ?? '')
-          .replace(/^---[\s\S]*?---\n?/m, '')
-          .replace(/<!--[\s\S]*?-->/g, '')
-          .trim();
+        const clean = stripFrontMatter(readme ?? '');
         if (clean && !clean.includes('HTTP 404') && !clean.includes('Failed to fetch')) {
           return clean;
         }
@@ -72,11 +83,7 @@ export function useHfModelReadme(modelId: string | null) {
         try {
           const res = await fetch(url);
           if (res.ok) {
-            const text = await res.text();
-            const clean = text
-              .replace(/^---[\s\S]*?---\n?/m, '')
-              .replace(/<!--[\s\S]*?-->/g, '')
-              .trim();
+            const clean = stripFrontMatter(await res.text());
             if (clean) return clean;
           }
         } catch {

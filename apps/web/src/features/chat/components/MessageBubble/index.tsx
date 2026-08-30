@@ -1,10 +1,11 @@
 import React, { memo, useRef, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, Square, Shield, Zap } from 'lucide-react';
+import { Loader2, Square, Shield, Zap, Presentation, Tv, FileDown } from 'lucide-react';
 import { CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
 import { ChatMessage, ToolCall } from '@src/infrastructure/types';
 import { isReasoningModel } from '@src/infrastructure/utils/provider';
 import { toast } from '@src/shared/components/ui/sonner';
+import { stripResponsePreamble, extractThinkingAndContent } from '../../utils/streamFilter';
 
 import { ThinkingBlock } from '../ThinkingBlock';
 import { FourDotsWaveLoader } from '../FourDotsWaveLoader';
@@ -22,6 +23,14 @@ import { ToolCallRenderer } from './ToolCallRenderer';
 import { ArtifactRenderer, StreamingArtifact } from './ArtifactRenderer';
 import { ImageArtifactCard } from '../ImageArtifactCard';
 import { ImageLightbox } from '../ImageLightbox';
+import { exportSlidevToPptx } from '../../../artifacts/utils/pptxExporter';
+import { parseSlidevMarkdown } from '../../../artifacts/utils/slidevParser';
+import {
+  compileResponseToSlidev,
+  extractSlidevCodeBlock,
+  isPresentationPrompt,
+  isSlidevContent,
+} from '../../../presentation/utils/slidevCompiler';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +38,7 @@ import { ImageLightbox } from '../ImageLightbox';
 
 export interface MessageBubbleProps {
   msg: ChatMessage;
+  previousMsg?: ChatMessage;
   index: number;
   isLast: boolean;
   isStreaming: boolean;
@@ -44,6 +54,7 @@ export interface MessageBubbleProps {
   approveTool?: (index: number, approvalId: string) => void;
   rejectTool?: (index: number, approvalId: string) => void;
   onPinToggle?: (index: number) => void;
+  onOpenLightbox?: (url?: string, prompt?: string, engine?: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -51,9 +62,25 @@ export interface MessageBubbleProps {
 // ---------------------------------------------------------------------------
 
 const ARTIFACT_LANGS = new Set([
-  'html', 'htm', 'react', 'tsx', 'jsx', 'ts', 'js',
-  'typescript', 'javascript', 'python', 'json', 'csv',
-  'mermaid', 'svg', 'markdown', 'md',
+  'html',
+  'htm',
+  'react',
+  'tsx',
+  'jsx',
+  'ts',
+  'js',
+  'typescript',
+  'javascript',
+  'python',
+  'json',
+  'csv',
+  'mermaid',
+  'svg',
+  'markdown',
+  'md',
+  'slidev',
+  'slides',
+  'presentation',
 ]);
 
 function detectStreamingArtifacts(content: string): StreamingArtifact[] {
@@ -65,7 +92,12 @@ function detectStreamingArtifacts(content: string): StreamingArtifact[] {
     if (!isClosed) {
       const lang = match[1]?.toLowerCase();
       if (ARTIFACT_LANGS.has(lang)) {
-        detected.push({ id: 'streaming-artifact', type: 'code', title: 'Generating...', content: '' });
+        detected.push({
+          id: 'streaming-artifact',
+          type: 'code',
+          title: 'Generating...',
+          content: '',
+        });
       }
     }
   }
@@ -81,7 +113,11 @@ interface ParsedContent {
   parsedContent: string;
 }
 
-function parseMessageContent(msg: ChatMessage, isUser: boolean, reasoningEnabled: boolean): ParsedContent {
+function parseMessageContent(
+  msg: ChatMessage,
+  isUser: boolean,
+  reasoningEnabled: boolean
+): ParsedContent {
   let parsedReasoning = msg.reasoning || '';
   let parsedContent = (msg.content as string) || '';
 
@@ -100,32 +136,52 @@ function parseMessageContent(msg: ChatMessage, isUser: boolean, reasoningEnabled
       .replace(/^\[LIVE WEB SEARCH RESULTS\][\s\S]*?\[\/LIVE WEB SEARCH RESULTS\]\s*/i, '')
       // Strip the "User question:" prefix injected for web-search-augmented prompts
       .replace(/^(?:User question|User query|User's question|User's query):\s*/i, '')
-      // Hard safety net: strip well-known filler preambles that the model adds
-      // before the actual answer despite the persona instruction.
-      .replace(/^Based on the (?:search results|information|data) provided[\s\S]*?:/i, '')
-      .replace(
-        /^(?:(?:according to (?:the )?(?:search results?|(?:the )?information(?: provided)?|(?:my )?(?:knowledge|data|findings))|based on (?:the )?(?:information|(?:search )?results?|(?:my )?(?:knowledge|research))|here'?s? (?:what i found|the (?:answer|information|result)s?)|that'?s? (?:a )?(?:great|good|excellent|interesting) question[!.]?|great question[!.]?|i found (?:the following|some information)|let me (?:share|give you|provide)|the (?:answer|president|result) (?:is|of|to)|in (?:summary|short|brief),?)[,!.]?\s*)+/i,
-        ''
-      )
       .trim();
 
-    // Transform broken ASCII scatter plots and axis charts (* -- -- -- + Year 5 Year 10) into clean Markdown tables
-    if (parsedContent.includes('Accumulated Capital') || /Year\s+\d+\s+Year\s+\d+/i.test(parsedContent) || /(?:\*\s*\||\|\s*\*|\+\-\-\-+)/.test(parsedContent)) {
-      parsedContent = parsedContent.replace(/(?:Accumulated Capital|\$\d+[\s*|\-+]+|Year\s+\d+[\s\d-]+){3,}/g, (match) => {
-        // Extract currency values ($1,200,000, $1,000,000, etc) and year markers
-        const amounts = match.match(/\$\d{1,3}(?:,\d{3})*/g) || ['$0', '$200,000', '$400,000', '$600,000', '$800,000', '$1,000,000'];
-        const years = match.match(/Year\s+\d+/gi) || ['Year 5', 'Year 10', 'Year 15', 'Year 20', 'Year 25', 'Year 30', 'Year 35', 'Year 40'];
+    parsedContent = stripResponsePreamble(parsedContent);
 
-        let tableMarkdown = '\n\n| Growth Timeline | Estimated Capital ($) | Compounding Milestone |\n| :--- | :--- | :--- |\n';
-        const maxLen = Math.max(years.length, 5);
-        for (let i = 0; i < maxLen; i++) {
-          const y = years[i] || `Period ${i + 1}`;
-          const val = amounts[amounts.length - 1 - i] || amounts[i] || '$100,000+';
-          const icon = i > 4 ? '🔥 Target Achieved' : (i > 2 ? '📈 Compounding Phase' : '🌱 Early Growth');
-          tableMarkdown += `| **${y}** | \`${val}\` | ${icon} |\n`;
+    // Transform broken ASCII scatter plots and axis charts (* -- -- -- + Year 5 Year 10) into clean Markdown tables
+    if (
+      parsedContent.includes('Accumulated Capital') ||
+      /Year\s+\d+\s+Year\s+\d+/i.test(parsedContent) ||
+      /(?:\*\s*\||\|\s*\*|\+\-\-\-+)/.test(parsedContent)
+    ) {
+      parsedContent = parsedContent.replace(
+        /(?:Accumulated Capital|\$\d+[\s*|\-+]+|Year\s+\d+[\s\d-]+){3,}/g,
+        (match) => {
+          // Extract currency values ($1,200,000, $1,000,000, etc) and year markers
+          const amounts = match.match(/\$\d{1,3}(?:,\d{3})*/g) || [
+            '$0',
+            '$200,000',
+            '$400,000',
+            '$600,000',
+            '$800,000',
+            '$1,000,000',
+          ];
+          const years = match.match(/Year\s+\d+/gi) || [
+            'Year 5',
+            'Year 10',
+            'Year 15',
+            'Year 20',
+            'Year 25',
+            'Year 30',
+            'Year 35',
+            'Year 40',
+          ];
+
+          let tableMarkdown =
+            '\n\n| Growth Timeline | Estimated Capital ($) | Compounding Milestone |\n| :--- | :--- | :--- |\n';
+          const maxLen = Math.max(years.length, 5);
+          for (let i = 0; i < maxLen; i++) {
+            const y = years[i] || `Period ${i + 1}`;
+            const val = amounts[amounts.length - 1 - i] || amounts[i] || '$100,000+';
+            const icon =
+              i > 4 ? '🔥 Target Achieved' : i > 2 ? '📈 Compounding Phase' : '🌱 Early Growth';
+            tableMarkdown += `| **${y}** | \`${val}\` | ${icon} |\n`;
+          }
+          return tableMarkdown + '\n';
         }
-        return tableMarkdown + '\n';
-      });
+      );
 
       // Cleanup remaining stray axis artifacts
       parsedContent = parsedContent
@@ -135,7 +191,11 @@ function parseMessageContent(msg: ChatMessage, isUser: boolean, reasoningEnabled
     }
 
     // Clean up any ASCII box art or pipe-wall frames safely without corrupting text or syntax
-    if (/[┌┐└┘├┤│─▼▲]/.test(parsedContent) || parsedContent.includes('+---') || /\|{2,}/.test(parsedContent)) {
+    if (
+      /[┌┐└┘├┤│─▼▲]/.test(parsedContent) ||
+      parsedContent.includes('+---') ||
+      /\|{2,}/.test(parsedContent)
+    ) {
       parsedContent = parsedContent
         .replace(/[┌┐└┘├┤│─▼▲]+/g, '')
         .replace(/\+---+/g, '')
@@ -144,29 +204,20 @@ function parseMessageContent(msg: ChatMessage, isUser: boolean, reasoningEnabled
         .replace(/\|\s*\[\s*\]\s*([^|]+)\|/g, '- [ ] $1\n')
         .replace(/\n{3,}/g, '\n\n');
     }
+
+    // Strip accidental CLI terminal commands telling the user to run slidev locally
+    parsedContent = parsedContent
+      .replace(
+        /(?:(?:you can now )?(?:paste|save) (?:the above|this) (?:markdown|content|code) into a file[\s\S]*?(?:slidev\s+[^\n]+)[\s\S]*?(?:enjoy[!.]?)?)/gi,
+        ''
+      )
+      .replace(/```(?:bash|sh|cmd|powershell)?\s*\n\s*slidev\s+[^\n]+\s*\n```/gi, '')
+      .replace(/(?:End of deck[.]?\s*)/gi, '')
+      .trim();
   }
 
-
-
-  const thinkStartMatch = parsedContent.match(/<(?:think|thought|thinking)>/i);
-  if (thinkStartMatch) {
-    const startIndex = thinkStartMatch.index!;
-    const endMatch = parsedContent.match(/<\/(?:think|thought|thinking)>/i);
-
-    const innerText =
-      endMatch && typeof endMatch.index !== 'undefined' && endMatch.index > startIndex
-        ? parsedContent.substring(startIndex + thinkStartMatch[0].length, endMatch.index).trim()
-        : parsedContent.substring(startIndex + thinkStartMatch[0].length).trim();
-
-    const outsideText =
-      endMatch && typeof endMatch.index !== 'undefined' && endMatch.index > startIndex
-        ? (parsedContent.substring(0, startIndex) + parsedContent.substring(endMatch.index + endMatch[0].length)).trim()
-        : parsedContent.substring(0, startIndex).trim();
-
-    if (innerText) {
-      parsedReasoning = parsedReasoning ? `${parsedReasoning}\n${innerText}` : innerText;
-    }
-    parsedContent = outsideText || innerText;
+  if (!isUser) {
+    return extractThinkingAndContent(parsedContent, parsedReasoning);
   }
 
   return { parsedReasoning, parsedContent };
@@ -179,6 +230,7 @@ function parseMessageContent(msg: ChatMessage, isUser: boolean, reasoningEnabled
 export const MessageBubble = memo<MessageBubbleProps>(
   ({
     msg,
+    previousMsg,
     index,
     isLast,
     isStreaming,
@@ -204,8 +256,21 @@ export const MessageBubble = memo<MessageBubbleProps>(
         msg.content.includes('Local Model Not Loaded'));
 
     const msgId = `${msg.timestamp}-${index}`;
-    const reasoningEnabled = isReasoningModel(msg.model || activeModel);
-    const [lightboxState, setLightboxState] = useState<{ isOpen: boolean; url: string; prompt: string; engine?: string }>({
+    const reasoningEnabled =
+      isReasoningModel(msg.model || activeModel) ||
+      !!msg.reasoning ||
+      !!(
+        typeof msg.content === 'string' &&
+        /<(?:think|thought|thinking|reasoning|antThinking|plan|reflection)(?:\s+[^>]*?)?>/i.test(
+          msg.content
+        )
+      );
+    const [lightboxState, setLightboxState] = useState<{
+      isOpen: boolean;
+      url: string;
+      prompt: string;
+      engine?: string;
+    }>({
       isOpen: false,
       url: '',
       prompt: '',
@@ -235,6 +300,102 @@ export const MessageBubble = memo<MessageBubbleProps>(
       return detected;
     }, [isStreaming, isLast, parsedContent]);
 
+    const userPromptText = useMemo(() => {
+      if (!previousMsg) return '';
+      if (typeof previousMsg.content === 'string') return previousMsg.content;
+      if (Array.isArray(previousMsg.content)) {
+        return (previousMsg.content as any[])
+          .map((c) => (typeof c === 'string' ? c : c?.text || ''))
+          .join('\n');
+      }
+      return String(previousMsg.content || '');
+    }, [previousMsg]);
+
+    const isPresentation = useMemo(() => {
+      if (isUser) return false;
+      // Do not convert to presentation mode while streaming unless explicitly an artifact deck
+      if (isStreaming) {
+        return (
+          msg.artifacts?.some(
+            (a: any) =>
+              a.type === 'slidev' ||
+              a.type === 'presentation' ||
+              a.type === 'slides' ||
+              a.language === 'slidev' ||
+              a.language === 'slides'
+          ) || false
+        );
+      }
+      if (
+        msg.artifacts?.some(
+          (a: any) =>
+            a.type === 'slidev' ||
+            a.type === 'presentation' ||
+            a.type === 'slides' ||
+            a.language === 'slidev' ||
+            a.language === 'slides'
+        )
+      ) {
+        return true;
+      }
+      if (isPresentationPrompt(userPromptText)) return true;
+      if (isSlidevContent(parsedContent)) return true;
+      if (
+        /(?:^|\n)\s*layout:\s*(?:cover|two-cols|two-cols-header|quote|center|default|intro|fact|statement|end)\b/i.test(
+          parsedContent
+        )
+      ) {
+        return true;
+      }
+      if (/::(?:left|right)::/i.test(parsedContent)) return true;
+      return false;
+    }, [isUser, isStreaming, msg.artifacts, parsedContent, userPromptText]);
+
+    const compiledSlidevDeck = useMemo(() => {
+      if (!isPresentation) return '';
+      const existingArtifact = msg.artifacts?.find(
+        (a: any) =>
+          a.type === 'slidev' ||
+          a.type === 'presentation' ||
+          a.type === 'slides' ||
+          a.language === 'slidev' ||
+          a.language === 'slides'
+      );
+      if (existingArtifact?.content && isSlidevContent(existingArtifact.content)) {
+        return existingArtifact.content;
+      }
+      return compileResponseToSlidev(parsedContent, userPromptText);
+    }, [isPresentation, msg.artifacts, parsedContent, userPromptText]);
+
+    const presentationTitle = useMemo(() => {
+      const clean = (userPromptText || 'Presentation')
+        .replace(
+          /(?:generate|create|make|build|write|give\s+me|show\s+me|a\s+ppt\s+for|a\s+ppt\s+of|ppt\s+for|ppt\s+of|presentation\s+for|presentation\s+of|presentation\s+on|slides\s+for|slides\s+on)/gi,
+          ''
+        )
+        .replace(/\b(?:ppt|presentation|powerpoint|slides|slide\s*deck)\b/gi, '')
+        .trim();
+      return clean
+        ? clean
+            .split(/\s+/)
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ')
+        : 'Interactive Presentation';
+    }, [userPromptText]);
+
+    const effectiveArtifacts = useMemo(() => {
+      const existing = (msg.artifacts || []) as StreamingArtifact[];
+      // If presentation studio is displayed inline, don't show an artifact button card for it
+      return existing.filter(
+        (a) =>
+          a.type !== 'slidev' &&
+          a.type !== 'presentation' &&
+          a.type !== 'slides' &&
+          a.language !== 'slidev' &&
+          a.language !== 'slides'
+      );
+    }, [msg.artifacts]);
+
     const isThinking =
       isStreaming &&
       !parsedContent &&
@@ -255,7 +416,7 @@ export const MessageBubble = memo<MessageBubbleProps>(
       >
         {isUser ? (
           <div className="max-w-[85%] sm:max-w-[75%] animate-fade-in">
-            <div className="py-3 px-4.5 bg-indigo-600/10 hover:bg-indigo-600/15 border border-indigo-500/20 rounded-2xl rounded-tr-xs transition-all shadow-md backdrop-blur-md text-slate-100 dark:text-slate-100">
+            <div className="py-3 px-4.5 bg-[#121214] hover:bg-[#161619] border border-white/10 rounded-2xl rounded-tr-xs transition-all shadow-sm text-zinc-100">
               {msg.attachments && msg.attachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-3">
                   {msg.attachments.map((att, i) => (
@@ -316,9 +477,7 @@ export const MessageBubble = memo<MessageBubbleProps>(
 
             <div className="flex w-full gap-3 items-start relative">
               <div className="flex-1 min-w-0">
-                {isSetupMessage && (
-                  <FourDotsWaveLoader />
-                )}
+                {isSetupMessage && <FourDotsWaveLoader />}
 
                 {msg.status === 'error' && (
                   <ErrorRenderer
@@ -334,7 +493,7 @@ export const MessageBubble = memo<MessageBubbleProps>(
                   </p>
                 )}
 
-                {(isThinking || parsedReasoning) && (
+                {(!!parsedReasoning || (reasoningEnabled && isThinking)) && (
                   <div className="pl-0">
                     <ThinkingBlock
                       content={parsedReasoning}
@@ -350,45 +509,134 @@ export const MessageBubble = memo<MessageBubbleProps>(
                   </div>
                 )}
 
-                {isLoadingIcon && !isThinking && !parsedReasoning && !parsedContent && (!msg.toolCalls || msg.toolCalls.length === 0) && (
-                  <FourDotsWaveLoader />
-                )}
+                {isLoadingIcon &&
+                  !isThinking &&
+                  !parsedReasoning &&
+                  !parsedContent &&
+                  (!msg.toolCalls || msg.toolCalls.length === 0) && <FourDotsWaveLoader />}
 
                 {(parsedContent || (msg.toolCalls && msg.toolCalls.length > 0)) && (
                   <div className="pl-0">
-                    {msg.toolCalls && msg.toolCalls.length > 0 && (
-                      <div className="space-y-1">
-                        <ToolCallRenderer
-                          toolCalls={msg.toolCalls}
-                          isStreaming={isStreaming}
-                          isLast={isLast}
-                        />
-                      </div>
-                    )}
-
-                    {parsedContent && msg.status !== 'error' && !isSetupMessage && (
-                      <MarkdownContent
-                        content={parsedContent}
-                        blocks={(msg as any).blocks}
-                        isStreaming={isStreaming && isLast}
-                        citations={msg.citations}
-                      />
-                    )}
-
-                    {msg.images && msg.images.length > 0 && !isUser && (
-                      <div className="flex flex-col gap-3 my-3">
-                        {msg.images.map((img, i) => (
-                          <ImageArtifactCard
-                            key={i}
-                            imageUrl={img.url || (img.data ? (img.data.startsWith('data:') ? img.data : `data:${img.mimeType || 'image/png'};base64,${img.data}`) : '')}
-                            prompt={img.name || (typeof msg.content === 'string' ? msg.content : 'Generated Visual Asset')}
-                            aspectRatio={(img as any).aspectRatio || '16:9'}
-                            engine={(img as any).engine || 'NYX Diffuser Engine'}
-                            onOpenLightbox={(url?: string, prompt?: string, engine?: string) => {
-                              setLightboxState({ isOpen: true, url: url || '', prompt: prompt || '', engine: engine || 'NYX Engine' });
-                            }}
+                    {msg.toolCalls &&
+                      msg.toolCalls.filter(
+                        (c) =>
+                          c.function?.name &&
+                          !(
+                            c.function.name === 'write_file' &&
+                            (!c.function.arguments || c.function.arguments === '{}')
+                          )
+                      ).length > 0 && (
+                        <div className="space-y-1">
+                          <ToolCallRenderer
+                            toolCalls={msg.toolCalls.filter(
+                              (c) =>
+                                c.function?.name &&
+                                !(
+                                  c.function.name === 'write_file' &&
+                                  (!c.function.arguments || c.function.arguments === '{}')
+                                )
+                            )}
+                            isStreaming={isStreaming}
+                            isLast={isLast}
                           />
-                        ))}
+                        </div>
+                      )}
+
+                    {parsedContent &&
+                      msg.status !== 'error' &&
+                      !isSetupMessage &&
+                      !isPresentation && (
+                        <MarkdownContent
+                          content={parsedContent}
+                          blocks={(msg as any).blocks}
+                          isStreaming={isStreaming && isLast}
+                          citations={msg.citations}
+                          images={msg.images}
+                          videos={(msg as any).videos}
+                          audios={(msg as any).audios}
+                          onOpenLightbox={(url?: string, prompt?: string, engine?: string) => {
+                            setLightboxState({
+                              isOpen: true,
+                              url: url || '',
+                              prompt: prompt || '',
+                              engine: engine || 'NYX Engine',
+                            });
+                          }}
+                        />
+                      )}
+
+                    {/* Executive Presentation Card Launcher */}
+                    {!isUser && isPresentation && msg.status !== 'error' && !isSetupMessage && (
+                      <div className="mt-2.5 w-full select-none">
+                        {isStreaming || !compiledSlidevDeck ? (
+                          <div className="rounded-xl border border-white/10 bg-[#09090b] px-4 py-3 flex items-center justify-between gap-3 shadow-md my-2">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="p-2 rounded-lg bg-zinc-900 border border-white/10 text-zinc-400 shrink-0">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-semibold text-zinc-100 truncate">
+                                  {presentationTitle}
+                                </span>
+                                <span className="text-[10px] text-zinc-500 font-mono">
+                                  Slidev Deck
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 text-zinc-400 border border-white/10 shrink-0">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Compiling Presentation...</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-white/10 bg-[#09090b] hover:border-white/20 px-4 py-3 flex items-center justify-between gap-3 shadow-md my-2 transition-all">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="p-2 rounded-lg bg-zinc-900 border border-white/10 text-zinc-200 shrink-0">
+                                <Presentation className="w-4 h-4 text-zinc-200" />
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-semibold text-zinc-100 truncate">
+                                  {presentationTitle}
+                                </span>
+                                <span className="text-[10px] text-zinc-500 font-mono">
+                                  Slidev Interactive Presentation
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={async () => {
+                                  toast.info('Generating PowerPoint (.pptx)...');
+                                  const parsed = parseSlidevMarkdown(compiledSlidevDeck);
+                                  await exportSlidevToPptx(parsed, { fileName: presentationTitle });
+                                  toast.success('Downloaded PowerPoint presentation!');
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-white/10 transition-colors cursor-pointer"
+                                title="Export .PPTX"
+                              >
+                                <FileDown className="w-3.5 h-3.5" />
+                                <span>.PPTX</span>
+                              </button>
+                              <button
+                                onClick={() =>
+                                  onArtifactClick?.({
+                                    id: msgId,
+                                    type: 'presentation',
+                                    title: presentationTitle,
+                                    content: compiledSlidevDeck,
+                                    language: 'slidev',
+                                  })
+                                }
+                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white text-black hover:bg-zinc-200 transition-all cursor-pointer shadow-sm active:scale-95"
+                              >
+                                <Tv className="w-3.5 h-3.5" />
+                                <span>Open Studio</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -401,11 +649,10 @@ export const MessageBubble = memo<MessageBubbleProps>(
                     />
 
                     <ArtifactRenderer
-                      artifacts={(msg.artifacts || []) as StreamingArtifact[]}
+                      artifacts={effectiveArtifacts}
                       streamingArtifacts={streamingArtifacts}
                       onArtifactClick={onArtifactClick}
                     />
-
 
                     {msg.citations && msg.citations.length > 0 && (
                       // SourcesToggle is imported from parent — kept in ChatMessageList to avoid circular dep
@@ -462,6 +709,7 @@ export const MessageBubble = memo<MessageBubbleProps>(
   },
   (prevProps, nextProps) => {
     if (prevProps.msg !== nextProps.msg) return false;
+    if (prevProps.previousMsg !== nextProps.previousMsg) return false;
     if (prevProps.isLast !== nextProps.isLast) return false;
     if (prevProps.isStreaming !== nextProps.isStreaming) return false;
     if (prevProps.index !== nextProps.index) return false;
@@ -557,7 +805,9 @@ const ToolApprovalGate: React.FC<{
             <button
               onClick={() => {
                 rejectTool?.(index, approval.approvalId);
-                toast.error('Action Rejected', { description: 'Lucifer tool execution cancelled.' });
+                toast.error('Action Rejected', {
+                  description: 'Lucifer tool execution cancelled.',
+                });
               }}
               className="px-4 py-2 rounded-xl border border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5"
             >

@@ -24,7 +24,7 @@ import { MemoryPanel } from './MemoryPanel';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { useModelStore } from '@src/core/stores/useModelStore';
 import { BranchingTreePanel } from './BranchingTreePanel';
-import { detectProvider } from '@src/infrastructure/utils/provider';
+import { detectProvider, getModelCapabilities } from '@src/infrastructure/utils/provider';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -148,7 +148,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [branchManagerOpen, setBranchManagerOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  
+
   // --- Artifact State ---
   const [activeArtifact, setActiveArtifact] = useState<{
     id?: string;
@@ -177,7 +177,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
   const cloudModelId = useNyxStore((s) => s.cloudModelId);
   const localModelId = useNyxStore((s) => s.localModelId);
-  
+
   // Since selecting a model clears the opposing state, we can just pick whichever is set.
   const currentModelId = localModelId || cloudModelId || models['nyx'];
   const localLibraryModels = useModelStore((s) => s.localLibraryModels);
@@ -205,7 +205,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   }, [currentModelId, storeModelConfigs, storeModelSettings]);
 
   const {
-    activeAgent,
     isLoading,
     history,
     metrics: parentMetrics,
@@ -230,9 +229,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     lightningDirectives,
     logRollout,
     submitReward,
-    maxContextTokens: activeSettings?.contextSize && activeSettings.contextSize > 0 
-      ? Math.floor(activeSettings.contextSize * 0.9) 
-      : Math.floor(getModelContextWindow(currentModel) * 0.9),
+    maxContextTokens:
+      activeSettings?.contextSize && activeSettings.contextSize > 0
+        ? Math.floor(activeSettings.contextSize * 0.9)
+        : Math.floor(getModelContextWindow(currentModel) * 0.9),
     currentProvider: currentModel?.provider || detectProvider(currentModelId),
     gatewayUrl: gatewayUrls[currentModel?.provider || detectProvider(currentModelId)],
   });
@@ -243,18 +243,36 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   useEffect(() => {
     if (history.length === 0) return;
     const lastMessage = history[history.length - 1];
-    if (lastMessage?.role === 'assistant' && lastMessage.artifacts && lastMessage.artifacts.length > 0) {
+    if (
+      lastMessage?.role === 'assistant' &&
+      lastMessage.artifacts &&
+      lastMessage.artifacts.length > 0
+    ) {
       const latestArtifact = lastMessage.artifacts[lastMessage.artifacts.length - 1];
+
       if (latestArtifact && latestArtifact.id) {
         const alreadyOpened = hasAutoOpenedRef.current[latestArtifact.id];
-        
-        if (activeArtifact && (activeArtifact.id === latestArtifact.id || activeArtifact.title === latestArtifact.title)) {
+
+        if (
+          activeArtifact &&
+          (activeArtifact.id === latestArtifact.id || activeArtifact.title === latestArtifact.title)
+        ) {
           // Sync content if it's already open and has updated
           if (activeArtifact.content !== latestArtifact.content) {
             setActiveArtifact(latestArtifact);
           }
-        } else if (!activeArtifact && !alreadyOpened && isLoading) {
-          // Auto-open only if it's a new artifact, hasn't been auto-opened yet, and we are currently loading/streaming
+        } else if (!activeArtifact && !alreadyOpened) {
+          const isPresentationArtifact =
+            latestArtifact.type === 'presentation' ||
+            latestArtifact.type === 'slidev' ||
+            latestArtifact.language === 'slidev';
+
+          // If it's a presentation and still streaming, wait until finished
+          if (isPresentationArtifact && isLoading) {
+            return;
+          }
+
+          // Auto-open presentation, code, HTML, and diagram artifacts in the app window
           hasAutoOpenedRef.current[latestArtifact.id] = true;
           setActiveArtifact(latestArtifact);
         }
@@ -278,9 +296,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       tps: parentMetrics?.tps || 0,
       totalMessages: history.length,
       contextTokens,
-      contextLimit: activeSettings?.contextSize && activeSettings.contextSize > 0 
-        ? activeSettings.contextSize 
-        : getModelContextWindow(currentModel),
+      contextLimit:
+        activeSettings?.contextSize && activeSettings.contextSize > 0
+          ? activeSettings.contextSize
+          : getModelContextWindow(currentModel),
     }),
     [parentMetrics, history.length, contextTokens, currentModel, activeSettings]
   );
@@ -289,7 +308,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const handleSubmit = useCallback(
     async (finalPrompt: string, images?: ChatImage[]): Promise<boolean> => {
       if ((!finalPrompt.trim() && (!images || images.length === 0)) || isLoading) return false;
-      
+
       const { cloudModelId, localModelId } = useNyxStore.getState();
       if (!currentModelId && !cloudModelId && !localModelId) {
         toast.error('Please select a model first');
@@ -328,7 +347,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   }, []);
 
   // --- Image & Document attachment handlers ---
-  function compressAndResizeImage(file: File, maxDimension = 1024, quality = 0.85): Promise<ChatImage> {
+  function compressAndResizeImage(
+    file: File,
+    maxDimension = 1024,
+    quality = 0.85
+  ): Promise<ChatImage> {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -390,46 +413,61 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     });
   }
 
-  const handleAttachFiles = useCallback((files: File[]) => {
-    const images: File[] = [];
-    const documents: File[] = [];
+  const handleAttachFiles = useCallback(
+    (files: File[]) => {
+      const images: File[] = [];
+      const documents: File[] = [];
 
-    files.forEach((file) => {
-      if (file.type.startsWith('image/')) {
-        images.push(file);
-      } else {
-        documents.push(file);
-      }
-    });
-
-    // Handle Documents (RAG Ingestion into TurboVec)
-    documents.forEach(async (file) => {
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error(`Document ${file.name} is too large (max 10MB)`);
-        return;
-      }
-      try {
-        const text = await file.text();
-        await invoke('turbovec_add_memory', {
-          text: `Document [${file.name}]:\n${text}`,
-          metadata: JSON.stringify({ filename: file.name, size: file.size, type: file.type }),
-        });
-        toast.success(`Document "${file.name}" ingested into RAG memory!`);
-      } catch (err: any) {
-        toast.error(`Failed to ingest ${file.name}: ${err.message || String(err)}`);
-      }
-    });
-
-    // Handle Images with ultra-fast canvas compression & max-dimension downscaling
-    const promises = images.map((file) => compressAndResizeImage(file));
-
-    if (images.length > 0) {
-      Promise.all(promises).then((newImages) => {
-        setPendingImages((prev) => [...prev, ...newImages]);
-        toast.success(`Attached ${newImages.length} image(s)`);
+      files.forEach((file) => {
+        if (file.type.startsWith('image/')) {
+          images.push(file);
+        } else {
+          documents.push(file);
+        }
       });
-    }
-  }, []);
+
+      // Handle Documents (RAG Ingestion into TurboVec)
+      documents.forEach(async (file) => {
+        if (file.size > 10 * 1024 * 1024) {
+          toast.error(`Document ${file.name} is too large (max 10MB)`);
+          return;
+        }
+        try {
+          const text = await file.text();
+          await invoke('turbovec_add_memory', {
+            text: `Document [${file.name}]:\n${text}`,
+            metadata: JSON.stringify({ filename: file.name, size: file.size, type: file.type }),
+          });
+          toast.success(`Document "${file.name}" ingested into RAG memory!`);
+        } catch (err: any) {
+          toast.error(`Failed to ingest ${file.name}: ${err.message || String(err)}`);
+        }
+      });
+
+      // Handle Images with ultra-fast canvas compression & max-dimension downscaling
+      if (images.length > 0) {
+        const modelCaps = getModelCapabilities(currentModelId || '');
+        const supportsVision =
+          (currentModel as any)?.capabilities?.vision !== undefined
+            ? !!(currentModel as any).capabilities.vision
+            : modelCaps.supportsVision;
+
+        if (!supportsVision) {
+          toast.error(
+            `The selected model (${currentModel?.name || currentModelId || 'current model'}) does not support image attachments. Please select a vision-capable model.`
+          );
+          return;
+        }
+
+        const promises = images.map((file) => compressAndResizeImage(file));
+        Promise.all(promises).then((newImages) => {
+          setPendingImages((prev) => [...prev, ...newImages]);
+          toast.success(`Attached ${newImages.length} image(s)`);
+        });
+      }
+    },
+    [currentModel, currentModelId]
+  );
 
   const handleRemoveImage = useCallback((index: number) => {
     setPendingImages((prev) => prev.filter((_, i) => i !== index));
@@ -500,12 +538,16 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 </head>
 <body>
   <h1>${title}</h1>
-  ${history.map(m => `
+  ${history
+    .map(
+      (m) => `
     <div class="msg ${m.role}">
       <div class="role">${m.role}</div>
       <div class="content">${m.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
     </div>
-  `).join('')}
+  `
+    )
+    .join('')}
 </body>
 </html>`;
           mimeType = 'text/html';
@@ -523,7 +565,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         case 'gist': {
           const finalMd = getMarkdown();
           navigator.clipboard.writeText(finalMd);
-          toast.success(`Copied ${format === 'notion' ? 'Notion' : 'GitHub Gist'} formatted Markdown to clipboard!`);
+          toast.success(
+            `Copied ${format === 'notion' ? 'Notion' : 'GitHub Gist'} formatted Markdown to clipboard!`
+          );
           return;
         }
       }
@@ -568,7 +612,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       } else {
         useNyxStore.getState().setCloudModelId(modelId);
       }
-      
+
       // setModel must be called AFTER the store update to avoid the parent overwriting
       setModel(modelId);
     },
@@ -626,11 +670,26 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary m-4 rounded-xl pointer-events-none">
           <div className="flex flex-col items-center gap-4 text-primary">
             <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" x2="12" y1="3" y2="15" />
+              </svg>
             </div>
             <h2 className="text-2xl font-bold">Drop files to add to context</h2>
             <p className="text-muted-foreground max-w-sm text-center">
-              Images will be attached to your next message. Documents will be ingested into memory for semantic search.
+              Images will be attached to your next message. Documents will be ingested into memory
+              for semantic search.
             </p>
           </div>
         </div>
@@ -683,7 +742,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           <div className="bg-primary/5 border-b border-primary/20 px-4 py-2 flex items-center justify-between shrink-0 animate-fade-in">
             <div className="flex items-center gap-2">
               <span className="text-sm select-none flex items-center justify-center shrink-0">
-                {activeProject.icon ? activeProject.icon : <Folder className="w-4 h-4 text-primary" />}
+                {activeProject.icon ? (
+                  activeProject.icon
+                ) : (
+                  <Folder className="w-4 h-4 text-primary" />
+                )}
               </span>
               <div className="flex flex-col">
                 <span className="text-xs font-semibold text-foreground leading-none">
@@ -710,7 +773,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         <ChatMessageList
           history={history}
           activeStreamMessage={activeStreamMessage}
-          activeAgent={activeAgent}
           isLoading={isLoading}
           onCopy={copyToClipboard}
           copiedId={copiedId}
@@ -724,7 +786,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onRegenerate={handleRegenerate}
           onBranchFromMessage={handleBranch}
           activeModel={currentModel?.name}
-
           onArtifactClick={setActiveArtifact}
           approveTool={approveTool}
           rejectTool={rejectTool}
@@ -777,10 +838,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       />
 
       {/* MEMORY MANAGER PANEL */}
-      <MemoryPanel
-        isOpen={memoryPanelOpen}
-        onClose={() => setMemoryPanelOpen(false)}
-      />
+      <MemoryPanel isOpen={memoryPanelOpen} onClose={() => setMemoryPanelOpen(false)} />
 
       <AnimatePresence>
         {branchManagerOpen && (
@@ -793,7 +851,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           />
         )}
       </AnimatePresence>
-
     </motion.div>
   );
 };

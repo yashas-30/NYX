@@ -58,13 +58,12 @@ async-trait = "0.1.89"
 lazy_static = "1.5"
 url = "2"
 fastembed = "5.17.2"
-rusqlite = { version = "0.31.0", features = ["load_extension", "bundled"] }
-sqlite-vec = "0.1.9"
 walkdir = "2.5.0"
 scraper = "0.20"
 urlencoding = "2.1"
 genai = "0.1.13"
 dashmap = "5"
+axum = { version = "0.7", features = ["json"] }
 mimalloc = "0.1"
 
 lancedb = "0.30.0"

@@ -89,8 +89,11 @@ export function useHfDownloads() {
 
       // ── Completion events ─────────────────────────────────────────────────
       const completeUnlisten = await listen<{ model_id: string }>('hf-download-complete', (e) => {
-        setDownloadState(e.payload.model_id, { status: 'completed', progress: 100, error: undefined });
-        useDownloadStore.getState().setDownloadState(e.payload.model_id, { status: 'completed', progress: 100 });
+        setDownloadState(e.payload.model_id, {
+          status: 'completed',
+          progress: 100,
+          error: undefined,
+        });
         queryClient.invalidateQueries({ queryKey: ['localModels'] });
         // Remove after 2 s so the user sees the "Done" state briefly
         setTimeout(() => removeDownload(e.payload.model_id), 2000);
@@ -98,17 +101,17 @@ export function useHfDownloads() {
       unlistens.push(completeUnlisten);
 
       // ── Error events ──────────────────────────────────────────────────────
-      const errorUnlisten = await listen<{ model_id: string; error: string }>('hf-download-error', (e) => {
-        const errStr = (e.payload.error || '').toLowerCase();
-        if (
-          errStr.includes('cancel') ||
-          errStr.includes('download paused')
-        ) {
-          removeDownload(e.payload.model_id);
-        } else {
-          setDownloadState(e.payload.model_id, { status: 'error', error: e.payload.error });
+      const errorUnlisten = await listen<{ model_id: string; error: string }>(
+        'hf-download-error',
+        (e) => {
+          const errStr = (e.payload.error || '').toLowerCase();
+          if (errStr.includes('cancel') || errStr.includes('download paused')) {
+            removeDownload(e.payload.model_id);
+          } else {
+            setDownloadState(e.payload.model_id, { status: 'error', error: e.payload.error });
+          }
         }
-      });
+      );
       unlistens.push(errorUnlisten);
     };
 
@@ -132,7 +135,13 @@ export function useDownloadActions() {
     const encodedFn = cleanFn.split('/').map(encodeURIComponent).join('/');
     const url = `https://huggingface.co/${cleanRepo}/resolve/main/${encodedFn}`;
 
-    setDownloadState(key, { progress: 0, downloaded: 0, total: 0, status: 'downloading', error: undefined });
+    setDownloadState(key, {
+      progress: 0,
+      downloaded: 0,
+      total: 0,
+      status: 'downloading',
+      error: undefined,
+    });
     try {
       await invoke('hf_download_model', {
         url,
@@ -159,7 +168,10 @@ export function useDownloadActions() {
     try {
       await invoke('hf_resume_download', { modelId: id });
     } catch (err) {
-      console.warn('hf_resume_download task not found in memory, falling back to hf_download_model...', err);
+      console.warn(
+        'hf_resume_download task not found in memory, falling back to hf_download_model...',
+        err
+      );
       const parts = id.split('/');
       const filename = parts.pop() || id;
       const cleanFn = filename.trim().replace(/^\/+/g, '');

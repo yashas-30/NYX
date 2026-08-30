@@ -136,10 +136,50 @@ pub struct FileInfo {
 /// Fix #15: Guard against accidentally reading multi-GB binaries into memory.
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
 
+/// Guard against reading sensitive OS files and directory traversal
+fn validate_path_safety(path: &str) -> Result<std::path::PathBuf, String> {
+    let p = std::path::PathBuf::from(path);
+    
+    // Check for obvious traversal
+    if path.contains("..") {
+        return Err("Security Violation: Path traversal (..) is not allowed".to_string());
+    }
+
+    // Attempt to canonicalize
+    let canonical = match std::fs::canonicalize(&p) {
+        Ok(c) => c,
+        Err(_) => p.clone(), // Might not exist yet (for write)
+    };
+
+    let path_str = canonical.to_string_lossy().to_lowercase();
+    
+    // Block sensitive Windows paths
+    if cfg!(target_os = "windows") {
+        if path_str.contains("windows\\system32") || 
+           path_str.contains("windows\\syswow64") ||
+           path_str.contains("ntuser.dat") ||
+           path_str.contains("sam") {
+            return Err("Security Violation: Access to sensitive Windows system files is denied".to_string());
+        }
+    } else {
+        // Block sensitive Unix paths
+        if path_str.starts_with("/etc/") || 
+           path_str.starts_with("/var/log/") || 
+           path_str.starts_with("/root/") ||
+           path_str.contains("/.ssh/") {
+            return Err("Security Violation: Access to sensitive system directories is denied".to_string());
+        }
+    }
+
+    Ok(p)
+}
+
 #[tauri::command]
 pub async fn fs_read_file(path: String) -> Result<String, String> {
+    let safe_path = validate_path_safety(&path)?;
+    
     // Check file size first to avoid OOM on large binaries.
-    let meta = tokio::fs::metadata(&path).await.map_err(|e| e.to_string())?;
+    let meta = tokio::fs::metadata(&safe_path).await.map_err(|e| e.to_string())?;
     if meta.len() > MAX_READ_BYTES {
         return Err(format!(
             "File is too large to read directly ({} MB). Maximum is {} MB.",
@@ -147,7 +187,7 @@ pub async fn fs_read_file(path: String) -> Result<String, String> {
             MAX_READ_BYTES / (1024 * 1024)
         ));
     }
-    tokio::fs::read_to_string(&path).await.map_err(|e| e.to_string())
+    tokio::fs::read_to_string(&safe_path).await.map_err(|e| e.to_string())
 }
 
 #[derive(serde::Serialize)]
@@ -161,12 +201,14 @@ pub struct FileWriteResult {
 
 #[tauri::command]
 pub async fn fs_write_file(path: String, content: String, overwrite: bool) -> Result<FileWriteResult, String> {
-    let existed = tokio::fs::metadata(&path).await.is_ok();
+    let safe_path = validate_path_safety(&path)?;
+
+    let existed = tokio::fs::metadata(&safe_path).await.is_ok();
     if existed && !overwrite {
         return Err(format!("File {} already exists and overwrite is false", path));
     }
     
-    tokio::fs::write(&path, &content).await.map_err(|e| e.to_string())?;
+    tokio::fs::write(&safe_path, &content).await.map_err(|e| e.to_string())?;
     
     Ok(FileWriteResult {
         success: true,

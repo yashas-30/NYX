@@ -2,47 +2,46 @@
  * intelligentQueryEngine.ts
  *
  * Multi-Vector Intelligent Query Synthesis System for:
- * 1. Real-Time Web Search (DuckDuckGo / Tavily)
- * 2. Deep Multi-Hop Research (Orthogonal investigative vectors)
+ * 1. Real-Time Web Search (DuckDuckGo / Tavily / Brave)
+ * 2. Deep Multi-Hop Research (orthogonal investigative vectors)
  * 3. High-Accuracy Web Photo Retrieval (DuckDuckGo & Bing Web Images)
  * 4. Generative Visual Prompt Planning (Local Diffusers & Cloud FLUX)
  *
- * 2026 Production Query Engineering Principles:
- * - Entity-First Visual Queries: Extract specific subject keywords (e.g. "James Webb Space Telescope", "Porsche 911 GT3 RS").
- * - Rigorous Intent Gates: Prevent unnecessary media fetches on pure code, syntax errors, or
- *   abstract math while activating on substantive real-world factual and visual inquiries.
+ * Pure dynamic, model-driven query synthesis with zero hardcoded keyword assumptions.
+ * Preserves full entity names, phrases, and user intents faithfully.
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 
-export interface QueryPlan {
-  /** Clean, high-precision query for real-time web search engines */
-  webSearchQuery: string;
-  /** Whether the prompt requires web search execution */
-  requiresSearch?: boolean;
-  /** Orthogonal sub-queries for deep multi-hop research exploration */
-  deepResearchQueries: string[];
-  /** Visual subject query optimized for DuckDuckGo & Bing Web Images */
-  photoSearchQuery: string;
-  /** Motion/action query optimized for HD Videos */
-  videoSearchQuery: string;
-  /** Atmospheric theme / soundtrack query for Audio & Soundscapes */
-  audioSearchQuery: string;
-  /** Core extracted entity subject */
-  primarySubject: string;
-  /** Primary and secondary entities for comparative queries */
-  entities?: { primary: string; secondary?: string };
-  /** Inferred informational intent */
-  intent: 'comparative' | 'technical_architecture' | 'benchmarks_performance' | 'troubleshooting' | 'historical_origin' | 'pricing_market' | 'factual_overview';
-  /** Section-specific media plans (topic title + targeted query) for section-aligned media retrieval */
-  sectionalTopics: SectionalTopicMediaPlan[];
-  /** Categorical domain for semantic routing */
-  domainCategory: 'technology' | 'science' | 'automotive' | 'space' | 'nature' | 'business' | 'history' | 'medical' | 'general';
-  /** AI-determined target depth */
-  targetDepth?: 'exhaustive' | 'concise';
-}
+export type DomainCategory =
+  | 'technology'
+  | 'science'
+  | 'automotive'
+  | 'space'
+  | 'nature'
+  | 'business'
+  | 'history'
+  | 'medical'
+  | 'entertainment'
+  | 'general';
+
+export type InquiryIntent =
+  | 'comparative'
+  | 'technical_architecture'
+  | 'benchmarks_performance'
+  | 'troubleshooting'
+  | 'historical_origin'
+  | 'pricing_market'
+  | 'factual_overview';
+
+export type FreshnessWindow = 'day' | 'week' | 'month' | 'year' | 'none';
+
+export type SearchProvider = 'duckduckgo' | 'tavily' | 'brave' | 'bing_images';
 
 export interface SectionalTopicMediaPlan {
   title: string;
@@ -50,537 +49,534 @@ export interface SectionalTopicMediaPlan {
   videoQuery?: string;
 }
 
-// ── Plan Cache ─────────────────────────────────────────────────────────────────
-
-const QUERY_PLAN_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-const _queryPlanCache = new Map<string, { plan: QueryPlan; timestamp: number }>();
-
-function getCachedPlan(key: string): QueryPlan | null {
-  const k = key.toLowerCase().trim();
-  const entry = _queryPlanCache.get(k);
-  if (!entry) return null;
-  if (Date.now() - entry.timestamp > QUERY_PLAN_CACHE_TTL) {
-    _queryPlanCache.delete(k);
-    return null;
-  }
-  return entry.plan;
+export interface ProviderQuerySpec {
+  provider: SearchProvider;
+  query: string;
+  freshness: FreshnessWindow;
 }
 
-function setCachedPlan(key: string, plan: QueryPlan): void {
-  if (_queryPlanCache.size > 200) {
-    const oldest = _queryPlanCache.keys().next().value;
-    if (oldest) _queryPlanCache.delete(oldest);
-  }
-  _queryPlanCache.set(key.toLowerCase().trim(), { plan, timestamp: Date.now() });
+export interface QueryPlan {
+  /** Clean, high-precision query for real-time web search engines */
+  webSearchQuery: string;
+  /** Whether the prompt requires web search execution at all */
+  requiresSearch: boolean;
+  /** How stale an answer is tolerable: drives whether we attach a freshness hint */
+  freshness: FreshnessWindow;
+  /** Per-backend variants of the web search query */
+  providerQueries: ProviderQuerySpec[];
+  /** Orthogonal sub-queries for deep multi-hop research exploration */
+  deepResearchQueries: string[];
+  /** Visual subject query optimized for DuckDuckGo & Bing Web Images */
+  photoSearchQuery: string;
+  /** Motion/action query optimized for HD Videos */
+  videoSearchQuery: string;
+  /** Atmospheric theme / soundtrack query for Audio & Soundscapes */
+  audioSearchQuery?: string;
+  /** Core extracted entity subject */
+  primarySubject: string;
+  /** Primary and secondary entities for comparative queries */
+  entities?: { primary: string; secondary?: string };
+  /** Inferred informational intent */
+  intent: InquiryIntent;
+  /** Section-specific media plans (topic title + targeted query) */
+  sectionalTopics: SectionalTopicMediaPlan[];
+  /** Categorical domain for semantic routing */
+  domainCategory: DomainCategory;
+  /** AI-determined target depth */
+  targetDepth: 'exhaustive' | 'concise';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Conversational Noise Patterns & Subject Extraction
+// LRU Cache
+// ─────────────────────────────────────────────────────────────────────────────
+
+class LRUCache<V> {
+  private store = new Map<string, { value: V; timestamp: number }>();
+  constructor(
+    private maxEntries: number,
+    private ttlMs: number
+  ) {}
+
+  get(key: string): V | null {
+    const k = key.toLowerCase().trim();
+    const entry = this.store.get(k);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.store.delete(k);
+      return null;
+    }
+    this.store.delete(k);
+    this.store.set(k, entry);
+    return entry.value;
+  }
+
+  set(key: string, value: V): void {
+    const k = key.toLowerCase().trim();
+    if (this.store.has(k)) this.store.delete(k);
+    else if (this.store.size >= this.maxEntries) {
+      const oldestKey = this.store.keys().next().value;
+      if (oldestKey !== undefined) this.store.delete(oldestKey);
+    }
+    this.store.set(k, { value, timestamp: Date.now() });
+  }
+}
+
+const QUERY_PLAN_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const queryPlanCache = new LRUCache<QueryPlan>(200, QUERY_PLAN_CACHE_TTL);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clean Subject Extraction (Preserves Full Noun Phrases & Entity Context)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CONVERSATIONAL_PATTERNS: RegExp[] = [
-  /^(?:can\s+you\s+(?:please\s+)?)?(?:tell\s+me\s+(?:all\s+)?(?:about|the\s+story\s+of|the\s+history\s+of|the\s+origin\s+of)|give\s+me\s+(?:the\s+)?(?:complete\s+story\s+of|story\s+of|full\s+story\s+of|full\s+history\s+of|history\s+of|origin\s+of|origins\s+of|lore\s+of|overview\s+of|summary\s+of|breakdown\s+of|biography\s+of|profile\s+of|details\s+on|information\s+on|info\s+about|facts\s+about)|complete\s+story\s+of|full\s+story\s+of|story\s+of|complete\s+history\s+of|full\s+history\s+of|history\s+of|origins?\s+of|lore\s+of|biography\s+of|profile\s+of|timeline\s+of|all\s+about|everything\s+about|deep\s+dive\s+(?:into|on|about)|explain\s+(?:to\s+me\s+)?(?:how|what|why|the)?|describe|write\s+(?:an?\s+)?(?:essay|article|report|summary|book|guide)\s+(?:on|about)|what\s+is\s+(?:the\s+)?|who\s+is\s+(?:the\s+)?|what\s+are\s+(?:the\s+)?|how\s+does\s+(?:the\s+)?|why\s+is\s+(?:the\s+)?|search\s+(?:the\s+web\s+for|for|online\s+for)|find\s+(?:out\s+about|information\s+on|me\s+info\s+about)|lookup|deep\s+research\s+(?:on|about)|research\s+(?:on|about))\s+/gi,
+  /^(?:can\s+you\s+(?:please\s+)?)?(?:tell\s+me\s+(?:all\s+)?(?:about|the\s+story\s+of|the\s+history\s+of|the\s+origin\s+of)|give\s+me\s+(?:the\s+)?(?:complete\s+story\s+of|story\s+of|full\s+story\s+of|full\s+history\s+of|history\s+of|origin\s+of|origins\s+of|lore\s+of|overview\s+of|summary\s+of|breakdown\s+of|biography\s+of|profile\s+of|details\s+on|information\s+on|info\s+about|facts\s+about)|deep\s+dive\s+(?:into|on|about)|explain\s+(?:to\s+me\s+)?(?:how|what|why|the)?|describe|write\s+(?:an?\s+)?(?:essay|article|report|summary|book|guide)\s+(?:on|about)|search\s+(?:the\s+web\s+for|for|online\s+for)|find\s+(?:out\s+about|information\s+on|me\s+info\s+about)|lookup|deep\s+research\s+(?:on|about)|research\s+(?:about|on)?)\s+/gi,
   /^(?:show\s+(?:me\s+)?(?:some\s+)?(?:pictures|images|photos|videos|multimedia|clips|tracks|soundtracks|music|wallpapers)\s+(?:of|about|showing|for)|give\s+me\s+(?:images|photos|videos|music|tracks|pictures)\s+(?:of|for)|i\s+want\s+to\s+(?:know|learn|listen\s+to|watch|see)\s+about)\s+/gi,
+  /^(?:create|draw|make|generate|build|visualize|plot)\s+(?:an?\s+)?(?:mermaid\s+)?(?:diagram|diagrams|graph|graphs|chart|charts|flowchart|flowcharts|presentation|ppt|slidev|slides|deck|table)\s+(?:of|for|about|showing|illustrating)?\s+/gi,
   /\s+(?:with\s+(?:all\s+)?(?:facts|details|images|photos|videos|pictures|sources|citations|references|music|multimedia|soundtrack)|explained\s+in\s+detail|in\s+depth|step\s+by\s+step|for\s+me|please|and\s+show\s+(?:me\s+)?(?:images|photos|videos|clips)|and\s+play\s+(?:some\s+)?(?:music|soundtrack))$/gi,
+  /\s+(?:with\s+(?:a\s+|an\s+)?(?:graphs?\s+and\s+diagrams?|diagrams?|graphs?|charts?|flowcharts?|visuals?|svg|ppt|presentation|slidev|slides|deck|tables?|code)|and\s+(?:create|draw|make|generate|build|show|plot)\s+(?:a\s+|an\s+)?(?:diagram|graph|chart|flowchart|ppt|presentation|slidev|slides|deck|visuals?))$/gi,
 ];
 
-/**
- * Strips conversational preamble while preserving compound nouns, versions, and named entities.
- */
+/** Extracts the clean core subject while preserving all essential nouns, qualifiers, and geographical/thematic anchors. */
 export function extractCoreSubject(prompt: string): string {
   if (!prompt?.trim()) return '';
   let text = prompt.trim();
   for (const pattern of CONVERSATIONAL_PATTERNS) {
-    text = text.replace(pattern, '');
+    text = text.replace(pattern, ' ');
   }
-  // Strip leading/trailing non-alphanumeric punctuation but keep inner hyphens, dots and quotes
-  text = text.replace(/^[^\w\d]+|[?!:;"]+$/g, '').replace(/\s+/g, ' ').trim();
+  text = text
+    .replace(/^[\s#*`"'?!:;]+|[\s#*`"'?!:;]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return text || prompt.trim();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Stop Words & Entity Cleaning
-// ─────────────────────────────────────────────────────────────────────────────
-
-const FUNCTION_WORDS = new Set([
-  'how', 'why', 'what', 'when', 'where', 'which', 'who', 'whom', 'whose',
-  'explain', 'explained', 'explaining', 'explanation', 'details', 'detailed',
-  'tutorial', 'guide', 'overview', 'summary', 'analysis', 'pros', 'cons',
-  'benefits', 'drawbacks', 'difference', 'differences', 'versus', 'comparison',
-  'mechanism', 'process', 'specifications', 'specs', 'benchmarks', 'pricing',
-  'understand', 'understanding', 'looking', 'for', 'with', 'without', 'help',
-  'using', 'recent', 'changes', 'tell', 'about', 'show', 'give', 'find', 'make',
-  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'do',
-  'does', 'did', 'have', 'has', 'had', 'will', 'would', 'could', 'should',
-  'can', 'need', 'to', 'of', 'in', 'on', 'at', 'by', 'from', 'up', 'out',
-  'off', 'over', 'under', 'then', 'here', 'there', 'all', 'both', 'each',
-  'few', 'more', 'most', 'other', 'some', 'such', 'no', 'not', 'only', 'same',
-  'so', 'than', 'too', 'very', 'just', 'but', 'if', 'or', 'because', 'as',
-  'complete', 'completed', 'story', 'stories', 'full', 'entire', 'lore', 'history',
-  'historical', 'timeline', 'biography', 'profile', 'origin', 'origins', 'background',
-  'everything', 'information', 'facts', 'breakdown', 'landscape', 'portrait', 'wallpaper',
-  'wallpapers', 'pictures', 'images', 'photos', 'videos', 'multimedia', 'clips', 'footage',
-  'music', 'soundtrack', 'soundtracks', 'song', 'songs', 'audio', 'track', 'tracks',
-]);
-
-/**
- * Isolates concrete physical entity nouns and keywords from a conversational subject.
- */
+/** Clean noun extractor that preserves complete entity phrases without truncating words. */
 export function cleanEntityNouns(text: string): string {
   if (!text) return '';
-  const words = text
-    .replace(/[^\w\s-]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length >= 2 && !FUNCTION_WORDS.has(w.toLowerCase()));
-  return words.join(' ').trim();
+  return extractCoreSubject(text);
 }
 
-/**
- * Sanitizes query for web image searches: max 100 chars, clean punctuation.
- */
+export function extractProperNounEntity(text: string): string | null {
+  if (!text) return null;
+  const subject = extractCoreSubject(text);
+  return subject.length >= 3 ? subject : null;
+}
+
+/** Sanitizes search queries: removes special characters and bounds length cleanly. */
 export function sanitizeImageQuery(query: string): string {
   return query
-    .replace(/[^\w\s-]/g, '')
+    .replace(/[^\w\s-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 100)
+    .slice(0, 120)
     .trim();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Intent & Media Detection Gates
+// Freshness & Provider Queries
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Detects whether the user explicitly or implicitly requests video footage/motion.
- */
+const CURRENT_YEAR = new Date().getFullYear();
+const DAY_FRESHNESS_PATTERN =
+  /\b(?:today|right now|breaking|live|as of now|this morning|currently happening|just announced)\b/i;
+const WEEK_FRESHNESS_PATTERN =
+  /\b(?:this\s+week|latest|newest|recent(?:ly)?|just\s+released|just\s+launched|new\s+update)\b/i;
+const MONTH_FRESHNESS_PATTERN =
+  /\b(?:current(?:ly)?|now|this\s+month|up\s+to\s+date|status\s+of|still\s+(?:exists|active|running|available))\b/i;
+const YEAR_FRESHNESS_PATTERN = new RegExp(
+  `\\b(?:${CURRENT_YEAR}|${CURRENT_YEAR - 1}|this\\s+year|202[4-9])\\b`,
+  'i'
+);
+
+export function detectFreshnessWindow(prompt: string): FreshnessWindow {
+  if (!prompt) return 'none';
+  if (DAY_FRESHNESS_PATTERN.test(prompt)) return 'day';
+  if (WEEK_FRESHNESS_PATTERN.test(prompt)) return 'week';
+  if (MONTH_FRESHNESS_PATTERN.test(prompt) || YEAR_FRESHNESS_PATTERN.test(prompt)) return 'month';
+  if (
+    /\b(?:current|who is the|who leads|ceo of|president of|prime minister of|latest version of)\b/i.test(
+      prompt
+    )
+  )
+    return 'month';
+  return 'none';
+}
+
+export function applyFreshnessQualifier(query: string, freshness: FreshnessWindow): string {
+  if (freshness === 'none' || !query) return query;
+  if (/\b20\d{2}\b/.test(query)) return query;
+  return `${query} ${CURRENT_YEAR}`.trim();
+}
+
+export function buildProviderQueries(
+  baseQuery: string,
+  freshness: FreshnessWindow
+): ProviderQuerySpec[] {
+  const qualified = applyFreshnessQualifier(baseQuery, freshness);
+  return [
+    { provider: 'duckduckgo', query: qualified, freshness },
+    { provider: 'tavily', query: baseQuery, freshness },
+    { provider: 'brave', query: baseQuery, freshness },
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Intent & Media Gates
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function shouldFetchVideos(prompt: string): boolean {
   if (!prompt || typeof prompt !== 'string') return false;
-  const lower = prompt.toLowerCase();
-  return /\b(?:video|videos|footage|clip|clips|movie|movies|animation|animations|watch|recording|timelapse|time-lapse|motion\s+video|film|documentary|reel|cinematic\s+video)\b/i.test(lower);
+  return /\b(?:video|videos|footage|clip|clips|movie|movies|animation|animations|watch|recording|timelapse|time-lapse|motion\s+video|film|documentary|reel|cinematic\s+video)\b/i.test(
+    prompt
+  );
 }
 
-/**
- * Detects whether the user explicitly or implicitly requests music/audio.
- */
 export function shouldFetchAudio(prompt: string): boolean {
   if (!prompt || typeof prompt !== 'string') return false;
-  const lower = prompt.toLowerCase();
-  return /\b(?:music|soundtrack|soundtracks|song|songs|audio|track|tracks|ambient\s+sound|ambience|soundscape|score|listen|play\s+music|background\s+(?:music|score|track|sound)|theme\s+song|lo-?fi|synthwave|beats)\b/i.test(lower);
+  return /\b(?:music|soundtrack|soundtracks|song|songs|audio|track|tracks|ambient\s+sound|ambience|soundscape|score|listen|play\s+music|background\s+(?:music|score|track|sound)|theme\s+song|lo-?fi|synthwave|beats)\b/i.test(
+    prompt
+  );
 }
 
-/**
- * Decides whether to fetch stock / reference images for this prompt.
- * Always fetches for any substantive non-greeting, non-code prompt.
- */
+const GREETING_PATTERN = /^(hi|hello|hey|yo|greetings|thanks|thank you|ok|okay|bye|ping)\b/i;
+const CODE_PATTERN =
+  /^(```|console\.log|function\s*\(|def\s+|class\s+|import\s+|SELECT\s+|curl\s+|npm\s+|pnpm\s+|git\s+)/i;
+const PURE_MATH_PATTERN = /^[\d\s+\-*/^().=,%]+$/;
+
 export function shouldFetchImages(
   prompt: string,
   _context?: { isWebSearch?: boolean; isDeepResearch?: boolean; isLucifer?: boolean }
 ): boolean {
   if (!prompt || typeof prompt !== 'string') return false;
-  const lower = prompt.toLowerCase().trim();
-
-  // Skip greetings, code blocks, and pure math
-  if (/^(hi|hello|hey|yo|greetings|thanks|thank you|ok|okay|bye|ping)\b/i.test(lower)) return false;
-  if (/^(```|console\.log|function\s*\(|def\s+|class\s+|import\s+|SELECT\s+|curl\s+|npm\s+|pnpm\s+|git\s+)/i.test(lower)) return false;
-  if (/^[\d\s\+\-\*\/\^\(\)\=\.\,\%]+$/.test(lower)) return false;
-
-  // Always fetch images for any substantive prompt
+  const trimmed = prompt.trim();
+  if (GREETING_PATTERN.test(trimmed)) return false;
+  if (CODE_PATTERN.test(trimmed)) return false;
+  if (PURE_MATH_PATTERN.test(trimmed)) return false;
   return true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Domain & Intent Classification
-// ─────────────────────────────────────────────────────────────────────────────
+export function requiresWebSearch(prompt: string): boolean {
+  if (!prompt || !prompt.trim()) return false;
+  if (CODE_PATTERN.test(prompt) || PURE_MATH_PATTERN.test(prompt.trim())) return false;
+  if (GREETING_PATTERN.test(prompt.trim())) return false;
+  if (detectFreshnessWindow(prompt) !== 'none') return true;
+  if (
+    /\b(?:search|look\s*up|find\s+out|latest|current|today|news|price\s+of|stock\s+price|score\s+of|who\s+is|what\s+is|history|story|origins?)\b/i.test(
+      prompt
+    )
+  )
+    return true;
+  return true;
+}
 
-export function detectInquiryIntent(prompt: string): QueryPlan['intent'] {
-  const lower = prompt.toLowerCase();
-  if (/\b(?:vs|versus|compared?\s+to|difference\s+between|which\s+is\s+better|or\s+should\s+i\s+choose|pros\s+and\s+cons)\b/i.test(lower)) return 'comparative';
-  if (/\b(?:benchmark|benchmarks|fps|flops|latency|throughput|performance|speed\s+test|geekbench|cinebench|specs|specifications)\b/i.test(lower)) return 'benchmarks_performance';
-  if (/\b(?:how\s+to\s+fix|error|exception|debug|fails|failed|issue|crash|troubleshoot|not\s+working|solution)\b/i.test(lower)) return 'troubleshooting';
-  if (/\b(?:architecture|under\s+the\s+hood|internals|how\s+it\s+works|mechanism|system\s+design|protocol|pipeline)\b/i.test(lower)) return 'technical_architecture';
-  if (/\b(?:history|origin|origins|ancient|timeline|who\s+invented|when\s+was\s+it\s+created|war\s+of|fall\s+of|empire|dynasty|evolution\s+of)\b/i.test(lower)) return 'historical_origin';
-  if (/\b(?:price|pricing|cost|how\s+much\s+does|plans|tier|subscription|expensive|cheap|tco|buy|msrp)\b/i.test(lower)) return 'pricing_market';
+export function detectInquiryIntent(prompt: string): InquiryIntent {
+  if (/\b(?:vs|versus|compared?\s+to|difference\s+between|which\s+is\s+better)\b/i.test(prompt))
+    return 'comparative';
+  if (
+    /\b(?:benchmark|benchmarks|fps|flops|latency|throughput|performance|speed\s+test)\b/i.test(
+      prompt
+    )
+  )
+    return 'benchmarks_performance';
+  if (
+    /\b(?:how\s+to\s+fix|error|exception|debug|fails|failed|issue|crash|troubleshoot)\b/i.test(
+      prompt
+    )
+  )
+    return 'troubleshooting';
+  if (
+    /\b(?:architecture|under\s+the\s+hood|internals|how\s+it\s+works|mechanism|system\s+design)\b/i.test(
+      prompt
+    )
+  )
+    return 'technical_architecture';
+  if (
+    /\b(?:history|origin|origins|ancient|timeline|who\s+invented|when\s+was\s+it\s+created)\b/i.test(
+      prompt
+    )
+  )
+    return 'historical_origin';
+  if (/\b(?:price|pricing|cost|how\s+much\s+does|plans|tier|subscription)\b/i.test(prompt))
+    return 'pricing_market';
   return 'factual_overview';
 }
 
-export function detectDomainCategory(text: string): QueryPlan['domainCategory'] {
-  const lower = text.toLowerCase();
-  if (/\b(?:space|telescope|nasa|planet|galaxy|orbit|satellite|mars|moon|astronomy|rocket|spacex|iss|nebula|astrophysics|cosmos|black\s+hole|supernova|james\s+webb|hubble)\b/.test(lower)) return 'space';
-  if (/\b(?:car|engine|porsche|ferrari|bmw|mercedes|motor|electric\s+vehicle|ev|turbo|horsepower|vehicle|automotive|supercar|track|formula\s+one|f1|drag\s+race|torque|hypercar)\b/.test(lower)) return 'automotive';
-  if (/\b(?:code|algorithm|processor|gpu|cpu|quantum\s+computing|chip|software|compiler|ai|llm|neural\s+network|server|database|react|rust|python|kubernetes|cloud|programming|developer|api|datacenter)\b/.test(lower)) return 'technology';
-  if (/\b(?:dna|gene|cell|crispr|medicine|vaccine|disease|symptom|biology|chemistry|physics|molecule|atom|biotech|anatomy|neuroscience|surgery|diagnosis|clinical|neuron)\b/.test(lower)) return 'medical';
-  if (/\b(?:forest|ocean|animal|mountain|wildlife|river|climate|weather|nature|landscape|tree|bird|whale|coral|earth|ecosystem|species|wilderness|reef|rainforest|glacier)\b/.test(lower)) return 'nature';
-  if (/\b(?:market|stock|finance|economy|revenue|startup|business|investment|crypto|bitcoin|inflation|valuation|trade|commerce|supply\s+chain|manufacturing)\b/.test(lower)) return 'business';
-  if (/\b(?:ancient|roman|greek|egypt|dynasty|revolution|century|empire|emperor|medieval|archaeology|history|war|battle|civilization|colonial|renaissance|colosseum|pyramid)\b/.test(lower)) return 'history';
-  if (/\b(?:science|research|experiment|laboratory|discovery|invention|physics|chemistry|biology|scientific)\b/.test(lower)) return 'science';
+export function detectDomainCategory(text: string): DomainCategory {
+  if (
+    /\b(?:space|telescope|nasa|planet|galaxy|orbit|satellite|mars|moon|astronomy|rocket|spacex|iss|nebula)\b/i.test(
+      text
+    )
+  )
+    return 'space';
+  if (
+    /\b(?:car|engine|porsche|ferrari|bmw|mercedes|motor|electric\s+vehicle|ev|turbo|horsepower|vehicle|automotive)\b/i.test(
+      text
+    )
+  )
+    return 'automotive';
+  if (
+    /\b(?:code|algorithm|processor|gpu|cpu|quantum|chip|software|compiler|ai|llm|server|database|react|rust|python)\b/i.test(
+      text
+    )
+  )
+    return 'technology';
+  if (
+    /\b(?:dna|gene|cell|crispr|medicine|vaccine|disease|symptom|biology|chemistry|anatomy|surgery|clinical)\b/i.test(
+      text
+    )
+  )
+    return 'medical';
+  if (
+    /\b(?:forest|ocean|animal|mountain|wildlife|river|climate|weather|nature|landscape|species)\b/i.test(
+      text
+    )
+  )
+    return 'nature';
+  if (
+    /\b(?:market|stock|finance|economy|revenue|startup|business|investment|crypto|bitcoin|trade)\b/i.test(
+      text
+    )
+  )
+    return 'business';
+  if (
+    /\b(?:ancient|roman|greek|egypt|dynasty|revolution|century|empire|emperor|medieval|archaeology|history|war)\b/i.test(
+      text
+    )
+  )
+    return 'history';
+  if (
+    /\b(?:movie|film|cinematic|marvel|mcu|comic|game|gaming|nintendo|character|actor|lore)\b/i.test(
+      text
+    )
+  )
+    return 'entertainment';
+  if (/\b(?:science|research|experiment|laboratory|discovery|physics|chemistry)\b/i.test(text))
+    return 'science';
   return 'general';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Entity-First Visual Query Planners
+// Query Formulation Methods
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Formulates a high-accuracy visual search query for DuckDuckGo & Bing Web Images.
- *
- * Rule: Extract the exact concrete entity (1-3 keywords) without noise or bloated adjectives.
- */
+/** Formulates a high-accuracy visual search query for DuckDuckGo & Bing Web Images. Preserves the full entity subject faithfully. */
 export function planVisualPhotoQuery(prompt: string): string {
-  if (!prompt?.trim()) return 'nature landscape';
-
-  const subject = extractCoreSubject(prompt);
-  if (!subject) return 'cinematic landscape';
-
-  // For comparative queries, focus on the primary entity
-  const parts = subject.split(/\s+(?:vs|versus|and|with|compared\s+to|or)\s+/i);
-  const primaryPart = parts[0]?.trim() || subject;
-
-  // Extract clean entity keywords
-  const cleaned = cleanEntityNouns(primaryPart);
-  const words = cleaned.split(/\s+/).filter((w) => w.length >= 2);
-
-  if (words.length > 0) {
-    // Return top 2-3 entity words max (e.g. "James Webb Telescope", "Ferrari F40", "Roman Colosseum")
-    return sanitizeImageQuery(words.slice(0, 3).join(' '));
-  }
-
-  return sanitizeImageQuery(primaryPart.slice(0, 40));
+  if (!prompt?.trim()) return '';
+  const subject = extractCoreSubject(prompt) || prompt.trim();
+  return sanitizeImageQuery(subject);
 }
 
-/**
- * Formulates an action/motion search query for video references if requested.
- */
 export function planVideoMediaQuery(prompt: string): string {
-  if (!prompt?.trim()) return 'timelapse nature';
-
-  const subject = extractCoreSubject(prompt);
-  const domain = detectDomainCategory(prompt);
-
-  const primaryPart = subject.split(/\s+(?:vs|versus|and|with|compared\s+to|or)\s+/i)[0]?.trim() || subject;
-  const cleaned = cleanEntityNouns(primaryPart);
-  const words = cleaned.split(/\s+/).filter((w) => w.length >= 2);
-
-  const entity = words.slice(0, 2).join(' ') || primaryPart.slice(0, 25);
-
-  // Check if prompt already contains motion terms
-  const hasMotion = /\b(?:timelapse|time-lapse|launch|drift|driving|flight|flying|aerial|drone|running|walking|waves|traffic|speed|explosion|slow\s+motion)\b/i.test(prompt);
-
-  if (hasMotion) {
-    const motionMatch = prompt.match(/\b(timelapse|time-lapse|launch|drift|driving|flight|aerial|drone|waves|traffic|slow\s+motion)\b/i);
-    const motion = motionMatch ? motionMatch[1] : '';
-    return sanitizeImageQuery(`${entity} ${motion}`.trim());
-  }
-
-  // Domain-specific motion keyword
-  const domainMotion: Record<QueryPlan['domainCategory'], string> = {
-    space: 'launch',
-    automotive: 'driving',
-    technology: 'datacenter',
-    nature: 'timelapse',
-    history: 'ruins',
-    medical: 'microscope',
-    business: 'office',
-    science: 'laboratory',
-    general: 'timelapse',
-  };
-
-  const motion = domainMotion[domain] || 'footage';
-  return sanitizeImageQuery(`${entity} ${motion}`.trim());
+  if (!prompt?.trim()) return '';
+  const subject = extractCoreSubject(prompt) || prompt.trim();
+  return sanitizeImageQuery(`${subject} video`);
 }
 
-/**
- * Formulates an atmospheric soundtrack / music query for background audio.
- */
 export function planAudioMusicQuery(prompt: string): string {
-  if (!prompt?.trim()) return 'ambient chill beats';
-
-  const lower = prompt.toLowerCase();
-
-  // 1. Explicit user musical genre/mood extraction
-  const genres = [
-    { pattern: /\b(?:lo-?fi|chill\s*hop|study\s*beats)\b/i, query: 'lofi chill beats' },
-    { pattern: /\b(?:synthwave|retrowave|cyberpunk|synth)\b/i, query: 'synthwave electronic cyberpunk' },
-    { pattern: /\b(?:orchestral|symphony|epic\s*score|dramatic|battle\s*music)\b/i, query: 'orchestral cinematic epic' },
-    { pattern: /\b(?:piano|classical\s*piano|calm\s*piano)\b/i, query: 'peaceful piano classical' },
-    { pattern: /\b(?:jazz|smooth\s*jazz|coffee\s*shop)\b/i, query: 'smooth jazz coffee' },
-    { pattern: /\b(?:ambient|soundscape|atmospheric|space\s*music)\b/i, query: 'ambient atmospheric space' },
-    { pattern: /\b(?:meditation|yoga|zen|relaxing|sleep)\b/i, query: 'peaceful meditation relaxing' },
-    { pattern: /\b(?:electronic|edm|techno|house|pulse)\b/i, query: 'electronic energetic beat' },
-    { pattern: /\b(?:acoustic|guitar|folk|indie)\b/i, query: 'acoustic guitar warm' },
-    { pattern: /\b(?:nature\s*sound|rain|ocean\s*waves|birds|forest)\b/i, query: 'nature soundscape rain ocean' },
-    { pattern: /\b(?:rock|metal|guitar\s*riff)\b/i, query: 'energetic rock guitar' },
-  ];
-
-  for (const g of genres) {
-    if (g.pattern.test(lower)) {
-      return sanitizeImageQuery(g.query);
-    }
-  }
-
-  // 2. Domain-based fallback atmosphere
-  const domain = detectDomainCategory(prompt);
-  const domainAtmospheres: Record<QueryPlan['domainCategory'], string> = {
-    space: 'cinematic space ambient synth',
-    automotive: 'electronic pulse driving energy',
-    technology: 'chill lofi electronic focus',
-    medical: 'gentle peaceful acoustic calm',
-    nature: 'nature soundscape acoustic calm',
-    business: 'calm study piano focus',
-    history: 'orchestral cinematic dramatic score',
-    science: 'atmospheric minimal ambient',
-    general: 'inspiring cinematic acoustic piano',
-  };
-
-  return sanitizeImageQuery(domainAtmospheres[domain] || 'ambient chill instrumental');
+  if (!prompt?.trim()) return '';
+  const subject = extractCoreSubject(prompt) || prompt.trim();
+  return sanitizeImageQuery(`${subject} soundtrack`);
 }
 
-/**
- * Formulates a clean, high-precision query for standard web search.
- */
-export function planWebSearchQuery(prompt: string): string {
-  const subject = extractCoreSubject(prompt);
-  return subject || prompt.trim();
+export function planWebSearchQuery(
+  prompt: string,
+  freshness: FreshnessWindow = detectFreshnessWindow(prompt)
+): string {
+  const subject = extractCoreSubject(prompt) || prompt.trim();
+  return applyFreshnessQualifier(subject, freshness);
 }
 
-/**
- * Decomposes a prompt into 2–4 orthogonal research sub-queries for deep search.
- */
-export function planDeepResearchQueries(prompt: string, maxQueries = 4): string[] {
-  const subject = extractCoreSubject(prompt);
-  if (!subject) return [prompt.trim()];
-
+export function planDeepResearchQueries(prompt: string, maxQueries = 8): string[] {
+  const subject = extractCoreSubject(prompt) || prompt.trim();
   const queries: string[] = [];
   const seen = new Set<string>();
 
   const addQuery = (q: string) => {
-    const clean = q.replace(/[?.,!;:"]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (clean.length >= 4 && !seen.has(clean.toLowerCase())) {
+    const clean = q
+      .replace(/[?.,!;:"]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (clean.length >= 3 && !seen.has(clean.toLowerCase())) {
       seen.add(clean.toLowerCase());
       queries.push(clean);
     }
   };
 
-  // 1. Core subject
-  addQuery(subject);
+  if (subject) {
+    addQuery(subject);
+  }
 
-  // 2. Multi-clause decomposition
+  // Decompose based on the actual subject and natural sub-clauses in user prompt
   const clauses = prompt
-    .split(/[,;\n\r]|(?:\band\s+(?:how|why|what|whether|where|when|which|compare|explain|discuss)\b)|(?:\b(?:also|additionally|furthermore)\b)/i)
+    .split(
+      /[,;\n\r]|(?:\band\s+(?:how|why|what|whether|where|when|which|compare|explain|discuss)\b)|(?:\b(?:also|additionally|furthermore)\b)/i
+    )
     .map((c) => extractCoreSubject(c))
     .filter((c) => c.length >= 4);
   for (const clause of clauses) addQuery(clause);
 
-  // 3. Comparative entity decomposition
-  const compMatch = subject.match(/(.+?)\s+(?:vs|versus|compared\s+to|or\s+should\s+i\s+choose)\s+(.+)/i);
-  if (compMatch) {
-    const entA = extractCoreSubject(compMatch[1]);
-    const entB = extractCoreSubject(compMatch[2]);
-    if (entA) addQuery(entA);
-    if (entB) addQuery(entB);
-    if (entA && entB) addQuery(`${entA} vs ${entB} comparison specs`);
-  }
-
   return queries.slice(0, maxQueries);
 }
 
-/**
- * Decomposes a prompt into section-specific topic titles and targeted visual search queries.
- * Enables searching DuckDuckGo and Bing Web Images for each exact sub-topic / title.
- */
 export function planSectionalMediaTopics(prompt: string, maxTopics = 4): SectionalTopicMediaPlan[] {
   if (!prompt?.trim()) return [];
-  const lower = prompt.toLowerCase();
-  const domain = detectDomainCategory(prompt);
-  const subject = extractCoreSubject(prompt);
+  const subject = extractCoreSubject(prompt) || prompt.trim();
 
-  // 1. Healthcare / Medical AI domain
-  if (domain === 'medical' || /\b(?:health|healthcare|medical|medicine|hospital|clinical|doctor|patient|disease|drug|radiology|surgery)\b/i.test(lower)) {
-    if (/\b(?:ai|artificial intelligence|machine learning|llm|deep learning|nlp)\b/i.test(lower)) {
-      return [
-        { title: 'Medical Imaging & Diagnostic Radiology', photoQuery: 'radiology MRI scan hospital' },
-        { title: 'AI-Assisted Robotic Surgery & Precision Procedures', photoQuery: 'robotic surgery operating room' },
-        { title: 'Genomic Sequencing & AI Drug Discovery', photoQuery: 'DNA genetics laboratory research' },
-        { title: 'Clinical NLP & Smart Electronic Health Records', photoQuery: 'doctor tablet hospital medical' },
-      ].slice(0, maxTopics);
-    }
-    return [
-      { title: 'Clinical Diagnostics & Patient Care', photoQuery: 'doctor patient examination hospital' },
-      { title: 'Biomedical Research & Laboratory Analysis', photoQuery: 'medical laboratory microscope' },
-      { title: 'Therapeutic Treatment & Pharmacology', photoQuery: 'medicine pharmaceuticals research' },
-      { title: 'Digital Health & Preventive Medicine', photoQuery: 'healthcare technology stethoscope' },
-    ].slice(0, maxTopics);
-  }
-
-  // 2. Space & Astronomy domain
-  if (domain === 'space' || /\b(?:space|astronomy|galaxy|planet|nebula|rocket|nasa|spacex|telescope|cosmos|black hole)\b/i.test(lower)) {
-    return [
-      { title: 'Space Exploration & Launch Vehicles', photoQuery: 'rocket launch spacecraft' },
-      { title: 'Deep Space Observatories & Telescopes', photoQuery: 'space telescope observatory' },
-      { title: 'Galaxies, Stars & Nebulae', photoQuery: 'galaxy nebula cosmos stars' },
-      { title: 'Planetary Science & Surface Features', photoQuery: 'planet mars surface cosmos' },
-    ].slice(0, maxTopics);
-  }
-
-  // 3. Automotive / Vehicles domain
-  if (domain === 'automotive' || /\b(?:car|supercar|porsche|ferrari|engine|vehicle|racing|f1|ev|hypercar)\b/i.test(lower)) {
-    const cleanCar = cleanEntityNouns(subject) || 'supercar';
-    return [
-      { title: `${cleanCar} Exterior Styling & Aerodynamics`, photoQuery: `${cleanCar} sports car` },
-      { title: `${cleanCar} Powertrain & Engine Bay`, photoQuery: `${cleanCar} engine` },
-      { title: `${cleanCar} Cockpit, Interior & Dynamics`, photoQuery: `${cleanCar} interior cockpit` },
-      { title: `${cleanCar} Track Performance & Handling`, photoQuery: `${cleanCar} race track` },
-    ].slice(0, maxTopics);
-  }
-
-  // 4. Technology / Computing domain
-  if (domain === 'technology' || /\b(?:code|programming|computer|hardware|processor|gpu|cpu|server|cloud|ai|robotics|quantum)\b/i.test(lower)) {
-    return [
-      { title: 'System Architecture & Core Framework', photoQuery: 'technology circuit board server' },
-      { title: 'Hardware Infrastructure & Processing Units', photoQuery: 'processor chip hardware datacenter' },
-      { title: 'Data Pipeline & Distributed Processing', photoQuery: 'datacenter server room technology' },
-      { title: 'User Interface & Real-World Integration', photoQuery: 'computer software screen interface' },
-    ].slice(0, maxTopics);
-  }
-
-  // 5. History / Civilization domain
-  if (domain === 'history' || /\b(?:history|ancient|roman|greek|egypt|empire|war|dynasty|monument|ruins|civilization)\b/i.test(lower)) {
-    const cleanHist = cleanEntityNouns(subject) || 'ancient civilization';
-    return [
-      { title: `${cleanHist} Historical Origins & Architecture`, photoQuery: `${cleanHist} ancient architecture` },
-      { title: `${cleanHist} Culture, Artifacts & Society`, photoQuery: `${cleanHist} museum artifact` },
-      { title: `${cleanHist} Key Milestones & Monuments`, photoQuery: `${cleanHist} monument ruins` },
-    ].slice(0, maxTopics);
-  }
-
-  // 6. Comparative / Multi-Entity
-  const compMatch = subject.match(/(.+?)\s+(?:vs|versus|compared\s+to|or\s+should\s+i\s+choose)\s+(.+)/i);
-  if (compMatch) {
-    const entA = cleanEntityNouns(compMatch[1]) || 'Primary Model';
-    const entB = cleanEntityNouns(compMatch[2]) || 'Secondary Model';
-    return [
-      { title: `${entA} Overview & Features`, photoQuery: entA },
-      { title: `${entB} Overview & Features`, photoQuery: entB },
-      { title: 'Comparative Performance & Analysis', photoQuery: `${entA} ${entB}` },
-    ].slice(0, maxTopics);
-  }
-
-  // 7. General multi-clause decomposition
   const subQueries = planDeepResearchQueries(prompt, maxTopics);
-  if (subQueries.length > 1) {
-    return subQueries.map((sq, i) => ({
-      title: `Key Aspect ${i + 1}: ${sq}`,
-      photoQuery: planVisualPhotoQuery(sq),
+  if (subQueries.length > 0) {
+    return subQueries.slice(0, maxTopics).map((sq) => ({
+      title: sq,
+      photoQuery: sq,
     }));
   }
 
-  // Single entity fallback
-  const cleanSub = cleanEntityNouns(subject) || subject;
-  return [
-    { title: `${cleanSub} Core Overview & Visual Identity`, photoQuery: cleanSub },
-    { title: `${cleanSub} Detailed Context & Background`, photoQuery: cleanSub },
-  ];
+  return [{ title: subject, photoQuery: subject }];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Synchronous Fast Query Planner
+// Synchronous Fast Query Planner (Fallback & Instant Baseline)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function formulateQueryPlan(prompt: string): QueryPlan {
-  const cached = getCachedPlan(prompt);
+  const cached = queryPlanCache.get(prompt);
   if (cached) return cached;
 
+  const freshness = detectFreshnessWindow(prompt);
+  const webSearchQuery = planWebSearchQuery(prompt, freshness);
+  const primarySubject = extractCoreSubject(prompt) || prompt.trim();
+
   const plan: QueryPlan = {
-    webSearchQuery: planWebSearchQuery(prompt),
+    webSearchQuery,
+    requiresSearch: requiresWebSearch(prompt),
+    freshness,
+    providerQueries: buildProviderQueries(webSearchQuery, freshness),
     deepResearchQueries: planDeepResearchQueries(prompt, 4),
     photoSearchQuery: planVisualPhotoQuery(prompt),
     videoSearchQuery: planVideoMediaQuery(prompt),
-    audioSearchQuery: planAudioMusicQuery(prompt),
-    primarySubject: extractCoreSubject(prompt),
+    audioSearchQuery: shouldFetchAudio(prompt) ? planAudioMusicQuery(prompt) : undefined,
+    primarySubject,
     sectionalTopics: planSectionalMediaTopics(prompt, 4),
     intent: detectInquiryIntent(prompt),
     domainCategory: detectDomainCategory(prompt),
+    targetDepth: 'exhaustive',
   };
 
-  setCachedPlan(prompt, plan);
+  queryPlanCache.set(prompt, plan);
   return plan;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Model-Assisted Intelligent Query Planner
+// Model-Assisted Intelligent Query Planner (Lucifer Agent / Cloud Model)
 // ─────────────────────────────────────────────────────────────────────────────
+
+interface RawModelPlanResult {
+  intent?: string;
+  requires_search?: boolean;
+  web_search_query?: string;
+  deep_research_queries?: string[];
+  photo_search_query?: string;
+  video_search_query?: string;
+  audio_music_query?: string;
+  sectional_topics?: Array<{ section_title: string; photo_query: string; video_query?: string }>;
+  primary_subject?: string;
+  domain_category?: string;
+  target_depth?: string;
+}
+
+export interface ModelPlannerOptions {
+  provider?: string;
+  modelId?: string;
+  apiKey?: string;
+  timeoutMs?: number;
+}
 
 export async function planQueryWithModel(
   prompt: string,
-  options?: {
-    provider?: string;
-    modelId?: string;
-    apiKey?: string;
-    timeoutMs?: number;
-  }
+  options?: ModelPlannerOptions
 ): Promise<QueryPlan> {
-  const cached = getCachedPlan(prompt);
+  const cached = queryPlanCache.get(prompt);
   if (cached) return cached;
 
-  const isLocal = !options?.provider || options.provider === 'nyx-native' || options.provider === 'lucifer-native' || options.provider.includes('local');
-  const resolvedProvider = options?.provider || (isLocal ? 'nyx-native' : 'gemini');
-  const resolvedModelId = options?.modelId || (isLocal ? 'qwen2.5-1.5b-instruct' : 'gemini-2.5-flash');
+  const activeStoreModel =
+    useNyxStore.getState().cloudModelId ||
+    useNyxStore.getState().localModelId ||
+    useNyxStore.getState().currentModel?.id;
+  const activeStoreProvider = useNyxStore.getState().currentModel?.provider;
+  const isLocal = !options?.provider
+    ? activeStoreProvider === 'nyx-native'
+    : options.provider === 'nyx-native';
+  const resolvedProvider =
+    options?.provider || activeStoreProvider || (isLocal ? 'nyx-native' : 'gemini');
+  const resolvedModelId = options?.modelId || activeStoreModel || (isLocal ? 'local-default' : '');
+  const timeoutMs = options?.timeoutMs ?? 5000;
 
   try {
-    const modelResult = await Promise.race([
-      invoke<{
-        intent?: string;
-        requires_search?: boolean;
-        web_search_query: string;
-        deep_research_queries: string[];
-        photo_search_query: string;
-        source_preference?: string;
-        video_search_query: string;
-        audio_music_query?: string;
-        sectional_topics?: Array<{ section_title: string; photo_query: string; video_query?: string; source_preference?: string }>;
-        primary_subject: string;
-        domain_category: string;
-        response_style?: string;
-        target_depth?: string;
-      }>('generate_intelligent_query_plan_command', {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const modelResult = await invoke<RawModelPlanResult>(
+      'generate_intelligent_query_plan_command',
+      {
         prompt,
         provider: resolvedProvider,
         modelId: resolvedModelId,
-        apiKey: isLocal ? undefined : options?.apiKey || undefined,
-      }).catch(() => null),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), options?.timeoutMs || 8000)),
-    ]);
+        apiKey: isLocal ? undefined : options?.apiKey,
+      }
+    ).finally(() => clearTimeout(timer));
 
-    if (modelResult?.web_search_query || modelResult?.photo_search_query) {
-      const dynamicSectionalTopics = (modelResult.sectional_topics || []).map((st) => ({
-        title: st.section_title,
-        photoQuery: st.photo_query?.trim() || st.section_title,
-        videoQuery: st.video_query?.trim() || undefined,
-      }));
+    if (
+      modelResult &&
+      (modelResult.web_search_query ||
+        modelResult.photo_search_query ||
+        modelResult.primary_subject)
+    ) {
+      const freshness = detectFreshnessWindow(prompt);
+      const webSearchQuery =
+        modelResult.web_search_query?.trim() || planWebSearchQuery(prompt, freshness);
+      const photoSearchQuery =
+        modelResult.photo_search_query?.trim() ||
+        modelResult.primary_subject?.trim() ||
+        planVisualPhotoQuery(prompt);
+      const primarySubject =
+        modelResult.primary_subject?.trim() || extractCoreSubject(prompt) || prompt.trim();
+
+      const sectionalTopics: SectionalTopicMediaPlan[] = (modelResult.sectional_topics || []).map(
+        (st) => ({
+          title: st.section_title,
+          photoQuery: st.photo_query?.trim() || st.section_title,
+          videoQuery: st.video_query?.trim() || undefined,
+        })
+      );
 
       const refined: QueryPlan = {
-        webSearchQuery: modelResult.web_search_query?.trim() || prompt.trim(),
-        requiresSearch: modelResult.requires_search !== undefined ? modelResult.requires_search : true,
-        deepResearchQueries: modelResult.deep_research_queries?.length > 0
+        webSearchQuery,
+        requiresSearch: modelResult.requires_search ?? requiresWebSearch(prompt),
+        freshness,
+        providerQueries: buildProviderQueries(webSearchQuery, freshness),
+        deepResearchQueries: modelResult.deep_research_queries?.length
           ? modelResult.deep_research_queries
-          : [prompt.trim()],
-        photoSearchQuery: modelResult.photo_search_query?.trim() || modelResult.primary_subject?.trim() || prompt.trim(),
-        videoSearchQuery: modelResult.video_search_query?.trim() || prompt.trim(),
-        audioSearchQuery: modelResult.audio_music_query?.trim() || undefined,
-        primarySubject: modelResult.primary_subject?.trim() || prompt.trim(),
-        sectionalTopics: dynamicSectionalTopics,
-        intent: (modelResult.intent as any) || 'factual_overview',
-        domainCategory: (modelResult.domain_category as QueryPlan['domainCategory']) || 'general',
-        targetDepth: (modelResult.target_depth as any) || 'exhaustive',
+          : planDeepResearchQueries(prompt, 4),
+        photoSearchQuery,
+        videoSearchQuery: modelResult.video_search_query?.trim() || planVideoMediaQuery(prompt),
+        audioSearchQuery:
+          modelResult.audio_music_query?.trim() ||
+          (shouldFetchAudio(prompt) ? planAudioMusicQuery(prompt) : undefined),
+        primarySubject,
+        sectionalTopics: sectionalTopics.length
+          ? sectionalTopics
+          : planSectionalMediaTopics(prompt, 4),
+        intent: (modelResult.intent as InquiryIntent) || detectInquiryIntent(prompt),
+        domainCategory:
+          (modelResult.domain_category as DomainCategory) || detectDomainCategory(prompt),
+        targetDepth: modelResult.target_depth === 'concise' ? 'concise' : 'exhaustive',
       };
-      setCachedPlan(prompt, refined);
+      queryPlanCache.set(prompt, refined);
       return refined;
     }
   } catch (err) {
-    console.warn('[intelligentQueryEngine] Model query planner fallback:', err);
+    console.warn('[intelligentQueryEngine] Model planner failed or timed out:', err);
   }
 
-  const fastFallback = formulateQueryPlan(prompt);
-  setCachedPlan(prompt, fastFallback);
-  return fastFallback;
+  const fallback = formulateQueryPlan(prompt);
+  queryPlanCache.set(prompt, fallback);
+  return fallback;
 }

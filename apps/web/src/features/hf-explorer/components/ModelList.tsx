@@ -3,7 +3,7 @@
 import React, { useCallback } from 'react';
 import { ModelCard } from './ModelCard';
 import { ErrorBoundary } from './ErrorBoundary';
-import type { HfModelResult } from '../types';
+import type { HfModelResult, HardwareSpecs } from '../types';
 
 interface ModelListProps {
   models: HfModelResult[];
@@ -13,7 +13,7 @@ interface ModelListProps {
   hasNextPage: boolean;
   error: string | null;
   activeQuery: string;
-  activeCategoryLabel: string;
+  hardware?: HardwareSpecs | null;
   onSelect: (id: string) => void;
   onLoadMore: () => void;
   onClear: () => void;
@@ -22,27 +22,44 @@ interface ModelListProps {
 // Skeleton row for loading state
 function SkeletonRow() {
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 10,
-      padding: '8px 12px',
-      minHeight: 56,
-    }}>
-      <div style={{
-        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-        background: '#2a2a2a',
-        animation: 'pulse 1.5s ease-in-out infinite',
-      }} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{
-          height: 12, width: '55%', borderRadius: 4, background: '#2a2a2a',
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '8px 12px',
+        minHeight: 56,
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          flexShrink: 0,
+          background: '#2a2a2a',
           animation: 'pulse 1.5s ease-in-out infinite',
-        }} />
-        <div style={{
-          height: 10, width: '80%', borderRadius: 4, background: '#222',
-          animation: 'pulse 1.5s ease-in-out infinite 0.2s',
-        }} />
+        }}
+      />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div
+          style={{
+            height: 12,
+            width: '55%',
+            borderRadius: 4,
+            background: '#2a2a2a',
+            animation: 'pulse 1.5s ease-in-out infinite',
+          }}
+        />
+        <div
+          style={{
+            height: 10,
+            width: '80%',
+            borderRadius: 4,
+            background: '#222',
+            animation: 'pulse 1.5s ease-in-out infinite 0.2s',
+          }}
+        />
       </div>
     </div>
   );
@@ -56,11 +73,17 @@ export function ModelList({
   hasNextPage,
   error,
   activeQuery,
+  hardware,
   onSelect,
   onLoadMore,
   onClear,
 }: ModelListProps) {
-  const handleSelect = useCallback((id: string) => { onSelect(id); }, [onSelect]);
+  const handleSelect = useCallback(
+    (id: string) => {
+      onSelect(id);
+    },
+    [onSelect]
+  );
 
   const showSkeleton = isLoading && models.length === 0;
 
@@ -76,15 +99,17 @@ export function ModelList({
     >
       {/* Error state */}
       {error && !isLoading && (
-        <div style={{
-          margin: '12px 8px',
-          padding: '10px 12px',
-          borderRadius: 8,
-          background: 'rgba(239,68,68,0.08)',
-          border: '1px solid rgba(239,68,68,0.2)',
-          color: '#f87171',
-          fontSize: 11,
-        }}>
+        <div
+          style={{
+            margin: '12px 8px',
+            padding: '10px 12px',
+            borderRadius: 8,
+            background: 'rgba(239,68,68,0.08)',
+            border: '1px solid rgba(239,68,68,0.2)',
+            color: '#f87171',
+            fontSize: 11,
+          }}
+        >
           <div style={{ fontWeight: 600, marginBottom: 2 }}>Failed to load</div>
           <div style={{ opacity: 0.8 }}>{error}</div>
         </div>
@@ -92,15 +117,17 @@ export function ModelList({
 
       {/* Empty state */}
       {!isLoading && models.length === 0 && !error && (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '40px 20px',
-          textAlign: 'center',
-          gap: 8,
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '40px 20px',
+            textAlign: 'center',
+            gap: 8,
+          }}
+        >
           <div style={{ fontSize: 28 }}>🔍</div>
           <div style={{ fontSize: 13, color: '#a1a1aa', fontWeight: 500 }}>
             {activeQuery ? `No results for "${activeQuery}"` : 'No models found'}
@@ -141,6 +168,7 @@ export function ModelList({
               <ModelCard
                 model={model}
                 isSelected={selectedModel === model.id}
+                hardware={hardware}
                 onSelect={handleSelect}
               />
             </ErrorBoundary>
@@ -165,8 +193,12 @@ export function ModelList({
               cursor: 'pointer',
               transition: 'background 0.15s',
             }}
-            onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = '#2a2a2a'}
-            onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = '#232323'}
+            onMouseEnter={(e) =>
+              ((e.currentTarget as HTMLButtonElement).style.background = '#2a2a2a')
+            }
+            onMouseLeave={(e) =>
+              ((e.currentTarget as HTMLButtonElement).style.background = '#232323')
+            }
           >
             Load more
           </button>

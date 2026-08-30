@@ -42,6 +42,8 @@ impl McpServer {
 
 use tokio::fs;
 
+const MAX_MCP_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+
 pub struct ReadFileTool;
 
 #[async_trait]
@@ -51,13 +53,22 @@ impl Tool for ReadFileTool {
     }
 
     fn description(&self) -> &str {
-        "Read the contents of a file"
+        "Read the contents of a file (up to 10MB)"
     }
 
     async fn execute(&self, args: Value) -> Result<String, String> {
         let path = args.get("path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing path argument".to_string())?;
+
+        let meta = fs::metadata(path).await.map_err(|e| e.to_string())?;
+        if meta.len() > MAX_MCP_READ_BYTES {
+            return Err(format!(
+                "File '{}' is too large ({} MB). Maximum allowed size is 10 MB.",
+                path,
+                meta.len() / (1024 * 1024)
+            ));
+        }
 
         fs::read_to_string(path).await.map_err(|e| e.to_string())
     }

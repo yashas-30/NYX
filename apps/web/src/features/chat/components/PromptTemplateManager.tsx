@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { SettingsIcon as Settings, PlusIcon as Plus, Trash2Icon as Trash2, CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
+import {
+  SettingsIcon as Settings,
+  PlusIcon as Plus,
+  Trash2Icon as Trash2,
+  CheckIcon as Check,
+  XIcon as X,
+} from '@animateicons/react/lucide';
 import { Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -44,15 +50,13 @@ export const PromptTemplateManager: React.FC<{
       toast.error('Title and content are required');
       return;
     }
-    
+
     if (isEditing === 'new') {
       const newTemplate = { id: Date.now().toString(), ...editForm };
       saveTemplates([...templates, newTemplate]);
       toast.success('Template added');
     } else {
-      const newTemplates = templates.map((t) =>
-        t.id === isEditing ? { ...t, ...editForm } : t
-      );
+      const newTemplates = templates.map((t) => (t.id === isEditing ? { ...t, ...editForm } : t));
       saveTemplates(newTemplates);
       toast.success('Template updated');
     }
@@ -69,10 +73,10 @@ export const PromptTemplateManager: React.FC<{
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="p-2 text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all"
+        className="flex items-center justify-center h-5 w-5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/40 active:scale-[0.95] transition-all cursor-pointer"
         title="Prompt Templates"
       >
-        <Settings size={16} />
+        <Settings size={12} />
       </button>
 
       <AnimatePresence>
@@ -85,7 +89,10 @@ export const PromptTemplateManager: React.FC<{
           >
             <div className="flex items-center justify-between p-3 border-b border-border bg-muted/50">
               <span className="text-xs font-semibold text-foreground">Prompt Templates</span>
-              <button onClick={handleAdd} className="text-emerald-400 hover:text-emerald-300 active:scale-[0.97] transition-all">
+              <button
+                onClick={handleAdd}
+                className="text-emerald-400 hover:text-emerald-300 active:scale-[0.97] transition-all"
+              >
                 <Plus size={14} />
               </button>
             </div>
@@ -107,10 +114,16 @@ export const PromptTemplateManager: React.FC<{
                     className="w-full bg-input border border-border rounded text-xs text-foreground p-2 min-h-[60px] outline-none focus:border-primary/50 resize-none"
                   />
                   <div className="flex justify-end gap-2 mt-2">
-                    <button onClick={() => setIsEditing(null)} className="text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all">
+                    <button
+                      onClick={() => setIsEditing(null)}
+                      className="text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all"
+                    >
                       <X size={14} />
                     </button>
-                    <button onClick={handleSave} className="text-emerald-400 hover:text-emerald-300 active:scale-[0.97] transition-all">
+                    <button
+                      onClick={handleSave}
+                      className="text-emerald-400 hover:text-emerald-300 active:scale-[0.97] transition-all"
+                    >
                       <Check size={14} />
                     </button>
                   </div>
@@ -123,36 +136,37 @@ export const PromptTemplateManager: React.FC<{
                 </div>
               )}
 
-              {!isEditing && templates.map((t) => (
-                <div
-                  key={t.id}
-                  onClick={() => {
-                    onSelectTemplate(t.content);
-                    setIsOpen(false);
-                  }}
-                  className="group flex items-center justify-between p-2 hover:bg-muted/40 rounded-md cursor-pointer transition-colors mb-1"
-                >
-                  <div className="truncate text-xs text-foreground/80">{t.title}</div>
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditForm({ title: t.title, content: t.content });
-                        setIsEditing(t.id);
-                      }}
-                      className="text-muted-foreground hover:text-primary active:scale-[0.97] transition-all"
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                    <button
-                      onClick={(e) => handleDelete(t.id, e)}
-                      className="text-muted-foreground hover:text-destructive active:scale-[0.97] transition-all"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+              {!isEditing &&
+                templates.map((t) => (
+                  <div
+                    key={t.id}
+                    onClick={() => {
+                      onSelectTemplate(t.content);
+                      setIsOpen(false);
+                    }}
+                    className="group flex items-center justify-between p-2 hover:bg-muted/40 rounded-md cursor-pointer transition-colors mb-1"
+                  >
+                    <div className="truncate text-xs text-foreground/80">{t.title}</div>
+                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditForm({ title: t.title, content: t.content });
+                          setIsEditing(t.id);
+                        }}
+                        className="text-muted-foreground hover:text-primary active:scale-[0.97] transition-all"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                      <button
+                        onClick={(e) => handleDelete(t.id, e)}
+                        className="text-muted-foreground hover:text-destructive active:scale-[0.97] transition-all"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           </motion.div>
         )}

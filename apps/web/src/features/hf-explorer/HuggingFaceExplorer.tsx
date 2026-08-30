@@ -22,9 +22,7 @@ function NoModelSelected() {
         🤗
       </div>
       <div>
-        <div className="text-[14px] font-semibold text-foreground mb-1">
-          Select a model
-        </div>
+        <div className="text-[14px] font-semibold text-foreground mb-1">Select a model</div>
         <div className="text-[12px] text-muted-foreground/80">
           Choose a model from the list to view details, quantized weights, and download options
         </div>
@@ -55,47 +53,48 @@ export function HuggingFaceExplorer() {
   const queryForFetch = activeQuery || '';
   const filterForFetch = cat?.query || undefined;
 
-  const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetching,
-    isFetchingNextPage,
-    refetch,
-    error,
-  } = useHfModels(queryForFetch, sortMode, filterForFetch, activeLibraryFilter);
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage, refetch, error } =
+    useHfModels(queryForFetch, sortMode, filterForFetch, activeLibraryFilter);
 
   const models = data?.pages.flatMap((page) => page.models) ?? [];
 
   const { data: modelFiles = [] } = useHfModelFiles(selectedModel);
   const { data: modelReadme = '' } = useHfModelReadme(selectedModel);
 
-  const selectedInfo = selectedModel
-    ? models.find((r) => r.id === selectedModel)
-    : undefined;
+  const selectedInfo = selectedModel ? models.find((r) => r.id === selectedModel) : undefined;
 
   // ── Downloads ───────────────────────────────────────────────────
   useHfDownloads();
   const { downloads } = useDownloadStore();
 
   // ── Handlers ────────────────────────────────────────────────────
+  const searchDebounce = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSearchQueryChange = useCallback(
     (newQuery: string) => {
       setSearchQuery(newQuery);
-      setActiveQuery(newQuery.trim());
+      if (searchDebounce.current) clearTimeout(searchDebounce.current);
+      searchDebounce.current = setTimeout(() => {
+        setActiveQuery(newQuery.trim());
+      }, 350);
     },
     [setSearchQuery, setActiveQuery]
   );
 
   const handleSortChange = useCallback(
-    (sort: SortMode) => { setSortMode(sort); },
+    (sort: SortMode) => {
+      setSortMode(sort);
+    },
     [setSortMode]
   );
 
-  const handleClear = useCallback(() => { resetExplorer(); }, [resetExplorer]);
+  const handleClear = useCallback(() => {
+    resetExplorer();
+  }, [resetExplorer]);
 
   const handleSelectModel = useCallback(
-    (modelId: string) => { setSelectedModel(modelId); },
+    (modelId: string) => {
+      setSelectedModel(modelId);
+    },
     [setSelectedModel]
   );
 
@@ -103,31 +102,43 @@ export function HuggingFaceExplorer() {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const handleRefresh = useCallback(() => { refetch(); }, [refetch]);
+  const handleRefresh = useCallback(() => {
+    refetch();
+  }, [refetch]);
 
   const isLoading = isFetching && !data;
   const isLoadingMore = isFetchingNextPage;
   const loadError = error
-    ? typeof error === 'string' ? error : (error as Error).message || String(error)
+    ? typeof error === 'string'
+      ? error
+      : (error as Error).message || String(error)
     : null;
-
-  const activeCatData = ALL_CATEGORIES.find((c) => c.id === activeCategory) || ALL_CATEGORIES[0];
 
   // ── Render ─────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden', background: '#0f0f0f' }}>
-      {/* ── LEFT PANEL: Search + List ───────────────────────────── */}
-      <div style={{
-        width: 380,
-        minWidth: 320,
-        maxWidth: 420,
-        flexShrink: 0,
+    <div
+      style={{
         display: 'flex',
-        flexDirection: 'column',
-        borderRight: '1px solid #1a1a1a',
-        background: '#141414',
+        height: '100%',
+        width: '100%',
         overflow: 'hidden',
-      }}>
+        background: '#0f0f0f',
+      }}
+    >
+      {/* ── LEFT PANEL: Search + List ───────────────────────────── */}
+      <div
+        style={{
+          width: 380,
+          minWidth: 320,
+          maxWidth: 420,
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          borderRight: '1px solid #1a1a1a',
+          background: '#141414',
+          overflow: 'hidden',
+        }}
+      >
         {/* Search bar at top */}
         <div style={{ flexShrink: 0, borderBottom: '1px solid #1a1a1a' }}>
           <SearchBar
@@ -154,7 +165,7 @@ export function HuggingFaceExplorer() {
           hasNextPage={!!hasNextPage}
           error={loadError}
           activeQuery={activeQuery}
-          activeCategoryLabel={activeCatData.label}
+          hardware={hardware}
           onSelect={handleSelectModel}
           onLoadMore={handleLoadMore}
           onClear={handleClear}
@@ -162,7 +173,15 @@ export function HuggingFaceExplorer() {
       </div>
 
       {/* ── RIGHT PANEL: Model Detail ───────────────────────────── */}
-      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {selectedModel ? (
           <ErrorBoundary>
             <ModelDetail

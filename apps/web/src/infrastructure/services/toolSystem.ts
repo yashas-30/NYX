@@ -5,10 +5,34 @@
  *              and structured tool results like Claude/Kimi.
  */
 
-
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { WorkspaceIntelligence } from './workspaceIntelligence';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
+import {
+  searchTopicImages,
+  searchTopicVideos,
+  generateVisualAsset,
+  ExtractedImage,
+  ExtractedVideo,
+} from '@src/core/services/mediaEngine';
+
+function safeEvaluateMath(expr: string): number {
+  const sanitized = expr.replace(/[^0-9+\-*/().,%^eE\sMath.sqrtcospitannlgabsminmax]/g, '');
+  const converted = sanitized
+    .replace(/\^/g, '**')
+    .replace(/\bsqrt\b/g, 'Math.sqrt')
+    .replace(/\bsin\b/g, 'Math.sin')
+    .replace(/\bcos\b/g, 'Math.cos')
+    .replace(/\btan\b/g, 'Math.tan')
+    .replace(/\babs\b/g, 'Math.abs')
+    .replace(/\bpi\b/gi, 'Math.PI')
+    .replace(/\blog\b/g, 'Math.log10')
+    .replace(/\bln\b/g, 'Math.log');
+  const result = Function(`"use strict"; return (${converted})`)();
+  if (typeof result !== 'number' || isNaN(result))
+    throw new Error('Invalid mathematical calculation');
+  return result;
+}
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -346,6 +370,134 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     },
   },
   {
+    name: 'deep_research',
+    description:
+      'Perform multi-angle deep technical research, benchmark comparison, and information extraction across web sources.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'The technical subject, system architecture, or question to research comprehensively.',
+        },
+        numResults: {
+          type: 'integer',
+          description: 'Number of search result references to gather (default: 8).',
+          default: 8,
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'search_images',
+    description:
+      'Search the web for high-resolution images, photos, illustrations, or diagrams. Returns image titles, direct URLs, and source attribution.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The search query describing the image/visual subject to look for.',
+        },
+        limit: {
+          type: 'integer',
+          description: 'Maximum number of images to return (1-6, default 3).',
+          default: 3,
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'search_videos',
+    description:
+      'Search YouTube and web platforms for relevant video tutorials, explanations, demonstrations, or clips.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The topic, keyword, or title to find videos for.',
+        },
+        limit: {
+          type: 'integer',
+          description: 'Maximum number of videos to return (1-4, default 2).',
+          default: 2,
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'generate_image',
+    description: 'Generate an AI image from a descriptive text prompt.',
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Detailed prompt describing the image to generate.',
+        },
+        aspect_ratio: {
+          type: 'string',
+          enum: ['1:1', '16:9', '9:16', '4:3', '3:2'],
+          description: 'Aspect ratio of the generated image (default: "1:1").',
+          default: '1:1',
+        },
+      },
+      required: ['prompt'],
+    },
+  },
+  {
+    name: 'calculate',
+    description:
+      'Evaluate a mathematical expression accurately (arithmetic, percentages, powers, trigonometry).',
+    parameters: {
+      type: 'object',
+      properties: {
+        expression: {
+          type: 'string',
+          description: 'Mathematical expression to compute, e.g. "(144 * 12) + (50 * 0.15)".',
+        },
+      },
+      required: ['expression'],
+    },
+  },
+  {
+    name: 'fetch_page_content',
+    description: 'Fetch and extract clean readable text from a webpage URL.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'The URL to fetch content from.',
+        },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'grep_search',
+    description: 'Search recursively in the workspace for files containing a specific pattern.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Relative path in workspace to search in. Defaults to workspace root.',
+        },
+        query: {
+          type: 'string',
+          description: 'Text pattern to search for.',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'list_directory',
     description: 'List files and directories at a specific path. Use to explore project structure.',
     parameters: {
@@ -390,20 +542,6 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       type: 'object',
       properties: {},
       required: [],
-    },
-  },
-  {
-    name: 'view_image',
-    description: 'View and analyze an image file in the workspace.',
-    parameters: {
-      type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'Relative path to the image file.',
-        },
-      },
-      required: ['path'],
     },
   },
 ];
@@ -621,7 +759,11 @@ export class ToolExecutor {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
         try {
-          await invoke('fs_write_file', { path: params.path, content: params.content, overwrite: true });
+          await invoke('fs_write_file', {
+            path: params.path,
+            content: params.content,
+            overwrite: true,
+          });
           return `Successfully edited file: ${params.path}`;
         } catch (e: any) {
           throw new Error(e || 'Failed to edit file');
@@ -633,22 +775,24 @@ export class ToolExecutor {
         validatePath(params.path);
         WorkspaceIntelligence.trackOpenFile(params.path);
         try {
-          await invoke('fs_write_file', { path: params.path, content: params.content, overwrite: params.overwrite ?? false });
+          await invoke('fs_write_file', {
+            path: params.path,
+            content: params.content,
+            overwrite: params.overwrite ?? false,
+          });
           return `Successfully created file: ${params.path}`;
         } catch (e: any) {
           throw new Error(e || 'Failed to write file');
         }
       }
 
-
-
       case 'run_terminal': {
         validatePath(params.cwd);
         sanitizeCommand(params.command);
         try {
-          const result: any = await invoke('execute_command', { 
-            command: params.command, 
-            cwd: params.cwd || ''
+          const result: any = await invoke('execute_command', {
+            command: params.command,
+            cwd: params.cwd || '',
           });
           return {
             stdout: result.stdout,
@@ -661,7 +805,8 @@ export class ToolExecutor {
       }
 
       case 'web_search': {
-        const q = params.query || (params.queries && params.queries.length > 0 ? params.queries[0] : '');
+        const q =
+          params.query || (params.queries && params.queries.length > 0 ? params.queries[0] : '');
         if (!q) throw new Error('Missing query parameter');
         try {
           const storeState = useNyxStore.getState();
@@ -679,6 +824,54 @@ export class ToolExecutor {
         }
       }
 
+      case 'deep_research': {
+        const q = params.query || params.prompt || '';
+        if (!q) throw new Error('Missing query parameter for deep_research');
+        try {
+          const storeState = useNyxStore.getState();
+          const searchProvider = storeState.searchProvider || 'duckduckgo';
+          const apiKey = storeState.apiKeys[searchProvider] || '';
+          const onProgress = new Channel<any>();
+
+          const researchResult: any = await invoke('start_deep_research', {
+            query: {
+              prompt: q,
+              depth_limit: params.numResults ?? 8,
+              provider: searchProvider,
+              api_key: apiKey,
+            },
+            onProgress,
+          }).catch((err) => {
+            console.warn(
+              '[toolSystem:deep_research] start_deep_research failed, falling back to search_web_command:',
+              err
+            );
+            return null;
+          });
+
+          if (researchResult && typeof researchResult === 'object') {
+            const report = researchResult.report || '';
+            const sources = (researchResult.sources || [])
+              .map(
+                (s: any, idx: number) =>
+                  `[${idx + 1}] [${s.title || 'Source'}](${s.url}): ${s.snippet || ''}`
+              )
+              .join('\n\n');
+            return `${report}\n\n### Discovered Sources & Citations\n${sources}`;
+          }
+
+          const fallbackResult: string = await invoke('search_web_command', {
+            query: q,
+            numResults: params.numResults ?? 8,
+            searchProvider,
+            apiKey,
+          });
+          return fallbackResult || 'Deep research completed with no external findings.';
+        } catch (e: any) {
+          throw new Error(e || 'Deep research failed');
+        }
+      }
+
       case 'list_directory': {
         validatePath(params.path);
         try {
@@ -689,12 +882,129 @@ export class ToolExecutor {
         }
       }
 
+      case 'search_images': {
+        const q = params.query?.trim();
+        if (!q) throw new Error('Missing search query for search_images');
+        const limit = Math.min(Math.max(Number(params.limit) || 3, 1), 6);
+        try {
+          const images: ExtractedImage[] = await searchTopicImages(q, limit);
+          return {
+            query: q,
+            count: images.length,
+            images: images.map((img) => ({
+              title: img.title,
+              url: img.url,
+              source: img.source || 'Web Search',
+              thumbnailUrl: img.thumbnailUrl || img.url,
+            })),
+          };
+        } catch (e: any) {
+          throw new Error(e?.message || e || 'Image search failed');
+        }
+      }
+
+      case 'search_videos': {
+        const q = params.query?.trim();
+        if (!q) throw new Error('Missing search query for search_videos');
+        const limit = Math.min(Math.max(Number(params.limit) || 2, 1), 4);
+        try {
+          const videos: ExtractedVideo[] = await searchTopicVideos(q, limit);
+          return {
+            query: q,
+            count: videos.length,
+            videos: videos.map((vid) => ({
+              title: vid.title,
+              url: vid.url,
+              previewUrl: vid.previewUrl,
+              duration: vid.duration,
+              channel: vid.author,
+              source: vid.source,
+            })),
+          };
+        } catch (e: any) {
+          throw new Error(e?.message || e || 'Video search failed');
+        }
+      }
+
+      case 'generate_image': {
+        const prompt = params.prompt?.trim();
+        if (!prompt) throw new Error('Missing prompt for generate_image');
+        const ar =
+          params.aspect_ratio === '16:9' ||
+          params.aspect_ratio === '9:16' ||
+          params.aspect_ratio === '4:3'
+            ? params.aspect_ratio
+            : '1:1';
+        try {
+          const asset = await generateVisualAsset(prompt, ar);
+          return {
+            prompt,
+            imageUrl: asset.imageUrl,
+            source: asset.engine,
+            status: 'success',
+          };
+        } catch (e: any) {
+          throw new Error(e?.message || e || 'Image generation failed');
+        }
+      }
+
+      case 'calculate': {
+        const expr = params.expression?.trim();
+        if (!expr) throw new Error('Missing expression for calculate');
+        try {
+          const val = safeEvaluateMath(expr);
+          return {
+            expression: expr,
+            result: val,
+          };
+        } catch (e: any) {
+          throw new Error(`Calculation error: ${e?.message || e}`);
+        }
+      }
+
+      case 'fetch_page_content': {
+        const url = params.url?.trim();
+        if (!url) throw new Error('Missing URL for fetch_page_content');
+        try {
+          const text: string = await invoke('fetch_page_content', { url });
+          return text;
+        } catch (e: any) {
+          // Fallback to fetch
+          try {
+            const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const html = await resp.text();
+            const cleanText = html
+              .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+              .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+            return cleanText.substring(0, 10000);
+          } catch (inner) {
+            throw new Error(`Failed to fetch page: ${e || inner}`);
+          }
+        }
+      }
+
+      case 'grep_search': {
+        const path = params.path || '.';
+        validatePath(path);
+        const query = params.query?.trim();
+        if (!query) throw new Error('Missing query for grep_search');
+        try {
+          const results: string = await invoke('grep_workspace', { path, query });
+          return results;
+        } catch (e: any) {
+          return `No matches or grep failed: ${e?.message || e}`;
+        }
+      }
+
       case 'git_diff': {
         validatePath(params.path);
         try {
           const result: any = await invoke('execute_command', {
-            command: 'git',
-            cwd: params.path
+            command: 'git diff',
+            cwd: params.path || '.',
           });
           return result.stdout;
         } catch (e: any) {
@@ -706,18 +1016,12 @@ export class ToolExecutor {
         try {
           const result: any = await invoke('execute_command', {
             command: 'git status',
-            cwd: '.'
+            cwd: '.',
           });
           return result.stdout;
         } catch (e: any) {
           throw new Error(e || 'Failed to fetch git status');
         }
-      }
-
-      case 'view_image': {
-        validatePath(params.path);
-        // Not implemented in Rust backend yet
-        throw new Error('view_image is not yet natively supported in Tauri backend');
       }
 
       default:

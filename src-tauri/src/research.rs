@@ -255,7 +255,7 @@ struct DiscoveredSearchResult {
 async fn get_search_results_meta(query: &str, max_urls: usize) -> Vec<DiscoveredSearchResult> {
     let mut items = Vec::new();
     let num_results = (max_urls * 2).max(15);
-    if let Ok(raw_res) = crate::commands::agent::search_web_command(
+    if let Ok(raw_res) = crate::commands::tools::search_web_command(
         query.to_string(),
         Some(num_results),
         None,
@@ -321,20 +321,20 @@ async fn fetch_page_for_research(url: &str) -> (String, String) {
     }
 
     // Check page cache first (populated by fetch_page_content)
-    if let Some(cached) = crate::commands::agent::PAGE_CACHE.get(url) {
+    if let Some(cached) = crate::commands::tools::PAGE_CACHE.get(url) {
         if cached.timestamp.elapsed().as_secs() < 1800 {
             let content = cached.content.clone();
             drop(cached);
             return (url.to_string(), content);
         } else {
             drop(cached);
-            crate::commands::agent::PAGE_CACHE.remove(url);
+            crate::commands::tools::PAGE_CACHE.remove(url);
         }
     }
 
     let result = tokio::time::timeout(
         Duration::from_secs(8),
-        crate::commands::agent::HTTP_CLIENT
+        crate::commands::tools::HTTP_CLIENT
             .get(url)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header(
@@ -356,13 +356,13 @@ async fn fetch_page_for_research(url: &str) -> (String, String) {
             }
             match res.text().await {
                 Ok(html) => {
-                    let markdown = crate::commands::agent::extract_clean_text(&html, url);
+                    let markdown = crate::commands::tools::extract_clean_text(&html, url);
                     if markdown.trim().len() < 200 {
                         return (url.to_string(), String::new());
                     }
-                    crate::commands::agent::PAGE_CACHE.insert(
+                    crate::commands::tools::PAGE_CACHE.insert(
                         url.to_string(),
-                        crate::commands::agent::CachedSearchResult {
+                        crate::commands::tools::CachedSearchResult {
                             content: markdown.clone(),
                             timestamp: std::time::Instant::now(),
                         },
@@ -489,9 +489,9 @@ pub async fn start_deep_research(
     }));
 
     let provider = query.provider.unwrap_or_else(|| "nyx-native".to_string());
-    let is_local = provider == "nyx-native" || provider.contains("local") || provider.contains("lucifer");
+    let is_local = provider == "nyx-native" || provider.contains("local");
     let model_id = query.model_id.unwrap_or_else(|| {
-        if is_local { "qwen2.5-1.5b-instruct".to_string() } else { "google/gemini-2.5-flash".to_string() }
+        if is_local { "local-default".to_string() } else { "google/gemini-2.5-flash".to_string() }
     });
     let api_key = query.api_key.unwrap_or_default();
 
@@ -738,6 +738,15 @@ pub async fn start_deep_research(
                     "message": format!("Gap analysis skipped ({}). Proceeding.", e)
                 }));
             }
+        }
+    }
+
+    // Index all scraped website sources into LanceDB TurboVec vector memory for future turns & model grounding
+    if let Some(tv_store) = app.try_state::<Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+        for (i, ctx) in all_context.iter().enumerate() {
+            let url = all_sources.get(i).map(|s| s.url.as_str()).unwrap_or("web-source");
+            let title = all_sources.get(i).map(|s| s.title.as_str()).unwrap_or("Scraped Document");
+            tv_store.add_scraped_document(url, title, ctx).await;
         }
     }
 

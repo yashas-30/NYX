@@ -72,7 +72,11 @@ pub async fn get_system_diagnostics(model_id: Option<String>) -> SystemDiagnosti
         } else { 4.0 };
 
         let decision = crate::llm::local_orchestrator::compute_ngl_decision(&hw, None, model_size_gb, 8192);
-        Some(OptimalLayers { gpu_layers: decision.ngl, message: decision.message })
+        let (gpu_layers, message) = match decision {
+            Ok(d) => (d.ngl, d.message),
+            Err(err_msg) => (0, err_msg),
+        };
+        Some(OptimalLayers { gpu_layers, message })
     } else {
         None
     };
@@ -126,16 +130,32 @@ pub struct CommandResult {
 pub async fn execute_command(command: String, cwd: String) -> Result<CommandResult, String> {
     use tokio::process::Command;
 
+    let trimmed = command.trim();
+    
+    // Safety guard against arbitrary RCE via shell chaining
+    if trimmed.contains('&') || trimmed.contains('|') || trimmed.contains(';') || trimmed.contains('>') || trimmed.contains('<') || trimmed.contains('$') || trimmed.contains('`') {
+        return Err("Security Violation: Shell chaining, redirection, and interpolation operators are not allowed".to_string());
+    }
+
+    // Only allow specific safe executables for the AI to run natively
+    let allowed_commands = ["git", "npm", "cargo", "rustc", "node", "python", "python3", "npx", "ls", "dir", "cat", "echo", "pwd"];
+    let cmd_name = trimmed.split_whitespace().next().unwrap_or("");
+    
+    if !allowed_commands.contains(&cmd_name) {
+        return Err(format!("Security Violation: Command '{}' is not in the allowlist of safe executables.", cmd_name));
+    }
+
     // Safety guard against catastrophic disk-wipe / bricking payloads
     let lower_cmd = command.to_lowercase().replace(' ', "");
-    if lower_cmd.contains("rmdir/s/qc:\\")
-        || lower_cmd.contains("del/f/s/qc:\\")
-        || lower_cmd.contains("formatc:")
-        || lower_cmd.contains("rm-rf/")
-        || lower_cmd.contains("mkfs.")
-        || lower_cmd.contains("ddif=/dev/zero")
+    if lower_cmd.contains("rm")
+        || lower_cmd.contains("del")
+        || lower_cmd.contains("format")
+        || lower_cmd.contains("mkfs")
+        || lower_cmd.contains("dd")
+        || lower_cmd.contains("curl")
+        || lower_cmd.contains("wget")
     {
-        return Err("Security Violation: Catastrophic system command blocked by NYX SafetyGuard".to_string());
+        return Err("Security Violation: Catastrophic or remote download system command blocked by NYX SafetyGuard".to_string());
     }
 
     #[cfg(target_os = "windows")]

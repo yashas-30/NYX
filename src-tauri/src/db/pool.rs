@@ -14,13 +14,7 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
         std::fs::create_dir_all(parent).ok();
     }
 
-    // Register sqlite-vec extension globally for all SQLite connections in this process.
-    // This allows sqlx to use sqlite-vec natively.
-    unsafe {
-        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
-            sqlite_vec::sqlite3_vec_init as *const (),
-        )));
-    }
+    // SQLite initialization (sqlite-vec removed since LanceDB handles vectors)
 
     info!("Initializing SQLite connection pool at: {:?}", db_path);
 
@@ -215,6 +209,14 @@ pub async fn init_db_pool(db_path: PathBuf) -> Result<SqlitePool, sqlx::Error> {
             tags TEXT,
             preset_config TEXT
         );
+
+        -- Performance Indexes on High-Volume Foreign Keys & Timestamps
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_conv ON chat_messages(conversation_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_ts ON chat_messages(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_chat_conversations_updated ON chat_conversations(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_db_messages_session ON db_messages(session_id);
+        CREATE INDEX IF NOT EXISTS idx_swarm_context_session ON swarm_context_pool(session_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_memory_session ON chat_memory(session_id);
     "#;
 
     sqlx::query(schema).execute(&pool).await?;

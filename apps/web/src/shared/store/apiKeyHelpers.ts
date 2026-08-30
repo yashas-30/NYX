@@ -9,7 +9,6 @@ import { Dispatch, SetStateAction } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from '@src/shared/components/ui/sonner';
 
-
 // ============================================================================
 // TYPES & INTERFACES
 // ============================================================================
@@ -111,6 +110,11 @@ const MAX_AUDIT_ENTRIES = 1000;
  */
 const KEY_PREFIXES: Record<string, RegExp> = {
   gemini: /^AIza[0-9A-Za-z_-]{35}/,
+  openrouter: /^sk-or-v1-[0-9a-fA-F]{64}|^sk-or-/,
+  groq: /^gsk_[0-9A-Za-z]{48,64}|^gsk_/,
+  mistral: /^[0-9A-Za-z]{32}$/,
+  nvidia: /^nvapi-[0-9A-Za-z_-]{40,80}|^nvapi-/,
+  tavily: /^tvly-[0-9A-Za-z_-]{20,60}|^tvly-/,
 };
 
 // ============================================================================
@@ -265,9 +269,9 @@ function analyzeKey(key: string): {
     }
   }
 
-  // Unknown format — treat as gemini anyway since it's the only provider
+  // Unknown or custom format
   return {
-    provider: 'gemini',
+    provider: 'unknown',
     prefix: trimmed.substring(0, Math.min(8, trimmed.length)),
     suffix: trimmed.slice(-4),
     isPrivileged: false,
@@ -812,5 +816,3 @@ export const updateVaultConfig = (config: Partial<VaultConfig>): void => {
 
 /** Get audit log entries */
 export const getAuditLog = (limit?: number): AuditLogEntry[] => registry.getAuditLog(limit);
-
-

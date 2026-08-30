@@ -1,9 +1,9 @@
 name: Security Scan
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   schedule:
     - cron: '0 0 * * 0' # Run weekly on Sunday
 
@@ -11,8 +11,8 @@ jobs:
   security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
       - uses: pnpm/action-setup@v4
         with:
           version: 11.5.1

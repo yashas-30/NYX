@@ -1,11 +1,11 @@
 import React, { memo } from 'react';
 import { TerminalIcon as Terminal } from '@animateicons/react/lucide';
-import { FileText } from 'lucide-react';
+import { FileText, Presentation, Workflow } from 'lucide-react';
 import { NyxLoader } from '@src/assets/icons/icons';
 
 export interface StreamingArtifact {
   id: string;
-  type: 'code' | 'html' | 'react' | 'markdown' | string;
+  type: 'code' | 'html' | 'react' | 'markdown' | 'slidev' | 'presentation' | string;
   title: string;
   content: string;
   language?: string;
@@ -55,31 +55,81 @@ export const ArtifactRenderer: React.FC<ArtifactRendererProps> = memo(
             );
           }
 
+          const isPresentation =
+            artifact.type === 'slidev' ||
+            artifact.type === 'presentation' ||
+            artifact.type === 'slides' ||
+            artifact.language === 'slidev' ||
+            artifact.language === 'slides';
+
+          const hasSvgOrHtml =
+            typeof artifact.content === 'string' &&
+            (/<svg\b/i.test(artifact.content) || /<div\b/i.test(artifact.content));
+
+          const isDiagram =
+            artifact.type === 'diagram' ||
+            artifact.language === 'mermaid' ||
+            artifact.language === 'diagram' ||
+            artifact.language === 'diagram-design' ||
+            hasSvgOrHtml ||
+            (typeof artifact.content === 'string' &&
+              /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|C4Context|C4Container)\b/im.test(
+                artifact.content
+              ));
+
           return (
             <div
               key={artifact.id || i}
-              onClick={() => onArtifactClick?.(artifact)}
-              className="cursor-pointer group flex items-center justify-between p-3.5 my-3 rounded-xl border border-border/60 bg-surface hover:bg-muted/30 hover:border-primary/40 hover:shadow-sm transition-all"
+              className="my-3 rounded-xl border border-white/10 bg-[#09090b] shadow-md overflow-hidden transition-all"
             >
-              <div className="flex items-center gap-3 overflow-hidden">
-                <div className="flex items-center justify-center w-9 h-9 rounded-md bg-primary/10 text-primary">
-                  {artifact.type === 'html' || artifact.type === 'react' || artifact.type === 'code' ? (
-                    <Terminal className="w-4.5 h-4.5" />
-                  ) : (
-                    <FileText className="w-4.5 h-4.5" />
-                  )}
+              {/* Header Bar */}
+              <div
+                onClick={() => onArtifactClick?.(artifact)}
+                className="cursor-pointer group flex items-center justify-between p-3 bg-[#121214] hover:bg-[#161619] border-b border-white/10 transition-colors"
+              >
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-zinc-900 border border-white/10 text-zinc-300 group-hover:text-indigo-400 group-hover:border-indigo-500/30 transition-colors">
+                    {isPresentation ? (
+                      <Presentation className="w-4 h-4 text-zinc-200" />
+                    ) : isDiagram ? (
+                      <Workflow className="w-4 h-4 text-zinc-200" />
+                    ) : artifact.type === 'html' ||
+                      artifact.type === 'react' ||
+                      artifact.type === 'code' ? (
+                      <Terminal className="w-4 h-4 text-zinc-200" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-zinc-200" />
+                    )}
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-medium text-zinc-100 truncate group-hover:text-white transition-colors">
+                      {artifact.title ||
+                        (isPresentation
+                          ? 'Slidev Presentation Deck'
+                          : isDiagram
+                            ? 'Architecture Diagram'
+                            : 'Generated Artifact')}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">
+                      {isPresentation
+                        ? 'Slidev Presentation'
+                        : isDiagram
+                          ? hasSvgOrHtml
+                            ? 'Editorial Diagram Design'
+                            : 'Mermaid Diagram'
+                          : artifact.type === 'code'
+                            ? artifact.language || 'code'
+                            : artifact.type}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-sm font-semibold text-foreground truncate">
-                    {artifact.title || 'Generated Artifact'}
-                  </span>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                    {artifact.type === 'code' ? artifact.language || 'code' : artifact.type}
-                  </span>
+                <div className="text-xs font-medium text-indigo-400 group-hover:text-indigo-300 transition-colors pr-1 flex items-center gap-1">
+                  {isPresentation
+                    ? 'Launch Deck →'
+                    : isDiagram
+                      ? 'Open in Canvas (Pan & Zoom) →'
+                      : 'Open in Canvas →'}
                 </div>
-              </div>
-              <div className="text-xs font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity pr-2">
-                Click to open
               </div>
             </div>
           );

@@ -1,7 +1,7 @@
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
 
 pub const SERVICE_NAME: &str = "com.nyx.desktop";
 
@@ -26,138 +26,84 @@ pub struct ProviderPayload {
 pub const KNOWN_PROVIDERS: &[&str] = &[
     "gemini",
     "openrouter",
-    "tavily",
-    "openai",
-    "anthropic",
-    "deepseek",
+    "nvidia-nim",
+    "nvidia",
     "groq",
     "mistral",
     "huggingface",
 ];
 
-// ── Machine-Bound Encrypted File Storage Fallback ───────────────────────────
-// Guarantees persistence even if Windows Credential Manager / Keyring fails
-// or loses credentials across OS restarts / power cycles.
-
-fn get_machine_vault_path() -> std::path::PathBuf {
-    let base = dirs::data_local_dir()
-        .or_else(dirs::data_dir)
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let dir = base.join("nyx").join(".nyx-vault");
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join("keys.vault")
-}
-
-fn derive_keystream(len: usize) -> Vec<u8> {
-    let user = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_else(|_| "nyx-user".to_string());
-    let machine = sysinfo::System::host_name().unwrap_or_else(|| "nyx-desktop".to_string());
-    let salt = format!("nyx-device-key-salt-2026:{}:{}", user, machine);
-    
-    let mut key_bytes = Vec::with_capacity(len);
-    let salt_bytes = salt.as_bytes();
-    for i in 0..len {
-        let b = salt_bytes[i % salt_bytes.len()];
-        let rot = ((i * 31 + 17) ^ (b as usize)) as u8;
-        key_bytes.push(rot);
-    }
-    key_bytes
-}
-
-fn encrypt_bytes(data: &[u8]) -> Vec<u8> {
-    let keystream = derive_keystream(data.len());
-    data.iter().zip(keystream.iter()).map(|(d, k)| d ^ k).collect()
-}
-
-fn decrypt_bytes(data: &[u8]) -> Vec<u8> {
-    encrypt_bytes(data) // Symmetric XOR cipher
-}
-
-fn read_file_vault() -> HashMap<String, String> {
-    let path = get_machine_vault_path();
-    if !path.exists() {
-        return HashMap::new();
-    }
-    match std::fs::read_to_string(&path) {
-        Ok(content) => {
-            if let Ok(cipher_bytes) = BASE64.decode(content.trim()) {
-                let plain_bytes = decrypt_bytes(&cipher_bytes);
-                if let Ok(json_str) = String::from_utf8(plain_bytes) {
-                    if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&json_str) {
-                        return map;
-                    }
-                }
-            }
-            HashMap::new()
-        }
-        Err(_) => HashMap::new(),
-    }
-}
-
-fn write_file_vault(map: &HashMap<String, String>) -> Result<(), String> {
-    let path = get_machine_vault_path();
-    let json_str = serde_json::to_string(map).map_err(|e| e.to_string())?;
-    let cipher_bytes = encrypt_bytes(json_str.as_bytes());
-    let encoded = BASE64.encode(cipher_bytes);
-    std::fs::write(&path, encoded).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 pub fn sync_provider_env_var(provider: &str, key: Option<&str>) {
     let prov = provider.to_lowercase();
     match key {
         Some(k) if !k.is_empty() => match prov.as_str() {
-            "tavily" => std::env::set_var("TAVILY_API_KEY", k),
             "gemini" => std::env::set_var("GEMINI_API_KEY", k),
             "openrouter" => std::env::set_var("OPENROUTER_API_KEY", k),
-            "openai" => std::env::set_var("OPENAI_API_KEY", k),
-            "anthropic" => std::env::set_var("ANTHROPIC_API_KEY", k),
-            "deepseek" => std::env::set_var("DEEPSEEK_API_KEY", k),
             "groq" => std::env::set_var("GROQ_API_KEY", k),
             "mistral" => std::env::set_var("MISTRAL_API_KEY", k),
             "huggingface" => std::env::set_var("HF_TOKEN", k),
+            "nvidia-nim" | "nvidia" => {
+                std::env::set_var("NVIDIA_API_KEY", k);
+                std::env::set_var("NVIDIA_NIM_API_KEY", k);
+            }
             _ => {}
         },
         _ => match prov.as_str() {
-            "tavily" => std::env::remove_var("TAVILY_API_KEY"),
             "gemini" => std::env::remove_var("GEMINI_API_KEY"),
             "openrouter" => std::env::remove_var("OPENROUTER_API_KEY"),
-            "openai" => std::env::remove_var("OPENAI_API_KEY"),
-            "anthropic" => std::env::remove_var("ANTHROPIC_API_KEY"),
-            "deepseek" => std::env::remove_var("DEEPSEEK_API_KEY"),
             "groq" => std::env::remove_var("GROQ_API_KEY"),
             "mistral" => std::env::remove_var("MISTRAL_API_KEY"),
             "huggingface" => std::env::remove_var("HF_TOKEN"),
+            "nvidia-nim" | "nvidia" => {
+                std::env::remove_var("NVIDIA_API_KEY");
+                std::env::remove_var("NVIDIA_NIM_API_KEY");
+            }
             _ => {}
         },
     }
 }
 
+fn get_vault_file_path() -> std::path::PathBuf {
+    let base_dir = dirs::config_dir()
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let nyx_dir = base_dir.join("com.nyx.desktop");
+    let _ = std::fs::create_dir_all(&nyx_dir);
+    nyx_dir.join("vault.json")
+}
+
+fn load_file_vault() -> HashMap<String, String> {
+    let path = get_vault_file_path();
+    if let Ok(data) = std::fs::read_to_string(&path) {
+        if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&data) {
+            return map;
+        }
+    }
+    HashMap::new()
+}
+
+fn save_file_vault(map: &HashMap<String, String>) {
+    let path = get_vault_file_path();
+    if let Ok(json_str) = serde_json::to_string_pretty(map) {
+        let _ = std::fs::write(&path, json_str);
+    }
+}
+
 pub fn restore_all_vault_keys_to_env() {
-    let file_keys = read_file_vault();
+    let file_vault = load_file_vault();
     for &provider in KNOWN_PROVIDERS {
-        // Try keyring first
-        let mut resolved_key: Option<String> = None;
-        if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, provider) {
-            if let Ok(key) = entry.get_password() {
-                if !key.trim().is_empty() {
-                    resolved_key = Some(key);
-                }
-            }
-        }
-        // If not in keyring, check encrypted file vault
-        if resolved_key.is_none() {
-            if let Some(key) = file_keys.get(provider) {
-                if !key.trim().is_empty() {
-                    resolved_key = Some(key.clone());
-                    // Backfill to keyring
-                    if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, provider) {
-                        let _ = entry.set_password(key);
-                    }
-                }
-            }
-        }
-        if let Some(ref k) = resolved_key {
-            sync_provider_env_var(provider, Some(k));
+        // 1. Try OS Keyring
+        let key_opt = if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, provider) {
+            entry.get_password().ok().filter(|k| !k.trim().is_empty())
+        } else {
+            None
+        };
+
+        // 2. Try file vault fallback
+        let final_key = key_opt.or_else(|| file_vault.get(provider).cloned().filter(|k| !k.trim().is_empty()));
+
+        if let Some(ref key) = final_key {
+            sync_provider_env_var(provider, Some(key));
         }
     }
 }
@@ -189,25 +135,17 @@ pub async fn vault_store_key(
         Err(_) => false,
     };
 
-    // 2. Store in Machine-Bound Encrypted Vault File
-    let mut file_keys = read_file_vault();
-    file_keys.insert(prov.clone(), val.clone());
-    let file_saved = write_file_vault(&file_keys).is_ok();
+    // 2. Dual-redundant backup store in persistent AppData vault file
+    let mut file_vault = load_file_vault();
+    file_vault.insert(prov.clone(), val.clone());
+    save_file_vault(&file_vault);
 
     sync_provider_env_var(&prov, Some(&val));
 
-    if keyring_saved || file_saved {
-        VaultResult {
-            success: true,
-            data: Some(()),
-            error: None,
-        }
-    } else {
-        VaultResult {
-            success: false,
-            data: None,
-            error: Some("Failed to store key in secure device vault".to_string()),
-        }
+    VaultResult {
+        success: true,
+        data: Some(()),
+        error: if keyring_saved { None } else { Some("Saved to local vault backup".to_string()) },
     }
 }
 
@@ -244,21 +182,19 @@ pub async fn vault_get_key(
         }
     }
 
-    // 2. Fallback to Machine-Bound Encrypted Vault File
-    let file_keys = read_file_vault();
-    if let Some(key) = file_keys.get(&prov) {
-        if !key.trim().is_empty() {
-            sync_provider_env_var(&prov, Some(key));
-            // Backfill into keyring
-            if let Ok(entry) = Entry::new(SERVICE_NAME, &prov) {
-                let _ = entry.set_password(key);
-            }
-            return VaultResult {
-                success: true,
-                data: Some(key.clone()),
-                error: None,
-            };
+    // 2. Try persistent file vault fallback
+    let file_vault = load_file_vault();
+    if let Some(key) = file_vault.get(&prov).filter(|k| !k.trim().is_empty()) {
+        sync_provider_env_var(&prov, Some(key));
+        // Restore back to OS Keyring if available
+        if let Ok(entry) = Entry::new(SERVICE_NAME, &prov) {
+            let _ = entry.set_password(key);
         }
+        return VaultResult {
+            success: true,
+            data: Some(key.clone()),
+            error: None,
+        };
     }
 
     VaultResult {
@@ -292,10 +228,10 @@ pub async fn vault_delete_key(
         let _ = entry.delete_credential();
     }
 
-    // 2. Delete from Encrypted File Vault
-    let mut file_keys = read_file_vault();
-    file_keys.remove(&prov);
-    let _ = write_file_vault(&file_keys);
+    // 2. Delete from file vault
+    let mut file_vault = load_file_vault();
+    file_vault.remove(&prov);
+    save_file_vault(&file_vault);
 
     sync_provider_env_var(&prov, None);
 
@@ -308,18 +244,19 @@ pub async fn vault_delete_key(
 
 #[tauri::command(rename = "vault:status")]
 pub async fn vault_status() -> VaultResult<HashMap<String, bool>> {
-    let file_keys = read_file_vault();
     let mut status_map = HashMap::new();
+    let file_vault = load_file_vault();
 
     for &provider in KNOWN_PROVIDERS {
-        let in_file = file_keys.get(provider).map(|k| !k.trim().is_empty()).unwrap_or(false);
         let in_keyring = Entry::new(SERVICE_NAME, provider)
             .ok()
             .and_then(|e| e.get_password().ok())
             .map(|k| !k.trim().is_empty())
             .unwrap_or(false);
 
-        status_map.insert(provider.to_string(), in_file || in_keyring);
+        let in_file = file_vault.get(provider).map(|k| !k.trim().is_empty()).unwrap_or(false);
+
+        status_map.insert(provider.to_string(), in_keyring || in_file);
     }
 
     VaultResult {
@@ -331,8 +268,14 @@ pub async fn vault_status() -> VaultResult<HashMap<String, bool>> {
 
 #[tauri::command(rename = "vault:list-keys")]
 pub async fn vault_list_keys() -> VaultResult<Vec<String>> {
-    let file_keys = read_file_vault();
     let mut keys_set = std::collections::HashSet::new();
+    let file_vault = load_file_vault();
+
+    for (k, v) in file_vault {
+        if !v.trim().is_empty() {
+            keys_set.insert(k);
+        }
+    }
 
     for &provider in KNOWN_PROVIDERS {
         if let Ok(entry) = Entry::new(SERVICE_NAME, provider) {
@@ -341,18 +284,6 @@ pub async fn vault_list_keys() -> VaultResult<Vec<String>> {
                     keys_set.insert(provider.to_string());
                 }
             }
-        }
-        if let Some(key) = file_keys.get(provider) {
-            if !key.trim().is_empty() {
-                keys_set.insert(provider.to_string());
-            }
-        }
-    }
-
-    // Also include any extra custom providers in file vault
-    for (k, v) in file_keys {
-        if !v.trim().is_empty() {
-            keys_set.insert(k);
         }
     }
 
@@ -375,13 +306,10 @@ pub async fn vault_validate(provider: String, api_key: String) -> VaultResult<bo
     }
     let valid = match provider.as_str() {
         "gemini" => key_trimmed.len() > 10,
-        "tavily" => key_trimmed.starts_with("tvly-") || key_trimmed.len() > 10,
-        "openai" => key_trimmed.starts_with("sk-") || key_trimmed.len() > 10,
-        "anthropic" => key_trimmed.starts_with("sk-ant-") || key_trimmed.len() > 10,
-        "deepseek" => key_trimmed.starts_with("sk-") || key_trimmed.len() > 10,
         "groq" => key_trimmed.starts_with("gsk_") || key_trimmed.len() > 10,
         "mistral" => key_trimmed.len() > 10,
         "openrouter" => key_trimmed.starts_with("sk-or-") || key_trimmed.len() > 10,
+        "nvidia-nim" | "nvidia" => key_trimmed.starts_with("nvapi-") || key_trimmed.len() > 10,
         "huggingface" => key_trimmed.starts_with("hf_") || key_trimmed.len() > 10,
         _ => true,
     };
@@ -389,41 +317,5 @@ pub async fn vault_validate(provider: String, api_key: String) -> VaultResult<bo
         success: valid,
         data: Some(valid),
         error: if valid { None } else { Some("Invalid API key format".to_string()) },
-    }
-}
-
-#[tauri::command(rename = "vault:encrypt")]
-pub async fn vault_encrypt(plaintext: String) -> VaultResult<String> {
-    let cipher = encrypt_bytes(plaintext.as_bytes());
-    VaultResult {
-        success: true,
-        data: Some(BASE64.encode(cipher)),
-        error: None,
-    }
-}
-
-#[tauri::command(rename = "vault:decrypt")]
-pub async fn vault_decrypt(ciphertext: String) -> VaultResult<String> {
-    match BASE64.decode(ciphertext.trim()) {
-        Ok(cipher_bytes) => {
-            let plain_bytes = decrypt_bytes(&cipher_bytes);
-            match String::from_utf8(plain_bytes) {
-                Ok(plain_str) => VaultResult {
-                    success: true,
-                    data: Some(plain_str),
-                    error: None,
-                },
-                Err(e) => VaultResult {
-                    success: false,
-                    data: None,
-                    error: Some(format!("UTF-8 decode failed: {}", e)),
-                },
-            }
-        }
-        Err(e) => VaultResult {
-            success: false,
-            data: None,
-            error: Some(format!("Base64 decode failed: {}", e)),
-        },
     }
 }

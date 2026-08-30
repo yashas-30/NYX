@@ -25,14 +25,17 @@ function getIcon(provider: string | undefined, size: number, className: string):
       return <Cpu size={size} strokeWidth={1.5} className={className} />;
     case 'nyx-native':
       return (
-        <Cpu
-          size={size}
-          strokeWidth={1.5}
-          className={`${className} text-primary animate-pulse`}
-        />
+        <Cpu size={size} strokeWidth={1.5} className={`${className} text-primary animate-pulse`} />
       );
     case 'openrouter':
       return <Cpu size={size} strokeWidth={1.5} className={`${className} text-violet-500`} />;
+    case 'nvidia-nim':
+    case 'nvidia':
+      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-emerald-400`} />;
+    case 'groq':
+      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-orange-400`} />;
+    case 'mistral':
+      return <Cpu size={size} strokeWidth={1.5} className={`${className} text-amber-400`} />;
     default:
       return <Cpu size={size} strokeWidth={1.5} className={className} />;
   }
@@ -61,6 +64,8 @@ export function getProviderLabel(provider: string | undefined): string {
   if (provider === 'cohere') return 'Cohere';
   if (provider === 'openchat') return 'OpenChat';
   if (provider === 'openrouter') return 'OpenRouter';
+  if (provider === 'nvidia-nim' || provider === 'nvidia') return 'NVIDIA NIM';
+  if (provider === 'groq') return 'Groq (LPU)';
   if (provider === 'community') return 'Community / Custom';
   return provider;
 }
@@ -76,6 +81,20 @@ export function inferProviderFromId(modelId: string | undefined): string | undef
   // Fall back to prefix matching for cloud providers
   if (id.startsWith('gemini') || id.includes('gemini')) return 'gemini';
   if (id.startsWith('openrouter') || id.includes('openrouter')) return 'openrouter';
+  if (
+    id.startsWith('nvidia-nim') ||
+    id.startsWith('nim') ||
+    id.includes('integrate.api.nvidia.com')
+  )
+    return 'nvidia-nim';
+  if (id.startsWith('groq') || id.includes('api.groq.com')) return 'groq';
+  if (
+    id.startsWith('mistral') ||
+    id.startsWith('ministral') ||
+    id.startsWith('codestral') ||
+    id.includes('api.mistral.ai')
+  )
+    return 'mistral';
 
   return undefined;
 }

@@ -13,6 +13,7 @@
     "skipLibCheck": true,
     "allowJs": true,
     "isolatedModules": true,
+    "ignoreDeprecations": "6.0",
     "noEmit": true
   }
 }

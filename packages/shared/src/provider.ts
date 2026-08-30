@@ -12,12 +12,18 @@ export const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
 };
 
-export const CLOUD_PROVIDERS: string[] = ['gemini', 'openai', 'groq', 'together', 'perplexity', 'anthropic'];
+export const CLOUD_PROVIDERS: string[] = [
+  'gemini',
+  'openai',
+  'groq',
+  'together',
+  'perplexity',
+  'anthropic',
+];
 
 export const LOCAL_PROVIDERS: string[] = ['nyx-native'];
 
 const LOCAL_MODEL_IDS = new Set([
-
   'gemma-2-2b-it',
   'gemma-2-9b-it',
   'gemma-3-4b-it',
@@ -55,7 +61,8 @@ export const detectProvider = (modelId: string): Provider => {
   }
 
   if (modelId.startsWith('nyx-native/') || modelId.startsWith('nyx-native:')) return 'nyx-native';
-  if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3')) return 'openai';
+  if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3'))
+    return 'openai';
   if (modelId.startsWith('claude-')) return 'anthropic';
 
   // 1. Check in local GGUF model presets first
@@ -101,7 +108,8 @@ export const getProviderForModel = (modelId: string): Provider => {
   }
 
   if (modelId.startsWith('nyx-native/') || modelId.startsWith('nyx-native:')) return 'nyx-native';
-  if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3')) return 'openai';
+  if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3'))
+    return 'openai';
   if (modelId.startsWith('claude-')) return 'anthropic';
 
   // 1. Check in local GGUF model presets first
@@ -163,8 +171,9 @@ export const getEffectiveApiKey = (
   const key = apiKeys[provider]?.trim();
   if (key && key !== '') return key;
 
-    if (provider === 'gemini') {
-    const globalObj: any = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {});
+  if (provider === 'gemini') {
+    const globalObj: any =
+      typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : {};
     const metaEnv = globalObj.importMetaEnv;
     if (metaEnv && metaEnv.VITE_GEMINI_API_KEY) {
       return metaEnv.VITE_GEMINI_API_KEY;
@@ -187,56 +196,73 @@ export interface ModelCapabilities {
   supportsStreaming: boolean;
   supportsTools: boolean;
   supportsSystemPrompt: boolean;
+  supportsReasoning: boolean;
   contextWindow: number;
 }
 
 export const getModelCapabilities = (modelId: string): ModelCapabilities => {
-  const lowerId = modelId.toLowerCase();
+  const cleanId = (modelId || '').trim();
+  const lowerId = cleanId.toLowerCase();
+
+  const found = AVAILABLE_MODELS.find(
+    (m) =>
+      m.id === cleanId ||
+      m.id.toLowerCase() === lowerId ||
+      m.id.endsWith(`/${cleanId}`) ||
+      cleanId.endsWith(`/${m.id}`)
+  );
 
   const caps: ModelCapabilities = {
-    supportsVision: false,
+    supportsVision: found?.capabilities?.vision !== undefined ? !!found.capabilities.vision : false,
     supportsStreaming: true,
     supportsTools: false,
     supportsSystemPrompt: true,
+    supportsReasoning:
+      found?.capabilities?.reasoning !== undefined ? !!found.capabilities.reasoning : false,
     contextWindow: 8192,
   };
 
-  if (lowerId.includes('gemini-2.5-flash')) {
-    caps.supportsVision = true;
-    caps.supportsTools = true;
-    caps.contextWindow = 1048576; // 1M
-  } else if (lowerId.includes('gemini-2.0-flash')) {
-    caps.supportsVision = true;
-    caps.supportsTools = true;
-    caps.contextWindow = 1048576;
-  } else if (lowerId.includes('gemini-1.5-pro')) {
-    caps.supportsVision = true;
-    caps.supportsTools = true;
-    caps.contextWindow = 2097152;
-  } else if (lowerId.includes('gemini-1.5-flash')) {
-    caps.supportsVision = true;
-    caps.supportsTools = true;
-    caps.contextWindow = 1048576;
-  } else if (lowerId.includes('gemini')) {
+  if (found) {
+    if (found.specs?.contextWindow) {
+      const match = found.specs.contextWindow.match(/^([\d,]+)/);
+      if (match) {
+        const num = parseInt(match[1].replace(/,/g, ''), 10);
+        if (!isNaN(num) && num > 0) caps.contextWindow = num;
+      }
+    }
+  }
+
+  if (
+    lowerId.includes('gemini-3.7-flash') ||
+    lowerId.includes('deepseek-r1') ||
+    lowerId.includes('claude-3.7') ||
+    lowerId.includes('qwq') ||
+    lowerId.includes('nemotron-3-ultra') ||
+    lowerId.includes('nemotron-3-super')
+  ) {
+    caps.supportsReasoning = true;
+  }
+
+  if (lowerId.includes('gemini')) {
     caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 1048576;
   } else if (lowerId.includes('gemma-4')) {
-    caps.supportsVision = false;
+    caps.supportsVision = true;
     caps.supportsTools = true;
     caps.contextWindow = 262144;
   } else if (lowerId.includes('llama-3.2')) {
     caps.supportsVision = lowerId.includes('vision');
     caps.supportsTools = true;
     caps.contextWindow = 128000;
-  } else if (lowerId.includes('qwen')) {
-    caps.supportsTools = true;
-    caps.contextWindow = 32768;
-  } else if (lowerId.includes('deepseek')) {
-    caps.supportsTools = false;
-    caps.contextWindow = 128000;
-  } else if (lowerId.includes('phi-4') || lowerId.includes('phi-3')) {
-    caps.contextWindow = 16384;
+  } else if (
+    lowerId.includes('pixtral') ||
+    lowerId.includes('vl') ||
+    lowerId.includes('vision') ||
+    lowerId.includes('claude') ||
+    lowerId.includes('gpt-4o')
+  ) {
+    caps.supportsVision = true;
   }
 
   return caps;

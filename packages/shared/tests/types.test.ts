@@ -91,5 +91,38 @@ describe('Shared Zod Schemas', () => {
       const result = ModelOptionSchema.safeParse(valid);
       expect(result.success).toBe(true);
     });
+
+    it('validates nvidia-nim model options', () => {
+      const valid = {
+        id: 'nvidia/nemotron-3-super-120b-a12b',
+        name: 'Nemotron 3 Super 120B',
+        provider: 'nvidia-nim',
+        description: 'NVIDIA NIM flagship model',
+      };
+      const result = ModelOptionSchema.safeParse(valid);
+      expect(result.success).toBe(true);
+    });
+
+    it('validates groq model options', () => {
+      const valid = {
+        id: 'openai/gpt-oss-120b',
+        name: 'GPT OSS 120B (Groq LPU)',
+        provider: 'groq',
+        description: 'Groq LPU accelerated model',
+      };
+      const result = ModelOptionSchema.safeParse(valid);
+      expect(result.success).toBe(true);
+    });
+
+    it('validates mistral model options', () => {
+      const valid = {
+        id: 'mistral-large-latest',
+        name: 'Mistral Large 3',
+        provider: 'mistral',
+        description: 'Mistral AI flagship model',
+      };
+      const result = ModelOptionSchema.safeParse(valid);
+      expect(result.success).toBe(true);
+    });
   });
 });

@@ -6,8 +6,36 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2Icon as Trash2, BrainIcon as Brain, ChevronDownIcon as ChevronDown, LockIcon as Lock, ZapIcon as Zap, PaperclipIcon as Paperclip, WifiIcon as Wifi, WifiOffIcon as WifiOff, DownloadIcon as Download, CheckIcon as Check, XIcon as X } from '@animateicons/react/lucide';
-import { PanelLeftOpen, PanelLeftClose, Share2, Unlock, Square, Bot, Cpu, Clock, MessageSquare, FileText, MoreHorizontal, Keyboard, AlertCircle, HardDrive, GitBranch } from 'lucide-react';
+import {
+  Trash2Icon as Trash2,
+  BrainIcon as Brain,
+  ChevronDownIcon as ChevronDown,
+  LockIcon as Lock,
+  ZapIcon as Zap,
+  PaperclipIcon as Paperclip,
+  WifiIcon as Wifi,
+  WifiOffIcon as WifiOff,
+  DownloadIcon as Download,
+  CheckIcon as Check,
+  XIcon as X,
+} from '@animateicons/react/lucide';
+import {
+  PanelLeftOpen,
+  PanelLeftClose,
+  Share2,
+  Unlock,
+  Square,
+  Bot,
+  Cpu,
+  Clock,
+  MessageSquare,
+  FileText,
+  MoreHorizontal,
+  Keyboard,
+  AlertCircle,
+  HardDrive,
+  GitBranch,
+} from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { ModelSelector } from '@src/features/model-registry/ui/ModelSelector';
@@ -55,7 +83,9 @@ export interface ChatHeaderProps {
   providerStatuses?: Record<string, 'online' | 'offline' | 'no-key'>;
   gatewayUrls?: Record<string, string>;
   onAttachFiles?: (files: File[]) => void;
-  onExportChat?: (format: 'markdown' | 'json' | 'txt' | 'html' | 'obsidian' | 'notion' | 'gist') => void;
+  onExportChat?: (
+    format: 'markdown' | 'json' | 'txt' | 'html' | 'obsidian' | 'notion' | 'gist'
+  ) => void;
   connectionStatus?: 'online' | 'offline' | 'degraded';
   isNewChat?: boolean;
   onShareChat?: (expiration?: string) => Promise<string>;
@@ -93,7 +123,6 @@ function formatDuration(ms: number): string {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
 
 const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?: boolean }> = ({
   onAttach,
@@ -135,13 +164,14 @@ const AttachmentButton: React.FC<{ onAttach: (files: File[]) => void; disabled?:
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         disabled={disabled}
-        className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors relative cursor-pointer ${dragOver
+        className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors relative cursor-pointer ${
+          dragOver
             ? 'bg-accent/10 text-accent'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-          } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+        } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
         title="Attach files (or drag & drop)"
       >
-        <Paperclip size={15}  />
+        <Paperclip size={15} />
         {dragOver && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
@@ -191,11 +221,14 @@ const ShareMenu: React.FC<{
       <motion.button
         whileTap={{ scale: 0.95 }}
         onClick={() => setOpen(!open)}
-        className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer ${open ? 'bg-muted/60 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-          }`}
+        className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors cursor-pointer ${
+          open
+            ? 'bg-muted/60 text-foreground'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+        }`}
         title="Share & Export"
       >
-        <Share2 size={15}  />
+        <Share2 size={15} />
       </motion.button>
 
       <AnimatePresence>
@@ -220,10 +253,18 @@ const ShareMenu: React.FC<{
                   onChange={(e: any) => setExpiration(e.target.value)}
                   className="bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-white/85 outline-none cursor-pointer"
                 >
-                  <option value="1h" className="bg-popover text-foreground">1 Hour</option>
-                  <option value="1d" className="bg-popover text-foreground">1 Day</option>
-                  <option value="7d" className="bg-popover text-foreground">7 Days</option>
-                  <option value="never" className="bg-popover text-foreground">Never</option>
+                  <option value="1h" className="bg-popover text-foreground">
+                    1 Hour
+                  </option>
+                  <option value="1d" className="bg-popover text-foreground">
+                    1 Day
+                  </option>
+                  <option value="7d" className="bg-popover text-foreground">
+                    7 Days
+                  </option>
+                  <option value="never" className="bg-popover text-foreground">
+                    Never
+                  </option>
                 </select>
               </div>
 
@@ -231,11 +272,7 @@ const ShareMenu: React.FC<{
                 onClick={handleCopyLink}
                 className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 transition-colors text-white font-medium text-xs cursor-pointer"
               >
-                {copied ? (
-                  <Check size={12} />
-                ) : (
-                  <Share2 size={12} />
-                )}
+                {copied ? <Check size={12} /> : <Share2 size={12} />}
                 <span>{copied ? 'Copied!' : 'Copy Share Link'}</span>
               </button>
             </div>
@@ -247,21 +284,35 @@ const ShareMenu: React.FC<{
                     Export Format
                   </span>
                 </div>
-                {(['markdown', 'json', 'txt', 'html', 'obsidian', 'notion', 'gist'] as const).map((fmt) => (
-                  <button
-                    key={fmt}
-                    onClick={() => {
-                      onExport(fmt);
-                      setOpen(false);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-white/5 rounded text-left transition-colors cursor-pointer"
-                  >
-                    <FileText size={12} className="text-muted-foreground" />
-                    <span className="text-[11px] text-foreground/80 capitalize">
-                      {fmt === 'txt' ? 'Plain Text' : fmt === 'markdown' ? 'Markdown' : fmt === 'html' ? 'HTML Webpage' : fmt === 'obsidian' ? 'Obsidian Note' : fmt === 'notion' ? 'Notion Format' : fmt === 'gist' ? 'GitHub Gist' : fmt.toUpperCase()}
-                    </span>
-                  </button>
-                ))}
+                {(['markdown', 'json', 'txt', 'html', 'obsidian', 'notion', 'gist'] as const).map(
+                  (fmt) => (
+                    <button
+                      key={fmt}
+                      onClick={() => {
+                        onExport(fmt);
+                        setOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-white/5 rounded text-left transition-colors cursor-pointer"
+                    >
+                      <FileText size={12} className="text-muted-foreground" />
+                      <span className="text-[11px] text-foreground/80 capitalize">
+                        {fmt === 'txt'
+                          ? 'Plain Text'
+                          : fmt === 'markdown'
+                            ? 'Markdown'
+                            : fmt === 'html'
+                              ? 'HTML Webpage'
+                              : fmt === 'obsidian'
+                                ? 'Obsidian Note'
+                                : fmt === 'notion'
+                                  ? 'Notion Format'
+                                  : fmt === 'gist'
+                                    ? 'GitHub Gist'
+                                    : fmt.toUpperCase()}
+                      </span>
+                    </button>
+                  )
+                )}
               </>
             )}
           </motion.div>
@@ -271,7 +322,11 @@ const ShareMenu: React.FC<{
   );
 };
 
-const ModelUsageIndicator: React.FC<{ modelId: string | null; apiKey?: string; allModels: any[] }> = ({ modelId, apiKey, allModels }) => {
+const ModelUsageIndicator: React.FC<{
+  modelId: string | null;
+  apiKey?: string;
+  allModels: any[];
+}> = ({ modelId, apiKey, allModels }) => {
   const { usage, refreshLimits } = useUsageStore();
   const [open, setOpen] = useState(false);
 
@@ -281,7 +336,7 @@ const ModelUsageIndicator: React.FC<{ modelId: string | null; apiKey?: string; a
   }, [refreshLimits]);
 
   if (!modelId) return null;
-  const modelConfig = allModels.find(m => m.id === modelId);
+  const modelConfig = allModels.find((m) => m.id === modelId);
   const limits = modelConfig?.limits;
   if (!limits) return null;
 
@@ -298,8 +353,14 @@ const ModelUsageIndicator: React.FC<{ modelId: string | null; apiKey?: string; a
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
-      <div className="flex items-center gap-1 text-muted-foreground/80 hover:text-foreground transition-colors" title="Rate Limits">
-        <Cpu size={13} className={isCritical ? 'text-red-500' : isWarning ? 'text-amber-500' : ''} />
+      <div
+        className="flex items-center gap-1 text-muted-foreground/80 hover:text-foreground transition-colors"
+        title="Rate Limits"
+      >
+        <Cpu
+          size={13}
+          className={isCritical ? 'text-red-500' : isWarning ? 'text-amber-500' : ''}
+        />
         <span className="text-[11px] font-mono hidden xl:inline">
           {currentUsage.rpmUsed}/{limits.rpm}
         </span>
@@ -314,7 +375,9 @@ const ModelUsageIndicator: React.FC<{ modelId: string | null; apiKey?: string; a
             className="absolute top-full right-0 mt-2 w-48 bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-lg p-3 z-50 flex flex-col gap-2"
           >
             <div className="flex justify-between items-center pb-2 border-b border-border/50">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Usage limit</span>
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Usage limit
+              </span>
             </div>
 
             <div className="flex flex-col gap-1.5 text-[12px] font-mono">
@@ -327,7 +390,8 @@ const ModelUsageIndicator: React.FC<{ modelId: string | null; apiKey?: string; a
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">TPM</span>
                 <span className="text-foreground/90">
-                  {formatTokens(currentUsage.tpmUsed)} / {limits.tpm ? formatTokens(limits.tpm) : '∞'}
+                  {formatTokens(currentUsage.tpmUsed)} /{' '}
+                  {limits.tpm ? formatTokens(limits.tpm) : '∞'}
                 </span>
               </div>
               <div className="flex justify-between items-center">
@@ -389,13 +453,19 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   const localModelId = useNyxStore((s) => s.localModelId);
   const setCloudModelId = useNyxStore((s) => s.setCloudModelId);
   const setLocalModelId = useNyxStore((s) => s.setLocalModelId);
-  const luciferAgentEnabled = useNyxStore((s) => s.luciferAgentEnabled);
-  const setLuciferAgentEnabled = useNyxStore((s) => s.setLuciferAgentEnabled);
-  
+
   const localLibraryModels = useModelStore((s) => s.localLibraryModels);
 
-  const cloudModel = useMemo(() => allModels?.find(m => m.id === cloudModelId), [allModels, cloudModelId]);
-  const localModel = useMemo(() => allModels?.find(m => m.id === localModelId) || localLibraryModels?.find(m => m.id === localModelId), [allModels, localLibraryModels, localModelId]);
+  const cloudModel = useMemo(
+    () => allModels?.find((m) => m.id === cloudModelId),
+    [allModels, cloudModelId]
+  );
+  const localModel = useMemo(
+    () =>
+      allModels?.find((m) => m.id === localModelId) ||
+      localLibraryModels?.find((m) => m.id === localModelId),
+    [allModels, localLibraryModels, localModelId]
+  );
 
   const lastPrivacyToggle = useRef(0);
   const liveElapsed = useLiveTimer(isLoading);
@@ -533,52 +603,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 )}
               </AnimatePresence>
             </div>
-
-            {/* Lucifer Agent Toggle Switch (Right side of Model Selector) */}
-            <div className="flex items-center pl-1 border-l border-border/40">
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                type="button"
-                onClick={() => {
-                  const next = !luciferAgentEnabled;
-                  setLuciferAgentEnabled(next);
-                  toast.info(next ? 'Lucifer Agent Active' : 'Direct Model Mode Active', {
-                    description: next
-                      ? 'Autonomous GPU agent with TurboVec RAG, tools, and model control.'
-                      : 'Direct prompt-to-model inference without agentic orchestration.',
-                  });
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-all select-none cursor-pointer ${
-                  luciferAgentEnabled
-                    ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.12)]'
-                    : 'bg-muted/30 text-muted-foreground hover:text-foreground border border-transparent'
-                }`}
-                title={
-                  luciferAgentEnabled
-                    ? 'Lucifer Agent is ON. Click to disable and select raw models directly.'
-                    : 'Lucifer Agent is OFF. Click to enable autonomous agent mode.'
-                }
-              >
-                <Zap
-                  size={13}
-                  className={
-                    luciferAgentEnabled
-                      ? 'text-purple-400 fill-purple-400/30'
-                      : 'text-muted-foreground'
-                  }
-                />
-                <span>Lucifer</span>
-                <span
-                  className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                    luciferAgentEnabled
-                      ? 'bg-purple-400 shadow-[0_0_6px_#c084fc]'
-                      : 'bg-muted-foreground/40'
-                  }`}
-                />
-              </motion.button>
-            </div>
           </div>
-
         </div>
 
         {/* Center zone: Session title + Context */}
@@ -619,7 +644,10 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 <span className="text-[14px] font-medium text-foreground/90 truncate">
                   {sessionTitle}
                 </span>
-                <ChevronDown size={14} className="text-muted-foreground opacity-0 group-hover:opacity-50 transition-opacity shrink-0 hidden sm:block" />
+                <ChevronDown
+                  size={14}
+                  className="text-muted-foreground opacity-0 group-hover:opacity-50 transition-opacity shrink-0 hidden sm:block"
+                />
               </button>
             )}
           </div>

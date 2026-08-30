@@ -36,7 +36,11 @@ export function isModelLoaded(modelId?: string | null, loadedModel?: string | nu
   const b2 = n2.split('/').pop() || n2;
   if (b1 === b2) return true;
   const stripExt = (s: string) => s.replace(/\.(gguf|bin|safetensors|pt|pth|onnx|ckpt)$/i, '');
-  return stripExt(b1) === stripExt(b2);
+  const s1 = stripExt(b1);
+  const s2 = stripExt(b2);
+  if (s1 === s2) return true;
+
+  return false;
 }
 
 export function formatContextWindow(
@@ -111,18 +115,26 @@ export function inferModelSpecs(idOrName: string) {
       contextWindow = '128K';
       maxOutput = '4K';
     } else if (
-      name.includes('llama-3') || name.includes('llama3') ||
-      name.includes('qwen2.5') || name.includes('qwen-2.5') ||
-      name.includes('deepseek-r1') || name.includes('deepseek-v3') ||
-      name.includes('mistral-nemo') || name.includes('command-r')
+      name.includes('llama-3') ||
+      name.includes('llama3') ||
+      name.includes('qwen2.5') ||
+      name.includes('qwen-2.5') ||
+      name.includes('deepseek-r1') ||
+      name.includes('deepseek-v3') ||
+      name.includes('mistral-nemo') ||
+      name.includes('command-r')
     ) {
       contextWindow = '128K';
       maxOutput = '4K';
     } else if (
-      name.includes('hyperclovax') || name.includes('hyperclova') ||
-      name.includes('llama-2') || name.includes('llama2') ||
-      name.includes('qwen2') || name.includes('qwen-2') ||
-      name.includes('mistral-7b-v0.3') || name.includes('yi-')
+      name.includes('hyperclovax') ||
+      name.includes('hyperclova') ||
+      name.includes('llama-2') ||
+      name.includes('llama2') ||
+      name.includes('qwen2') ||
+      name.includes('qwen-2') ||
+      name.includes('mistral-7b-v0.3') ||
+      name.includes('yi-')
     ) {
       contextWindow = '32K';
       maxOutput = '4K';
@@ -182,13 +194,21 @@ export function inferModelSpecs(idOrName: string) {
     name.match(/\.(safetensors|bin|ckpt|pt|pth|onnx)$/i);
 
   let quantization = quantMatch ? quantMatch[1].toUpperCase() : 'Unknown';
-  if (quantization === 'SAFETENSORS' || quantization === 'BIN' || quantization === 'PT' || quantization === 'PTH') {
+  if (
+    quantization === 'SAFETENSORS' ||
+    quantization === 'BIN' ||
+    quantization === 'PT' ||
+    quantization === 'PTH'
+  ) {
     quantization = 'PyTorch / FP16';
   } else if (quantization === 'ONNX') {
     quantization = 'ONNX Runtime';
   } else if (quantization === 'CKPT') {
     quantization = 'Diffusers Checkpoint';
-  } else if (quantization === 'UNKNOWN' && (name.includes('instruct') || name.includes('seed') || name.includes('model'))) {
+  } else if (
+    quantization === 'UNKNOWN' &&
+    (name.includes('instruct') || name.includes('seed') || name.includes('model'))
+  ) {
     quantization = 'HuggingFace Model';
   }
 
@@ -220,16 +240,13 @@ const COMPANION_FILE_PREFIXES = [
   't5-xxl',
   't5_xxl',
 ];
-const COMPANION_FILE_EXACT = [
-  'ae.safetensors',
-  'vae.safetensors',
-];
+const COMPANION_FILE_EXACT = ['ae.safetensors', 'vae.safetensors'];
 
 function isCompanionSupportFile(name: string): boolean {
   const lower = name.toLowerCase();
   if (lower.includes('mmproj') || lower.includes('projector')) return true;
   if (COMPANION_FILE_EXACT.includes(lower)) return true;
-  if (COMPANION_FILE_PREFIXES.some(p => lower.startsWith(p))) return true;
+  if (COMPANION_FILE_PREFIXES.some((p) => lower.startsWith(p))) return true;
   // e.g. "flux1-vae.safetensors"
   if (lower.endsWith('-vae.safetensors') && !lower.includes('text')) return true;
   return false;
@@ -265,10 +282,10 @@ export function useLocalModels(enabled: boolean = true) {
                 m.model_type === 'text-to-image'
                   ? 'Diffusion'
                   : m.model_type === 'onnx'
-                  ? 'ONNX'
-                  : m.model_type === 'pytorch'
-                  ? 'PyTorch'
-                  : 'GGUF',
+                    ? 'ONNX'
+                    : m.model_type === 'pytorch'
+                      ? 'PyTorch'
+                      : 'GGUF',
               ],
               pros: ['Private', 'Fast', 'No Cloud'],
               cons: ['Requires RAM/VRAM'],

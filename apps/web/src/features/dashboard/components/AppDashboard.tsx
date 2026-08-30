@@ -12,8 +12,22 @@ import { AppRouter } from '@src/app/router';
 import { AVAILABLE_MODELS } from '@shared/config/models';
 import { useTheme } from '@src/shared/context/ThemeContext';
 import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
-import { SettingsIcon as Settings, Trash2Icon as Trash2, ChevronRightIcon as ChevronRight, UserIcon as User, ActivityIcon as Activity, FolderIcon, LayersIcon as Layers } from '@animateicons/react/lucide';
-import { Plus, PanelLeftOpen, MessageSquare, Library, FolderPlus, MoreHorizontal, Folder, Users, GitBranch, FileText, Image, Plug, Calendar, Code2, Brain } from 'lucide-react';
+import {
+  SettingsIcon as Settings,
+  Trash2Icon as Trash2,
+  ChevronRightIcon as ChevronRight,
+  UserIcon as User,
+  FolderIcon,
+} from '@animateicons/react/lucide';
+import {
+  Plus,
+  PanelLeftOpen,
+  MessageSquare,
+  Library,
+  FolderPlus,
+  MoreHorizontal,
+  Folder,
+} from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { CommandPalette } from '@src/shared/components/CommandPalette';
 
@@ -90,7 +104,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   return (
     <ErrorBoundary name="AppDashboard">
       <main className="flex h-full w-full overflow-hidden bg-background text-foreground font-sans relative selection:bg-primary/20">
-        
         {/* Mobile Sidebar Backdrop Overlay */}
         <AnimatePresence>
           {isMobile && sidebarOpen && (
@@ -108,8 +121,8 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         <motion.aside
           initial={false}
           animate={{
-          width: sidebarOpen ? 220 : 0,
-          opacity: sidebarOpen ? 1 : 0,
+            width: sidebarOpen ? 220 : 0,
+            opacity: sidebarOpen ? 1 : 0,
           }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
           className={`flex-shrink-0 flex border-r border-border h-full bg-card overflow-hidden z-20 ${
@@ -117,7 +130,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           }`}
         >
           <div className="flex flex-col h-full min-w-full bg-card">
-
             {/* Top Primary Actions */}
             <div className="px-3 pt-3 pb-2 space-y-1">
               <div
@@ -128,7 +140,9 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 }`}
               >
                 <button
-                  onClick={() => { setActiveMode('chat'); }}
+                  onClick={() => {
+                    setActiveMode('chat');
+                  }}
                   className="flex-1 flex items-center gap-2.5 px-3 py-2 text-left cursor-pointer outline-none"
                 >
                   <MessageSquare
@@ -153,8 +167,6 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                   <Plus size={10} strokeWidth={2.5} />
                 </motion.button>
               </div>
-
-
             </div>
 
             {/* Folders and Chat Session List */}
@@ -188,8 +200,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         onDeleteFolder={() => deleteFolder(folder.id)}
                         onSelectSession={(id: string) => {
                           switchSession(id);
-                          if (activeMode !== 'chat')
-                            setActiveMode('chat');
+                          if (activeMode !== 'chat') setActiveMode('chat');
                         }}
                         onDeleteSession={deleteSession}
                         updateSessionMeta={updateSessionMeta}
@@ -213,7 +224,9 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         }}
                         onDelete={() => deleteSession(session.id)}
                         folders={folders}
-                        onMoveToFolder={(folderId: string) => updateSessionMeta(session.id, { folderId })}
+                        onMoveToFolder={(folderId: string) =>
+                          updateSessionMeta(session.id, { folderId })
+                        }
                       />
                     ))}
 
@@ -230,17 +243,16 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
             {/* Bottom Section (Horizontal Navigation Grid) */}
             <div className="px-3 py-3.5 border-t border-border mt-auto space-y-3">
-              
-              <div className="grid grid-cols-4 gap-1.5 px-1">
+              <div className="grid grid-cols-2 gap-1.5 px-1">
                 {[
                   { mode: 'registry', icon: Library, label: 'Models' },
                   { mode: 'settings', icon: Settings, label: 'Settings' },
-                  { mode: 'memory', icon: Brain, label: 'Memory' },
-                  { mode: 'observability', icon: Layers, label: 'Observe' },
                 ].map(({ mode, icon: Icon, label }) => (
                   <button
                     key={mode}
-                    onClick={() => { setActiveMode(mode as any); }}
+                    onClick={() => {
+                      setActiveMode(mode as any);
+                    }}
                     title={label}
                     className={`flex flex-col items-center justify-center gap-1 rounded-lg transition-all cursor-pointer p-2 hover:bg-muted/50 ${
                       activeMode === mode
@@ -252,9 +264,13 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                       size={14}
                       className={activeMode === mode ? 'text-primary' : 'text-muted-foreground'}
                     />
-                    <span className={`text-[9px] font-medium leading-none tracking-tight ${
-                      activeMode === mode ? 'text-foreground' : 'text-muted-foreground/70'
-                    }`}>{label}</span>
+                    <span
+                      className={`text-[9px] font-medium leading-none tracking-tight ${
+                        activeMode === mode ? 'text-foreground' : 'text-muted-foreground/70'
+                      }`}
+                    >
+                      {label}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -343,49 +359,68 @@ const SideNavButton: React.FC<{
 
 /* ── Sub-components for Sidebar ──────────────── */
 
-const FolderItem = ({ folder, sessions, activeSid, onDeleteFolder, onSelectSession, onDeleteSession, updateSessionMeta, allFolders }: any) => {
+const FolderItem = ({
+  folder,
+  sessions,
+  activeSid,
+  onDeleteFolder,
+  onSelectSession,
+  onDeleteSession,
+  updateSessionMeta,
+  allFolders,
+}: any) => {
   const [isOpen, setIsOpen] = useState(false);
-  
+
   return (
     <div className="mb-1">
-      <div 
+      <div
         className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-muted/50 cursor-pointer group transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
         <div className="flex items-center gap-2 overflow-hidden">
-          <ChevronRight size={12} className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+          <ChevronRight
+            size={12}
+            className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`}
+          />
           <Folder size={12} className="text-muted-foreground flex-shrink-0" />
           <span className="text-[11px] font-medium truncate opacity-80">{folder.name}</span>
         </div>
         <button
-          onClick={(e) => { e.stopPropagation(); onDeleteFolder(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteFolder();
+          }}
           className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-red-400 transition-all"
         >
           <Trash2 size={10} />
         </button>
       </div>
-      
+
       <AnimatePresence>
         {isOpen && (
-          <motion.div 
+          <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="pl-4 mt-0.5 space-y-0.5 border-l border-border/40 ml-2.5 overflow-hidden"
           >
-            {sessions.length > 0 ? sessions.map((session: any) => (
-              <SessionItem
-                key={session.id}
-                session={session}
-                isActive={session.id === activeSid}
-                onClick={() => onSelectSession(session.id)}
-                onDelete={() => onDeleteSession(session.id)}
-                folders={allFolders}
-                onMoveToFolder={(folderId: string) => updateSessionMeta(session.id, { folderId })}
-                isNested
-              />
-            )) : (
-              <div className="py-1 px-2 text-[10px] text-muted-foreground/50 italic">Empty folder</div>
+            {sessions.length > 0 ? (
+              sessions.map((session: any) => (
+                <SessionItem
+                  key={session.id}
+                  session={session}
+                  isActive={session.id === activeSid}
+                  onClick={() => onSelectSession(session.id)}
+                  onDelete={() => onDeleteSession(session.id)}
+                  folders={allFolders}
+                  onMoveToFolder={(folderId: string) => updateSessionMeta(session.id, { folderId })}
+                  isNested
+                />
+              ))
+            ) : (
+              <div className="py-1 px-2 text-[10px] text-muted-foreground/50 italic">
+                Empty folder
+              </div>
             )}
           </motion.div>
         )}
@@ -394,7 +429,15 @@ const FolderItem = ({ folder, sessions, activeSid, onDeleteFolder, onSelectSessi
   );
 };
 
-const SessionItem = ({ session, isActive, onClick, onDelete, folders, onMoveToFolder, isNested = false }: any) => {
+const SessionItem = ({
+  session,
+  isActive,
+  onClick,
+  onDelete,
+  folders,
+  onMoveToFolder,
+  isNested = false,
+}: any) => {
   const [showMenu, setShowMenu] = useState(false);
 
   return (
@@ -419,28 +462,43 @@ const SessionItem = ({ session, isActive, onClick, onDelete, folders, onMoveToFo
       </button>
 
       {/* Action buttons appear on hover */}
-      <div className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? 'opacity-100' : ''}`}>
+      <div
+        className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? 'opacity-100' : ''}`}
+      >
         <div className="relative">
-          <button 
-            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(!showMenu);
+            }}
             className={`p-1 rounded text-muted-foreground hover:text-foreground hover:bg-background shadow-sm transition-colors ${isActive ? 'bg-background/50' : ''}`}
           >
             <MoreHorizontal size={11} />
           </button>
-          
+
           {showMenu && (
             <div className="absolute right-0 top-full mt-1 w-32 py-1 bg-popover border border-border rounded-md shadow-lg z-50 overflow-hidden">
-              <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-wider bg-muted/30">Move to</div>
-              <button 
-                onClick={(e) => { e.stopPropagation(); onMoveToFolder(null); setShowMenu(false); }}
+              <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                Move to
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveToFolder(null);
+                  setShowMenu(false);
+                }}
                 className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-muted transition-colors"
               >
                 No Folder
               </button>
               {folders?.map((f: any) => (
-                <button 
+                <button
                   key={f.id}
-                  onClick={(e) => { e.stopPropagation(); onMoveToFolder(f.id); setShowMenu(false); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveToFolder(f.id);
+                    setShowMenu(false);
+                  }}
                   className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-muted transition-colors truncate"
                 >
                   {f.name}
@@ -449,7 +507,7 @@ const SessionItem = ({ session, isActive, onClick, onDelete, folders, onMoveToFo
             </div>
           )}
         </div>
-        
+
         <button
           onClick={(e) => {
             e.stopPropagation();

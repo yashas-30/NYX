@@ -39,8 +39,8 @@ export const useProviderStatus = (
 
   useEffect(() => {
     checkAllStatuses();
-    // Increased from 30s to 60s to reduce unnecessary network calls
-    const interval = setInterval(checkAllStatuses, 60000);
+    // Increased to 5 minutes (300,000ms) to avoid consuming free-tier API quotas
+    const interval = setInterval(checkAllStatuses, 300000);
     return () => clearInterval(interval);
   }, [checkAllStatuses]);
 

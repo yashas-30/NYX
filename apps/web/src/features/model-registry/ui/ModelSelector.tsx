@@ -1,6 +1,13 @@
 // fallow-ignore-file code-duplication
 import React, { useMemo, useEffect, useRef } from 'react';
-import { SearchIcon as Search, CheckIcon as Check, InfoIcon as Info, XIcon as X, SparklesIcon as Sparkles, ZapIcon as Zap } from '@animateicons/react/lucide';
+import {
+  SearchIcon as Search,
+  CheckIcon as Check,
+  InfoIcon as Info,
+  XIcon as X,
+  SparklesIcon as Sparkles,
+  ZapIcon as Zap,
+} from '@animateicons/react/lucide';
 import { Bot, RefreshCw, HardDrive, Cpu, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -14,7 +21,11 @@ import { useModelStore } from '@src/core/stores/useModelStore';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
-import { formatContextWindow, useLocalServerStatus, isModelLoaded } from '@shared/hooks/useLocalModels';
+import {
+  formatContextWindow,
+  useLocalServerStatus,
+  isModelLoaded,
+} from '@shared/hooks/useLocalModels';
 
 interface Props {
   currentModelId?: string;
@@ -36,10 +47,14 @@ interface Props {
 }
 
 // Structured provider order for the selector
-const PROVIDER_ORDER = ['gemini', 'openrouter', 'nyx-native'];
+const PROVIDER_ORDER = ['gemini', 'openrouter', 'nvidia-nim', 'groq', 'mistral', 'nyx-native'];
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  openrouter: 'https://openrouter.ai/api/v1',
+  'nvidia-nim': 'https://integrate.api.nvidia.com/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  mistral: 'https://api.mistral.ai/v1',
 };
 
 // Emil Kowalski stagger animations
@@ -95,10 +110,10 @@ export const ModelSelector: React.FC<Props> = ({
   const loadLocalLibraryModels = useModelStore((s) => s.loadLocalLibraryModels);
   const [togglingModelId, setTogglingModelId] = React.useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = React.useState<string | null>(null);
-  
+
   // Actively sync backend state so the UI always knows if a model is running
   useLocalServerStatus();
-  
+
   const modelConfigs = useNyxStore((s) => s.modelConfigs);
   const updateModelConfig = useNyxStore((s) => s.updateModelConfig);
   const executionMode = useNyxStore((s) => s.executionMode);
@@ -115,9 +130,15 @@ export const ModelSelector: React.FC<Props> = ({
     e.stopPropagation();
     try {
       const isDownloaded = localLibraryModels.some(
-        (m) => m.id === id || (m as any).name === id || (m as any).filePath
+        (m) =>
+          isModelLoaded(m.id, id) ||
+          m.id === id ||
+          (m as any).name === id ||
+          (m as any).filePath === id
       );
-      const isLocalExt = ['.gguf', '.safetensors', '.bin', '.pt', '.pth', '.onnx', '.ckpt'].some((ext) => id.endsWith(ext));
+      const isLocalExt = ['.gguf', '.safetensors', '.bin', '.pt', '.pth', '.onnx', '.ckpt'].some(
+        (ext) => id.endsWith(ext)
+      );
       if (!isDownloaded && !isLocalExt) {
         toast.error(`Model '${id}' is not downloaded locally. Please download it first.`);
         return;
@@ -128,13 +149,29 @@ export const ModelSelector: React.FC<Props> = ({
 
       const state = useNyxStore.getState();
       const targetConfig = state.modelConfigs?.[id] || DEFAULT_SETTINGS;
-      const { contextSize, gpuLayers, threads: cpuThreads, flashAttention, kvCacheType, useMlock, batchSize, draftModelId, disableKvOffload } = targetConfig;
+      const {
+        contextSize,
+        gpuLayers,
+        threads: cpuThreads,
+        flashAttention,
+        kvCacheType,
+        useMlock,
+        batchSize,
+        draftModelId,
+        disableKvOffload,
+      } = targetConfig;
 
       let resolvedKvCacheType = kvCacheType;
       if (kvCacheType === 'auto') {
-        const model = allModels.find(m => m.id === id);
+        const model = allModels.find((m) => m.id === id);
         const quantization = (model?.specs as any)?.quantization?.toLowerCase() || '';
-        if (quantization.includes('q4') || quantization.includes('q5') || quantization.includes('q6') || quantization.includes('q2') || quantization.includes('q3')) {
+        if (
+          quantization.includes('q4') ||
+          quantization.includes('q5') ||
+          quantization.includes('q6') ||
+          quantization.includes('q2') ||
+          quantization.includes('q3')
+        ) {
           resolvedKvCacheType = 'q4_0';
         } else if (quantization.includes('f16') || quantization.includes('f32')) {
           resolvedKvCacheType = 'f16';
@@ -168,36 +205,45 @@ export const ModelSelector: React.FC<Props> = ({
       };
 
       // Now that resolve/reject exist, register all listeners and AWAIT them
-      const [unlistenLoading, unlistenReady, unlistenError, unlistenVram, unlistenDownload] = await Promise.all([
-        listen<{ elapsed_secs?: number; status?: string }>('llm-server-loading', (event) => {
-          const { elapsed_secs, status } = event.payload;
-          if (status) {
-            setLoadingStatus(status);
-          } else if (elapsed_secs !== undefined) {
-            const timeStr = elapsed_secs > 60 ? `${Math.floor(elapsed_secs / 60)}m ${Math.floor(elapsed_secs % 60)}s` : `${elapsed_secs}s`;
-            setLoadingStatus(`Loading model... ${timeStr}`);
-          }
-        }),
-        listen<{ progress: number; status: string }>('llm-download-progress', (event) => {
-          const { progress, status } = event.payload;
-          setLoadingStatus(`${status} (${Math.round(progress)}%)`);
-        }),
-        listen<{ status: string }>('llm-server-ready', () => {
-          cleanup();
-          deferredResolve();
-        }),
-        listen<{ error: string }>('llm-server-error', (event) => {
-          cleanup();
-          deferredReject(new Error(event.payload.error));
-        }),
-        listen<{ ngl: number, fully_gpu: boolean, suggest_cloud_fallback: boolean, message: string }>('vram-decision', (event) => {
-          if (event.payload.suggest_cloud_fallback) {
-            toast.warning(event.payload.message, { duration: 10000, id: 'vram-decision' });
-          } else {
-            toast.info(event.payload.message, { id: 'vram-decision' });
-          }
-        }),
-      ]);
+      const [unlistenLoading, unlistenReady, unlistenError, unlistenVram, unlistenDownload] =
+        await Promise.all([
+          listen<{ elapsed_secs?: number; status?: string }>('llm-server-loading', (event) => {
+            const { elapsed_secs, status } = event.payload;
+            if (status) {
+              setLoadingStatus(status);
+            } else if (elapsed_secs !== undefined) {
+              const timeStr =
+                elapsed_secs > 60
+                  ? `${Math.floor(elapsed_secs / 60)}m ${Math.floor(elapsed_secs % 60)}s`
+                  : `${elapsed_secs}s`;
+              setLoadingStatus(`Loading model... ${timeStr}`);
+            }
+          }),
+          listen<{ progress: number; status: string }>('llm-download-progress', (event) => {
+            const { progress, status } = event.payload;
+            setLoadingStatus(`${status} (${Math.round(progress)}%)`);
+          }),
+          listen<{ status: string }>('llm-server-ready', () => {
+            cleanup();
+            deferredResolve();
+          }),
+          listen<{ error: string }>('llm-server-error', (event) => {
+            cleanup();
+            deferredReject(new Error(event.payload.error));
+          }),
+          listen<{
+            ngl: number;
+            fully_gpu: boolean;
+            suggest_cloud_fallback: boolean;
+            message: string;
+          }>('vram-decision', (event) => {
+            if (event.payload.suggest_cloud_fallback) {
+              toast.warning(event.payload.message, { duration: 10000, id: 'vram-decision' });
+            } else {
+              toast.info(event.payload.message, { id: 'vram-decision' });
+            }
+          }),
+        ]);
 
       unlistenFns = [unlistenLoading, unlistenReady, unlistenError, unlistenVram, unlistenDownload];
 
@@ -316,8 +362,11 @@ export const ModelSelector: React.FC<Props> = ({
 
   const groupedModels = useMemo(() => {
     const groups: Record<string, ModelOption[]> = {
-      'gemini': [],
-      'openrouter': [],
+      gemini: [],
+      openrouter: [],
+      'nvidia-nim': [],
+      groq: [],
+      mistral: [],
       'nyx-native': [],
     };
     mergedModels.forEach((model) => {
@@ -352,17 +401,15 @@ export const ModelSelector: React.FC<Props> = ({
     );
   }, [groupedModels, selectedProvider, searchTerm]);
 
-  // Virtualizer setup — cap visible height to 5 rows for ALL providers so the list is
-  // compact, scrollable, and never floods the selector modal.
-  const ROW_ESTIMATE_PX = 52;
-  const MAX_VISIBLE_ROWS = 5;
-  const listMaxHeight = Math.min(filteredModels.length, MAX_VISIBLE_ROWS) * ROW_ESTIMATE_PX;
+  // Virtualizer setup — compact, scrollable list
+  const ROW_ESTIMATE_PX = 56;
+  const listMaxHeight = Math.min(Math.max(filteredModels.length * ROW_ESTIMATE_PX, 160), 380);
 
   const rowVirtualizer = useVirtualizer({
     count: filteredModels.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_ESTIMATE_PX,
-    overscan: 5,
+    overscan: 8,
   });
 
   const dropdownClassName =
@@ -433,16 +480,16 @@ export const ModelSelector: React.FC<Props> = ({
                 const status = providerStatuses?.[provider];
                 const isActive = selectedProvider === provider;
 
-              return (
-                <motion.button
-                  key={provider}
-                  whileTap={{ scale: 0.97 }}
-                  type="button"
-                  onClick={() => {
-                    onProviderChange(provider);
-                    onSearchChange('');
-                  }}
-                  className={`
+                return (
+                  <motion.button
+                    key={provider}
+                    whileTap={{ scale: 0.97 }}
+                    type="button"
+                    onClick={() => {
+                      onProviderChange(provider);
+                      onSearchChange('');
+                    }}
+                    className={`
                     w-full flex items-center justify-between px-1.5 py-1 rounded-md transition-all duration-300 group cursor-pointer border
                     ${
                       isActive
@@ -452,29 +499,29 @@ export const ModelSelector: React.FC<Props> = ({
                         : 'hover:bg-muted/50 border-transparent text-muted-foreground hover:text-foreground'
                     }
                   `}
-                >
-                  <span className="flex-1 text-left text-[8.2px] font-bold truncate leading-none">
-                    {getProviderLabel(provider)}
-                  </span>
+                  >
+                    <span className="flex-1 text-left text-[8.2px] font-bold truncate leading-none">
+                      {getProviderLabel(provider)}
+                    </span>
 
-                  {/* Status Indicator Glow Dot */}
-                  {providerStatuses && (
-                    <div className="relative flex items-center shrink-0 ml-1">
-                      <div
-                        className={`w-1.5 h-1.5 rounded-md ${
-                          status === 'online'
-                            ? 'bg-emerald-400 animate-pulse'
-                            : status === 'no-key'
-                              ? 'bg-zinc-700'
-                              : 'bg-zinc-800'
-                        }`}
-                      />
-                    </div>
-                  )}
-                </motion.button>
-              );
-            })}
-          </div>
+                    {/* Status Indicator Glow Dot */}
+                    {providerStatuses && (
+                      <div className="relative flex items-center shrink-0 ml-1">
+                        <div
+                          className={`w-1.5 h-1.5 rounded-md ${
+                            status === 'online'
+                              ? 'bg-emerald-400 animate-pulse'
+                              : status === 'no-key'
+                                ? 'bg-zinc-700'
+                                : 'bg-zinc-800'
+                          }`}
+                        />
+                      </div>
+                    )}
+                  </motion.button>
+                );
+              })}
+            </div>
           )}
 
           {/* Right Box: Models Grid */}
@@ -493,7 +540,10 @@ export const ModelSelector: React.FC<Props> = ({
             <div
               ref={parentRef}
               className="flex-1 overflow-y-auto p-2 custom-scrollbar"
-              style={listMaxHeight !== undefined ? { maxHeight: listMaxHeight, height: listMaxHeight } : undefined}
+              style={{
+                maxHeight: `${listMaxHeight}px`,
+                minHeight: filteredModels.length > 0 ? '160px' : 'auto',
+              }}
             >
               {filteredModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center space-y-2 py-6">
@@ -549,9 +599,7 @@ export const ModelSelector: React.FC<Props> = ({
                             }
                           `}
                         >
-                          <div 
-                            className="flex items-center justify-between gap-1.5"
-                          >
+                          <div className="flex items-center justify-between gap-1.5">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1">
                                 <h4
@@ -594,28 +642,32 @@ export const ModelSelector: React.FC<Props> = ({
                                 )}
 
                                 {/* Inline Monospace Specs Badge */}
-                                {(model as any).specs?.quantization && (model as any).specs.quantization !== 'Unknown' && (
-                                  <span className="text-[6px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 shrink-0 ml-auto leading-none">
-                                    {(model as any).specs.quantization}
-                                  </span>
-                                )}
+                                {(model as any).specs?.quantization &&
+                                  (model as any).specs.quantization !== 'Unknown' && (
+                                    <span className="text-[6px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 shrink-0 ml-auto leading-none">
+                                      {(model as any).specs.quantization}
+                                    </span>
+                                  )}
                                 {(() => {
-                                   const modelCfg = modelConfigs?.[model.id];
-                                   const displayCtx = (modelCfg?.contextSize && modelCfg.contextSize > 0)
-                                     ? formatContextWindow(modelCfg.contextSize, model.name)
-                                     : model.specs?.contextWindow;
-                                   return displayCtx ? (
-                                     <span className={`text-[6px] font-mono font-bold text-muted-foreground/80 bg-muted px-1 py-0.5 rounded border border-border shrink-0 leading-none ${(model as any).specs?.quantization && (model as any).specs.quantization !== 'Unknown' ? '' : 'ml-auto'}`}>
-                                       {displayCtx}
-                                     </span>
-                                   ) : null;
-                                 })()}
-                                {((model as any).capabilities?.vision) && (
+                                  const modelCfg = modelConfigs?.[model.id];
+                                  const displayCtx =
+                                    modelCfg?.contextSize && modelCfg.contextSize > 0
+                                      ? formatContextWindow(modelCfg.contextSize, model.name)
+                                      : model.specs?.contextWindow;
+                                  return displayCtx ? (
+                                    <span
+                                      className={`text-[6px] font-mono font-bold text-muted-foreground/80 bg-muted px-1 py-0.5 rounded border border-border shrink-0 leading-none ${(model as any).specs?.quantization && (model as any).specs.quantization !== 'Unknown' ? '' : 'ml-auto'}`}
+                                    >
+                                      {displayCtx}
+                                    </span>
+                                  ) : null;
+                                })()}
+                                {(model as any).capabilities?.vision && (
                                   <span className="text-[6px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-1 py-0.5 rounded border border-indigo-500/20 shrink-0 leading-none">
                                     👁️ Vision
                                   </span>
                                 )}
-                                {((model as any).capabilities?.reasoning) && (
+                                {(model as any).capabilities?.reasoning && (
                                   <span className="text-[6px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 shrink-0 leading-none">
                                     🧠 Reasoning
                                   </span>
@@ -629,7 +681,10 @@ export const ModelSelector: React.FC<Props> = ({
 
                             <div className="flex items-center gap-1 shrink-0">
                               {/* Settings / Info Button */}
-                              {(model.features || model.pros || model.cons || model.provider === 'nyx-native') && (
+                              {(model.features ||
+                                model.pros ||
+                                model.cons ||
+                                model.provider === 'nyx-native') && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -637,108 +692,139 @@ export const ModelSelector: React.FC<Props> = ({
                                     setExpandedModelId(isExpanded ? null : model.id);
                                   }}
                                   className={`p-1 rounded transition-colors ${
-                                    isExpanded 
-                                      ? 'bg-primary/20 text-primary' 
+                                    isExpanded
+                                      ? 'bg-primary/20 text-primary'
                                       : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                                   }`}
-                                  title={model.provider === 'nyx-native' ? "Model Settings & Info" : "View features"}
+                                  title={
+                                    model.provider === 'nyx-native'
+                                      ? 'Model Settings & Info'
+                                      : 'View features'
+                                  }
                                 >
                                   <Info size={12} />
                                 </button>
                               )}
-                              
-                                {model.provider === 'nyx-native' && (() => {
-                                   const isThisModelLoaded = isModelLoaded(model.id, loadedLocalModel);
-                                   const isAnyModelLoaded = !!loadedLocalModel;
-                                   return (
-                                     <button
-                                       type="button"
-                                       onClick={(e) =>
-                                         isThisModelLoaded
-                                           ? handleUnloadModel(e)
-                                           : handleLoadModel(model.id, e)
-                                       }
-                                       disabled={togglingModelId !== null}
-                                       className={`
+
+                              {model.provider === 'nyx-native' &&
+                                (() => {
+                                  const isThisModelLoaded = isModelLoaded(
+                                    model.id,
+                                    loadedLocalModel
+                                  );
+                                  const isAnyModelLoaded = !!loadedLocalModel;
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={(e) =>
+                                        isThisModelLoaded
+                                          ? handleUnloadModel(e)
+                                          : handleLoadModel(model.id, e)
+                                      }
+                                      disabled={togglingModelId !== null}
+                                      className={`
                                          px-2 py-0.5 rounded border text-[7px] font-bold tracking-wider uppercase transition-colors shrink-0
                                          ${
                                            isThisModelLoaded
                                              ? 'bg-red-500/20 border-red-500/40 text-red-400 hover:bg-red-500/30 font-black'
                                              : isAnyModelLoaded
-                                             ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
-                                             : 'bg-primary/10 border-primary/20 text-primary hover:bg-primary/20'
+                                               ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
+                                               : 'bg-primary/10 border-primary/20 text-primary hover:bg-primary/20'
                                          }
                                          ${togglingModelId !== null ? 'opacity-50 cursor-not-allowed' : ''}
                                        `}
-                                     >
-                                       {togglingModelId === model.id
-                                         ? loadingStatus || 'STARTING...'
-                                         : isThisModelLoaded
-                                         ? 'UNLOAD'
-                                         : isAnyModelLoaded
-                                         ? 'SWITCH'
-                                         : 'LOAD'}
-                                     </button>
-                                   );
-                                 })()}
-                              
-                                {isSelected && (
-                                  <div
-                                    className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ml-0.5 ${isNoKey ? 'bg-muted border border-border text-muted-foreground' : 'bg-primary border border-primary/20 text-primary-foreground'}`}
-                                  >
-                                    <Check
-                                      className={`w-2 h-2 ${isNoKey ? 'text-muted-foreground' : 'text-primary-foreground'}`}
-                                    />
-                                  </div>
-                                )}
-                              </div>
+                                    >
+                                      {togglingModelId === model.id
+                                        ? loadingStatus || 'STARTING...'
+                                        : isThisModelLoaded
+                                          ? 'UNLOAD'
+                                          : isAnyModelLoaded
+                                            ? 'SWITCH'
+                                            : 'LOAD'}
+                                    </button>
+                                  );
+                                })()}
+
+                              {isSelected && (
+                                <div
+                                  className={`w-3.5 h-3.5 rounded-md flex items-center justify-center shrink-0 ml-0.5 ${isNoKey ? 'bg-muted border border-border text-muted-foreground' : 'bg-primary border border-primary/20 text-primary-foreground'}`}
+                                >
+                                  <Check
+                                    className={`w-2 h-2 ${isNoKey ? 'text-muted-foreground' : 'text-primary-foreground'}`}
+                                  />
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           {/* Expanded Details */}
                           <AnimatePresence>
-                            {isExpanded && (model.features || model.pros || model.cons || model.provider === 'nyx-native') && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 'auto', opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                className="overflow-hidden"
-                              >
-                                <div className="pt-2 mt-1 border-t border-border/30 flex flex-col gap-2">
-
-                                  
-                                  {model.features && model.features.length > 0 && (
-                                    <div>
-                                      <span className="text-[7px] font-black uppercase tracking-widest text-muted-foreground/80">Features</span>
-                                      <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
-                                        {model.features.map((f: string, i: number) => (
-                                          <li key={i} className="text-[8px] text-foreground/80 leading-snug">{f}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  )}
-                                  {model.pros && model.pros.length > 0 && (
-                                    <div>
-                                      <span className="text-[7px] font-black uppercase tracking-widest text-emerald-500/80">Good</span>
-                                      <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
-                                        {model.pros.map((p: string, i: number) => (
-                                          <li key={i} className="text-[8px] text-emerald-500/90 leading-snug">{p}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  )}
-                                  {model.cons && model.cons.length > 0 && (
-                                    <div>
-                                      <span className="text-[7px] font-black uppercase tracking-widest text-destructive/80">Bad</span>
-                                      <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
-                                        {model.cons.map((c: string, i: number) => (
-                                          <li key={i} className="text-[8px] text-destructive/90 leading-snug">{c}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  )}
-                                </div>
-                              </motion.div>
-                            )}
+                            {isExpanded &&
+                              (model.features ||
+                                model.pros ||
+                                model.cons ||
+                                model.provider === 'nyx-native') && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  className="overflow-hidden"
+                                >
+                                  <div className="pt-2 mt-1 border-t border-border/30 flex flex-col gap-2">
+                                    {model.features && model.features.length > 0 && (
+                                      <div>
+                                        <span className="text-[7px] font-black uppercase tracking-widest text-muted-foreground/80">
+                                          Features
+                                        </span>
+                                        <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
+                                          {model.features.map((f: string, i: number) => (
+                                            <li
+                                              key={i}
+                                              className="text-[8px] text-foreground/80 leading-snug"
+                                            >
+                                              {f}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {model.pros && model.pros.length > 0 && (
+                                      <div>
+                                        <span className="text-[7px] font-black uppercase tracking-widest text-emerald-500/80">
+                                          Good
+                                        </span>
+                                        <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
+                                          {model.pros.map((p: string, i: number) => (
+                                            <li
+                                              key={i}
+                                              className="text-[8px] text-emerald-500/90 leading-snug"
+                                            >
+                                              {p}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {model.cons && model.cons.length > 0 && (
+                                      <div>
+                                        <span className="text-[7px] font-black uppercase tracking-widest text-destructive/80">
+                                          Bad
+                                        </span>
+                                        <ul className="list-disc list-outside ml-3 mt-0.5 space-y-0.5">
+                                          {model.cons.map((c: string, i: number) => (
+                                            <li
+                                              key={i}
+                                              className="text-[8px] text-destructive/90 leading-snug"
+                                            >
+                                              {c}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              )}
                           </AnimatePresence>
                         </motion.div>
                       </div>
@@ -749,7 +835,6 @@ export const ModelSelector: React.FC<Props> = ({
             </div>
           </div>
         </div>
-
       </motion.div>
 
       {/* CSS Scrollbar Overrides */}

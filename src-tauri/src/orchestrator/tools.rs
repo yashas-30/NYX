@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use crate::commands::agent::search_web_command;
+use crate::commands::tools::search_web_command;
 use std::path::PathBuf;
 use tokio::fs;
 

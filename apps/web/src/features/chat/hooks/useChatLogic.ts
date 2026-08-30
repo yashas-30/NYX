@@ -9,9 +9,18 @@ import { ModelDefinition, ChatMessage, ToolCall, StreamEvent } from '@src/infras
 import { useMessageHistory } from '@src/shared/hooks/useMessageHistory';
 import { AIService, cancelRequest, cancelAllRequests } from '@src/features/ai/services/ai.service';
 import { toast } from '@src/shared/components/ui/sonner';
-import { detectProvider, getEffectiveApiKey, getModelCapabilities, isReasoningModel } from '@src/infrastructure/utils/provider';
+import {
+  detectProvider,
+  getEffectiveApiKey,
+  getModelCapabilities,
+  isReasoningModel,
+} from '@src/infrastructure/utils/provider';
 import { useUsageStore } from '@src/core/stores/useUsageStore';
-import { compactHistory, compactHistoryAsync, estimateContextTokens } from '@src/infrastructure/utils/compaction';
+import {
+  compactHistory,
+  compactHistoryAsync,
+  estimateContextTokens,
+} from '@src/infrastructure/utils/compaction';
 import { buildChatPrompts, ChatContext } from '@src/core/prompts/chatPrompts';
 import { stripThinkingContent } from '@src/utils/textUtils';
 import { PlanPhase } from '@src/types/agent';
@@ -19,7 +28,6 @@ import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { useAppStore } from '@src/stores/useAppStore';
-import { useModelStore } from '@src/core/stores/useModelStore';
 import { useChatPipeline } from './useChatPipeline';
 
 // ---------------------------------------------------------------------------
@@ -97,13 +105,16 @@ interface ConversationMetrics {
 }
 
 interface ChatLogicReturn {
-  activeAgent: 'lucifer';
   isLoading: boolean;
   history: ChatMessage[];
   metrics: ConversationMetrics;
   models: Record<'nyx', string>;
   setModel: (modelId: string) => void;
-  runChat: (prompt: string, images?: ChatImage[], options?: { skipUserMessage?: boolean; modelOverride?: string }) => Promise<boolean>;
+  runChat: (
+    prompt: string,
+    images?: ChatImage[],
+    options?: { skipUserMessage?: boolean; modelOverride?: string }
+  ) => Promise<boolean>;
   stopChat: () => void;
   clearHistory: () => void;
   suggestedPrompts: string[];
@@ -240,11 +251,10 @@ export const useChatLogic = ({
   const models = propModels ?? localModels;
   const modelSystemPrompts = useNyxStore((s) => s.modelSystemPrompts);
 
-
   // --- History with reducer for atomic updates ---
   const [history, dispatch] = useReducer(historyReducer, []);
   const historyRef = useRef<ChatMessage[]>([]);
-  
+
   // --- Active Stream State (2026 Standard) ---
   const [activeStreamMessage, setActiveStreamMessage] = useState<ChatMessage | null>(null);
   // Keep a ref to the active stream so we can safely commit it when done
@@ -315,7 +325,6 @@ export const useChatLogic = ({
     return;
   }, [chatSessions?.activeSid]);
 
-
   // -------------------------------------------------------------------------
   // Session synchronization
   // -------------------------------------------------------------------------
@@ -328,7 +337,7 @@ export const useChatLogic = ({
   const persistHistory = useCallback(
     (messages: ChatMessage[], options?: { newSession?: boolean; title?: string }) => {
       const sid = activeSidRef.current;
-      const validMessages = messages.filter(m => m.status !== 'error');
+      const validMessages = messages.filter((m) => m.status !== 'error');
 
       if (!sid || options?.newSession) {
         if (isCreatingSessionRef.current) return;
@@ -388,7 +397,8 @@ export const useChatLogic = ({
     const isStreaming = activeStreamMessage !== null;
 
     if (isStreaming) {
-      const isToolCalling = activeStreamMessage.toolCalls && activeStreamMessage.toolCalls.length > 0;
+      const isToolCalling =
+        activeStreamMessage.toolCalls && activeStreamMessage.toolCalls.length > 0;
       return {
         content: activeStreamMessage.content || '',
         reasoning: activeStreamMessage.reasoning || '',
@@ -434,21 +444,26 @@ export const useChatLogic = ({
 
   const stopChat = useCallback(() => {
     // Tell Tauri backend to explicitly stop any running agent/LLM loops
-    const isTauriEnv = typeof window !== 'undefined' &&
+    const isTauriEnv =
+      typeof window !== 'undefined' &&
       ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
     if (isTauriEnv) {
       // import('@tauri-apps/api/core').then(m => m.invoke('cancel_agent_loop')).catch(console.error);
     }
-    
+
     cancelPipeline();
     cancelRequest('chat-stream');
   }, [cancelPipeline]);
 
   // Stable refs for loading/stopChat so the session sync effect doesn't re-run on every render
   const loadingRef = useRef(isLoading);
-  useEffect(() => { loadingRef.current = isLoading; }, [isLoading]);
+  useEffect(() => {
+    loadingRef.current = isLoading;
+  }, [isLoading]);
   const stopChatRef = useRef(stopChat);
-  useEffect(() => { stopChatRef.current = stopChat; }, [stopChat]);
+  useEffect(() => {
+    stopChatRef.current = stopChat;
+  }, [stopChat]);
 
   useEffect(() => {
     if (activeSid !== lastActiveSidRef.current) {
@@ -461,6 +476,7 @@ export const useChatLogic = ({
           stopChatRef.current();
         }
         const msgs = activeSessionMessages || [];
+        historyRef.current = msgs;
         dispatch({ type: 'SET', messages: msgs });
         setActiveStreamMessage(null);
         activeStreamRef.current = null;
@@ -474,14 +490,10 @@ export const useChatLogic = ({
       activeSessionMessages.length >= historyRef.current.length &&
       !areMessagesEqual(activeSessionMessages, historyRef.current)
     ) {
+      historyRef.current = activeSessionMessages;
       dispatch({ type: 'SET', messages: activeSessionMessages });
     }
-  }, [
-    activeSid,
-    activeSessionMessages,
-    clearMetrics,
-    chatSessions?.activeSession?.title,
-  ]);
+  }, [activeSid, activeSessionMessages, clearMetrics, chatSessions?.activeSession?.title]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -556,15 +568,23 @@ export const useChatLogic = ({
         }))
         .filter((img) => !!img.data);
 
-      const { cloudModelId, localModelId } = useNyxStore.getState();
-      const modelToUse = (cloudModelId || localModelId) as string;
+      const nyxState = useNyxStore.getState();
+      const modelToUse =
+        nyxState.currentModel?.id ||
+        nyxState.cloudModelId ||
+        nyxState.localModelId ||
+        models?.nyx ||
+        '';
 
       if (!modelToUse) {
-        toast.error('Please select at least one model (Cloud or Local).');
+        toast.error('Please select a model first.');
         return;
       }
 
-      runChatRef.current?.(userMsg.content, mappedImages, { skipUserMessage: true, modelOverride: modelToUse });
+      runChatRef.current?.(userMsg.content, mappedImages, {
+        skipUserMessage: true,
+        modelOverride: modelToUse,
+      });
     },
     [persistHistory]
   );
@@ -572,7 +592,10 @@ export const useChatLogic = ({
   const branchFromMessage = useCallback(
     (index: number): string | null => {
       const branchedHistory = historyRef.current.slice(0, index + 1).map((msg) => ({ ...msg }));
-      const newSid = chatSessions.createSession?.(branchedHistory, { branchOf: activeSid, branchAtIndex: index });
+      const newSid = chatSessions.createSession?.(branchedHistory, {
+        branchOf: activeSid,
+        branchAtIndex: index,
+      });
       if (newSid) {
         chatSessions.switchSession?.(newSid);
         toast.success('Branched conversation from this message');
@@ -652,17 +675,18 @@ export const useChatLogic = ({
 
   const approveTool = useCallback(async (index: number, approvalId: string) => {
     try {
-      const isTauriEnv = typeof window !== 'undefined' &&
+      const isTauriEnv =
+        typeof window !== 'undefined' &&
         ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-      
+
       if (isTauriEnv) {
         await invoke('approve_tool', { approvalId });
       }
-      
+
       dispatch({
         type: 'UPDATE',
         index,
-        updater: (msg) => ({ ...msg, pendingApproval: null })
+        updater: (msg) => ({ ...msg, pendingApproval: null }),
       });
     } catch (err: any) {
       toast.error(`Failed to approve tool: ${err.message || String(err)}`);
@@ -671,17 +695,18 @@ export const useChatLogic = ({
 
   const rejectTool = useCallback(async (index: number, approvalId: string) => {
     try {
-      const isTauriEnv = typeof window !== 'undefined' &&
+      const isTauriEnv =
+        typeof window !== 'undefined' &&
         ('_tauri' in window || '__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-      
+
       if (isTauriEnv) {
         await invoke('reject_tool', { approvalId });
       }
-      
+
       dispatch({
         type: 'UPDATE',
         index,
-        updater: (msg) => ({ ...msg, pendingApproval: null, status: 'stopped' })
+        updater: (msg) => ({ ...msg, pendingApproval: null, status: 'stopped' }),
       });
     } catch (err: any) {
       toast.error(`Failed to reject tool: ${err.message || String(err)}`);
@@ -689,7 +714,6 @@ export const useChatLogic = ({
   }, []);
 
   return {
-    activeAgent: 'lucifer',
     isLoading,
     history,
     metrics,

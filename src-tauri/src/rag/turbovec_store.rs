@@ -42,6 +42,39 @@ impl TurbovecStore {
         }
     }
 
+    /// Stores a scraped web document into LanceDB vector memory for model context and future retrieval
+    pub async fn add_scraped_document(&self, url: &str, title: &str, content: &str) {
+        let clean_content = content.trim();
+        if clean_content.len() < 50 {
+            return;
+        }
+
+        const CHUNK_SIZE: usize = 1500;
+        let chars: Vec<char> = clean_content.chars().collect();
+        let total = chars.len();
+        let mut start = 0;
+        let mut chunk_idx = 1;
+
+        while start < total {
+            let end = usize::min(start + CHUNK_SIZE, total);
+            let chunk: String = chars[start..end].iter().collect();
+
+            let structured = format!(
+                "### Web Source: \"{}\" ({}) [Part {}]\n{}",
+                title, url, chunk_idx, chunk
+            );
+            let meta = format!("web_scrape|url:{}|title:{}|chunk:{}", url, title, chunk_idx);
+
+            self.add_memory_with_meta(&structured, &meta).await;
+
+            if end >= total {
+                break;
+            }
+            start += CHUNK_SIZE.saturating_sub(200);
+            chunk_idx += 1;
+        }
+    }
+
     /// Stores a single structured conversation turn (User Prompt + Model Response) into vector memory.
     pub async fn add_structured_turn(
         &self,

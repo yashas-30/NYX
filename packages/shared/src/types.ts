@@ -1,7 +1,20 @@
 import { z } from 'zod';
 
 // Provider definition
-export type ModelProvider = 'gemini' | 'terminal' | 'openai' | 'groq' | 'together' | 'perplexity' | 'anthropic' | 'openrouter' | 'deepseek' | 'nyx-native';
+export type ModelProvider =
+  | 'gemini'
+  | 'terminal'
+  | 'openai'
+  | 'groq'
+  | 'together'
+  | 'perplexity'
+  | 'anthropic'
+  | 'openrouter'
+  | 'deepseek'
+  | 'nyx-native'
+  | 'nvidia-nim'
+  | 'nvidia'
+  | 'mistral';
 export type Provider = ModelProvider;
 
 // Telemetry Metrics schema and type
@@ -47,42 +60,58 @@ export const ChatMessageSchema = z.object({
   rolloutId: z.string().optional(),
   reward: z.number().nullable().optional(),
   isPinned: z.boolean().optional(),
-  images: z.array(z.object({
-    name: z.string(),
-    mimeType: z.string().optional(),
-    data: z.string().optional(), // base64
-    url: z.string().optional(),
-    aspectRatio: z.string().optional(),
-    engine: z.string().optional(),
-  })).optional(),
+  images: z
+    .array(
+      z.object({
+        name: z.string(),
+        mimeType: z.string().optional(),
+        data: z.string().optional(), // base64
+        url: z.string().optional(),
+        aspectRatio: z.string().optional(),
+        engine: z.string().optional(),
+      })
+    )
+    .optional(),
 
-  videos: z.array(z.object({
-    url: z.string(),
-    previewUrl: z.string().optional(),
-    title: z.string().optional(),
-    duration: z.number().optional(),
-    source: z.string().optional(),
-    author: z.string().optional(),
-    authorUrl: z.string().optional(),
-  })).optional(),
+  videos: z
+    .array(
+      z.object({
+        url: z.string(),
+        previewUrl: z.string().optional(),
+        title: z.string().optional(),
+        duration: z.number().optional(),
+        source: z.string().optional(),
+        author: z.string().optional(),
+        authorUrl: z.string().optional(),
+      })
+    )
+    .optional(),
 
-  audios: z.array(z.object({
-    url: z.string(),
-    title: z.string().optional(),
-    artist: z.string().optional(),
-    duration: z.number().optional(),
-    source: z.string().optional(),
-    tags: z.string().optional(),
-    previewUrl: z.string().optional(),
-  })).optional(),
+  audios: z
+    .array(
+      z.object({
+        url: z.string(),
+        title: z.string().optional(),
+        artist: z.string().optional(),
+        duration: z.number().optional(),
+        source: z.string().optional(),
+        tags: z.string().optional(),
+        previewUrl: z.string().optional(),
+      })
+    )
+    .optional(),
 
-  attachments: z.array(z.object({
-    name: z.string(),
-    url: z.string().optional(),
-    type: z.string().optional(),
-    size: z.number().optional(),
-    mimeType: z.string().optional(),
-  })).optional(),
+  attachments: z
+    .array(
+      z.object({
+        name: z.string(),
+        url: z.string().optional(),
+        type: z.string().optional(),
+        size: z.number().optional(),
+        mimeType: z.string().optional(),
+      })
+    )
+    .optional(),
   reasoning: z.string().optional(),
   thinkingTimeMs: z.number().optional(),
   model: z.string().optional(),
@@ -112,25 +141,43 @@ export type ModelStatus = 'ga' | 'preview' | 'deprecated' | 'alias';
 export const ModelOptionSchema = z.object({
   id: z.string(),
   name: z.string(),
-  provider: z.enum(['gemini', 'terminal', 'openai', 'groq', 'together', 'perplexity', 'anthropic', 'openrouter', 'deepseek', 'nyx-native']),
+  provider: z.enum([
+    'gemini',
+    'terminal',
+    'openai',
+    'groq',
+    'together',
+    'perplexity',
+    'anthropic',
+    'openrouter',
+    'deepseek',
+    'nyx-native',
+    'nvidia-nim',
+    'nvidia',
+    'mistral',
+  ]),
   description: z.string(),
   isLocal: z.boolean().optional(),
   status: z.enum(['ga', 'preview', 'deprecated', 'alias']).optional().default('ga'),
   shutdownDate: z.string().optional(), // ISO date string for deprecated models
   specs: ModelSpecsSchema.optional(),
-  capabilities: z.object({
-    vision: z.boolean().optional(),
-    reasoning: z.boolean().optional(),
-  }).optional(),
+  capabilities: z
+    .object({
+      vision: z.boolean().optional(),
+      reasoning: z.boolean().optional(),
+    })
+    .optional(),
   features: z.array(z.string()).optional(),
   pros: z.array(z.string()).optional(),
   cons: z.array(z.string()).optional(),
   supportsThinking: z.boolean().optional(),
-  limits: z.object({
-    rpm: z.number().nullable(),
-    tpm: z.number().nullable(),
-    rpd: z.number().nullable(),
-  }).optional(),
+  limits: z
+    .object({
+      rpm: z.number().nullable().optional(),
+      tpm: z.number().nullable().optional(),
+      rpd: z.number().nullable().optional(),
+    })
+    .optional(),
 });
 export type ModelOption = z.infer<typeof ModelOptionSchema>;
 
@@ -156,3 +203,21 @@ export const TOKEN_ESTIMATE_DIVISORS = {
 
 export const LOCAL_MODEL_PORT = 12345;
 
+export interface ToolCall {
+  id?: string;
+  index?: number;
+  name?: string;
+  arguments?: string | Record<string, any>;
+  [key: string]: any;
+}
+
+export interface Artifact {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  language?: string;
+  [key: string]: any;
+}
+
+export type ChatArtifact = Artifact;

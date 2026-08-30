@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { CheckIcon as Check, TerminalIcon as Terminal, ChevronDownIcon as ChevronDown } from '@animateicons/react/lucide';
+import {
+  CheckIcon as Check,
+  TerminalIcon as Terminal,
+  ChevronDownIcon as ChevronDown,
+} from '@animateicons/react/lucide';
 import { CopyIcon as Copy } from '@animateicons/react/lucide';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -22,11 +26,22 @@ export const ErrorRenderer: React.FC<ErrorRendererProps> = ({ content, onRetry }
     content &&
     (content.includes('[UNAVAILABLE]') ||
       content.toLowerCase().includes('high demand') ||
-      content.includes('429'))
+      // Match "Request failed (429)" — status code in parens, not incidentally in body text
+      /Request failed \(429\)/i.test(content) ||
+      content.includes('RESOURCE_EXHAUSTED'))
+  );
+
+  const isModelNotFound = !!(
+    content &&
+    (/Request failed \(40[04]\)/i.test(content) ||
+      content.toLowerCase().includes('not found') ||
+      content.toLowerCase().includes('does not exist'))
   );
 
   const cleanErrorMessage = content.startsWith('Error: Error:') ? content.substring(7) : content;
-  const errorMessage = cleanErrorMessage || 'Error: Generation failed. Please check your model settings or connection.';
+  const errorMessage =
+    cleanErrorMessage ||
+    'Error: Generation failed. Please check your model settings or connection.';
 
   const copyDiagnostics = () => {
     navigator.clipboard.writeText(errorMessage);
@@ -36,33 +51,56 @@ export const ErrorRenderer: React.FC<ErrorRendererProps> = ({ content, onRetry }
   };
 
   const bgClass = isHighDemand
-    ? 'border-orange-500/20 bg-orange-500/[0.03] dark:bg-[oklch(0.75_0.18_65/0.05)] shadow-orange-950/5 text-orange-200'
-    : 'border-red-500/20 bg-red-500/[0.03] dark:bg-[oklch(0.63_0.22_28.5/0.05)] shadow-red-950/5 text-red-200';
+    ? 'border-orange-500/20 bg-orange-500/[0.03] shadow-orange-950/5 text-orange-200'
+    : isModelNotFound
+      ? 'border-amber-500/20 bg-amber-500/[0.03] shadow-amber-950/5 text-amber-200'
+      : 'border-red-500/20 bg-red-500/[0.03] shadow-red-950/5 text-red-200';
 
   const badgeClass = isHighDemand
     ? 'bg-orange-500/10 text-orange-300 border-orange-500/20'
-    : 'bg-red-500/10 text-red-300 border-red-500/20';
+    : isModelNotFound
+      ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+      : 'bg-red-500/10 text-red-300 border-red-500/20';
 
-  const iconClass = isHighDemand ? 'text-orange-400 animate-pulse' : 'text-red-400';
-  const title = isHighDemand ? 'High Server Load Detected' : 'Execution Engine Alert';
+  const iconClass = isHighDemand
+    ? 'text-orange-400 animate-pulse'
+    : isModelNotFound
+      ? 'text-amber-400'
+      : 'text-red-400';
+
+  const title = isHighDemand
+    ? 'Rate Limit Reached'
+    : isModelNotFound
+      ? 'Model Not Available'
+      : 'Execution Engine Alert';
+
+  const description = isHighDemand
+    ? 'You have hit the free-tier rate limit for this model (429 RESOURCE_EXHAUSTED). Wait a minute and retry, or select a model with a higher RPM limit.'
+    : isModelNotFound
+      ? 'The selected model ID was not found on the API. It may have been deprecated or renamed. Open the model selector and choose a different model.'
+      : 'An unexpected error occurred during execution. Check your API key and network connection, then retry.';
 
   return (
-    <div className={`my-3 rounded-xl border p-4 shadow-sm backdrop-blur-md transition-all duration-300 ${bgClass}`}>
+    <div
+      className={`my-3 rounded-xl border p-4 shadow-sm backdrop-blur-md transition-all duration-300 ${bgClass}`}
+    >
       <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg bg-background/50 border border-border/10 shrink-0 ${iconClass}`}>
+        <div
+          className={`p-2 rounded-lg bg-background/50 border border-border/10 shrink-0 ${iconClass}`}
+        >
           <AlertTriangle className="w-4 h-4 animate-pulse" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h4 className="font-semibold text-[13px] tracking-tight">{title}</h4>
-            <span className={`text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded border ${badgeClass}`}>
-              {isHighDemand ? '429 Limit' : 'Inference Error'}
+            <span
+              className={`text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded border ${badgeClass}`}
+            >
+              {isHighDemand ? '429 Limit' : isModelNotFound ? '404 Not Found' : 'Inference Error'}
             </span>
           </div>
           <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap break-words max-w-full font-sans">
-            {isHighDemand
-              ? 'The inference server is currently experiencing extremely high volume. Your request has been queued but rate-limited.'
-              : 'An unexpected error occurred during execution. This could be due to a backend crash or configuration misalignment.'}
+            {description}
           </p>
         </div>
       </div>
@@ -89,7 +127,9 @@ export const ErrorRenderer: React.FC<ErrorRendererProps> = ({ content, onRetry }
         >
           <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
           <span>{showLogs ? 'Hide Diagnostics' : 'Inspect Diagnostics'}</span>
-          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showLogs ? 'rotate-180' : ''}`} />
+          <ChevronDown
+            className={`w-3.5 h-3.5 transition-transform duration-200 ${showLogs ? 'rotate-180' : ''}`}
+          />
         </button>
       </div>
 
@@ -101,7 +141,11 @@ export const ErrorRenderer: React.FC<ErrorRendererProps> = ({ content, onRetry }
               onClick={copyDiagnostics}
               className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             >
-              {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+              {copied ? (
+                <Check className="w-3 h-3 text-emerald-400" />
+              ) : (
+                <Copy className="w-3 h-3" />
+              )}
               <span>{copied ? 'Copied' : 'Copy Log'}</span>
             </button>
           </div>

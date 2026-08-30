@@ -6,6 +6,10 @@ import {
 
 const DEFAULT_GATEWAY_URLS: Record<string, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  openrouter: 'https://openrouter.ai/api/v1',
+  'nvidia-nim': 'https://integrate.api.nvidia.com/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  mistral: 'https://api.mistral.ai/v1',
 };
 
 export const useSecurityState = (

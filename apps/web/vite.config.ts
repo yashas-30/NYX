@@ -18,38 +18,40 @@ export default defineConfig(({ mode }) => {
       wasm(),
       topLevelAwait(),
       svgr(),
-      ...(mode === 'production' ? [
-        VitePWA({
-          registerType: 'autoUpdate',
-          workbox: {
-            maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
-          },
-          manifest: {
-            name: 'NYX Coder Workspace',
-            short_name: 'NYX',
-            description: 'Transparent agentic AI coding workspace',
-            theme_color: '#09090b',
-            icons: [
-              {
-                src: '/icon-192.png',
-                sizes: '192x192',
-                type: 'image/png',
+      ...(mode === 'production'
+        ? [
+            VitePWA({
+              registerType: 'autoUpdate',
+              workbox: {
+                maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
               },
-              {
-                src: '/icon-512.png',
-                sizes: '512x512',
-                type: 'image/png',
+              manifest: {
+                name: 'NYX Coder Workspace',
+                short_name: 'NYX',
+                description: 'Transparent agentic AI coding workspace',
+                theme_color: '#09090b',
+                icons: [
+                  {
+                    src: '/icon-192.png',
+                    sizes: '192x192',
+                    type: 'image/png',
+                  },
+                  {
+                    src: '/icon-512.png',
+                    sizes: '512x512',
+                    type: 'image/png',
+                  },
+                ],
               },
-            ],
-          },
-        }),
-        visualizer({
-          open: false,
-          gzipSize: true,
-          brotliSize: true,
-          filename: 'dist/stats.html'
-        })
-      ] : [])
+            }),
+            visualizer({
+              open: false,
+              gzipSize: true,
+              brotliSize: true,
+              filename: 'dist/stats.html',
+            }),
+          ]
+        : []),
     ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
@@ -101,8 +103,10 @@ export default defineConfig(({ mode }) => {
           manualChunks(id) {
             if (id.includes('node_modules')) {
               if (id.includes('shiki')) return 'vendor-shiki';
-              if (id.includes('katex') || id.includes('rehype-katex') || id.includes('remark-math')) return 'vendor-katex';
-              if (id.includes('react-markdown') || id.includes('remark') || id.includes('rehype')) return 'vendor-markdown';
+              if (id.includes('katex') || id.includes('rehype-katex') || id.includes('remark-math'))
+                return 'vendor-katex';
+              if (id.includes('react-markdown') || id.includes('remark') || id.includes('rehype'))
+                return 'vendor-markdown';
               if (id.includes('@tanstack/react-virtual')) return 'vendor-virtual';
               if (id.includes('lucide-react')) return 'vendor-icons';
               if (id.includes('motion')) return 'vendor-animation';
@@ -114,7 +118,11 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    clearScreen: false,
     server: {
+      host: '0.0.0.0',
+      port: 3000,
+      strictPort: true,
       watch: {
         usePolling: false,
         ignored: [
@@ -133,8 +141,6 @@ export default defineConfig(({ mode }) => {
           '**/conversations.json',
         ],
       },
-      port: 3000,
-      strictPort: true,
       proxy: undefined /* process.env.FASTIFY_VITE_EMBEDDED ? undefined : {
         '/uploads': {
           target: 'http://127.0.0.1:3001',

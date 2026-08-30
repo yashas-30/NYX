@@ -70,7 +70,32 @@ app.add_middleware(
 GLOBAL_MODEL = None
 GLOBAL_TOKENIZER = None
 GLOBAL_MODEL_ID = "nyx-native-model"
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def detect_accelerator() -> str:
+    """Detect available GPU/NPU accelerator. Fails fast if none found (CPU inference disabled)."""
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        print(f"[NyxNativeServer] Dedicated GPU detected: {gpu_name} ({vram_gb:.1f} GB VRAM) via CUDA.")
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        print("[NyxNativeServer] Apple Silicon GPU detected via Metal Performance Shaders (MPS).")
+        return "mps"
+    try:
+        import torch_directml
+        if torch_directml.is_available():
+            print("[NyxNativeServer] iGPU/dGPU detected via DirectML.")
+            return "directml"
+    except ImportError:
+        pass
+
+    print("[NyxNativeServer] FATAL: No GPU (CUDA/MPS/DirectML) or NPU detected on this system.", file=sys.stderr)
+    print("[NyxNativeServer] NYX local inference is GPU-only. CPU inference is disabled.", file=sys.stderr)
+    sys.exit(1)
+
+
+DEVICE = detect_accelerator()
 
 
 def find_model_config_dir(model_path: str) -> Optional[str]:
@@ -101,32 +126,20 @@ _DIFFUSERS_SUBCOMPONENT_NAMES = {
 }
 
 
-def is_diffusers_subcomponent(model_path: str) -> bool:
-    """
-    Returns True if model_path is a Diffusers pipeline subcomponent directory
-    that cannot be loaded as a standalone text-generation model.
-    Detects this by:
-      1. Folder name is a known subcomponent name, OR
-      2. config.json exists with _class_name / _diffusers_version but no model_type.
-    """
-    folder_name = os.path.basename(os.path.normpath(model_path))
-    config_path = os.path.join(model_path, "config.json") if os.path.isdir(model_path) else None
+def is_diffusers_subcomponent(path: str) -> bool:
+    """Return True if path is a sub-folder of a Diffusers pipeline (e.g. text_encoder, vae)."""
+    basename = os.path.basename(os.path.normpath(path)).lower()
+    if basename in _DIFFUSERS_SUBCOMPONENT_NAMES:
+        return True
 
-    # Check config.json content first — definitive signal
-    if config_path and os.path.exists(config_path):
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            has_model_type = "model_type" in cfg
-            has_diffusers_marker = "_class_name" in cfg or "_diffusers_version" in cfg
-            if has_diffusers_marker and not has_model_type:
-                return True
-        except Exception:
-            pass
+    parent = os.path.dirname(os.path.abspath(path))
+    parent_model_index = os.path.join(parent, "model_index.json")
+    if os.path.exists(parent_model_index):
+        return True
 
-    # Fallback: known subcomponent name AND no model_type in config
-    if folder_name.lower() in _DIFFUSERS_SUBCOMPONENT_NAMES:
-        if config_path and os.path.exists(config_path):
+    if os.path.isdir(path):
+        config_path = os.path.join(path, "config.json")
+        if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     cfg = json.load(f)
@@ -135,7 +148,6 @@ def is_diffusers_subcomponent(model_path: str) -> bool:
             except Exception:
                 pass
         elif not (config_path and os.path.exists(config_path)):
-            # No config at all + known subcomponent name = definitely a subcomponent
             return True
 
     return False
@@ -145,12 +157,16 @@ def load_native_model(model_path: str, repo_id: Optional[str] = None, gpu_layers
     global GLOBAL_MODEL, GLOBAL_TOKENIZER, GLOBAL_MODEL_ID, DEVICE
     GLOBAL_MODEL_ID = os.path.basename(model_path)
 
+    if gpu_layers <= 0:
+        print("[NyxNativeServer] FATAL: gpu_layers <= 0 passed, but CPU inference is disabled in NYX.", file=sys.stderr)
+        sys.exit(1)
+
     if cpu_threads and cpu_threads > 0:
         try:
             torch.set_num_threads(cpu_threads)
-            print(f"[NyxNativeServer] Configured PyTorch CPU threads: {cpu_threads}")
+            print(f"[NyxNativeServer] Configured PyTorch helper threads: {cpu_threads}")
         except Exception as e:
-            print(f"[NyxNativeServer] Warning setting CPU threads: {e}", file=sys.stderr)
+            print(f"[NyxNativeServer] Warning setting helper threads: {e}", file=sys.stderr)
 
     config_dir = find_model_config_dir(model_path)
     model_source = config_dir if config_dir else (repo_id if repo_id else model_path)
@@ -182,18 +198,19 @@ def load_native_model(model_path: str, repo_id: Optional[str] = None, gpu_layers
     if GLOBAL_TOKENIZER and GLOBAL_TOKENIZER.pad_token is None:
         GLOBAL_TOKENIZER.pad_token = GLOBAL_TOKENIZER.eos_token
 
-    # Determine CPU/GPU Layer Splitting & Offloading
-    cuda_available = torch.cuda.is_available()
-    print(f"[NyxNativeServer] CUDA Available: {cuda_available} | Requested GPU Layers: {gpu_layers}")
+    # Determine GPU precision
+    if DEVICE == "cuda":
+        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    else:
+        dtype = torch.float16
 
-    dtype = torch.float16 if cuda_available else torch.float32
+    print(f"[NyxNativeServer] Target Accelerator: {DEVICE} | Precision: {dtype}")
 
     # Detect Diffusers pipeline subcomponents — warn but do not exit
     if os.path.isdir(model_path) and is_diffusers_subcomponent(model_path):
         folder_name = os.path.basename(os.path.normpath(model_path))
         print(
-            f"[NyxNativeServer] WARNING: '{folder_name}' is a Diffusers pipeline subcomponent, not a standalone model. "
-            f"Loading anyway in fallback mode...",
+            f"[NyxNativeServer] WARNING: '{folder_name}' is a Diffusers pipeline subcomponent, not a standalone model.",
             file=sys.stderr,
         )
 
@@ -203,54 +220,35 @@ def load_native_model(model_path: str, repo_id: Optional[str] = None, gpu_layers
         sys.exit(1)
 
     try:
-        if cuda_available and gpu_layers > 0:
-            total_vram_bytes = torch.cuda.get_device_properties(0).total_memory
-            total_vram_mb = int(total_vram_bytes / (1024 * 1024))
-            
-            gpu_ratio = min(float(gpu_layers) / 32.0, 1.0) if gpu_layers < 99 else 1.0
-            allocated_gpu_mb = int(total_vram_mb * gpu_ratio * 0.88)
-
-            offload_dir = os.path.join(os.path.dirname(os.path.abspath(model_path)), ".nyx_offload")
-            os.makedirs(offload_dir, exist_ok=True)
-
-            print(f"[NyxNativeServer] CPU/GPU Layer Offloading Active -> VRAM Limit: {allocated_gpu_mb} MB / {total_vram_mb} MB | CPU Offload Enabled.")
-
-            max_memory = {0: f"{allocated_gpu_mb}MB", "cpu": "64GB"}
-            
-            try:
-                GLOBAL_MODEL = load_model_with_fallbacks(
-                    model_source,
-                    torch_dtype=dtype,
-                    trust_remote_code=True,
-                    low_cpu_mem_usage=True,
-                    device_map="auto",
-                    max_memory=max_memory,
-                    offload_folder=offload_dir,
-                )
-                DEVICE = "cuda"
-            except Exception as gpu_err:
-                print(f"[NyxNativeServer] GPU offloading failed ({gpu_err}). Falling back to CPU RAM loading...", file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
-                GLOBAL_MODEL = load_model_with_fallbacks(
-                    model_source,
-                    torch_dtype=torch.float32,
-                    trust_remote_code=True,
-                    low_cpu_mem_usage=True,
-                    device_map="cpu",
-                )
-                DEVICE = "cpu"
-        else:
-            print("[NyxNativeServer] Loading model on CPU...")
+        print(f"[NyxNativeServer] Loading model 100% on GPU ({DEVICE})...")
+        if DEVICE == "cuda":
             GLOBAL_MODEL = load_model_with_fallbacks(
                 model_source,
-                torch_dtype=torch.float32,
+                torch_dtype=dtype,
                 trust_remote_code=True,
                 low_cpu_mem_usage=True,
-                device_map="cpu",
+                device_map="auto",
             )
-            DEVICE = "cpu"
+        elif DEVICE == "directml":
+            import torch_directml
+            dml = torch_directml.device()
+            raw_model = load_model_with_fallbacks(
+                model_source,
+                torch_dtype=dtype,
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+            )
+            GLOBAL_MODEL = raw_model.to(dml)
+        else:
+            GLOBAL_MODEL = load_model_with_fallbacks(
+                model_source,
+                torch_dtype=dtype,
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+                device_map="auto",
+            )
 
-        print(f"[NyxNativeServer] Model successfully loaded on device: {DEVICE}.")
+        print(f"[NyxNativeServer] Model successfully loaded on GPU ({DEVICE}) with 100% layer acceleration.")
     except OSError as os_err:
         err_msg = str(os_err)
         print(f"[NyxNativeServer] OSError loading model from '{model_source}': {err_msg}", file=sys.stderr)

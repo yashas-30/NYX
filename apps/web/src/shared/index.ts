@@ -15,7 +15,6 @@ export * from './components/ui/skeleton';
 export * from './components/ui/sonner';
 export * from './components/ui/tabs';
 export * from './components/ui/badge';
-export * from './components/ui/CodeMirrorBlock';
 export * from './components/ui/NodeToggle';
 export * from './components/ui/ProviderIcon';
 export * from './components/ui/StatusBadge';

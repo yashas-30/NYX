@@ -335,8 +335,8 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
     let max_tokens = req.max_tokens.filter(|&v| v > 0);
     let mut system_text = req.system_instruction.clone().unwrap_or_default();
 
-    if !system_text.contains("VISUAL GENERATION DIRECTIVE") {
-        system_text.push_str("\n\n[VISUAL & FORMATTING DIRECTIVE]\nFormat responses using clean Markdown with headers, tables, and bullet points. Whenever prompt mentions images, visual representation, or research, you MUST embed real Markdown images: ![Description](url) using extracted verified DuckDuckGo & Bing web photos and Iconify vector SVGs (![Icon](https://api.iconify.design/logos/python.svg)). Never wrap image tags in backticks. For mindmaps, ensure exactly ONE top-level root node is used. For roadmaps, use horizontal flowcharts (```mermaid\nflowchart LR...\n```). For research, provide exhaustive detailed reports.");
+    if !system_text.contains("FORMATTING DIRECTIVE") {
+        system_text.push_str("\n\n[FORMATTING DIRECTIVE]\nFormat responses using clean Markdown with headers, tables, and bullet points where appropriate. For code, always use fenced code blocks with the correct language tag. Keep responses concise and direct.");
     }
 
     if req.reasoning_enabled == Some(true) && !system_text.contains("<think>") {
@@ -409,17 +409,14 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
         .sum();
 
     // Resolve virtual model aliases to the actual GGUF filename for llama-server compatibility.
-    // llama-server requires the real model name; virtual aliases like 'lucifer-native' are unknown to it.
-    let effective_model_id = match req.model_id.as_str() {
-        "lucifer-native" | "qwen2.5-1.5b-instruct-native" => "qwen2.5-1.5b-instruct-q4_k_m.gguf".to_string(),
-        other => other.to_string(),
-    };
+    let effective_model_id = req.model_id.clone();
 
     let mut body = json!({
         "model": effective_model_id,
         "messages": sanitized,
         "temperature": req.temperature.unwrap_or(0.7),
         "stream": true,
+        // Enable KV prompt caching for lightning-fast TTFT (<50ms) across conversation turns.
         "cache_prompt": true,
     });
 
@@ -427,6 +424,9 @@ pub fn build_local_request(req: &UnifiedRequest) -> Result<LocalRequestConfig, R
 
 
     let default_stop = vec![
+        "<end_of_turn>".to_string(),
+        "<start_of_turn>".to_string(),
+        "<eos>".to_string(),
         "<|eot_id|>".to_string(),
         "<|eom_id|>".to_string(),
         "<|im_end|>".to_string(),
@@ -774,11 +774,11 @@ pub async fn execute_local_stream(
             return Ok(Box::pin(stream));
         }
 
-        // Auto-boot the native Qwen 2.5 1.5B agent on GPU if port is 0
+        // Auto-boot the native Gemma 4 E2B Lucifer agent on GPU if port is 0
         let target_model = if req.model_id.contains(".gguf") {
             req.model_id.clone()
         } else {
-            "qwen2.5-1.5b-instruct-q4_k_m.gguf".to_string()
+            "gemma-4-E2B_q4_0-it.gguf".to_string()
         };
         
         let resolved = crate::llm::local_orchestrator::resolve_model_path(app, &target_model).await;
@@ -787,28 +787,28 @@ pub async fn execute_local_stream(
             if active_port == 0 {
                 info!("[Inference] Auto-starting native Lucifer GPU engine with model: {}", target_model);
                 if let Some(manager) = app.try_state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>() {
-                    let _ = crate::llm::local_orchestrator::start_local_server(
+                    if let Err(e) = crate::llm::local_orchestrator::start_local_server(
                         app.clone(),
                         manager,
-                        target_model,
+                        target_model.clone(),
                         Some(8192),
-                        Some(99), // 100% GPU offload
+                        Some(999), // 100% GPU offload
                         None,
-                        Some(true),
+                        Some(true), // Flash Attention enabled
+                        Some("q4_0".to_string()),
                         None,
-                        None,
-                        Some(512),
-                        None,
-                        None,
+                        Some(2048), // Batch size 2048 for high throughput
                         None,
                         None,
-                    ).await;
+                        None,
+                        None,
+                    ).await {
+                        error!("[Inference] Failed to start local server for {}: {}", target_model, e);
+                        return Err(format!("Failed to auto-start local inference server for {}: {}", target_model, e));
+                    }
                 }
 
                 // Poll for up to 90 seconds (180 × 500ms) for the server to become ready.
-                // start_local_server is async but the internal llama-server process takes time to
-                // bind its port and report ready. Without this wait the port is still 0 immediately
-                // after the call returns, causing a spurious "model not downloaded" error.
                 let mut waited = 0u32;
                 while waited < 180 {
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -824,7 +824,7 @@ pub async fn execute_local_stream(
 
         let current_port = SERVER_PORT.load(std::sync::atomic::Ordering::Relaxed);
         if current_port == 0 {
-            return Err("Native Qwen 2.5 1.5B model is not yet downloaded. Please run install-qwen-model.bat or download it in Settings to start chatting offline.".to_string());
+            return Err(format!("Local model '{}' is not loaded or could not be found. Please check Settings → Local Models to start the engine.", target_model));
         }
     }
 

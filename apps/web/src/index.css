@@ -258,7 +258,7 @@
 @keyframes smooth-reveal {
   0% {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(4px);
   }
   100% {
     opacity: 1;
@@ -267,8 +267,7 @@
 }
 
 .animate-smooth-reveal {
-  animation: smooth-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  opacity: 0; /* Ensures it is hidden before the animation starts */
+  animation: smooth-reveal 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   will-change: transform, opacity;
 }
 

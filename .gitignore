@@ -1,95 +1,62 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Build outputs
 build/
 dist/
-coverage/
-.DS_Store
-*.log
-*.err
-.env*
-!.env.example
-.nyx-cache/
-.claude/
-graphify-out/*
-!graphify-out/graph.html
-!graphify-out/sampleData.json
-!graphify-out/verify.ps1
-!graphify-out/extract.ps1
-!graphify-out/extract2.ps1
-scratch/
-.nyx-models/
 dist-server/
 dist-desktop/
 dist-electron/
-*.pdf
-src-tauri/target/
-
-.nyx-keys/
-.gemini/
-.commandcode/
-claude-obsidian/
-
-# Local databases and runtime state
-.nyx-state/
-*.db
-*.db-shm
-*.db-wal
-
-# Temporary text extracts and test files
-extracted_text*.txt
-nul .txt
-test_api.py
-node_modules/
-build/
-dist/
+release/
 coverage/
-.DS_Store
-*.log
-*.err
-.env*
-!.env.example
-.nyx-cache/
-.claude/
-graphify-out/*
-!graphify-out/graph.html
-!graphify-out/sampleData.json
-!graphify-out/verify.ps1
-!graphify-out/extract.ps1
-!graphify-out/extract2.ps1
-scratch/
-.nyx-models/
-dist-server/
-dist-desktop/
-dist-electron/
-*.pdf
-src-tauri/target/
-
-.nyx-keys/
-.gemini/
-.commandcode/
-claude-obsidian/
-
-# Local databases and runtime state
-.nyx-state/
-*.db
-*.db-shm
-*.db-wal
-
-# Temporary text extracts and test files
-extracted_text*.txt
-nul .txt
-test_api.py
-scripts/debug-console.cjs
-. t u r b o /  
- . w o r k t r e e s /  
- 
-.worktrees/
 .turbo/
+.worktrees/
 uploads/
-
 /tmp/
-
-/dist/
-/dist-desktop/
-/release/
 /playwright-report/
 /test-results/
+
+# Rust / Tauri build artifacts
+src-tauri/target/
+src-tauri/**/target/
+src-tauri/temp_target/
+src-tauri/.fastembed_cache/
+
+# Graphify / Scratch / Logs
+graphify-out/*
+!graphify-out/graph.json
+!graphify-out/GRAPH_REPORT.md
+!graphify-out/wiki/
+scratch/
+tools/scratch/
+*.log
+*.err
+
+# Environment & Keys
+.env*
+!.env.example
+.nyx-keys/
+.nyx-cache/
+.nyx-models/
+
+# Local databases and runtime state
+.nyx-state/
+*.db
+*.db-shm
+*.db-wal
+
+# OS / Editor
+.DS_Store
+.vscode/
+.gemini/
+.claude/
+.commandcode/
+claude-obsidian/
+
+# Documents & temporary artifacts
+*.pdf
+*.pptx
+extracted_text*.txt
+test_api.py
+scripts/debug-console.cjs

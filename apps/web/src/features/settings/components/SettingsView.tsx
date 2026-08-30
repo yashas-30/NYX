@@ -1,16 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
-import { BookOpenIcon as BookOpen, ExternalLinkIcon as ExternalLink, ZapIcon as Zap, GlobeIcon as Globe, SettingsIcon as SettingsIcon, ChevronUpIcon as ChevronUp, ChevronDownIcon as ChevronDown, SearchIcon as Search, UserIcon as User } from '@animateicons/react/lucide';
-import { Network, HelpCircle, Cpu, Database, Palette } from 'lucide-react';
+import { SettingsIcon } from '@animateicons/react/lucide';
+import { KeyRound } from 'lucide-react';
 import { useTokenUsage } from '@src/shared/context/TokenUsageContext';
-import { toast } from '@src/shared/components/ui/sonner';
-
-
 import { ApiKeyVault } from './ApiKeyVault';
-import { ModelSettingsSection } from './ModelSettingsSection';
-import { CacheClean } from './CacheClean';
-import { SearchSettingsSection } from './SearchSettingsSection';
 
 interface SettingsViewProps {
   apiKeys: Record<string, string>;
@@ -23,39 +17,20 @@ interface SettingsViewProps {
   sidebarOpen?: boolean;
 }
 
-const QUANT_TIERS = ['Q4_K_M', 'Q5_K_M', 'Q6_K'] as const;
-type QuantTierId = (typeof QUANT_TIERS)[number];
-
 export const SettingsView: React.FC<SettingsViewProps> = ({
   apiKeys,
   clearApiKeys,
-  gatewayUrls = {},
-  updateGatewayUrl = () => {},
   sidebarOpen = true,
 }) => {
   const { refreshProviderQuota } = useTokenUsage();
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
-
   const [vaultStatus, setVaultStatus] = useState<Record<string, boolean>>({});
   const [keysInput, setKeysInput] = useState<Record<string, string>>({});
-
-  const [selectedQuant, setSelectedQuant] = useState<QuantTierId>(() => {
-    return (localStorage.getItem('nyx_quant') as QuantTierId) || 'Q5_K_M';
-  });
-
-  const [cacheStats, setCacheStats] = useState<{
-    itemCount: number;
-    totalSizeBytes: number;
-    hits: number;
-    misses: number;
-  }>({ itemCount: 0, totalSizeBytes: 0, hits: 0, misses: 0 });
-
-  const [activeTab, setActiveTab] = useState<string>('api-keys');
 
   const fetchVaultStatus = async () => {
     try {
       const res: any = await invoke('vault:status');
-      if (res.success && res.data) {
+      if (res && res.success && res.data) {
         setVaultStatus(res.data);
       }
     } catch (e: any) {
@@ -63,19 +38,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const fetchCacheStats = async () => {
-    try {
-      // In native Tauri mode, cache stats are either not applicable or handled differently.
-      // Since the get_cache_stats endpoint doesn't exist yet in the Rust backend,
-      // we set this to null instead of faking zeros.
-      setCacheStats(null as any);
-    } catch (err: any) {
-      console.error('Failed to fetch cache stats:', err);
-    }
-  };
-
   useEffect(() => {
-    fetchCacheStats();
     fetchVaultStatus();
   }, []);
 
@@ -87,16 +50,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     });
   }, [vaultStatus, refreshProviderQuota]);
 
-
   const toggleExpanded = (providerId: string) => {
-    setExpandedProvider(expandedProvider === providerId ? null : providerId);
+    setExpandedProvider((prev) => (prev === providerId ? null : providerId));
   };
-
-  const TABS = [
-    { id: 'api-keys', label: 'API Keys', icon: <Database size={14} /> },
-    { id: 'models', label: 'Models & Cache', icon: <Cpu size={14} /> },
-    { id: 'search', label: 'Web Search', icon: <Globe size={14} /> },
-  ];
 
   return (
     <motion.div
@@ -107,63 +63,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       transition={{ duration: 0.05 }}
       className="h-full w-full flex flex-col min-h-0 overflow-hidden bg-background"
     >
-      {/* Settings header — tabs inline, no internal sidebar */}
+      {/* Settings header */}
       <header
-        className={`h-10 flex items-center gap-6 px-6 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-card transition-all duration-300`}
+        className={`h-10 flex items-center justify-between px-6 ${!sidebarOpen ? 'pl-14' : ''} border-b border-border shrink-0 select-none bg-card transition-all duration-300`}
       >
         <div className="flex items-center gap-2 shrink-0">
           <SettingsIcon size={14} className="text-primary" />
-          <h2 className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">Settings</h2>
+          <h2 className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
+            Settings <span className="text-muted-foreground/40 font-normal">/</span> API Key Vault &
+            Model Providers
+          </h2>
         </div>
 
-        {/* Horizontal tab pills */}
-        <div className="flex items-center gap-0.5">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium transition-colors duration-150 cursor-pointer ${
-                activeTab === tab.id
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
-              }`}
-            >
-              <span className={activeTab === tab.id ? 'text-primary' : 'text-muted-foreground/60'}>{tab.icon}</span>
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-accent/5 border border-accent/15 text-[10px] font-mono text-accent">
+          <KeyRound size={11} />
+          <span>Device Secured Vault</span>
         </div>
       </header>
 
       {/* Full-width content area */}
       <div className="flex-1 overflow-y-auto p-6 scrollbar-none bg-background">
         <div className="max-w-screen-xl mx-auto space-y-6 pb-12">
-          {activeTab === 'api-keys' && (
-            <ApiKeyVault
-              apiKeys={apiKeys}
-              vaultStatus={vaultStatus}
-              keysInput={keysInput}
-              setKeysInput={setKeysInput}
-              expandedProvider={expandedProvider}
-              toggleExpanded={toggleExpanded}
-              fetchVaultStatus={fetchVaultStatus}
-              clearApiKeys={clearApiKeys}
-            />
-          )}
-
-          {activeTab === 'models' && (
-            <div className="space-y-6">
-              <ModelSettingsSection
-                selectedQuant={selectedQuant}
-                setSelectedQuant={setSelectedQuant}
-              />
-              <CacheClean cacheStats={cacheStats} fetchCacheStats={fetchCacheStats} />
-            </div>
-          )}
-
-          {activeTab === 'search' && (
-            <SearchSettingsSection />
-          )}
+          <ApiKeyVault
+            apiKeys={apiKeys}
+            vaultStatus={vaultStatus}
+            keysInput={keysInput}
+            setKeysInput={setKeysInput}
+            expandedProvider={expandedProvider}
+            toggleExpanded={toggleExpanded}
+            fetchVaultStatus={fetchVaultStatus}
+            clearApiKeys={clearApiKeys}
+          />
         </div>
       </div>
     </motion.div>

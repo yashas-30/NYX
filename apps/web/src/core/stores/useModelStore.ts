@@ -62,13 +62,26 @@ export const useModelStore = create<ModelState>((set, get) => {
     setLoadedLocalModel: (modelId) => {
       const lib = get().localLibraryModels;
       const def = modelId ? lib.find((m: any) => m.id === modelId) : null;
-      const imageGen = !!(def?.capabilities?.imageGen) ||
+      const imageGen =
+        !!def?.capabilities?.imageGen ||
         // Fallback: check known image-model keywords in the ID itself
-        (!!modelId && [
-          'text_encoder', 'text-encoder', 'vae', 'transformer',
-          'flux', 'diffusion', 'stable', 'sdxl', 'sd3', 'sd1', 'sd2',
-          'controlnet', 'lora', 'unet',
-        ].some(kw => modelId.toLowerCase().includes(kw)));
+        (!!modelId &&
+          [
+            'text_encoder',
+            'text-encoder',
+            'vae',
+            'transformer',
+            'flux',
+            'diffusion',
+            'stable',
+            'sdxl',
+            'sd3',
+            'sd1',
+            'sd2',
+            'controlnet',
+            'lora',
+            'unet',
+          ].some((kw) => modelId.toLowerCase().includes(kw)));
       set({ loadedLocalModel: modelId, isActiveModelImageGen: imageGen });
     },
 
@@ -77,11 +90,22 @@ export const useModelStore = create<ModelState>((set, get) => {
       try {
         let modelsData: any[] = [];
 
-        const tauriModels: any = await invoke('list_local_models');
-        modelsData = tauriModels || [];
+        if (
+          typeof window !== 'undefined' &&
+          ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)
+        ) {
+          const tauriModels: any = await invoke('list_local_models');
+          modelsData = tauriModels || [];
+        }
 
         const completed = modelsData
-          .filter((m: any) => (!m.status || m.status === 'completed') && m.model_type !== 'vision' && !m.name?.toLowerCase().includes('mmproj') && !m.id?.toLowerCase().includes('mmproj'))
+          .filter(
+            (m: any) =>
+              (!m.status || m.status === 'completed') &&
+              m.model_type !== 'vision' &&
+              !m.name?.toLowerCase().includes('mmproj') &&
+              !m.id?.toLowerCase().includes('mmproj')
+          )
           .map((m: any) => {
             const rawCtx = m.context_length || m.contextLength || m.max_context_length;
             const contextWindow = formatContextWindow(rawCtx, m.name);
@@ -91,7 +115,7 @@ export const useModelStore = create<ModelState>((set, get) => {
             const searchStr = `${nameLower} ${repoIdLower}`;
 
             const isImageGen =
-              m.model_type === 'text-to-image' ||  // Rust backend sets this for diffusion models by name/type
+              m.model_type === 'text-to-image' || // Rust backend sets this for diffusion models by name/type
               searchStr.includes('flux') ||
               searchStr.includes('diffusion') ||
               searchStr.includes('diffus') ||
@@ -154,12 +178,12 @@ export const useModelStore = create<ModelState>((set, get) => {
             const modality = isImageGen
               ? 'Text-to-Image'
               : isOnnx
-              ? 'ONNX'
-              : isPytorch
-              ? 'PyTorch Native'
-              : isVision
-              ? 'Text + Vision'
-              : 'Text';
+                ? 'ONNX'
+                : isPytorch
+                  ? 'PyTorch Native'
+                  : isVision
+                    ? 'Text + Vision'
+                    : 'Text';
 
             return {
               id: m.id,
@@ -167,7 +191,7 @@ export const useModelStore = create<ModelState>((set, get) => {
               provider: 'nyx-native',
               description: m.description || `Local model (${m.size || ''})`,
               specs: {
-                contextWindow: (isImageGen || isOnnx || isPytorch) ? 'N/A' : contextWindow,
+                contextWindow: isImageGen || isOnnx || isPytorch ? 'N/A' : contextWindow,
                 maxOutput: 'N/A',
                 modality,
               },
@@ -178,7 +202,15 @@ export const useModelStore = create<ModelState>((set, get) => {
                 onnx: isOnnx,
                 pytorch: isPytorch,
               },
-              model_type: m.model_type || (isImageGen ? 'text-to-image' : isOnnx ? 'onnx' : isPytorch ? 'pytorch' : 'text-generation'),
+              model_type:
+                m.model_type ||
+                (isImageGen
+                  ? 'text-to-image'
+                  : isOnnx
+                    ? 'onnx'
+                    : isPytorch
+                      ? 'pytorch'
+                      : 'text-generation'),
               status: m.status,
             };
           });

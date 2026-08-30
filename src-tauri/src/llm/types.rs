@@ -84,7 +84,15 @@ pub fn sanitize_messages_for_api(messages: &[UnifiedMessage]) -> Vec<Value> {
                 }
                 _ => (String::new(), m.content.to_string(), String::new()),
             };
-            sanitized.push(json!({"role": "tool", "tool_call_id": tool_call_id, "name": name, "content": content}));
+            let mut tool_val = json!({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": content,
+            });
+            if !name.is_empty() {
+                tool_val["name"] = json!(name);
+            }
+            sanitized.push(tool_val);
             continue;
         }
 

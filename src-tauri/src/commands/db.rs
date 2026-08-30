@@ -95,8 +95,12 @@ pub struct ChatMessagePayload {
     pub is_pinned: Option<bool>,
     pub metrics: Option<serde_json::Value>,
     pub attachments: Option<serde_json::Value>,
+    pub images: Option<serde_json::Value>,
+    pub videos: Option<serde_json::Value>,
     pub model: Option<String>,
     pub reasoning: Option<String>,
+    /// Diagram, presentation, and code artifacts — serialized as JSON in the DB attachments blob
+    pub artifacts: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
@@ -137,6 +141,13 @@ pub async fn db_get_all_chat_sessions(
     let mut msgs_by_convo: std::collections::HashMap<String, Vec<ChatMessagePayload>> = std::collections::HashMap::new();
     
     for m in all_msgs {
+        let attach_val: Option<serde_json::Value> = m.attachments.and_then(|a| serde_json::from_str(&a).ok());
+        let reasoning_val: Option<String> = attach_val.as_ref().and_then(|a| a.get("reasoning").and_then(|r| r.as_str().map(|s| s.to_string())));
+        let images_val: Option<serde_json::Value> = attach_val.as_ref().and_then(|a| a.get("images").cloned());
+        let videos_val: Option<serde_json::Value> = attach_val.as_ref().and_then(|a| a.get("videos").cloned());
+        // Restore persisted artifacts (diagrams, presentations, code)
+        let artifacts_val: Option<serde_json::Value> = attach_val.as_ref().and_then(|a| a.get("artifacts").cloned());
+
         let payload = ChatMessagePayload {
             id: Some(m.id),
             role: m.role,
@@ -144,9 +155,12 @@ pub async fn db_get_all_chat_sessions(
             timestamp: Some(m.timestamp),
             is_pinned: Some(m.is_pinned == 1),
             metrics: m.token_usage.and_then(|t| serde_json::from_str(&t).ok()),
-            attachments: m.attachments.and_then(|a| serde_json::from_str(&a).ok()),
+            attachments: attach_val.as_ref().and_then(|a| a.get("files").cloned()).or(attach_val),
+            images: images_val,
+            videos: videos_val,
             model: Some(m.model),
-            reasoning: None,
+            reasoning: reasoning_val,
+            artifacts: artifacts_val,
         };
         msgs_by_convo.entry(m.conversation_id).or_default().push(payload);
     }
@@ -216,8 +230,30 @@ pub async fn db_save_chat_session(
         let is_pinned = if msg.is_pinned.unwrap_or(false) { 1 } else { 0 };
         let msg_model = msg.model.clone().unwrap_or_else(|| "default".to_string());
         
-        let attach_str = msg.attachments.as_ref().map(|a| a.to_string());
+        let mut meta_obj = serde_json::Map::new();
+        if let Some(att) = &msg.attachments {
+            meta_obj.insert("files".to_string(), att.clone());
+        }
+        if let Some(imgs) = &msg.images {
+            meta_obj.insert("images".to_string(), imgs.clone());
+        }
+        if let Some(vids) = &msg.videos {
+            meta_obj.insert("videos".to_string(), vids.clone());
+        }
+        if let Some(rsn) = &msg.reasoning {
+            meta_obj.insert("reasoning".to_string(), serde_json::Value::String(rsn.clone()));
+        }
+        // Persist artifacts (diagrams, presentations, code) so they survive app restarts
+        if let Some(arts) = &msg.artifacts {
+            meta_obj.insert("artifacts".to_string(), arts.clone());
+        }
+        let attach_str = if !meta_obj.is_empty() {
+            Some(serde_json::Value::Object(meta_obj).to_string())
+        } else {
+            None
+        };
         let token_str = msg.metrics.as_ref().map(|m| m.to_string());
+
 
         sqlx::query(
             "INSERT INTO chat_messages (id, conversation_id, parent_id, role, content, model, is_pinned, timestamp, token_usage, attachments, feedback)
@@ -710,6 +746,7 @@ pub async fn db_search_chat_history(
 
     Ok(results)
 }
+
 
 #[tauri::command]
 pub async fn db_get_local_models(

@@ -36,7 +36,8 @@ function deriveTitleFromMessages(messages: ChatMessage[]): string {
   return words.length > 0 ? words : 'New Chat';
 }
 
-const isTauriEnv = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
+const isTauriEnv =
+  typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
 
 export function useChatSessions(agentType?: 'chat' | 'coder') {
   const [regularSessions, setRegularSessions] = useState<ChatSession[]>([]);
@@ -68,85 +69,56 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
   // Computed sessions list
   const sessions = regularSessions.filter((s) => matchesAgentType(s.id));
 
-  // Load sessions from API or fallback to localStorage on mount
+  // Load sessions from API on mount; fallback to localStorage only if API fails
   useEffect(() => {
     let activeToken = true;
 
     async function loadSessions() {
       try {
         let serverSessions: any[] = [];
-        
-          serverSessions = await invoke('db_get_all_chat_sessions');
-        
-        // fallow-ignore-next-line code-duplication
+        serverSessions = await invoke('db_get_all_chat_sessions');
+
         if (Array.isArray(serverSessions) && activeToken) {
-            setRegularSessions((prev) => {
-              const prevMap = new Map(prev.map((s) => [s.id, s]));
-              const merged = [...prev];
-              // fallow-ignore-next-line code-duplication
-              for (const s of serverSessions) {
-                if (!prevMap.has(s.id)) {
-                  merged.push(s);
-                  prevMap.set(s.id, s);
-                }
-              }
-              return merged.sort((a, b) => b.updatedAt - a.updatedAt);
+          setRegularSessions(
+            serverSessions.sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))
+          );
+          if (serverSessions.length > 0) {
+            setActiveSid((prevSid) => {
+              if (prevSid) return prevSid;
+              const matching = serverSessions.find((s) => matchesAgentType(s.id));
+              return matching ? matching.id : prevSid;
             });
-            if (serverSessions.length > 0) {
-              // Only auto-switch if we don't already have an active session for this agent
-              setActiveSid((prevSid) => {
-                if (prevSid) return prevSid; // Keep existing selection
-                const matching = serverSessions.find((s) => matchesAgentType(s.id));
-                return matching ? matching.id : prevSid;
-              });
-            }
           }
+        }
       } catch (e: any) {
         console.warn('[useChatSessions] Backend fetch failed, falling back to localStorage:', e);
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw && activeToken) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              setRegularSessions(parsed);
+              if (parsed.length > 0) {
+                const matching = parsed.find((s: any) => matchesAgentType(s.id));
+                if (matching) {
+                  setActiveSid((prevSid) => prevSid || matching.id);
+                }
+              }
+            }
+          }
+        } catch (fallbackErr) {
+          console.warn('[useChatSessions] Fallback load failed:', fallbackErr);
+        }
       }
 
       // Load folders
       try {
         if (agentType === 'chat') {
-          let fetchedFolders: any[] = [];
-          
-            fetchedFolders = await invoke('db_get_folders');
-          
-          if (activeToken) setFolders(fetchedFolders);
+          const fetchedFolders = await invoke<any[]>('db_get_folders');
+          if (activeToken && Array.isArray(fetchedFolders)) setFolders(fetchedFolders);
         }
       } catch (e: any) {
         console.warn('[useChatSessions] Folders fetch failed:', e);
-      }
-
-      // Fallback
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw && activeToken) {
-          const parsed = JSON.parse(raw);
-          // fallow-ignore-next-line code-duplication
-          if (Array.isArray(parsed)) {
-            setRegularSessions((prev) => {
-              const prevMap = new Map(prev.map((s) => [s.id, s]));
-              const merged = [...prev];
-              // fallow-ignore-next-line code-duplication
-              for (const s of parsed) {
-                if (!prevMap.has(s.id)) {
-                  merged.push(s);
-                  prevMap.set(s.id, s);
-                }
-              }
-              return merged.sort((a, b) => b.updatedAt - a.updatedAt);
-            });
-            if (parsed.length > 0) {
-              const matching = parsed.find((s) => matchesAgentType(s.id));
-              if (matching) {
-                setActiveSid((prevSid) => prevSid || matching.id);
-              }
-            }
-          }
-        }
-      } catch (e: any) {
-        console.warn('[useChatSessions] Fallback load failed:', e);
       }
     }
 
@@ -157,14 +129,28 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
     };
   }, [agentType, matchesAgentType]);
 
-  // Persist sessions on every change (regular sessions only!)
+  // Debounced backup persistence to localStorage (only lightweight metadata without heavy SVG blobs)
   useEffect(() => {
     if (regularSessions.length === 0) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(regularSessions.slice(0, MAX_SESSIONS)));
-    } catch (e: any) {
-      console.warn('[useChatSessions] Failed to save sessions:', e);
-    }
+    const timeout = setTimeout(() => {
+      try {
+        const lightweight = regularSessions.slice(0, 20).map((s) => ({
+          ...s,
+          messages: (s.messages || []).slice(-10).map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content?.slice(0, 1000),
+            timestamp: m.timestamp,
+            model: m.model,
+          })),
+        }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweight));
+      } catch (e) {
+        // Ignore localStorage quota errors
+      }
+    }, 2000);
+
+    return () => clearTimeout(timeout);
   }, [regularSessions]);
 
   // Manage initial session selection when switching modes
@@ -205,11 +191,10 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
       setActiveSid(id);
 
       // Sync to backend
-      
-        invoke('db_save_chat_session', { session }).catch((err: any) => 
-          console.warn('[useChatSessions] Failed to sync session creation:', err)
-        );
-      
+
+      invoke('db_save_chat_session', { session }).catch((err: any) =>
+        console.warn('[useChatSessions] Failed to sync session creation:', err)
+      );
 
       return id;
     },
@@ -219,27 +204,40 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
   const updateSession = useCallback(
     (sid: string, messages: ChatMessage[]) => {
       const now = Date.now();
-      const session = regularSessionsRef.current.find((s) => s.id === sid);
-      if (!session) return;
+      let session = regularSessionsRef.current.find((s) => s.id === sid);
+      if (!session) {
+        session = {
+          id: sid,
+          title: deriveTitleFromMessages(messages),
+          messages,
+          createdAt: now,
+          updatedAt: now,
+        };
+      } else {
+        session = {
+          ...session,
+          messages,
+          title:
+            session.title && session.title !== 'New Chat'
+              ? session.title
+              : deriveTitleFromMessages(messages),
+          updatedAt: now,
+        };
+      }
 
-      const updated = {
-        ...session,
-        messages,
-        title: deriveTitleFromMessages(messages),
-        updatedAt: now,
-      };
+      const updated = session;
+      setRegularSessions((prev) => {
+        const exists = prev.some((s) => s.id === sid);
+        if (exists) {
+          return prev.map((s) => (s.id === sid ? updated : s));
+        }
+        return [updated, ...prev];
+      });
 
-      setRegularSessions((prev) => prev.map((s) => (s.id === sid ? updated : s)));
-
-      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-
-      syncTimeoutRef.current = setTimeout(() => {
-        
-          invoke('db_save_chat_session', { session: updated }).catch((err: any) => 
-            console.warn('[useChatSessions] Failed to sync session update:', err)
-          );
-        
-      }, 1000);
+      // Direct persistent sync to SQLite backend
+      invoke('db_save_chat_session', { session: updated }).catch((err: any) =>
+        console.warn('[useChatSessions] Failed to sync session update:', err)
+      );
     },
     [agentType]
   );
@@ -250,11 +248,10 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
       setActiveSid((prev) => (prev === sid ? null : prev));
 
       // Sync to backend
-      
-        invoke('db_delete_chat_session', { id: sid }).catch((err: any) => 
-          console.warn('[useChatSessions] Failed to sync session deletion:', err)
-        );
-      
+
+      invoke('db_delete_chat_session', { id: sid }).catch((err: any) =>
+        console.warn('[useChatSessions] Failed to sync session deletion:', err)
+      );
     },
     [agentType]
   );
@@ -265,12 +262,10 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
 
   const createFolder = useCallback(async (name: string) => {
     try {
-      
-        const id = `folder-${Date.now()}`;
-        await invoke('db_create_folder', { id, name });
-        setFolders((prev) => [...prev, { id, name, createdAt: Date.now() }]);
-        return id;
-      
+      const id = `folder-${Date.now()}`;
+      await invoke('db_create_folder', { id, name });
+      setFolders((prev) => [...prev, { id, name, createdAt: Date.now() }]);
+      return id;
     } catch (e) {
       console.error('[useChatSessions] Failed to create folder:', e);
     }
@@ -278,10 +273,8 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
 
   const deleteFolder = useCallback(async (id: string) => {
     try {
-      
-        await invoke('db_delete_folder', { id });
-        setFolders((prev) => prev.filter((f) => f.id !== id));
-      
+      await invoke('db_delete_folder', { id });
+      setFolders((prev) => prev.filter((f) => f.id !== id));
     } catch (e) {
       console.error('[useChatSessions] Failed to delete folder:', e);
     }
@@ -294,15 +287,15 @@ export function useChatSessions(agentType?: 'chat' | 'coder') {
           if (s.id === sid) {
             const updated = { ...s, ...meta };
             // Sync to backend
-            
-              invoke('db_update_chat_session_meta', {
-                id: sid,
-                folderId: meta.folderId || null,
-                tags: meta.tags || null,
-              }).catch((err: any) =>
-                console.warn('[useChatSessions] Failed to sync session meta update:', err)
-              );
-            
+
+            invoke('db_update_chat_session_meta', {
+              id: sid,
+              folderId: meta.folderId || null,
+              tags: meta.tags || null,
+            }).catch((err: any) =>
+              console.warn('[useChatSessions] Failed to sync session meta update:', err)
+            );
+
             return updated;
           }
           return s;

@@ -1,9 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { codeToHtml } from 'shiki';
 import mermaid from 'mermaid';
+import DOMPurify from 'dompurify';
 import { useTheme } from '../../shared/context/ThemeContext';
 import { CopyIcon as Copy } from '@animateicons/react/lucide';
 import { Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, Download, Move } from 'lucide-react';
+import { isSlidevContent } from '../../features/artifacts/utils/slidevParser';
+import { PresentationDeck } from '../../features/presentation/components/PresentationDeck';
 
 interface CodeBlockProps {
   code: string;
@@ -36,15 +39,19 @@ function cleanupMermaidDOMErrors() {
 export function sanitizeMermaidCode(rawCode: string): string {
   if (!rawCode) return '';
   let cleaned = rawCode.trim();
-  cleaned = cleaned.replace(/^```(?:mermaid)?\s*/i, '').replace(/```\s*$/, '').trim();
+  cleaned = cleaned
+    .replace(/^```(?:mermaid)?\s*/i, '')
+    .replace(/```\s*$/, '')
+    .trim();
 
   // Strip leading comments or markdown titles before diagram declaration
   cleaned = cleaned.replace(/^#+.*$/gm, '').trim();
 
   // Ensure valid diagram type header if missing
-  const hasValidHeader = /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|journey|gantt)\b/i.test(
-    cleaned
-  );
+  const hasValidHeader =
+    /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|journey|gantt)\b/i.test(
+      cleaned
+    );
 
   if (!hasValidHeader) {
     cleaned = `flowchart TD\n${cleaned}`;
@@ -57,16 +64,23 @@ export function sanitizeMermaidCode(rawCode: string): string {
     if (!l) return l;
 
     // Preserve top-level directives and subgraphs
-    if (/^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|subgraph|end)\b/i.test(l)) {
+    if (
+      /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|subgraph|end)\b/i.test(
+        l
+      )
+    ) {
       return l;
     }
 
     // 1. Double bracket labels: NodeId[["Label"]] or NodeId((("Label"))) or NodeId{{ "Label" }}
-    l = l.replace(/(\b[a-zA-Z0-9_-]+)\s*(\{\{|\(\(|\(\[|\[\[)\s*([^\]\)\}\n]+?)\s*(\}\}|\)\)|\)\]|\]\])/g, (match, id, open, content, close) => {
-      const trimmed = content.trim().replace(/^["']+|["']+$/g, '');
-      const escaped = trimmed.replace(/"/g, "'");
-      return `${id}${open}"${escaped}"${close}`;
-    });
+    l = l.replace(
+      /(\b[a-zA-Z0-9_-]+)\s*(\{\{|\(\(|\(\[|\[\[)\s*([^\]\)\}\n]+?)\s*(\}\}|\)\)|\)\]|\]\])/g,
+      (match, id, open, content, close) => {
+        const trimmed = content.trim().replace(/^["']+|["']+$/g, '');
+        const escaped = trimmed.replace(/"/g, "'");
+        return `${id}${open}"${escaped}"${close}`;
+      }
+    );
 
     // 2. Square bracket labels: NodeId[Any Text Here (even with nested parens, colons, etc)]
     l = l.replace(/(\b[a-zA-Z0-9_-]+)\s*\[([^\]\n]+)\]/g, (match, id, content) => {
@@ -97,109 +111,245 @@ export function sanitizeMermaidCode(rawCode: string): string {
 }
 
 /**
- * Pure SVG Flowchart Fallback Generator.
- * Used when Mermaid syntax is severely malformed so the user ALWAYS gets a crisp visual graph.
+ * Editorial Diagram-Design Fallback HTML Generator.
+ * Produces a publication-grade diagram-design HTML+SVG when Mermaid fails to render.
+ * Uses the same Obsidian / True Black + Atomic Coral (#f08a59) color tokens as cathrynlavery/diagram-design.
  */
-function generateFallbackFlowchartSvg(rawCode: string): string {
+export function generateFallbackFlowchartSvg(rawCode: string): string {
   const lines = rawCode
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l && !/^(flowchart|graph|sequenceDiagram|subgraph|end)/i.test(l));
+    .filter((l) => l && !/^(flowchart|graph|sequenceDiagram|subgraph|end|%%)/i.test(l));
 
   const nodesMap = new Map<string, string>();
+  const edges: Array<{ from: string; to: string; label?: string }> = [];
 
   for (const line of lines) {
-    // Extract node definitions with labels like A["Label"] or A[Label]
-    const defMatches = line.matchAll(/(\b[a-zA-Z0-9_-]+)\s*(?:\[|\(|\{)\s*["']?([^\]\)\}]+?)["']?\s*(?:\]|\)|\})/g);
+    const defMatches = line.matchAll(
+      /(\b[a-zA-Z0-9_-]+)\s*(?:\[|\(|\{)\s*["']?([^\]\)\}]+?)["']?\s*(?:\]|\)|\})/g
+    );
     for (const match of defMatches) {
-      if (match[1] && match[2]) {
-        nodesMap.set(match[1], match[2].trim());
-      }
+      if (match[1] && match[2])
+        nodesMap.set(
+          match[1],
+          match[2]
+            .trim()
+            .replace(/&amp;/g, '&')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+        );
     }
-
-    // Extract connections: A --> B or A -->|label| B
-    const connMatch = line.match(/(\b[a-zA-Z0-9_-]+)\s*(?:-->|==>|->)\s*(?:\|["']?([^|\n]+?)["']?\|)?\s*(\b[a-zA-Z0-9_-]+)/);
+    const connMatch = line.match(
+      /(\b[a-zA-Z0-9_-]+)\s*(?:-->|==>|->)\s*(?:\|["']?([^|\n]+?)["']?\|)?\s*(\b[a-zA-Z0-9_-]+)/
+    );
     if (connMatch) {
       const fromId = connMatch[1];
       const toId = connMatch[3];
+      const edgeLabel = connMatch[2]?.trim();
       if (!nodesMap.has(fromId)) nodesMap.set(fromId, fromId);
       if (!nodesMap.has(toId)) nodesMap.set(toId, toId);
+      edges.push({ from: fromId, to: toId, label: edgeLabel });
     }
   }
 
   const nodeList = Array.from(nodesMap.entries()).map(([id, label]) => ({ id, label }));
   if (nodeList.length === 0) {
     nodeList.push(
-      { id: '1', label: 'System Ingestion & Extraction' },
-      { id: '2', label: 'Processing & Architecture' },
-      { id: '3', label: 'Autonomous Diagnostic Output' }
+      { id: '1', label: 'Input Layer' },
+      { id: '2', label: 'Processing Core' },
+      { id: '3', label: 'Output Layer' }
     );
+    edges.push({ from: '1', to: '2' }, { from: '2', to: '3' });
   }
 
-  const nodeWidth = 240;
-  const nodeHeight = 56;
-  const gap = 50;
-  const totalWidth = Math.max(680, nodeList.length * (nodeWidth + gap) + 40);
-  const totalHeight = 160;
+  // Layout: horizontal row with wrap at 5 nodes
+  const cols = Math.min(nodeList.length, 5);
+  const rows = Math.ceil(nodeList.length / cols);
+  const NW = 180;
+  const NH = 56;
+  const HGAP = 60;
+  const VGAP = 70;
+  const PAD = 40;
+  const totalW = PAD * 2 + cols * NW + (cols - 1) * HGAP;
+  const totalH = PAD * 2 + rows * NH + (rows - 1) * VGAP + 40;
 
+  const nodePositions = new Map<string, { cx: number; cy: number }>();
   const nodeSvg = nodeList
     .map((n, i) => {
-      const x = 30 + i * (nodeWidth + gap);
-      const y = 50;
-      const cleanLabel = n.label.length > 30 ? n.label.slice(0, 28) + '...' : n.label;
-      return `
-      <g class="flow-node">
-        <rect x="${x}" y="${y}" width="${nodeWidth}" height="${nodeHeight}" rx="12" fill="#1e1b4b" stroke="#6366f1" stroke-width="2" />
-        <text x="${x + nodeWidth / 2}" y="${y + 33}" fill="#f8fafc" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="middle">${cleanLabel}</text>
-      </g>`;
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = PAD + col * (NW + HGAP);
+      const y = PAD + row * (NH + VGAP);
+      const cx = x + NW / 2;
+      const cy = y + NH / 2;
+      nodePositions.set(n.id, { cx, cy });
+      const isFirst = i === 0;
+      const fill = isFirst ? 'rgba(240,138,89,0.15)' : '#121214';
+      const stroke = isFirst ? '#f08a59' : 'rgba(255,255,255,0.12)';
+      const textColor = isFirst ? '#f08a59' : '#f5f5f5';
+      const label = n.label.length > 24 ? n.label.slice(0, 22) + '…' : n.label;
+      return `<g>
+      <rect x="${x}" y="${y}" width="${NW}" height="${NH}" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>
+      <text x="${cx}" y="${y + 33}" fill="${textColor}" font-family="Geist,Inter,system-ui,sans-serif" font-size="12" font-weight="600" text-anchor="middle">${label}</text>
+    </g>`;
     })
-    .join('');
+    .join('\n');
 
-  const arrowSvg = nodeList
-    .slice(0, nodeList.length - 1)
-    .map((_, i) => {
-      const startX = 30 + i * (nodeWidth + gap) + nodeWidth;
-      const endX = startX + gap;
-      const y = 50 + nodeHeight / 2;
-      return `
-      <g class="flow-arrow">
-        <line x1="${startX}" y1="${y}" x2="${endX - 6}" y2="${y}" stroke="#818cf8" stroke-width="2.5" stroke-dasharray="4,2" />
-        <polygon points="${endX},${y} ${endX - 8},${y - 5} ${endX - 8},${y + 5}" fill="#818cf8" />
-      </g>`;
+  const edgeSvg = edges
+    .map((e) => {
+      const from = nodePositions.get(e.from);
+      const to = nodePositions.get(e.to);
+      if (!from || !to) return '';
+      const x1 = from.cx + NW / 2 - 10;
+      const y1 = from.cy;
+      const x2 = to.cx - NW / 2 + 10;
+      const y2 = to.cy;
+      return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#a1a1aa" stroke-width="1.5" marker-end="url(#arr)"/>`;
     })
-    .join('');
+    .join('\n');
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} ${totalHeight}" style="max-width: 100%; height: auto; display: block; margin: auto;">
-    <rect width="100%" height="100%" fill="transparent" />
-    ${nodeSvg}
-    ${arrowSvg}
-  </svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalW} ${totalH}" style="max-width:100%;height:auto;display:block;margin:auto;background:#09090b;border-radius:12px;">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 2 L10 5 L0 8z" fill="#a1a1aa"/>
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="#09090b" rx="12"/>
+  ${edgeSvg}
+  ${nodeSvg}
+</svg>`;
 }
 
-export function makeSvgResponsive(rawSvg: string): string {
-  if (!rawSvg) return '';
-  let svg = rawSvg.replace(/max-width:\s*[^;"]+;?/gi, '');
-  if (/style="([^"]*)"/i.test(svg)) {
-    svg = svg.replace(/style="([^"]*)"/i, (_, s) => `style="${s}; max-width: 100%; height: auto;"`);
-  } else {
-    svg = svg.replace(/<svg\b/i, '<svg style="max-width: 100%; height: auto;"');
+const SANITIZE_OPTIONS = {
+  USE_PROFILES: { svg: true, html: true, svgFilters: true },
+  ADD_TAGS: [
+    'style',
+    'svg',
+    'defs',
+    'linearGradient',
+    'radialGradient',
+    'filter',
+    'feGaussianBlur',
+    'feMerge',
+    'feMergeNode',
+    'feDropShadow',
+    'path',
+    'rect',
+    'circle',
+    'text',
+    'tspan',
+    'g',
+    'marker',
+    'line',
+    'polygon',
+    'polyline',
+    'ellipse',
+    'div',
+    'span',
+  ],
+  ADD_ATTR: [
+    'viewBox',
+    'xmlns',
+    'fill',
+    'stroke',
+    'stroke-width',
+    'stroke-dasharray',
+    'marker-end',
+    'marker-start',
+    'd',
+    'rx',
+    'ry',
+    'x',
+    'y',
+    'x1',
+    'y1',
+    'x2',
+    'y2',
+    'cx',
+    'cy',
+    'r',
+    'text-anchor',
+    'dominant-baseline',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'letter-spacing',
+    'opacity',
+    'transform',
+    'filter',
+    'style',
+    'class',
+    'id',
+    'refX',
+    'refY',
+    'markerWidth',
+    'markerHeight',
+    'orient',
+  ],
+};
+
+export function makeSvgResponsive(rawHtmlOrSvg: string): string {
+  if (!rawHtmlOrSvg) return '';
+  let content = rawHtmlOrSvg.trim();
+  content = content
+    .replace(/^```(?:html|svg|diagram|diagram-design)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  const styleMatch = content.match(/<style[\s\S]*?<\/style>/i);
+  const styleTag = styleMatch ? styleMatch[0] : '';
+  const svgMatch = content.match(/<svg[\s\S]*?<\/svg>/i);
+
+  if (svgMatch) {
+    let svg = svgMatch[0];
+    svg = svg.replace(/max-width:\s*[^;"]+;?/gi, '');
+    if (/style="([^"]*)"/i.test(svg)) {
+      svg = svg.replace(
+        /style="([^"]*)"/i,
+        (_, s) => `style="${s}; width: 100%; max-width: 100%; height: auto;"`
+      );
+    } else {
+      svg = svg.replace(/<svg\b/i, '<svg style="width: 100%; max-width: 100%; height: auto;"');
+    }
+    return `${styleTag}\n${svg}`;
   }
-  return svg;
+
+  return content;
 }
 
-export function makeExpandedSvgResponsive(rawSvg: string): string {
-  if (!rawSvg) return '';
-  return rawSvg
-    .replace(/max-width:\s*[^;"]+;?/gi, '')
-    .replace(/<svg\s+([^>]*)\bstyle="([^"]*)"/gi, (_, attrs, style) => {
-      const cleanStyle = style
-        .replace(/max-width:\s*[^;"]+;?/gi, '')
-        .replace(/max-height:\s*[^;"]+;?/gi, '')
-        .replace(/height:\s*[^;"]+;?/gi, '')
-        .replace(/width:\s*[^;"]+;?/gi, '')
-        .trim();
-      return `<svg ${attrs} style="${cleanStyle}; width: 100%; height: 100%; min-height: 420px;"`;
-    });
+export function makeExpandedSvgResponsive(rawHtmlOrSvg: string): string {
+  if (!rawHtmlOrSvg) return '';
+  let content = rawHtmlOrSvg.trim();
+  content = content
+    .replace(/^```(?:html|svg|diagram|diagram-design)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  const styleMatch = content.match(/<style[\s\S]*?<\/style>/i);
+  const styleTag = styleMatch ? styleMatch[0] : '';
+  const svgMatch = content.match(/<svg[\s\S]*?<\/svg>/i);
+
+  if (svgMatch) {
+    let svg = svgMatch[0];
+    svg = svg
+      .replace(/max-width:\s*[^;"]+;?/gi, '')
+      .replace(/<svg\s+([^>]*)\bstyle="([^"]*)"/gi, (_, attrs, style) => {
+        const cleanStyle = style
+          .replace(/max-width:\s*[^;"]+;?/gi, '')
+          .replace(/max-height:\s*[^;"]+;?/gi, '')
+          .replace(/height:\s*[^;"]+;?/gi, '')
+          .replace(/width:\s*[^;"]+;?/gi, '')
+          .trim();
+        return `<svg ${attrs} style="${cleanStyle}; width: 100%; height: 100%; min-height: 460px;"`;
+      });
+    if (!svg.includes('style=')) {
+      svg = svg.replace(/<svg\b/i, '<svg style="width: 100%; height: 100%; min-height: 460px;"');
+    }
+    return `${styleTag}\n${svg}`;
+  }
+
+  return content;
 }
 
 export function CodeBlock({ code, language, filename }: CodeBlockProps) {
@@ -211,12 +361,18 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const { theme } = useTheme();
+  const isSlidev = isSlidevContent(code, language);
 
   const isMermaid =
     language === 'mermaid' ||
-    /^\s*(flowchart|graph|gantt|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph)\b/i.test(code);
+    /^\s*(flowchart|graph|gantt|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph)\b/i.test(
+      code
+    );
   const isSvg = language === 'svg' || (language === 'xml' && /^\s*<svg\b/i.test(code.trim()));
-  const isVisualDiagram = isMermaid || isSvg;
+  const isDiagramHtml =
+    (language === 'html' || language === 'diagram' || language === 'diagram-design') &&
+    (/<svg\b/i.test(code) || /class="diagram/i.test(code) || /viewBox=/i.test(code));
+  const isVisualDiagram = isMermaid || isSvg || isDiagramHtml;
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -297,7 +453,15 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
         });
         if (!isCancelled) setHtml(highlighted);
       } catch {
-        if (!isCancelled) setHtml(`<pre><code>${code}</code></pre>`);
+        // Escape HTML entities to prevent XSS when Shiki fails
+        const escapeHtml = (text: string) =>
+          text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+        if (!isCancelled) setHtml(`<pre><code>${escapeHtml(code)}</code></pre>`);
       }
     };
 
@@ -376,7 +540,13 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
   const zoomOut = () => setScale((prev) => Math.max(prev * 0.8, 0.4));
 
   const downloadSvg = () => {
-    const svgContent = isMermaid ? mermaidSvg : makeSvgResponsive(code);
+    let svgContent = isMermaid ? mermaidSvg : code;
+    if (isDiagramHtml) {
+      const match = code.match(/<svg[\s\S]*?<\/svg>/i);
+      if (match) svgContent = match[0];
+    } else if (!isMermaid) {
+      svgContent = makeSvgResponsive(code);
+    }
     if (!svgContent) return;
     const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -388,6 +558,10 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+
+  if (isSlidev) {
+    return <PresentationDeck content={code} title={filename || 'Presentation Deck'} />;
+  }
 
   // Inline Expanded Diagram Window
   if (isVisualDiagram && isExpanded) {
@@ -484,7 +658,10 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
             }}
             className="w-full h-full flex items-center justify-center pointer-events-auto [&_svg]:w-full [&_svg]:h-full [&_svg]:max-w-[98%] [&_svg]:max-h-[96%] [&_svg]:mx-auto [&_svg]:my-auto"
             dangerouslySetInnerHTML={{
-              __html: isMermaid ? makeExpandedSvgResponsive(mermaidSvg) : makeExpandedSvgResponsive(code),
+              __html: DOMPurify.sanitize(
+                isMermaid ? makeExpandedSvgResponsive(mermaidSvg) : makeExpandedSvgResponsive(code),
+                SANITIZE_OPTIONS as any
+              ),
             }}
           />
         </div>
@@ -498,7 +675,9 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
       <div className="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-b border-border/60 text-xs">
         <div className="flex items-center gap-2">
           <span className="font-mono text-muted-foreground uppercase text-[10px] font-semibold tracking-wider">
-            {filename || (isMermaid ? 'Visual Diagram' : isSvg ? 'SVG Graphic' : language) || 'code'}
+            {filename ||
+              (isMermaid ? 'Visual Diagram' : isSvg ? 'SVG Graphic' : language) ||
+              'code'}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -532,7 +711,9 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
                 className="w-full flex items-center justify-center overflow-auto p-2 min-h-[140px] max-h-[480px] [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto cursor-pointer"
                 onClick={() => setIsExpanded(true)}
                 title="Click to Expand Window Inside Chatpage"
-                dangerouslySetInnerHTML={{ __html: mermaidSvg }}
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(mermaidSvg, SANITIZE_OPTIONS as any),
+                }}
               />
             ) : (
               <div className="w-full flex items-center justify-center p-6 text-xs text-muted-foreground font-mono animate-pulse">
@@ -544,12 +725,17 @@ export function CodeBlock({ code, language, filename }: CodeBlockProps) {
               className="w-full max-w-full overflow-auto flex items-center justify-center p-2 min-h-[140px] max-h-[480px] [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto cursor-pointer"
               onClick={() => setIsExpanded(true)}
               title="Click to Expand Window Inside Chatpage"
-              dangerouslySetInnerHTML={{ __html: makeSvgResponsive(code) }}
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(makeSvgResponsive(code), SANITIZE_OPTIONS as any),
+              }}
             />
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto p-3 text-xs font-mono leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
+        <div
+          className="overflow-x-auto max-h-[380px] overflow-y-auto p-3 text-xs font-mono leading-relaxed select-text"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
       )}
     </div>
   );

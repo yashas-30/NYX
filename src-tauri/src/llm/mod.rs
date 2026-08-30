@@ -2,30 +2,36 @@
 // NYX — LLM Module Root
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub mod local_orchestrator;
-pub mod cloud_orchestrator;
+pub mod local;
+pub use local as local_orchestrator;
+pub mod providers;
 pub mod types;
 pub mod local_inference;
-pub mod local;
 pub mod model_formats;
 pub mod diffusers;
 pub mod ocr;
+pub mod gateway;
+pub mod router;
 
 pub use model_formats::ModelFormat;
+pub use gateway::{LiveQuotaLedger, DynamicModelRegistry, ModelRole, DynamicModelSpec, ProviderQuotaState};
+pub use router::{PrimaryIntent, RouteDecision, MediaDecision, classify_intent_dynamically};
 
 
-// ── Cloud Orchestrator public API ────────────────────────────────────────────
+// ── Cloud Providers public API ───────────────────────────────────────────────
 pub use types::{
     UnifiedRequest,
     UnifiedMessage,
     StreamChunkPayload,
 };
 
-pub use cloud_orchestrator::{
+pub use providers::{
     QuotaResponse,
+    ReachableResponse,
     execute_cloud_stream,
     llm_stream_request,
     get_models_quota,
+    check_provider_reachable,
 };
 
 // ── Local Orchestrator public API ────────────────────────────────────────────

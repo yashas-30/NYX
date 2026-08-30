@@ -55,11 +55,15 @@ pub struct AppState {
     pub conductor_channels: Arc<Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<agents::protocol::ConductorMessage>>>>,
     pub search_provider: Arc<tokio::sync::RwLock<String>>,
     pub search_api_key: Arc<tokio::sync::RwLock<String>>,
+    pub quota_ledger: Arc<llm::LiveQuotaLedger>,
+    pub model_registry: Arc<llm::DynamicModelRegistry>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         let mcp_manager = Arc::new(commands::mcp::McpManager::default());
+        let quota_ledger = Arc::new(llm::LiveQuotaLedger::default());
+        let model_registry = Arc::new(llm::DynamicModelRegistry::new());
         Self {
             mcp_manager,
             agent_cancel: Arc::new(AtomicBool::new(false)),
@@ -69,6 +73,8 @@ impl Default for AppState {
             conductor_channels: Arc::new(Mutex::new(std::collections::HashMap::new())),
             search_provider: Arc::new(tokio::sync::RwLock::new("duckduckgo".to_string())),
             search_api_key: Arc::new(tokio::sync::RwLock::new("".to_string())),
+            quota_ledger,
+            model_registry,
         }
     }
 }
@@ -79,7 +85,7 @@ pub fn run() {
     tracing_subscriber::fmt::init();
 
     // Optimize Webview2 memory usage on Windows to reduce RAM consumption
-    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=RendererCodeIntegrity,SitePerProcess --js-flags=\"--max-old-space-size=2048\"");
+    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=RendererCodeIntegrity,SitePerProcess --js-flags=--max-old-space-size=2048");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -161,15 +167,18 @@ pub fn run() {
                 });
 
                 // Auto-check and update local binaries on app startup / restart
-                let handle_update = handle.clone();
+                // Background binary verification & Lucifer Gemma 4 E2B GPU Auto-loader
+                let handle_startup = handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Ok(app_dir) = handle_update.path().app_data_dir() {
-                        tracing::info!("[AutoUpdate] Checking for binary & library updates on startup...");
+                    if let Ok(app_dir) = handle_startup.path().app_data_dir() {
+                        tracing::info!("[Startup] Verifying inference engine binaries on startup...");
                         let downloader = crate::llm::local_orchestrator::Downloader::new();
                         let hw = crate::llm::local_orchestrator::HardwareSnapshot::collect().await;
-                        let _ = downloader.ensure_server(&app_dir, &hw.gpu_backend, |_p, msg| {
-                            tracing::info!("[AutoUpdate] {}", msg);
-                        }).await;
+                        if let Err(e) = downloader.ensure_server(&app_dir, &hw.gpu_backend, |_p, msg| {
+                            tracing::info!("[Startup/Binary] {}", msg);
+                        }).await {
+                            tracing::warn!("[Startup/Binary] ensure_server note: {}", e);
+                        }
                     }
                 });
 
@@ -177,36 +186,6 @@ pub fn run() {
                 // first web search or codebase scan doesn't hang.
                 tauri::async_runtime::spawn_blocking(|| {
                     crate::rag::embeddings::warm_up();
-                });
-                
-                // Auto-start Qwen 2.5 1.5B on GPU in background if model is present on disk
-                let handle_qwen = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    let resolved = crate::llm::local_orchestrator::resolve_model_path(
-                        &handle_qwen,
-                        "qwen2.5-1.5b-instruct-q4_k_m.gguf"
-                    ).await;
-                    
-                    if resolved.is_some() {
-                        tracing::info!("[Startup] Qwen 2.5 1.5B detected on disk. Auto-loading model to GPU VRAM with 100% offload...");
-                        let manager = handle_qwen.state::<std::sync::Arc<crate::llm::local_orchestrator::LlamaManager>>();
-                        let _ = crate::llm::local_orchestrator::start_local_server(
-                            handle_qwen.clone(),
-                            manager,
-                            "qwen2.5-1.5b-instruct-q4_k_m.gguf".to_string(),
-                            Some(8192),
-                            Some(99), // 100% GPU offload
-                            None,
-                            Some(true), // flash attention
-                            None,
-                            None,
-                            Some(512),
-                            None,
-                            None,
-                            None,
-                            None,
-                        ).await;
-                    }
                 });
 
                 setup_app(&handle).await;
@@ -221,10 +200,8 @@ pub fn run() {
             app_get_version, app_open_external,
             execute_computer_action,
             mcp_start_server, mcp_send_request, mcp_call_tool, mcp_stop_server, mcp_list_servers,
-            llm::cloud_orchestrator::llm_stream_request,
+            llm::providers::llm_stream_request,
             llm::local_inference::llm_local_stream_request,
-            commands::lucifer::run_lucifer_turn,
-            commands::lucifer::analyze_lucifer_turn,
             commands::system::cleanup_session_state,
             commands::system::set_search_settings,
             pty_spawn, pty_write, pty_resize, pty_close,
@@ -257,21 +234,22 @@ pub fn run() {
             db_update_model_metadata,
             db_delete_local_model,
             search_web_command,
-            commands::agent::search_images_command,
-            commands::agent::fetch_image_base64,
-            commands::agent::generate_search_queries_with_model,
-            commands::agent::generate_intelligent_query_plan_command,
-            commands::agent::fetch_image_data_url_command,
-            commands::agent::check_prompt_cache_command,
-            commands::agent::save_prompt_cache_command,
-            commands::agent::clear_prompt_cache_command,
-            commands::agent::fetch_page_html_command,
-            commands::agent::fetch_multiple_pages_command,
-            commands::agent::run_agent_tool,
-            commands::agent::approve_tool,
-            commands::agent::reject_tool,
-            commands::agent::resolve_plugin_tool,
-            commands::agent::resolve_browser_action,
+            commands::tools::search_images_command,
+            commands::tools::search_videos_command,
+            commands::tools::fetch_image_base64,
+            commands::tools::generate_search_queries_with_model,
+            commands::tools::generate_intelligent_query_plan_command,
+            commands::tools::fetch_image_data_url_command,
+            commands::tools::check_prompt_cache_command,
+            commands::tools::save_prompt_cache_command,
+            commands::tools::clear_prompt_cache_command,
+            commands::tools::fetch_page_html_command,
+            commands::tools::fetch_multiple_pages_command,
+            commands::tools::run_agent_tool,
+            commands::tools::approve_tool,
+            commands::tools::reject_tool,
+            commands::tools::resolve_plugin_tool,
+            commands::tools::resolve_browser_action,
             // Vault Secure Storage Commands
             commands::vault::vault_store_key,
             commands::vault::vault_get_key,
@@ -279,8 +257,6 @@ pub fn run() {
             commands::vault::vault_status,
             commands::vault::vault_list_keys,
             commands::vault::vault_validate,
-            commands::vault::vault_encrypt,
-            commands::vault::vault_decrypt,
             // Local model orchestration
             llm::local_orchestrator::analyze_hardware,
             llm::local_orchestrator::download_local_model,
@@ -306,8 +282,8 @@ pub fn run() {
             llm::diffusers::generate_local_image,
             llm::ocr::run_local_ocr,
             // Cloud model orchestration
-            llm::cloud_orchestrator::get_models_quota,
-            llm::cloud_orchestrator::check_provider_reachable,
+            llm::providers::get_models_quota,
+            llm::providers::check_provider_reachable,
             commands::system::get_hardware_specs,
             commands::system::get_system_diagnostics,
             research::start_deep_research,
@@ -322,7 +298,12 @@ pub fn run() {
             commands::memory::turbovec_search_memory,
             commands::memory::turbovec_search_chat_history,
             commands::memory::turbovec_sync_chat_session,
-            commands::agent::codebase_search_command,
+            commands::tools::codebase_search_command,
+            commands::nyx_run_agent_pipeline,
+            commands::nyx_classify_intent,
+            commands::nyx_get_live_quota_states,
+            commands::nyx_sync_dynamic_models,
+            commands::nyx_cancel_agent,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
