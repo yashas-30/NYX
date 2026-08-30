@@ -9,6 +9,7 @@ dist-server/
 dist-desktop/
 dist-electron/
 release/
+release-builds/
 coverage/
 .turbo/
 .worktrees/
