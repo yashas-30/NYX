@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="public/nyx-icon.png" alt="NYX Logo" width="88" height="88" />
+<img src="public/nyx-icon.png" alt="NYX Logo" width="96" height="96" />
 
 # NYX
 
-### High-Performance Native Local Intelligence & Multi-Provider AI Studio
+### The Ultimate Native AI Studio & Local GPU Operating Environment
 
 [![Version](https://img.shields.io/badge/version-0.5.0-0ea5e9?style=flat-square)](https://github.com/yashas-30/NYX/releases)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
@@ -15,234 +15,276 @@
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
 
-**NYX** is a desktop & web AI operating environment combining **local GPU inference** (`llama.cpp` / Vulkan) with **multi-provider cloud LLM orchestration** (Google Gemini, Groq LPUs, Mistral AI, NVIDIA NIM, and OpenRouter Free Tier).
+**NYX** is an all-in-one native AI workspace designed to give you **frontier intelligence with zero subscription costs**. It lets you run open-weight GGUF models directly on your local GPU with 100% privacy, or tap into 40 top-tier cloud models with massive context windows, real-time web search, interactive slide generation, 39 diagram types, and autonomous ReAct agents — all wrapped in an obsidian **True Black Minimalist** interface.
 
-Built from the ground up for high-fidelity code synthesis, interactive Slidev/PPTX presentations, 39 visual diagram types, real-time grounded web search, and ReAct agent workflows inside an obsidian **True Black Minimalist** interface.
-
-[**Live Demo**](https://yashas-30.github.io/NYX) · [**Releases**](https://github.com/yashas-30/NYX/releases) · [**Issues**](https://github.com/yashas-30/NYX/issues)
+[**Live Web App**](https://yashas-30.github.io/NYX) · [**Download Desktop Releases**](https://github.com/yashas-30/NYX/releases) · [**Report an Issue**](https://github.com/yashas-30/NYX/issues)
 
 </div>
 
 ---
 
-## ⚡ Core Pillars
+## 🌟 Why NYX?
+
+Most AI tools force you into costly monthly subscriptions, lock you into cloud-only silos, or require complicated terminal setups. **NYX changes that completely:**
+
+1. **100% Free & Private Local Execution**: Run any open-source model (Llama 3.3, Qwen 2.5, Gemma 3, DeepSeek, Mistral) directly on your NVIDIA, AMD, or Intel GPU via built-in Vulkan acceleration. No Ollama, no LM Studio, no Docker, and no internet connection required.
+2. **40 Curated Free Cloud Models**: If you don't have a high-end GPU, NYX gives you instant access to 40 frontier models from Google Gemini, Groq LPUs, Mistral AI, NVIDIA NIM, and OpenRouter Free Tier.
+3. **Beyond Plain Chat**: NYX isn't just a chatbot — it's a creative and analytical powerhouse that builds presentations you can export to PowerPoint, draws editorial system diagrams, conducts grounded research with verified citations, and runs autonomous multi-step coding agents.
+
+---
+
+## 🚀 Key Features In Depth
+
+---
+
+### 1. 🖥️ Native Local GPU Inference Engine (Zero Middleware)
+
+NYX includes its own internal `llama.cpp` Vulkan inference server embedded directly into the Rust backend:
+
+- **True Hardware Acceleration**: Automatically detects your GPU VRAM and CPU threads to deliver maximum tokens-per-second via Vulkan GPU shaders.
+- **100% Offline & Private**: Your prompts, documents, and code never leave your device.
+- **HuggingFace Hub Explorer**: Search, explore, download, and manage GGUF quantized models directly within NYX.
+- **Per-Model Fine-Tuned Controls**:
+  - **GPU Layer Offload (`ngl`)**: Slide seamlessly from 0 (CPU-only) to 99 (Full VRAM offloading).
+  - **Dynamic Context Length**: Adjust context memory allocation from 512 up to 131,072 tokens per model.
+  - **Advanced Sampling**: Full control over Temperature, Top-P, Top-K, Repeat Penalty, and Mirostat v1/v2 algorithms.
+  - **Thread & Batch Tuning**: Calibrate CPU thread count and batch evaluation size for stutter-free generation.
+
+---
+
+### 2. ☁️ Multi-Provider Free Cloud Intelligence
+
+NYX connects natively to 5 premier AI providers, giving you access to **40 curated models** covering reasoning, coding, long context, and vision:
 
 ```
-                     ┌─────────────────────────────────────────────────────────┐
-                     │                       NYX STUDIO                        │
-                     └────────────────────────────┬────────────────────────────┘
-                                                  │
-         ┌────────────────────────────────────────┴────────────────────────────────────────┐
-         │                                                                                 │
-┌────────▼────────┐                                                               ┌────────▼────────┐
-│  LOCAL RUNNER   │                                                               │  CLOUD GATEWAY  │
-├─────────────────┤                                                               ├─────────────────┤
-│ • Vulkan Engine │                                                               │ • Google Gemini │
-│ • GGUF Models   │                                                               │ • Groq LPUs     │
-│ • HuggingFace   │                                                               │ • Mistral AI    │
-│ • Zero External │                                                               │ • NVIDIA NIM    │
-│   Dependencies  │                                                               │ • OpenRouter    │
-└─────────────────┘                                                               └─────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                               NYX UNIFIED MODEL SELECTOR                               │
+├──────────────────┬──────────────────┬──────────────────┬──────────────────┬────────────┤
+│  GOOGLE GEMINI   │    GROQ CLOUD    │    MISTRAL AI    │    NVIDIA NIM    │ OPENROUTER │
+│   (6 Models)     │   (5 LPU Models) │   (7 Models)     │   (11 Models)    │ (11 Free)  │
+└──────────────────┴──────────────────┴──────────────────┴──────────────────┴────────────┘
 ```
 
-| Engine                            | Highlights                                                                                                                                           |
-| :-------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🖥️ **Local GPU Runner**           | Built-in Vulkan `llama-server` runtime. Download and execute GGUF models directly on your GPU without Ollama or external daemons.                    |
-| ☁️ **Unified Cloud Gateway**      | High-throughput streaming across **40 curated cloud models** from Gemini, Groq, Mistral, NVIDIA NIM, and OpenRouter.                                 |
-| 📊 **Slidev & PPTX Engine**       | Automated generation of modular Slidev presentations with layout text budgets, drawing canvas, overview grid, and PowerPoint (`.pptx`) / PDF export. |
-| 📐 **39 Visual Diagram Types**    | Publication-grade inline HTML/SVG diagrams (C4 models, sequence flows, flywheels, ER schemas, swimlanes, timelines) in True Black styling.           |
-| 🔍 **Grounded Web Search**        | Real-time DuckDuckGo web retrieval with bracketed inline citations (`[1]`, `[2]`), verified image cards, and YouTube explanation video embeds.       |
-| 🤖 **Rust ReAct Conductor**       | Native multi-step agent loop with filesystem I/O, web scraping, live command execution, and real-time execution plan visualization.                  |
-| 🧠 **Persistent TurboVec Memory** | Native SQLite connection pooling and vector embeddings for instant semantic search and cross-session memory recall.                                  |
-| 🎨 **True Black Minimalist UI**   | Pure `#000000` canvas, obsidian surface cards (`#09090b` / `#121214`), subtle `border-white/10` borders, and Geist typography.                       |
+#### 🌐 Complete Model Catalog
+
+#### 🔹 Google Gemini (1M Context & Hybrid Reasoning)
+
+- **`Gemini 3.7 Flash`**: Google's frontier model with controllable hybrid thinking budgets (0–64K reasoning tokens), 1M context, and native audio/video/image comprehension.
+- **`Gemini 3.6 Flash`**: High-speed workhorse delivering instant generation across 1M tokens.
+- **`Gemini 3.5 Flash-Lite`**: Ultra-high concurrency model (30 RPM / 4M TPM) built for parallel workflows and subagent execution.
+- **`Gemini 3.1 Flash-Lite`**: Rapid micro-task and real-time response model with a full 1M context window.
+- **`Gemma 4 31B`**: Google's flagship dense open-weights model featuring multimodal vision and deep mathematical reasoning.
+- **`Gemma 4 26B MoE`**: Sparse Mixture-of-Experts model (4B active parameters) combining blazing speed with 262K context.
+
+#### ⚡ Groq Cloud (Ultra-Low Latency LPUs)
+
+- **`GPT OSS 120B`**: OpenAI's 120B parameter reasoning model running at blazing speed on Groq LPUs with a 65K max output token limit.
+- **`GPT OSS 20B`**: Lightweight 20B reasoning model delivering near-instant responses with 65K max output capacity.
+- **`Groq Compound`**: Specialized agentic model engineered for compound multi-step reasoning and automated tool execution.
+- **`Groq Compound Mini`**: Ultra-fast agentic router for rapid intermediate subagent verification.
+- **`Qwen 3.6 27B`**: High-throughput 27B multilingual model generating ~400+ tokens per second.
+
+#### 🇫🇷 Mistral AI (European Frontier & Code Intelligence)
+
+- **`Mistral Medium 3.5 (128B)`**: 128B flagship medium model with 256K context and multimodal image understanding.
+- **`Mistral Small 4`**: Fast, lightweight multimodal model with 256K context for responsive everyday chat.
+- **`Mistral Large 3`**: Top-tier foundation model with 256K context and deep multilingual reasoning.
+- **`Ministral 3 8B`**: Compact edge model pairing an 8B footprint with a massive 256K context window.
+- **`Codestral`**: Industry-standard coding model trained on 80+ languages with Fill-In-The-Middle (FIM) support.
+- **`Ministral 3 3B` & `Ministral 3 14B`**: Fast edge vision models for instant extraction and multimodal tasks.
+
+#### 🟢 NVIDIA NIM (Enterprise Frontier Scale & DGX Cloud)
+
+- **`Nemotron 3 Super 120B`**: 120B MoE flagship model with 1M context and a massive 262K maximum output capacity.
+- **`Nemotron 3 Nano 30B`**: 30B MoE (3B active) model with 262K context for high-throughput batching.
+- **`Llama 3.1 Nemotron Ultra 253B`**: Massive 253B dense frontier model accelerated on NVIDIA DGX Cloud.
+- **`Meta Llama 3.3 70B Instruct`**: Meta's premier open model running with TensorRT-LLM low-latency acceleration.
+- **`Mistral Nemotron`**: Co-developed by Mistral and NVIDIA for high-efficiency logic and coding.
+- **`Gemma 4 31B (NVIDIA NIM)`**: 31B dense instruction model running on high-speed NIM clusters.
+- **`Mistral Large 2 Instruct`**: Enterprise-grade logic and function calling with 128K context.
+- **`MiniMax M3`**: Ultra-large scale model featuring 1M input context and 64K output token budget.
+- **`Nemotron 3 Ultra 550B`**: 550B MoE (55B active) massive enterprise reasoning model with 1M context.
+- **`GPT OSS 120B & 20B (NVIDIA NIM)`**: Full 131K output capacity matching the 131K input context window.
+
+#### 🌍 OpenRouter Free Tier (Zero-Cost Curated Fleet)
+
+- **`Nemotron 3 Super 120B (Free)`**: 262K context and 262K output headroom with thinking reasoning at zero cost.
+- **`GPT OSS 20B (Free)`**: 131K context and 32K output ceiling for algorithmic coding and reasoning.
+- **`Cohere North Mini Code (Free)`**: 256K context specialized for multi-file codebase synthesis.
+- **`Gemma 4 26B & 31B (Free)`**: Multimodal vision and document parsing on a 262K context window.
+- **`Ling 3.0 Flash (Free)`**: Fast 262K context model with strong multilingual comprehension.
+- **`Nemotron 3 Nano 30B & Nano 9B v2 (Free)`**: Snappy lightweight reasoning models for quick Q&A.
+- **`Nemotron Nano 12B v2 VL (Free)`**: Multimodal vision-language model with a huge 128K output ceiling.
+- **`Poolside Laguna S 2.1 & XS 2.1 (Free)`**: Specialized coding models trained on real-world Git diffs and refactoring.
 
 ---
 
-## 🌐 Supported Cloud Model Catalog
+### 3. 📊 Slidev & PowerPoint (PPTX) Studio
 
-NYX features an accurate, provider-organized model catalog with complete specs and rate-limit tracking:
+Turn any idea, topic, or document into a presentation with zero formatting hassle:
 
-### 1. Google Gemini (Google AI Studio)
-
-| Model Name                | Model ID                | Context        | Max Output   | Modality   | Rate Limit      | Capabilities                                     |
-| :------------------------ | :---------------------- | :------------- | :----------- | :--------- | :-------------- | :----------------------------------------------- |
-| **Gemini 3.7 Flash**      | `gemini-3.7-flash`      | 1M (1,048,576) | 64K (65,536) | Multimodal | 15 RPM / 1M TPM | Hybrid Reasoning, Thinking Budget, Vision, Audio |
-| **Gemini 3.6 Flash**      | `gemini-3.6-flash`      | 1M (1,048,576) | 64K (65,536) | Multimodal | 15 RPM / 1M TPM | Fast Single-Pass Inference, Multimodal Vision    |
-| **Gemini 3.5 Flash-Lite** | `gemini-3.5-flash-lite` | 1M (1,048,576) | 64K (65,536) | Multimodal | 30 RPM / 4M TPM | High-Throughput Subagent Loops & Batching        |
-| **Gemini 3.1 Flash-Lite** | `gemini-3.1-flash-lite` | 1M (1,048,576) | 64K (65,536) | Multimodal | 30 RPM / 4M TPM | Low Latency UI & Fast Summarization              |
-| **Gemma 4 31B**           | `gemma-4-31b-it`        | 262K (262,144) | 32K (32,768) | Multimodal | 30 RPM / 4M TPM | Dense Open Model, Vision & Code                  |
-| **Gemma 4 26B MoE**       | `gemma-4-26b-a4b-it`    | 262K (262,144) | 32K (32,768) | Multimodal | 30 RPM / 4M TPM | Sparse Mixture-of-Experts (4B Active), Vision    |
+- **Structural Slidev Engine**: Automatically generates slides using clean Slidev Markdown grammar (`layout: cover | two-cols | fact | quote | section`, `::right::` slot partitioning, presenter notes).
+- **Layout-Specific Text Budgets**: Prevents slide text overflows by calculating optimal density per slide type.
+- **One-Click Export to PowerPoint (`.pptx`)**: Generates real Microsoft PowerPoint files with custom styled visual cards, bold titles, and responsive geometries via `pptxgenjs`.
+- **Interactive Presentation Deck**:
+  - **Full-Screen Presentation Mode** with smooth slide transitions.
+  - **Slide Overview Grid**: Thumbnail view to jump to any slide instantly.
+  - **Live Drawing Canvas**: Annotate, highlight, and draw directly over your slides during a presentation.
+  - **PDF Export**: Print-ready high-resolution slides.
 
 ---
 
-### 2. Groq Cloud (Ultra-Fast LPU Hardware)
+### 4. 📐 39 Publication-Grade Visual Architecture Types
 
-| Model Name             | Model ID              | Context        | Max Output   | Modality | Rate Limit       | Capabilities                                      |
-| :--------------------- | :-------------------- | :------------- | :----------- | :------- | :--------------- | :------------------------------------------------ |
-| **GPT OSS 120B**       | `openai/gpt-oss-120b` | 131K (131,072) | 65K (65,536) | Text     | 30 RPM / 20K TPM | Flagship 120B Open Reasoning, Deep Thinking       |
-| **GPT OSS 20B**        | `openai/gpt-oss-20b`  | 131K (131,072) | 65K (65,536) | Text     | 30 RPM / 20K TPM | 20B Fast Reasoning, 65K Max Output Tokens         |
-| **Groq Compound**      | `groq/compound`       | 131K (131,072) | 8K (8,192)   | Text     | 30 RPM / 10K TPM | Multi-Step Agentic Planning, Thinking             |
-| **Groq Compound Mini** | `groq/compound-mini`  | 131K (131,072) | 8K (8,192)   | Text     | 30 RPM / 10K TPM | Fast Subagent Intermediate Execution              |
-| **Qwen 3.6 27B**       | `qwen/qwen3.6-27b`    | 131K (131,072) | 16K (16,384) | Text     | 30 RPM / 20K TPM | Ultra-High Throughput (~400+ tok/s), Multilingual |
+Stop generating unstyled Mermaid diagrams. NYX generates clean, declarative inline **HTML/SVG diagrams** styled in an obsidian True Black palette (`#09090b` canvas, `#121214` cards, `border-white/10`, `#f08a59` focal accents):
 
----
+```
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│   Client App    ├──────►│   API Gateway   ├──────►│  Microservices  │
+│  (React 19/Web) │       │   (Tauri/Rust)  │       │  (Vulkan / NIM) │
+└─────────────────┘       └─────────────────┘       └─────────────────┘
+```
 
-### 3. Mistral AI (La Plateforme)
+**Supported Diagram Grammars**:
 
-| Model Name                    | Model ID                | Context        | Max Output   | Modality            | Rate Limit        | Capabilities                                 |
-| :---------------------------- | :---------------------- | :------------- | :----------- | :------------------ | :---------------- | :------------------------------------------- |
-| **Mistral Medium 3.5 (128B)** | `mistral-medium-latest` | 256K (262,144) | 32K (32,768) | Text + Image + Code | 60 RPM / 500K TPM | 128B Multimodal Analysis, Code Generation    |
-| **Mistral Small 4**           | `mistral-small-latest`  | 256K (262,144) | 32K (32,768) | Text + Image + Code | 60 RPM / 500K TPM | Efficient Multimodal & Code Generation       |
-| **Mistral Large 3**           | `mistral-large-latest`  | 256K (262,144) | 32K (32,768) | Multimodal          | 60 RPM / 500K TPM | Frontier Foundation Reasoning & Multilingual |
-| **Ministral 3 8B**            | `ministral-8b-latest`   | 256K (262,144) | 16K (16,384) | Text + Vision       | 60 RPM / 500K TPM | High-Performance Edge Vision Reasoning       |
-| **Codestral**                 | `codestral-latest`      | 128K (131,072) | 32K (32,768) | Code                | 60 RPM / 500K TPM | Fill-In-The-Middle (FIM), 80+ Languages      |
-| **Ministral 3 3B**            | `ministral-3b-latest`   | 256K (262,144) | 8K (8,192)   | Text + Vision       | 60 RPM / 500K TPM | Ultra-Fast Lightweight Edge Vision Model     |
-| **Ministral 3 14B**           | `ministral-14b-latest`  | 256K (262,144) | 16K (16,384) | Text + Vision       | 60 RPM / 500K TPM | Balanced Precision Multimodal Reasoning      |
+1. **Architecture Topologies** (Cloud stacks, microservices, container clusters)
+2. **Sequence Flows** (Time-ordered actor message exchanges & auth handshakes)
+3. **C4 Models** (Context, Container, Component, and Code architectural levels)
+4. **Swimlane Workflows** (Cross-functional process handoffs)
+5. **Entity-Relationship (ER) & Database Schemas** (Tables, columns, foreign keys)
+6. **State Machines** (States, transitions, triggers, and guards)
+7. **Reinforcing Flywheels & Loops** (System dynamics with central hubs)
+8. **Sankey Diagrams** (Flow volumes and branching pipelines)
+9. **Medallion Data Pipelines** (Bronze → Silver → Gold storage architectures)
+10. **Wardley Maps, Timelines, Ishikawa Fishbone Root-Cause Models, and 29 more layout types.**
 
----
-
-### 4. NVIDIA NIM (Inference Microservices)
-
-| Model Name                        | Model ID                                  | Context        | Max Output     | Modality | Rate Limit       | Capabilities                                    |
-| :-------------------------------- | :---------------------------------------- | :------------- | :------------- | :------- | :--------------- | :---------------------------------------------- |
-| **Nemotron 3 Super 120B**         | `nvidia/nemotron-3-super-120b-a12b`       | 1M (1,048,576) | 262K (262,144) | Text     | 40 RPM / 10K RPD | 120B MoE Flagship Reasoning, 262K Output        |
-| **Nemotron 3 Nano 30B**           | `nvidia/nemotron-3-nano-30b-a3b`          | 262K (262,144) | 32K (32,768)   | Text     | 40 RPM / 10K RPD | 30B MoE Lightweight High Concurrency            |
-| **Llama 3.1 Nemotron Ultra 253B** | `nvidia/llama-3.1-nemotron-ultra-253b-v1` | 128K (131,072) | 4K (4,096)     | Text     | 40 RPM / 10K RPD | Ultra-Dense 253B Frontier Reasoning             |
-| **Meta Llama 3.3 70B Instruct**   | `meta/llama-3.3-70b-instruct`             | 128K (131,072) | 4K (4,096)     | Text     | 40 RPM / 10K RPD | Open Foundation Llama 3.3 with TensorRT         |
-| **Mistral Nemotron**              | `mistralai/mistral-nemotron`              | 128K (131,072) | 8K (8,192)     | Text     | 40 RPM / 10K RPD | Co-Developed High-Throughput Reasoning          |
-| **Gemma 4 31B (NVIDIA NIM)**      | `google/gemma-4-31b-it`                   | 262K (262,144) | 8K (8,192)     | Text     | 40 RPM / 10K RPD | 31B Dense Instruction Model with TensorRT       |
-| **Mistral Large 2 Instruct**      | `mistralai/mistral-large-2-instruct`      | 128K (131,072) | 4K (4,096)     | Text     | 40 RPM / 10K RPD | Enterprise Logic and Agentic Task Execution     |
-| **MiniMax M3**                    | `minimaxai/minimax-m3`                    | 1M (1,048,576) | 64K (65,536)   | Text     | 40 RPM / 10K RPD | 1M Context Window, 64K Output Budget            |
-| **Nemotron 3 Ultra 550B**         | `nvidia/nemotron-3-ultra-550b-a55b`       | 1M (1,048,576) | 262K (262,144) | Text     | 40 RPM / 10K RPD | 550B MoE (55B Active) Frontier Architecture     |
-| **GPT OSS 120B (NVIDIA NIM)**     | `openai/gpt-oss-120b`                     | 131K (131,072) | 131K (131,072) | Text     | 40 RPM / 10K RPD | Full 131K Output Headroom Matching Input        |
-| **GPT OSS 20B (NVIDIA NIM)**      | `openai/gpt-oss-20b`                      | 131K (131,072) | 131K (131,072) | Text     | 40 RPM / 10K RPD | Full 131K Output Token Capacity, Fast Inference |
+_Includes interactive pan, zoom, full-screen expansion, and direct SVG export._
 
 ---
 
-### 5. OpenRouter (Zero-Cost Free Tier Catalog)
+### 5. 🔍 Real-Time Grounded Web Search & Video Grounding
 
-| Model Name                         | Model ID                                 | Context        | Max Output     | Modality     | Rate Limit      | Capabilities                                  |
-| :--------------------------------- | :--------------------------------------- | :------------- | :------------- | :----------- | :-------------- | :-------------------------------------------- |
-| **Nemotron 3 Super 120B (Free)**   | `nvidia/nemotron-3-super-120b-a12b:free` | 262K (262,144) | 262K (262,144) | Text         | 20 RPM / 50 RPD | 262K Output Generation at Zero Cost           |
-| **GPT OSS 20B (Free)**             | `openai/gpt-oss-20b:free`                | 131K (131,072) | 32K (32,768)   | Text         | 20 RPM / 50 RPD | 20B Algorithmic Reasoning & Thinking          |
-| **Cohere North Mini Code (Free)**  | `cohere/north-mini-code:free`            | 256K (262,144) | 64K (65,536)   | Text (Code)  | 20 RPM / 50 RPD | 64K Output Ceiling for Codebase Synthesis     |
-| **Gemma 4 26B (Free)**             | `google/gemma-4-26b-a4b-it:free`         | 262K (262,144) | 32K (32,768)   | Text + Image | 20 RPM / 50 RPD | Free Multimodal Image & Document Analysis     |
-| **Gemma 4 31B (Free)**             | `google/gemma-4-31b-it:free`             | 262K (262,144) | 32K (32,768)   | Text + Image | 20 RPM / 50 RPD | Free Multimodal 31B Visual Comprehension      |
-| **Ling 3.0 Flash (Free)**          | `inclusionai/ling-3.0-flash:free`        | 262K (262,144) | 32K (32,768)   | Text         | 20 RPM / 50 RPD | 262K Context Window with Low Latency          |
-| **Nemotron 3 Nano 30B (Free)**     | `nvidia/nemotron-3-nano-30b-a3b:free`    | 256K (262,144) | 32K (32,768)   | Text         | 20 RPM / 50 RPD | 30B MoE Lightweight Extraction                |
-| **Nemotron Nano 9B v2 (Free)**     | `nvidia/nemotron-nano-9b-v2:free`        | 128K (131,072) | 8K (8,192)     | Text         | 20 RPM / 50 RPD | 9B Fast Response Times on Free Tier           |
-| **Nemotron Nano 12B v2 VL (Free)** | `nvidia/nemotron-nano-12b-v2-vl:free`    | 128K (131,072) | 128K (128,000) | Text + Image | 20 RPM / 50 RPD | Multimodal Vision-Language with 128K Output   |
-| **Poolside Laguna S 2.1 (Free)**   | `poolside/laguna-s-2.1:free`             | 262K (262,144) | 32K (32,768)   | Text (Code)  | 20 RPM / 50 RPD | Trained on Real-World Git Diffs & Refactoring |
-| **Poolside Laguna XS 2.1 (Free)**  | `poolside/laguna-xs-2.1:free`            | 262K (262,144) | 32K (32,768)   | Text (Code)  | 20 RPM / 50 RPD | Ultra-Fast Real-Time Code Completion          |
+Search the web in real-time without leaving your conversation:
+
+- **Factual Attribution**: Every fact, metric, and breaking news item is grounded with numbered citations `[1]`, `[2]` linking directly to verified sources.
+- **Verified Web Images**: Contextual DuckDuckGo search images embedded inline with descriptive captions.
+- **YouTube Explanation Cards**: Video preview cards displaying video thumbnails, channel names, duration badges, and direct links.
+- **Temporal Grounding**: Automatically synchronizes today's date so queries like _"what happened today?"_ or _"latest stock prices"_ deliver accurate, current information.
 
 ---
 
-## 🎨 Specialized Feature Engines
+### 6. 🤖 Autonomous ReAct Agent Conductor (Rust Native)
 
-### 1. Slidev & PowerPoint (PPTX) Engine
+When you need multi-step problem solving, NYX's native Rust agent takes over:
 
-- **AST-Driven Slidev Parser**: Converts prompts into presentation syntax (`---` delimited slides, `layout: cover | two-cols | fact | quote | section`, `::right::` slot partitions).
-- **Enforced Layout Text Budgets**: Prevents slide text overflows with explicit word-count bounds.
-- **PowerPoint (`.pptx`) & PDF Exporter**: Native browser export using `pptxgenjs` with high-contrast color cards and responsive geometry.
-- **Interactive Presentation Deck**: In-app presentation mode with thumbnail overview grid, slide transitions, and interactive drawing canvas.
-
-### 2. Publication-Grade Visual Architecture (39 Diagram Types)
-
-- **Declarative Inline HTML/SVG**: Renders diagrams in Obsidian / True Black styling (`#09090b` canvas, `#121214` cards, `border-white/10` borders, `#f08a59` focal accents).
-- **Supported Grammars**: Architecture topologies, Sequence message exchanges, C4 models, ER schemas, Flywheels, Swimlanes, Ishikawa root-cause diagrams, Sankey flow distributions, Medallion storage pipelines, Wardley maps, and UML class hierarchies.
-- **Zero Heavy JS Libraries**: Pure declarative SVG markup with embedded CSS, interactive pan, zoom, and SVG export.
-
-### 3. Real-Time Grounded Web Search
-
-- **Strict Bracketed Citations**: Claims are mapped directly to numbered references `[1]`, `[2]` linking back to source URLs.
-- **Verified DuckDuckGo Web Images**: Embedded verified visual images with contextual captions.
-- **YouTube Explanation Cards**: Video preview cards with channel attribution, duration badges, and direct links.
-
-### 4. Autonomous ReAct Agent Conductor (Rust Native)
-
-- **Multi-Step Tool Coordination**: Native Rust runtime executing tools:
-  - `fs_read`, `fs_write`, `list_dir` (Local filesystem I/O)
-  - `web_search`, `fetch_webpage` (Live internet browsing)
-  - `execute_command` (Controlled sandbox execution)
-- **Live Plan Monitoring**: Step-by-step interactive plan viewer with active status badges, input/output inspection, and cancellation controls.
+- **Plan-First Architecture**: Structures a step-by-step execution plan before making changes.
+- **Native Tool Calling**:
+  - `fs_read` / `fs_write` / `list_dir` — Inspect and modify local project files safely.
+  - `web_search` / `fetch_webpage` — Search the live internet and scrape full markdown content.
+  - `execute_command` — Run terminal commands and test scripts in a controlled sandbox.
+- **Live Plan Monitor**: Visual progress card showing step status (pending, active, completed, failed) with full input/output inspection.
 
 ---
 
-## 🚀 Quick Start
+### 7. 🧠 Persistent Memory & Semantic Recall (TurboVec)
 
-### 1. Installation
+- **Vector-Powered Memory**: Indexes your conversation history, project preferences, and user context locally in SQLite with TurboVec vector embeddings.
+- **Zero Privacy Leakage**: Your long-term memory is stored locally on your machine and never synced to external analytics servers.
+
+---
+
+### 8. 🎨 True Black Minimalist Design System
+
+Built following the **True Black Minimalist** design standard (`DESIGN.md`):
+
+- **Canvas Background**: Pure `#000000` (True Black) for zero eye strain on OLED displays.
+- **Surface Elevation**: `#09090b` (Primary Surface) and `#121214` (Elevated Cards).
+- **Hairline Obsidian Borders**: `border-white/10` for subtle visual depth.
+- **Typography Stack**: Geist Sans for clean readability, Geist Mono for code blocks, and Instrument Serif for editorial titles.
+- **Smooth Streaming Experience**: Zero-delay typewriter streaming with expandable chain-of-thought `<think>` reasoning traces.
+
+---
+
+## 💻 Quick Start
+
+### 1. Prerequisites
+
+- **Node.js** v20+ or v22+
+- **pnpm** v11+ (`npm install -g pnpm`)
+- **Rust Toolchain** (for desktop builds) — [rustup.rs](https://rustup.rs)
+- **GPU** (optional, NVIDIA / AMD / Intel with Vulkan support for local models)
+
+### 2. Installation
 
 ```bash
 # Clone the repository
 git clone https://github.com/yashas-30/NYX.git
 cd NYX
 
-# Install monorepo dependencies
+# Install all monorepo dependencies
 pnpm install
 ```
 
-### 2. Development
+### 3. Running NYX
 
 ```bash
-# Run the Web App (Vite + React 19)
+# Start the Web Application (Vite + React 19)
 pnpm run dev:web
 
-# Or run the Desktop Application (Tauri v2 + Rust)
+# Or start the Native Desktop Application (Tauri v2 + Rust Backend)
 pnpm run dev:desktop
 ```
 
-### 3. Production Build & Verification
+### 4. Running Tests & Quality Scans
 
 ```bash
-# Run full Vitest test suite (71+ automated tests)
+# Run all Vitest unit and integration tests (71+ passing tests)
 pnpm test
 
 # Run TypeScript typechecks across all monorepo packages
 pnpm run typecheck
 
-# Build web distribution assets
+# Build production web bundle
 pnpm run build
 
-# Verify Rust backend compilation
+# Verify Rust compilation
 cd src-tauri && cargo check
 ```
 
 ---
 
-## 🏛️ Monorepo Architecture
+## 🏛️ Monorepo Structure
 
 ```
 NYX/
 ├── apps/
-│   ├── web/                     # React 19 + Vite 6 + Tailwind CSS v4 frontend
-│   │   ├── src/core/prompts/    # Modular prompt routing (Slidev, Search, Diagrams, Code, Research)
-│   │   ├── src/features/chat/   # Smooth streaming chat, typewriter, lightbox, video cards
-│   │   ├── src/features/presentation/ # Slidev parser, interactive deck, PPTX exporter
-│   │   ├── src/features/agents/ # Plan visualizer & execution monitors
-│   │   └── src/shared/          # Model selector, API key vault, Zustand global stores
-│   │
-│   └── desktop/                 # Tauri v2 native desktop wrapper
+│   ├── web/                       # React 19 + Vite 6 + Tailwind CSS v4 SPA
+│   │   ├── src/core/prompts/      # Modular prompt orchestrators (Slidev, Diagrams, Search, Code)
+│   │   ├── src/features/chat/     # Typewriter streaming, thinking disclosure, lightbox, video cards
+│   │   ├── src/features/presentation/ # Slidev compiler, drawing canvas, PPTX exporter
+│   │   ├── src/features/agents/   # ReAct plan visualizer & execution monitors
+│   │   └── src/shared/            # Model registry, API key vault, Zustand stores
+│   └── desktop/                   # Tauri v2 desktop shell
 │
 ├── packages/
-│   ├── shared/                  # Central model registry, Zod schemas, provider types
-│   │   └── src/models/          # Gemini, Groq, Mistral, NVIDIA, OpenRouter catalogs
-│   └── config/                  # TypeScript & tooling configurations
+│   ├── shared/                    # 40-model catalog, provider normalizers, Zod schemas
+│   └── config/                    # TypeScript base configs & shared tooling
 │
-└── src-tauri/                   # Rust Native Backend (Tauri v2)
-    ├── src/llm/providers/       # Native SSE streaming for Gemini, Groq, Mistral, NVIDIA, OpenRouter
-    ├── src/llm/local/           # Vulkan llama-server process manager & hardware detection
-    ├── src/agents/core/         # ReAct agent loop & execution conductor
-    ├── src/agents/tools/        # Filesystem, web search, media, and sandbox tools
-    └── src/rag/                 # SQLite connection pooling & TurboVec vector embeddings
+└── src-tauri/                     # Native Rust Backend
+    ├── src/llm/providers/         # SSE streaming for Gemini, Groq, Mistral, NVIDIA, OpenRouter
+    ├── src/llm/local/             # Vulkan llama-server process manager & hardware detection
+    ├── src/agents/core/           # Native ReAct conductor & loop orchestrator
+    ├── src/agents/tools/          # Filesystem, scraper, search, and sandbox tools
+    └── src/rag/                   # SQLite persistence & TurboVec vector embeddings
 ```
 
 ---
 
 ## 🔒 Security & Privacy
 
-- **100% Client-Side Key Storage**: API keys are saved strictly on your local machine and never proxied through external servers.
-- **GitHub CodeQL Analysis**: Integrated static analysis scanning on every push and pull request.
-- **Weekly Vulnerability Audits**: Automated dependency vulnerability scanning via `pnpm audit`.
+- **Local-First Secret Vault**: API keys are stored exclusively in your browser/desktop storage and cached in memory.
+- **GitHub CodeQL Analysis**: Static security scanning on every push and pull request.
+- **Supply-Chain Hardening**: Upstream dependencies audited via `pnpm audit`.
 
 ---
 
