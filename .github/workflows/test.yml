@@ -16,9 +16,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @nyx/shared build
       - run: pnpm run lint
       - run: pnpm run typecheck
-      - run: pnpm run test -- --coverage
+      - run: pnpm vitest run --coverage
       - uses: codecov/codecov-action@v5
+        if: always()
+        continue-on-error: true
         with:
           files: ./coverage/lcov.info

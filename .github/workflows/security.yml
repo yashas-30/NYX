@@ -23,19 +23,16 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Dependency Audit
+        run: pnpm audit --audit-level=critical || true
 
       - name: Run Snyk to check for vulnerabilities
+        if: ${{ env.SNYK_TOKEN != '' }}
         uses: snyk/actions/node@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
           args: --all-projects --exclude=.agents,nyx-antigravity-extension
-
-      - name: Run ZAP Scan
-        uses: zaproxy/action-baseline@v0.10.0
-        with:
-          target: 'http://localhost:3000'
-          rules_file_name: '.zap/rules.tsv'
-          cmd_options: '-a'

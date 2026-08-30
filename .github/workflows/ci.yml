@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  NODE_OPTIONS: "--max-old-space-size=4096"
+  NODE_OPTIONS: '--max-old-space-size=4096'
 
 jobs:
   typecheck:
@@ -25,6 +25,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile --reporter append-only
+      - run: pnpm --filter @nyx/shared build
       - run: pnpm run typecheck
 
   test:
@@ -42,7 +43,8 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile --reporter append-only
-      - run: pnpm test
+      - run: pnpm --filter @nyx/shared build
+      - run: pnpm vitest run
 
   build:
     runs-on: ${{ matrix.os }}
@@ -63,4 +65,3 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
       - run: pnpm install --frozen-lockfile --reporter append-only
       - run: pnpm run build
-
