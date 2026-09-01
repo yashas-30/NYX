@@ -52,11 +52,16 @@ const STORAGE_POLYFILL = `
     try {
       var RealAudioContext = window.AudioContext || window.webkitAudioContext;
       if (RealAudioContext) {
-        var SafeAudioContext = function() {
-          var ctx = new RealAudioContext();
+        var SafeAudioContext = function(options) {
+          var ctx;
+          try {
+            ctx = options !== undefined ? new RealAudioContext(options) : new RealAudioContext();
+          } catch(e) {
+            ctx = new RealAudioContext();
+          }
           window.__nyx_audio_ctx = ctx;
           var resumeCtx = function() {
-            if (ctx.state === 'suspended') {
+            if (ctx && ctx.state === 'suspended') {
               ctx.resume().catch(function() {});
             }
           };
@@ -160,10 +165,38 @@ function getSmartDependencies(code: string): string {
     deps.push('<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>');
   }
 
+  // Import Map for modern ES module packages
+  deps.push(`
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js",
+      "gsap/": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/",
+      "canvas-confetti": "https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/+esm",
+      "howler": "https://cdn.jsdelivr.net/npm/howler@2.2.4/+esm",
+      "animejs": "https://cdn.jsdelivr.net/npm/animejs@3.2.2/+esm",
+      "lucide": "https://cdn.jsdelivr.net/npm/lucide@latest/+esm",
+      "react": "https://esm.sh/react@18.2.0",
+      "react-dom": "https://esm.sh/react-dom@18.2.0",
+      "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
+    }
+  }
+  </script>
+  `);
+
   // Three.js
-  if (code.includes('THREE.') && !code.includes('three.min.js')) {
+  if (
+    (code.includes('THREE.') || code.includes('three') || code.includes('OrbitControls')) &&
+    !code.includes('three.min.js')
+  ) {
     deps.push(
       '<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>'
+    );
+    deps.push(
+      '<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>'
     );
   }
 
@@ -386,6 +419,17 @@ export function buildLivePreviewSrcDoc(rawCode: string, language = 'html'): stri
     return buildJsExecutionHtml(cleanCode, cleanLang);
   }
 
+  // Auto-upgrade scripts using ES module imports without type="module"
+  cleanCode = cleanCode.replace(
+    /<script(?![^>]*\btype=)([^>]*)>([\s\S]*?)<\/script>/gi,
+    (match, attrs, body) => {
+      if (/\bimport\s+[\s\S]*?from\s+['"]/.test(body) || /\bimport\s+['"]/.test(body)) {
+        return `<script type="module"${attrs}>${body}</script>`;
+      }
+      return match;
+    }
+  );
+
   const smartDeps = getSmartDependencies(cleanCode);
 
   const isFullHtmlDoc =
@@ -398,7 +442,8 @@ export function buildLivePreviewSrcDoc(rawCode: string, language = 'html'): stri
     } else if (/<html[^>]*>/i.test(cleanCode)) {
       return cleanCode.replace(/(<html[^>]*>)/i, `$1\n<head>\n${smartDeps}\n</head>\n`);
     }
-    return `<head>\n${smartDeps}\n</head>\n${cleanCode}`;
+    const strippedDoctype = cleanCode.replace(/<!DOCTYPE[^>]*>/i, '').trim();
+    return `<!DOCTYPE html>\n<html>\n<head>\n${smartDeps}\n</head>\n<body>\n${strippedDoctype}\n</body>\n</html>`;
   }
 
   // Fragment or single component / SVG wrapper

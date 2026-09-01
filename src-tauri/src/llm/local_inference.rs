@@ -1220,6 +1220,7 @@ mod tests {
             stop: None,
             execution_mode: None,
             reasoning_enabled: None,
+            thinking_level: None,
             capabilities: None,
             tool_choice: None,
             web_search_enabled: false,

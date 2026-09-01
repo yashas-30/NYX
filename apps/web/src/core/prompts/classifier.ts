@@ -24,8 +24,8 @@ const DIAGRAM_PATTERNS = [
 ];
 
 const RESEARCH_PATTERNS = [
-  /\b(?:deep\s*research|deep\s*dive|in-depth\s*analysis|research\s*report|whitepaper|literature\s*review|comprehensive\s*study|compare\s*architectures|state\s*of\s*the\s*art|exhaustive\s*survey|trade[- ]off\s*matrix|rfc\s*analysis|academic\s*paper)\b/i,
-  /(?:conduct|do|perform|write|provide)\s+(?:a\s+)?(?:deep\s+research|comprehensive\s+analysis|exhaustive\s+breakdown|technical\s+whitepaper)\b/i,
+  /\b(?:deep\s*research|research\s+on|do\s+(?:some\s+)?research|conduct\s+research|deep\s*dive|in-depth\s*analysis|research\s*report|whitepaper|literature\s*review|comprehensive\s*study|compare\s*architectures|state\s*of\s*the\s*art|exhaustive\s*survey|trade[- ]off\s*matrix|rfc\s*analysis|academic\s*paper)\b/i,
+  /(?:conduct|do|perform|write|provide)\s+(?:a\s+)?(?:research|deep\s+research|comprehensive\s+analysis|exhaustive\s+breakdown|technical\s+whitepaper)\b/i,
 ];
 
 const WEBSEARCH_PATTERNS = [

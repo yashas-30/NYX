@@ -365,6 +365,11 @@ const MemoizedMarkdownBlock: React.FC<{
             else if (lang === 'svg') title = 'Vector Graphic';
 
             const lineCount = rawCode.split('\n').length;
+            const artifactHash = Array.from(rawCode.slice(0, 40)).reduce(
+              (acc, c) => (acc * 31 + c.charCodeAt(0)) >>> 0,
+              0
+            );
+            const artifactId = `artifact-${lang}-${rawCode.length}-${artifactHash}`;
 
             return (
               <div
@@ -372,7 +377,7 @@ const MemoizedMarkdownBlock: React.FC<{
                 tabIndex={0}
                 onClick={() => {
                   onArtifactClick?.({
-                    id: `artifact-${Date.now()}`,
+                    id: artifactId,
                     type: ['html', 'htm', 'jsx', 'tsx', 'react'].includes(lang)
                       ? 'app'
                       : lang === 'slidev'
@@ -608,7 +613,7 @@ const MemoizedMarkdownBlock: React.FC<{
         },
       }),
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      [onOpenLightbox]
+      [onOpenLightbox, onArtifactClick]
     );
 
     return (
@@ -625,6 +630,7 @@ const MemoizedMarkdownBlock: React.FC<{
     if (prevProps.content !== nextProps.content) return false;
     if (prevProps.isStreaming !== nextProps.isStreaming) return false;
     if ((prevProps.citations?.length || 0) !== (nextProps.citations?.length || 0)) return false;
+    if (prevProps.onArtifactClick !== nextProps.onArtifactClick) return false;
     return true;
   }
 );
@@ -726,6 +732,7 @@ export const MarkdownContent: React.FC<{
     if ((prevProps.citations?.length || 0) !== (nextProps.citations?.length || 0)) return false;
     if ((prevProps.images?.length || 0) !== (nextProps.images?.length || 0)) return false;
     if ((prevProps.videos?.length || 0) !== (nextProps.videos?.length || 0)) return false;
+    if (prevProps.onArtifactClick !== nextProps.onArtifactClick) return false;
     return true;
   }
 );

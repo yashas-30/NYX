@@ -135,6 +135,7 @@ RULES:
                 top_p: None,
                 execution_mode: Some("chat".to_string()),
                 reasoning_enabled: Some(false),
+                thinking_level: None,
                 context_window: None,
                 capabilities: None,
                 tool_choice: None,

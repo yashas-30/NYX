@@ -232,12 +232,24 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
     }
   }, [content]);
 
+  // Track previous id to reset version selection when switching artifacts
+  const prevIdRef = useRef(id);
+  useEffect(() => {
+    if (prevIdRef.current !== id) {
+      prevIdRef.current = id;
+      setSelectedVersionIndex(null);
+    }
+  }, [id]);
+
   // Version history compiled from message history
   const versions = useMemo(() => {
+    if (!id) {
+      return [{ content, title, language, version: 1 }];
+    }
     const list: { content: string; title: string; language?: string; version: number }[] = [];
     history.forEach((msg) => {
       msg.artifacts?.forEach((art) => {
-        const isMatch = (art.id && id && art.id === id) || art.title === title;
+        const isMatch = art.id && id && art.id === id;
         if (isMatch) {
           list.push({
             content: art.content,
@@ -254,11 +266,6 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
     }
     return list;
   }, [history, id, title, content, language]);
-
-  // Auto-switch to latest version when a new version arrives
-  useEffect(() => {
-    setSelectedVersionIndex(versions.length - 1);
-  }, [versions.length]);
 
   const displayedArtifact = useMemo(() => {
     if (selectedVersionIndex !== null && versions[selectedVersionIndex]) {
@@ -776,7 +783,7 @@ User instructions to modify this selection: ${editInstruction}`;
                     srcDoc={iframeSrcDoc}
                     className="w-full h-full border-none bg-zinc-950"
                     sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads allow-pointer-lock"
-                    allow="autoplay; camera; microphone; clipboard-write; web-share"
+                    allow="autoplay; camera; microphone; clipboard-write; web-share; fullscreen; accelerometer; gyroscope"
                   />
                 )}
               </div>

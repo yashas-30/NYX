@@ -503,6 +503,7 @@ export const MessageBubble = memo<MessageBubbleProps>(
     if (prevProps.rejectTool !== nextProps.rejectTool) return false;
     if (prevProps.onPinToggle !== nextProps.onPinToggle) return false;
     if (prevProps.onBranchChange !== nextProps.onBranchChange) return false;
+    if (prevProps.onArtifactClick !== nextProps.onArtifactClick) return false;
     return true;
   }
 );

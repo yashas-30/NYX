@@ -13,8 +13,7 @@
 import { GoogleGenAI } from '@google/genai';
 
 export const ANTIGRAVITY_BASE_AGENT = 'antigravity-preview-05-2026';
-export const ANTIGRAVITY_BASE_MODEL = 'gemini-3.5-flash-lite';
-export const ANTIGRAVITY_BACKUP_MODEL = 'gemini-3.1-flash-lite';
+export const DEFAULT_ANTIGRAVITY_MODEL = 'gemini-3.7-flash';
 
 export interface AntigravitySource {
   type: 'inline' | 'repository' | 'gcs';
@@ -55,7 +54,6 @@ export interface AntigravityRunOptions {
   previousInteractionId?: string;
   tools?: AntigravityToolDefinition[];
   model?: string;
-  backupModel?: string;
   maxTotalTokens?: number;
   background?: boolean;
   onDelta?: (deltaText: string) => void;
@@ -123,27 +121,18 @@ export class AntigravityAgentService {
    * synthesizing an enriched context plan to supervise and empower the model selected in the model selector.
    */
   public async orchestrateAndPlan(options: AntigravityPlanOptions): Promise<AntigravityPlanResult> {
-    const client = this.getClient(options.apiKey);
-    const planningModel = ANTIGRAVITY_BASE_MODEL; // gemini-3.5-flash-lite
+    const selectedModel = options.targetModel || DEFAULT_ANTIGRAVITY_MODEL;
     const toolOutputs: Array<{ tool: string; result: any }> = [];
 
     const metaPrompt = `You are the Antigravity Agent Controller & Orchestrator in NYX.
 Your mission is to act as the intelligent supervisor:
 1. Review the conversation history and user request.
 2. Determine if external tools (such as live web search, python sandbox, calculations, image search, or memory recall) are needed to answer the user's request accurately.
-3. Formulate a brief, sharp architectural plan for the selected generation model (${options.targetModel}) to fulfill the user's request.
+3. Formulate a brief, sharp architectural plan and guidelines for the selected generation model (${selectedModel}) to fulfill the user's request.
 
-Output your thoughts concisely.`;
+Output your thoughts concisely with reasoning.`;
 
     const contents: any[] = [];
-    if (options.systemInstruction) {
-      contents.push({
-        role: 'system',
-        parts: [{ text: `${options.systemInstruction}\n\n${metaPrompt}` }],
-      });
-    } else {
-      contents.push({ role: 'system', parts: [{ text: metaPrompt }] });
-    }
 
     if (options.history && options.history.length > 0) {
       for (let i = 0; i < options.history.length; i++) {
@@ -172,84 +161,125 @@ Output your thoughts concisely.`;
     let planOutput = '';
     let thoughtText = '';
 
+    // First attempt: Call Antigravity Managed Agent on Interactions API with selected model
     try {
-      const responseStream = await (client as any).models.generateContentStream({
-        model: planningModel,
-        contents,
-      });
+      const interactionPayload = {
+        agent: ANTIGRAVITY_BASE_AGENT,
+        input: options.prompt,
+        environment: 'remote',
+        agent_config: {
+          type: 'antigravity',
+          model: selectedModel,
+          max_total_tokens: 100000,
+        },
+        tools: [{ type: 'code_execution' }, { type: 'google_search' }, { type: 'url_context' }],
+      };
 
-      for await (const chunk of responseStream) {
-        const candidates = (chunk as any).candidates || [];
-        if (candidates.length > 0) {
-          const parts = candidates[0]?.content?.parts || [];
-          for (const part of parts) {
-            if (part.thought && typeof part.text === 'string') {
-              thoughtText += part.text;
-              if (options.onStep) {
-                options.onStep({
-                  iteration: 1,
-                  thought: part.text,
-                });
+      const interaction = await this.callInteractionsRestApi(options.apiKey, interactionPayload);
+      if (interaction && interaction.steps) {
+        for (const step of interaction.steps) {
+          if (step.type === 'thought' && step.summary) {
+            for (const item of step.summary) {
+              if (item.text) {
+                thoughtText += (thoughtText ? '\n' : '') + item.text;
+                if (options.onStep) {
+                  options.onStep({ iteration: 1, thought: item.text });
+                }
               }
+            }
+          } else if (step.thought) {
+            thoughtText += (thoughtText ? '\n' : '') + step.thought;
+            if (options.onStep) {
+              options.onStep({ iteration: 1, thought: step.thought });
             }
           }
         }
-        const text = chunk.text || '';
-        if (text) {
-          planOutput += text;
-        }
       }
-    } catch (err: any) {
-      console.warn('[AntigravityAgent] Primary planning model fallback:', err);
+      if (interaction && interaction.output_text) {
+        planOutput = interaction.output_text;
+      }
+    } catch {
+      // Fallback to streaming generation with selected model
+      const client = this.getClient(options.apiKey);
+      try {
+        const responseStream = await (client as any).models.generateContentStream({
+          model: selectedModel,
+          contents,
+          config: {
+            systemInstruction: options.systemInstruction
+              ? `${options.systemInstruction}\n\n${metaPrompt}`
+              : metaPrompt,
+            thinkingConfig: {
+              thinkingBudget: -1,
+            },
+          },
+        });
+
+        for await (const chunk of responseStream) {
+          const candidates = (chunk as any).candidates || [];
+          if (candidates.length > 0) {
+            const parts = candidates[0]?.content?.parts || [];
+            for (const part of parts) {
+              if (part.thought && typeof part.text === 'string') {
+                thoughtText += part.text;
+                if (options.onStep) {
+                  options.onStep({
+                    iteration: 1,
+                    thought: part.text,
+                  });
+                }
+              }
+            }
+          }
+          const text = chunk.text || '';
+          if (text) {
+            planOutput += text;
+            if (!thoughtText && options.onStep) {
+              options.onStep({
+                iteration: 1,
+                thought: text,
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn('[AntigravityAgent] Planning model fallback warning:', err);
+      }
     }
 
     const thinkMatch = planOutput.match(/<think>([\s\S]*?)<\/think>/i);
     if (thinkMatch && !thoughtText) {
       thoughtText = thinkMatch[1].trim();
-      if (options.onStep) {
-        options.onStep({ iteration: 1, thought: thoughtText });
-      }
     }
+    const finalPlan = thoughtText || planOutput;
 
     return {
-      orchestrationSummary: thoughtText || planOutput,
-      contextEnrichment: thoughtText ? `[Antigravity Controller Plan]:\n${thoughtText}` : '',
+      orchestrationSummary: finalPlan,
+      contextEnrichment: finalPlan
+        ? `[Antigravity Controller Plan & Guidelines for ${selectedModel}]:\n${finalPlan}`
+        : '',
       toolOutputs,
     };
   }
 
   /**
-   * Runs an interaction with the Antigravity managed agent.
-   * Seamlessly handles primary (gemini-3.5-flash-lite) and backup (gemini-3.1-flash-lite) model routing.
+   * Runs an interaction with the Antigravity managed agent using the selected Gemini model.
    */
   public async runInteraction(
     options: AntigravityRunOptions
   ): Promise<AntigravityInteractionResult> {
-    const primaryModel = options.model || ANTIGRAVITY_BASE_MODEL;
-    const backupModel = options.backupModel || ANTIGRAVITY_BACKUP_MODEL;
-
-    try {
-      return await this.executeSingleInteraction({
-        ...options,
-        model: primaryModel,
-      });
-    } catch (primaryErr: any) {
-      console.warn(
-        `[AntigravityAgent] Primary model (${primaryModel}) failed or rate-limited. Falling back to backup (${backupModel}):`,
-        primaryErr
-      );
-      return await this.executeSingleInteraction({
-        ...options,
-        model: backupModel,
-      });
-    }
+    const chosenModel = options.model || DEFAULT_ANTIGRAVITY_MODEL;
+    return await this.executeSingleInteraction({
+      ...options,
+      model: chosenModel,
+    });
   }
 
   private async executeSingleInteraction(
     options: AntigravityRunOptions
   ): Promise<AntigravityInteractionResult> {
     const client = this.getClient(options.apiKey);
-    const chosenModel = options.model || ANTIGRAVITY_BASE_MODEL;
+    const chosenModel = options.model || DEFAULT_ANTIGRAVITY_MODEL;
 
     // Build input payload (multimodal supported)
     let inputPayload: any;
@@ -502,7 +532,7 @@ Output your thoughts concisely.`;
       base_agent: ANTIGRAVITY_BASE_AGENT,
       agent_config: {
         type: 'antigravity',
-        model: options.model || ANTIGRAVITY_BASE_MODEL,
+        model: options.model || DEFAULT_ANTIGRAVITY_MODEL,
       },
       system_instruction: options.systemInstruction,
       base_environment: {

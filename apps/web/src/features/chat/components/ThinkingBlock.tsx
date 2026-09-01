@@ -705,18 +705,34 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
   }, [segments, isComplete, currentPhase]);
 
   const userScrolledUp = useRef(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    userScrolledUp.current = distanceFromBottom > 50;
+    // Only flag as user scrolled up if they scrolled up more than 30px away from bottom
+    userScrolledUp.current = distanceFromBottom > 30;
   };
 
+  // Reset user scrolled state whenever a stream begins or block expands
   useEffect(() => {
-    if (scrollRef.current && !userScrolledUp.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (!isComplete || isExpanded) {
+      userScrolledUp.current = false;
     }
-  }, [segments, isExpanded]);
+  }, [isComplete, isExpanded]);
+
+  // Robust auto-scroll to bottom as new reasoning chunks/segments stream in
+  useEffect(() => {
+    if (!isExpanded) return;
+    if (!userScrolledUp.current) {
+      const scrollEl = scrollRef.current;
+      if (scrollEl) {
+        requestAnimationFrame(() => {
+          scrollEl.scrollTop = scrollEl.scrollHeight;
+        });
+      }
+    }
+  }, [smoothContent, segments, isExpanded, content]);
 
   const hasActualReasoning = useMemo(() => {
     if (!content) return false;
@@ -901,6 +917,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({
                         return null;
                     }
                   })}
+                  <div ref={bottomRef} className="h-0 w-0 pointer-events-none" />
                 </div>
               </div>
             </div>

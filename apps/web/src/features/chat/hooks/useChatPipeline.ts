@@ -24,6 +24,7 @@ import {
   buildChatPrompts,
   ChatContext,
   isDiagramPrompt,
+  isWebSearchPrompt,
   detectPromptCategory,
 } from '@src/core/prompts/chatPrompts';
 import { TOOL_REGISTRY, toolExecutor } from '@src/infrastructure/services/toolSystem';
@@ -35,11 +36,8 @@ import {
 import { ChatArtifact } from '@nyx/shared';
 import { isModelLoaded } from '@src/shared/hooks/useLocalModels';
 import { extractCoreSubject } from '@src/core/services/intelligentQueryEngine';
-import {
-  antigravityAgent,
-  ANTIGRAVITY_BASE_MODEL,
-  ANTIGRAVITY_BACKUP_MODEL,
-} from '@src/core/agents/antigravityAgent';
+import { antigravityAgent } from '@src/core/agents/antigravityAgent';
+import { geminiDeepResearchAgent } from '@src/core/agents/geminiDeepResearchAgent';
 import { runLangGraphAgent } from '@src/core/agents/langgraphAgent';
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
@@ -589,12 +587,9 @@ export function useChatPipeline({
         const isReasoning = isReasoningModel(modelToUse);
         const resolvedProviderEarly2 = resolvedProviderEarly;
         const promptCat = detectPromptCategory(prompt);
-        const isSearchOrResearch =
-          promptCat === 'websearch' ||
-          promptCat === 'research' ||
-          /\b(?:price|pricing|hike|history|evolution|vs|versus|compare|latest|news|benchmark|stats|specs|stock|when|who|what|why|how|research)\b/i.test(
-            prompt
-          );
+        const isExplicitSearchOrResearch =
+          promptCat === 'websearch' || promptCat === 'research' || isWebSearchPrompt(prompt);
+
         const isGreetingOrTrivial =
           /^(?:hi|hello|hey|greetings|howdy|yo|sup|thanks|thank you|good\s+(?:morning|afternoon|evening))\b/i.test(
             prompt.trim()
@@ -604,10 +599,13 @@ export function useChatPipeline({
             prompt.trim()
           );
 
+        // Only search the web if user toggled Web Search ON or explicitly requested search/research
         const liveWebSearchEnabled =
           !isGreetingOrTrivial &&
           !isPureDiagramSyntax &&
-          (useAppStore.getState().webSearchEnabled || webSearchEnabled || isSearchOrResearch);
+          (useAppStore.getState().webSearchEnabled ||
+            webSearchEnabled ||
+            isExplicitSearchOrResearch);
         const cleanSearchQuery = extractCoreSubject(prompt) || prompt;
 
         // Execute live web search or deep research DAG via Rust engine
@@ -619,56 +617,117 @@ export function useChatPipeline({
             const apiKey = storeState.apiKeys[searchProvider] || '';
 
             if (promptCat === 'research') {
-              const onResearchProgress = new Channel<any>();
-              onResearchProgress.onmessage = (msg: any) => {
-                if (msg && msg.message && activeStreamRef.current) {
-                  const currReasoning = activeStreamRef.current.reasoning || '';
-                  activeStreamRef.current = {
-                    ...activeStreamRef.current,
-                    reasoning: currReasoning
-                      ? `${currReasoning}\n🔬 ${msg.message}`
-                      : `🔬 ${msg.message}`,
-                  };
-                  setActiveStreamMessage({ ...activeStreamRef.current });
+              if (resolvedProviderEarly === 'gemini') {
+                const geminiKey = getEffectiveApiKey('gemini', apiKeys) || apiKeys['gemini'] || '';
+                if (geminiKey) {
+                  if (activeStreamRef.current) {
+                    activeStreamRef.current.reasoning = `━━━ [Gemini Deep Research Agent] Autonomously Investigating ━━━\n🔬 Formulating research plan with ${modelToUse}...\n🌐 Iterative web querying, page comprehension, and synthesis...`;
+                    setActiveStreamMessage({ ...activeStreamRef.current });
+                  }
+
+                  try {
+                    const drPromise = geminiDeepResearchAgent.runDeepResearch({
+                      apiKey: geminiKey,
+                      prompt: cleanSearchQuery,
+                      model: modelToUse,
+                      visualization: 'auto',
+                      thinkingSummaries: 'auto',
+                      onReasoning: (thought) => {
+                        if (!activeStreamRef.current) return;
+                        const prev = activeStreamRef.current.reasoning || '';
+                        activeStreamRef.current.reasoning = prev
+                          ? `${prev}\n🔬 ${thought}`
+                          : `🔬 ${thought}`;
+                        activeStreamRef.current.thinkingTimeMs =
+                          Date.now() - (activeStreamRef.current.timestamp || Date.now());
+                        setActiveStreamMessage({ ...activeStreamRef.current });
+                      },
+                    });
+
+                    // Up to 15 seconds for real-time deep research aggregation before final synthesis
+                    const timeoutDr = new Promise<null>((resolve) =>
+                      setTimeout(() => resolve(null), 15000)
+                    );
+                    const drResult: any = await Promise.race([drPromise, timeoutDr]);
+
+                    if (drResult && drResult.outputText) {
+                      webSearchResults = `[GEMINI DEEP RESEARCH COMPREHENSIVE REPORT (${modelToUse})]:\n${drResult.outputText}`;
+                    }
+                  } catch (drErr) {
+                    console.warn('[useChatPipeline] Gemini Deep Research Agent error:', drErr);
+                  }
                 }
-              };
+              }
 
-              const researchRes: any = await invoke('start_deep_research', {
-                query: {
-                  prompt: cleanSearchQuery,
-                  depth_limit: 8,
-                  provider: resolvedProviderEarly || 'google',
-                  model_id: modelToUse,
-                  api_key: getEffectiveApiKey(resolvedProviderEarly, apiKeys) || '',
-                },
-                onProgress: onResearchProgress,
-              }).catch((err) => {
-                console.warn(
-                  '[useChatPipeline] start_deep_research failed, falling back to search_web_command:',
-                  err
+              if (!webSearchResults) {
+                const onResearchProgress = new Channel<any>();
+                onResearchProgress.onmessage = (msg: any) => {
+                  if (msg && msg.message && activeStreamRef.current) {
+                    const currReasoning = activeStreamRef.current.reasoning || '';
+                    activeStreamRef.current = {
+                      ...activeStreamRef.current,
+                      reasoning: currReasoning
+                        ? `${currReasoning}\n🔬 ${msg.message}`
+                        : `🔬 ${msg.message}`,
+                    };
+                    setActiveStreamMessage({ ...activeStreamRef.current });
+                  }
+                };
+
+                const researchPromise = invoke('start_deep_research', {
+                  query: {
+                    prompt: cleanSearchQuery,
+                    depth_limit: 4,
+                    provider: resolvedProviderEarly || 'google',
+                    model_id: modelToUse,
+                    api_key: getEffectiveApiKey(resolvedProviderEarly, apiKeys) || '',
+                  },
+                  onProgress: onResearchProgress,
+                });
+
+                // Bounded timeout: Do not block generation for more than 8 seconds
+                const timeoutResearch = new Promise<null>((resolve) =>
+                  setTimeout(() => resolve(null), 8000)
                 );
-                return null;
-              });
 
-              if (researchRes && typeof researchRes === 'object') {
-                const report = researchRes.report || '';
-                const sources = (researchRes.sources || [])
-                  .map(
-                    (s: any, idx: number) =>
-                      `[${idx + 1}] [${s.title || 'Source'}](${s.url}): ${s.snippet || ''}`
-                  )
-                  .join('\n\n');
-                webSearchResults = `[DEEP RESEARCH CONTEXT & SYNTHESIS]\n${report}\n\n[DISCOVERED SOURCES & CITATIONS]\n${sources}`;
+                const researchRes: any = await Promise.race([
+                  researchPromise,
+                  timeoutResearch,
+                ]).catch((err) => {
+                  console.warn(
+                    '[useChatPipeline] start_deep_research failed, falling back to search_web_command:',
+                    err
+                  );
+                  return null;
+                });
+
+                if (researchRes && typeof researchRes === 'object') {
+                  const report = researchRes.report || '';
+                  const sources = (researchRes.sources || [])
+                    .map(
+                      (s: any, idx: number) =>
+                        `[${idx + 1}] [${s.title || 'Source'}](${s.url}): ${s.snippet || ''}`
+                    )
+                    .join('\n\n');
+                  webSearchResults = `[DEEP RESEARCH CONTEXT & SYNTHESIS]\n${report}\n\n[DISCOVERED SOURCES & CITATIONS]\n${sources}`;
+                }
               }
             }
 
             if (!webSearchResults) {
-              const searchRes = await invoke<string>('search_web_command', {
+              const searchPromise = invoke<string>('search_web_command', {
                 query: cleanSearchQuery,
-                numResults: 6,
+                numResults: 5,
                 searchProvider,
                 apiKey,
               });
+
+              // Bounded timeout: 4-second max for quick web search
+              const timeoutSearch = new Promise<string>((resolve) =>
+                setTimeout(() => resolve(''), 4000)
+              );
+
+              const searchRes = await Promise.race([searchPromise, timeoutSearch]).catch(() => '');
               if (searchRes && typeof searchRes === 'string' && searchRes.trim().length > 0) {
                 webSearchResults = searchRes.trim();
               }
@@ -753,13 +812,17 @@ export function useChatPipeline({
             resolvedProviderEarly2 === 'nyx-native' ? (activeTools as any) : undefined,
         };
 
-        // Retrieve relevant semantic context from TurboVec LanceDB memory store
+        // Retrieve relevant semantic context from TurboVec LanceDB memory store (with 300ms timeout guard)
         let memoryContext: string | undefined = undefined;
         try {
-          const tvResults = await invoke<Array<{ text: string; metadata: string }>>(
+          const tvPromise = invoke<Array<{ text: string; metadata: string }>>(
             'turbovec_search_chat_history',
             { query: prompt, limit: 3 }
-          ).catch(() => []);
+          );
+          const tvTimeout = new Promise<Array<{ text: string; metadata: string }>>((resolve) =>
+            setTimeout(() => resolve([]), 300)
+          );
+          const tvResults = await Promise.race([tvPromise, tvTimeout]).catch(() => []);
           if (tvResults && tvResults.length > 0) {
             const memSnippets = tvResults
               .map((r, idx) => `[Memory Snippet ${idx + 1} (${r.metadata})]: ${r.text}`)
@@ -885,6 +948,9 @@ export function useChatPipeline({
               pendingToolName = message.name as string | undefined;
               pendingToolId = (message.tool_call as any)?.id as string | undefined;
               pendingToolArgs = '';
+              const thoughtSig =
+                (message.metadata as any)?.thoughtSignature ||
+                (message.metadata as any)?.thought_signature;
               if (pendingToolName) {
                 const newCall = {
                   id:
@@ -893,6 +959,7 @@ export function useChatPipeline({
                       ? crypto.randomUUID()
                       : Math.random().toString(36).substring(2, 15)),
                   type: 'function' as const,
+                  thoughtSignature: thoughtSig,
                   function: { name: pendingToolName, arguments: '{}' },
                   status: 'running' as const,
                 };
@@ -1206,7 +1273,9 @@ export function useChatPipeline({
               ? maxContextTokens
               : 128000;
 
-          const shouldEnableReasoning = isReasoning;
+          const isReasoningUserActive = useAppStore.getState().reasoningEnabled ?? true;
+          const geminiThinkingLevel = useAppStore.getState().geminiThinkingLevel || 'max';
+          const shouldEnableReasoning = isReasoningUserActive;
           const configuredMaxTokens = modelSettings?.maxTokens;
           const finalMaxTokens = isLocalModel
             ? configuredMaxTokens && configuredMaxTokens > 0
@@ -1229,18 +1298,18 @@ export function useChatPipeline({
             lowerModel.includes('deepseek-r1') ||
             lowerModel.includes('deepseek/deepseek-r1') ||
             lowerModel.includes('qwq');
-          const shouldPassTools =
-            modelCaps.supportsTools && !isGemma && !isImageGen && !isReasoningOnly;
+          const shouldPassTools = modelCaps.supportsTools && !isImageGen && !isReasoningOnly;
 
           const isAntigravitySupervisorActive =
             modelSettings?.antigravity !== false &&
+            resolvedProvider === 'gemini' &&
             !!(apiKeys['gemini'] || getEffectiveApiKey('gemini', apiKeys));
 
           let enrichedSystemInstruction = finalSystemInstruction;
 
           // ── Pass 1: Antigravity Agent Controller & Orchestrator (Brain & Memory) ──
-          // The Antigravity Agent (Gemini 3.5 Flash-Lite / 3.1 Flash-Lite) reviews the conversation memory,
-          // decides what tools to run, and produces a live thinking plan in the ThinkingBlock.
+          // The Antigravity Managed Agent (antigravity-preview-05-2026) dynamically leverages the selected Gemini model,
+          // reviews the conversation memory, coordinates tools, and produces a live thinking plan in the ThinkingBlock.
           if (isAntigravitySupervisorActive) {
             const geminiKey = getEffectiveApiKey('gemini', apiKeys) || apiKeys['gemini'] || '';
             const initialThought = `━━━ [Antigravity Controller] Supervising & Orchestrating ━━━\n🔍 Analyzing user specifications for ${modelToUse}...\n🧠 Reviewing conversation history & TurboVec semantic memory...`;
@@ -1303,12 +1372,12 @@ export function useChatPipeline({
                 },
               });
 
-              // Fast timeout: Do not block generation for more than 3 seconds
+              // Fast timeout: Do not block generation for more than 4 seconds
               const timeoutPromise = new Promise<{
                 contextEnrichment?: string;
                 toolOutputs: any[];
               }>((resolve) =>
-                setTimeout(() => resolve({ contextEnrichment: '', toolOutputs: [] }), 3000)
+                setTimeout(() => resolve({ contextEnrichment: '', toolOutputs: [] }), 4000)
               );
 
               const planResult = await Promise.race([planPromise, timeoutPromise]);
@@ -1340,11 +1409,12 @@ export function useChatPipeline({
               top_p: modelSettings?.topP ?? 0.95,
               top_k: 40,
               repeat_penalty: 1.0,
-              system_instruction: finalSystemInstruction || undefined,
+              system_instruction: enrichedSystemInstruction || undefined,
               event_name: eventName,
               max_tokens: finalMaxTokens,
               execution_mode: executionMode,
               reasoning_enabled: shouldEnableReasoning,
+              thinking_level: resolvedProvider === 'gemini' ? geminiThinkingLevel : undefined,
               context_window: effectiveContextWindow,
               tools: shouldPassTools ? standardTools : undefined,
               web_search_enabled: liveWebSearchEnabled && !isGemma,
@@ -1456,6 +1526,7 @@ export function useChatPipeline({
                   ...newCalls.map((c: any) => ({
                     type: 'tool_call',
                     id: c.id,
+                    thoughtSignature: c.thoughtSignature || c.thought_signature,
                     function: { name: c.function.name, arguments: c.function.arguments },
                   })),
                 ] as any,

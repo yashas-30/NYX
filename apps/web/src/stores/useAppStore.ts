@@ -24,6 +24,12 @@ interface AppState {
   codebaseKnowledgeEnabled: boolean;
   toggleWebSearch: () => void;
   toggleCodebaseKnowledge: () => void;
+
+  reasoningEnabled: boolean;
+  geminiThinkingLevel: 'low' | 'medium' | 'max';
+  toggleReasoning: () => void;
+  setReasoningEnabled: (enabled: boolean) => void;
+  setGeminiThinkingLevel: (level: 'low' | 'medium' | 'max') => void;
 }
 
 const defaultSettings: AISettings = {
@@ -95,12 +101,18 @@ export const useAppStore = create<AppState>()(
 
       webSearchEnabled: false,
       codebaseKnowledgeEnabled: true,
-      toggleWebSearch: () =>
-        set((state) => ({ webSearchEnabled: !state.webSearchEnabled })),
+      toggleWebSearch: () => set((state) => ({ webSearchEnabled: !state.webSearchEnabled })),
       toggleCodebaseKnowledge: () =>
         set((state) => ({
           codebaseKnowledgeEnabled: !state.codebaseKnowledgeEnabled,
         })),
+
+      reasoningEnabled: true,
+      geminiThinkingLevel: 'max',
+      toggleReasoning: () => set((state) => ({ reasoningEnabled: !state.reasoningEnabled })),
+      setReasoningEnabled: (enabled: boolean) => set({ reasoningEnabled: enabled }),
+      setGeminiThinkingLevel: (level: 'low' | 'medium' | 'max') =>
+        set({ geminiThinkingLevel: level }),
     }),
     {
       name: 'nyx-app-storage',
@@ -110,7 +122,9 @@ export const useAppStore = create<AppState>()(
         sidebarOpen: state.sidebarOpen,
         webSearchEnabled: state.webSearchEnabled,
         codebaseKnowledgeEnabled: state.codebaseKnowledgeEnabled,
+        reasoningEnabled: state.reasoningEnabled,
+        geminiThinkingLevel: state.geminiThinkingLevel,
       }),
     }
   )
-);
+);

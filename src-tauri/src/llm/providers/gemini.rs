@@ -174,11 +174,30 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
                         } else {
                             func.get("arguments").cloned().unwrap_or(json!({}))
                         };
-                        Some(json!({
-                            "functionCall": {
-                                "name": name,
-                                "args": args_val
+
+                        let maybe_sig = part.get("thoughtSignature")
+                            .or_else(|| part.get("thought_signature"))
+                            .or_else(|| part.get("signature"))
+                            .or_else(|| func.get("thoughtSignature"))
+                            .or_else(|| func.get("thought_signature"))
+                            .and_then(|s| s.as_str());
+
+                        if let Some(sig) = maybe_sig {
+                            if !sig.is_empty() {
+                                return Some(json!({
+                                    "functionCall": {
+                                        "name": name,
+                                        "args": args_val
+                                    },
+                                    "thoughtSignature": sig
+                                }));
                             }
+                        }
+
+                        // If no thought signature exists on this tool call, serialize as text
+                        // to avoid Gemini 400 Bad Request ("Function call is missing a thought_signature")
+                        Some(json!({
+                            "text": format!("[Invoked tool '{}' with arguments: {}]", name, args_val)
                         }))
                     }
                     _ => None,
@@ -213,20 +232,28 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
     }
 
     let model_id = req.model_id.as_str();
-    let is_gemini_thinking_supported = model_id.contains("3.7") || req.reasoning_enabled == Some(true);
-    let has_tools = req.tools.as_ref().map_or(false, |t| t.as_array().map_or(false, |a| !a.is_empty()))
-        || sanitized_history.iter().any(|m| m.role == "tool" || m.content.to_string().contains("tool_call"));
+    let is_gemini_thinking_requested = req.reasoning_enabled == Some(true);
+    let is_gemini_thinking_disabled = req.reasoning_enabled == Some(false);
 
-    if req.reasoning_enabled == Some(true) && is_gemini_thinking_supported && !has_tools {
-        // Dynamic thinking: Gemini adapts reasoning length to problem complexity (0s for greetings, deep for complex logic)
-        generation_config["thinkingConfig"] = json!({
-            "thinkingBudget": -1
-        });
-    } else if is_gemini_thinking_supported && has_tools {
-        // Zero thinking budget for ultra-fast latency and avoiding thought_signature requirement on tool turns
-        generation_config["thinkingConfig"] = json!({
-            "thinkingBudget": 0
-        });
+    if !is_gemma {
+        if is_gemini_thinking_disabled {
+            // Explicitly turned OFF: set thinking budget to 0 to disable thinking tokens and optimize latency
+            generation_config["thinkingConfig"] = json!({
+                "thinkingBudget": 0
+            });
+        } else if is_gemini_thinking_requested || req.reasoning_enabled.is_none() {
+            // Thinking ON: apply selected thinking level budget (0 disables, -1 unconstrained, or explicit limit)
+            let budget: i64 = match req.thinking_level.as_deref() {
+                Some("low") => 1024,
+                Some("medium") => 8192,
+                Some("max") | Some("high") => -1,
+                Some("minimal") => 512,
+                _ => -1, // dynamic unconstrained adaptive budget
+            };
+            generation_config["thinkingConfig"] = json!({
+                "thinkingBudget": budget
+            });
+        }
     }
 
 
@@ -296,7 +323,7 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
     Ok((endpoint, body, headers))
 }
 
-/// Parses an SSE JSON chunk from Gemini
+/// Parses an SSE JSON chunk from Gemini supporting both generateContent and Interactions API schemas
 pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
     let mut events = Vec::new();
     let val: Value = match serde_json::from_str(data) {
@@ -304,13 +331,83 @@ pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
         Err(_) => return events,
     };
 
+    // 1. Check Interactions API format (step.delta, step.start, step.stop, interaction.completed)
+    if let Some(event_type) = val.get("event_type").and_then(|t| t.as_str()) {
+        match event_type {
+            "step.delta" => {
+                if let Some(delta) = val.get("delta") {
+                    let dtype = delta.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    if dtype == "thought_summary" {
+                        if let Some(text) = delta.get("content").and_then(|c| c.get("text")).and_then(|t| t.as_str()) {
+                            events.push(StreamChunkPayload::thinking(text.to_string()));
+                        } else if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
+                            events.push(StreamChunkPayload::thinking(text.to_string()));
+                        }
+                    } else if dtype == "text" {
+                        if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
+                            events.push(StreamChunkPayload::text(text.to_string()));
+                        }
+                    } else if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
+                        events.push(StreamChunkPayload::text(text.to_string()));
+                    }
+                }
+            }
+            "step.start" => {
+                if let Some(step) = val.get("step") {
+                    let stype = step.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    if stype == "thought" {
+                        if let Some(summary_arr) = step.get("summary").and_then(|s| s.as_array()) {
+                            for block in summary_arr {
+                                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                                    events.push(StreamChunkPayload::thinking(text.to_string()));
+                                }
+                            }
+                        }
+                    } else if stype == "model_output" {
+                        if let Some(content_arr) = step.get("content").and_then(|c| c.as_array()) {
+                            for block in content_arr {
+                                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                                    events.push(StreamChunkPayload::text(text.to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "interaction.completed" => {
+                if let Some(usage) = val.get("interaction").and_then(|i| i.get("usage")) {
+                    let pt = usage.get("total_input_tokens").and_then(|t| t.as_i64()).unwrap_or(0);
+                    let ot = usage.get("total_output_tokens").and_then(|t| t.as_i64()).unwrap_or(0);
+                    let tt = usage.get("total_thought_tokens").and_then(|t| t.as_i64()).unwrap_or(0);
+                    events.push(StreamChunkPayload {
+                        event_type: "metadata".to_string(),
+                        content: Some(format!("Tokens: {} in / {} out ({} thought)", pt, ot, tt)),
+                        done: Some(false),
+                        error: None,
+                        tool_call: None,
+                        name: None,
+                        result: None,
+                        metadata: Some(serde_json::json!({ "prompt_tokens": pt, "completion_tokens": ot, "thought_tokens": tt })),
+                    });
+                }
+            }
+            _ => {}
+        }
+        if !events.is_empty() {
+            return events;
+        }
+    }
+
+    // 2. Check generateContent API format (candidates -> content -> parts)
     let candidates = val.get("candidates").and_then(|c| c.as_array());
     let first_candidate = candidates.and_then(|arr| arr.first());
 
     if let Some(cand) = first_candidate {
         if let Some(parts) = cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
             for part in parts {
-                if let Some(true) = part.get("thought").and_then(|t| t.as_bool()) {
+                let is_thought = part.get("thought").and_then(|t| t.as_bool()).unwrap_or(false)
+                    || part.get("type").and_then(|t| t.as_str()) == Some("thought");
+                if is_thought {
                     if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                         events.push(StreamChunkPayload::thinking(text.to_string()));
                     }
@@ -321,7 +418,17 @@ pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
                 if let Some(func_call) = part.get("functionCall") {
                     let name = func_call.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_string();
                     let args = func_call.get("args").cloned().unwrap_or(json!({}));
-                    events.push(StreamChunkPayload::tool_start(name.clone(), name.clone()));
+                    let mut start_payload = StreamChunkPayload::tool_start(name.clone(), name.clone());
+                    let sig = part.get("thoughtSignature")
+                        .or_else(|| part.get("thought_signature"))
+                        .or_else(|| part.get("signature"))
+                        .or_else(|| func_call.get("thoughtSignature"))
+                        .or_else(|| func_call.get("thought_signature"))
+                        .and_then(|s| s.as_str());
+                    if let Some(s) = sig {
+                        start_payload.metadata = Some(json!({ "thoughtSignature": s, "thought_signature": s }));
+                    }
+                    events.push(start_payload);
                     events.push(StreamChunkPayload::tool_args(args.to_string()));
                     events.push(StreamChunkPayload::tool_complete());
                 }
@@ -332,6 +439,7 @@ pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
     if let Some(usage) = val.get("usageMetadata") {
         let pt = usage.get("promptTokenCount").and_then(|t| t.as_i64()).unwrap_or(0);
         let ct = usage.get("candidatesTokenCount").and_then(|t| t.as_i64()).unwrap_or(0);
+        let tt = usage.get("candidatesThinkingTokenCount").and_then(|t| t.as_i64()).unwrap_or(0);
         events.push(StreamChunkPayload {
             event_type: "metadata".to_string(),
             content: Some(format!("Tokens: {} in / {} out", pt, ct)),
@@ -340,7 +448,7 @@ pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
             tool_call: None,
             name: None,
             result: None,
-            metadata: Some(serde_json::json!({ "prompt_tokens": pt, "completion_tokens": ct })),
+            metadata: Some(serde_json::json!({ "prompt_tokens": pt, "completion_tokens": ct, "thought_tokens": tt })),
         });
     }
 

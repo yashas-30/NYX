@@ -374,6 +374,19 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
   const canAttachFiles = supportsVision;
   const [showReasoningMenu, setShowReasoningMenu] = useState(false);
 
+  const isGeminiProvider =
+    providerStr === 'gemini' ||
+    Boolean(
+      currentModelId &&
+      (currentModelId.toLowerCase().includes('gemini') ||
+        currentModelId.toLowerCase().includes('gemma'))
+    );
+
+  const reasoningEnabled = useAppStore((s) => s.reasoningEnabled);
+  const toggleReasoning = useAppStore((s) => s.toggleReasoning);
+  const geminiThinkingLevel = useAppStore((s) => s.geminiThinkingLevel);
+  const setGeminiThinkingLevel = useAppStore((s) => s.setGeminiThinkingLevel);
+
   const loadLocalLibraryModels = useModelStore((s) => s.loadLocalLibraryModels);
 
   // Eagerly load local model metadata if a local model is active but the
@@ -610,6 +623,58 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   <Globe className="w-3 h-3" />
                   <span className="text-[9px] font-semibold tracking-tight">Web Search</span>
                 </motion.button>
+
+                <motion.button
+                  variants={tagItemVariants}
+                  whileHover={{ y: -1, scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="button"
+                  onClick={toggleReasoning}
+                  className={`flex items-center gap-1 h-5 px-2 rounded border transition-all text-left cursor-pointer shrink-0 ${
+                    reasoningEnabled
+                      ? 'bg-violet-500/10 border-violet-500/35 text-violet-400 font-semibold'
+                      : 'bg-secondary border-border hover:border-border-strong hover:text-foreground text-muted-foreground'
+                  }`}
+                  title={
+                    reasoningEnabled
+                      ? 'Reasoning is active (Click to disable thinking)'
+                      : 'Reasoning is disabled (Click to enable thinking)'
+                  }
+                  aria-label="Toggle reasoning"
+                >
+                  <Brain className="w-3 h-3" />
+                  <span className="text-[9px] font-semibold tracking-tight">
+                    Reasoning {reasoningEnabled ? 'ON' : 'OFF'}
+                  </span>
+                </motion.button>
+
+                {isGeminiProvider && reasoningEnabled && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.92 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.92 }}
+                    className="flex items-center bg-secondary/90 border border-border/80 rounded px-1 py-0 gap-0.5 h-5 shrink-0"
+                  >
+                    <span className="text-[8px] font-mono font-medium text-muted-foreground/60 mr-0.5">
+                      Budget:
+                    </span>
+                    {(['low', 'medium', 'max'] as const).map((lvl) => (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => setGeminiThinkingLevel(lvl)}
+                        className={`px-1 py-0 text-[8px] font-mono rounded uppercase transition-colors cursor-pointer ${
+                          geminiThinkingLevel === lvl
+                            ? 'bg-violet-500/25 text-violet-300 font-bold border border-violet-500/40'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                        }`}
+                        title={`Set Gemini Thinking Budget to ${lvl.toUpperCase()}`}
+                      >
+                        {lvl === 'low' ? 'Low' : lvl === 'medium' ? 'Med' : 'Max'}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
 
                 <div className="flex items-center">
                   <PromptTemplateManager

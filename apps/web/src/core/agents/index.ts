@@ -8,3 +8,4 @@
 
 export * from './langgraphAgent';
 export * from './antigravityAgent';
+export * from './geminiDeepResearchAgent';

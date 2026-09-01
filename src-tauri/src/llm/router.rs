@@ -121,6 +121,7 @@ Output NO extra text or markdown formatting."#;
         top_p: None,
         execution_mode: Some("chat".to_string()),
         reasoning_enabled: None,
+        thinking_level: None,
         context_window: None,
         capabilities: None,
         tool_choice: None,

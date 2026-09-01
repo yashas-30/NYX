@@ -298,25 +298,25 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   useEffect(() => {
     if (userDismissedRef.current) return;
 
-    const targetMsg =
-      activeStreamMessage || (history.length > 0 ? history[history.length - 1] : null);
-    if (!targetMsg || targetMsg.role !== 'assistant') return;
-
-    const detected = extractArtifactFromMessage(targetMsg);
-    if (!detected || !detected.content) return;
-
-    if (activeArtifact) {
-      if (activeArtifact.content !== detected.content) {
-        setActiveArtifact({
-          ...activeArtifact,
-          content: detected.content,
-          title: detected.title,
-          language: detected.language,
-        });
+    if (activeStreamMessage && activeStreamMessage.role === 'assistant') {
+      const detected = extractArtifactFromMessage(activeStreamMessage);
+      if (detected && detected.content) {
+        hasAutoOpenedRef.current[detected.id] = true;
+        setActiveArtifact(detected);
       }
-    } else if (activeStreamMessage || !hasAutoOpenedRef.current[detected.id]) {
-      hasAutoOpenedRef.current[detected.id] = true;
-      setActiveArtifact(detected);
+      return;
+    }
+
+    // When not streaming, auto-open on initial arrival only if no artifact is currently active
+    if (!activeArtifact && history.length > 0) {
+      const lastMsg = history[history.length - 1];
+      if (lastMsg && lastMsg.role === 'assistant') {
+        const detected = extractArtifactFromMessage(lastMsg);
+        if (detected && detected.content && !hasAutoOpenedRef.current[detected.id]) {
+          hasAutoOpenedRef.current[detected.id] = true;
+          setActiveArtifact(detected);
+        }
+      }
     }
   }, [activeStreamMessage, history, activeArtifact, extractArtifactFromMessage]);
 

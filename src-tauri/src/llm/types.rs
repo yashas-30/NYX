@@ -226,6 +226,8 @@ pub struct UnifiedRequest {
     pub execution_mode: Option<String>,
     #[serde(default)]
     pub reasoning_enabled: Option<bool>,
+    #[serde(default)]
+    pub thinking_level: Option<String>,
     /// Actual context window the llama-server was started with.
     /// When set, local_inference uses this for history budgeting instead of
     /// the conservative 8 192-token fallback, preventing premature message drops

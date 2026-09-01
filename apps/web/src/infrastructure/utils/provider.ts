@@ -341,12 +341,13 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
         lowerId.includes('moondream') ||
         lowerId.includes('gemini');
 
+  const isGemini = lowerId.includes('gemini') || lowerId.includes('gemma');
   const isGemma = lowerId.includes('gemma');
   const isImageGen =
     lowerId.includes('imagen') || lowerId.includes('flux') || lowerId.includes('diffusion');
   const isGeminiFlash = lowerId.includes('gemini') && !isGemma && !isImageGen;
   const isStandardToolModel =
-    isGeminiFlash ||
+    isGemini ||
     lowerId.includes('gpt-4') ||
     lowerId.includes('gpt-3.5') ||
     lowerId.includes('claude-3') ||
@@ -357,14 +358,14 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
     lowerId.includes('groq/');
 
   const caps: ModelCapabilities = {
-    supportsVision: isVision,
+    supportsVision: isVision || isGemini,
     supportsStreaming: true,
-    supportsTools: isStandardToolModel && !isReasoning && !isGemma && !isImageGen,
+    supportsTools: (isStandardToolModel || isGemini) && !isImageGen,
     supportsSystemPrompt: true,
-    supportsReasoning: isReasoning,
-    contextWindow: 32768,
-    maxOutputTokens: 8192,
-    supportsAudio: false,
+    supportsReasoning: isReasoning || isGemini,
+    contextWindow: isGemini ? (isGemma ? 262144 : 1048576) : 32768,
+    maxOutputTokens: isGemini ? (isGemma ? 32768 : 65536) : 8192,
+    supportsAudio: isGeminiFlash,
   };
 
   if (isGeminiFlash) {
@@ -378,7 +379,7 @@ export const getModelCapabilities = (modelId: any): ModelCapabilities => {
       caps.latencyClass = 'fast';
     }
   } else if (isGemma) {
-    caps.supportsTools = false;
+    caps.supportsTools = true;
     caps.contextWindow = 262144; // 262,144 tokens (262K)
     caps.maxOutputTokens = 32768; // 32,768 tokens (32K)
     caps.supportsAudio = false;
@@ -592,8 +593,12 @@ export const isReasoningModel = (modelId: any): boolean => {
     lower.includes('r1-distill') ||
     lower.includes('qwq-') ||
     lower.includes('qwen-qwq') ||
-    lower.includes('gemini-3.7-flash') ||
-    lower.includes('gemini-2.5-pro') ||
+    lower.startsWith('gemini') ||
+    lower.startsWith('gemma') ||
+    lower.includes('gemini-') ||
+    lower.includes('gemma-') ||
+    lower.includes('gemini') ||
+    lower.includes('gemma') ||
     lower.includes('nemotron-3-ultra') ||
     lower.includes('nemotron-3-super') ||
     lower.includes('nemotron-70b')

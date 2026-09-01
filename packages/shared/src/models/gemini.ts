@@ -59,22 +59,22 @@ export const GEMINI_MODELS: ModelOption[] = [
     },
     capabilities: {
       vision: true,
-      reasoning: false,
+      reasoning: true,
     },
-    supportsThinking: false,
+    supportsThinking: true,
     features: [
       '1M Token Context Window for large-scale document analysis',
-      'Fast Single-Pass Inference without reasoning token overhead',
+      'High-Throughput Multimodal Processing & Code Synthesis',
       'Native Google Search Grounding for real-time web retrieval',
       'Multi-tool invocation and structured function calling',
-      'Multimodal video, audio, and visual document reasoning',
+      'Controllable Thinking & Multimodal Reasoning',
     ],
     pros: [
-      'Extremely responsive with near-instant generation start',
-      'High instruction-following accuracy for structured data',
+      'Extremely responsive with adaptive reasoning capabilities',
+      'High instruction-following accuracy for structured data and tools',
       'Reliable daily driver for general assistant workflows',
     ],
-    cons: ['Does not feature iterative multi-step chain-of-thought thinking'],
+    cons: ['Free tier subject to 15 RPM project limits'],
     limits: {
       rpm: 15,
       tpm: 1000000,
@@ -99,14 +99,14 @@ export const GEMINI_MODELS: ModelOption[] = [
     },
     capabilities: {
       vision: true,
-      reasoning: false,
+      reasoning: true,
     },
-    supportsThinking: false,
+    supportsThinking: true,
     features: [
       'High Free Tier Quota: 30 RPM & 4M TPM (up to 10M TPM enqueued)',
       '1M Token Context Ingestion at minimal resource footprint',
-      'Fast JSON extraction and data normalization',
-      'Lightweight multimodal vision and audio processing',
+      'Fast JSON extraction, tool calling, and data normalization',
+      'Adaptive reasoning and lightweight multimodal vision/audio processing',
     ],
     pros: [
       'Double the request-per-minute throughput of standard Flash (30 RPM)',
@@ -138,19 +138,19 @@ export const GEMINI_MODELS: ModelOption[] = [
     },
     capabilities: {
       vision: true,
-      reasoning: false,
+      reasoning: true,
     },
-    supportsThinking: false,
+    supportsThinking: true,
     features: [
       'High Free Tier Quota: 30 RPM & 4M TPM',
       '1M Token Context Window',
-      'Ultra-low latency generation for interactive UI elements',
+      'Ultra-low latency generation with reasoning support',
       'Reliable schema adherence and structured extraction',
     ],
     pros: [
       '30 RPM free rate limit prevents 429 bottlenecks on frequent queries',
       'Massive 1M token ingestion capability',
-      'High speed for rapid conversational responses',
+      'High speed for rapid conversational responses and tool calls',
     ],
     cons: ['Best suited for direct tasks rather than multi-layered reasoning'],
     limits: {
@@ -177,9 +177,9 @@ export const GEMINI_MODELS: ModelOption[] = [
     },
     capabilities: {
       vision: true,
-      reasoning: false,
+      reasoning: true,
     },
-    supportsThinking: false,
+    supportsThinking: true,
     features: [
       '262K Token Long-Context Window',
       'Dense 31B parameter instruction-tuned weights',
@@ -217,14 +217,14 @@ export const GEMINI_MODELS: ModelOption[] = [
     },
     capabilities: {
       vision: true,
-      reasoning: false,
+      reasoning: true,
     },
-    supportsThinking: false,
+    supportsThinking: true,
     features: [
       '262K Token Long-Context Window',
       'Sparse Mixture-of-Experts (4B active parameter routing)',
       'High-speed inference with minimal latency',
-      'Multimodal image understanding and code generation',
+      'Multimodal image understanding, reasoning, and code generation',
       'High free rate limit: 30 RPM, 4M TPM',
     ],
     pros: [

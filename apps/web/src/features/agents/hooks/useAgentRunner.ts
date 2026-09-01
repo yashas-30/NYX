@@ -11,11 +11,7 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { runLangGraphAgent } from '@src/core/agents/langgraphAgent';
-import {
-  antigravityAgent,
-  ANTIGRAVITY_BASE_MODEL,
-  ANTIGRAVITY_BACKUP_MODEL,
-} from '@src/core/agents/antigravityAgent';
+import { antigravityAgent } from '@src/core/agents/antigravityAgent';
 
 export interface PlanStep {
   step_id: number;
@@ -101,18 +97,19 @@ export function useAgentRunner() {
       setCurrentStepId(null);
       setStatusMessage(`Initializing autonomous agent (${engine})...`);
 
-      const apiKeys = useNyxStore.getState().apiKeys;
+      const nyxState = useNyxStore.getState();
+      const apiKeys = nyxState.apiKeys;
       const geminiKey = getEffectiveApiKey('gemini', apiKeys) || '';
+      const selectedModel = nyxState.selectedModel || 'gemini-3.7-flash';
 
       // ── 1. Antigravity Managed Agent Engine ───────────────────────────────
       if (engine === 'antigravity' && geminiKey) {
         try {
-          setStatusMessage('Running Antigravity Managed Agent (Gemini 3.5 Flash-Lite)...');
+          setStatusMessage(`Running Antigravity Managed Agent (${selectedModel})...`);
           const result = await antigravityAgent.runInteraction({
             apiKey: geminiKey,
             prompt,
-            model: ANTIGRAVITY_BASE_MODEL,
-            backupModel: ANTIGRAVITY_BACKUP_MODEL,
+            model: selectedModel,
             environment: 'remote',
             onStep: (step) => {
               setExecutionSteps((prev) => [
@@ -150,8 +147,7 @@ export function useAgentRunner() {
           setStatusMessage('Executing LangGraph ReAct state workflow...');
           const result = await runLangGraphAgent(prompt, {
             apiKey: geminiKey,
-            primaryModel: ANTIGRAVITY_BASE_MODEL,
-            backupModel: ANTIGRAVITY_BACKUP_MODEL,
+            primaryModel: selectedModel,
             onStep: (step) => {
               setExecutionSteps((prev) => {
                 const existingIdx = prev.findIndex((s) => s.iteration === step.iteration);
