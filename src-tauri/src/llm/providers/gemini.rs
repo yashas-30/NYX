@@ -97,43 +97,44 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
             if let Some(arr) = m.content.as_array() {
                 for item in arr {
                     let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("tool");
-                    let c_val = item.get("content").cloned().unwrap_or(json!({}));
+                    let c_val = item.get("content").cloned().unwrap_or(json!(""));
+                    let resp_obj = if c_val.is_object() {
+                        c_val
+                    } else {
+                        json!({ "result": c_val, "output": c_val })
+                    };
                     func_parts.push(json!({
                         "functionResponse": {
                             "name": name,
-                            "response": {
-                                "name": name,
-                                "content": c_val
-                            }
+                            "response": resp_obj
                         }
                     }));
                 }
             } else if let Some(obj) = m.content.as_object() {
                 let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("tool");
-                let c_val = obj.get("content").cloned().unwrap_or(json!({}));
+                let c_val = obj.get("content").cloned().unwrap_or(json!(""));
+                let resp_obj = if c_val.is_object() {
+                    c_val
+                } else {
+                    json!({ "result": c_val, "output": c_val })
+                };
                 func_parts.push(json!({
                     "functionResponse": {
                         "name": name,
-                        "response": {
-                            "name": name,
-                            "content": c_val
-                        }
+                        "response": resp_obj
                     }
                 }));
             } else {
                 func_parts.push(json!({
                     "functionResponse": {
                         "name": "tool",
-                        "response": {
-                            "name": "tool",
-                            "content": m.content.clone()
-                        }
+                        "response": { "result": m.content.clone(), "output": m.content.clone() }
                     }
                 }));
             }
 
             return json!({
-                "role": "user",
+                "role": "function",
                 "parts": func_parts
             });
         }
@@ -182,23 +183,20 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
                             .or_else(|| func.get("thought_signature"))
                             .and_then(|s| s.as_str());
 
+                        let mut part_obj = json!({
+                            "functionCall": {
+                                "name": name,
+                                "args": args_val
+                            }
+                        });
+
                         if let Some(sig) = maybe_sig {
                             if !sig.is_empty() {
-                                return Some(json!({
-                                    "functionCall": {
-                                        "name": name,
-                                        "args": args_val
-                                    },
-                                    "thoughtSignature": sig
-                                }));
+                                part_obj["thoughtSignature"] = json!(sig);
                             }
                         }
 
-                        // If no thought signature exists on this tool call, serialize as text
-                        // to avoid Gemini 400 Bad Request ("Function call is missing a thought_signature")
-                        Some(json!({
-                            "text": format!("[Invoked tool '{}' with arguments: {}]", name, args_val)
-                        }))
+                        Some(part_obj)
                     }
                     _ => None,
                 }
@@ -285,6 +283,7 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
     // Tools (Not supported on Gemma)
     let mut tools_list: Vec<Value> = Vec::new();
     if !is_gemma {
+        let mut has_func_decls = false;
         if let Some(tools) = &req.tools {
             if let Some(tool_arr) = tools.as_array() {
                 let decls: Vec<Value> = tool_arr.iter()
@@ -296,13 +295,21 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
                     .collect();
                 if !decls.is_empty() {
                     tools_list.push(json!({"functionDeclarations": decls}));
-                    body["toolConfig"] = json!({"functionCallingConfig": {"mode": "AUTO"}});
+                    has_func_decls = true;
                 }
             }
         }
 
+        // Only add googleSearch grounding when NO function declarations are present and web search is enabled
+        if !has_func_decls && req.web_search_enabled {
+            tools_list.push(json!({"googleSearch": {}}));
+        }
+
         if !tools_list.is_empty() {
             body["tools"] = Value::Array(tools_list);
+            if has_func_decls {
+                body["toolConfig"] = json!({"functionCallingConfig": {"mode": "AUTO"}});
+            }
         }
     }
 
@@ -403,6 +410,43 @@ pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
     let first_candidate = candidates.and_then(|arr| arr.first());
 
     if let Some(cand) = first_candidate {
+        // Parse Grounding Metadata (Google Search Grounding webSearchQueries & citations)
+        if let Some(grounding) = cand.get("groundingMetadata") {
+            if let Some(queries) = grounding.get("webSearchQueries").and_then(|q| q.as_array()) {
+                let q_list: Vec<String> = queries
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| format!("\"{}\"", s)))
+                    .collect();
+                if !q_list.is_empty() {
+                    events.push(StreamChunkPayload::thinking(format!("🌐 Grounding with Google Search: {}", q_list.join(", "))));
+                }
+            }
+            if let Some(chunks) = grounding.get("groundingChunks").and_then(|c| c.as_array()) {
+                let mut citations: Vec<String> = Vec::new();
+                for chunk in chunks {
+                    if let Some(web) = chunk.get("web") {
+                        let title = web.get("title").and_then(|t| t.as_str()).unwrap_or("Source");
+                        let uri = web.get("uri").and_then(|u| u.as_str()).unwrap_or("");
+                        if !uri.is_empty() {
+                            citations.push(format!("[{}]({})", title, uri));
+                        }
+                    }
+                }
+                if !citations.is_empty() {
+                    events.push(StreamChunkPayload {
+                        event_type: "metadata".to_string(),
+                        content: Some(format!("Citations: {}", citations.join(" | "))),
+                        done: Some(false),
+                        error: None,
+                        tool_call: None,
+                        name: None,
+                        result: None,
+                        metadata: Some(json!({ "citations": citations })),
+                    });
+                }
+            }
+        }
+
         if let Some(parts) = cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
             for part in parts {
                 let is_thought = part.get("thought").and_then(|t| t.as_bool()).unwrap_or(false)
@@ -462,7 +506,7 @@ pub async fn execute_stream(
     let (url, body, headers) = build_request(req)?;
 
     let mut attempts = 0;
-    let max_attempts = 3;
+    let max_attempts = 4;
     let mut current_body = body.clone();
     let mut final_response = None;
 
@@ -522,7 +566,13 @@ pub async fn execute_stream(
 
                 // Friendly diagnostic formatting
                 if status.as_u16() == 429 || body_text.contains("RESOURCE_EXHAUSTED") {
-                    return Err("Google Gemini free-tier rate limit or quota reached on this model. Try switching to Gemini 3.5 Flash or retry in 5-10 seconds.".to_string());
+                    let mut detail_msg = String::new();
+                    if let Ok(err_json) = serde_json::from_str::<Value>(&body_text) {
+                        if let Some(msg) = err_json.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()) {
+                            detail_msg = format!(" ({})", msg);
+                        }
+                    }
+                    return Err(format!("Google Gemini rate limit or quota reached on {}{}. Please wait a few seconds or switch to another Gemini model.", req.model_id, detail_msg));
                 } else if status.as_u16() == 503 || body_text.contains("UNAVAILABLE") || body_text.contains("overloaded") {
                     return Err("Google Gemini servers are currently in high demand for this preview model. Please retry in a few moments or switch to Gemini 3.5 Flash.".to_string());
                 } else {

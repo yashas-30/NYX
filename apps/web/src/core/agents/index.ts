@@ -6,6 +6,5 @@
  * - Antigravity Managed Agent (Gemini 3.5 Flash-Lite base / Gemini 3.1 Flash-Lite backup)
  */
 
-export * from './langgraphAgent';
+export * from './antigravity';
 export * from './antigravityAgent';
-export * from './geminiDeepResearchAgent';

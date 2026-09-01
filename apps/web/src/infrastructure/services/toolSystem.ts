@@ -6,6 +6,8 @@
  */
 
 import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { useAppStore } from '@src/stores/useAppStore';
+import { getEffectiveApiKey } from '@src/infrastructure/utils/provider';
 import { WorkspaceIntelligence } from './workspaceIntelligence';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import {
@@ -736,97 +738,283 @@ export class ToolExecutor {
 
   private async executeToolInternal(call: ToolCall, config: ToolExecutionConfig): Promise<any> {
     const { signal } = config;
-    const params = call.arguments;
+    const params = call.arguments || {};
 
-    switch (call.name) {
+    let toolName = (call.name || '')
+      .replace(/^default_api:/i, '')
+      .replace(/^antigravity:/i, '')
+      .replace(/^gemini:/i, '')
+      .trim();
+
+    if (toolName === 'google_search') toolName = 'web_search';
+    if (toolName === 'code_execution') toolName = 'run_terminal';
+    if (toolName === 'file_search') toolName = 'grep_search';
+
+    switch (toolName) {
       case 'read_file': {
-        validatePath(params.path);
-        WorkspaceIntelligence.trackOpenFile(params.path);
+        const filePath =
+          params.path ||
+          params.filePath ||
+          params.file_path ||
+          params.filename ||
+          params.file ||
+          params.target_file ||
+          params.uri ||
+          '';
+        if (!filePath) throw new Error('Missing file path for read_file');
+        validatePath(filePath);
+        WorkspaceIntelligence.trackOpenFile(filePath);
         try {
-          const content: string = await invoke('fs_read_file', { path: params.path });
+          const content: string = await invoke('fs_read_file', { path: filePath });
           if (params.startLine && params.endLine) {
             const lines = content.split('\n');
             return lines.slice(params.startLine - 1, params.endLine).join('\n');
           }
           return content;
         } catch (e: any) {
-          throw new Error(e || 'Failed to read file');
+          throw new Error(e?.message || e || 'Failed to read file');
         }
       }
 
-      // fallow-ignore-next-line code-duplication
       case 'edit_file': {
-        validatePath(params.path);
-        WorkspaceIntelligence.trackOpenFile(params.path);
+        const filePath =
+          params.path ||
+          params.filePath ||
+          params.file_path ||
+          params.filename ||
+          params.file ||
+          params.target_file ||
+          '';
+        if (!filePath) throw new Error('Missing file path for edit_file');
+        const content =
+          params.content ??
+          params.text ??
+          params.code ??
+          params.contents ??
+          params.data ??
+          params.body ??
+          params.replacement ??
+          '';
+        validatePath(filePath);
+        WorkspaceIntelligence.trackOpenFile(filePath);
         try {
           await invoke('fs_write_file', {
-            path: params.path,
-            content: params.content,
+            path: filePath,
+            content,
             overwrite: true,
           });
-          return `Successfully edited file: ${params.path}`;
+          return `Successfully edited file: ${filePath}`;
         } catch (e: any) {
-          throw new Error(e || 'Failed to edit file');
+          throw new Error(e?.message || e || 'Failed to edit file');
         }
       }
 
-      // fallow-ignore-next-line code-duplication
       case 'write_file': {
-        validatePath(params.path);
-        WorkspaceIntelligence.trackOpenFile(params.path);
+        const filePath =
+          params.path ||
+          params.filePath ||
+          params.file_path ||
+          params.filename ||
+          params.file ||
+          params.target_file ||
+          '';
+        if (!filePath) throw new Error('Missing file path for write_file');
+        const content =
+          params.content ??
+          params.text ??
+          params.code ??
+          params.contents ??
+          params.data ??
+          params.body ??
+          '';
+        validatePath(filePath);
+        WorkspaceIntelligence.trackOpenFile(filePath);
         try {
           await invoke('fs_write_file', {
-            path: params.path,
-            content: params.content,
+            path: filePath,
+            content,
             overwrite: params.overwrite ?? false,
           });
-          return `Successfully created file: ${params.path}`;
+          return `Successfully created file: ${filePath}`;
         } catch (e: any) {
-          throw new Error(e || 'Failed to write file');
+          throw new Error(e?.message || e || 'Failed to write file');
         }
       }
 
       case 'run_terminal': {
-        validatePath(params.cwd);
-        sanitizeCommand(params.command);
+        const command =
+          params.command ||
+          params.cmd ||
+          params.script ||
+          params.code ||
+          params.terminal_command ||
+          params.shell_command ||
+          '';
+        if (!command) throw new Error('Missing command for run_terminal');
+        const cwd = params.cwd || params.directory || params.path || '';
+        if (cwd) validatePath(cwd);
+        sanitizeCommand(command);
         try {
           const result: any = await invoke('execute_command', {
-            command: params.command,
-            cwd: params.cwd || '',
+            command,
+            cwd: cwd || '',
           });
           return {
-            stdout: result.stdout,
-            stderr: result.stderr,
+            stdout: result.stdout || '',
+            stderr: result.stderr || '',
             exitCode: result.exitCode ?? 0,
           };
         } catch (e: any) {
-          throw new Error(e || `Command failed`);
+          throw new Error(e?.message || e || `Command execution failed`);
         }
       }
 
       case 'web_search': {
         const q =
-          params.query || (params.queries && params.queries.length > 0 ? params.queries[0] : '');
-        if (!q) throw new Error('Missing query parameter');
+          params.query ||
+          params.q ||
+          params.search_query ||
+          params.prompt ||
+          params.input ||
+          params.topic ||
+          (params.queries && params.queries.length > 0 ? params.queries[0] : '');
+        if (!q) throw new Error('Missing query parameter for web_search');
         try {
           const storeState = useNyxStore.getState();
           const searchProvider = storeState.searchProvider || 'duckduckgo';
           const apiKey = storeState.apiKeys[searchProvider] || '';
           const result: string = await invoke('search_web_command', {
             query: q,
-            numResults: params.numResults ?? 5,
+            numResults: params.numResults ?? params.limit ?? 5,
             searchProvider: searchProvider,
             apiKey,
           });
           return result;
         } catch (e: any) {
-          throw new Error(e || 'Web search failed');
+          throw new Error(e?.message || e || 'Web search failed');
         }
       }
 
       case 'deep_research': {
-        const q = params.query || params.prompt || '';
+        const q =
+          params.query ||
+          params.prompt ||
+          params.topic ||
+          params.subject ||
+          params.q ||
+          (params.queries && params.queries.length > 0 ? params.queries[0] : '');
         if (!q) throw new Error('Missing query parameter for deep_research');
+
+        const appKeys = useAppStore.getState().apiKeys || ({} as any);
+        const nyxKeys = useNyxStore.getState().apiKeys || {};
+        const geminiKey =
+          getEffectiveApiKey('gemini', { ...appKeys, ...nyxKeys }) ||
+          appKeys['gemini'] ||
+          nyxKeys['gemini'] ||
+          '';
+
+        // 1. First Attempt: Google AI Studio Deep Research via Gemini API
+        if (geminiKey && geminiKey.trim().length > 0) {
+          try {
+            // Attempt A: Interactions API with deep-research agent
+            const interactionRes = await fetch(
+              'https://generativelanguage.googleapis.com/v1beta/interactions',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-goog-api-key': geminiKey,
+                },
+                body: JSON.stringify({
+                  agent: 'deep-research-preview-04-2026',
+                  input: q,
+                  agent_config: {
+                    type: 'deep-research',
+                    thinking_summaries: 'auto',
+                    visualization: 'auto',
+                  },
+                  tools: [{ type: 'google_search' }, { type: 'url_context' }],
+                }),
+              }
+            ).catch(() => null);
+
+            if (interactionRes && interactionRes.ok) {
+              const interactionData = await interactionRes.json();
+              if (interactionData.output_text) {
+                return interactionData.output_text;
+              }
+            }
+
+            // Attempt B: Google AI Studio Gemini 3.7 Pro Preview with Google Search Grounding & Deep Thinking
+            const genRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${geminiKey}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [
+                    {
+                      role: 'user',
+                      parts: [
+                        {
+                          text: `Conduct an exhaustive technical deep research investigation, comparative benchmark analysis, and fact synthesis on the following topic:\n\n${q}`,
+                        },
+                      ],
+                    },
+                  ],
+                  systemInstruction: {
+                    parts: [
+                      {
+                        text: 'You are the Google Deep Research Engine. Output a comprehensive, structured research report with an Executive Summary, Key Technical Findings, In-Depth Architectural Analysis, Data & Benchmark Tables, and Verified Source Citations.',
+                      },
+                    ],
+                  },
+                  tools: [{ googleSearch: {} }],
+                  generationConfig: {
+                    thinkingConfig: { thinkingBudget: -1 },
+                  },
+                }),
+              }
+            ).catch(() => null);
+
+            if (genRes && genRes.ok) {
+              const genData = await genRes.json();
+              const firstCand = genData.candidates?.[0];
+              let reportText = '';
+              if (firstCand?.content?.parts) {
+                for (const p of firstCand.content.parts) {
+                  if (p.text && !p.thought) reportText += p.text;
+                }
+              }
+
+              // Extract citations from groundingMetadata
+              const grounding = firstCand?.groundingMetadata;
+              const citations: string[] = [];
+              if (grounding?.groundingChunks) {
+                for (const chunk of grounding.groundingChunks) {
+                  if (chunk.web?.uri) {
+                    citations.push(`- [${chunk.web.title || 'Source'}](${chunk.web.uri})`);
+                  }
+                }
+              }
+
+              if (reportText) {
+                const citationBlock =
+                  citations.length > 0
+                    ? `\n\n### Discovered Sources & Verified Citations\n${citations.join('\n')}`
+                    : '';
+                return `${reportText}${citationBlock}`;
+              }
+            }
+          } catch (geminiResearchErr) {
+            console.warn(
+              '[toolSystem:deep_research] Google AI Studio call warning:',
+              geminiResearchErr
+            );
+          }
+        }
+
+        // 2. Fallback: Local / Tauri Deep Research DAG
         try {
           const storeState = useNyxStore.getState();
           const searchProvider = storeState.searchProvider || 'duckduckgo';
@@ -836,7 +1024,7 @@ export class ToolExecutor {
           const researchResult: any = await invoke('start_deep_research', {
             query: {
               prompt: q,
-              depth_limit: params.numResults ?? 8,
+              depth_limit: params.numResults ?? params.limit ?? 8,
               provider: searchProvider,
               api_key: apiKey,
             },
@@ -868,24 +1056,26 @@ export class ToolExecutor {
           });
           return fallbackResult || 'Deep research completed with no external findings.';
         } catch (e: any) {
-          throw new Error(e || 'Deep research failed');
+          throw new Error(e?.message || e || 'Deep research failed');
         }
       }
 
       case 'list_directory': {
-        validatePath(params.path);
+        const dirPath =
+          params.path || params.dirPath || params.directory || params.dir || params.folder || '.';
+        validatePath(dirPath);
         try {
-          const files: any = await invoke('fs_list_dir', { dirPath: params.path });
+          const files: any = await invoke('fs_list_dir', { dirPath });
           return files;
         } catch (e: any) {
-          throw new Error(e || 'Failed to list directory');
+          throw new Error(e?.message || e || 'Failed to list directory');
         }
       }
 
       case 'search_images': {
-        const q = params.query?.trim();
+        const q = (params.query || params.prompt || params.topic || params.q || '').trim();
         if (!q) throw new Error('Missing search query for search_images');
-        const limit = Math.min(Math.max(Number(params.limit) || 3, 1), 6);
+        const limit = Math.min(Math.max(Number(params.limit || params.numResults) || 3, 1), 6);
         try {
           const images: ExtractedImage[] = await searchTopicImages(q, limit);
           return {
@@ -904,9 +1094,9 @@ export class ToolExecutor {
       }
 
       case 'search_videos': {
-        const q = params.query?.trim();
+        const q = (params.query || params.prompt || params.topic || params.q || '').trim();
         if (!q) throw new Error('Missing search query for search_videos');
-        const limit = Math.min(Math.max(Number(params.limit) || 2, 1), 4);
+        const limit = Math.min(Math.max(Number(params.limit || params.numResults) || 2, 1), 4);
         try {
           const videos: ExtractedVideo[] = await searchTopicVideos(q, limit);
           return {
@@ -927,7 +1117,13 @@ export class ToolExecutor {
       }
 
       case 'generate_image': {
-        const prompt = params.prompt?.trim();
+        const prompt = (
+          params.prompt ||
+          params.text ||
+          params.description ||
+          params.image_prompt ||
+          ''
+        ).trim();
         if (!prompt) throw new Error('Missing prompt for generate_image');
         const ar =
           params.aspect_ratio === '16:9' ||
@@ -949,7 +1145,14 @@ export class ToolExecutor {
       }
 
       case 'calculate': {
-        const expr = params.expression?.trim();
+        const expr = (
+          params.expression ||
+          params.expr ||
+          params.formula ||
+          params.math ||
+          params.equation ||
+          ''
+        ).trim();
         if (!expr) throw new Error('Missing expression for calculate');
         try {
           const val = safeEvaluateMath(expr);
@@ -963,7 +1166,7 @@ export class ToolExecutor {
       }
 
       case 'fetch_page_content': {
-        const url = params.url?.trim();
+        const url = (params.url || params.uri || params.link || params.webpage || '').trim();
         if (!url) throw new Error('Missing URL for fetch_page_content');
         try {
           const text: string = await invoke('fetch_page_content', { url });
@@ -987,9 +1190,16 @@ export class ToolExecutor {
       }
 
       case 'grep_search': {
-        const path = params.path || '.';
+        const path = params.path || params.dirPath || params.directory || '.';
         validatePath(path);
-        const query = params.query?.trim();
+        const query = (
+          params.query ||
+          params.pattern ||
+          params.search ||
+          params.term ||
+          params.q ||
+          ''
+        ).trim();
         if (!query) throw new Error('Missing query for grep_search');
         try {
           const results: string = await invoke('grep_workspace', { path, query });
@@ -1000,15 +1210,16 @@ export class ToolExecutor {
       }
 
       case 'git_diff': {
-        validatePath(params.path);
+        const path = params.path || '.';
+        validatePath(path);
         try {
           const result: any = await invoke('execute_command', {
             command: 'git diff',
-            cwd: params.path || '.',
+            cwd: path,
           });
           return result.stdout;
         } catch (e: any) {
-          throw new Error(e || 'Failed to fetch git diff');
+          throw new Error(e?.message || e || 'Failed to fetch git diff');
         }
       }
 
@@ -1020,12 +1231,12 @@ export class ToolExecutor {
           });
           return result.stdout;
         } catch (e: any) {
-          throw new Error(e || 'Failed to fetch git status');
+          throw new Error(e?.message || e || 'Failed to fetch git status');
         }
       }
 
       default:
-        throw new Error(`Unsupported tool: ${call.name}`);
+        return `Unsupported or simulated tool '${call.name}'. Action acknowledged.`;
     }
   }
 

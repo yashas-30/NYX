@@ -10,8 +10,7 @@ import { useState, useCallback, useRef } from 'react';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { getEffectiveApiKey } from '@src/infrastructure/utils/provider';
-import { runLangGraphAgent } from '@src/core/agents/langgraphAgent';
-import { antigravityAgent } from '@src/core/agents/antigravityAgent';
+import { Agent, antigravityAgent } from '@src/core/agents';
 
 export interface PlanStep {
   step_id: number;
@@ -102,33 +101,35 @@ export function useAgentRunner() {
       const geminiKey = getEffectiveApiKey('gemini', apiKeys) || '';
       const selectedModel = nyxState.selectedModel || 'gemini-3.7-flash';
 
-      // ── 1. Antigravity Managed Agent Engine ───────────────────────────────
-      if (engine === 'antigravity' && geminiKey) {
+      // ── 1. Antigravity Universal Autonomous Agent Engine ─────────────────
+      if (engine === 'antigravity') {
         try {
-          setStatusMessage(`Running Antigravity Managed Agent (${selectedModel})...`);
-          const result = await antigravityAgent.runInteraction({
-            apiKey: geminiKey,
-            prompt,
+          const provider = nyxState.selectedProvider || 'nyx-native';
+          const activeApiKey = getEffectiveApiKey(provider, apiKeys) || apiKeys[provider] || '';
+          setStatusMessage(`Running Antigravity Agent (${selectedModel} on ${provider})...`);
+          const result = await antigravityAgent.runAgentLoop({
+            provider,
             model: selectedModel,
-            environment: 'remote',
+            apiKey: activeApiKey,
+            prompt,
             onStep: (step) => {
               setExecutionSteps((prev) => [
                 ...prev,
                 {
-                  iteration: prev.length + 1,
+                  iteration: step.iteration || prev.length + 1,
                   thought: step.thought || '',
                   tool_name: step.tool_name,
                   tool_args: step.tool_args,
                   tool_result: step.tool_result,
-                  is_error: false,
-                  is_finished: false,
+                  is_error: !!step.is_error,
+                  is_finished: !!step.is_finished,
                 },
               ]);
             },
           });
 
           setFinalOutput(result.outputText);
-          setStatusMessage('Antigravity task completed.');
+          setStatusMessage('Antigravity autonomous task completed.');
           return result.outputText;
         } catch (err: any) {
           const errStr =
@@ -141,41 +142,29 @@ export function useAgentRunner() {
         }
       }
 
-      // ── 2. LangGraph ReAct Agent Engine ──────────────────────────────────
-      if (engine === 'langgraph' && geminiKey) {
+      // ── 2. Antigravity SDK Agent Class Runner ───────────────────────────
+      if (engine === 'langgraph') {
         try {
-          setStatusMessage('Executing LangGraph ReAct state workflow...');
-          const result = await runLangGraphAgent(prompt, {
-            apiKey: geminiKey,
-            primaryModel: selectedModel,
-            onStep: (step) => {
-              setExecutionSteps((prev) => {
-                const existingIdx = prev.findIndex((s) => s.iteration === step.iteration);
-                const mapped: AgentExecutionStep = {
-                  iteration: step.iteration,
-                  thought: step.thought || '',
-                  tool_name: step.toolName || null,
-                  tool_args: step.toolArgs,
-                  tool_result: step.toolResult || null,
-                  is_error: step.isError,
-                  is_finished: step.isFinished,
-                };
-                if (existingIdx !== -1) {
-                  const updated = [...prev];
-                  updated[existingIdx] = mapped;
-                  return updated;
-                }
-                return [...prev, mapped];
-              });
-            },
+          const provider = nyxState.selectedProvider || 'nyx-native';
+          const activeApiKey = getEffectiveApiKey(provider, apiKeys) || apiKeys[provider] || '';
+          setStatusMessage(`Executing Antigravity SDK Agent (${selectedModel})...`);
+          const agent = new Agent({
+            provider,
+            model: selectedModel,
+            api_key: activeApiKey,
           });
 
-          setFinalOutput(result);
-          setStatusMessage('LangGraph task completed.');
-          return result;
+          const response = await agent.chat(prompt);
+          let fullOutput = '';
+          for await (const token of response) {
+            fullOutput += token;
+            setFinalOutput(fullOutput);
+          }
+
+          setStatusMessage('Antigravity SDK task completed.');
+          return fullOutput;
         } catch (err: any) {
-          const errStr =
-            typeof err === 'string' ? err : err?.message || 'LangGraph execution failed';
+          const errStr = typeof err === 'string' ? err : err?.message || 'Agent execution failed';
           setError(errStr);
           setStatusMessage(`Error: ${errStr}`);
           throw err;

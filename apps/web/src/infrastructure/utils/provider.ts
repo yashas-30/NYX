@@ -212,8 +212,17 @@ export const getEffectiveApiKey = (
   provider: string,
   apiKeys: Record<string, string>
 ): string | undefined => {
-  const key = apiKeys[provider]?.trim();
+  const key = apiKeys?.[provider]?.trim();
   if (key && key !== '') return key;
+
+  try {
+    const appKey = useAppStore.getState().apiKeys?.[provider as any]?.trim();
+    if (appKey && appKey !== '') return appKey;
+    const nyxKey = useNyxStore.getState().apiKeys?.[provider]?.trim();
+    if (nyxKey && nyxKey !== '') return nyxKey;
+  } catch {
+    // Store might not be initialized in tests
+  }
 
   if (provider === 'gemini') {
     if (
