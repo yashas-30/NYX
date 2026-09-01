@@ -8,6 +8,14 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { invoke, Channel } from '@tauri-apps/api/core';
+import { useNyxStore } from '@src/shared/store/useNyxStore';
+import { getEffectiveApiKey } from '@src/infrastructure/utils/provider';
+import { runLangGraphAgent } from '@src/core/agents/langgraphAgent';
+import {
+  antigravityAgent,
+  ANTIGRAVITY_BASE_MODEL,
+  ANTIGRAVITY_BACKUP_MODEL,
+} from '@src/core/agents/antigravityAgent';
 
 export interface PlanStep {
   step_id: number;
@@ -80,15 +88,107 @@ export function useAgentRunner() {
   }, []);
 
   const runAgent = useCallback(
-    async (prompt: string, workspaceRoot?: string) => {
+    async (
+      prompt: string,
+      workspaceRoot?: string,
+      engine: 'native' | 'langgraph' | 'antigravity' = 'native'
+    ) => {
       setIsRunning(true);
       setError(null);
       setFinalOutput(null);
       setExecutionSteps([]);
       setPlan(null);
       setCurrentStepId(null);
-      setStatusMessage('Initializing autonomous agent swarm...');
+      setStatusMessage(`Initializing autonomous agent (${engine})...`);
 
+      const apiKeys = useNyxStore.getState().apiKeys;
+      const geminiKey = getEffectiveApiKey('gemini', apiKeys) || '';
+
+      // ── 1. Antigravity Managed Agent Engine ───────────────────────────────
+      if (engine === 'antigravity' && geminiKey) {
+        try {
+          setStatusMessage('Running Antigravity Managed Agent (Gemini 3.5 Flash-Lite)...');
+          const result = await antigravityAgent.runInteraction({
+            apiKey: geminiKey,
+            prompt,
+            model: ANTIGRAVITY_BASE_MODEL,
+            backupModel: ANTIGRAVITY_BACKUP_MODEL,
+            environment: 'remote',
+            onStep: (step) => {
+              setExecutionSteps((prev) => [
+                ...prev,
+                {
+                  iteration: prev.length + 1,
+                  thought: step.thought || '',
+                  tool_name: step.tool_name,
+                  tool_args: step.tool_args,
+                  tool_result: step.tool_result,
+                  is_error: false,
+                  is_finished: false,
+                },
+              ]);
+            },
+          });
+
+          setFinalOutput(result.outputText);
+          setStatusMessage('Antigravity task completed.');
+          return result.outputText;
+        } catch (err: any) {
+          const errStr =
+            typeof err === 'string' ? err : err?.message || 'Antigravity execution failed';
+          setError(errStr);
+          setStatusMessage(`Error: ${errStr}`);
+          throw err;
+        } finally {
+          setIsRunning(false);
+        }
+      }
+
+      // ── 2. LangGraph ReAct Agent Engine ──────────────────────────────────
+      if (engine === 'langgraph' && geminiKey) {
+        try {
+          setStatusMessage('Executing LangGraph ReAct state workflow...');
+          const result = await runLangGraphAgent(prompt, {
+            apiKey: geminiKey,
+            primaryModel: ANTIGRAVITY_BASE_MODEL,
+            backupModel: ANTIGRAVITY_BACKUP_MODEL,
+            onStep: (step) => {
+              setExecutionSteps((prev) => {
+                const existingIdx = prev.findIndex((s) => s.iteration === step.iteration);
+                const mapped: AgentExecutionStep = {
+                  iteration: step.iteration,
+                  thought: step.thought || '',
+                  tool_name: step.toolName || null,
+                  tool_args: step.toolArgs,
+                  tool_result: step.toolResult || null,
+                  is_error: step.isError,
+                  is_finished: step.isFinished,
+                };
+                if (existingIdx !== -1) {
+                  const updated = [...prev];
+                  updated[existingIdx] = mapped;
+                  return updated;
+                }
+                return [...prev, mapped];
+              });
+            },
+          });
+
+          setFinalOutput(result);
+          setStatusMessage('LangGraph task completed.');
+          return result;
+        } catch (err: any) {
+          const errStr =
+            typeof err === 'string' ? err : err?.message || 'LangGraph execution failed';
+          setError(errStr);
+          setStatusMessage(`Error: ${errStr}`);
+          throw err;
+        } finally {
+          setIsRunning(false);
+        }
+      }
+
+      // ── 3. Native Tauri Rust Pipeline Engine ──────────────────────────────
       const progressChannel = new Channel<ConductorProgressEvent>();
       const stepChannel = new Channel<AgentExecutionStep>();
 
@@ -107,7 +207,6 @@ export function useAgentRunner() {
 
       stepChannel.onmessage = (step: AgentExecutionStep) => {
         setExecutionSteps((prev) => {
-          // Update or append step
           const existingIdx = prev.findIndex(
             (s) => s.iteration === step.iteration && s.tool_name === step.tool_name
           );

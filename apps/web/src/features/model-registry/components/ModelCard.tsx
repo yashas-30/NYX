@@ -82,34 +82,55 @@ export const ModelCard: React.FC<ModelCardProps> = ({
         modelId: id,
         contextSize: targetConfig?.contextSize || undefined,
         gpuLayers: targetConfig?.gpuLayers || 99,
-      }).then((res: any) => {
-        setHardwareEst(res);
-      }).catch(console.error);
+      })
+        .then((res: any) => {
+          setHardwareEst(res);
+        })
+        .catch(console.error);
     }
   }, [isLocal, id, targetConfig?.contextSize, targetConfig?.gpuLayers]);
 
-  const modelVramMb = hardwareEst ? hardwareEst.estimated_vram_mb : (modelSizeBytes ? modelSizeBytes / (1024 * 1024) : 0);
-  const totalVramMb = hardwareEst ? hardwareEst.vram_total_mb : (systemVramBytes ? systemVramBytes / (1024 * 1024) : 0);
-  
-  const vramPercent = modelVramMb && totalVramMb
-    ? Math.min(100, Math.round((modelVramMb / totalVramMb) * 100))
-    : 0;
-    
-  const strategyLabel = hardwareEst?.strategy === 'FullDedicatedGpu' ? '✅ FULL GPU' :
-                        hardwareEst?.strategy === 'SharedGpuMemory' ? '⚡ SHARED MEM' :
-                        hardwareEst?.strategy === 'IntegratedGpu' ? '🔄 iGPU RAM' :
-                        hardwareEst?.strategy === 'CpuOnly' ? '🖥️ CPU ONLY' : 'UNKNOWN';
+  const modelVramMb = hardwareEst
+    ? hardwareEst.estimated_vram_mb
+    : modelSizeBytes
+      ? modelSizeBytes / (1024 * 1024)
+      : 0;
+  const totalVramMb = hardwareEst
+    ? hardwareEst.vram_total_mb
+    : systemVramBytes
+      ? systemVramBytes / (1024 * 1024)
+      : 0;
 
-  const strategyColor = hardwareEst?.strategy === 'FullDedicatedGpu' ? 'text-emerald-500' :
-                        hardwareEst?.strategy === 'SharedGpuMemory' ? 'text-blue-500' :
-                        hardwareEst?.strategy === 'IntegratedGpu' ? 'text-amber-500' :
-                        'text-muted-foreground';
-  const barColor = hardwareEst?.strategy === 'FullDedicatedGpu' ? 'bg-emerald-500' :
-                   hardwareEst?.strategy === 'SharedGpuMemory' ? 'bg-blue-500' :
-                   hardwareEst?.strategy === 'IntegratedGpu' ? 'bg-amber-500' :
-                   'bg-muted-foreground';
+  const vramPercent =
+    modelVramMb && totalVramMb ? Math.min(100, Math.round((modelVramMb / totalVramMb) * 100)) : 0;
 
+  const strategyLabel =
+    hardwareEst?.strategy === 'FullDedicatedGpu'
+      ? '✅ FULL GPU'
+      : hardwareEst?.strategy === 'SharedGpuMemory'
+        ? '⚡ SHARED MEM'
+        : hardwareEst?.strategy === 'IntegratedGpu'
+          ? '🔄 iGPU RAM'
+          : hardwareEst?.strategy === 'CpuOnly'
+            ? '🖥️ CPU ONLY'
+            : 'UNKNOWN';
 
+  const strategyColor =
+    hardwareEst?.strategy === 'FullDedicatedGpu'
+      ? 'text-emerald-500'
+      : hardwareEst?.strategy === 'SharedGpuMemory'
+        ? 'text-blue-500'
+        : hardwareEst?.strategy === 'IntegratedGpu'
+          ? 'text-amber-500'
+          : 'text-muted-foreground';
+  const barColor =
+    hardwareEst?.strategy === 'FullDedicatedGpu'
+      ? 'bg-emerald-500'
+      : hardwareEst?.strategy === 'SharedGpuMemory'
+        ? 'bg-blue-500'
+        : hardwareEst?.strategy === 'IntegratedGpu'
+          ? 'bg-amber-500'
+          : 'bg-muted-foreground';
 
   return (
     <motion.div
@@ -117,7 +138,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -2, scale: 1.01 }}
       transition={{ duration: 0.2, ease: 'easeOut', delay: index * 0.04 }}
-      className="group relative p-4 rounded-xl flex flex-col transform-gpu transition-[transform,background-color,border-color,box-shadow] duration-500 overflow-hidden border border-border bg-card/50 hover:bg-card hover:border-accent/30 shadow-sm hover:shadow-md"
+      className="group relative p-4 rounded-xl flex flex-col transform-gpu transition-[transform,background-color,border-color] duration-500 overflow-hidden border border-border bg-card hover:border-border-strong"
       style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
     >
       {/* Provider badge + status */}
@@ -155,18 +176,20 @@ export const ModelCard: React.FC<ModelCardProps> = ({
         </div>
         {/* Info Button */}
         {!isLocal && (features || pros || cons) && (
-          <button 
-            onClick={onToggleExpand} 
+          <button
+            onClick={onToggleExpand}
             className={`p-1.5 rounded-md transition-colors shrink-0 ${isExpanded ? 'bg-primary/20 text-primary' : 'hover:bg-muted/50 text-muted-foreground hover:text-foreground'}`}
             title="View Details"
           >
-            <Info size={16} weight={isExpanded ? "fill" : "regular"} />
+            <Info size={16} weight={isExpanded ? 'fill' : 'regular'} />
           </button>
         )}
       </div>
 
       {/* Description */}
-      <p className={`text-[11px] text-muted-foreground leading-relaxed font-medium mb-2.5 ${isExpanded ? '' : 'line-clamp-2 min-h-[36px]'}`}>
+      <p
+        className={`text-[11px] text-muted-foreground leading-relaxed font-medium mb-2.5 ${isExpanded ? '' : 'line-clamp-2 min-h-[36px]'}`}
+      >
         {description}
       </p>
 
@@ -228,30 +251,42 @@ export const ModelCard: React.FC<ModelCardProps> = ({
             <div className="pt-4 mt-3 border-t border-border/30 flex flex-col gap-3">
               {features && features.length > 0 && (
                 <div>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">Features</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80">
+                    Features
+                  </span>
                   <ul className="list-disc list-outside ml-3 mt-1 space-y-0.5">
                     {features.map((f, i) => (
-                      <li key={i} className="text-[10px] text-foreground/80 leading-snug">{f}</li>
+                      <li key={i} className="text-[10px] text-foreground/80 leading-snug">
+                        {f}
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
               {pros && pros.length > 0 && (
                 <div>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500/80">Good</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500/80">
+                    Good
+                  </span>
                   <ul className="list-disc list-outside ml-3 mt-1 space-y-0.5">
                     {pros.map((p, i) => (
-                      <li key={i} className="text-[10px] text-emerald-500/90 leading-snug">{p}</li>
+                      <li key={i} className="text-[10px] text-emerald-500/90 leading-snug">
+                        {p}
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
               {cons && cons.length > 0 && (
                 <div>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-destructive/80">Bad</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-destructive/80">
+                    Bad
+                  </span>
                   <ul className="list-disc list-outside ml-3 mt-1 space-y-0.5">
                     {cons.map((c, i) => (
-                      <li key={i} className="text-[10px] text-destructive/90 leading-snug">{c}</li>
+                      <li key={i} className="text-[10px] text-destructive/90 leading-snug">
+                        {c}
+                      </li>
                     ))}
                   </ul>
                 </div>
@@ -275,7 +310,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
         </motion.div>
       )}
 
-      {isLocal && (modelVramMb > 0) && (
+      {isLocal && modelVramMb > 0 && (
         <div className="pt-3 mt-3 border-t border-border/30 flex flex-col gap-1.5">
           <div className="flex flex-col gap-1 mb-1.5">
             <div className="flex items-center justify-between">
@@ -283,12 +318,14 @@ export const ModelCard: React.FC<ModelCardProps> = ({
                 {strategyLabel}
               </span>
               <span className="text-foreground/80 text-[9px] font-medium">
-                Model Size: {modelSizeBytes ? (modelSizeBytes / (1024 * 1024 * 1024)).toFixed(1) : '?.?'} GB
+                Model Size:{' '}
+                {modelSizeBytes ? (modelSizeBytes / (1024 * 1024 * 1024)).toFixed(1) : '?.?'} GB
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-foreground/70 text-[9px]">
-                VRAM: {(modelVramMb / 1024).toFixed(1)}GB est. / {(totalVramMb / 1024).toFixed(1)}GB total
+                VRAM: {(modelVramMb / 1024).toFixed(1)}GB est. / {(totalVramMb / 1024).toFixed(1)}GB
+                total
               </span>
               {hardwareEst && hardwareEst.estimated_ram_mb > 0 && !hardwareEst.fully_gpu && (
                 <span className="text-amber-500/80 text-[9px] font-medium">
@@ -306,82 +343,108 @@ export const ModelCard: React.FC<ModelCardProps> = ({
           {hardwareEst && (
             <div className="flex flex-col gap-0.5 text-[8px] text-muted-foreground mt-0.5">
               <div className="flex justify-between items-center">
-                 <span>GPU: {hardwareEst.gpu_name}</span>
+                <span>GPU: {hardwareEst.gpu_name}</span>
               </div>
               <div className="text-[8px] text-muted-foreground/60 line-clamp-1">
-                 {hardwareEst.message}
+                {hardwareEst.message}
               </div>
             </div>
           )}
         </div>
       )}
 
-
       {/* Downloading / Paused State Controls */}
-      {isLocal && downloadState && (downloadState.status === 'downloading' || downloadState.status === 'paused' || downloadState.status === 'error') && (
-        <div className="pt-3 mt-3 border-t border-border/30 flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
-              {downloadState.status === 'downloading' && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />}
-              {downloadState.status === 'paused' && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
-              {downloadState.status === 'error' && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
-              {downloadState.status}
-            </span>
-            <span className="text-[10px] font-mono text-muted-foreground">
-              {downloadState.progress.toFixed(0)}%
-            </span>
+      {isLocal &&
+        downloadState &&
+        (downloadState.status === 'downloading' ||
+          downloadState.status === 'paused' ||
+          downloadState.status === 'error') && (
+          <div className="pt-3 mt-3 border-t border-border/30 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
+                {downloadState.status === 'downloading' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+                )}
+                {downloadState.status === 'paused' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                )}
+                {downloadState.status === 'error' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                )}
+                {downloadState.status}
+              </span>
+              <span className="text-[10px] font-mono text-muted-foreground">
+                {downloadState.progress.toFixed(0)}%
+              </span>
+            </div>
+
+            <div className="h-1.5 w-full bg-muted/60 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  downloadState.status === 'error'
+                    ? 'bg-red-500'
+                    : downloadState.status === 'paused'
+                      ? 'bg-amber-400'
+                      : 'bg-primary'
+                }`}
+                style={{ width: `${downloadState.progress}%` }}
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-1.5 mt-1">
+              {downloadState.status === 'downloading' && onPauseDownload && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onPauseDownload();
+                  }}
+                  className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 flex items-center gap-1 transition-colors"
+                >
+                  <Pause size={10} weight="fill" /> Pause
+                </button>
+              )}
+
+              {(downloadState.status === 'paused' || downloadState.status === 'error') &&
+                onResumeDownload && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onResumeDownload();
+                    }}
+                    className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 flex items-center gap-1 transition-colors"
+                  >
+                    <Play size={10} weight="fill" /> Resume
+                  </button>
+                )}
+
+              {onCancelDownload && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onCancelDownload();
+                  }}
+                  className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center gap-1 transition-colors"
+                >
+                  <X size={10} weight="bold" /> Cancel
+                </button>
+              )}
+            </div>
           </div>
-
-          <div className="h-1.5 w-full bg-muted/60 rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all duration-300 ${
-                downloadState.status === 'error'
-                  ? 'bg-red-500'
-                  : downloadState.status === 'paused'
-                    ? 'bg-amber-400'
-                    : 'bg-primary'
-              }`}
-              style={{ width: `${downloadState.progress}%` }}
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-1.5 mt-1">
-            {downloadState.status === 'downloading' && onPauseDownload && (
-              <button
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPauseDownload(); }}
-                className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 flex items-center gap-1 transition-colors"
-              >
-                <Pause size={10} weight="fill" /> Pause
-              </button>
-            )}
-
-            {(downloadState.status === 'paused' || downloadState.status === 'error') && onResumeDownload && (
-              <button
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onResumeDownload(); }}
-                className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 flex items-center gap-1 transition-colors"
-              >
-                <Play size={10} weight="fill" /> Resume
-              </button>
-            )}
-
-            {onCancelDownload && (
-              <button
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCancelDownload(); }}
-                className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center gap-1 transition-colors"
-              >
-                <X size={10} weight="bold" /> Cancel
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+        )}
 
       {/* Local Model Actions */}
       {isLocal && (
         <div className="pt-3 mt-3 border-t border-border/30 flex justify-end gap-2">
           {onUninstall && (
             <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onUninstall(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onUninstall();
+              }}
               disabled={loadingState === 'uninstalling'}
               className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:opacity-50 transition-colors mr-auto"
             >
@@ -390,7 +453,11 @@ export const ModelCard: React.FC<ModelCardProps> = ({
           )}
           {isLoaded ? (
             <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onUnload?.(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onUnload?.();
+              }}
               disabled={loadingState === 'unloading'}
               className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
             >
@@ -398,7 +465,11 @@ export const ModelCard: React.FC<ModelCardProps> = ({
             </button>
           ) : (
             <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onLoad?.(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onLoad?.();
+              }}
               disabled={loadingState === 'loading'}
               className="px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
             >

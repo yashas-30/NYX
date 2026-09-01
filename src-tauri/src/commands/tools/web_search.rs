@@ -476,7 +476,7 @@ pub async fn generate_search_queries_with_model(
 ) -> Vec<String> {
     let prov = provider.unwrap_or_else(|| "nyx-native".to_string());
     let is_local = prov == "nyx-native" || prov.contains("local");
-    let model = model_id.unwrap_or_else(|| if is_local { "local-default".to_string() } else { "gemini-2.5-flash".to_string() });
+    let model = model_id.unwrap_or_else(|| if is_local { "local-default".to_string() } else { "gemini-3.5-flash-lite".to_string() });
     let key = api_key.unwrap_or_default();
 
     let planner_prompt = format!(
@@ -560,7 +560,7 @@ pub async fn generate_intelligent_query_plan_command(
 ) -> ModelQueryPlan {
     let prov = provider.unwrap_or_else(|| "nyx-native".to_string());
     let is_local = prov == "nyx-native" || prov.contains("local");
-    let model = model_id.unwrap_or_else(|| if is_local { "local-default".to_string() } else { "gemini-2.5-flash".to_string() });
+    let model = model_id.unwrap_or_else(|| if is_local { "local-default".to_string() } else { "gemini-3.5-flash-lite".to_string() });
     let key = api_key.unwrap_or_default();
 
     let planner_prompt = format!(

@@ -68,182 +68,74 @@ export function ModelCard({ model, isSelected, hardware, onSelect }: ModelCardPr
       onClick={() => onSelect(model.id)}
       aria-label={`Select ${model.id}`}
       aria-selected={isSelected}
-      style={{
-        width: '100%',
-        textAlign: 'left',
-        background: isSelected ? '#1e3a8a' : 'transparent',
-        border: 'none',
-        borderBottom: '1px solid #1c1c1f',
-        padding: '10px 12px',
-        cursor: 'pointer',
-        transition: 'background 0.12s ease',
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 10,
-      }}
-      onMouseEnter={(e) => {
-        if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = '#1a1a1e';
-      }}
-      onMouseLeave={(e) => {
-        if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-      }}
+      className={`w-full text-left p-3 cursor-pointer transition-colors duration-150 flex items-start gap-2.5 border-b border-border ${
+        isSelected
+          ? 'bg-muted border-l-2 border-l-primary text-foreground'
+          : 'bg-transparent hover:bg-muted/40 text-foreground/90'
+      }`}
     >
       {/* Official Creator Avatar */}
-      <div style={{ flexShrink: 0, marginTop: 2 }}>
+      <div className="shrink-0 mt-0.5">
         <HfAuthorAvatar creator={creator} avatarUrl={model.authorData?.avatarUrl} size={36} />
       </div>
 
       {/* Content Body */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
         {/* Row 1: Model Name + Verified + Param Count */}
-        <div
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 700,
-                color: isSelected ? '#ffffff' : '#f4f4f5',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {name}
-            </span>
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1 min-w-0 flex-1">
+            <span className="text-[13px] font-bold text-foreground truncate">{name}</span>
             {isVerified && (
-              <CheckCircle
-                size={13}
-                weight="fill"
-                style={{ color: isSelected ? '#93c5fd' : '#3b82f6', flexShrink: 0 }}
-              />
+              <CheckCircle size={13} weight="fill" className="text-primary shrink-0" />
             )}
           </div>
 
           {/* Param Badge (e.g. 7B, 14B) */}
           {paramCount && (
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '1px 6px',
-                borderRadius: 4,
-                background: isSelected ? 'rgba(255,255,255,0.15)' : '#27272a',
-                color: isSelected ? '#ffffff' : '#e4e4e7',
-                fontFamily: 'monospace',
-                flexShrink: 0,
-              }}
-            >
+            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-muted border border-border text-foreground shrink-0">
               {paramCount}
             </span>
           )}
         </div>
 
         {/* Row 2: Architecture + Capability Badges */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            flexWrap: 'nowrap',
-            overflow: 'hidden',
-          }}
-        >
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 500,
-              color: isSelected ? '#bfdbfe' : '#71717a',
-              whiteSpace: 'nowrap',
-            }}
-          >
+        <div className="flex items-center gap-1 flex-nowrap overflow-hidden">
+          <span className="text-[10px] font-medium text-muted-foreground truncate">
             {creator} • {archName}
           </span>
 
           {caps.map((c) => (
             <span
               key={c.label}
-              style={{
-                fontSize: 9,
-                fontWeight: 600,
-                padding: '1px 5px',
-                borderRadius: 3,
-                background: isSelected ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)',
-                color: isSelected ? '#ffffff' : '#a1a1aa',
-                flexShrink: 0,
-              }}
+              className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-muted/60 border border-border/50 text-muted-foreground shrink-0"
             >
               {c.label}
             </span>
           ))}
         </div>
 
-        {/* Row 3: Device Hardware Fit Indicator (LM Studio style) + Downloads + Time */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginTop: 2,
-            gap: 6,
-          }}
-        >
+        {/* Row 3: Device Hardware Fit Indicator + Downloads + Time */}
+        <div className="flex items-center justify-between mt-0.5 gap-1.5">
           {/* Hardware Fit badge */}
           {hwFit ? (
             <span
-              style={{
-                fontSize: 9,
-                fontWeight: 700,
-                padding: '1px 6px',
-                borderRadius: 4,
-                background:
-                  hwFit.color === 'emerald'
-                    ? 'rgba(16, 185, 129, 0.15)'
-                    : hwFit.color === 'blue'
-                      ? 'rgba(59, 130, 246, 0.15)'
-                      : 'rgba(239, 68, 68, 0.15)',
-                color:
-                  hwFit.color === 'emerald'
-                    ? '#34d399'
-                    : hwFit.color === 'blue'
-                      ? '#60a5fa'
-                      : '#f87171',
-                border: `1px solid ${
-                  hwFit.color === 'emerald'
-                    ? 'rgba(16, 185, 129, 0.3)'
-                    : hwFit.color === 'blue'
-                      ? 'rgba(59, 130, 246, 0.3)'
-                      : 'rgba(239, 68, 68, 0.3)'
-                }`,
-                flexShrink: 0,
-              }}
+              className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border shrink-0 ${
+                hwFit.color === 'emerald'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : hwFit.color === 'blue'
+                    ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+              }`}
             >
               {hwFit.badge}
             </span>
           ) : (
-            <span
-              style={{
-                fontSize: 9,
-                fontWeight: 600,
-                color: isSelected ? '#bfdbfe' : '#52525b',
-              }}
-            >
-              GGUF
-            </span>
+            <span className="text-[9px] font-medium text-muted-foreground/60">GGUF</span>
           )}
 
           {/* Downloads & Updated */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 10,
-              color: isSelected ? '#dbeafe' : '#71717a',
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-0.5">
               <DownloadSimple size={10} />
               {formatCount(model.downloads)}
             </span>

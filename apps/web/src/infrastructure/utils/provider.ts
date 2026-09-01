@@ -175,7 +175,8 @@ export const detectProvider = (modelId: any, providerHint?: string): Provider =>
 
   // 4. Explicit Cloud Provider Prefixes (for custom models)
   if (lowerId.startsWith('huggingface/')) return 'huggingface' as Provider;
-  if (lowerId.startsWith('nvidia/')) return 'nvidia-nim' as Provider;
+  if (lowerId.startsWith('nvidia/') || lowerId.includes('deepseek-v4-pro'))
+    return 'nvidia-nim' as Provider;
   if (lowerId.startsWith('openrouter/')) return 'openrouter' as Provider;
 
   // 5. Default for unknown cloud models

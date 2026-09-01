@@ -19,6 +19,19 @@ use super::common::{
 /// Dedicated high-speed HTTP client for Google AI Studio / Gemini API
 static GEMINI_CLIENT: LazyLock<Client> = LazyLock::new(|| build_fast_http_client(64, 120));
 
+/// Normalizes model ID aliases for Gemini API
+pub fn normalize_gemini_model(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    let stripped = trimmed.strip_prefix("models/").unwrap_or(trimmed);
+    match stripped {
+        "gemini-3.5-flash" => "gemini-3.5-flash-preview",
+        "gemini-3.5-flash-lite" => "gemini-3.5-flash-lite-preview",
+        "gemini-3.1-flash-lite" => "gemini-3.1-flash-lite-preview",
+        "gemini-3.7-flash" => "gemini-3.7-flash-preview",
+        other => other,
+    }
+}
+
 /// Cleans OpenAPI JSON schemas into Gemini's expected subset
 fn clean_gemini_schema(val: &mut Value) {
     if let Value::Object(map) = val {
@@ -271,11 +284,14 @@ pub fn build_request(req: &UnifiedRequest) -> Result<(String, Value, HeaderMap),
     headers.insert("x-goog-api-key",
         HeaderValue::from_str(&req.api_key).map_err(|e| e.to_string())?);
 
-
-    let base = req.endpoint_override.clone()
-        .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta/models/".to_string());
-    let endpoint = format!("{}{}:streamGenerateContent?alt=sse", base, model_id);
-
+    let raw_base = req.endpoint_override.as_deref()
+        .unwrap_or("https://generativelanguage.googleapis.com/v1beta");
+    let base = raw_base.trim_end_matches('/');
+    let endpoint = if base.ends_with("/models") {
+        format!("{}/{}:streamGenerateContent?alt=sse", base, model_id)
+    } else {
+        format!("{}/models/{}:streamGenerateContent?alt=sse", base, model_id)
+    };
 
     Ok((endpoint, body, headers))
 }
@@ -331,101 +347,99 @@ pub fn parse_sse_event(data: &str) -> Vec<StreamChunkPayload> {
     events
 }
 
-/// Executes streaming generation on Google AI Studio / Gemini API
+/// Executes streaming generation on Google AI Studio / Gemini API with smart resilient retries
 pub async fn execute_stream(
     req: &UnifiedRequest,
 ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunkPayload, String>>, String> {
     let (url, body, headers) = build_request(req)?;
 
-    let mut response = GEMINI_CLIENT.post(&url)
-        .headers(headers.clone())
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut attempts = 0;
+    let max_attempts = 3;
+    let mut current_body = body.clone();
+    let mut final_response = None;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body_text = response.text().await.unwrap_or_default();
+    while attempts < max_attempts {
+        attempts += 1;
+        let resp_res = GEMINI_CLIENT.post(&url)
+            .headers(headers.clone())
+            .json(&current_body)
+            .send()
+            .await;
 
-        if status.as_u16() == 429 {
-            // Check if there is a short retryDelay specified in Google's error response (e.g. "retryDelay": "2s")
-            let mut retry_secs: Option<u64> = None;
-            if let Ok(err_json) = serde_json::from_str::<Value>(&body_text) {
-                if let Some(err_obj) = err_json.get("error") {
-                    if let Some(details) = err_obj.get("details").and_then(|d| d.as_array()) {
-                        for d in details {
-                            if let Some(delay_str) = d.get("retryDelay").and_then(|r| r.as_str()) {
-                                if let Some(num_str) = delay_str.strip_suffix('s') {
-                                    if let Ok(s) = num_str.parse::<u64>() {
-                                        retry_secs = Some(s);
+        match resp_res {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    final_response = Some(resp);
+                    break;
+                }
+
+                let status = resp.status();
+                let body_text = resp.text().await.unwrap_or_default();
+
+                // 1. Recover if thinkingConfig is unsupported on this specific model
+                if (status.as_u16() == 400 || body_text.contains("Thinking budget is not supported") || body_text.contains("thinkingConfig"))
+                    && current_body.get("generationConfig").and_then(|g| g.get("thinkingConfig")).is_some()
+                {
+                    if let Some(gen) = current_body.get_mut("generationConfig").and_then(|g| g.as_object_mut()) {
+                        gen.remove("thinkingConfig");
+                    }
+                    continue;
+                }
+
+                // 2. Recover on 429 (Resource Exhausted) or 503 (Model Overloaded / High Demand)
+                let is_transient_overload = status.as_u16() == 429
+                    || status.as_u16() == 503
+                    || body_text.contains("UNAVAILABLE")
+                    || body_text.contains("overloaded")
+                    || body_text.contains("RESOURCE_EXHAUSTED");
+
+                if is_transient_overload && attempts < max_attempts {
+                    let mut delay_secs = attempts as u64;
+                    if let Ok(err_json) = serde_json::from_str::<Value>(&body_text) {
+                        if let Some(details) = err_json.get("error").and_then(|e| e.get("details")).and_then(|d| d.as_array()) {
+                            for d in details {
+                                if let Some(delay_str) = d.get("retryDelay").and_then(|r| r.as_str()) {
+                                    if let Some(num_str) = delay_str.strip_suffix('s') {
+                                        if let Ok(s) = num_str.parse::<u64>() {
+                                            delay_secs = s.min(4);
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs.max(1))).await;
+                    continue;
                 }
-            }
 
-            // Attempt automatic short backoff retry if delay is <= 4 seconds
-            if let Some(delay) = retry_secs {
-                if delay <= 4 {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(delay.max(1))).await;
-                    if let Ok(retry_resp) = GEMINI_CLIENT.post(&url)
-                        .headers(headers.clone())
-                        .json(&body)
-                        .send()
-                        .await
-                    {
-                        if retry_resp.status().is_success() {
-                            response = retry_resp;
-                        } else {
-                            let r_status = retry_resp.status();
-                            let r_text = retry_resp.text().await.unwrap_or_default();
-                            return Err(format!("Request failed ({}): {}", r_status, r_text));
-                        }
-                    } else {
-                        return Err(format!("Request failed ({}): {}", status, body_text));
-                    }
+                // Friendly diagnostic formatting
+                if status.as_u16() == 429 || body_text.contains("RESOURCE_EXHAUSTED") {
+                    return Err("Google Gemini free-tier rate limit or quota reached on this model. Try switching to Gemini 3.5 Flash or retry in 5-10 seconds.".to_string());
+                } else if status.as_u16() == 503 || body_text.contains("UNAVAILABLE") || body_text.contains("overloaded") {
+                    return Err("Google Gemini servers are currently in high demand for this preview model. Please retry in a few moments or switch to Gemini 3.5 Flash.".to_string());
                 } else {
-                    return Err(format!("Request failed ({}): {}", status, body_text));
+                    return Err(format!("Google Gemini request failed ({}): {}", status, body_text));
                 }
-            } else {
-                return Err(format!("Request failed ({}): {}", status, body_text));
             }
-        } else if (status.as_u16() == 400 || body_text.contains("Thinking budget is not supported"))
-            && body.get("generationConfig").and_then(|g| g.get("thinkingConfig")).is_some()
-        {
-            // Automatic recovery when thinking budget is unsupported
-            let mut retry_body = body.clone();
-            if let Some(gen) = retry_body.get_mut("generationConfig").and_then(|g| g.as_object_mut()) {
-                gen.remove("thinkingConfig");
-            }
-            if let Ok(retry_resp) = GEMINI_CLIENT.post(&url)
-                .headers(headers.clone())
-                .json(&retry_body)
-                .send()
-                .await
-            {
-                if retry_resp.status().is_success() {
-                    response = retry_resp;
-                } else {
-                    let r_status = retry_resp.status();
-                    let r_text = retry_resp.text().await.unwrap_or_default();
-                    return Err(format!("Request failed ({}): {}", r_status, r_text));
+            Err(e) => {
+                if attempts < max_attempts {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempts as u64)).await;
+                    continue;
                 }
-            } else {
-                return Err(format!("Request failed ({}): {}", status, body_text));
+                return Err(format!("Network connection to Google Gemini failed: {}", e));
             }
-        } else {
-            return Err(format!("Request failed ({}): {}", status, body_text));
         }
     }
+
+    let final_response = match final_response {
+        Some(r) => r,
+        None => return Err("Gemini request timed out after retries.".to_string()),
+    };
 
     let (tx, rx) = tokio::sync::mpsc::channel(256);
 
     tauri::async_runtime::spawn(async move {
-        let byte_stream = response.bytes_stream().map_err(|e| {
+        let byte_stream = final_response.bytes_stream().map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::Other, e)
         });
         let stream_reader = StreamReader::new(byte_stream);

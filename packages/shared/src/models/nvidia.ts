@@ -8,8 +8,41 @@ import { ModelOption } from '../types.js';
  */
 export const NVIDIA_MODELS: ModelOption[] = [
   // ═══════════════════════════════════════════════════════════════════════════════
-  // NVIDIA NIM CATALOG (11 MODELS)
+  // NVIDIA NIM CATALOG
   // ═══════════════════════════════════════════════════════════════════════════════
+  {
+    id: 'deepseek-ai/deepseek-v4-pro-0813',
+    name: 'DeepSeek V4 Pro',
+    provider: 'nvidia-nim',
+    status: 'ga',
+    description:
+      'DeepSeek V4 Pro frontier MoE reasoning and algorithmic coding model hosted on NVIDIA NIM with TensorRT-LLM optimization. High throughput, deep mathematical logic, and advanced code synthesis.',
+    specs: {
+      contextWindow: '131,072 (128K)',
+      maxOutput: '16,384 (16K)',
+      modality: 'Text',
+    },
+    capabilities: {
+      vision: false,
+      reasoning: true,
+    },
+    supportsThinking: true,
+    features: [
+      '128K Token Context Window with TensorRT-LLM acceleration',
+      'Advanced mathematical synthesis, algorithmic coding, and multi-step reasoning',
+      'High-throughput low-latency inference on NVIDIA DGX Cloud infrastructure',
+    ],
+    pros: [
+      'Frontier reasoning accuracy with deep mathematical and code capabilities',
+      'Fast token throughput on NVIDIA NIM cluster',
+    ],
+    cons: ['Text-only modality'],
+    limits: {
+      rpm: 40,
+      tpm: null,
+      rpd: 10000,
+    },
+  },
   {
     id: 'nvidia/nemotron-3-super-120b-a12b',
     name: 'Nemotron 3 Super 120B',

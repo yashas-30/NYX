@@ -313,13 +313,20 @@ export async function fetchAllQuotas(
 }
 
 /**
- * Invalidate cache for a provider.
+ * Invalidate cache for a provider and flush backend validation cache.
  */
 export function invalidateQuotaCache(provider?: string): void {
   if (provider) {
     quotaCache.delete(provider);
   } else {
     quotaCache.clear();
+  }
+  try {
+    if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+      invoke('clear_provider_cache', { provider }).catch(() => {});
+    }
+  } catch (e) {
+    // Ignore
   }
 }
 

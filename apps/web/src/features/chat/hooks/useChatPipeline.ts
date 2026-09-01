@@ -35,6 +35,12 @@ import {
 import { ChatArtifact } from '@nyx/shared';
 import { isModelLoaded } from '@src/shared/hooks/useLocalModels';
 import { extractCoreSubject } from '@src/core/services/intelligentQueryEngine';
+import {
+  antigravityAgent,
+  ANTIGRAVITY_BASE_MODEL,
+  ANTIGRAVITY_BACKUP_MODEL,
+} from '@src/core/agents/antigravityAgent';
+import { runLangGraphAgent } from '@src/core/agents/langgraphAgent';
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -142,7 +148,12 @@ export function useChatPipeline({
     async (
       prompt: string,
       images?: ChatImage[],
-      options?: { skipUserMessage?: boolean; modelOverride?: string }
+      options?: {
+        skipUserMessage?: boolean;
+        modelOverride?: string;
+        userDisplayPrompt?: string;
+        contextInjection?: string;
+      }
     ): Promise<boolean> => {
       const now = Date.now();
       if (now - lastRunRef.current < 300) return false;
@@ -396,6 +407,9 @@ export function useChatPipeline({
       try {
         const supportsVision = resolveSupportsVision(modelToUse, modelState);
         let finalPrompt = prompt;
+        if (options?.contextInjection) {
+          finalPrompt = `${options.contextInjection}\n\n${prompt}`;
+        }
         if (images && images.length > 0 && !supportsVision) {
           toast.info('Attached image context provided as text reference to active model.');
           const imgRefText = images
@@ -404,7 +418,7 @@ export function useChatPipeline({
                 `[USER ATTACHED IMAGE: ${img.name || 'Image'} (URL: ${img.url || 'Attached'})]`
             )
             .join('\n');
-          finalPrompt = `${prompt}\n\n[USER ATTACHED IMAGES]\n${imgRefText}\n[/USER ATTACHED IMAGES]`;
+          finalPrompt = `${finalPrompt}\n\n[USER ATTACHED IMAGES]\n${imgRefText}\n[/USER ATTACHED IMAGES]`;
         }
 
         const skipUserMessage = options?.skipUserMessage;
@@ -519,7 +533,7 @@ export function useChatPipeline({
               }
             );
             if (ocrRes?.success && ocrRes.extracted_text) {
-              finalPrompt = `${prompt}\n\n[🔍 Extracted OCR Document Text]:\n${ocrRes.extracted_text}`;
+              finalPrompt = `${finalPrompt}\n\n[🔍 Extracted OCR Document Text]:\n${ocrRes.extracted_text}`;
             }
           } catch (err) {
             console.warn('Local OCR skipped:', err);
@@ -532,7 +546,7 @@ export function useChatPipeline({
               ? crypto.randomUUID()
               : Math.random().toString(36).substring(2, 15),
             role: 'user',
-            content: prompt,
+            content: options?.userDisplayPrompt || prompt,
             timestamp: Date.now(),
             images: images
               ?.map((img) => ({
@@ -660,7 +674,13 @@ export function useChatPipeline({
               }
             }
 
-            if (webSearchResults) {
+            const isMediaSearchExplicit =
+              /\b(?:pictures?|images?|photos?|videos?|youtube|clip|movie)\b/i.test(prompt) &&
+              !/\b(?:code|html|css|js|javascript|typescript|python|bug|fix|error|component|refactor|function|script|app|application|cursor|freeze|glitch)\b/i.test(
+                prompt
+              );
+
+            if (webSearchResults && isMediaSearchExplicit) {
               const mediaMatch = webSearchResults.match(/<!-- NYX_MEDIA_DATA:\s*([\s\S]*?)\s*-->/);
               if (mediaMatch && mediaMatch[1]) {
                 try {
@@ -733,13 +753,30 @@ export function useChatPipeline({
             resolvedProviderEarly2 === 'nyx-native' ? (activeTools as any) : undefined,
         };
 
+        // Retrieve relevant semantic context from TurboVec LanceDB memory store
+        let memoryContext: string | undefined = undefined;
+        try {
+          const tvResults = await invoke<Array<{ text: string; metadata: string }>>(
+            'turbovec_search_chat_history',
+            { query: prompt, limit: 3 }
+          ).catch(() => []);
+          if (tvResults && tvResults.length > 0) {
+            const memSnippets = tvResults
+              .map((r, idx) => `[Memory Snippet ${idx + 1} (${r.metadata})]: ${r.text}`)
+              .join('\n\n');
+            memoryContext = `[TURBOVEC RELEVANT CHAT CONTEXT (Gemini 3.5 Flash-Lite Extracted)]:\n${memSnippets}`;
+          }
+        } catch (e) {}
+
         const promptResult = buildChatPrompts(
           modelToUse,
           chatContext,
           finalPrompt,
           llmHistory,
           webSearchResults,
-          resolvedProviderEarly2
+          resolvedProviderEarly2,
+          undefined,
+          memoryContext
         );
 
         let currentContent = initialWarning;
@@ -829,11 +866,17 @@ export function useChatPipeline({
                   }
                 }
 
+                const effectiveReasoning =
+                  extractedReasoning ||
+                  currentReasoning ||
+                  activeStreamRef.current?.reasoning ||
+                  undefined;
+
                 const updatedMsg = {
                   ...activeStreamRef.current,
                   content: displayContent,
-                  reasoning: isModelReasoningType ? extractedReasoning || undefined : undefined,
-                  thinkingTimeMs: isModelReasoningType ? currentThinkingTimeMs : undefined,
+                  reasoning: effectiveReasoning,
+                  thinkingTimeMs: currentThinkingTimeMs || activeStreamRef.current?.thinkingTimeMs,
                 };
                 activeStreamRef.current = updatedMsg;
                 setActiveStreamMessage(updatedMsg);
@@ -1018,9 +1061,12 @@ export function useChatPipeline({
 
               if (now - lastUpdateTime > THROTTLE_MS) {
                 lastUpdateTime = now;
+                const fullReasoning = activeStreamRef.current?.reasoning
+                  ? `${activeStreamRef.current.reasoning}\n${currentReasoning}`
+                  : currentReasoning;
                 const updatedMsg = {
                   ...activeStreamRef.current,
-                  reasoning: currentReasoning || undefined,
+                  reasoning: fullReasoning || undefined,
                   thinkingTimeMs: Date.now() - (activeStreamRef.current.timestamp || Date.now()),
                 };
                 activeStreamRef.current = updatedMsg;
@@ -1033,11 +1079,16 @@ export function useChatPipeline({
               }
               if (activeStreamRef.current) {
                 const extracted = extractThinkingAndContent(currentContent, currentReasoning);
+                const finalReasoningCombined = extracted.parsedReasoning
+                  ? activeStreamRef.current.reasoning
+                    ? `${activeStreamRef.current.reasoning}\n\n${extracted.parsedReasoning}`
+                    : extracted.parsedReasoning
+                  : activeStreamRef.current.reasoning || undefined;
 
                 const updatedMsg = {
                   ...activeStreamRef.current,
                   content: extracted.parsedContent,
-                  reasoning: extracted.parsedReasoning || undefined,
+                  reasoning: finalReasoningCombined,
                 };
                 activeStreamRef.current = updatedMsg;
                 setActiveStreamMessage(updatedMsg);
@@ -1181,6 +1232,98 @@ export function useChatPipeline({
           const shouldPassTools =
             modelCaps.supportsTools && !isGemma && !isImageGen && !isReasoningOnly;
 
+          const isAntigravitySupervisorActive =
+            modelSettings?.antigravity !== false &&
+            !!(apiKeys['gemini'] || getEffectiveApiKey('gemini', apiKeys));
+
+          let enrichedSystemInstruction = finalSystemInstruction;
+
+          // ── Pass 1: Antigravity Agent Controller & Orchestrator (Brain & Memory) ──
+          // The Antigravity Agent (Gemini 3.5 Flash-Lite / 3.1 Flash-Lite) reviews the conversation memory,
+          // decides what tools to run, and produces a live thinking plan in the ThinkingBlock.
+          if (isAntigravitySupervisorActive) {
+            const geminiKey = getEffectiveApiKey('gemini', apiKeys) || apiKeys['gemini'] || '';
+            const initialThought = `━━━ [Antigravity Controller] Supervising & Orchestrating ━━━\n🔍 Analyzing user specifications for ${modelToUse}...\n🧠 Reviewing conversation history & TurboVec semantic memory...`;
+            if (activeStreamRef.current) {
+              activeStreamRef.current.reasoning = initialThought;
+              activeStreamRef.current.thinkingTimeMs = 50;
+              setActiveStreamMessage({ ...activeStreamRef.current });
+            }
+
+            try {
+              const planPromise = antigravityAgent.orchestrateAndPlan({
+                apiKey: geminiKey,
+                prompt: finalPrompt,
+                history: backendMessages,
+                systemInstruction: finalSystemInstruction || undefined,
+                targetModel: modelToUse,
+                onStep: (step) => {
+                  if (!activeStreamRef.current) return;
+
+                  if (step.thought) {
+                    const prev = activeStreamRef.current.reasoning || '';
+                    activeStreamRef.current.reasoning = `${prev}\n${step.thought}`;
+                    activeStreamRef.current.thinkingTimeMs =
+                      Date.now() - (activeStreamRef.current.timestamp || Date.now());
+                  }
+
+                  if (step.tool_name) {
+                    const callId = `ag_${Date.now()}_${step.tool_name}`;
+                    const callStatus: 'running' | 'success' | 'error' = step.is_finished
+                      ? 'success'
+                      : step.is_error
+                        ? 'error'
+                        : 'running';
+                    const newCall = {
+                      id: callId,
+                      type: 'function' as const,
+                      function: {
+                        name: step.tool_name,
+                        arguments: JSON.stringify(step.tool_args || {}),
+                      },
+                      status: callStatus,
+                      result: step.tool_result,
+                    };
+                    activeStreamRef.current.toolCalls = [
+                      ...(activeStreamRef.current.toolCalls || []),
+                      newCall,
+                    ];
+                  }
+
+                  setActiveStreamMessage({ ...activeStreamRef.current });
+                },
+                customFunctionHandler: async (name, args) => {
+                  const res = await toolExecutor.executeSingle({
+                    id: `ag_call_${Date.now()}`,
+                    name,
+                    arguments: args,
+                    rawArguments: JSON.stringify(args),
+                  });
+                  return res.content;
+                },
+              });
+
+              // Fast timeout: Do not block generation for more than 3 seconds
+              const timeoutPromise = new Promise<{
+                contextEnrichment?: string;
+                toolOutputs: any[];
+              }>((resolve) =>
+                setTimeout(() => resolve({ contextEnrichment: '', toolOutputs: [] }), 3000)
+              );
+
+              const planResult = await Promise.race([planPromise, timeoutPromise]);
+
+              if (planResult.contextEnrichment) {
+                enrichedSystemInstruction = `${enrichedSystemInstruction}\n\n${planResult.contextEnrichment}`;
+              }
+            } catch (planErr) {
+              console.warn('[useChatPipeline] Antigravity orchestrator planning skipped:', planErr);
+            }
+          }
+
+          // ── Pass 2: Selected Model Generates Response & Code Artifacts ──
+          // The model selected in the model selector (Gemini 3.7 Flash, Claude 3.5 Sonnet, GPT-4o, LLaMA 3.3 70B, etc.)
+          // streams the final output and code into the chat and Artifact Canvas.
           let toolIteration = 0;
           const maxToolIterations = 5;
 
@@ -1420,66 +1563,35 @@ export function useChatPipeline({
             }
           }
 
-          // Diagram Artifact Extraction
-          // Priority 1: explicit ```html or ```svg fence containing <svg
-          // Priority 1: explicit ```html/svg/diagram fence containing <svg or <div class="diagram" (diagram-design wraps SVG in <div>)
-          const htmlDiagramMatch =
-            finalContent.match(
-              /```(?:html|svg|diagram|diagram-design)\s*\n([\s\S]*?(?:<svg\b|<div[^>]*(?:class|id)="[^"]*(?:diagram|chart|graph|viz)[^"]*")[^>]*>[\s\S]*?)```/i
-            ) ??
-            finalContent.match(
-              /```(?:html|svg|diagram|diagram-design)\s*\n([\s\S]*?<svg[\s\S]*?)```/i
-            );
-          // Priority 2: explicit ```mermaid fence
+          // Diagram Artifact Extraction — mermaid only.
+          // HTML/SVG code fences render in the CodeBlock iframe and must NOT
+          // create a diagram artifact (which would auto-open the ArtifactCanvas).
+          // Only pure mermaid syntax — either an explicit ```mermaid fence or a
+          // bare unfenced mermaid block — becomes a diagram artifact.
           const mermaidFenceMatch = finalContent.match(/```mermaid\s*\n([\s\S]*?)```/i);
-          // Priority 3: bare Mermaid syntax (no fence at all, entire response is a diagram)
           const hasRawMermaid =
             !finalContent.includes('<svg') &&
             !finalContent.match(
-              /```(?:typescript|javascript|python|rust|go|java|c\+\+|cpp|sql|bash|sh|yaml|json|css|tsx|jsx)\s*\n/
+              /```(?:typescript|javascript|python|rust|go|java|c\+\+|cpp|sql|bash|sh|yaml|json|css|tsx|jsx|html|svg)\s*\n/
             ) &&
             /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|C4Context|C4Container)\b/im.test(
               finalContent
             );
-          // Priority 4: raw <svg> inline in the response body (not in a code fence)
-          const rawSvgOutsideFence =
-            !htmlDiagramMatch &&
-            /<svg[\s\S]*?<\/svg>/i.test(finalContent.replace(/```[\s\S]*?```/g, ''));
 
           let diagramCode = '';
-          let diagramLang = 'html';
+          let diagramLang = 'mermaid';
 
-          if (htmlDiagramMatch) {
-            // Full HTML+SVG diagram-design output
-            diagramCode = htmlDiagramMatch[1].trim();
-            diagramLang = 'html';
-          } else if (mermaidFenceMatch) {
-            // Explicit ```mermaid fence
+          if (mermaidFenceMatch) {
             diagramCode = mermaidFenceMatch[1].trim();
             diagramLang = 'mermaid';
           } else if (hasRawMermaid) {
-            // Entire response is raw Mermaid
             diagramCode = finalContent.trim();
             diagramLang = 'mermaid';
-          } else if (rawSvgOutsideFence) {
-            // Loose <svg> tag in prose
-            const cleaned = finalContent.replace(/```[\s\S]*?```/g, '');
-            const match = cleaned.match(/<svg[\s\S]*?<\/svg>/i);
-            if (match) {
-              diagramCode = match[0];
-              diagramLang = 'svg';
-            }
           }
 
           if (
             diagramCode &&
-            !msgArtifacts.some(
-              (a) =>
-                a.type === 'diagram' ||
-                a.language === 'html' ||
-                a.language === 'mermaid' ||
-                a.language === 'svg'
-            )
+            !msgArtifacts.some((a) => a.type === 'diagram' || a.language === 'mermaid')
           ) {
             const cleanTitle = (prompt || 'Architecture Diagram')
               .replace(
@@ -1581,59 +1693,33 @@ export function useChatPipeline({
               } as ChatArtifact);
             }
 
-            // Diagram Artifact Extraction
-            // Priority 1: html/svg/diagram fence containing <svg or <div.diagram-container
-            const htmlDiagramMatch =
-              existingContent.match(
-                /```(?:html|svg|diagram|diagram-design)\s*\n([\s\S]*?(?:<svg\b|<div[^>]*(?:class|id)="[^"]*(?:diagram|chart|graph|viz)[^"]*")[^>]*>[\s\S]*?)```/i
-              ) ??
-              existingContent.match(
-                /```(?:html|svg|diagram|diagram-design)\s*\n([\s\S]*?<svg[\s\S]*?)```/i
-              );
-
+            // Diagram Artifact Extraction — mermaid only.
+            // HTML/SVG code fences render in the CodeBlock iframe and must NOT
+            // create a diagram artifact (which would auto-open the ArtifactCanvas).
             const mermaidFenceMatch = existingContent.match(/```mermaid\s*\n([\s\S]*?)```/i);
             const hasRawMermaid =
               !existingContent.includes('<svg') &&
               !existingContent.match(
-                /```(?:typescript|javascript|python|rust|go|java|c\+\+|cpp|sql|bash|sh|yaml|json|css|tsx|jsx)\s*\n/
+                /```(?:typescript|javascript|python|rust|go|java|c\+\+|cpp|sql|bash|sh|yaml|json|css|tsx|jsx|html|svg)\s*\n/
               ) &&
               /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|C4Context|C4Container)\b/im.test(
                 existingContent
               );
-            const rawSvgOutsideFence =
-              !htmlDiagramMatch &&
-              /<svg[\s\S]*?<\/svg>/i.test(existingContent.replace(/```[\s\S]*?```/g, ''));
 
             let diagramCode = '';
-            let diagramLang = 'html';
+            let diagramLang = 'mermaid';
 
-            if (htmlDiagramMatch) {
-              diagramCode = htmlDiagramMatch[1].trim();
-              diagramLang = 'html';
-            } else if (mermaidFenceMatch) {
+            if (mermaidFenceMatch) {
               diagramCode = mermaidFenceMatch[1].trim();
               diagramLang = 'mermaid';
             } else if (hasRawMermaid) {
               diagramCode = existingContent.trim();
               diagramLang = 'mermaid';
-            } else if (rawSvgOutsideFence) {
-              const cleaned = existingContent.replace(/```[\s\S]*?```/g, '');
-              const match = cleaned.match(/<svg[\s\S]*?<\/svg>/i);
-              if (match) {
-                diagramCode = match[0];
-                diagramLang = 'svg';
-              }
             }
 
             if (
               diagramCode &&
-              !existingArtifacts.some(
-                (a) =>
-                  a.type === 'diagram' ||
-                  a.language === 'html' ||
-                  a.language === 'mermaid' ||
-                  a.language === 'svg'
-              )
+              !existingArtifacts.some((a) => a.type === 'diagram' || a.language === 'mermaid')
             ) {
               const cleanTitle = (prompt || 'Architecture Diagram')
                 .replace(

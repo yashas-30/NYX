@@ -284,6 +284,7 @@ pub fn run() {
             // Cloud model orchestration
             llm::providers::get_models_quota,
             llm::providers::check_provider_reachable,
+            llm::providers::clear_provider_cache,
             commands::system::get_hardware_specs,
             commands::system::get_system_diagnostics,
             research::start_deep_research,

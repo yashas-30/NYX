@@ -56,6 +56,13 @@ pub async fn check_provider_reachable(provider: String, api_key: Option<String>)
     })
 }
 
+/// Clears provider in-memory validation cache (e.g. on key update or user request)
+#[tauri::command]
+pub async fn clear_provider_cache(provider: Option<String>) -> Result<bool, String> {
+    common::clear_validation_cache(provider.as_deref());
+    Ok(true)
+}
+
 /// IPC command for frontend streaming requests across cloud providers
 #[tauri::command]
 pub async fn llm_stream_request(

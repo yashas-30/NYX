@@ -256,7 +256,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     title={label}
                     className={`flex flex-col items-center justify-center gap-1 rounded-lg transition-all cursor-pointer p-2 hover:bg-muted/50 ${
                       activeMode === mode
-                        ? 'text-foreground bg-muted border border-border shadow-sm'
+                        ? 'text-foreground bg-muted border border-border'
                         : 'text-muted-foreground hover:text-foreground border border-transparent'
                     }`}
                   >
@@ -288,7 +288,7 @@ export const AppDashboard: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               whileHover={{ scale: 1.05, backgroundColor: 'var(--muted)' }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setSidebarOpen(true)}
-              className="absolute top-[7px] left-3.5 z-30 p-1.5 rounded-md bg-secondary hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all shadow-sm cursor-pointer"
+              className="absolute top-[7px] left-3.5 z-30 p-1.5 rounded-md bg-secondary hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all cursor-pointer"
             >
               <PanelLeftOpen size={14} />
             </motion.button>

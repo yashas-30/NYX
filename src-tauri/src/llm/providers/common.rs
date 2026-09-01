@@ -32,6 +32,18 @@ pub struct ReachableResponse {
 pub static KEY_VALIDATION_CACHE: LazyLock<std::sync::Mutex<std::collections::HashMap<String, (bool, std::time::Instant)>>> =
     LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
+/// Clears cached validation results for all or a specific provider
+pub fn clear_validation_cache(provider: Option<&str>) {
+    if let Ok(mut cache) = KEY_VALIDATION_CACHE.lock() {
+        if let Some(p) = provider {
+            let prefix = format!("{}:", p);
+            cache.retain(|k, _| !k.starts_with(&prefix));
+        } else {
+            cache.clear();
+        }
+    }
+}
+
 /// Builds an optimized HTTP client with TCP_NODELAY, HTTP/2 multiplexing, connection pooling, and fast keep-alive
 pub fn build_fast_http_client(max_idle: usize, keepalive_secs: u64) -> Client {
     Client::builder()

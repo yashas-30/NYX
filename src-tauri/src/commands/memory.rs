@@ -97,7 +97,7 @@ pub async fn extract_session_memory(
         &session_id,
         &snapshots,
         "",
-        "gemini-2.0-flash",
+        "gemini-3.5-flash-lite",
     )
     .await
     .map_err(|e| e.to_string())?;

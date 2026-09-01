@@ -292,7 +292,7 @@ impl DynamicModelRegistry {
         Ok(DynamicModelSpec {
             id: match role {
                 ModelRole::FastIntentClassifier => "openai/gpt-oss-20b".to_string(),
-                ModelRole::DeepResearchSynthesizer => "gemini-2.5-flash".to_string(),
+                ModelRole::DeepResearchSynthesizer => "gemini-3.5-flash-lite".to_string(),
                 ModelRole::CodeAndArtifactEngine => "codestral-latest".to_string(),
                 ModelRole::ReasoningAndReflection => "openai/gpt-oss-120b".to_string(),
                 ModelRole::UniversalFallback => "nvidia/nemotron-3-super-120b-a12b:free".to_string(),

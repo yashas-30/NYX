@@ -308,7 +308,7 @@ pub async fn db_save_chat_session(
                 &session_id,
                 &snapshots,
                 "",
-                "gemini-2.0-flash",
+                "gemini-3.5-flash-lite",
             )
             .await;
         });

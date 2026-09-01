@@ -116,31 +116,11 @@ export function HuggingFaceExplorer() {
 
   // ── Render ─────────────────────────────────────────────────────
   return (
-    <div
-      style={{
-        display: 'flex',
-        height: '100%',
-        width: '100%',
-        overflow: 'hidden',
-        background: '#0f0f0f',
-      }}
-    >
+    <div className="flex h-full w-full overflow-hidden bg-background">
       {/* ── LEFT PANEL: Search + List ───────────────────────────── */}
-      <div
-        style={{
-          width: 380,
-          minWidth: 320,
-          maxWidth: 420,
-          flexShrink: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          borderRight: '1px solid #1a1a1a',
-          background: '#141414',
-          overflow: 'hidden',
-        }}
-      >
+      <div className="w-[380px] min-w-[320px] max-w-[420px] shrink-0 flex flex-col border-r border-border bg-card overflow-hidden">
         {/* Search bar at top */}
-        <div style={{ flexShrink: 0, borderBottom: '1px solid #1a1a1a' }}>
+        <div className="shrink-0 border-b border-border">
           <SearchBar
             value={searchQuery}
             onChange={handleSearchQueryChange}
@@ -173,15 +153,7 @@ export function HuggingFaceExplorer() {
       </div>
 
       {/* ── RIGHT PANEL: Model Detail ───────────────────────────── */}
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
+      <div className="flex-1 min-w-0 overflow-hidden flex flex-col bg-background">
         {selectedModel ? (
           <ErrorBoundary>
             <ModelDetail

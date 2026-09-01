@@ -52,10 +52,10 @@ export const PythonSandbox: React.FC<PythonSandboxProps> = ({ code }) => {
         const py = await (window as any).loadPyodide({
           indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.1/full/',
         });
-        
+
         setLoadingStatus('Loading packages (numpy, pandas, matplotlib)...');
         await py.loadPackage(['numpy', 'pandas', 'matplotlib']);
-        
+
         if (active) {
           setPyodide(py);
           setLoading(false);
@@ -74,6 +74,13 @@ export const PythonSandbox: React.FC<PythonSandboxProps> = ({ code }) => {
       active = false;
     };
   }, []);
+
+  // Auto-run code once runtime is ready or code updates
+  useEffect(() => {
+    if (pyodide && !running) {
+      runCode();
+    }
+  }, [pyodide, code]);
 
   const runCode = async () => {
     if (!pyodide || running) return;
@@ -170,12 +177,18 @@ else:
         {/* Terminal logs */}
         <div className="flex-1 p-3 overflow-y-auto space-y-1 bg-background/50 min-h-[150px]">
           {output.length === 0 ? (
-            <p className="text-muted-foreground/40">Click 'Run Code' to execute in WASM sandbox...</p>
+            <p className="text-muted-foreground/40">
+              Click 'Run Code' to execute in WASM sandbox...
+            </p>
           ) : (
             output.map((line, idx) => (
               <p
                 key={idx}
-                className={line.startsWith('[Error]') || line.startsWith('Runtime Exception') ? 'text-red-400' : 'text-foreground/80'}
+                className={
+                  line.startsWith('[Error]') || line.startsWith('Runtime Exception')
+                    ? 'text-red-400'
+                    : 'text-foreground/80'
+                }
               >
                 {line}
               </p>

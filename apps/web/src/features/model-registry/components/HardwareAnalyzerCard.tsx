@@ -32,12 +32,12 @@ export const HardwareAnalyzerCard: React.FC = () => {
   const gb = (bytes: number) => (bytes / (1024 * 1024 * 1024)).toFixed(1);
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-3 shadow-sm mb-6">
+    <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-3 mb-6">
       <div className="flex items-center gap-2 border-b border-border pb-2">
         <Desktop size={16} weight="duotone" className="text-primary" />
         <h3 className="text-sm font-bold text-foreground">Hardware Analyzer</h3>
       </div>
-      
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -46,7 +46,7 @@ export const HardwareAnalyzerCard: React.FC = () => {
           </div>
           <span className="text-sm font-bold">{specs.cpu_cores} Cores</span>
         </div>
-        
+
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Memory size={14} />
@@ -72,9 +72,7 @@ export const HardwareAnalyzerCard: React.FC = () => {
             <Memory size={14} />
             <span className="text-xs font-medium uppercase">VRAM</span>
           </div>
-          <span className="text-sm font-bold">
-            {gb(specs.gpu_vram)} GB
-          </span>
+          <span className="text-sm font-bold">{gb(specs.gpu_vram)} GB</span>
         </div>
       </div>
     </div>

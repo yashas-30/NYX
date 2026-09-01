@@ -17,10 +17,10 @@ import {
   Copy,
   Download,
   ChevronLeft,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@src/shared/components/ui/button';
 import Editor, { DiffEditor } from '@monaco-editor/react';
-import { Sandpack } from '@codesandbox/sandpack-react';
 import { PythonSandbox } from '../../chat/components/PythonSandbox';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { toast } from '@src/shared/components/ui/sonner';
@@ -32,6 +32,8 @@ import {
   sanitizeMermaidCode,
   generateFallbackFlowchartSvg,
 } from '../../../components/chat/CodeBlock';
+import { buildLivePreviewSrcDoc } from '../../../shared/utils/livePreviewRunner';
+import { ErrorBoundary } from '@src/shared/components/ErrorBoundary';
 
 function getLanguageFromExt(langOrExt?: string): string {
   if (!langOrExt) return 'plaintext';
@@ -193,6 +195,7 @@ export interface ArtifactCanvasProps {
   language?: string;
   title?: string;
   isOpen: boolean;
+  isStreaming?: boolean;
   onClose: () => void;
   onSubmitPrompt?: (prompt: string) => void;
   history?: ChatMessage[];
@@ -204,14 +207,20 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
   language = 'html',
   title = 'Artifact',
   isOpen,
+  isStreaming = false,
   onClose,
   onSubmitPrompt,
   history = [],
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'preview' | 'code' | 'diff'>('preview');
+  const [activeTab, setActiveTab] = useState<'preview' | 'code' | 'diff'>(() =>
+    isStreaming ? 'code' : 'preview'
+  );
   const [selectedVersionIndex, setSelectedVersionIndex] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const prevStreamingRef = useRef(isStreaming);
+  const userOverrodeTab = useRef(false);
 
   const activeProjectId = useNyxStore((s) => s.activeProjectId);
 
@@ -258,6 +267,20 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
     return { content, title, language };
   }, [selectedVersionIndex, versions, content, title, language]);
 
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [debouncedPreviewCode, setDebouncedPreviewCode] = useState(content);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setDebouncedPreviewCode(displayedArtifact.content || '');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedPreviewCode(displayedArtifact.content || '');
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [displayedArtifact.content, isStreaming]);
+
   // Code selections for target AI edits
   const [selection, setSelection] = useState<{
     text: string;
@@ -271,7 +294,9 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
 
   const handleEditorDidMount = (editor: any) => {
     setEditorInstance(editor);
+    let isDisposed = false;
     const listener = editor.onDidChangeCursorSelection((e: any) => {
+      if (isDisposed) return;
       try {
         const model = editor.getModel();
         if (!model || typeof model.isDisposed !== 'function' || model.isDisposed()) return;
@@ -292,9 +317,14 @@ export const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({
       }
     });
 
-    editor.onDidDispose(() => {
-      listener.dispose();
-    });
+    try {
+      editor.onDidDispose(() => {
+        isDisposed = true;
+        try {
+          listener?.dispose?.();
+        } catch {}
+      });
+    } catch {}
   };
 
   const handleRequestEdit = (e: React.FormEvent) => {
@@ -456,364 +486,378 @@ User instructions to modify this selection: ${editInstruction}`;
     hasSvgOrHtml;
 
   const iframeSrcDoc = useMemo(() => {
-    if (!isPreviewable || isSlidev || isMermaid || isReact || isPython) return '';
-    const tailwindScript = '<script src="https://cdn.tailwindcss.com"></script>';
-    const chartJsScript = '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
-    const d3Script = '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>';
-    const fontLinks =
-      '<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">';
-
-    let htmlContent = displayedArtifact.content || '';
-    // Strip markdown code fences if content was stored with ```html ... ```
-    htmlContent = htmlContent
-      .replace(/^```(?:html|svg|diagram-design|diagram)?\s*\n?/i, '')
-      .replace(/\n?```\s*$/i, '')
-      .trim();
-
-    if (!htmlContent.trim()) {
-      htmlContent = generateFallbackFlowchartSvg(
-        displayedArtifact.title || 'Architecture & Evolution Diagram'
-      );
-    }
-
-    if (
-      displayedArtifact.language?.toLowerCase() === 'svg' ||
-      (/^<svg\b/i.test(htmlContent.trim()) && !htmlContent.includes('<html'))
-    ) {
-      htmlContent = `<div class="diagram-container flex items-center justify-center w-full my-auto">${htmlContent}</div>`;
-    }
-
-    if (!htmlContent.includes('<head>') && !htmlContent.includes('<html')) {
-      return `<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    ${fontLinks}
-    ${tailwindScript}
-    ${chartJsScript}
-    ${d3Script}
-    <style>
-      *, *::before, *::after { box-sizing: border-box; }
-      html, body {
-        margin: 0;
-        padding: 24px;
-        background: #09090b;
-        color: #f5f5f5;
-        font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        min-height: 100vh;
-        width: 100%;
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-      }
-      .diagram-container {
-        width: 100%;
-        max-width: 1080px;
-        margin: auto;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-      }
-      svg {
-        max-width: 100%;
-        height: auto;
-        display: block;
-        margin: auto;
-      }
-    </style>
-  </head>
-  <body>
-    ${htmlContent}
-  </body>
-</html>`;
-    }
-
-    return htmlContent.replace(
-      '</head>',
-      `${fontLinks}\n${tailwindScript}\n${chartJsScript}\n${d3Script}\n</head>`
+    if (!isPreviewable || isSlidev || isMermaid || isPython) return '';
+    return buildLivePreviewSrcDoc(
+      debouncedPreviewCode || '',
+      displayedArtifact.language || (isReact ? 'jsx' : 'html')
     );
   }, [
-    displayedArtifact.content,
+    debouncedPreviewCode,
     displayedArtifact.language,
     isPreviewable,
+    isSlidev,
     isMermaid,
     isReact,
     isPython,
   ]);
+
+  // Clean up Monaco model on unmount to prevent heap leaks
+  useEffect(() => {
+    return () => {
+      try {
+        if (editorInstance) {
+          const model = editorInstance.getModel();
+          if (model && typeof model.dispose === 'function') {
+            model.dispose();
+          }
+        }
+      } catch (e) {}
+    };
+  }, [editorInstance]);
+
+  const decorationsRef = useRef<string[]>([]);
+
+  // Automatically show 'code' tab while streaming, and switch to 'preview' once complete
+  useEffect(() => {
+    if (isStreaming) {
+      if (!userOverrodeTab.current) {
+        setActiveTab('code');
+      }
+    } else if (prevStreamingRef.current && !isStreaming) {
+      if (!userOverrodeTab.current && isPreviewable) {
+        setActiveTab('preview');
+      }
+    }
+    prevStreamingRef.current = isStreaming;
+  }, [isStreaming, isPreviewable]);
+
+  // Auto-scroll Monaco Editor to the active edited line during streaming / editing
+  useEffect(() => {
+    if (!editorInstance) return;
+
+    const lineCount = (displayedArtifact.content || '').split('\n').length;
+
+    if (isStreaming) {
+      try {
+        editorInstance.revealLineInCenter(lineCount);
+
+        // Highlight active streaming line with a glowing accent
+        decorationsRef.current = editorInstance.deltaDecorations(decorationsRef.current, [
+          {
+            range: {
+              startLineNumber: lineCount,
+              startColumn: 1,
+              endLineNumber: lineCount,
+              endColumn: 1,
+            },
+            options: {
+              isWholeLine: true,
+              className: 'bg-white/10 border-l-2 border-primary animate-pulse',
+            },
+          },
+        ]);
+      } catch (err) {}
+    } else if (prevStreamingRef.current && !isStreaming) {
+      // Clear line decoration and reveal bottom on completion
+      try {
+        decorationsRef.current = editorInstance.deltaDecorations(decorationsRef.current, []);
+        editorInstance.revealLine(lineCount);
+      } catch (err) {}
+    }
+  }, [displayedArtifact.content, isStreaming, editorInstance]);
 
   if (!isOpen) return null;
 
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, x: 300 }}
+        initial={{ opacity: 0, x: 50 }}
         animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: 300 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className={`bg-[#000000] border-l border-white/10 flex flex-col z-30 shadow-2xl overflow-hidden ${
-          isFullscreen
-            ? 'fixed inset-0 w-full h-full'
-            : 'w-[clamp(450px,50vw,800px)] h-full relative'
+        exit={{ opacity: 0, x: 50 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className={`fixed top-0 right-0 bottom-0 bg-[#09090b] border-l border-white/10 flex flex-col z-50 shadow-2xl transition-all ${
+          isFullscreen ? 'left-0 w-full' : 'w-full md:w-[650px] lg:w-[750px] xl:w-[850px]'
         }`}
       >
-        {/* Header Toolbar */}
-        <div className="flex items-center justify-between p-3 border-b border-white/10 bg-[#0a0a0a] shrink-0 select-none">
-          <div className="font-semibold text-xs flex items-center gap-2 tracking-wide text-zinc-100 uppercase truncate max-w-[50%]">
-            {isPreviewable ? (
-              <Play className="w-3.5 h-3.5 text-zinc-300 shrink-0" />
-            ) : (
-              <Code className="w-3.5 h-3.5 text-zinc-300 shrink-0" />
-            )}
-            <span className="truncate">{displayedArtifact.title}</span>
+        {/* Header Bar */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#09090b] select-none">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-300 truncate">
+              {displayedArtifact.title}
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-zinc-400 uppercase">
+              {displayedArtifact.language}
+            </span>
           </div>
 
-          {/* Version Switcher */}
-          {versions.length > 1 && selectedVersionIndex !== null && (
-            <div className="flex items-center gap-1.5 bg-zinc-900 px-2 py-0.5 rounded-full border border-white/10 shadow-sm">
-              <button
-                disabled={selectedVersionIndex === 0}
-                onClick={() => setSelectedVersionIndex((prev) => (prev !== null ? prev - 1 : null))}
-                className="p-0.5 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                title="Previous Version"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-[10px] font-mono font-medium text-zinc-400 select-none">
-                v{selectedVersionIndex + 1} of {versions.length}
-              </span>
-              <button
-                disabled={selectedVersionIndex === versions.length - 1}
-                onClick={() => setSelectedVersionIndex((prev) => (prev !== null ? prev + 1 : null))}
-                className="p-0.5 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                title="Next Version"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-1.5">
+            {/* Version History Selector */}
+            {versions.length > 1 && (
+              <div className="flex items-center gap-1 mr-2 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-xs text-zinc-400">
+                <button
+                  disabled={selectedVersionIndex === 0}
+                  onClick={() =>
+                    setSelectedVersionIndex((prev) =>
+                      Math.max(0, (prev ?? versions.length - 1) - 1)
+                    )
+                  }
+                  className="p-0.5 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-400"
+                  title="Previous version"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </button>
+                <span className="font-mono text-[10px]">
+                  v{(selectedVersionIndex ?? versions.length - 1) + 1}/{versions.length}
+                </span>
+                <button
+                  disabled={selectedVersionIndex === versions.length - 1}
+                  onClick={() =>
+                    setSelectedVersionIndex((prev) =>
+                      Math.min(versions.length - 1, (prev ?? versions.length - 1) + 1)
+                    )
+                  }
+                  className="p-0.5 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-400"
+                  title="Next version"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            )}
 
-          <div className="flex items-center gap-1">
+            {/* Copy Button */}
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
-              title="Save to Project"
-              onClick={handleSaveToProject}
-            >
-              <Save className="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
-              title="Fork Code"
-              onClick={handleFork}
-            >
-              <GitFork className="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
-              title="Copy"
+              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/5"
               onClick={handleCopy}
+              title="Copy to clipboard"
             >
-              <Copy className="w-3.5 h-3.5" />
+              {copied ? (
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
             </Button>
+
+            {/* Download Button */}
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
-              title="Export File"
+              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/5"
               onClick={handleDownload}
+              title="Download file"
             >
               <Download className="w-3.5 h-3.5" />
             </Button>
-            <div className="h-4 w-px bg-white/10 mx-1" />
+
+            {/* Save to Project */}
+            {activeProjectId && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/5"
+                onClick={handleSaveToProject}
+                title="Save to Project Files"
+              >
+                <Save className="w-3.5 h-3.5" />
+              </Button>
+            )}
+
+            {/* Fullscreen Toggle */}
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
+              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/5"
               onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? 'Exit full screen' : 'Full screen'}
             >
               {isFullscreen ? (
-                <Minimize2 className="w-3.5 h-3.5 text-zinc-300" />
+                <Minimize2 className="w-3.5 h-3.5" />
               ) : (
-                <Maximize2 className="w-3.5 h-3.5 text-zinc-300" />
+                <Maximize2 className="w-3.5 h-3.5" />
               )}
             </Button>
+
+            {/* Close Button */}
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
+              className="h-7 w-7 text-zinc-400 hover:text-white hover:bg-white/5"
               onClick={onClose}
+              title="Close panel"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>
 
-        {/* Tab Controls */}
-        <div className="flex border-b border-white/10 px-3 pt-2 gap-2 bg-[#0a0a0a] shrink-0 select-none">
-          {isPreviewable && (
+        {/* Tab Navigation */}
+        {/* Tab Navigation */}
+        <div className="flex items-center justify-between px-4 border-b border-white/10 bg-[#09090b] gap-2 select-none">
+          <div className="flex items-center gap-2">
+            {isPreviewable && (
+              <button
+                className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-all cursor-pointer ${
+                  activeTab === 'preview'
+                    ? 'border-white text-white'
+                    : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                }`}
+                onClick={() => {
+                  userOverrodeTab.current = true;
+                  setActiveTab('preview');
+                }}
+              >
+                Live Preview
+              </button>
+            )}
             <button
               className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-all cursor-pointer ${
-                activeTab === 'preview'
+                activeTab === 'code'
                   ? 'border-white text-white'
                   : 'border-transparent text-zinc-400 hover:text-zinc-200'
               }`}
-              onClick={() => setActiveTab('preview')}
+              onClick={() => {
+                userOverrodeTab.current = true;
+                setActiveTab('code');
+              }}
             >
-              Live Preview
+              Source Code
+            </button>
+            <button
+              className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-all cursor-pointer ${
+                activeTab === 'diff'
+                  ? 'border-white text-white'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              }`}
+              onClick={() => {
+                userOverrodeTab.current = true;
+                setActiveTab('diff');
+              }}
+            >
+              Changes Diff
+            </button>
+          </div>
+
+          {activeTab === 'preview' && isPreviewable && (
+            <button
+              onClick={() => setRefreshKey((k) => k + 1)}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-md border border-white/5 transition-all cursor-pointer"
+              title="Restart Live Runtime"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>Reload Preview</span>
             </button>
           )}
-          <button
-            className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-all cursor-pointer ${
-              activeTab === 'code'
-                ? 'border-white text-white'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
-            }`}
-            onClick={() => setActiveTab('code')}
-          >
-            Source Code
-          </button>
-          <button
-            className={`px-3 py-1.5 text-xs font-medium border-b-2 transition-all cursor-pointer ${
-              activeTab === 'diff'
-                ? 'border-white text-white'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
-            }`}
-            onClick={() => setActiveTab('diff')}
-          >
-            Changes Diff
-          </button>
         </div>
 
         {/* Content Viewer / Preview Area */}
         <div className="flex-1 overflow-hidden bg-[#000000] relative flex flex-col">
           {activeTab === 'preview' && isPreviewable ? (
-            <div className="w-full h-full bg-[#000000] relative overflow-hidden flex flex-col">
-              {isSlidev ? (
-                <div className="w-full h-full overflow-hidden bg-[#000000] flex flex-col">
-                  <PresentationDeck
-                    content={displayedArtifact.content}
-                    title={displayedArtifact.title}
-                    className="h-full my-0 border-none rounded-none"
+            <ErrorBoundary name="ArtifactPreview">
+              <div className="w-full h-full bg-[#000000] relative overflow-hidden flex flex-col">
+                {isSlidev ? (
+                  <div className="w-full h-full overflow-hidden bg-[#000000] flex flex-col">
+                    <PresentationDeck
+                      content={displayedArtifact.content}
+                      title={displayedArtifact.title}
+                      className="h-full my-0 border-none rounded-none"
+                    />
+                  </div>
+                ) : isMermaid ? (
+                  <div className="h-full overflow-auto bg-card flex items-center justify-center p-4">
+                    <MermaidRenderer content={displayedArtifact.content} />
+                  </div>
+                ) : isPython ? (
+                  <PythonSandbox code={displayedArtifact.content} />
+                ) : (
+                  <iframe
+                    key={`artifact-preview-${refreshKey}`}
+                    title="Artifact Live Preview"
+                    srcDoc={iframeSrcDoc}
+                    className="w-full h-full border-none bg-zinc-950"
+                    sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads allow-pointer-lock"
+                    allow="autoplay; camera; microphone; clipboard-write; web-share"
                   />
-                </div>
-              ) : isMermaid ? (
-                <div className="h-full overflow-auto bg-card flex items-center justify-center p-4">
-                  <MermaidRenderer content={displayedArtifact.content} />
-                </div>
-              ) : isReact ? (
-                <Sandpack
-                  template="react-ts"
-                  theme="dark"
-                  files={{
-                    '/App.tsx': displayedArtifact.content,
-                  }}
-                  options={{
-                    showNavigator: false,
-                    showTabs: false,
-                    externalResources: ['https://cdn.tailwindcss.com'],
-                  }}
-                  customSetup={{
-                    dependencies: {
-                      'lucide-react': '^0.263.1',
-                      recharts: '^2.7.2',
-                      'chart.js': '^4.4.0',
-                      'react-chartjs-2': '^5.2.0',
-                      'framer-motion': '^10.12.16',
-                      clsx: '^1.2.1',
-                      'tailwind-merge': '^1.13.2',
-                    },
-                  }}
-                />
-              ) : isPython ? (
-                <PythonSandbox code={displayedArtifact.content} />
-              ) : (
-                <iframe
-                  title="Artifact HTML Preview"
-                  srcDoc={iframeSrcDoc}
-                  className="w-full h-full border-none bg-zinc-950"
-                  sandbox="allow-scripts allow-same-origin allow-modals allow-popups"
-                />
-              )}
-            </div>
+                )}
+              </div>
+            </ErrorBoundary>
           ) : activeTab === 'diff' ? (
-            <div className="w-full h-full overflow-hidden bg-zinc-950">
-              <DiffEditor
-                height="100%"
-                language={getLanguageFromExt(displayedArtifact.language || language)}
-                original={originalContentRef.current || ''}
-                modified={displayedArtifact.content}
-                theme="vs-dark"
-                options={{
-                  readOnly: true,
-                  minimap: { enabled: false },
-                  fontSize: 13,
-                  fontFamily: 'JetBrains Mono, monospace',
-                  wordWrap: 'on',
-                }}
-              />
-            </div>
-          ) : (
-            <div className="w-full h-full relative overflow-hidden bg-zinc-950 flex flex-col">
-              <div className="flex-1">
-                <Editor
+            <ErrorBoundary name="ArtifactDiff">
+              <div className="w-full h-full overflow-hidden bg-zinc-950">
+                <DiffEditor
+                  key="monaco-diff-editor"
                   height="100%"
                   language={getLanguageFromExt(displayedArtifact.language || language)}
-                  value={displayedArtifact.content}
-                  onMount={handleEditorDidMount}
+                  original={originalContentRef.current || displayedArtifact.content || ''}
+                  modified={displayedArtifact.content || ''}
                   theme="vs-dark"
                   options={{
-                    minimap: { enabled: true },
+                    readOnly: true,
+                    minimap: { enabled: false },
                     fontSize: 13,
                     fontFamily: 'JetBrains Mono, monospace',
                     wordWrap: 'on',
-                    lineNumbers: 'on',
-                    automaticLayout: true,
                   }}
                 />
               </div>
+            </ErrorBoundary>
+          ) : (
+            <ErrorBoundary name="ArtifactEditor">
+              <div className="w-full h-full relative overflow-hidden bg-zinc-950 flex flex-col">
+                <div className="flex-1">
+                  <Editor
+                    key="monaco-code-editor"
+                    height="100%"
+                    language={getLanguageFromExt(displayedArtifact.language || language)}
+                    value={displayedArtifact.content || ''}
+                    onMount={handleEditorDidMount}
+                    theme="vs-dark"
+                    options={{
+                      minimap: { enabled: true },
+                      fontSize: 13,
+                      fontFamily: 'JetBrains Mono, monospace',
+                      wordWrap: 'on',
+                      lineNumbers: 'on',
+                      automaticLayout: true,
+                    }}
+                  />
+                </div>
 
-              {/* Floating Selection AI Edit prompt-chip (OpenAI Canvas style) */}
-              <AnimatePresence>
-                {selection && onSubmitPrompt && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 30 }}
-                    className="absolute bottom-4 left-4 right-4 bg-popover border border-border shadow-xl rounded-lg p-3 z-40"
-                  >
-                    <form onSubmit={handleRequestEdit} className="flex flex-col gap-2">
-                      <div className="text-[10px] text-muted-foreground font-semibold flex items-center gap-1.5 uppercase">
-                        <CheckCircle className="w-3.5 h-3.5 text-primary" />
-                        <span>
-                          Selected Lines {selection.startLine} - {selection.endLine}
-                        </span>
-                      </div>
-                      <div className="flex gap-2 items-center">
-                        <input
-                          type="text"
-                          value={editInstruction}
-                          onChange={(e) => setEditInstruction(e.target.value)}
-                          placeholder={`Ask AI to edit this selected block...`}
-                          className="flex-1 text-xs px-3 py-2 bg-muted/60 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
-                          autoFocus
-                        />
-                        <Button type="submit" size="icon" className="h-8 w-8 shrink-0">
-                          <Send className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </form>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                {/* Floating Selection AI Edit prompt-chip (OpenAI Canvas style) */}
+                <AnimatePresence>
+                  {selection && onSubmitPrompt && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 30 }}
+                      className="absolute bottom-4 left-4 right-4 bg-popover border border-border shadow-xl rounded-lg p-3 z-40"
+                    >
+                      <form onSubmit={handleRequestEdit} className="flex flex-col gap-2">
+                        <div className="text-[10px] text-muted-foreground font-semibold flex items-center gap-1.5 uppercase">
+                          <CheckCircle className="w-3.5 h-3.5 text-primary" />
+                          <span>
+                            Selected Lines {selection.startLine} - {selection.endLine}
+                          </span>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="text"
+                            value={editInstruction}
+                            onChange={(e) => setEditInstruction(e.target.value)}
+                            placeholder={`Ask AI to edit this selected block...`}
+                            className="flex-1 text-xs px-3 py-2 bg-muted/60 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
+                            autoFocus
+                          />
+                          <Button type="submit" size="icon" className="h-8 w-8 shrink-0">
+                            <Send className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </ErrorBoundary>
           )}
         </div>
       </motion.div>

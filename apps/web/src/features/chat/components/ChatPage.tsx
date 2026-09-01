@@ -238,47 +238,94 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   });
 
   const hasAutoOpenedRef = useRef<Record<string, boolean>>({});
+  const userDismissedRef = useRef(false);
+  const prevStreamMsgRef = useRef<ChatMessage | null>(null);
 
-  // Auto-open and sync streaming artifacts
+  // Reset user dismissed state whenever a brand new streaming generation begins
   useEffect(() => {
-    if (history.length === 0) return;
-    const lastMessage = history[history.length - 1];
-    if (
-      lastMessage?.role === 'assistant' &&
-      lastMessage.artifacts &&
-      lastMessage.artifacts.length > 0
-    ) {
-      const latestArtifact = lastMessage.artifacts[lastMessage.artifacts.length - 1];
-
-      if (latestArtifact && latestArtifact.id) {
-        const alreadyOpened = hasAutoOpenedRef.current[latestArtifact.id];
-
-        if (
-          activeArtifact &&
-          (activeArtifact.id === latestArtifact.id || activeArtifact.title === latestArtifact.title)
-        ) {
-          // Sync content if it's already open and has updated
-          if (activeArtifact.content !== latestArtifact.content) {
-            setActiveArtifact(latestArtifact);
-          }
-        } else if (!activeArtifact && !alreadyOpened) {
-          const isPresentationArtifact =
-            latestArtifact.type === 'presentation' ||
-            latestArtifact.type === 'slidev' ||
-            latestArtifact.language === 'slidev';
-
-          // If it's a presentation and still streaming, wait until finished
-          if (isPresentationArtifact && isLoading) {
-            return;
-          }
-
-          // Auto-open presentation, code, HTML, and diagram artifacts in the app window
-          hasAutoOpenedRef.current[latestArtifact.id] = true;
-          setActiveArtifact(latestArtifact);
-        }
-      }
+    if (activeStreamMessage && !prevStreamMsgRef.current) {
+      userDismissedRef.current = false;
     }
-  }, [history, activeArtifact, isLoading]);
+    prevStreamMsgRef.current = activeStreamMessage;
+  }, [activeStreamMessage]);
+
+  // Helper to extract artifact or code fence from streaming / finished message
+  const extractArtifactFromMessage = useCallback((msg: ChatMessage | null | undefined) => {
+    if (!msg) return null;
+    if (msg.artifacts && msg.artifacts.length > 0) {
+      const art = msg.artifacts[msg.artifacts.length - 1];
+      return {
+        id: art.id || `artifact-${msg.timestamp || Date.now()}`,
+        type: art.type || 'code',
+        title: art.title || 'Code Artifact',
+        content: art.content,
+        language: art.language || 'html',
+      };
+    }
+    const text = typeof msg.content === 'string' ? msg.content : '';
+    const match = /```(\w+)?\s*\n?([\s\S]*?)(?:```|$)/i.exec(text);
+    if (!match) return null;
+    const lang = (match[1] || 'html').toLowerCase();
+    if (['markdown', 'md', 'text', 'txt'].includes(lang)) return null;
+    const rawCode = match[2].trim();
+    if (!rawCode) return null;
+
+    let title = 'Code Artifact';
+    if (['html', 'htm', 'xhtml'].includes(lang)) title = 'Web Application';
+    else if (['jsx', 'tsx', 'react'].includes(lang)) title = 'React Component';
+    else if (['python', 'py'].includes(lang)) title = 'Python Script';
+    else if (['javascript', 'js', 'typescript', 'ts'].includes(lang)) title = 'JavaScript Program';
+    else if (lang === 'mermaid') title = 'Architecture Diagram';
+    else if (lang === 'slidev' || lang === 'presentation') title = 'Presentation Deck';
+    else if (lang === 'svg') title = 'Vector Graphic';
+
+    return {
+      id: `artifact-msg-${msg.timestamp || 'stream'}`,
+      type: ['html', 'htm', 'jsx', 'tsx', 'react'].includes(lang)
+        ? 'app'
+        : lang === 'slidev'
+          ? 'presentation'
+          : lang === 'mermaid'
+            ? 'diagram'
+            : 'code',
+      title,
+      content: rawCode,
+      language: lang,
+    };
+  }, []);
+
+  // Auto-open and sync streaming artifacts directly in the right-side studio panel
+  useEffect(() => {
+    if (userDismissedRef.current) return;
+
+    const targetMsg =
+      activeStreamMessage || (history.length > 0 ? history[history.length - 1] : null);
+    if (!targetMsg || targetMsg.role !== 'assistant') return;
+
+    const detected = extractArtifactFromMessage(targetMsg);
+    if (!detected || !detected.content) return;
+
+    if (activeArtifact) {
+      if (activeArtifact.content !== detected.content) {
+        setActiveArtifact({
+          ...activeArtifact,
+          content: detected.content,
+          title: detected.title,
+          language: detected.language,
+        });
+      }
+    } else if (activeStreamMessage || !hasAutoOpenedRef.current[detected.id]) {
+      hasAutoOpenedRef.current[detected.id] = true;
+      setActiveArtifact(detected);
+    }
+  }, [activeStreamMessage, history, activeArtifact, extractArtifactFromMessage]);
+
+  // Auto-close sidebar when activeArtifact is mounted or opened
+  useEffect(() => {
+    if (activeArtifact && sidebarOpen && onToggleSidebar) {
+      onToggleSidebar();
+    }
+  }, [activeArtifact, sidebarOpen, onToggleSidebar]);
 
   const streaming = (rest as any).streaming;
 
@@ -315,13 +362,32 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         return false;
       }
 
+      // Detect if user prompt is asking to modify/edit the currently open artifact
+      const isEditIntent =
+        !!activeArtifact &&
+        /\b(?:edit|change|modify|update|fix|refactor|add|remove|replace|make|tweak|adjust|improve|styled|color|speed|controls?|physics|animation|button|feature|bug|error)\b/i.test(
+          finalPrompt
+        );
+
+      let contextInjection: string | undefined = undefined;
+      if (isEditIntent && activeArtifact?.content) {
+        contextInjection = `[ACTIVE ARTIFACT CODE: "${activeArtifact.title}" (${activeArtifact.language || 'html'})]\n\`\`\`${activeArtifact.language || 'html'}\n${activeArtifact.content}\n\`\`\`\n\n[USER MODIFICATION INSTRUCTIONS]:\n${finalPrompt}\n\nPlease generate the full updated code incorporating these changes.`;
+      } else if (!isEditIntent && activeArtifact) {
+        // Brand new creation: reset active artifact so a new fresh codeblock is created for the new prompt
+        setActiveArtifact(null);
+        hasAutoOpenedRef.current = {};
+      }
+
       // Optimistically clear the input so it doesn't stay in the text box while generating
       const previousPrompt = prompt;
       const previousImages = pendingImages;
       setPrompt('');
       setPendingImages([]);
 
-      const success = await parentRunChat(finalPrompt, images || pendingImages);
+      const success = await parentRunChat(finalPrompt, images || pendingImages, {
+        userDisplayPrompt: finalPrompt,
+        contextInjection,
+      });
       if (!success) {
         // Restore if failed to start
         setPrompt(previousPrompt);
@@ -329,7 +395,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       }
       return success;
     },
-    [isLoading, currentModelId, parentRunChat, pendingImages, prompt]
+    [isLoading, currentModelId, parentRunChat, pendingImages, prompt, activeArtifact]
   );
 
   // --- Copy handler ---
@@ -696,7 +762,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       )}
       {/* Global sidebar is managed by AppDashboard */}
 
-      <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden relative">
+      <div
+        className={`flex-1 min-h-0 flex flex-col overflow-hidden relative transition-all duration-300 ease-out ${
+          activeArtifact ? 'w-full md:mr-[650px] lg:mr-[750px] xl:mr-[850px]' : 'w-full mr-0'
+        }`}
+      >
         {/* CHAT HEADER */}
         <ChatHeader
           metrics={metrics}
@@ -786,7 +856,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onRegenerate={handleRegenerate}
           onBranchFromMessage={handleBranch}
           activeModel={currentModel?.name}
-          onArtifactClick={setActiveArtifact}
+          onArtifactClick={(art) => {
+            userDismissedRef.current = false;
+            setActiveArtifact(art);
+          }}
           approveTool={approveTool}
           rejectTool={rejectTool}
         />
@@ -829,10 +902,14 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       <ArtifactCanvas
         id={activeArtifact?.id}
         isOpen={!!activeArtifact}
+        isStreaming={isLoading && activeStreamMessage !== null}
         content={activeArtifact?.content || ''}
         language={activeArtifact?.language}
         title={activeArtifact?.title}
-        onClose={() => setActiveArtifact(null)}
+        onClose={() => {
+          userDismissedRef.current = true;
+          setActiveArtifact(null);
+        }}
         onSubmitPrompt={(p) => handleSubmit(p)}
         history={history}
       />

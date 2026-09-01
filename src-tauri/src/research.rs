@@ -491,7 +491,7 @@ pub async fn start_deep_research(
     let provider = query.provider.unwrap_or_else(|| "nyx-native".to_string());
     let is_local = provider == "nyx-native" || provider.contains("local");
     let model_id = query.model_id.unwrap_or_else(|| {
-        if is_local { "local-default".to_string() } else { "google/gemini-2.5-flash".to_string() }
+        if is_local { "local-default".to_string() } else { "gemini-3.5-flash-lite".to_string() }
     });
     let api_key = query.api_key.unwrap_or_default();
 

@@ -32,6 +32,7 @@ pub fn normalize_nvidia_model(raw: &str) -> &str {
         "nemotron-3-ultra" => "nvidia/nemotron-3-ultra-550b-a55b",
         "gpt-oss-120b" => "openai/gpt-oss-120b",
         "gpt-oss-20b" => "openai/gpt-oss-20b",
+        "deepseek-v4-pro" | "deepseek-v4-pro-0813" | "deepseek-ai/deepseek-v4-pro" => "deepseek-ai/deepseek-v4-pro-0813",
         other => other,
     }
 }

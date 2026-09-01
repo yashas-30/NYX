@@ -259,14 +259,30 @@ def get_qwen_model(
 
 
 def get_generator_model(
-    provider: str = "openai",
+    provider: str = "gemini",
     model_name: Optional[str] = None,
     api_key: Optional[str] = None,
     base_url: Optional[str] = None
 ):
     """
-    Returns the large final generator model (e.g. Claude 3.5 Sonnet, Gemini 2.5 Flash, GPT-4o, DeepSeek).
+    Returns the final generator model (e.g. Gemini 3.5 Flash-Lite, Gemini 3.1 Flash-Lite, Gemini 3.7 Flash, GPT-4o).
     """
+    prov = (provider or os.environ.get("NYX_GENERATOR_PROVIDER", "gemini")).lower()
+    
+    if prov == "gemini" or "gemini" in (model_name or "").lower():
+        key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        m_name = model_name or os.environ.get("NYX_GENERATOR_MODEL", "gemini-3.5-flash-lite")
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            return ChatGoogleGenerativeAI(
+                model=m_name,
+                google_api_key=key,
+                temperature=0.7,
+                max_retries=2,
+            )
+        except Exception as e:
+            sys.stderr.write(f"[get_generator_model] ChatGoogleGenerativeAI init warning: {e}\n")
+
     key = api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMINI_API_KEY") or "EMPTY"
     m_name = model_name or os.environ.get("NYX_GENERATOR_MODEL", "gpt-4o")
     b_url = base_url or os.environ.get("NYX_GENERATOR_BASE_URL", None)

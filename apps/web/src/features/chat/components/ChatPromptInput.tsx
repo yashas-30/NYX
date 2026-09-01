@@ -554,7 +554,7 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
             </div>
           )}
 
-          <div className="w-full flex flex-col bg-card border border-border focus-within:border-accent/40 rounded-xl p-1 shadow-surface transition-colors duration-200">
+          <div className="w-full flex flex-col bg-card border border-border focus-within:border-border-strong rounded-xl p-1 transition-colors duration-200">
             <motion.div
               variants={tagContainerVariants}
               initial="hidden"
@@ -572,13 +572,14 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   className={`flex items-center gap-1 h-5 px-2 rounded transition-all text-left shrink-0 ${
                     !canAttachFiles
                       ? 'bg-muted/50 border border-border/30 text-muted-foreground/40 cursor-not-allowed opacity-50'
-                      : 'bg-secondary border border-border hover:border-amber-500/40 hover:text-amber-500 text-foreground cursor-pointer'
+                      : 'bg-secondary border border-border hover:border-border-strong hover:text-foreground text-muted-foreground cursor-pointer'
                   }`}
                   title={
                     !canAttachFiles
                       ? 'Selected model does not support vision/image input'
                       : 'Attach image'
                   }
+                  aria-label="Attach image"
                 >
                   <ImageIcon className="w-3 h-3 opacity-70" />
                   <span className="text-[9px] font-semibold tracking-tight">
@@ -601,9 +602,10 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   onClick={toggleWebSearch}
                   className={`flex items-center gap-1 h-5 px-2 rounded border transition-all text-left cursor-pointer shrink-0 ${
                     webSearchEnabled
-                      ? 'bg-blue-500/10 border-blue-500/40 text-blue-500'
-                      : 'bg-secondary border-border hover:border-blue-500/40 hover:text-blue-500 text-foreground'
+                      ? 'bg-primary/10 border-primary/30 text-primary'
+                      : 'bg-secondary border-border hover:border-border-strong hover:text-foreground text-muted-foreground'
                   }`}
+                  aria-label="Toggle web search"
                 >
                   <Globe className="w-3 h-3" />
                   <span className="text-[9px] font-semibold tracking-tight">Web Search</span>
@@ -776,33 +778,32 @@ export const ChatPromptInput: React.FC<ChatPromptInputProps> = ({
                   <motion.button
                     whileHover={{
                       scale: 1.02,
-                      backgroundColor: 'rgba(239,68,68,0.15)',
-                      borderColor: 'rgba(239,68,68,0.3)',
                     }}
                     whileTap={{ scale: 0.95 }}
                     type="button"
                     onClick={onStop}
-                    className="h-6 px-2.5 rounded bg-red-500/10 text-red-500 flex items-center justify-center gap-1 border border-red-500/20 text-[8.5px] font-black tracking-widest uppercase transition-all cursor-pointer"
+                    aria-label="Stop generating"
+                    className="h-7 px-2.5 rounded bg-destructive/10 text-destructive hover:bg-destructive/20 flex items-center justify-center gap-1 border border-destructive/20 text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
                   >
-                    <StopCircle className="w-3 h-3 animate-pulse" />
+                    <StopCircle className="w-3.5 h-3.5" />
                     Stop
                   </motion.button>
                 ) : (
                   <motion.button
                     whileHover={{
-                      scale: canSubmit ? 1.05 : 1,
-                      boxShadow: canSubmit ? '0 0 10px rgba(var(--accent-rgb), 0.25)' : 'none',
+                      scale: canSubmit ? 1.04 : 1,
                     }}
-                    whileTap={{ scale: canSubmit ? 0.95 : 1 }}
+                    whileTap={{ scale: canSubmit ? 0.96 : 1 }}
                     type="submit"
                     disabled={!canSubmit}
-                    className={`h-7 w-7 min-h-[28px] min-w-[28px] rounded flex items-center justify-center transition-all border cursor-pointer ${
+                    aria-label="Send message"
+                    className={`h-8 w-8 min-h-[32px] min-w-[32px] sm:h-7 sm:w-7 rounded flex items-center justify-center transition-colors border cursor-pointer ${
                       canSubmit
-                        ? 'bg-accent text-accent-foreground border-accent font-bold'
+                        ? 'bg-primary text-primary-foreground border-primary font-bold'
                         : 'bg-muted border-transparent text-muted-foreground/30 cursor-not-allowed'
                     }`}
                   >
-                    <Send size={11} />
+                    <Send size={12} />
                   </motion.button>
                 )}
               </div>

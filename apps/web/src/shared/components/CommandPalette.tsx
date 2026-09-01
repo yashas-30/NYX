@@ -1,7 +1,29 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SearchIcon as Search, PlusIcon as Plus, Trash2Icon as Trash2, LockIcon as Lock, SettingsIcon as Settings, CheckIcon as Check, CornerDownLeftIcon as CornerDownLeft } from '@animateicons/react/lucide';
-import { Unlock, Cpu, MessageSquare, Library, ArrowLeft, Folder, Users, GitBranch, FileText, Image, Plug, Calendar, Code2 } from 'lucide-react';
+import {
+  SearchIcon as Search,
+  PlusIcon as Plus,
+  Trash2Icon as Trash2,
+  LockIcon as Lock,
+  SettingsIcon as Settings,
+  CheckIcon as Check,
+  CornerDownLeftIcon as CornerDownLeft,
+} from '@animateicons/react/lucide';
+import {
+  Unlock,
+  Cpu,
+  MessageSquare,
+  Library,
+  ArrowLeft,
+  Folder,
+  Users,
+  GitBranch,
+  FileText,
+  Image,
+  Plug,
+  Calendar,
+  Code2,
+} from 'lucide-react';
 import { toast } from '@src/shared/components/ui/sonner';
 import { useNyxStore } from '@src/shared/store/useNyxStore';
 import { AVAILABLE_MODELS } from '@shared/config/models';
@@ -191,9 +213,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           setActiveMode('settings');
         },
       },
-
     ];
-
 
     return list.filter(
       (cmd) =>
@@ -286,7 +306,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="relative w-full max-w-[600px] rounded-xl border border-border bg-card shadow-2xl overflow-hidden font-sans"
+            className="relative w-full max-w-[600px] rounded-xl border border-border-strong bg-card overflow-hidden font-sans"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header / Input Area */}
@@ -312,9 +332,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  view === 'commands'
-                    ? 'Type a command or search...'
-                    : 'Search for an AI model...'
+                  view === 'commands' ? 'Type a command or search...' : 'Search for an AI model...'
                 }
                 className="flex-1 bg-transparent border-none outline-none text-[15px] placeholder:text-muted-foreground/60 text-foreground py-1"
                 spellCheck={false}
@@ -351,19 +369,25 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                           }
                         }}
                         className={`flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
-                          isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'
+                          isSelected
+                            ? 'bg-primary/10 text-primary'
+                            : 'hover:bg-muted text-foreground'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div
                             className={`flex items-center justify-center w-7 h-7 rounded-md ${
-                              isSelected ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                              isSelected
+                                ? 'bg-primary/20 text-primary'
+                                : 'bg-muted text-muted-foreground'
                             }`}
                           >
                             {cmd.icon}
                           </div>
                           <div className="flex flex-col truncate">
-                            <span className={`text-[13px] font-medium ${isSelected ? 'text-primary' : ''}`}>
+                            <span
+                              className={`text-[13px] font-medium ${isSelected ? 'text-primary' : ''}`}
+                            >
                               {cmd.title}
                             </span>
                             <span className="text-[11px] text-muted-foreground truncate">
@@ -418,8 +442,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                               isActive
                                 ? 'bg-green-500/20 text-green-500'
                                 : isSelected
-                                ? 'bg-primary/20 text-primary'
-                                : 'bg-muted text-muted-foreground'
+                                  ? 'bg-primary/20 text-primary'
+                                  : 'bg-muted text-muted-foreground'
                             }`}
                           >
                             <Cpu size={14} />
@@ -438,7 +462,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                               )}
                             </span>
                             <span className="text-[11px] text-muted-foreground truncate uppercase tracking-wide">
-                              {mdl.provider} • {mdl.contextSize ? `${Math.round(mdl.contextSize / 1024)}k ctx` : 'Unknown ctx'}
+                              {mdl.provider} •{' '}
+                              {mdl.contextSize
+                                ? `${Math.round(mdl.contextSize / 1024)}k ctx`
+                                : 'Unknown ctx'}
                             </span>
                           </div>
                         </div>

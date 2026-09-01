@@ -155,8 +155,15 @@ const MemoizedMarkdownBlock: React.FC<{
   isStreaming?: boolean;
   citations?: Citation[];
   onOpenLightbox?: (url?: string, prompt?: string, engine?: string) => void;
+  onArtifactClick?: (artifact: {
+    id: string;
+    type: string;
+    title: string;
+    content: string;
+    language?: string;
+  }) => void;
 }> = memo(
-  ({ content, isStreaming, citations, onOpenLightbox }) => {
+  ({ content, isStreaming, citations, onOpenLightbox, onArtifactClick }) => {
     // useSmoothTypewriter drives the RAF-paced reveal — no useDeferredValue on top (double-buffer overhead)
     const smoothContent = useSmoothTypewriter(content, isStreaming || false);
 
@@ -322,7 +329,7 @@ const MemoizedMarkdownBlock: React.FC<{
             const lang = match[1].toLowerCase();
             const rawCode = String(children).trim();
 
-            // 1. If markdown/text was enclosed in a code fence, render it cleanly as markdown rather than a code block box
+            // 1. If markdown/text was enclosed in a code fence, render it cleanly as markdown
             if (['markdown', 'md', 'text', 'txt', 'table'].includes(lang)) {
               return (
                 <ReactMarkdown
@@ -335,23 +342,75 @@ const MemoizedMarkdownBlock: React.FC<{
               );
             }
 
-            // 2. If diagram or presentation deck, suppress codeblock in chat bubble — handled exclusively by Artifact Canvas & Card
-            const isDiagramOrPresentation =
-              ['mermaid', 'diagram', 'diagram-design', 'slidev', 'slides'].includes(lang) ||
-              ((lang === 'html' || lang === 'svg' || lang === 'xml') &&
-                (/<svg\b/i.test(rawCode) ||
-                  /class="[^"]*diagram/i.test(rawCode) ||
-                  /viewBox=/i.test(rawCode))) ||
-              /^\s*(flowchart|graph\s+(?:TD|TB|LR|RL)|sequenceDiagram|classDiagram|stateDiagram|erDiagram|C4Context|C4Container)\b/i.test(
-                rawCode
-              );
+            const isShortCommand =
+              ['bash', 'sh', 'shell', 'cmd', 'powershell', 'zsh', 'terminal'].includes(lang) &&
+              rawCode.split('\n').length <= 2;
 
-            if (isDiagramOrPresentation) {
-              return null;
+            if (isShortCommand) {
+              return (
+                <div className="my-2 px-3 py-2 rounded-lg bg-[#0d0d0f] border border-white/10 font-mono text-xs text-zinc-300 overflow-x-auto flex items-center justify-between gap-2">
+                  <code>{rawCode}</code>
+                </div>
+              );
             }
 
-            // 3. Code block is ONLY rendered when there is real code generation
-            return <CodeBlock code={rawCode} language={match[1]} />;
+            let title = 'Code Artifact';
+            if (['html', 'htm', 'xhtml'].includes(lang)) title = 'Web Application';
+            else if (['jsx', 'tsx', 'react'].includes(lang)) title = 'React Component';
+            else if (['python', 'py'].includes(lang)) title = 'Python Script';
+            else if (['javascript', 'js', 'typescript', 'ts'].includes(lang))
+              title = 'JavaScript Program';
+            else if (lang === 'mermaid') title = 'Architecture Diagram';
+            else if (lang === 'slidev' || lang === 'presentation') title = 'Presentation Deck';
+            else if (lang === 'svg') title = 'Vector Graphic';
+
+            const lineCount = rawCode.split('\n').length;
+
+            return (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  onArtifactClick?.({
+                    id: `artifact-${Date.now()}`,
+                    type: ['html', 'htm', 'jsx', 'tsx', 'react'].includes(lang)
+                      ? 'app'
+                      : lang === 'slidev'
+                        ? 'presentation'
+                        : lang === 'mermaid'
+                          ? 'diagram'
+                          : 'code',
+                    title,
+                    content: rawCode,
+                    language: lang,
+                  });
+                }}
+                className="flex items-center justify-between p-3.5 my-3 bg-[#0d0d0f] hover:bg-[#141417] border border-white/10 hover:border-white/20 rounded-xl transition-all group cursor-pointer select-none shadow-sm"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                      <span className="truncate">{title}</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-zinc-400 uppercase shrink-0">
+                        {lang}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 font-mono mt-0.5 truncate">
+                      {isStreaming
+                        ? 'Streaming live in Right Studio...'
+                        : `${lineCount} lines • View in Studio`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 group-hover:bg-white/10 border border-white/10 text-zinc-300 group-hover:text-white text-xs font-medium transition-colors shrink-0 ml-3">
+                  <span>Open in Studio</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            );
           }
 
           const textChild = String(children || '').trim();
@@ -603,8 +662,25 @@ export const MarkdownContent: React.FC<{
     previewUrl?: string;
   }>;
   onOpenLightbox?: (url?: string, prompt?: string, engine?: string) => void;
+  onArtifactClick?: (artifact: {
+    id: string;
+    type: string;
+    title: string;
+    content: string;
+    language?: string;
+  }) => void;
 }> = memo(
-  ({ content, blocks, isStreaming, citations, images, videos, audios, onOpenLightbox }) => {
+  ({
+    content,
+    blocks,
+    isStreaming,
+    citations,
+    images,
+    videos,
+    audios,
+    onOpenLightbox,
+    onArtifactClick,
+  }) => {
     // Hide raw XML artifact tags from being rendered in text bubble
     const cleanText = (text: string) => {
       return text.replace(/<nyx_artifact[\s\S]*?(?:<\/nyx_artifact>|$)/g, '');
@@ -635,6 +711,7 @@ export const MarkdownContent: React.FC<{
               isStreaming={isStreaming && isLastBlock}
               citations={citations}
               onOpenLightbox={onOpenLightbox}
+              onArtifactClick={onArtifactClick}
             />
           );
         })}
@@ -1236,12 +1313,24 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     [autoScroll, showJumpToBottom]
   );
 
-  // Smooth auto-scroll following streaming output without fighting user scrolls
+  // RAF-batched auto-scroll — fires at most once per animation frame so it never
+  // fights CSS smooth scrolling or causes mid-render layout thrash.
+  const rafScrollRef = useRef<number | null>(null);
   useEffect(() => {
     if (!autoScroll || allMessages.length === 0) return;
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-    }
+    if (rafScrollRef.current !== null) cancelAnimationFrame(rafScrollRef.current);
+    rafScrollRef.current = requestAnimationFrame(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+      rafScrollRef.current = null;
+    });
+    return () => {
+      if (rafScrollRef.current !== null) {
+        cancelAnimationFrame(rafScrollRef.current);
+        rafScrollRef.current = null;
+      }
+    };
   }, [allMessages, autoScroll]);
 
   // Keyboard shortcut: Escape to stop auto-scroll
@@ -1284,8 +1373,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
         ) : (
           <div
             ref={scrollContainerRef}
-            className="absolute inset-0 overflow-y-auto custom-scrollbar scroll-smooth overscroll-y-contain"
-            style={{ overflowAnchor: 'auto' }}
+            className="absolute inset-0 overflow-y-auto custom-scrollbar overscroll-y-contain"
+            style={{ overflowAnchor: 'none' }}
             onScroll={handleScroll}
           >
             <div className="flex flex-col gap-4 py-4 px-3 md:px-4 w-full max-w-3xl mx-auto">

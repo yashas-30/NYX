@@ -113,7 +113,12 @@ interface ChatLogicReturn {
   runChat: (
     prompt: string,
     images?: ChatImage[],
-    options?: { skipUserMessage?: boolean; modelOverride?: string }
+    options?: {
+      skipUserMessage?: boolean;
+      modelOverride?: string;
+      userDisplayPrompt?: string;
+      contextInjection?: string;
+    }
   ) => Promise<boolean>;
   stopChat: () => void;
   clearHistory: () => void;

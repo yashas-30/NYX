@@ -102,19 +102,26 @@ export function getConvertedStyle(elt: Element, pseudoElt?: string | null): CSSS
   return window.getComputedStyle(elt, pseudoElt);
 }
 
-// ── Global Error Catcher (shows errors in Tauri window instead of blank screen) ──
+// ── Global Error Catcher (catches fatal startup errors only) ──
 window.addEventListener('error', (e) => {
   const msg = e.message || e.error?.message || '';
+  // Ignore cross-origin script errors (e.g. from sandboxed iframes, Monaco CDN workers, etc.)
+  if (!msg || msg === 'Script error.' || msg.includes('Script error')) {
+    console.warn('[NYX] Ignored non-fatal cross-origin script error:', e);
+    return;
+  }
   if (
     msg.includes('ResizeObserver loop') ||
     msg.includes('ResizeObserver loop completed with undelivered notifications') ||
-    msg.includes('ResizeObserver loop limit exceeded')
+    msg.includes('ResizeObserver loop limit exceeded') ||
+    msg.includes('Canceled') ||
+    msg.includes('Loading chunk')
   ) {
-    // Benign browser notification when layout changes during render/mount — ignore
+    // Benign browser / bundler notification when layout changes during render/mount — ignore
     return;
   }
   console.error('[NYX] Uncaught error:', e.error || e.message);
-  
+
   // Don't duplicate crash overlays if one already exists
   if (document.getElementById('nyx-crash-overlay')) return;
 
@@ -134,16 +141,22 @@ window.addEventListener('error', (e) => {
 
 window.addEventListener('unhandledrejection', (e) => {
   const msg = e.reason?.message || String(e.reason || '');
+  if (!msg || msg === 'Script error.' || msg.includes('Script error')) {
+    console.warn('[NYX] Ignored non-fatal promise rejection:', e.reason);
+    return;
+  }
   if (
     msg.includes('ResizeObserver loop') ||
     msg.includes('ResizeObserver loop completed with undelivered notifications') ||
-    msg.includes('ResizeObserver loop limit exceeded')
+    msg.includes('ResizeObserver loop limit exceeded') ||
+    msg.includes('Canceled') ||
+    msg.includes('abort')
   ) {
     // Benign browser notification — ignore
     return;
   }
   console.error('[NYX] Unhandled promise rejection:', e.reason);
-  
+
   if (document.getElementById('nyx-crash-overlay')) return;
 
   const overlay = document.createElement('div');
@@ -159,8 +172,6 @@ window.addEventListener('unhandledrejection', (e) => {
   `;
   document.body.appendChild(overlay);
 });
-
-
 
 // ── Tauri IPC Bridge ─────────────────────────────
 if (typeof window !== 'undefined') {

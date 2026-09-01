@@ -82,7 +82,7 @@ pub async fn extract_and_store(
         let extraction_model = if model.contains("flash") || model.contains("mini") || model.contains("haiku") {
             model.to_string()
         } else {
-            "gemini-2.0-flash".to_string()
+            "gemini-3.5-flash-lite".to_string()
         };
 
         let client = Client::builder().build();

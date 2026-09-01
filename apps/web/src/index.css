@@ -9,48 +9,48 @@
 }
 
 :root {
-  /* Premium Minimalist Dark Grey Palette */
-  --background: #121212;
-  --foreground: #e4e4e7;
+  /* Premium Minimalist True Black Palette */
+  --background: #000000;
+  --foreground: #ffffff;
   
-  --card: #18181b;
-  --card-foreground: #e4e4e7;
-  --popover: #1f1f22;
-  --popover-foreground: #e4e4e7;
+  --card: #09090b;
+  --card-foreground: #ffffff;
+  --popover: #121214;
+  --popover-foreground: #ffffff;
   
   --primary: #ffffff;
   --primary-foreground: #000000;
   
-  --secondary: #27272a;
+  --secondary: #18181b;
   --secondary-foreground: #ffffff;
   
-  --muted: #27272a;
+  --muted: #18181b;
   --muted-foreground: #a1a1aa;
   
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
   
-  --border: #27272a;
-  --border-strong: #3f3f46;
-  --input: #27272a;
-  --ring: #3f3f46;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: rgba(255, 255, 255, 0.3);
 
   --accent: #27272a;
   --accent-foreground: #ffffff;
   --accent-warm: #3f3f46;
   --accent-warm-foreground: #ffffff;
   
-  /* Unified Small Geometry */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  /* Unified Geometry */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   
-  /* Ultra-diffuse Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-surface: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-terminal: 0 16px 48px rgba(0, 0, 0, 0.6);
+  /* No-Shadow Rule: Flat obsidian precision borders */
+  --shadow-sm: none;
+  --shadow-surface: none;
+  --shadow-md: none;
+  --shadow-terminal: none;
   
   /* Emil-Design-Eng Animation */
   --ease-apple: cubic-bezier(0.23, 1, 0.32, 1);
@@ -648,17 +648,17 @@
   opacity: 0.6;
 }
 
-/* ── Custom Glassmorphism & Neon Spells ────────────────────── */
+/* ── Custom Glassmorphism & Minimalist Panels ────────────────────── */
 .glass-panel {
-  background: rgba(17, 22, 34, 0.45) !important;
+  background: var(--card) !important;
   backdrop-filter: blur(12px) !important;
   -webkit-backdrop-filter: blur(12px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid var(--border) !important;
   box-shadow: none !important;
 }
 
 .neon-border {
-  border-color: rgba(204, 120, 92, 0.3) !important;
+  border-color: var(--border-strong) !important;
 }
 
 .neon-glow-cyan, .neon-glow-flame {
@@ -666,15 +666,15 @@
 }
 
 .btn-tech {
-  @apply px-4 py-2 text-[10px] font-black uppercase tracking-wider rounded-md transition-all duration-200 border cursor-pointer flex items-center justify-center gap-1.5;
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  @apply px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all duration-200 border cursor-pointer flex items-center justify-center gap-1.5;
+  border-color: var(--border);
+  background: var(--card);
   color: var(--foreground);
 }
 
 .btn-tech:hover {
-  background: rgba(204, 120, 92, 0.08);
-  border-color: rgba(204, 120, 92, 0.3);
+  background: var(--muted);
+  border-color: var(--border-strong);
   color: var(--primary);
 }
 
@@ -721,12 +721,12 @@
 @keyframes nyx-loader-pulse {
   0%, 100% {
     opacity: 0.25;
-    fill: var(--muted-foreground, #8e8b82);
+    fill: var(--muted-foreground);
     transform: scale(0.88);
   }
   50% {
     opacity: 1;
-    fill: var(--primary, #cc785c);
+    fill: var(--primary);
     transform: scale(1.05);
   }
 }
@@ -755,5 +755,30 @@ button,
 [role="button"],
 .active-scale {
   transition: transform 160ms var(--ease-out), background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), opacity 160ms var(--ease-out);
+}
+
+/* ── CodeBlock Streaming & Shiki Zero-Shift Layout ─────────── */
+.shiki,
+.shiki-streaming {
+  background: transparent !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-family: var(--font-mono), monospace !important;
+  font-size: 12px !important;
+  line-height: 1.625 !important;
+  white-space: pre !important;
+  word-break: normal !important;
+  tab-size: 2;
+}
+
+.shiki code,
+.shiki-streaming code {
+  font-family: inherit !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  color: #e4e4e7;
+  background: transparent !important;
+  padding: 0 !important;
+  border: none !important;
 }
 

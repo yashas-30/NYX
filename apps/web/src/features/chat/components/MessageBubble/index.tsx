@@ -20,7 +20,6 @@ import { MessageHeader } from './MessageHeader';
 import { CollapsibleUserText } from './CollapsibleUserText';
 import { ErrorRenderer } from './ErrorRenderer';
 import { ToolCallRenderer } from './ToolCallRenderer';
-import { ArtifactRenderer, StreamingArtifact } from './ArtifactRenderer';
 import { ImageArtifactCard } from '../ImageArtifactCard';
 import { ImageLightbox } from '../ImageLightbox';
 import { exportSlidevToPptx } from '../../../artifacts/utils/pptxExporter';
@@ -50,58 +49,17 @@ export interface MessageBubbleProps {
   onBranch?: (index: number) => void;
   activeModel?: string;
   onBranchChange?: (index: number, branchOffset: number) => void;
-  onArtifactClick?: (artifact: StreamingArtifact) => void;
+  onArtifactClick?: (artifact: {
+    id: string;
+    type: string;
+    title: string;
+    content: string;
+    language?: string;
+  }) => void;
   approveTool?: (index: number, approvalId: string) => void;
   rejectTool?: (index: number, approvalId: string) => void;
   onPinToggle?: (index: number) => void;
   onOpenLightbox?: (url?: string, prompt?: string, engine?: string) => void;
-}
-
-// ---------------------------------------------------------------------------
-// Artifact detection helper (streaming only)
-// ---------------------------------------------------------------------------
-
-const ARTIFACT_LANGS = new Set([
-  'html',
-  'htm',
-  'react',
-  'tsx',
-  'jsx',
-  'ts',
-  'js',
-  'typescript',
-  'javascript',
-  'python',
-  'json',
-  'csv',
-  'mermaid',
-  'svg',
-  'markdown',
-  'md',
-  'slidev',
-  'slides',
-  'presentation',
-]);
-
-function detectStreamingArtifacts(content: string): StreamingArtifact[] {
-  const codeBlockRegex = /```(\w*)\n([\s\S]*?)(?:```|$)/g;
-  const detected: StreamingArtifact[] = [];
-  let match;
-  while ((match = codeBlockRegex.exec(content)) !== null) {
-    const isClosed = content.substring(match.index).includes('```', match[1].length + 3);
-    if (!isClosed) {
-      const lang = match[1]?.toLowerCase();
-      if (ARTIFACT_LANGS.has(lang)) {
-        detected.push({
-          id: 'streaming-artifact',
-          type: 'code',
-          title: 'Generating...',
-          content: '',
-        });
-      }
-    }
-  }
-  return detected;
 }
 
 // ---------------------------------------------------------------------------
@@ -290,16 +248,6 @@ export const MessageBubble = memo<MessageBubbleProps>(
 
     const { parsedReasoning, parsedContent } = parseMessageContent(msg, isUser, reasoningEnabled);
 
-    // Streaming artifact detection with ref guard to skip unchanged content
-    const artifactContentRef = useRef('');
-    const streamingArtifacts = useMemo<StreamingArtifact[]>(() => {
-      if (!isStreaming || !isLast || !parsedContent) return [];
-      if (artifactContentRef.current === parsedContent) return [];
-      const detected = detectStreamingArtifacts(parsedContent);
-      artifactContentRef.current = parsedContent;
-      return detected;
-    }, [isStreaming, isLast, parsedContent]);
-
     const userPromptText = useMemo(() => {
       if (!previousMsg) return '';
       if (typeof previousMsg.content === 'string') return previousMsg.content;
@@ -310,91 +258,6 @@ export const MessageBubble = memo<MessageBubbleProps>(
       }
       return String(previousMsg.content || '');
     }, [previousMsg]);
-
-    const isPresentation = useMemo(() => {
-      if (isUser) return false;
-      // Do not convert to presentation mode while streaming unless explicitly an artifact deck
-      if (isStreaming) {
-        return (
-          msg.artifacts?.some(
-            (a: any) =>
-              a.type === 'slidev' ||
-              a.type === 'presentation' ||
-              a.type === 'slides' ||
-              a.language === 'slidev' ||
-              a.language === 'slides'
-          ) || false
-        );
-      }
-      if (
-        msg.artifacts?.some(
-          (a: any) =>
-            a.type === 'slidev' ||
-            a.type === 'presentation' ||
-            a.type === 'slides' ||
-            a.language === 'slidev' ||
-            a.language === 'slides'
-        )
-      ) {
-        return true;
-      }
-      if (isPresentationPrompt(userPromptText)) return true;
-      if (isSlidevContent(parsedContent)) return true;
-      if (
-        /(?:^|\n)\s*layout:\s*(?:cover|two-cols|two-cols-header|quote|center|default|intro|fact|statement|end)\b/i.test(
-          parsedContent
-        )
-      ) {
-        return true;
-      }
-      if (/::(?:left|right)::/i.test(parsedContent)) return true;
-      return false;
-    }, [isUser, isStreaming, msg.artifacts, parsedContent, userPromptText]);
-
-    const compiledSlidevDeck = useMemo(() => {
-      if (!isPresentation) return '';
-      const existingArtifact = msg.artifacts?.find(
-        (a: any) =>
-          a.type === 'slidev' ||
-          a.type === 'presentation' ||
-          a.type === 'slides' ||
-          a.language === 'slidev' ||
-          a.language === 'slides'
-      );
-      if (existingArtifact?.content && isSlidevContent(existingArtifact.content)) {
-        return existingArtifact.content;
-      }
-      return compileResponseToSlidev(parsedContent, userPromptText);
-    }, [isPresentation, msg.artifacts, parsedContent, userPromptText]);
-
-    const presentationTitle = useMemo(() => {
-      const clean = (userPromptText || 'Presentation')
-        .replace(
-          /(?:generate|create|make|build|write|give\s+me|show\s+me|a\s+ppt\s+for|a\s+ppt\s+of|ppt\s+for|ppt\s+of|presentation\s+for|presentation\s+of|presentation\s+on|slides\s+for|slides\s+on)/gi,
-          ''
-        )
-        .replace(/\b(?:ppt|presentation|powerpoint|slides|slide\s*deck)\b/gi, '')
-        .trim();
-      return clean
-        ? clean
-            .split(/\s+/)
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(' ')
-        : 'Interactive Presentation';
-    }, [userPromptText]);
-
-    const effectiveArtifacts = useMemo(() => {
-      const existing = (msg.artifacts || []) as StreamingArtifact[];
-      // If presentation studio is displayed inline, don't show an artifact button card for it
-      return existing.filter(
-        (a) =>
-          a.type !== 'slidev' &&
-          a.type !== 'presentation' &&
-          a.type !== 'slides' &&
-          a.language !== 'slidev' &&
-          a.language !== 'slides'
-      );
-    }, [msg.artifacts]);
 
     const isThinking =
       isStreaming &&
@@ -542,102 +405,25 @@ export const MessageBubble = memo<MessageBubbleProps>(
                         </div>
                       )}
 
-                    {parsedContent &&
-                      msg.status !== 'error' &&
-                      !isSetupMessage &&
-                      !isPresentation && (
-                        <MarkdownContent
-                          content={parsedContent}
-                          blocks={(msg as any).blocks}
-                          isStreaming={isStreaming && isLast}
-                          citations={msg.citations}
-                          images={msg.images}
-                          videos={(msg as any).videos}
-                          audios={(msg as any).audios}
-                          onOpenLightbox={(url?: string, prompt?: string, engine?: string) => {
-                            setLightboxState({
-                              isOpen: true,
-                              url: url || '',
-                              prompt: prompt || '',
-                              engine: engine || 'NYX Engine',
-                            });
-                          }}
-                        />
-                      )}
-
-                    {/* Executive Presentation Card Launcher */}
-                    {!isUser && isPresentation && msg.status !== 'error' && !isSetupMessage && (
-                      <div className="mt-2.5 w-full select-none">
-                        {isStreaming || !compiledSlidevDeck ? (
-                          <div className="rounded-xl border border-white/10 bg-[#09090b] px-4 py-3 flex items-center justify-between gap-3 shadow-md my-2">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="p-2 rounded-lg bg-zinc-900 border border-white/10 text-zinc-400 shrink-0">
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              </div>
-                              <div className="flex flex-col min-w-0">
-                                <span className="text-xs font-semibold text-zinc-100 truncate">
-                                  {presentationTitle}
-                                </span>
-                                <span className="text-[10px] text-zinc-500 font-mono">
-                                  Slidev Deck
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 text-zinc-400 border border-white/10 shrink-0">
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Compiling Presentation...</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="rounded-xl border border-white/10 bg-[#09090b] hover:border-white/20 px-4 py-3 flex items-center justify-between gap-3 shadow-md my-2 transition-all">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="p-2 rounded-lg bg-zinc-900 border border-white/10 text-zinc-200 shrink-0">
-                                <Presentation className="w-4 h-4 text-zinc-200" />
-                              </div>
-                              <div className="flex flex-col min-w-0">
-                                <span className="text-xs font-semibold text-zinc-100 truncate">
-                                  {presentationTitle}
-                                </span>
-                                <span className="text-[10px] text-zinc-500 font-mono">
-                                  Slidev Interactive Presentation
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                onClick={async () => {
-                                  toast.info('Generating PowerPoint (.pptx)...');
-                                  const parsed = parseSlidevMarkdown(compiledSlidevDeck);
-                                  await exportSlidevToPptx(parsed, { fileName: presentationTitle });
-                                  toast.success('Downloaded PowerPoint presentation!');
-                                }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-white/10 transition-colors cursor-pointer"
-                                title="Export .PPTX"
-                              >
-                                <FileDown className="w-3.5 h-3.5" />
-                                <span>.PPTX</span>
-                              </button>
-                              <button
-                                onClick={() =>
-                                  onArtifactClick?.({
-                                    id: msgId,
-                                    type: 'presentation',
-                                    title: presentationTitle,
-                                    content: compiledSlidevDeck,
-                                    language: 'slidev',
-                                  })
-                                }
-                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white text-black hover:bg-zinc-200 transition-all cursor-pointer shadow-sm active:scale-95"
-                              >
-                                <Tv className="w-3.5 h-3.5" />
-                                <span>Open Studio</span>
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                    {parsedContent && msg.status !== 'error' && !isSetupMessage && (
+                      <MarkdownContent
+                        content={parsedContent}
+                        blocks={(msg as any).blocks}
+                        isStreaming={isStreaming && isLast}
+                        citations={msg.citations}
+                        images={msg.images}
+                        videos={(msg as any).videos}
+                        audios={(msg as any).audios}
+                        onOpenLightbox={(url?: string, prompt?: string, engine?: string) => {
+                          setLightboxState({
+                            isOpen: true,
+                            url: url || '',
+                            prompt: prompt || '',
+                            engine: engine || 'NYX Engine',
+                          });
+                        }}
+                        onArtifactClick={onArtifactClick as any}
+                      />
                     )}
 
                     <ImageLightbox
@@ -646,12 +432,6 @@ export const MessageBubble = memo<MessageBubbleProps>(
                       prompt={lightboxState.prompt}
                       engine={lightboxState.engine}
                       onClose={() => setLightboxState((prev) => ({ ...prev, isOpen: false }))}
-                    />
-
-                    <ArtifactRenderer
-                      artifacts={effectiveArtifacts}
-                      streamingArtifacts={streamingArtifacts}
-                      onArtifactClick={onArtifactClick}
                     />
 
                     {msg.citations && msg.citations.length > 0 && (
@@ -771,32 +551,31 @@ const ToolApprovalGate: React.FC<{
     <motion.div
       initial={{ opacity: 0, y: 10, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      className="my-4 p-5 rounded-2xl border border-purple-500/30 bg-purple-950/10 dark:bg-purple-950/20 backdrop-blur-md shadow-xl relative overflow-hidden"
+      className="my-4 p-5 rounded-xl border border-border bg-card relative overflow-hidden"
     >
-      <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
       <div className="flex items-start gap-3.5 relative z-10">
-        <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
-          <Shield size={18} className="animate-pulse" />
+        <div className="p-2 rounded-lg bg-muted text-foreground border border-border shrink-0">
+          <Shield size={18} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h4 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
-              <span>Lucifer Agent Tool Authorization</span>
-              <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-bold uppercase tracking-wider border border-purple-500/30">
+              <span>Agent Tool Authorization</span>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-mono font-bold uppercase tracking-wider border border-border">
                 Action Gate
               </span>
             </h4>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Lucifer Supreme Agent requests permission to execute the following tool operation:
+            Agent requests permission to execute the following tool operation:
           </p>
 
-          <div className="mt-3.5 bg-muted/40 border border-border/50 rounded-xl p-3.5 font-mono">
-            <div className="text-[11px] text-purple-300 font-bold mb-2 flex items-center gap-2">
-              <Zap size={12} className="text-purple-400" />
+          <div className="mt-3.5 bg-background border border-border rounded-lg p-3 font-mono">
+            <div className="text-[11px] text-foreground font-bold mb-2 flex items-center gap-2">
+              <Zap size={12} className="text-primary" />
               <span>{approval.tool}</span>
             </div>
-            <pre className="text-[11px] text-foreground/90 whitespace-pre-wrap bg-background/60 p-2.5 rounded-lg border border-border/40 max-h-[200px] overflow-y-auto">
+            <pre className="text-[11px] text-muted-foreground whitespace-pre-wrap bg-muted/40 p-2.5 rounded border border-border/40 max-h-[200px] overflow-y-auto">
               {JSON.stringify(approval.input || {}, null, 2)}
             </pre>
           </div>
@@ -806,10 +585,10 @@ const ToolApprovalGate: React.FC<{
               onClick={() => {
                 rejectTool?.(index, approval.approvalId);
                 toast.error('Action Rejected', {
-                  description: 'Lucifer tool execution cancelled.',
+                  description: 'Tool execution cancelled.',
                 });
               }}
-              className="px-4 py-2 rounded-xl border border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg border border-destructive/20 text-destructive bg-destructive/10 hover:bg-destructive/20 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
             >
               <X size={14} />
               Reject Action
@@ -817,9 +596,9 @@ const ToolApprovalGate: React.FC<{
             <button
               onClick={() => {
                 approveTool?.(index, approval.approvalId);
-                toast.success('Action Approved', { description: 'Executing Lucifer tool...' });
+                toast.success('Action Approved', { description: 'Executing tool...' });
               }}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold cursor-pointer transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2"
+              className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold cursor-pointer transition-colors flex items-center gap-2"
             >
               <Check size={14} />
               Approve &amp; Execute

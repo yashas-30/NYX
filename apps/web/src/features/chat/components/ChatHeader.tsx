@@ -237,7 +237,7 @@ const ShareMenu: React.FC<{
             initial={{ opacity: 0, y: -4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            className="absolute top-full right-0 mt-1 w-56 bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-md overflow-hidden z-50 p-1.5 space-y-1"
+            className="absolute top-full right-0 mt-1 w-56 bg-popover border border-border rounded-md overflow-hidden z-50 p-1.5 space-y-1"
           >
             <div className="px-2.5 py-1">
               <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -251,7 +251,7 @@ const ShareMenu: React.FC<{
                 <select
                   value={expiration}
                   onChange={(e: any) => setExpiration(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-white/85 outline-none cursor-pointer"
+                  className="bg-background border border-border rounded px-1.5 py-0.5 text-[10px] text-foreground outline-none cursor-pointer"
                 >
                   <option value="1h" className="bg-popover text-foreground">
                     1 Hour
@@ -270,7 +270,7 @@ const ShareMenu: React.FC<{
 
               <button
                 onClick={handleCopyLink}
-                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 transition-colors text-white font-medium text-xs cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded bg-primary hover:bg-primary/90 transition-colors text-primary-foreground font-semibold text-xs cursor-pointer"
               >
                 {copied ? <Check size={12} /> : <Share2 size={12} />}
                 <span>{copied ? 'Copied!' : 'Copy Share Link'}</span>
@@ -372,7 +372,7 @@ const ModelUsageIndicator: React.FC<{
             initial={{ opacity: 0, y: 4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
-            className="absolute top-full right-0 mt-2 w-48 bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-lg p-3 z-50 flex flex-col gap-2"
+            className="absolute top-full right-0 mt-2 w-48 bg-popover border border-border rounded-md p-3 z-50 flex flex-col gap-2"
           >
             <div className="flex justify-between items-center pb-2 border-b border-border/50">
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
