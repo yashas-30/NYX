@@ -1,0 +1,83 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.1
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install Linux Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile --reporter append-only
+
+      - name: Build Shared Package
+        run: pnpm --filter @nyx/shared build
+
+      - name: Build Web Application for GitHub Pages
+        env:
+          GITHUB_PAGES: 'true'
+          NODE_OPTIONS: '--max-old-space-size=4096'
+        run: |
+          pnpm --filter @nyx/web build
+          # Create 404.html for SPA client-side routing on GitHub Pages
+          cp apps/web/dist/index.html apps/web/dist/404.html
+          # Ensure .nojekyll exists so Jekyll doesn't filter Vite assets
+          touch apps/web/dist/.nojekyll
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+      - name: Deploy to gh-pages Branch (Branch Deployment Support)
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: apps/web/dist
+          branch: gh-pages
+        continue-on-error: true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages (Actions Deployment Support)
+        id: deployment
+        uses: actions/deploy-pages@v4

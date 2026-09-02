@@ -13,6 +13,7 @@
     "dev:web": "node scripts/pre-dev.cjs && cross-env NODE_OPTIONS=--max-old-space-size=2048 pnpm --filter @nyx/web dev",
     "build": "turbo run build",
     "build:web": "pnpm --filter @nyx/web build",
+    "build:pages": "cross-env GITHUB_PAGES=true pnpm --filter @nyx/web build",
     "tauri": "tauri",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

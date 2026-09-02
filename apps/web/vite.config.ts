@@ -8,9 +8,21 @@ import { VitePWA } from 'vite-plugin-pwa';
 import svgr from 'vite-plugin-svgr';
 import { visualizer } from 'rollup-plugin-visualizer';
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, '.', '');
+  const repoName = process.env.GITHUB_REPOSITORY
+    ? process.env.GITHUB_REPOSITORY.split('/')[1]
+    : 'NYX';
+  const isGitHubPages = process.env.GITHUB_PAGES === 'true';
+  const base =
+    command === 'serve'
+      ? '/'
+      : process.env.VITE_BASE_PATH ||
+        process.env.VITE_BASE_URL ||
+        (isGitHubPages ? `/${repoName}/` : './');
+
   return {
+    base,
     plugins: [
       // NOTE: Mock backend removed — all /api/* calls now route through Tauri IPC (invoke()).
       react(),

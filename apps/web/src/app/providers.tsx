@@ -36,7 +36,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <ThemeProvider>
           <TokenUsageProvider>{children}</TokenUsageProvider>
         </ThemeProvider>
