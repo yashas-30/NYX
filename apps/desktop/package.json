@@ -1,8 +1,0 @@
-{
-  "name": "@nyx/desktop",
-  "version": "3.0.0",
-  "private": true,
-  "dependencies": {
-    "@nyx/web": "workspace:*"
-  }
-}

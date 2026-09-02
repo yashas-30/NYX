@@ -8,5 +8,8 @@
   "python.autoComplete.extraPaths": [
     "C:/Users/yasha/AppData/Local/Packages/PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0/LocalCache/local-packages/Python313/site-packages"
   ],
-  "rust-analyzer.linkedProjects": ["./src-tauri/Cargo.toml"]
+  "rust-analyzer.linkedProjects": [
+    "./src-tauri/Cargo.toml"
+  ],
+  "chat.disableAIFeatures": false
 }

@@ -23,6 +23,16 @@ src-tauri/target/
 src-tauri/**/target/
 src-tauri/temp_target/
 src-tauri/.fastembed_cache/
+src-tauri/documents.lance/
+src-tauri/__manifest/
+src-tauri/protoc/
+src-tauri/test_genai/
+*.tsbuildinfo
+local-node/
+.vscode/skills/
+.github/skills/
+**/graphify-out/cache/
+
 
 # Graphify / Scratch / Logs
 graphify-out/*
