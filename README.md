@@ -37,7 +37,18 @@ Most AI tools force you into costly monthly subscriptions, lock you into cloud-o
 
 ---
 
-### 1. 🖥️ Native Local GPU Inference Engine (Zero Middleware)
+### 1. ⚡ Real-Time Live Application Preview (Split CodeBlocks)
+
+Watch apps build and run in real time as the AI generates code:
+
+- **Automatic Split View**: When generating code for web applications (HTML/CSS/JS, React TSX/JSX, SVG graphics, Mermaid diagrams, or Slidev decks), NYX automatically opens a responsive **Split View**.
+- **Concurrent Live Compilation**: The upper pane displays the streaming syntax-highlighted code, while the lower pane continuously compiles, mounts, and renders the live running app simultaneously as tokens stream in.
+- **Debounced Execution Engine**: A 300ms stream-debounced runner prevents iframe reloads or DOM thrashing on individual characters, ensuring silky-smooth rendering.
+- **View Controls**: Toggle between **Split**, full-height **Live Preview**, raw **Source Code**, or WASM **Terminal** with one click. Includes a live reload button for instant state refreshes.
+
+---
+
+### 2. 🖥️ Native Local GPU Inference Engine (Zero Middleware)
 
 NYX includes its own internal `llama.cpp` Vulkan inference server embedded directly into the Rust backend:
 
@@ -52,7 +63,7 @@ NYX includes its own internal `llama.cpp` Vulkan inference server embedded direc
 
 ---
 
-### 2. ☁️ Multi-Provider Free Cloud Intelligence
+### 3. ☁️ Multi-Provider Free Cloud Intelligence
 
 NYX connects natively to 5 premier AI providers, giving you access to **40 curated models** covering reasoning, coding, long context, and vision:
 
@@ -119,7 +130,7 @@ NYX connects natively to 5 premier AI providers, giving you access to **40 curat
 
 ---
 
-### 3. 📊 Slidev & PowerPoint (PPTX) Studio
+### 4. 📊 Slidev & PowerPoint (PPTX) Studio
 
 Turn any idea, topic, or document into a presentation with zero formatting hassle:
 
@@ -134,7 +145,7 @@ Turn any idea, topic, or document into a presentation with zero formatting hassl
 
 ---
 
-### 4. 📐 39 Publication-Grade Visual Architecture Types
+### 5. 📐 39 Publication-Grade Visual Architecture Types
 
 Stop generating unstyled Mermaid diagrams. NYX generates clean, declarative inline **HTML/SVG diagrams** styled in an obsidian True Black palette (`#09090b` canvas, `#121214` cards, `border-white/10`, `#f08a59` focal accents):
 
@@ -162,7 +173,7 @@ _Includes interactive pan, zoom, full-screen expansion, and direct SVG export._
 
 ---
 
-### 5. 🔍 Real-Time Grounded Web Search & Video Grounding
+### 6. 🔍 Real-Time Grounded Web Search & Video Grounding
 
 Search the web in real-time without leaving your conversation:
 
@@ -173,7 +184,7 @@ Search the web in real-time without leaving your conversation:
 
 ---
 
-### 6. 🤖 Autonomous ReAct Agent Conductor (Rust Native)
+### 7. 🤖 Autonomous ReAct Agent Conductor (Rust Native)
 
 When you need multi-step problem solving, NYX's native Rust agent takes over:
 
@@ -186,14 +197,14 @@ When you need multi-step problem solving, NYX's native Rust agent takes over:
 
 ---
 
-### 7. 🧠 Persistent Memory & Semantic Recall (TurboVec)
+### 8. 🧠 Persistent Memory & Semantic Recall (TurboVec)
 
 - **Vector-Powered Memory**: Indexes your conversation history, project preferences, and user context locally in SQLite with TurboVec vector embeddings.
 - **Zero Privacy Leakage**: Your long-term memory is stored locally on your machine and never synced to external analytics servers.
 
 ---
 
-### 8. 🎨 True Black Minimalist Design System
+### 9. 🎨 True Black Minimalist Design System
 
 Built following the **True Black Minimalist** design standard (`DESIGN.md`):
 
@@ -205,77 +216,150 @@ Built following the **True Black Minimalist** design standard (`DESIGN.md`):
 
 ---
 
-## 💻 Quick Start
+---
 
-### 1. Prerequisites
+## 🌐 Testing the Web App (Live Demo & Local Setup)
 
-- **Node.js** v20+ or v22+
-- **pnpm** v11+ (`npm install -g pnpm`)
-- **Rust Toolchain** (for desktop builds) — [rustup.rs](https://rustup.rs)
-- **GPU** (optional, NVIDIA / AMD / Intel with Vulkan support for local models)
+Viewers and evaluators can test NYX instantly in any web browser without cloning or installing dependencies, or run it locally:
 
-### 2. Installation
+### Option 1: Instant Live Web App (Zero Install)
+
+👉 **[Launch NYX on GitHub Pages](https://yashas-30.github.io/NYX/)**
+
+- **Runs in Any Modern Browser**: Works immediately on Chrome, Edge, Safari, Firefox, and Brave on both desktop and mobile devices.
+- **Client-Side SPA**: Built as a pure client-side application with client-side routing, offline PWA support, and sub-50ms tab switching.
+- **Zero Server Setup**: Connects directly from your browser to AI provider endpoints.
+
+### Option 2: Run Web App Locally for Testing
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/yashas-30/NYX.git
 cd NYX
 
-# Install all monorepo dependencies
+# 2. Install monorepo dependencies
 pnpm install
+
+# 3. Launch the Vite development server
+pnpm run dev:web
 ```
 
-### 3. Running NYX
+Open **`http://localhost:3000`** in your browser.
+
+### Option 3: Run Full Native Desktop Application (Tauri v2 + Rust)
 
 ```bash
-# Start the Web Application (Vite + React 19)
-pnpm run dev:web
-
-# Or start the Native Desktop Application (Tauri v2 + Rust Backend)
+# Requires Rust Toolchain (https://rustup.rs)
 pnpm run dev:desktop
 ```
 
-### 4. Running Tests & Quality Scans
+---
+
+## 🔑 How to Set Up Free API Keys (Step-by-Step Guide)
+
+To start chatting, writing code, generating presentations, and rendering architecture diagrams, you only need **at least one free API key**. NYX lets you configure keys for any combination of providers:
+
+### Step 1: Where to Navigate in NYX
+
+1. Open the NYX Web App or Desktop App.
+2. In the left navigation sidebar, click the **Settings (⚙️)** gear icon (or click the **API Key / Provider Status badge** in the model selector at the top of the chat page).
+3. The **Settings** panel opens, displaying dedicated input fields for each supported AI provider:
+   - **Google Gemini**
+   - **Groq Cloud**
+   - **Mistral AI**
+   - **OpenRouter**
+   - **NVIDIA NIM**
+4. Paste your key into the corresponding field and click **Save**. A confirmation toast will verify that your key is active.
+
+---
+
+### Step 2: Where & How to Get Your FREE API Keys
+
+#### 1. 🔹 Google Gemini (Recommended — 100% Free Tier)
+
+_Google AI Studio provides a free tier with high rate limits (15 RPM / 1M TPM)._
+
+1. Go to **[Google AI Studio API Keys](https://aistudio.google.com/app/apikey)**.
+2. Sign in with your standard Google account.
+3. Click the blue **"Create API key"** button.
+4. Choose an existing Google Cloud project or click **"Create key in new project"** (takes ~5 seconds).
+5. Copy the generated key (format: `AIzaSy...`).
+6. In NYX Settings, paste it into the **Google Gemini API Key** input and click **Save**.
+7. **Unlocked Capabilities**: Access to **Gemini 3.7 Flash**, **Gemini 3.6 Flash**, **Gemini 3.5 Flash-Lite**, **Gemma 4 31B**, full 1M context windows, hybrid thinking reasoning budgets (0–64K tokens), and grounded web search.
+
+#### 2. ⚡ Groq Cloud (Ultra-Fast LPUs — Free Developer Tier)
+
+_Groq provides near-instant inference speeds exceeding 400–500 tokens per second._
+
+1. Go to **[Groq Console API Keys](https://console.groq.com/keys)**.
+2. Sign up or log in (free with GitHub or Google).
+3. Click **"Create API Key"**, enter a friendly name (e.g., `NYX`), and click **Submit**.
+4. Copy the secret key immediately (format: `gsk_...`).
+5. In NYX Settings, paste it into the **Groq API Key** input and click **Save**.
+6. **Unlocked Capabilities**: Access to **GPT OSS 120B**, **GPT OSS 20B**, **Qwen 3.6 27B**, and **Groq Compound** with real-time streaming.
+
+#### 3. 🇫🇷 Mistral AI (European Frontier Intelligence)
+
+_Mistral AI offers free developer credits and access to state-of-the-art code models._
+
+1. Go to **[Mistral La Plateforme](https://console.mistral.ai/api-keys/)**.
+2. Sign up for a free account.
+3. Navigate to **API Keys** in the dashboard and click **"Create new key"**.
+4. Copy your secret API key.
+5. In NYX Settings, paste it into the **Mistral API Key** input and click **Save**.
+6. **Unlocked Capabilities**: Access to **Codestral** (industry-leading coding engine), **Mistral Large 3**, **Mistral Small 4**, and **Ministral**.
+
+#### 4. 🌍 OpenRouter (Dozens of Curated Free Models)
+
+_OpenRouter aggregates dozens of top open-source models with completely free endpoints._
+
+1. Go to **[OpenRouter Keys](https://openrouter.ai/keys)**.
+2. Sign in with Google, GitHub, or Email.
+3. Click **"Create Key"**, give it a name (e.g., `NYX`), and copy the key (format: `sk-or-v1-...`).
+4. In NYX Settings, paste it into the **OpenRouter API Key** input and click **Save**.
+5. **Unlocked Capabilities**: Access to 11+ completely free models marked with `:free`, including **Nemotron 3 Super 120B (Free)**, **GPT OSS 20B (Free)**, **Cohere North Mini Code (Free)**, and **Gemma 4 (Free)**.
+
+#### 5. 🟢 NVIDIA NIM (DGX Cloud Enterprise Acceleration)
+
+_NVIDIA provides 1,000 free evaluation credits to run models on DGX Cloud infrastructure._
+
+1. Visit **[NVIDIA Build NIM](https://build.nvidia.com/)**.
+2. Sign in with your NVIDIA developer account.
+3. Browse to any model (e.g., _Meta Llama 3.3 70B Instruct_ or _Nemotron 3 Super_).
+4. Click **"Get API Key"** and copy the generated key (format: `nvapi-...`).
+5. In NYX Settings, paste it into the **NVIDIA NIM API Key** input and click **Save**.
+
+#### 6. 🏠 Local Models (Ollama & Vulkan — Zero API Keys Required)
+
+_If you prefer running completely offline without any cloud accounts:_
+
+- **Ollama**: If you have [Ollama](https://ollama.com/) running locally (`ollama serve`), NYX detects your local instance on `http://localhost:11434` automatically.
+- **Embedded Vulkan GPU (Desktop App)**: In the NYX Desktop application, GGUF models are loaded directly onto your GPU VRAM via built-in Vulkan shaders with zero external processes or API keys.
+
+---
+
+### 🔒 Privacy & Secret Storage Guarantee
+
+- **100% Client-Side Storage**: All API keys are stored strictly in your browser or desktop environment's private `localStorage`.
+- **Zero Third-Party Relays**: NYX has no intermediate proxy servers, tracking telemetry, or cloud logging.
+- **Direct Encrypted Transport**: Prompts and API keys are transmitted directly and securely over HTTPS/SSE only to the official provider endpoints (`generativelanguage.googleapis.com`, `api.groq.com`, `api.mistral.ai`, `openrouter.ai`, `integrate.api.nvidia.com`).
+
+---
+
+## 🧪 Automated Testing & Verification
 
 ```bash
-# Run all Vitest unit and integration tests (71+ passing tests)
+# Run all Vitest unit and integration tests (60+ passing tests)
 pnpm test
 
 # Run TypeScript typechecks across all monorepo packages
 pnpm run typecheck
 
-# Build production web bundle
-pnpm run build
+# Build production web bundle for GitHub Pages
+pnpm run build:pages
 
-# Verify Rust compilation
+# Verify Rust backend compilation (for desktop app)
 cd src-tauri && cargo check
-```
-
----
-
-## 🏛️ Monorepo Structure
-
-```
-NYX/
-├── apps/
-│   ├── web/                       # React 19 + Vite 6 + Tailwind CSS v4 SPA
-│   │   ├── src/core/prompts/      # Modular prompt orchestrators (Slidev, Diagrams, Search, Code)
-│   │   ├── src/features/chat/     # Typewriter streaming, thinking disclosure, lightbox, video cards
-│   │   ├── src/features/presentation/ # Slidev compiler, drawing canvas, PPTX exporter
-│   │   ├── src/features/agents/   # ReAct plan visualizer & execution monitors
-│   │   └── src/shared/            # Model registry, API key vault, Zustand stores
-│   └── desktop/                   # Tauri v2 desktop shell
-│
-├── packages/
-│   ├── shared/                    # 40-model catalog, provider normalizers, Zod schemas
-│   └── config/                    # TypeScript base configs & shared tooling
-│
-└── src-tauri/                     # Native Rust Backend
-    ├── src/llm/providers/         # SSE streaming for Gemini, Groq, Mistral, NVIDIA, OpenRouter
-    ├── src/llm/local/             # Vulkan llama-server process manager & hardware detection
-    ├── src/agents/core/           # Native ReAct conductor & loop orchestrator
-    ├── src/agents/tools/          # Filesystem, scraper, search, and sandbox tools
-    └── src/rag/                   # SQLite persistence & TurboVec vector embeddings
 ```
 
 ---
