@@ -27,7 +27,7 @@
 
 Most AI tools force you into costly monthly subscriptions, lock you into cloud-only silos, or require complicated terminal setups. **NYX changes that completely:**
 
-1. **100% Free & Private Local Execution**: Run any open-source model (Llama 3.3, Qwen 2.5, Gemma 3, DeepSeek, Mistral) directly on your NVIDIA, AMD, or Intel GPU via built-in Vulkan acceleration. No Ollama, no LM Studio, no Docker, and no internet connection required.
+1. **100% Free & Private Local Execution**: Run any open-source model (Llama 3.3, Qwen 2.5, Gemma 3, DeepSeek, Mistral) directly via built-in `llama.cpp` and native Hugging Face Hub integration. Search, download, and run GGUF models with 100% offline privacy and zero external tools.
 2. **40 Curated Free Cloud Models**: If you don't have a high-end GPU, NYX gives you instant access to 40 frontier models from Google Gemini, Groq LPUs, Mistral AI, NVIDIA NIM, and OpenRouter Free Tier.
 3. **Beyond Plain Chat**: NYX isn't just a chatbot — it's a creative and analytical powerhouse that builds presentations you can export to PowerPoint, draws editorial system diagrams, conducts grounded research with verified citations, and runs autonomous multi-step coding agents.
 
@@ -48,15 +48,16 @@ Watch apps build and run in real time as the AI generates code:
 
 ---
 
-### 2. 🖥️ Native Local GPU Inference Engine (Zero Middleware)
+### 2. 🖥️ Native `llama.cpp` Local Inference Engine & Hugging Face Hub Integration
 
-NYX includes its own internal `llama.cpp` Vulkan inference server embedded directly into the Rust backend:
+NYX embeds a native `llama.cpp` inference engine directly into the application and pairs it with a full-featured **Hugging Face Hub Explorer**:
 
-- **True Hardware Acceleration**: Automatically detects your GPU VRAM and CPU threads to deliver maximum tokens-per-second via Vulkan GPU shaders.
-- **100% Offline & Private**: Your prompts, documents, and code never leave your device.
-- **HuggingFace Hub Explorer**: Search, explore, download, and manage GGUF quantized models directly within NYX.
+- **Native `llama.cpp` Engine**: Direct GGUF model execution with automatic hardware acceleration, thread scaling, and multi-layer offloading for optimal tokens-per-second.
+- **Integrated Hugging Face Hub Explorer**: Search, browse, inspect model cards, and download thousands of quantized GGUF models directly within NYX's UI — no terminal scripts or external tools required.
+- **Full Model Lifecycle**: Download GGUF quants (Q4_K_M, Q8_0, etc.) with real-time download speed meters, progress bars, pause/resume, and instant one-click activation.
+- **100% Offline & Private**: Once downloaded from Hugging Face, your models, prompts, documents, and code run completely offline and never leave your machine.
 - **Per-Model Fine-Tuned Controls**:
-  - **GPU Layer Offload (`ngl`)**: Slide seamlessly from 0 (CPU-only) to 99 (Full VRAM offloading).
+  - **GPU Layer Offload (`ngl`)**: Slide seamlessly from 0 (CPU-only) to full GPU VRAM offloading.
   - **Dynamic Context Length**: Adjust context memory allocation from 512 up to 131,072 tokens per model.
   - **Advanced Sampling**: Full control over Temperature, Top-P, Top-K, Repeat Penalty, and Mirostat v1/v2 algorithms.
   - **Thread & Batch Tuning**: Calibrate CPU thread count and batch evaluation size for stutter-free generation.
@@ -152,7 +153,7 @@ Stop generating unstyled Mermaid diagrams. NYX generates clean, declarative inli
 ```
 ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
 │   Client App    ├──────►│   API Gateway   ├──────►│  Microservices  │
-│  (React 19/Web) │       │   (Tauri/Rust)  │       │  (Vulkan / NIM) │
+│  (React 19/Web) │       │   (Tauri/Rust)  │       │(llama.cpp / NIM)│
 └─────────────────┘       └─────────────────┘       └─────────────────┘
 ```
 
@@ -329,12 +330,13 @@ _NVIDIA provides 1,000 free evaluation credits to run models on DGX Cloud infras
 4. Click **"Get API Key"** and copy the generated key (format: `nvapi-...`).
 5. In NYX Settings, paste it into the **NVIDIA NIM API Key** input and click **Save**.
 
-#### 6. 🏠 Local Models (Ollama & Vulkan — Zero API Keys Required)
+#### 6. 🏠 Local Models (`llama.cpp` & Hugging Face Hub — Zero API Keys Required)
 
-_If you prefer running completely offline without any cloud accounts:_
+_If you prefer running completely offline without any cloud accounts or API keys:_
 
-- **Ollama**: If you have [Ollama](https://ollama.com/) running locally (`ollama serve`), NYX detects your local instance on `http://localhost:11434` automatically.
-- **Embedded Vulkan GPU (Desktop App)**: In the NYX Desktop application, GGUF models are loaded directly onto your GPU VRAM via built-in Vulkan shaders with zero external processes or API keys.
+- **Built-in `llama.cpp` Engine**: NYX executes quantized GGUF models natively on your local hardware with maximum performance and zero external processes.
+- **Integrated Hugging Face Hub**: Open the **Model Registry / Hugging Face** tab in NYX to search, explore, and download any model (DeepSeek, Llama 3, Qwen 2.5, Mistral, Gemma 3) with a single click.
+- **Zero API Keys & Zero Telemetry**: All inference runs directly on your local device. No subscriptions, no cloud accounts, and no internet connection required once your model is downloaded.
 
 ---
 
