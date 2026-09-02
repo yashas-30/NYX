@@ -21,6 +21,7 @@ import {
   Check,
   ExternalLink,
   Sparkles,
+  Columns,
 } from 'lucide-react';
 import { isSlidevContent } from '../../features/artifacts/utils/slidevParser';
 import { PresentationDeck } from '../../features/presentation/components/PresentationDeck';
@@ -435,24 +436,37 @@ export function CodeBlock({
   const userOverrodeTab = useRef(false);
   const prevStreaming = useRef(isStreaming);
 
-  // Active tab state: default to 'code' during streaming so user sees live code typing,
-  // and 'preview' when complete for previewable languages.
-  const [activeTab, setActiveTab] = useState<'preview' | 'code' | 'console'>(() => {
-    if (isStreaming) return 'code';
-    return isPreviewable ? 'preview' : 'code';
+  // Debounced code for live preview execution during streaming — avoids per-character iframe thrashing
+  const [debouncedCode, setDebouncedCode] = useState(code);
+  useEffect(() => {
+    if (!isStreaming) {
+      setDebouncedCode(code);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedCode(code);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [code, isStreaming]);
+
+  // Active tab state: default to 'split' during streaming for previewable apps,
+  // so the user can see code being generated while the app builds in real-time live preview!
+  const [activeTab, setActiveTab] = useState<'split' | 'preview' | 'code' | 'console'>(() => {
+    if (isPreviewable) return isStreaming ? 'split' : 'preview';
+    return 'code';
   });
 
-  // Switch to preview automatically when streaming finishes for previewable content (unless user manually pinned code)
+  // Switch to split when streaming previewable content begins (unless user manually pinned code)
   useEffect(() => {
-    if (prevStreaming.current && !isStreaming) {
-      if (!userOverrodeTab.current && isPreviewable) {
-        setActiveTab('preview');
+    if (!userOverrodeTab.current && isPreviewable) {
+      if (isStreaming && activeTab === 'code') {
+        setActiveTab('split');
       }
     }
     prevStreaming.current = isStreaming;
-  }, [isStreaming, isPreviewable]);
+  }, [isStreaming, isPreviewable, activeTab]);
 
-  const handleTabChange = (tab: 'preview' | 'code' | 'console') => {
+  const handleTabChange = (tab: 'split' | 'preview' | 'code' | 'console') => {
     userOverrodeTab.current = true;
     setActiveTab(tab);
   };
@@ -500,13 +514,13 @@ export function CodeBlock({
     };
   }, [code, cleanLang, theme, isStreaming, isMermaid, escapeHtml]);
 
-  // Mermaid render effect — only runs after streaming is complete
+  // Mermaid render effect — renders live using debouncedCode
   useEffect(() => {
     let isCancelled = false;
 
-    if (isMermaid && !isStreaming) {
+    if (isMermaid) {
       const renderMermaid = async () => {
-        const sanitized = sanitizeMermaidCode(code);
+        const sanitized = sanitizeMermaidCode(debouncedCode);
         const uniqueId = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
 
         try {
@@ -547,7 +561,7 @@ export function CodeBlock({
             const fallbackSvg = generateFallbackFlowchartSvg(sanitized);
             if (!isCancelled) setMermaidSvg(makeSvgResponsive(fallbackSvg));
           } catch {
-            if (!isCancelled) setMermaidSvg(makeSvgResponsive(generateFallbackFlowchartSvg(code)));
+            // Keep previous render while mid-stream
           }
         }
       };
@@ -559,13 +573,13 @@ export function CodeBlock({
       isCancelled = true;
       cleanupMermaidDOMErrors();
     };
-  }, [code, isMermaid, isStreaming]);
+  }, [debouncedCode, isMermaid]);
 
   // HTML / JS Iframe generation with full libraries & storage polyfill
   const iframeSrcDoc = useMemo(() => {
     if (!isHtml && !isDiagramHtml && !isJsScript) return '';
-    return buildLivePreviewSrcDoc(code, cleanLang);
-  }, [code, cleanLang, isHtml, isDiagramHtml, isJsScript]);
+    return buildLivePreviewSrcDoc(debouncedCode, cleanLang);
+  }, [debouncedCode, cleanLang, isHtml, isDiagramHtml, isJsScript]);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(code).then(() => {
@@ -825,6 +839,90 @@ export function CodeBlock({
     );
   }
 
+  const renderPreviewElement = (
+    currentCode: string,
+    heightClass = 'min-h-[360px] max-h-[560px]'
+  ) => {
+    if (isSlidev) {
+      return <PresentationDeck content={currentCode} title={filename || 'Presentation Deck'} />;
+    }
+    if (isHtml || isDiagramHtml || isJsScript) {
+      return (
+        <div className={`w-full ${heightClass} relative bg-[#09090b]`}>
+          <iframe
+            key={reloadKey}
+            title="Live Code Preview"
+            srcDoc={iframeSrcDoc}
+            className="w-full h-full min-h-[360px] border-none bg-[#09090b]"
+            style={{ colorScheme: 'dark', backgroundColor: '#09090b' }}
+            sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms"
+          />
+        </div>
+      );
+    }
+    if (isReact) {
+      return (
+        <div className={`w-full ${heightClass} overflow-hidden bg-background`}>
+          <Sandpack
+            template="react-ts"
+            theme="dark"
+            files={{ '/App.tsx': currentCode }}
+            options={{
+              showNavigator: false,
+              showTabs: false,
+              externalResources: ['https://cdn.tailwindcss.com'],
+            }}
+            customSetup={{
+              dependencies: {
+                'lucide-react': '^0.263.1',
+                recharts: '^2.7.2',
+                'chart.js': '^4.4.0',
+                'framer-motion': '^10.12.16',
+                clsx: '^1.2.1',
+                'tailwind-merge': '^1.13.2',
+              },
+            }}
+          />
+        </div>
+      );
+    }
+    if (isPython) {
+      return (
+        <div className="w-full h-[360px] overflow-hidden bg-background">
+          <PythonSandbox code={currentCode} />
+        </div>
+      );
+    }
+    if (isMermaid) {
+      return (
+        <div className="p-4 flex flex-col items-center justify-center bg-card/40 overflow-x-auto min-h-[160px] max-h-[460px]">
+          {mermaidSvg ? (
+            <div
+              className="w-full flex items-center justify-center overflow-auto p-2 min-h-[140px] [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto"
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(mermaidSvg, SANITIZE_OPTIONS as any),
+              }}
+            />
+          ) : (
+            <div className="w-full flex items-center justify-center p-6 text-xs text-muted-foreground font-mono animate-pulse">
+              Building Architecture Diagram...
+            </div>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="p-4 flex flex-col items-center justify-center bg-card/40 overflow-x-auto min-h-[160px] max-h-[460px]">
+        <div
+          className="w-full max-w-full overflow-auto flex items-center justify-center p-2 min-h-[140px] [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto"
+          dangerouslySetInnerHTML={{
+            __html: DOMPurify.sanitize(makeSvgResponsive(currentCode), SANITIZE_OPTIONS as any),
+          }}
+        />
+      </div>
+    );
+  };
+
   return (
     <div className="rounded-xl overflow-hidden border border-border bg-card my-3.5 transition-colors duration-200">
       <div className="flex items-center justify-between px-3 py-2 bg-muted/40 border-b border-border text-xs gap-2 select-none">
@@ -837,16 +935,29 @@ export function CodeBlock({
             <div className="flex items-center bg-background rounded-md border border-border p-0.5 gap-0.5">
               <button
                 type="button"
+                onClick={() => handleTabChange('split')}
+                className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-colors flex items-center gap-1 cursor-pointer ${
+                  activeTab === 'split'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Split View (Live Code & Application Preview)"
+              >
+                <Columns className="w-3 h-3" />
+                <span>Split</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => handleTabChange('preview')}
                 className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-colors flex items-center gap-1 cursor-pointer ${
                   activeTab === 'preview'
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
-                title="Live Preview"
+                title="Live Application Preview"
               >
                 <Play className="w-3 h-3 fill-current" />
-                <span>Live Preview</span>
+                <span>Preview</span>
               </button>
               <button
                 type="button"
@@ -859,7 +970,7 @@ export function CodeBlock({
                 title="Source Code"
               >
                 <Code className="w-3 h-3" />
-                <span>Source Code</span>
+                <span>Code</span>
               </button>
               {isPython && (
                 <button
@@ -888,15 +999,17 @@ export function CodeBlock({
         </div>
 
         <div className="flex items-center gap-1">
-          {isPreviewable && activeTab === 'preview' && (isHtml || isDiagramHtml) && (
-            <button
-              onClick={reloadPreview}
-              title="Refresh Preview"
-              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            >
-              <RotateCw className="w-3.5 h-3.5" />
-            </button>
-          )}
+          {isPreviewable &&
+            (activeTab === 'preview' || activeTab === 'split') &&
+            (isHtml || isDiagramHtml) && (
+              <button
+                onClick={reloadPreview}
+                title="Refresh Preview"
+                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+              </button>
+            )}
 
           <button
             onClick={copyToClipboard}
@@ -938,73 +1051,57 @@ export function CodeBlock({
         </div>
       </div>
 
-      {activeTab === 'preview' && isPreviewable ? (
-        <div className="w-full relative overflow-hidden bg-[#09090b]">
-          {isSlidev ? (
-            <PresentationDeck content={code} title={filename || 'Presentation Deck'} />
-          ) : isHtml || isDiagramHtml || isJsScript ? (
-            <div className="w-full min-h-[360px] max-h-[560px] relative bg-[#09090b]">
-              <iframe
-                key={reloadKey}
-                title="Live Code Preview"
-                srcDoc={iframeSrcDoc}
-                className="w-full h-[440px] border-none bg-[#09090b]"
-                style={{ colorScheme: 'dark', backgroundColor: '#09090b' }}
-                sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms"
-              />
-            </div>
-          ) : isReact ? (
-            <div className="w-full min-h-[380px] max-h-[580px] overflow-hidden bg-background">
-              <Sandpack
-                template="react-ts"
-                theme="dark"
-                files={{ '/App.tsx': code }}
-                options={{
-                  showNavigator: false,
-                  showTabs: false,
-                  externalResources: ['https://cdn.tailwindcss.com'],
-                }}
-                customSetup={{
-                  dependencies: {
-                    'lucide-react': '^0.263.1',
-                    recharts: '^2.7.2',
-                    'chart.js': '^4.4.0',
-                    'framer-motion': '^10.12.16',
-                    clsx: '^1.2.1',
-                    'tailwind-merge': '^1.13.2',
-                  },
-                }}
-              />
-            </div>
-          ) : isPython ? (
-            <div className="w-full h-[360px] overflow-hidden bg-background">
-              <PythonSandbox code={code} />
-            </div>
-          ) : isMermaid ? (
-            <div className="p-4 flex flex-col items-center justify-center bg-card/40 overflow-x-auto min-h-[160px] max-h-[460px]">
-              {mermaidSvg ? (
-                <div
-                  className="w-full flex items-center justify-center overflow-auto p-2 min-h-[140px] [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto"
-                  dangerouslySetInnerHTML={{
-                    __html: DOMPurify.sanitize(mermaidSvg, SANITIZE_OPTIONS as any),
-                  }}
-                />
-              ) : (
-                <div className="w-full flex items-center justify-center p-6 text-xs text-muted-foreground font-mono animate-pulse">
-                  Rendering Architecture Diagram...
-                </div>
+      {activeTab === 'split' && isPreviewable ? (
+        <div className="flex flex-col w-full divide-y divide-border">
+          {/* Top: Live source code viewer */}
+          <div className="w-full bg-[#09090b]">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 border-b border-border/40 text-[10px] font-mono text-muted-foreground">
+              <span className="flex items-center gap-1.5 font-semibold text-zinc-300">
+                <Code className="w-3 h-3 text-primary" />
+                <span>SOURCE CODE</span>
+              </span>
+              {isStreaming && (
+                <span className="text-primary flex items-center gap-1 font-sans">
+                  <Sparkles className="w-3 h-3 animate-spin text-primary" />
+                  <span>Writing code...</span>
+                </span>
               )}
             </div>
-          ) : (
-            <div className="p-4 flex flex-col items-center justify-center bg-card/40 overflow-x-auto min-h-[160px] max-h-[460px]">
-              <div
-                className="w-full max-w-full overflow-auto flex items-center justify-center p-2 min-h-[140px] [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto"
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(makeSvgResponsive(code), SANITIZE_OPTIONS as any),
-                }}
-              />
+            <div
+              className="overflow-x-auto max-h-[220px] overflow-y-auto p-3 text-xs font-mono leading-relaxed select-text bg-[#09090b]"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </div>
+
+          {/* Bottom: Live app preview */}
+          <div className="w-full bg-[#09090b]">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/40 text-[10px] font-mono">
+              <span className="flex items-center gap-1.5 font-bold text-zinc-100">
+                <Play className="w-3 h-3 text-emerald-400 fill-current" />
+                <span>LIVE APPLICATION PREVIEW</span>
+              </span>
+              <div className="flex items-center gap-2">
+                {isStreaming ? (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] text-amber-400 font-mono">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                    Building live app...
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    App Ready
+                  </span>
+                )}
+              </div>
             </div>
-          )}
+            <div className="w-full relative overflow-hidden bg-[#09090b]">
+              {renderPreviewElement(debouncedCode, 'min-h-[340px] max-h-[520px]')}
+            </div>
+          </div>
+        </div>
+      ) : activeTab === 'preview' && isPreviewable ? (
+        <div className="w-full relative overflow-hidden bg-[#09090b]">
+          {renderPreviewElement(debouncedCode)}
         </div>
       ) : activeTab === 'console' && isPython ? (
         <div className="w-full h-[360px] overflow-hidden bg-background">

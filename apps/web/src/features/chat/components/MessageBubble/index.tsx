@@ -272,13 +272,13 @@ export const MessageBubble = memo<MessageBubbleProps>(
 
     return (
       <motion.div
-        initial={{ opacity: 0, y: 4 }}
+        initial={isLast && isStreaming ? { opacity: 0, y: 4 } : false}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: 'easeOut' }}
+        transition={{ duration: 0.15, ease: 'easeOut' }}
         className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} group`}
       >
         {isUser ? (
-          <div className="max-w-[85%] sm:max-w-[75%] animate-fade-in">
+          <div className="max-w-[85%] sm:max-w-[75%]">
             <div className="py-3 px-4.5 bg-[#121214] hover:bg-[#161619] border border-white/10 rounded-2xl rounded-tr-xs transition-all shadow-sm text-zinc-100">
               {msg.attachments && msg.attachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-3">
@@ -329,7 +329,7 @@ export const MessageBubble = memo<MessageBubbleProps>(
             />
           </div>
         ) : (
-          <div className="flex flex-col w-full animate-fade-in relative">
+          <div className="flex flex-col w-full relative">
             <MessageHeader
               msg={msg}
               activeModel={activeModel}
@@ -488,22 +488,36 @@ export const MessageBubble = memo<MessageBubbleProps>(
     );
   },
   (prevProps, nextProps) => {
-    if (prevProps.msg !== nextProps.msg) return false;
-    if (prevProps.previousMsg !== nextProps.previousMsg) return false;
-    if (prevProps.isLast !== nextProps.isLast) return false;
+    // If streaming state changed on this message, re-render
     if (prevProps.isStreaming !== nextProps.isStreaming) return false;
-    if (prevProps.index !== nextProps.index) return false;
-    if (prevProps.copiedId !== nextProps.copiedId) return false;
+    if (prevProps.isLast !== nextProps.isLast) return false;
+    if (nextProps.isLast && (nextProps.isStreaming || nextProps.msg.status === 'loading'))
+      return false;
+
+    // Check message content and state changes
+    if (prevProps.msg.content !== nextProps.msg.content) return false;
+    if (prevProps.msg.reasoning !== nextProps.msg.reasoning) return false;
+    if (prevProps.msg.status !== nextProps.msg.status) return false;
+    if (prevProps.msg.toolCalls?.length !== nextProps.msg.toolCalls?.length) return false;
+    if (prevProps.msg.attachments?.length !== nextProps.msg.attachments?.length) return false;
+    if (prevProps.msg.images?.length !== nextProps.msg.images?.length) return false;
+    if ((prevProps.msg as any).videos?.length !== (nextProps.msg as any).videos?.length)
+      return false;
+    if (prevProps.msg.citations?.length !== nextProps.msg.citations?.length) return false;
+    if (prevProps.msg.pendingApproval !== nextProps.msg.pendingApproval) return false;
+    if (prevProps.msg.isPinned !== nextProps.msg.isPinned) return false;
     if (prevProps.activeModel !== nextProps.activeModel) return false;
-    // Compare stable function references — stale closures will execute otherwise
-    if (prevProps.onCopy !== nextProps.onCopy) return false;
-    if (prevProps.onRegenerate !== nextProps.onRegenerate) return false;
-    if (prevProps.onEdit !== nextProps.onEdit) return false;
-    if (prevProps.approveTool !== nextProps.approveTool) return false;
-    if (prevProps.rejectTool !== nextProps.rejectTool) return false;
-    if (prevProps.onPinToggle !== nextProps.onPinToggle) return false;
-    if (prevProps.onBranchChange !== nextProps.onBranchChange) return false;
-    if (prevProps.onArtifactClick !== nextProps.onArtifactClick) return false;
+
+    // Only re-render if copiedId changes specifically for this message
+    const thisMsgId = `${nextProps.msg.timestamp}-${nextProps.index}`;
+    if (
+      prevProps.copiedId !== nextProps.copiedId &&
+      (prevProps.copiedId === thisMsgId || nextProps.copiedId === thisMsgId)
+    ) {
+      return false;
+    }
+
+    // Previous completed messages remain completely static
     return true;
   }
 );

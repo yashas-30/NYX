@@ -94,3 +94,62 @@ pub async fn nyx_cancel_agent(app: AppHandle) -> Result<(), String> {
     state.agent_cancel.store(true, Ordering::Relaxed);
     Ok(())
 }
+
+/// Runs the official Google Antigravity Python SDK bridge with live streaming
+#[tauri::command]
+pub async fn run_antigravity_python_agent(
+    req: serde_json::Value,
+    on_event: Channel<serde_json::Value>,
+) -> Result<String, String> {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::process::Command;
+
+    let script_path = std::env::current_dir()
+        .map(|p| {
+            let in_root = p.join("src-tauri").join("scripts").join("antigravity_bridge.py");
+            if in_root.exists() {
+                in_root
+            } else {
+                p.join("scripts").join("antigravity_bridge.py")
+            }
+        })
+        .unwrap_or_else(|_| std::path::PathBuf::from("src-tauri/scripts/antigravity_bridge.py"));
+
+    let mut child = Command::new("python")
+        .arg("-u")
+        .arg(&script_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn Python process: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let req_str = req.to_string();
+        let _ = stdin.write_all(req_str.as_bytes()).await;
+        let _ = stdin.shutdown().await;
+    }
+
+    let mut final_text = String::new();
+    if let Some(stdout) = child.stdout.take() {
+        let mut reader = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+                let _ = on_event.send(val.clone());
+                if val.get("event").and_then(|e| e.as_str()) == Some("done") {
+                    if let Some(d) = val.get("data").and_then(|s| s.as_str()) {
+                        final_text = d.to_string();
+                    }
+                }
+            }
+        }
+    }
+
+    let status = child.wait().await.map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("Python Antigravity SDK process exited with status {}", status));
+    }
+
+    Ok(final_text)
+}

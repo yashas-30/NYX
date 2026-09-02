@@ -630,7 +630,6 @@ const MemoizedMarkdownBlock: React.FC<{
     if (prevProps.content !== nextProps.content) return false;
     if (prevProps.isStreaming !== nextProps.isStreaming) return false;
     if ((prevProps.citations?.length || 0) !== (nextProps.citations?.length || 0)) return false;
-    if (prevProps.onArtifactClick !== nextProps.onArtifactClick) return false;
     return true;
   }
 );
@@ -732,7 +731,6 @@ export const MarkdownContent: React.FC<{
     if ((prevProps.citations?.length || 0) !== (nextProps.citations?.length || 0)) return false;
     if ((prevProps.images?.length || 0) !== (nextProps.images?.length || 0)) return false;
     if ((prevProps.videos?.length || 0) !== (nextProps.videos?.length || 0)) return false;
-    if (prevProps.onArtifactClick !== nextProps.onArtifactClick) return false;
     return true;
   }
 );
@@ -1233,227 +1231,234 @@ EmptyState.displayName = 'EmptyState';
 // Main Component
 // ---------------------------------------------------------------------------
 
-export const ChatMessageList: React.FC<ChatMessageListProps> = ({
-  history,
-  activeStreamMessage,
-  isLoading,
-  onCopy,
-  copiedId,
-  suggestedPrompts,
-  onSuggestedPromptClick,
-  submitReward,
-  onEditMessage,
-  onRegenerate,
-  onBranchFromMessage,
-  activeModel,
-  onArtifactClick,
-  onBranchChange,
-  approveTool,
-  rejectTool,
-  onPinToggle,
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const webSearchEnabled = useAppStore((state) => state.webSearchEnabled);
+export const ChatMessageList: React.FC<ChatMessageListProps> = memo(
+  ({
+    history,
+    activeStreamMessage,
+    isLoading,
+    onCopy,
+    copiedId,
+    suggestedPrompts,
+    onSuggestedPromptClick,
+    submitReward,
+    onEditMessage,
+    onRegenerate,
+    onBranchFromMessage,
+    activeModel,
+    onArtifactClick,
+    onBranchChange,
+    approveTool,
+    rejectTool,
+    onPinToggle,
+  }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [autoScroll, setAutoScroll] = useState(true);
+    const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const webSearchEnabled = useAppStore((state) => state.webSearchEnabled);
 
-  // Lightbox viewer state for inspect / zoom / pan
-  const [lightbox, setLightbox] = useState<{
-    isOpen: boolean;
-    imageUrl: string;
-    prompt: string;
-    engine?: string;
-  }>({
-    isOpen: false,
-    imageUrl: '',
-    prompt: '',
-    engine: undefined,
-  });
+    // Lightbox viewer state for inspect / zoom / pan
+    const [lightbox, setLightbox] = useState<{
+      isOpen: boolean;
+      imageUrl: string;
+      prompt: string;
+      engine?: string;
+    }>({
+      isOpen: false,
+      imageUrl: '',
+      prompt: '',
+      engine: undefined,
+    });
 
-  const handleOpenLightbox = useCallback((imageUrl?: string, prompt?: string, engine?: string) => {
-    if (imageUrl) {
-      setLightbox({ isOpen: true, imageUrl, prompt: prompt || '', engine });
-    }
-  }, []);
+    const handleOpenLightbox = useCallback(
+      (imageUrl?: string, prompt?: string, engine?: string) => {
+        if (imageUrl) {
+          setLightbox({ isOpen: true, imageUrl, prompt: prompt || '', engine });
+        }
+      },
+      []
+    );
 
-  const handleCloseLightbox = useCallback(() => {
-    setLightbox((prev) => ({ ...prev, isOpen: false }));
-  }, []);
+    const handleCloseLightbox = useCallback(() => {
+      setLightbox((prev) => ({ ...prev, isOpen: false }));
+    }, []);
 
-  // Build the display list: history + active stream message (if any)
-  const allMessages = useMemo(
-    () => (activeStreamMessage ? [...history, activeStreamMessage] : history),
-    [history, activeStreamMessage]
-  );
+    // Build the display list: history + active stream message (if any)
+    const allMessages = useMemo(
+      () => (activeStreamMessage ? [...history, activeStreamMessage] : history),
+      [history, activeStreamMessage]
+    );
 
-  const bottomRef = useRef<HTMLDivElement>(null);
+    const bottomRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = useCallback((smooth = false) => {
-    if (smooth) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    } else if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-    }
-  }, []);
-
-  const jumpToBottom = useCallback(() => {
-    scrollToBottom(true);
-    setAutoScroll(true);
-    setShowJumpToBottom(false);
-  }, [scrollToBottom]);
-
-  const handleScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      const target = e.currentTarget;
-      const distanceFromBottom = target.scrollHeight - target.clientHeight - target.scrollTop;
-      const isAtBottom = distanceFromBottom < 80;
-
-      if (isAtBottom) {
-        if (!autoScroll) setAutoScroll(true);
-        if (showJumpToBottom) setShowJumpToBottom(false);
-      } else {
-        if (autoScroll) setAutoScroll(false);
-        if (!showJumpToBottom && distanceFromBottom > 150) setShowJumpToBottom(true);
-      }
-    },
-    [autoScroll, showJumpToBottom]
-  );
-
-  // RAF-batched auto-scroll — fires at most once per animation frame so it never
-  // fights CSS smooth scrolling or causes mid-render layout thrash.
-  const rafScrollRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!autoScroll || allMessages.length === 0) return;
-    if (rafScrollRef.current !== null) cancelAnimationFrame(rafScrollRef.current);
-    rafScrollRef.current = requestAnimationFrame(() => {
-      if (scrollContainerRef.current) {
+    const scrollToBottom = useCallback((smooth = false) => {
+      if (smooth) {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      } else if (scrollContainerRef.current) {
         scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
       }
-      rafScrollRef.current = null;
-    });
-    return () => {
-      if (rafScrollRef.current !== null) {
-        cancelAnimationFrame(rafScrollRef.current);
+    }, []);
+
+    const jumpToBottom = useCallback(() => {
+      scrollToBottom(true);
+      setAutoScroll(true);
+      setShowJumpToBottom(false);
+    }, [scrollToBottom]);
+
+    const handleScroll = useCallback(
+      (e: React.UIEvent<HTMLDivElement>) => {
+        const target = e.currentTarget;
+        const distanceFromBottom = target.scrollHeight - target.clientHeight - target.scrollTop;
+        const isAtBottom = distanceFromBottom < 80;
+
+        if (isAtBottom) {
+          if (!autoScroll) setAutoScroll(true);
+          if (showJumpToBottom) setShowJumpToBottom(false);
+        } else {
+          if (autoScroll) setAutoScroll(false);
+          if (!showJumpToBottom && distanceFromBottom > 150) setShowJumpToBottom(true);
+        }
+      },
+      [autoScroll, showJumpToBottom]
+    );
+
+    // RAF-batched auto-scroll — fires at most once per animation frame so it never
+    // fights CSS smooth scrolling or causes mid-render layout thrash.
+    const rafScrollRef = useRef<number | null>(null);
+    useEffect(() => {
+      if (!autoScroll || allMessages.length === 0) return;
+      if (rafScrollRef.current !== null) cancelAnimationFrame(rafScrollRef.current);
+      rafScrollRef.current = requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+        }
         rafScrollRef.current = null;
-      }
-    };
-  }, [allMessages, autoScroll]);
+      });
+      return () => {
+        if (rafScrollRef.current !== null) {
+          cancelAnimationFrame(rafScrollRef.current);
+          rafScrollRef.current = null;
+        }
+      };
+    }, [allMessages, autoScroll]);
 
-  // Keyboard shortcut: Escape to stop auto-scroll
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setAutoScroll(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    // Keyboard shortcut: Escape to stop auto-scroll
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setAutoScroll(false);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
-  return (
-    <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden w-full bg-background">
-      <div
-        ref={containerRef}
-        className="flex-1 min-h-0 relative w-full"
-        aria-live="polite"
-        aria-atomic="false"
-      >
-        {history.length === 0 ? (
-          isLoading ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
-              className="flex-1 flex flex-col items-center justify-center min-h-[65vh] gap-4"
-            >
-              <div className="flex items-center gap-2">
-                <FourDotsWaveLoader />
-              </div>
-            </motion.div>
+    return (
+      <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden w-full bg-background">
+        <div
+          ref={containerRef}
+          className="flex-1 min-h-0 relative w-full"
+          aria-live="polite"
+          aria-atomic="false"
+        >
+          {history.length === 0 ? (
+            isLoading ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
+                className="flex-1 flex flex-col items-center justify-center min-h-[65vh] gap-4"
+              >
+                <div className="flex items-center gap-2">
+                  <FourDotsWaveLoader />
+                </div>
+              </motion.div>
+            ) : (
+              <EmptyState
+                suggestedPrompts={suggestedPrompts}
+                onSuggestedPromptClick={onSuggestedPromptClick}
+              />
+            )
           ) : (
-            <EmptyState
-              suggestedPrompts={suggestedPrompts}
-              onSuggestedPromptClick={onSuggestedPromptClick}
-            />
-          )
-        ) : (
-          <div
-            ref={scrollContainerRef}
-            className="absolute inset-0 overflow-y-auto custom-scrollbar overscroll-y-contain"
-            style={{ overflowAnchor: 'none' }}
-            onScroll={handleScroll}
-          >
-            <div className="flex flex-col gap-4 py-4 px-3 md:px-4 w-full max-w-3xl mx-auto">
-              {allMessages.map((msg, index) => {
-                const isLast = index === allMessages.length - 1;
-                const isStreaming = isLast && (activeStreamMessage ? true : isLoading);
-                const msgKey = msg.timestamp ? `${msg.timestamp}-${index}` : `msg-${index}`;
+            <div
+              ref={scrollContainerRef}
+              className="absolute inset-0 overflow-y-auto custom-scrollbar overscroll-y-contain"
+              style={{ overflowAnchor: 'none' }}
+              onScroll={handleScroll}
+            >
+              <div className="flex flex-col gap-4 py-4 px-3 md:px-4 w-full max-w-3xl mx-auto">
+                {allMessages.map((msg, index) => {
+                  const isLast = index === allMessages.length - 1;
+                  const isStreaming = isLast && (activeStreamMessage ? true : isLoading);
+                  const msgKey =
+                    msg.id || (msg.timestamp ? `${msg.timestamp}-${index}` : `msg-${index}`);
 
-                return (
-                  <div key={msgKey} className="w-full">
-                    <MessageBubble
-                      msg={msg}
-                      previousMsg={index > 0 ? allMessages[index - 1] : undefined}
-                      index={index}
-                      isLast={isLast}
-                      isStreaming={isStreaming}
-                      onCopy={onCopy}
-                      copiedId={copiedId}
-                      submitReward={submitReward}
-                      onEdit={onEditMessage}
-                      onRegenerate={onRegenerate}
-                      onBranch={onBranchFromMessage}
-                      onBranchChange={onBranchChange}
-                      activeModel={activeModel}
-                      onArtifactClick={onArtifactClick}
-                      approveTool={approveTool}
-                      rejectTool={rejectTool}
-                      onPinToggle={onPinToggle}
-                      onOpenLightbox={handleOpenLightbox}
-                    />
-                  </div>
-                );
-              })}
-              <div ref={bottomRef} className="h-4 w-full shrink-0 pointer-events-none" />
+                  return (
+                    <div key={msgKey} className="w-full">
+                      <MessageBubble
+                        msg={msg}
+                        previousMsg={index > 0 ? allMessages[index - 1] : undefined}
+                        index={index}
+                        isLast={isLast}
+                        isStreaming={isStreaming}
+                        onCopy={onCopy}
+                        copiedId={copiedId}
+                        submitReward={submitReward}
+                        onEdit={onEditMessage}
+                        onRegenerate={onRegenerate}
+                        onBranch={onBranchFromMessage}
+                        onBranchChange={onBranchChange}
+                        activeModel={activeModel}
+                        onArtifactClick={onArtifactClick}
+                        approveTool={approveTool}
+                        rejectTool={rejectTool}
+                        onPinToggle={onPinToggle}
+                        onOpenLightbox={handleOpenLightbox}
+                      />
+                    </div>
+                  );
+                })}
+                <div ref={bottomRef} className="h-4 w-full shrink-0 pointer-events-none" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Jump to bottom button */}
+        <AnimatePresence>
+          {showJumpToBottom && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.85, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.85, y: 12 }}
+              onClick={jumpToBottom}
+              className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 px-3.5 py-2.5 rounded-md bg-card/90 border border-border text-foreground/70 hover:text-foreground shadow-sm text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-muted/90 cursor-pointer"
+            >
+              <ArrowDown className="w-3 h-3" />
+              Latest
+              {isLoading && <span className="w-1.5 h-1.5 rounded-md bg-primary animate-pulse" />}
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        {/* New messages indicator */}
+        {!autoScroll && isLoading && (
+          <div className="absolute top-0 left-0 right-0 z-10 flex justify-center pt-2 pointer-events-none">
+            <div className="px-3 py-1 rounded-md bg-primary/10 border border-primary/20 text-[10px] text-primary font-semibold animate-pulse">
+              Generating...
             </div>
           </div>
         )}
+        {/* Image Inspect Lightbox Modal */}
+        <ImageLightbox
+          isOpen={lightbox.isOpen}
+          imageUrl={lightbox.imageUrl}
+          prompt={lightbox.prompt}
+          engine={lightbox.engine}
+          onClose={handleCloseLightbox}
+        />
       </div>
-
-      {/* Jump to bottom button */}
-      <AnimatePresence>
-        {showJumpToBottom && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.85, y: 12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.85, y: 12 }}
-            onClick={jumpToBottom}
-            className="absolute bottom-4 right-6 z-20 flex items-center gap-1.5 px-3.5 py-2.5 rounded-md bg-card/90 border border-border text-foreground/70 hover:text-foreground shadow-sm text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-all hover:bg-muted/90 cursor-pointer"
-          >
-            <ArrowDown className="w-3 h-3" />
-            Latest
-            {isLoading && <span className="w-1.5 h-1.5 rounded-md bg-primary animate-pulse" />}
-          </motion.button>
-        )}
-      </AnimatePresence>
-
-      {/* New messages indicator */}
-      {!autoScroll && isLoading && (
-        <div className="absolute top-0 left-0 right-0 z-10 flex justify-center pt-2 pointer-events-none">
-          <div className="px-3 py-1 rounded-md bg-primary/10 border border-primary/20 text-[10px] text-primary font-semibold animate-pulse">
-            Generating...
-          </div>
-        </div>
-      )}
-      {/* Image Inspect Lightbox Modal */}
-      <ImageLightbox
-        isOpen={lightbox.isOpen}
-        imageUrl={lightbox.imageUrl}
-        prompt={lightbox.prompt}
-        engine={lightbox.engine}
-        onClose={handleCloseLightbox}
-      />
-    </div>
-  );
-};
+    );
+  }
+);
+ChatMessageList.displayName = 'ChatMessageList';

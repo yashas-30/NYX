@@ -27,6 +27,32 @@ export interface ConnectionStrategy {
   createConnection(config?: LocalAgentConfig): Promise<Connection>;
 }
 
+export function resolveActiveModelAndProvider(config?: LocalAgentConfig): {
+  model: string;
+  provider: string;
+} {
+  const storeApp = useAppStore.getState();
+  const storeNyx = useNyxStore.getState();
+
+  const appSelectedModelId =
+    typeof storeApp.selectedModel === 'string'
+      ? (storeApp.selectedModel as unknown as string)
+      : storeApp.selectedModel?.id;
+
+  const appSelectedProvider =
+    typeof storeApp.selectedModel === 'object' ? storeApp.selectedModel?.provider : undefined;
+
+  const model = config?.model || storeNyx.selectedModel || appSelectedModelId || '';
+
+  const provider =
+    config?.provider ||
+    storeNyx.selectedProvider ||
+    appSelectedProvider ||
+    (model.includes('/') ? model.split('/')[0] : 'gemini');
+
+  return { model, provider };
+}
+
 export class LocalConnection implements Connection {
   constructor(private config?: LocalAgentConfig) {}
 
@@ -34,13 +60,7 @@ export class LocalConnection implements Connection {
     const storeApp = useAppStore.getState();
     const storeNyx = useNyxStore.getState();
 
-    const provider =
-      this.config?.provider ||
-      storeNyx.selectedProvider ||
-      storeApp.selectedModel?.split('/')[0] ||
-      'nyx-native';
-    const model =
-      this.config?.model || storeNyx.selectedModel || storeApp.selectedModel || 'gemini-3.7-flash';
+    const { model, provider } = resolveActiveModelAndProvider(this.config);
 
     const mergedKeys = { ...(storeApp.apiKeys || {}), ...(storeNyx.apiKeys || {}) };
     const apiKey =
@@ -109,6 +129,79 @@ export class LocalConnection implements Connection {
   }
 
   public async close(): Promise<void> {}
+}
+
+export class PythonSdkConnection implements Connection {
+  constructor(private config?: LocalAgentConfig) {}
+
+  public async send(messages: any[], callbacks: StreamCallbacks): Promise<void> {
+    const storeApp = useAppStore.getState();
+    const storeNyx = useNyxStore.getState();
+
+    const { model, provider } = resolveActiveModelAndProvider(this.config);
+
+    const mergedKeys = { ...(storeApp.apiKeys || {}), ...(storeNyx.apiKeys || {}) };
+    const apiKey =
+      this.config?.api_key ||
+      getEffectiveApiKey(provider, mergedKeys) ||
+      mergedKeys[provider] ||
+      '';
+
+    let prompt = '';
+    const lastMsg = messages[messages.length - 1];
+    if (typeof lastMsg?.content === 'string') {
+      prompt = lastMsg.content;
+    } else if (Array.isArray(lastMsg?.content)) {
+      prompt = lastMsg.content.map((p: any) => p.text || '').join('\n');
+    }
+
+    const onProgress = new Channel<any>();
+    onProgress.onmessage = (msg: any) => {
+      if (!msg) return;
+      if (msg.event === 'token' && callbacks.onToken) {
+        callbacks.onToken(msg.data);
+      } else if (msg.event === 'thought' && callbacks.onThought) {
+        callbacks.onThought(msg.data);
+      } else if (msg.event === 'tool_call' && callbacks.onToolCall) {
+        callbacks.onToolCall(msg.data);
+      } else if (msg.event === 'error' && callbacks.onError) {
+        callbacks.onError(msg.data);
+      } else if (msg.event === 'done' && callbacks.onFinish) {
+        callbacks.onFinish();
+      }
+    };
+
+    try {
+      await invoke('run_antigravity_python_agent', {
+        req: {
+          provider,
+          model,
+          api_key: apiKey,
+          prompt,
+          system_instructions: this.config?.system_instructions || undefined,
+          capabilities: this.config?.capabilities || undefined,
+        },
+        onEvent: onProgress,
+      });
+    } catch (err: any) {
+      console.warn(
+        '[PythonSdkConnection] Python bridge error, falling back to LocalConnection:',
+        err
+      );
+      const fallback = new LocalConnection(this.config);
+      await fallback.send(messages, callbacks);
+    }
+  }
+
+  public async close(): Promise<void> {}
+}
+
+export class PythonSdkConnectionStrategy implements ConnectionStrategy {
+  constructor(private config?: LocalAgentConfig) {}
+
+  public async createConnection(config?: LocalAgentConfig): Promise<Connection> {
+    return new PythonSdkConnection(config || this.config);
+  }
 }
 
 export class LocalConnectionStrategy implements ConnectionStrategy {

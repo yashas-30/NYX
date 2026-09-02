@@ -202,6 +202,7 @@ pub fn run() {
             mcp_start_server, mcp_send_request, mcp_call_tool, mcp_stop_server, mcp_list_servers,
             llm::providers::llm_stream_request,
             llm::local_inference::llm_local_stream_request,
+            commands::agent_pipeline::run_antigravity_python_agent,
             commands::system::cleanup_session_state,
             commands::system::set_search_settings,
             pty_spawn, pty_write, pty_resize, pty_close,

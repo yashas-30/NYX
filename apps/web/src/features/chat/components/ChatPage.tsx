@@ -720,6 +720,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     [handleAttachFiles]
   );
 
+  const handleArtifactClick = useCallback((art: any) => {
+    userDismissedRef.current = false;
+    setActiveArtifact(art);
+  }, []);
+
+  const handleSuggestedPromptClick = useCallback(
+    (p: string) => {
+      setPrompt(p);
+      handleSubmit(p);
+    },
+    [handleSubmit]
+  );
+
   return (
     <motion.div
       key="chat"
@@ -847,19 +860,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           onCopy={copyToClipboard}
           copiedId={copiedId}
           suggestedPrompts={suggestedPrompts}
-          onSuggestedPromptClick={(p) => {
-            setPrompt(p);
-            handleSubmit(p);
-          }}
+          onSuggestedPromptClick={handleSuggestedPromptClick}
           submitReward={submitReward}
           onEditMessage={handleEditMessage}
           onRegenerate={handleRegenerate}
           onBranchFromMessage={handleBranch}
           activeModel={currentModel?.name}
-          onArtifactClick={(art) => {
-            userDismissedRef.current = false;
-            setActiveArtifact(art);
-          }}
+          onArtifactClick={handleArtifactClick}
           approveTool={approveTool}
           rejectTool={rejectTool}
         />
@@ -886,10 +893,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           }}
           modelSettings={activeSettings}
           suggestedPrompts={suggestedPrompts}
-          onSuggestedPromptClick={(p) => {
-            setPrompt(p);
-            handleSubmit(p);
-          }}
+          onSuggestedPromptClick={handleSuggestedPromptClick}
           getCustomModelIcon={getCustomModelIcon}
           pendingImages={pendingImages}
           onRemoveImage={handleRemoveImage}
