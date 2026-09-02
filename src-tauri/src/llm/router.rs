@@ -58,6 +58,11 @@ impl Default for RouteDecision {
     }
 }
 
+use std::sync::LazyLock;
+use dashmap::DashMap;
+
+static ROUTE_CACHE: LazyLock<DashMap<String, RouteDecision>> = LazyLock::new(DashMap::new);
+
 /// Classifies user intent dynamically using the healthiest model assigned to FastIntentClassifier
 pub async fn classify_intent_dynamically(
     app: &AppHandle,
@@ -66,6 +71,11 @@ pub async fn classify_intent_dynamically(
     ledger: &LiveQuotaLedger,
     api_key_override: Option<&str>,
 ) -> Result<RouteDecision, String> {
+    let cache_key = user_prompt.trim().to_lowercase();
+    if let Some(cached) = ROUTE_CACHE.get(&cache_key) {
+        return Ok(cached.clone());
+    }
+
     let model_spec = registry.select_model_for_role(ModelRole::FastIntentClassifier, ledger).await?;
 
     let system_prompt = r#"You are an ultra-fast, grammar-aware intent router.
@@ -149,8 +159,8 @@ Output NO extra text or markdown formatting."#;
         trimmed
     };
 
-    match serde_json::from_str::<RouteDecision>(json_slice) {
-        Ok(decision) => Ok(decision),
+    let final_decision = match serde_json::from_str::<RouteDecision>(json_slice) {
+        Ok(decision) => decision,
         Err(_) => {
             // Fallback heuristic classification
             let p_lower = user_prompt.to_lowercase();
@@ -166,13 +176,16 @@ Output NO extra text or markdown formatting."#;
                 PrimaryIntent::DirectChat
             };
 
-            Ok(RouteDecision {
+            RouteDecision {
                 intent,
                 needs_web_search: p_lower.contains("search") || p_lower.contains("latest") || p_lower.contains("news"),
                 search_depth: 1,
                 extracted_core_query: user_prompt.to_string(),
                 ..Default::default()
-            })
+            }
         }
-    }
+    };
+
+    ROUTE_CACHE.insert(cache_key, final_decision.clone());
+    Ok(final_decision)
 }

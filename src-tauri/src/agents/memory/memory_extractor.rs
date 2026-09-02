@@ -58,7 +58,7 @@ pub async fn extract_and_store(
     // Build conversation text for the extraction prompt
     let conversation_text = messages
         .iter()
-        .map(|m| format!("[{}]: {}", m.role.to_uppercase(), &m.content[..m.content.len().min(1000)]))
+        .map(|m| format!("[{}]: {}", m.role.to_uppercase(), m.content.chars().take(1000).collect::<String>()))
         .collect::<Vec<_>>()
         .join("\n\n");
 

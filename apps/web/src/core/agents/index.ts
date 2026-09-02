@@ -1,10 +1,9 @@
 /**
  * core/agents/index.ts
  *
- * Unified agent exports for NYX:
- * - LangGraph ReAct Agent
- * - Antigravity Managed Agent (Gemini 3.5 Flash-Lite base / Gemini 3.1 Flash-Lite backup)
+ * Single Canonical Agent Engine for NYX:
+ * - Antigravity Agent (Universal Multi-Provider Autonomous ReAct Engine)
  */
 
-export * from './antigravity';
 export * from './antigravityAgent';
+export * from './antigravity';

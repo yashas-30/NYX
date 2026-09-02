@@ -83,97 +83,51 @@ export function useAgentRunner() {
   }, []);
 
   const runAgent = useCallback(
-    async (
-      prompt: string,
-      workspaceRoot?: string,
-      engine: 'native' | 'langgraph' | 'antigravity' = 'native'
-    ) => {
+    async (prompt: string, workspaceRoot?: string) => {
       setIsRunning(true);
       setError(null);
       setFinalOutput(null);
       setExecutionSteps([]);
       setPlan(null);
       setCurrentStepId(null);
-      setStatusMessage(`Initializing autonomous agent (${engine})...`);
+      setStatusMessage('Initializing Antigravity Agent...');
 
       const nyxState = useNyxStore.getState();
       const apiKeys = nyxState.apiKeys;
-      const geminiKey = getEffectiveApiKey('gemini', apiKeys) || '';
-      const selectedModel = nyxState.selectedModel || 'gemini-3.7-flash';
+      const selectedModel = nyxState.currentModel?.id || 'gemini-3.7-flash';
+      const provider = nyxState.currentModel?.provider || 'nyx-native';
+      const activeApiKey =
+        getEffectiveApiKey(provider, apiKeys) ||
+        (apiKeys as Record<string, string>)[provider] ||
+        '';
 
-      // ── 1. Antigravity Universal Autonomous Agent Engine ─────────────────
-      if (engine === 'antigravity') {
-        try {
-          const provider = nyxState.selectedProvider || 'nyx-native';
-          const activeApiKey = getEffectiveApiKey(provider, apiKeys) || apiKeys[provider] || '';
-          setStatusMessage(`Running Antigravity Agent (${selectedModel} on ${provider})...`);
-          const result = await antigravityAgent.runAgentLoop({
-            provider,
-            model: selectedModel,
-            apiKey: activeApiKey,
-            prompt,
-            onStep: (step) => {
-              setExecutionSteps((prev) => [
-                ...prev,
-                {
-                  iteration: step.iteration || prev.length + 1,
-                  thought: step.thought || '',
-                  tool_name: step.tool_name,
-                  tool_args: step.tool_args,
-                  tool_result: step.tool_result,
-                  is_error: !!step.is_error,
-                  is_finished: !!step.is_finished,
-                },
-              ]);
+      // ── Step 1: Sub-Microsecond Antigravity Planning & Routing ────────────
+      const planRes = await antigravityAgent.orchestrateAndPlan({
+        prompt,
+        targetModel: selectedModel,
+        targetProvider: provider,
+        apiKey: activeApiKey,
+        onStep: (step) => {
+          setExecutionSteps((prev) => [
+            ...prev,
+            {
+              iteration: step.iteration,
+              thought: step.thought || '',
+              tool_name: step.tool_name,
+              tool_args: step.tool_args,
+              tool_result: step.tool_result,
+              is_error: !!step.is_error,
+              is_finished: !!step.is_finished,
             },
-          });
+          ]);
+        },
+      });
 
-          setFinalOutput(result.outputText);
-          setStatusMessage('Antigravity autonomous task completed.');
-          return result.outputText;
-        } catch (err: any) {
-          const errStr =
-            typeof err === 'string' ? err : err?.message || 'Antigravity execution failed';
-          setError(errStr);
-          setStatusMessage(`Error: ${errStr}`);
-          throw err;
-        } finally {
-          setIsRunning(false);
-        }
+      if (planRes.routeDecision) {
+        setStatusMessage(`Antigravity executing intent: ${planRes.routeDecision.intent}...`);
       }
 
-      // ── 2. Antigravity SDK Agent Class Runner ───────────────────────────
-      if (engine === 'langgraph') {
-        try {
-          const provider = nyxState.selectedProvider || 'nyx-native';
-          const activeApiKey = getEffectiveApiKey(provider, apiKeys) || apiKeys[provider] || '';
-          setStatusMessage(`Executing Antigravity SDK Agent (${selectedModel})...`);
-          const agent = new Agent({
-            provider,
-            model: selectedModel,
-            api_key: activeApiKey,
-          });
-
-          const response = await agent.chat(prompt);
-          let fullOutput = '';
-          for await (const token of response) {
-            fullOutput += token;
-            setFinalOutput(fullOutput);
-          }
-
-          setStatusMessage('Antigravity SDK task completed.');
-          return fullOutput;
-        } catch (err: any) {
-          const errStr = typeof err === 'string' ? err : err?.message || 'Agent execution failed';
-          setError(errStr);
-          setStatusMessage(`Error: ${errStr}`);
-          throw err;
-        } finally {
-          setIsRunning(false);
-        }
-      }
-
-      // ── 3. Native Tauri Rust Pipeline Engine ──────────────────────────────
+      // ── Step 2: Native Sandboxed ReAct Pipeline ────────────────────────────
       const progressChannel = new Channel<ConductorProgressEvent>();
       const stepChannel = new Channel<AgentExecutionStep>();
 
@@ -205,6 +159,7 @@ export function useAgentRunner() {
       };
 
       try {
+        // Run native sandboxed accelerator
         const result = await invoke<string>('nyx_run_agent_pipeline', {
           prompt,
           workspaceRoot: workspaceRoot || null,
@@ -214,12 +169,47 @@ export function useAgentRunner() {
 
         setFinalOutput(result);
         await fetchQuotaStates();
+        setStatusMessage('Antigravity Agent completed task successfully.');
         return result;
-      } catch (err: any) {
-        const errStr = typeof err === 'string' ? err : err?.message || 'Agent execution failed';
-        setError(errStr);
-        setStatusMessage(`Error: ${errStr}`);
-        throw err;
+      } catch (nativeErr) {
+        console.warn(
+          '[Antigravity Agent] Native pipeline fallback to in-process ReAct loop:',
+          nativeErr
+        );
+
+        // Fallback: In-process Antigravity ReAct loop
+        try {
+          const res = await antigravityAgent.runAgentLoop({
+            provider,
+            model: selectedModel,
+            apiKey: activeApiKey,
+            prompt,
+            onStep: (step) => {
+              setExecutionSteps((prev) => [
+                ...prev,
+                {
+                  iteration: step.iteration || prev.length + 1,
+                  thought: step.thought || '',
+                  tool_name: step.tool_name,
+                  tool_args: step.tool_args,
+                  tool_result: step.tool_result,
+                  is_error: !!step.is_error,
+                  is_finished: !!step.is_finished,
+                },
+              ]);
+            },
+          });
+
+          setFinalOutput(res.outputText);
+          setStatusMessage('Antigravity Agent completed task.');
+          return res.outputText;
+        } catch (loopErr: any) {
+          const errStr =
+            typeof loopErr === 'string' ? loopErr : loopErr?.message || 'Agent execution failed';
+          setError(errStr);
+          setStatusMessage(`Error: ${errStr}`);
+          throw loopErr;
+        }
       } finally {
         setIsRunning(false);
       }

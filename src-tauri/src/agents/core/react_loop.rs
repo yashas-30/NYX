@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::agents::tools::ClineFsTools;
+use crate::guardrails::{args_fingerprint, check_loop_detection, sanitize_output, validate_agent_input, validate_generated_output, validate_tool_args};
 use crate::llm::gateway::{DynamicModelRegistry, LiveQuotaLedger, ModelRole};
 use crate::llm::{execute_any_stream, UnifiedMessage, UnifiedRequest};
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCallRequest {
@@ -59,8 +61,14 @@ impl ReActLoopEngine {
         max_iterations: u32,
         on_step: Channel<AgentExecutionStep>,
     ) -> Result<String, String> {
+        let validated_task = validate_agent_input(task_description);
+        if !validated_task.allowed {
+            return Err(validated_task.violation.unwrap_or_else(|| "Agent input rejected".to_string()));
+        }
+
         let mut conversation_history: Vec<UnifiedMessage> = Vec::new();
         let mut final_answer = String::new();
+        let mut tool_history: Vec<(String, String)> = Vec::new();
 
         let system_instruction = r#"You are an expert autonomous software engineer and problem solver working within a sandboxed codebase.
 You have access to the following safe tools:
@@ -71,6 +79,9 @@ You have access to the following safe tools:
 5. `list_directory`: {"path": "relative/dir", "recursive": boolean} - List files in the workspace.
 6. `grep_search`: {"query": "text to search", "path_filter": optional "subfolder"} - Search text in project files.
 7. `web_search`: {"query": "search query"} - Search the web for documentation or technical facts.
+8. `search_memory`: {"query": "search query"} - Search the agent's episodic memory for relevant past context.
+9. `run_terminal_command`: {"command": "command string"} - Execute build, test, or inspection commands safely.
+10. `call_mcp_tool`: {"server": "server_name", "tool": "tool_name", "arguments": {}} - Call external MCP tools.
 
 REPRESENT YOUR THOUGHT PROCESS AND TOOL ACTION USING STRICT JSON:
 If you need to call a tool:
@@ -99,9 +110,36 @@ RULES:
 - Keep diffs surgical and minimal.
 - If a tool returns an error, carefully inspect the feedback and correct your search block or path."#;
 
+        let mut task_context = validated_task.sanitized.unwrap_or_else(|| task_description.to_string());
+        if let Some(scanner) = app.try_state::<Arc<crate::rag::scanner::CodebaseScanner>>() {
+            if scanner.is_indexed() {
+                if let Ok(results) = scanner.search(task_description, 5).await {
+                    let context = results.into_iter()
+                        .map(|(path, content, _)| format!("[Workspace: {}]\n{}", path, content))
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    if !context.is_empty() {
+                        task_context.push_str("\n\n[Workspace RAG Context]\n");
+                        task_context.push_str(&context.chars().take(12000).collect::<String>());
+                    }
+                }
+            }
+        }
+        if let Some(memory) = app.try_state::<Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+            let memories = memory.search_memory(task_description, 5).await;
+            if !memories.is_empty() {
+                task_context.push_str("\n\n[Relevant Agent Memory]\n");
+                task_context.push_str(&memories.into_iter()
+                    .map(|(text, _)| text)
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+                    .chars().take(12000).collect::<String>());
+            }
+        }
+
         conversation_history.push(UnifiedMessage {
             role: "user".to_string(),
-            content: json!(format!("Task to execute: {}", task_description)),
+            content: json!(format!("Task to execute: {}", task_context)),
         });
 
         for iteration in 1..=max_iterations {
@@ -158,11 +196,12 @@ RULES:
 
             // Parse ReAct JSON block
             let cleaned = extract_json_block(&step_response);
-            let parsed_action: serde_json::Value = match serde_json::from_str(cleaned) {
+            let parsed_action: serde_json::Value = match serde_json::from_str(&cleaned) {
                 Ok(v) => v,
                 Err(_) => {
                     // If the model responded in plain natural language without invoking tools, treat it as immediate final response
-                    final_answer = step_response.trim().to_string();
+                    final_answer = sanitize_output(step_response.trim()).0;
+                    validate_generated_output(&final_answer)?;
                     let _ = on_step.send(AgentExecutionStep {
                         iteration,
                         thought: "Direct response".to_string(),
@@ -184,6 +223,8 @@ RULES:
                     .as_str()
                     .unwrap_or(&thought)
                     .to_string();
+                final_answer = sanitize_output(&final_answer).0;
+                validate_generated_output(&final_answer)?;
 
                 let _ = on_step.send(AgentExecutionStep {
                     iteration,
@@ -200,6 +241,16 @@ RULES:
             let tool_name = parsed_action["tool"].as_str().unwrap_or("").to_string();
             let tool_args = parsed_action.get("args").cloned().unwrap_or(json!({}));
 
+            if tool_name.is_empty() {
+                return Err("Agent produced an empty tool name without finishing".to_string());
+            }
+            validate_tool_args(&tool_name, &tool_args)?;
+            let fingerprint = args_fingerprint(&tool_args);
+            if check_loop_detection(&tool_history, &tool_name, &fingerprint, 3) {
+                return Err(format!("Agent loop detected for tool '{}'", tool_name));
+            }
+            tool_history.push((tool_name.clone(), fingerprint));
+
             let _ = on_step.send(AgentExecutionStep {
                 iteration,
                 thought: thought.clone(),
@@ -211,7 +262,7 @@ RULES:
             });
 
             // Execute the selected safe tool
-            let (tool_result, is_error) = self.dispatch_safe_tool(&tool_name, &tool_args).await;
+            let (tool_result, is_error) = self.dispatch_safe_tool(app, &tool_name, &tool_args).await;
 
             // Cap observation text at 4,000 characters to prevent context window bloat
             let bounded_result: String = tool_result.chars().take(4000).collect();
@@ -241,10 +292,12 @@ RULES:
             final_answer = "Agent reached maximum iteration limit.".to_string();
         }
 
-        Ok(final_answer)
+        let sanitized = sanitize_output(&final_answer).0;
+        validate_generated_output(&sanitized)?;
+        Ok(sanitized)
     }
 
-    async fn dispatch_safe_tool(&self, name: &str, args: &serde_json::Value) -> (String, bool) {
+    async fn dispatch_safe_tool(&self, app: &AppHandle, name: &str, args: &serde_json::Value) -> (String, bool) {
         match name {
             "read_file" => {
                 let path = args["path"].as_str().unwrap_or("");
@@ -300,6 +353,44 @@ RULES:
                     Err(e) => (format!("Search error: {}", e), true),
                 }
             }
+            "search_memory" => {
+                let query = args["query"].as_str().unwrap_or("");
+                if let Some(memory_store) = app.try_state::<Arc<crate::rag::turbovec_store::TurbovecStore>>() {
+                    let results = memory_store.search_memory(query, 5).await;
+                    if results.is_empty() {
+                        ("No relevant memories found.".to_string(), false)
+                    } else {
+                        let text = results.into_iter().map(|(t, _)| t).collect::<Vec<_>>().join("\n");
+                        (text, false)
+                    }
+                } else {
+                    ("Memory store not available.".to_string(), true)
+                }
+            }
+            "run_terminal_command" | "execute_command" => {
+                let cmd_str = args["command"].as_str().unwrap_or("");
+                if cmd_str.trim().is_empty() {
+                    ("Error: Command is empty".to_string(), true)
+                } else {
+                    let res = crate::commands::tools::agent_execution::execute_tool(
+                        app,
+                        "run_terminal_command",
+                        &args.to_string(),
+                    ).await;
+                    let is_err = res.starts_with("Error") || res.starts_with("Security blocked") || res.starts_with("Command failed");
+                    (res, is_err)
+                }
+            }
+            "call_mcp_tool" => {
+                let server = args["server"].as_str().unwrap_or("");
+                let tool = args["tool"].as_str().unwrap_or("");
+                let tool_args = args.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+                let state = app.state::<crate::AppState>();
+                match crate::commands::mcp::mcp_call_tool_internal(server, tool, tool_args, &state.mcp_manager).await {
+                    Ok(val) => (val.to_string(), false),
+                    Err(e) => (format!("MCP error: {}", e), true),
+                }
+            }
             other => (
                 format!("Error: Tool '{}' is unknown or disabled for safety.", other),
                 true,
@@ -308,12 +399,23 @@ RULES:
     }
 }
 
-fn extract_json_block(raw: &str) -> &str {
-    let trimmed = raw.trim();
-    if let (Some(s), Some(e)) = (trimmed.find('{'), trimmed.rfind('}')) {
+fn extract_json_block(raw: &str) -> String {
+    // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
+    let stripped = if let Some(inner) = raw
+        .trim()
+        .strip_prefix("```json")
+        .or_else(|| raw.trim().strip_prefix("```"))
+    {
+        inner.trim_end_matches('`').trim().to_string()
+    } else {
+        raw.trim().to_string()
+    };
+
+    // Find outermost JSON object
+    if let (Some(s), Some(e)) = (stripped.find('{'), stripped.rfind('}')) {
         if s < e {
-            return &trimmed[s..=e];
+            return stripped[s..=e].to_string();
         }
     }
-    trimmed
+    stripped
 }

@@ -105,6 +105,43 @@ pub async fn extract_session_memory(
     Ok(())
 }
 
+/// Lightweight post-turn memory extraction: called immediately after each chat turn
+/// with the raw user prompt and assistant response. Runs via tokio::spawn (non-blocking).
+#[tauri::command]
+pub async fn extract_turn_memory(
+    pool: State<'_, SqlitePool>,
+    conversation_id: String,
+    user_turn: String,
+    assistant_turn: String,
+) -> Result<(), String> {
+    let snapshots = vec![
+        crate::agents::memory::memory_extractor::MessageSnapshot {
+            role: "user".to_string(),
+            content: user_turn.chars().take(4000).collect(),
+        },
+        crate::agents::memory::memory_extractor::MessageSnapshot {
+            role: "assistant".to_string(),
+            content: assistant_turn.chars().take(8000).collect(),
+        },
+    ];
+
+    // Spawn as background task so we don't block the response
+    let pool_clone = pool.inner().clone();
+    tokio::spawn(async move {
+        let _ = crate::agents::memory::memory_extractor::extract_and_store(
+            &pool_clone,
+            &conversation_id,
+            &snapshots,
+            "",
+            "gemini-3.5-flash-lite",
+        )
+        .await;
+    });
+
+    Ok(())
+}
+
+
 #[derive(Serialize, Deserialize)]
 pub struct TurbovecSearchResult {
     pub text: String,
@@ -178,3 +215,46 @@ pub async fn turbovec_sync_chat_session(
 }
 
 
+
+/// Called internally after each chat turn completes to persist episodic memory.
+/// Non-blocking: spawns a tokio task so it never blocks the response stream.
+#[allow(dead_code)]
+pub fn trigger_memory_extraction_async(
+    app: tauri::AppHandle,
+    conversation_id: String,
+    user_turn: String,
+    assistant_turn: String,
+) {
+    tokio::spawn(async move {
+        let pool = match app.try_state::<SqlitePool>() {
+            Some(p) => p.inner().clone(),
+            None => {
+                eprintln!("[memory] SqlitePool not available for memory extraction");
+                return;
+            }
+        };
+
+        let messages = vec![
+            crate::agents::memory::memory_extractor::MessageSnapshot {
+                role: "user".to_string(),
+                content: user_turn,
+            },
+            crate::agents::memory::memory_extractor::MessageSnapshot {
+                role: "assistant".to_string(),
+                content: assistant_turn,
+            },
+        ];
+
+        if let Err(e) = crate::agents::memory::memory_extractor::extract_and_store(
+            &pool,
+            &conversation_id,
+            &messages,
+            "",
+            "gemini-3.5-flash-lite",
+        )
+        .await
+        {
+            eprintln!("[memory] Memory extraction failed (non-critical): {}", e);
+        }
+    });
+}

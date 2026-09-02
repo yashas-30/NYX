@@ -5,6 +5,7 @@
 use super::react_loop::{AgentExecutionStep, ReActLoopEngine};
 use crate::agents::tools::ClineFsTools;
 use crate::llm::gateway::{DynamicModelRegistry, LiveQuotaLedger};
+use crate::llm::router::{PrimaryIntent, RouteDecision};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -71,9 +72,19 @@ impl ConductorSupervisor {
         &self,
         app: &AppHandle,
         user_prompt: &str,
+        route: &RouteDecision,
         on_progress: Channel<ConductorProgressEvent>,
         on_step: Channel<AgentExecutionStep>,
     ) -> Result<String, String> {
+        let plan = build_execution_plan(user_prompt, route);
+        let _ = on_progress.send(ConductorProgressEvent {
+            event_type: "plan_created".to_string(),
+            current_step: Some(1),
+            message: format!("Execution plan created for {:?}.", route.intent),
+            plan: Some(plan.clone()),
+            final_output: None,
+        });
+
         let _ = on_progress.send(ConductorProgressEvent {
             event_type: "started".to_string(),
             current_step: Some(1),
@@ -83,9 +94,17 @@ impl ConductorSupervisor {
         });
 
         // Direct single-engine ReAct execution (Cline standard: direct streaming & surgical tool application)
+        let planned_prompt = format!(
+            "Execution intent: {:?}\nWeb search required: {}\nSearch depth: {}\nOutput format: {}\n\nOriginal task: {}",
+            route.intent,
+            route.needs_web_search,
+            route.search_depth,
+            route.target_diagram_format.as_deref().unwrap_or("default"),
+            user_prompt
+        );
         let result = self
             .react_engine
-            .execute_task(app, user_prompt, 10, on_step.clone())
+            .execute_task(app, &planned_prompt, 10, on_step.clone())
             .await?;
 
         let _ = on_progress.send(ConductorProgressEvent {
@@ -98,4 +117,29 @@ impl ConductorSupervisor {
 
         Ok(result)
     }
+}
+
+fn build_execution_plan(goal: &str, route: &RouteDecision) -> ConductorPlan {
+    let mut steps = vec![
+        PlanStep {
+            step_id: 1,
+            title: "Understand request".to_string(),
+            description: format!("Resolve the {:?} intent and gather required context.", route.intent),
+            status: "pending".to_string(),
+            result_summary: None,
+        },
+        PlanStep {
+            step_id: 2,
+            title: "Execute and verify".to_string(),
+            description: "Perform permitted actions and verify the resulting output.".to_string(),
+            status: "pending".to_string(),
+            result_summary: None,
+        },
+    ];
+
+    if matches!(route.intent, PrimaryIntent::DeepResearch) || route.needs_web_search {
+        steps[0].description.push_str(" Use web-grounded sources with bounded retrieval.");
+    }
+
+    ConductorPlan { goal: goal.to_string(), steps }
 }

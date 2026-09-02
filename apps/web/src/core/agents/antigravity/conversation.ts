@@ -17,6 +17,7 @@ import { HookRunner, enforce } from './policies';
 import { TriggerRunner } from './triggers';
 import { toolExecutor } from '@src/infrastructure/services/toolSystem';
 import { WorkspaceIntelligence } from '@src/infrastructure/services/workspaceIntelligence';
+import { antigravityAgent } from '../antigravityAgent';
 
 export class ToolRunner {
   private hookRunner: HookRunner;
@@ -178,6 +179,11 @@ export class ChatResponse {
   }
 }
 
+/**
+ * @deprecated The internal ReAct loop in this class duplicates `antigravityAgent.runAgentLoop()`.
+ * No external code imports `Conversation` from this file — prefer `antigravityAgent` directly.
+ * This class is retained for backward-compatibility only and will be removed in a future cleanup pass.
+ */
 export class Conversation {
   private rawMessages: Array<{ role: string; content: any }> = [];
   public history: Step[] = [];
@@ -221,82 +227,61 @@ export class Conversation {
     const formattedContent = this.formatInput(prompt);
     this.rawMessages.push({ role: 'user', content: formattedContent });
 
-    // 2. Execute multi-step loop in background
+    // 2. Delegate execution to unified antigravityAgent.runAgentLoop (single source of truth)
     (async () => {
-      let iteration = 0;
-      const maxIterations = this.config?.max_iterations || 8;
-      let isComplete = false;
+      try {
+        const textPrompt =
+          typeof prompt === 'string'
+            ? prompt
+            : Array.isArray(prompt)
+              ? prompt.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join('\n')
+              : JSON.stringify(prompt);
 
-      while (iteration < maxIterations && !isComplete) {
-        iteration++;
-        let currentStepText = '';
-        let currentStepThought = '';
-        const stepToolCalls: ToolCall[] = [];
-
-        await this.connection.send(this.rawMessages, {
-          onToken: (token) => {
-            currentStepText += token;
-            response.pushToken(token);
-          },
-          onThought: (thought) => {
-            currentStepThought += thought;
-            response.pushThought(thought);
-          },
-          onToolCall: (call) => {
-            stepToolCalls.push(call);
-            response.pushToolCall(call);
+        const res = await antigravityAgent.runAgentLoop({
+          model: this.config?.model,
+          prompt: textPrompt,
+          history: this.rawMessages,
+          maxIterations: this.config?.max_iterations || 8,
+          onDelta: (delta) => response.pushToken(delta),
+          onReasoning: (reasoning) => response.pushThought(reasoning),
+          onStep: (agStep) => {
+            this.history.push({
+              id: `step_${Date.now()}_${agStep.iteration}`,
+              iteration: agStep.iteration,
+              content: agStep.thought || '',
+              thought: agStep.thought,
+              tool_calls: agStep.tool_name
+                ? [
+                    {
+                      id: `call_${Date.now()}`,
+                      name: agStep.tool_name,
+                      arguments: agStep.tool_args,
+                    },
+                  ]
+                : [],
+              tool_results: agStep.tool_result
+                ? [
+                    {
+                      call_id: `res_${Date.now()}`,
+                      name: agStep.tool_name || 'tool',
+                      result: agStep.tool_result,
+                    },
+                  ]
+                : [],
+              is_complete_response: !!agStep.is_finished,
+              is_error: !!agStep.is_error,
+            });
           },
         });
 
-        // If tools were called, execute them via ToolRunner and continue loop
-        if (stepToolCalls.length > 0) {
-          this.rawMessages.push({
-            role: 'assistant',
-            content: currentStepText || 'Executing tools...',
-          });
-
-          const stepToolResults: ToolResult[] = [];
-          for (const call of stepToolCalls) {
-            const result = await this.toolRunner.execute(call);
-            stepToolResults.push(result);
-            this.rawMessages.push({
-              role: 'tool',
-              content: [
-                {
-                  name: call.name,
-                  content:
-                    typeof result.result === 'string'
-                      ? result.result
-                      : JSON.stringify(result.result),
-                },
-              ],
-            });
-          }
-
-          this.history.push({
-            id: `step_${Date.now()}_${iteration}`,
-            iteration,
-            content: currentStepText,
-            thought: currentStepThought,
-            tool_calls: stepToolCalls,
-            tool_results: stepToolResults,
-            is_complete_response: false,
-            is_error: false,
-          });
-        } else {
-          isComplete = true;
-          this.history.push({
-            id: `step_${Date.now()}_${iteration}`,
-            iteration,
-            content: currentStepText,
-            thought: currentStepThought,
-            is_complete_response: true,
-            is_error: false,
-          });
+        if (res.outputText) {
+          response.pushToken(res.outputText);
         }
+        response.finish();
+      } catch (err: any) {
+        response.pushToken(`\n[Agent Error]: ${err?.message || String(err)}`);
+        response.finish();
       }
-
-      response.finish();
     })();
 
     return response;

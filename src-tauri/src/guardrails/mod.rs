@@ -148,7 +148,7 @@ pub fn redact_pii(text: &str) -> String {
 pub fn validate_tool_args(tool_name: &str, args: &Value) -> Result<(), String> {
     match tool_name {
         "write_file" | "edit_file" | "fs_write_file" => validate_file_write_args(args),
-        "run_terminal_command" | "run_shell" | "execute_command" | "run_python" | "run_javascript" => {
+        "run_terminal_command" | "run_shell" | "run_test" | "lint_code" | "execute_command" | "run_python" | "run_javascript" => {
             validate_command_args(args)
         }
         "fetch_page" | "web_scrape" | "web_browse" => validate_url_args(args),
@@ -294,7 +294,7 @@ pub fn check_loop_detection(
 pub fn args_fingerprint(args: &Value) -> String {
     // Truncate to first 200 chars to avoid huge strings in history
     let s = args.to_string();
-    s[..s.len().min(200)].to_string()
+    s.chars().take(200).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +308,46 @@ pub fn sanitize_output(text: &str) -> (String, bool) {
     let sanitized = redact_pii(text);
     let had_violations = sanitized.len() != original_len || sanitized != text;
     (sanitized, had_violations)
+}
+
+/// Validates structured artifacts embedded in a generated response.
+/// This intentionally checks structural boundaries, not topic-specific content.
+pub fn validate_generated_output(text: &str) -> Result<(), String> {
+    let mut in_mermaid = false;
+    let mut mermaid_body = String::new();
+
+    for line in text.lines() {
+        if line.trim().eq_ignore_ascii_case("```mermaid") {
+            if in_mermaid {
+                return Err("Generated Mermaid artifact contains a nested code fence".to_string());
+            }
+            in_mermaid = true;
+            mermaid_body.clear();
+        } else if in_mermaid && line.trim() == "```" {
+            let first = mermaid_body.lines().next().unwrap_or("").trim();
+            let valid_kind = [
+                "graph ", "flowchart ", "sequencediagram", "classdiagram", "statediagram",
+                "erdiagram", "gantt", "pie", "mindmap", "timeline", "quadrantchart",
+            ].iter().any(|kind| first.to_lowercase().starts_with(kind));
+            if first.is_empty() || !valid_kind {
+                return Err("Generated Mermaid artifact has no recognized diagram declaration".to_string());
+            }
+            in_mermaid = false;
+        } else if in_mermaid {
+            mermaid_body.push_str(line);
+            mermaid_body.push('\n');
+        }
+    }
+
+    if in_mermaid {
+        return Err("Generated Mermaid artifact is missing its closing code fence".to_string());
+    }
+
+    if text.trim_start().starts_with("---") && !text.contains("\n---") {
+        return Err("Generated Slidev artifact is missing its closing frontmatter boundary".to_string());
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +386,13 @@ mod tests {
         let sanitized = result.sanitized.unwrap();
         assert!(!sanitized.contains("sk-abcdefghij"));
         assert!(sanitized.contains("[API_KEY]"));
+    }
+
+    #[test]
+    fn test_generated_mermaid_validation() {
+        assert!(validate_generated_output("```mermaid\nflowchart TD\nA-->B\n```").is_ok());
+        assert!(validate_generated_output("```mermaid\nnot-a-diagram\n```").is_err());
+        assert!(validate_generated_output("```mermaid\nflowchart TD\nA-->B").is_err());
     }
 
     #[test]

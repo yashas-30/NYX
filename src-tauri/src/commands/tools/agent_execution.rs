@@ -20,7 +20,92 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
         Err(_) => return format!("Error: Failed to parse tool arguments as JSON: {}", args_json),
     };
 
+    if let Err(reason) = crate::guardrails::validate_tool_args(name, &args) {
+        return format!("Security blocked: {}", reason);
+    }
+
     match name {
+        "run_terminal_command" | "execute_command" | "run_shell" | "run_test" | "lint_code" => {
+            let cmd_str = args["command"].as_str().unwrap_or("");
+            if cmd_str.trim().is_empty() {
+                return "Error: Command is empty".to_string();
+            }
+            #[cfg(target_os = "windows")]
+            let mut cmd = Command::new("powershell.exe");
+            #[cfg(target_os = "windows")]
+            cmd.args(["-NoProfile", "-NonInteractive", "-Command", cmd_str]);
+
+            #[cfg(not(target_os = "windows"))]
+            let mut cmd = Command::new("sh");
+            #[cfg(not(target_os = "windows"))]
+            cmd.args(["-c", cmd_str]);
+
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+            match tokio::time::timeout(Duration::from_secs(30), cmd.output()).await {
+                Ok(Ok(output)) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    if output.status.success() {
+                        if stdout.trim().is_empty() && !stderr.trim().is_empty() {
+                            format!("[Exit: 0]\n{}", stderr.trim())
+                        } else {
+                            stdout.trim().to_string()
+                        }
+                    } else {
+                        format!("Command failed (exit code {:?}):\nSTDOUT:\n{}\nSTDERR:\n{}", output.status.code(), stdout.trim(), stderr.trim())
+                    }
+                }
+                Ok(Err(e)) => format!("Execution error: {}", e),
+                Err(_) => "Command timed out after 30 seconds.".to_string(),
+            }
+        }
+        "run_python" => {
+            let code = args["code"].as_str().or_else(|| args["command"].as_str()).unwrap_or("");
+            if code.trim().is_empty() {
+                return "Error: Python code is empty".to_string();
+            }
+            let mut cmd = Command::new("python");
+            cmd.args(["-c", code]);
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+            match tokio::time::timeout(Duration::from_secs(30), cmd.output()).await {
+                Ok(Ok(output)) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    if output.status.success() {
+                        stdout.trim().to_string()
+                    } else {
+                        format!("Python error (exit code {:?}):\n{}\n{}", output.status.code(), stdout.trim(), stderr.trim())
+                    }
+                }
+                Ok(Err(e)) => format!("Python execution error: {}. Ensure python is in PATH.", e),
+                Err(_) => "Python script timed out after 30 seconds.".to_string(),
+            }
+        }
+        "run_javascript" => {
+            let code = args["code"].as_str().or_else(|| args["command"].as_str()).unwrap_or("");
+            if code.trim().is_empty() {
+                return "Error: JavaScript code is empty".to_string();
+            }
+            let mut cmd = Command::new("node");
+            cmd.args(["-e", code]);
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+            match tokio::time::timeout(Duration::from_secs(30), cmd.output()).await {
+                Ok(Ok(output)) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    if output.status.success() {
+                        stdout.trim().to_string()
+                    } else {
+                        format!("Node error (exit code {:?}):\n{}\n{}", output.status.code(), stdout.trim(), stderr.trim())
+                    }
+                }
+                Ok(Err(e)) => format!("Node execution error: {}. Ensure node is in PATH.", e),
+                Err(_) => "JavaScript execution timed out after 30 seconds.".to_string(),
+            }
+        }
         "web_search" => {
             let query = args["query"].as_str().unwrap_or("");
             let num_results = args["num_results"].as_u64().unwrap_or(5) as usize;
@@ -308,66 +393,6 @@ pub async fn execute_tool(app: &tauri::AppHandle, name: &str, args_json: &str) -
                     }
                 }
                 Err(e) => format!("Failed to scrape page: {}", e),
-            }
-        }
-        "run_python" => {
-            let code = args["code"].as_str().unwrap_or("");
-            let mut cmd = if cfg!(target_os = "windows") {
-                let mut c = Command::new("python");
-                c.arg("-c").arg(code);
-                c
-            } else {
-                let mut c = Command::new("python3");
-                c.arg("-c").arg(code);
-                c
-            };
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-            match cmd.output().await {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    format!("STDOUT:\n{}\nSTDERR:\n{}", stdout, stderr)
-                }
-                Err(e) => format!("Failed to run Python code: {}", e),
-            }
-        }
-        "run_javascript" => {
-            let code = args["code"].as_str().unwrap_or("");
-            let mut cmd = Command::new("node");
-            cmd.arg("-e").arg(code);
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-            match cmd.output().await {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    format!("STDOUT:\n{}\nSTDERR:\n{}", stdout, stderr)
-                }
-                Err(e) => format!("Failed to run Node.js script: {}", e),
-            }
-        }
-        "run_shell" | "run_test" | "lint_code" | "run_terminal_command" => {
-            let command = args["command"].as_str().unwrap_or("");
-            let cwd = args["cwd"].as_str().unwrap_or("");
-            let mut cmd = if cfg!(target_os = "windows") {
-                let mut c = Command::new("powershell");
-                c.arg("-Command").arg(command);
-                c
-            } else {
-                let mut c = Command::new("sh");
-                c.arg("-c").arg(command);
-                c
-            };
-            if !cwd.is_empty() {
-                cmd.current_dir(cwd);
-            }
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-            match cmd.output().await {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    format!("STDOUT:\n{}\nSTDERR:\n{}", stdout, stderr)
-                }
-                Err(e) => format!("Failed to run command: {}", e),
             }
         }
         "get_system_info" => {

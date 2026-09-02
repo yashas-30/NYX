@@ -13,6 +13,7 @@ from google.antigravity import (
     LocalAgentConfig,
     LocalOpenAIAgentConfig,
     CapabilitiesConfig,
+    policy,
 )
 
 def emit(event: str, data: any):
@@ -51,6 +52,7 @@ async def main():
                 api_key=api_key if api_key else None,
                 system_instructions=system_instructions,
                 capabilities=capabilities,
+                policies=[policy.allow_all()],
             )
         else:
             # Multi-provider via OpenAI-compatible bridge
@@ -76,16 +78,17 @@ async def main():
 
         emit("status", f"Antigravity Python Agent initialized with model {model} ({provider})")
 
-        agent = Agent(config)
-        response = await agent.chat(prompt)
+        # REQUIRED: use async context manager — direct .chat() raises RuntimeError
+        async with Agent(config) as agent:
+            response = await agent.chat(prompt)
 
-        # Stream tokens
-        full_text = ""
-        async for token in response:
-            full_text += token
-            emit("token", token)
+            # Stream tokens from the async generator
+            full_text = ""
+            async for token in response:
+                full_text += token
+                emit("token", token)
 
-        emit("done", full_text)
+            emit("done", full_text)
 
     except Exception as e:
         emit("error", str(e))

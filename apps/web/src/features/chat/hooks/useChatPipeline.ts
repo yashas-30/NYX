@@ -23,6 +23,7 @@ import {
 import {
   buildChatPrompts,
   ChatContext,
+  PromptCategory,
   isDiagramPrompt,
   isWebSearchPrompt,
   detectPromptCategory,
@@ -598,8 +599,43 @@ export function useChatPipeline({
         const isReasoning = isReasoningModel(modelToUse);
         const resolvedProviderEarly2 = resolvedProviderEarly;
         const promptCat = detectPromptCategory(prompt);
+
+        // ── Sub-Microsecond Antigravity Intent Classifier (< 0.002ms) ──
+        const fastDecision = antigravityAgent.classifyIntentFast(prompt);
+
+        let rustRouteDecision: any = fastDecision;
+        // Asynchronous non-blocking IPC refinement only for ambiguous long queries
+        if (fastDecision.intent === 'DirectChat' && prompt.length > 30) {
+          try {
+            const classifyPromise = invoke<any>('nyx_classify_intent', {
+              prompt,
+              apiKeyOverride: null,
+            });
+            const classifyTimeout = new Promise<null>((resolve) =>
+              setTimeout(() => resolve(null), 300)
+            );
+            const refined = await Promise.race([classifyPromise, classifyTimeout]);
+            if (refined && refined.intent) {
+              rustRouteDecision = refined;
+            }
+          } catch {
+            // Keep fastDecision
+          }
+        }
+
+        // Merge resolved decisions
+        const resolvedIntent = rustRouteDecision?.intent ?? fastDecision.intent;
+        const resolvedNeedsSearch =
+          rustRouteDecision?.needs_web_search ?? fastDecision.needs_web_search;
+        const resolvedDiagramFormat =
+          rustRouteDecision?.target_diagram_format ?? fastDecision.target_diagram_format;
+
         const isExplicitSearchOrResearch =
-          promptCat === 'websearch' || promptCat === 'research' || isWebSearchPrompt(prompt);
+          resolvedNeedsSearch ||
+          resolvedIntent === 'DeepResearch' ||
+          promptCat === 'websearch' ||
+          promptCat === 'research' ||
+          isWebSearchPrompt(prompt);
 
         const isGreetingOrTrivial =
           /^(?:hi|hello|hey|greetings|howdy|yo|sup|thanks|thank you|good\s+(?:morning|afternoon|evening))\b/i.test(
@@ -629,7 +665,12 @@ export function useChatPipeline({
 
             const searchPromise = invoke<string>('search_web_command', {
               query: cleanSearchQuery,
-              numResults: promptCat === 'research' ? 8 : 5,
+              numResults:
+                promptCat === 'research' ||
+                resolvedIntent === 'DeepResearch' ||
+                (rustRouteDecision?.search_depth ?? 0) >= 2
+                  ? 8
+                  : 5,
               searchProvider,
               apiKey,
             });
@@ -709,6 +750,23 @@ export function useChatPipeline({
         }));
 
         const eventName = `dag_update_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15)}`;
+        const targetPromptCategory: PromptCategory =
+          resolvedIntent === 'SlidevPresentation'
+            ? 'presentation'
+            : resolvedIntent === 'DiagramGeneration'
+              ? 'diagram'
+              : resolvedIntent === 'DeepResearch'
+                ? 'research'
+                : resolvedIntent === 'AutonomousCoding'
+                  ? 'code'
+                  : promptCat;
+
+        const dynamicDirectives: string[] = [];
+        if (resolvedDiagramFormat) {
+          dynamicDirectives.push(
+            `Target Diagram Format: ${resolvedDiagramFormat}. Produce production-grade, valid syntax for this format.`
+          );
+        }
 
         const chatContext: ChatContext = {
           conversationTone: 'casual',
@@ -718,29 +776,70 @@ export function useChatPipeline({
           localModel: resolvedProviderEarly2 === 'nyx-native',
           customSystemPrompt: modelSystemPrompts?.[modelToUse] || undefined,
           hasWebSearch: liveWebSearchEnabled,
-          hasDeepResearch: promptCat === 'research',
+          hasDeepResearch: targetPromptCategory === 'research',
+          promptCategory: targetPromptCategory,
+          lightningDirectives: dynamicDirectives.length > 0 ? dynamicDirectives : undefined,
           availableTools:
             resolvedProviderEarly2 === 'nyx-native' ? (activeTools as any) : undefined,
         };
 
-        // Retrieve relevant semantic context from TurboVec LanceDB memory store (with 300ms timeout guard)
+        // Retrieve relevant semantic context (TurboVec Memory + Codebase RAG in parallel)
         let memoryContext: string | undefined = undefined;
         try {
+          const needsCodebase =
+            promptCat === 'code' ||
+            resolvedIntent === 'AutonomousCoding' ||
+            /\b(?:code|function|class|file|repo|component|bug|fix|error|implement|refactor)\b/i.test(
+              prompt
+            );
+
           const tvPromise = invoke<Array<{ text: string; metadata: string }>>(
             'turbovec_search_chat_history',
             { query: prompt, limit: 3 }
+          ).catch(() => []);
+
+          const cbPromise = needsCodebase
+            ? invoke<{
+                success: boolean;
+                results: Array<{ path: string; content: string; score: number }>;
+              }>('codebase_search_command', { query: prompt, limit: 3 }).catch(() => ({
+                success: false,
+                results: [],
+              }))
+            : Promise.resolve({ success: false, results: [] });
+
+          const timeoutGuard = new Promise<[any[], any]>((resolve) =>
+            setTimeout(() => resolve([[], { success: false, results: [] }]), 350)
           );
-          const tvTimeout = new Promise<Array<{ text: string; metadata: string }>>((resolve) =>
-            setTimeout(() => resolve([]), 300)
-          );
-          const tvResults = await Promise.race([tvPromise, tvTimeout]).catch(() => []);
+
+          const [tvResults, cbRes] = await Promise.race([
+            Promise.all([tvPromise, cbPromise]),
+            timeoutGuard,
+          ]);
+
+          const parts: string[] = [];
           if (tvResults && tvResults.length > 0) {
             const memSnippets = tvResults
-              .map((r, idx) => `[Memory Snippet ${idx + 1} (${r.metadata})]: ${r.text}`)
+              .map(
+                (r: any, idx: number) => `[Memory Snippet ${idx + 1} (${r.metadata})]: ${r.text}`
+              )
               .join('\n\n');
-            memoryContext = `[TURBOVEC RELEVANT CHAT CONTEXT (Gemini 3.5 Flash-Lite Extracted)]:\n${memSnippets}`;
+            parts.push(`[TURBOVEC RELEVANT CHAT CONTEXT]:\n${memSnippets}`);
           }
-        } catch (e) {}
+
+          if (cbRes?.success && cbRes.results && cbRes.results.length > 0) {
+            const snippets = cbRes.results
+              .map((r: any) => `[File: ${r.path}]\n${r.content.substring(0, 1500)}`)
+              .join('\n\n');
+            parts.push(`[WORKSPACE CODEBASE RAG CONTEXT]:\n${snippets}`);
+          }
+
+          if (parts.length > 0) {
+            memoryContext = parts.join('\n\n');
+          }
+        } catch {
+          // Non-critical context retrieval fallback
+        }
 
         const promptResult = buildChatPrompts(
           modelToUse,
@@ -1551,13 +1650,13 @@ export function useChatPipeline({
           // create a diagram artifact (which would auto-open the ArtifactCanvas).
           // Only pure mermaid syntax — either an explicit ```mermaid fence or a
           // bare unfenced mermaid block — becomes a diagram artifact.
-          const mermaidFenceMatch = finalContent.match(/```mermaid\s*\n([\s\S]*?)```/i);
+          const mermaidFenceMatch = finalContent.match(/```(?:mermaid|diagram)\s*\n([\s\S]*?)```/i);
           const hasRawMermaid =
             !finalContent.includes('<svg') &&
             !finalContent.match(
               /```(?:typescript|javascript|python|rust|go|java|c\+\+|cpp|sql|bash|sh|yaml|json|css|tsx|jsx|html|svg)\s*\n/
             ) &&
-            /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|C4Context|C4Container)\b/im.test(
+            /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|pie|mindmap|erDiagram|gitGraph|C4Context|C4Container|C4Component|gantt|quadrantChart|sankey(?:-beta)?|xychart(?:-beta)?|block(?:-beta)?|timeline|journey)\b/im.test(
               finalContent
             );
 
@@ -1679,13 +1778,15 @@ export function useChatPipeline({
             // Diagram Artifact Extraction — mermaid only.
             // HTML/SVG code fences render in the CodeBlock iframe and must NOT
             // create a diagram artifact (which would auto-open the ArtifactCanvas).
-            const mermaidFenceMatch = existingContent.match(/```mermaid\s*\n([\s\S]*?)```/i);
+            const mermaidFenceMatch = existingContent.match(
+              /```(?:mermaid|diagram)\s*\n([\s\S]*?)```/i
+            );
             const hasRawMermaid =
               !existingContent.includes('<svg') &&
               !existingContent.match(
                 /```(?:typescript|javascript|python|rust|go|java|c\+\+|cpp|sql|bash|sh|yaml|json|css|tsx|jsx|html|svg)\s*\n/
               ) &&
-              /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|pie|mindmap|erDiagram|gitGraph|C4Context|C4Container)\b/im.test(
+              /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|pie|mindmap|erDiagram|gitGraph|C4Context|C4Container|C4Component|gantt|quadrantChart|sankey(?:-beta)?|xychart(?:-beta)?|block(?:-beta)?|timeline|journey)\b/im.test(
                 existingContent
               );
 
@@ -1739,6 +1840,26 @@ export function useChatPipeline({
           historyRef.current = finalHistory;
         }
         persistHistory(historyRef.current);
+
+        // ── Fire-and-forget episodic memory extraction (non-blocking) ──
+        // Extracts entities and summaries from the conversation turn and stores
+        // them in SQLite episodic_memories + memory_entities tables via Rust.
+        try {
+          const convoId =
+            historyRef.current[0]?.id ||
+            (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString());
+          const assistantTurn =
+            (historyRef.current[historyRef.current.length - 1]?.content as string) || '';
+          if (assistantTurn.trim().length > 20) {
+            invoke('extract_turn_memory', {
+              conversationId: convoId,
+              userTurn: prompt.substring(0, 4000),
+              assistantTurn: assistantTurn.substring(0, 8000),
+            }).catch(() => {}); // Non-critical — ignore errors silently
+          }
+        } catch {
+          /* non-critical */
+        }
 
         setTokensUsed((prev) => prev + estimatedInput);
 

@@ -5,6 +5,7 @@
 
 import { Provider, ModelDefinition } from '../types';
 import { AVAILABLE_MODELS } from '@shared/config/models';
+import { useAppStore } from '@src/stores/useAppStore';
 
 export const PROVIDER_LABELS: Record<string, string> = {
   gemini: 'Gemini',
@@ -216,7 +217,9 @@ export const getEffectiveApiKey = (
   if (key && key !== '') return key;
 
   try {
-    const appKey = useAppStore.getState().apiKeys?.[provider as any]?.trim();
+    const appKey = (useAppStore.getState().apiKeys as Record<string, string> | undefined)?.[
+      provider
+    ]?.trim();
     if (appKey && appKey !== '') return appKey;
     const nyxKey = useNyxStore.getState().apiKeys?.[provider]?.trim();
     if (nyxKey && nyxKey !== '') return nyxKey;

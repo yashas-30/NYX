@@ -23,8 +23,6 @@ pub mod agents;
 pub mod rag;
 pub mod guardrails;
 pub mod research;
-pub mod mcp_server;
-pub mod orchestrator;
 
 use commands::*;
 use crate::commands::db::{
@@ -150,8 +148,13 @@ pub fn run() {
                 let rag_path = rag_db_path.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Ok(scanner) = crate::rag::scanner::CodebaseScanner::new(rag_path).await {
-                        handle_rag.manage(std::sync::Arc::new(scanner));
-                        tracing::info!("[RAG] CodebaseScanner initialized asynchronously");
+                        let scanner = std::sync::Arc::new(scanner);
+                        handle_rag.manage(scanner.clone());
+                        let workspace_root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                        if let Err(error) = scanner.index_workspace(&workspace_root).await {
+                            tracing::warn!("[RAG] Workspace indexing failed: {}", error);
+                        }
+                        tracing::info!("[RAG] CodebaseScanner initialized and workspace indexing completed");
                     } else {
                         tracing::error!("Failed to initialize CodebaseScanner");
                     }
@@ -203,6 +206,7 @@ pub fn run() {
             llm::providers::llm_stream_request,
             llm::local_inference::llm_local_stream_request,
             commands::agent_pipeline::run_antigravity_python_agent,
+            commands::agent_pipeline::run_langgraph_python_agent,
             commands::system::cleanup_session_state,
             commands::system::set_search_settings,
             pty_spawn, pty_write, pty_resize, pty_close,
@@ -296,6 +300,7 @@ pub fn run() {
             commands::memory::get_memory_entities,
             commands::memory::delete_entity,
             commands::memory::extract_session_memory,
+            commands::memory::extract_turn_memory,
             commands::memory::turbovec_add_memory,
             commands::memory::turbovec_search_memory,
             commands::memory::turbovec_search_chat_history,

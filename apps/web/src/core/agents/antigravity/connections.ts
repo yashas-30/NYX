@@ -42,11 +42,11 @@ export function resolveActiveModelAndProvider(config?: LocalAgentConfig): {
   const appSelectedProvider =
     typeof storeApp.selectedModel === 'object' ? storeApp.selectedModel?.provider : undefined;
 
-  const model = config?.model || storeNyx.selectedModel || appSelectedModelId || '';
+  const model = config?.model || storeNyx.currentModel?.id || appSelectedModelId || '';
 
   const provider =
     config?.provider ||
-    storeNyx.selectedProvider ||
+    storeNyx.currentModel?.provider ||
     appSelectedProvider ||
     (model.includes('/') ? model.split('/')[0] : 'gemini');
 
@@ -66,7 +66,7 @@ export class LocalConnection implements Connection {
     const apiKey =
       this.config?.api_key ||
       getEffectiveApiKey(provider, mergedKeys) ||
-      mergedKeys[provider] ||
+      (mergedKeys as Record<string, string>)[provider] ||
       '';
 
     const onProgress = new Channel<any>();
@@ -144,7 +144,7 @@ export class PythonSdkConnection implements Connection {
     const apiKey =
       this.config?.api_key ||
       getEffectiveApiKey(provider, mergedKeys) ||
-      mergedKeys[provider] ||
+      (mergedKeys as Record<string, string>)[provider] ||
       '';
 
     let prompt = '';
