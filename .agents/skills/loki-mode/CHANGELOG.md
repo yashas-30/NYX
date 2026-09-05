@@ -313,11 +313,11 @@ Comprehensive guide covering:
 **Human Escalation Triggers:**
 | Trigger | Action |
 |---------|--------|
-| retry_count > 3 | Pause and escalate |
+| retry*count > 3 | Pause and escalate |
 | domain in [payments, auth, pii] | Require approval |
 | confidence_score < 0.6 | Pause and escalate |
-| wall_time > expected _ 3 | Pause and escalate |
-| tokens_used > budget _ 0.8 | Pause and escalate |
+| wall_time > expected * 3 | Pause and escalate |
+| tokens*used > budget * 0.8 | Pause and escalate |
 
 ### Changed
 

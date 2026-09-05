@@ -111,6 +111,7 @@ import { Button, Html } from '@react-email/components';
 
 export default function WelcomeEmail({ userName }) {
 return (
+
 <Html>
 <h1>Welcome {userName}!</h1>
 <Button href="https://app.com/start">

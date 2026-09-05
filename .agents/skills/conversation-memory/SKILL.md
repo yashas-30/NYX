@@ -271,9 +271,9 @@ Recommended fix:
 
 class ManagedMemory {
 // Limits
-private readonly SHORT_TERM_MAX = 100;
+private readonly SHORT*TERM_MAX = 100;
 private readonly LONG_TERM_MAX = 10000;
-private readonly CONSOLIDATION_INTERVAL = 24 _ 60 _ 60 \* 1000;
+private readonly CONSOLIDATION_INTERVAL = 24 * 60 \_ 60 \* 1000;
 
     async add(memory: Memory): Promise<void> {
         // Score importance before storing

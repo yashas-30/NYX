@@ -188,6 +188,7 @@ redirect('/login')
 }
 
 return (
+
 <div>
 <h1>Welcome, {user.email}</h1>
 </div>

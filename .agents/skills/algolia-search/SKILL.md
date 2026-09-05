@@ -47,6 +47,7 @@ import { searchClient, INDEX_NAME } from '@/lib/algolia';
 
 function Hit({ hit }: { hit: ProductHit }) {
 return (
+
 <article>
 <h3>{hit.name}</h3>
 <p>{hit.description}</p>
@@ -80,6 +81,7 @@ const { hits } = useHits<ProductHit>();
 const { status } = useInstantSearch();
 
 return (
+
 <div>
 <input
 value={query}
@@ -139,6 +141,7 @@ routing={{
           cleanUrlOnDispose: false,
         },
       }} >
+
 <div className="flex gap-8">
 <aside className="w-64">
 <h3>Categories</h3>
@@ -543,6 +546,7 @@ import { searchClient, INDEX_NAME } from '@/lib/algolia';
 export function ProductSearch() {
 return (
 <InstantSearch searchClient={searchClient} indexName={INDEX_NAME}>
+
 <div className="flex gap-8">
 {/_ Filters Sidebar _/}
 <aside className="w-64 space-y-6">

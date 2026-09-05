@@ -475,7 +475,7 @@ postgres://user:pass@ep-xxx-pooler.aws.neon.tech/db?sslmode=require&sslnegotiati
 import { prisma } from './prisma';
 
 // Ping database every 4 minutes to prevent suspend
-const KEEPALIVE_INTERVAL = 4 _ 60 _ 1000;
+const KEEPALIVE*INTERVAL = 4 * 60 \_ 1000;
 
 if (process.env.NEON_KEEPALIVE === 'true') {
 setInterval(async () => {

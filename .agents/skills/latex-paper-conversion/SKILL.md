@@ -46,8 +46,8 @@ Run a build cycle (`pdflatex` -> `bibtex` -> `pdflatex`). Check the `.log` file 
 ### Example 1: Converting IPOL to MDPI
 
 \```
-USER: "I need to convert my paper 'SAHQR_Paper.tex' to the MDPI format located in the 'MDPI_template_ACS' folder."
-AGENT: _Triggers latex-paper-conversion skill_
+USER: "I need to convert my paper 'SAHQR*Paper.tex' to the MDPI format located in the 'MDPI_template_ACS' folder."
+AGENT: \_Triggers latex-paper-conversion skill*
 
 1. Analyzes source `.tex` and target `template.tex`.
 2. Creates Python script to extract Introduction through Conclusion.

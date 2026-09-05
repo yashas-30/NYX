@@ -222,7 +222,7 @@ parse_mode="HTML"
 
 await bot.send*message(
 chat_id=chat_id,
-text="*Negrito*, \_italico*, `codigo`, [link](https://example\.com)",
+text="*Negrito*, \_italico*, `codigo`, [link](https://example.com)",
 parse_mode="MarkdownV2"
 )
 

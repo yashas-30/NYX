@@ -154,7 +154,7 @@ ack()
 
 # Listen for app_home_opened events
 
-@app.event("app_home_opened")
+@app.event("app*home_opened")
 def update_home_tab(client, event):
 """Update the Home tab when user opens it."""
 client.views_publish(
@@ -166,7 +166,7 @@ view={
 "type": "section",
 "text": {
 "type": "mrkdwn",
-"text": "_Welcome to the Ticket Bot!_"
+"text": "\_Welcome to the Ticket Bot!*"
 }
 },
 {
@@ -398,14 +398,14 @@ def build*task_blocks(task: dict):
 return [
 {
 "type": "section",
-"text": {"type": "mrkdwn", "text": f"*{task['title']}*"},
+"text": {"type": "mrkdwn", "text": f"*{task['title']}_"},
 "accessory": {
 "type": "overflow",
 "action_id": "task_overflow",
 "options": [
 {
 "text": {"type": "plain_text", "text": "Edit"},
-"value": f"edit*{task['id']}"
+"value": f"edit_{task['id']}"
 },
 {
 "text": {"type": "plain*text", "text": "Delete"},

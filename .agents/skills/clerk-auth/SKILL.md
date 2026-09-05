@@ -47,6 +47,7 @@ children: React.ReactNode;
 }) {
 return (
 <ClerkProvider>
+
 <html lang="en">
 <body>{children}</body>
 </html>
@@ -59,6 +60,7 @@ import { SignIn } from '@clerk/nextjs';
 
 export default function SignInPage() {
 return (
+
 <div className="flex justify-center items-center min-h-screen">
 <SignIn />
 </div>
@@ -70,6 +72,7 @@ import { SignUp } from '@clerk/nextjs';
 
 export default function SignUpPage() {
 return (
+
 <div className="flex justify-center items-center min-h-screen">
 <SignUp />
 </div>
@@ -81,6 +84,7 @@ import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs';
 
 export function Header() {
 return (
+
 <header className="flex justify-between p-4">
 <h1>My App</h1>
 <SignedOut>
@@ -207,6 +211,7 @@ redirect('/sign-in');
 const user = await currentUser();
 
 return (
+
 <div>
 <h1>Welcome, {user?.firstName}!</h1>
 <p>Email: {user?.emailAddresses[0]?.emailAddress}</p>
@@ -232,6 +237,7 @@ redirect('/select-org');
 }
 
 return (
+
 <div>
 <p>Organization Role: {orgRole}</p>
 {children}
@@ -303,6 +309,7 @@ return <div>Not signed in</div>;
 }
 
 return (
+
 <div>
 <img src={user.imageUrl} alt={user.fullName ?? ''} />
 <h2>{user.fullName}</h2>
@@ -327,6 +334,7 @@ return <p>No organization selected</p>;
 }
 
 return (
+
 <div>
 <p>Current: {organization.name}</p>
 <p>Role: {membership?.role}</p>
@@ -397,6 +405,7 @@ import { CreateOrganization } from '@clerk/nextjs';
 
 export default function CreateOrgPage() {
 return (
+
 <div className="flex justify-center">
 <CreateOrganization afterCreateOrganizationUrl="/dashboard" />
 </div>
@@ -417,6 +426,7 @@ import { OrganizationSwitcher, UserButton } from '@clerk/nextjs';
 
 export function Header() {
 return (
+
 <header className="flex justify-between p-4">
 <OrganizationSwitcher
         hidePersonal
@@ -446,6 +456,7 @@ where: { organizationId: orgId },
 });
 
 return (
+
 <div>
 <h1>Projects</h1>
 {projects.map((p) => (
@@ -465,6 +476,7 @@ const { membership } = useOrganization();
 // Using Protect component
 return (
 <Protect role="org:admin" fallback={<p>Admin access required</p>}>
+
 <div>Admin content here</div>
 </Protect>
 );

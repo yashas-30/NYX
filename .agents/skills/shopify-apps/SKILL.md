@@ -136,6 +136,7 @@ const { apiKey } = useLoaderData<typeof loader>();
 return (
 <AppProvider isEmbeddedApp apiKey={apiKey}>
 <ui-nav-menu>
+
 <Link to="/app" rel="home">Home</Link>
 <Link to="/app/products">Products</Link>
 <Link to="/app/settings">Settings</Link>

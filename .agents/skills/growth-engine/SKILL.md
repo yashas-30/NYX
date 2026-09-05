@@ -151,8 +151,8 @@ Meta: cada usuario traz 0.3 novos usuarios (K=0.3)
 
 ## Calculadora De Viral Coefficient
 
-def calculate_k_factor(percent_who_invite, invites_per_user, conversion_rate):
-k = percent_who_invite _ invites_per_user _ conversion_rate
+def calculate*k_factor(percent_who_invite, invites_per_user, conversion_rate):
+k = percent_who_invite * invites*per_user * conversion_rate
 if k >= 1:
 status = "Crescimento viral (cada usuario traz mais de 1)"
 elif k >= 0.5:

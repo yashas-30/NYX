@@ -301,7 +301,7 @@ git branch -D upgrade/{package_name}-{target_version}
 - Changelog})
 - Community Discussions})
   """
-      return guide
+  return guide
 
 ````
 

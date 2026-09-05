@@ -210,7 +210,7 @@ logging.info("Python HTTP trigger function processed a request.")
             mimetype="application/json"
         )
 
-@app.timer_trigger(schedule="0 _/5 _ \* \* \*", arg_name="myTimer")
+@app.timer*trigger(schedule="0 */5 \_ \* \* \*", arg_name="myTimer")
 def timer_trigger(myTimer: func.TimerRequest) -> None:
 logging.info("Timer trigger executed")
 

@@ -206,7 +206,7 @@ modelos de distribuicoes de probabilidade como sistemas de energia.
 Uma Boltzmann Machine e uma rede neural estocastica onde:
 
 - Cada unidade tem um estado binario (0 ou 1)
-- O sistema tem uma funcao de energia E = -sum(w_ij _ s_i _ s_j) - sum(b_i \* s_i)
+- O sistema tem uma funcao de energia E = -sum(w*ij * s*i * s_j) - sum(b_i \* s_i)
 - Configuracoes de baixa energia correspondem a padroes de dados validos
 - O aprendizado ajusta os pesos para que configuracoes frequentes nos dados tenham baixa energia
 

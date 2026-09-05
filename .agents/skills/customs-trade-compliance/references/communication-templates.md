@@ -395,7 +395,7 @@ From: {start_date} To: {end_date} {maximum 12 months}
 
 The goods described in this document qualify as originating and the information contained in this document is true and accurate. I assume responsibility for proving such representations and agree to maintain and present upon request or to make available during a verification visit, documentation necessary to support this certification, and to inform, in writing, all persons to whom the certification was given of any changes that could affect the accuracy or validity of this certification.
 
-**Signature:** **********\_\_**********
+**Signature:** \***\*\*\*\*\***\_\_\***\*\*\*\*\***
 **Date:** {date}
 
 ---
@@ -459,10 +459,10 @@ We are evaluating whether the above product(s) qualify for preferential duty tre
 
 **SECTION A: PRODUCT INFORMATION**
 
-1. Product description (technical, not marketing): **************\_\_\_\_**************
-2. HS classification at the 6-digit level: **************\_\_\_\_**************
-3. Country where the product is manufactured: **************\_\_\_\_**************
-4. Facility address where final production occurs: **************\_\_\_\_**************
+1. Product description (technical, not marketing): **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+2. HS classification at the 6-digit level: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+3. Country where the product is manufactured: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+4. Facility address where final production occurs: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
 
 **SECTION B: BILL OF MATERIALS**
 
@@ -478,30 +478,30 @@ For each material/component used in the manufacture of the product, please provi
 
 **SECTION C: MANUFACTURING PROCESS**
 
-5. Describe the manufacturing process performed at your facility: **************\_\_\_\_**************
+5. Describe the manufacturing process performed at your facility: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
    {Specifically identify: cutting, assembly, machining, chemical processing, finishing, testing}
 
-6. List any processes performed by subcontractors and the country where subcontracting occurs: **************\_\_\_\_**************
+6. List any processes performed by subcontractors and the country where subcontracting occurs: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
 
 7. What is the total value added at your facility as a percentage of the FOB price? **\_**%
 
 **SECTION D: COST INFORMATION** {Required only if RVC calculation is needed}
 
-8. FOB price of the finished product: **************\_\_\_\_**************
-9. Total cost of non-originating materials: **************\_\_\_\_**************
-10. Total cost of originating materials: **************\_\_\_\_**************
-11. Direct labour cost: **************\_\_\_\_**************
-12. Manufacturing overhead: **************\_\_\_\_**************
-13. Profit: **************\_\_\_\_**************
+8. FOB price of the finished product: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+9. Total cost of non-originating materials: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+10. Total cost of originating materials: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+11. Direct labour cost: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+12. Manufacturing overhead: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+13. Profit: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
 
 **SECTION E: CERTIFICATION**
 
 I certify that the information provided above is true and accurate to the best of my knowledge. I understand that false statements may result in penalties under the laws of the importing country.
 
-Name: **************\_\_\_\_**************
-Title: **************\_\_\_\_**************
-Signature: **************\_\_\_\_**************
-Date: **************\_\_\_\_**************
+Name: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+Title: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+Signature: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
+Date: **\*\***\*\***\*\***\_\_\_\_**\*\***\*\***\*\***
 
 Please return the completed questionnaire to {compliance_email} by {deadline_date}.
 
@@ -635,7 +635,7 @@ cc: {Legal counsel}
 
 **[ ] INCONCLUSIVE** — Cannot determine with confidence. Escalated to {compliance officer} for additional investigation on {date}.
 
-**Approved by:** **********\_\_\_********** Date: ****\_\_\_****
+**Approved by:** \***\*\*\*\*\***\_\_\_\***\*\*\*\*\*** Date: \***\*\_\_\_\*\***
 {Compliance Officer / Manager}
 
 **Record Retention:** This memorandum and all supporting documentation will be retained for {5 years from the date of adjudication / indefinitely for true positives}.

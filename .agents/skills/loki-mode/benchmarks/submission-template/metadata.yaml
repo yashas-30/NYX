@@ -3,42 +3,42 @@
 
 # Model Information
 model:
-  name: "loki-mode"
-  version: "2.25.0"
-  base_model: "claude-opus-4-5-20251101"
-  type: "multi-agent-system"
+  name: 'loki-mode'
+  version: '2.25.0'
+  base_model: 'claude-opus-4-5-20251101'
+  type: 'multi-agent-system'
 
 # System Architecture
 architecture:
-  type: "multi-agent-pipeline"
+  type: 'multi-agent-pipeline'
   agents:
-    - name: "Architect"
-      role: "Analyze issue and design fix approach"
-      model: "claude-opus-4.5"
+    - name: 'Architect'
+      role: 'Analyze issue and design fix approach'
+      model: 'claude-opus-4.5'
       timeout: 120
-    - name: "Engineer"
+    - name: 'Engineer'
       role: "Generate patch based on architect's analysis"
-      model: "claude-opus-4.5"
+      model: 'claude-opus-4.5'
       timeout: 300
-    - name: "QA"
-      role: "Validate patch format"
-      model: "rule-based"
+    - name: 'QA'
+      role: 'Validate patch format'
+      model: 'rule-based'
       timeout: 5
-    - name: "Reviewer"
-      role: "Analyze issues and suggest fixes"
-      model: "claude-opus-4.5"
+    - name: 'Reviewer'
+      role: 'Analyze issues and suggest fixes'
+      model: 'claude-opus-4.5'
       timeout: 60
 
   # RARV Cycle (Reason-Act-Reflect-Verify)
   rarv:
     enabled: true
     max_retries: 3
-    description: "Self-verification loop that retries failed patches with reviewer feedback"
+    description: 'Self-verification loop that retries failed patches with reviewer feedback'
 
 # Benchmark Configuration
 benchmark:
-  dataset: "SWE-bench_Lite"
-  split: "test"
+  dataset: 'SWE-bench_Lite'
+  split: 'test'
   total_problems: 300
 
 # Results Summary
@@ -53,15 +53,15 @@ results:
 
 # Submission Information
 submission:
-  date: "2026-01-05"
-  author: "Loki Mode Team"
-  repository: "https://github.com/asklokesh/loki-mode"
-  license: "MIT"
+  date: '2026-01-05'
+  author: 'Loki Mode Team'
+  repository: 'https://github.com/asklokesh/loki-mode'
+  license: 'MIT'
 
 # Contact
 contact:
-  email: "lokesh@example.com"
-  github: "asklokesh"
+  email: 'lokesh@example.com'
+  github: 'asklokesh'
 
 # Notes
 notes: |

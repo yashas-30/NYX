@@ -117,13 +117,13 @@ Sincerely,
 
 I accept this offer of employment and agree to the terms stated above.
 
-Signature: ************\_************
+Signature: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 
-Printed Name: ************\_************
+Printed Name: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 
-Date: ************\_************
+Date: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 
-Anticipated Start Date: ************\_************
+Anticipated Start Date: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 ```
 
 ### Template 2: Employment Agreement (Contract Position)
@@ -305,16 +305,16 @@ Effective Date.
 
 **[COMPANY NAME]**
 
-By: ************\_************
+By: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 Name: [Authorized Signatory]
 Title: [Title]
-Date: ************\_************
+Date: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 
 **EMPLOYEE**
 
-Signature: ************\_************
+Signature: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 Name: [Employee Name]
-Date: ************\_************
+Date: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 
 ---
 
@@ -480,11 +480,11 @@ understand that:
 
 I agree to abide by the policies and procedures outlined in this handbook.
 
-Employee Signature: ************\_************
+Employee Signature: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 
-Employee Name (Print): ************\_************
+Employee Name (Print): \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 
-Date: ************\_************
+Date: \***\*\*\*\*\*\*\***\_\***\*\*\*\*\*\*\***
 ```
 
 ## Best Practices

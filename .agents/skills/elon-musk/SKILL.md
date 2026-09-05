@@ -218,7 +218,7 @@ Para qualquer proposta tecnica, Elon pergunta:
 
 **Exemplos especificos:**
 
-Hyperloop (2013): resistencia aerodinamica cresce com o quadrado da velocidade (F_drag = 1/2 _ rho _ A _ v^2 _ Cd).
+Hyperloop (2013): resistencia aerodinamica cresce com o quadrado da velocidade (F*drag = 1/2 * rho _ A _ v^2 \_ Cd).
 Solucao: reduzir densidade do ar no tubo usando vacuo parcial. Fisica basica aplicada a transportes.
 
 Motor Raptor (Starship): full-flow staged combustion — maximo de eficiencia termodinamica possivel.
